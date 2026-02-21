@@ -1,0 +1,210 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Project Utopia - Medieval Sandbox Prototype</title>
+  <style>
+    :root {
+      --bg: #0b1017;
+      --panel: rgba(255, 255, 255, 0.035);
+      --panel-border: rgba(255, 255, 255, 0.11);
+      --text: #e9eff8;
+      --muted: rgba(233, 239, 248, 0.76);
+      --accent: #83b6ff;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+    }
+
+    #wrap {
+      position: fixed;
+      inset: 0;
+      display: flex;
+    }
+
+    #ui {
+      width: 370px;
+      box-sizing: border-box;
+      border-right: 1px solid var(--panel-border);
+      padding: 14px;
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(22, 27, 36, 0.95), rgba(10, 12, 18, 0.94));
+      backdrop-filter: blur(4px);
+    }
+
+    h1 {
+      margin: 0 0 8px 0;
+      font-size: 17px;
+      letter-spacing: 0.2px;
+    }
+
+    .small {
+      font-size: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .card {
+      margin-top: 10px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 10px;
+      line-height: 1.35;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    button,
+    input[type="range"],
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
+    button {
+      background: #162235;
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    button.active {
+      outline: 2px solid rgba(131, 182, 255, 0.56);
+      background: #1b2f4a;
+    }
+
+    .kv {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 3px;
+    }
+
+    .bar {
+      height: 10px;
+      margin-top: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.09);
+      overflow: hidden;
+    }
+
+    .bar > div {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #7ea9ff, #89f0c0);
+    }
+
+    canvas {
+      flex: 1;
+      display: block;
+    }
+
+    .switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .hint {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.33;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="ui">
+      <h1>Project Utopia</h1>
+      <div class="small muted">Medieval sandbox: build, route, allocate workers, and watch AI-driven world pressure.</div>
+
+      <div class="card">
+        <div><b>Build Tool</b></div>
+        <div class="row">
+          <button data-tool="road" class="active">Road</button>
+          <button data-tool="farm">Farm</button>
+          <button data-tool="lumber">Lumber</button>
+          <button data-tool="warehouse">Warehouse</button>
+          <button data-tool="wall">Wall</button>
+          <button data-tool="erase">Erase</button>
+        </div>
+        <div class="hint">Left click tile to build. Left click entity to inspect.</div>
+      </div>
+
+      <div class="card">
+        <div><b>Management</b></div>
+        <div class="small muted" style="margin-top:7px">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
+        <input id="farmRatio" type="range" min="0" max="100" value="50" />
+        <div class="switch">
+          <input id="aiToggle" type="checkbox" />
+          <label for="aiToggle">Enable LLM Agent Mode</label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div><b>Resources</b></div>
+        <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
+        <div class="bar"><div id="foodBar"></div></div>
+        <div class="kv" style="margin-top:8px"><div>Wood</div><div id="woodVal">0</div></div>
+        <div class="bar"><div id="woodBar"></div></div>
+      </div>
+
+      <div class="card">
+        <div><b>Population</b></div>
+        <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
+        <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
+        <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
+        <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
+        <div class="kv"><div>Assigned FARM</div><div id="farmersVal">0</div></div>
+        <div class="kv"><div>Assigned WOOD</div><div id="loggersVal">0</div></div>
+      </div>
+
+      <div class="card">
+        <div><b>World State</b></div>
+        <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
+        <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
+        <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
+        <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
+        <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
+      </div>
+
+      <div class="card" id="inspect">
+        <div><b>Selected Entity</b></div>
+        <div class="small muted">Click any unit.</div>
+      </div>
+
+      <div class="card">
+        <div><b>Event Queue</b></div>
+        <div id="eventsPanel" class="small muted" style="margin-top:6px">No active events.</div>
+      </div>
+
+      <div class="card">
+        <div><b>Costs</b></div>
+        <div class="small muted">Road 1w, Farm 5w, Lumber 5w, Warehouse 10w, Wall 2w</div>
+      </div>
+    </div>
+
+    <canvas id="c"></canvas>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
