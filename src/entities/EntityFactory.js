@@ -21,6 +21,7 @@ function baseAgent(id, type, x, z) {
     targetTile: null,
     path: null,
     pathIndex: 0,
+    pathGridVersion: -1,
     blackboard: {},
     policy: null,
     memory: { recentEvents: [], dangerTiles: [] },
@@ -56,6 +57,7 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE) {
     targetTile: null,
     path: null,
     pathIndex: 0,
+    pathGridVersion: -1,
     policy: null,
     memory: { recentEvents: [] },
     groupId: kind === ANIMAL_KIND.PREDATOR ? GROUP_IDS.PREDATORS : GROUP_IDS.HERBIVORES,
@@ -128,6 +130,8 @@ export function createInitialGameState() {
       frameMs: 0,
       frameCount: 0,
       averageFps: 60,
+      benchmarkStatus: "idle",
+      benchmarkCsvReady: false,
       warnings: [],
     },
     ai: {
@@ -142,6 +146,7 @@ export function createInitialGameState() {
       farmRatio: 0.5,
       selectedEntityId: null,
       tool: "road",
+      stressExtraWorkers: 0,
     },
   };
 }

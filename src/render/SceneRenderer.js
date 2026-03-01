@@ -81,16 +81,15 @@ export class SceneRenderer {
 
   #setupEntityMeshes() {
     const sphere = new THREE.SphereGeometry(0.34, 14, 14);
+    const maxWorkers = 900;
+    const maxVisitors = 120;
+    const maxHerbivores = 200;
+    const maxPredators = 80;
 
-    const workerCount = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length;
-    const visitorCount = this.state.agents.filter((a) => a.type === ENTITY_TYPE.VISITOR).length;
-    const herbivoreCount = this.state.animals.filter((a) => a.kind === ANIMAL_KIND.HERBIVORE).length;
-    const predatorCount = this.state.animals.filter((a) => a.kind === ANIMAL_KIND.PREDATOR).length;
-
-    this.workerMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xe8eef7, roughness: 0.7 }), workerCount || 1);
-    this.visitorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xf2b56e, roughness: 0.74 }), visitorCount || 1);
-    this.herbivoreMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0x8fd18f, roughness: 0.78 }), herbivoreCount || 1);
-    this.predatorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xd67878, roughness: 0.78 }), predatorCount || 1);
+    this.workerMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xe8eef7, roughness: 0.7 }), maxWorkers);
+    this.visitorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xf2b56e, roughness: 0.74 }), maxVisitors);
+    this.herbivoreMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0x8fd18f, roughness: 0.78 }), maxHerbivores);
+    this.predatorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xd67878, roughness: 0.78 }), maxPredators);
 
     this.scene.add(this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh);
   }

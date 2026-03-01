@@ -18,6 +18,9 @@
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
     this.warningVal = document.getElementById("warningVal");
+    this.fpsVal = document.getElementById("fpsVal");
+    this.frameVal = document.getElementById("frameVal");
+    this.agentVal = document.getElementById("agentVal");
   }
 
   render() {
@@ -50,6 +53,10 @@
       ? state.events.active.map((e) => `${e.type}:${e.status}`).join(", ")
       : "none";
     this.timeVal.textContent = `${state.metrics.timeSec.toFixed(1)}s`;
+    const totalAgents = state.agents.length + state.animals.length;
+    if (this.fpsVal) this.fpsVal.textContent = state.metrics.averageFps.toFixed(1);
+    if (this.frameVal) this.frameVal.textContent = `${state.metrics.frameMs.toFixed(2)} ms`;
+    if (this.agentVal) this.agentVal.textContent = String(totalAgents);
 
     if (state.ai.lastError) {
       this.warningVal.textContent = `AI: ${state.ai.lastError}`;

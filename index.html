@@ -30,13 +30,18 @@
     }
 
     #ui {
-      width: 370px;
+      width: 360px;
+      min-width: 320px;
       box-sizing: border-box;
       border-right: 1px solid var(--panel-border);
       padding: 14px;
       overflow: auto;
       background: linear-gradient(180deg, rgba(22, 27, 36, 0.95), rgba(10, 12, 18, 0.94));
       backdrop-filter: blur(4px);
+    }
+
+    #ui.compact {
+      width: 320px;
     }
 
     h1 {
@@ -62,10 +67,54 @@
       line-height: 1.35;
     }
 
+    details.card {
+      padding: 0;
+      overflow: hidden;
+    }
+
+    details.card > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 10px;
+      font-weight: 700;
+      border-bottom: 1px solid transparent;
+    }
+
+    details.card[open] > summary {
+      border-bottom-color: var(--panel-border);
+    }
+
+    details.card > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .panel-body {
+      padding: 10px;
+    }
+
     .row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .tool-grid button,
+    .benchmark-grid button {
+      width: 100%;
+    }
+
+    .benchmark-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
       margin-top: 8px;
     }
 
@@ -128,6 +177,14 @@
       font-size: 12px;
       line-height: 1.33;
     }
+
+    #ui.compact .optional-panel {
+      display: none;
+    }
+
+    #ui.compact .hint {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -135,10 +192,15 @@
     <div id="ui">
       <h1>Project Utopia</h1>
       <div class="small muted">Medieval sandbox: build, route, allocate workers, and watch AI-driven world pressure.</div>
+      <div class="switch">
+        <input id="compactToggle" type="checkbox" />
+        <label for="compactToggle">Compact Mode</label>
+      </div>
 
-      <div class="card">
-        <div><b>Build Tool</b></div>
-        <div class="row">
+      <details class="card" open>
+        <summary>Build Tool</summary>
+        <div class="panel-body">
+        <div class="tool-grid">
           <button data-tool="road" class="active">Road</button>
           <button data-tool="farm">Farm</button>
           <button data-tool="lumber">Lumber</button>
@@ -147,59 +209,95 @@
           <button data-tool="erase">Erase</button>
         </div>
         <div class="hint">Left click tile to build. Left click entity to inspect.</div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>Management</b></div>
+      <details class="card optional-panel">
+        <summary>Management</summary>
+        <div class="panel-body">
         <div class="small muted" style="margin-top:7px">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
         <input id="farmRatio" type="range" min="0" max="100" value="50" />
         <div class="switch">
           <input id="aiToggle" type="checkbox" />
           <label for="aiToggle">Enable LLM Agent Mode</label>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>Resources</b></div>
+      <details class="card" open>
+        <summary>Stress Test</summary>
+        <div class="panel-body">
+        <div class="small muted" style="margin-top:7px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
+        <input id="extraWorkers" type="range" min="0" max="500" value="0" />
+        <div class="benchmark-grid">
+          <button id="applyStressBtn">Apply Load</button>
+          <button id="runBenchmarkBtn">Run Benchmark</button>
+          <button id="cancelBenchmarkBtn">Cancel</button>
+          <button id="downloadBenchmarkBtn">Download CSV</button>
+        </div>
+        <div class="small muted" id="benchmarkStatusVal" style="margin-top:7px">Benchmark: idle</div>
+        <div class="hint">Use this during demo: increase load and show FPS/frame time trends.</div>
+        </div>
+      </details>
+
+      <details class="card optional-panel">
+        <summary>Resources</summary>
+        <div class="panel-body">
         <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
         <div class="bar"><div id="foodBar"></div></div>
         <div class="kv" style="margin-top:8px"><div>Wood</div><div id="woodVal">0</div></div>
         <div class="bar"><div id="woodBar"></div></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>Population</b></div>
+      <details class="card optional-panel">
+        <summary>Population</summary>
+        <div class="panel-body">
         <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
         <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
         <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
         <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
         <div class="kv"><div>Assigned FARM</div><div id="farmersVal">0</div></div>
         <div class="kv"><div>Assigned WOOD</div><div id="loggersVal">0</div></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>World State</b></div>
+      <details class="card" open>
+        <summary>World State</summary>
+        <div class="panel-body">
         <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
         <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
         <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
         <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
+        <div class="kv"><div>FPS</div><div id="fpsVal">60.0</div></div>
+        <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
+        <div class="kv"><div>Total Entities</div><div id="agentVal">0</div></div>
+        <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
         <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card" id="inspect">
-        <div><b>Selected Entity</b></div>
-        <div class="small muted">Click any unit.</div>
-      </div>
+      <details class="card optional-panel">
+        <summary>Selected Entity</summary>
+        <div class="panel-body" id="inspect">
+          <div><b>Selected Entity</b></div>
+          <div class="small muted">Click any unit.</div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>Event Queue</b></div>
-        <div id="eventsPanel" class="small muted" style="margin-top:6px">No active events.</div>
-      </div>
+      <details class="card optional-panel">
+        <summary>Event Queue</summary>
+        <div class="panel-body">
+          <div id="eventsPanel" class="small muted" style="margin-top:6px">No active events.</div>
+        </div>
+      </details>
 
-      <div class="card">
-        <div><b>Costs</b></div>
-        <div class="small muted">Road 1w, Farm 5w, Lumber 5w, Warehouse 10w, Wall 2w</div>
-      </div>
+      <details class="card optional-panel">
+        <summary>Costs</summary>
+        <div class="panel-body">
+          <div class="small muted">Road 1w, Farm 5w, Lumber 5w, Warehouse 10w, Wall 2w</div>
+        </div>
+      </details>
     </div>
 
     <canvas id="c"></canvas>
