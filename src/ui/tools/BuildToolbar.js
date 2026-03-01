@@ -5,6 +5,8 @@
     this.farmRatio = document.getElementById("farmRatio");
     this.farmRatioLabel = document.getElementById("farmRatioLabel");
     this.aiToggle = document.getElementById("aiToggle");
+    this.compactToggle = document.getElementById("compactToggle");
+    this.uiRoot = document.getElementById("ui");
 
     this.toolButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -28,6 +30,18 @@
       }
     });
 
+    this.compactToggle?.addEventListener("change", () => {
+      const compact = Boolean(this.compactToggle.checked);
+      this.uiRoot?.classList.toggle("compact", compact);
+      localStorage.setItem("utopiaCompactMode", compact ? "1" : "0");
+    });
+
+    const savedCompact = localStorage.getItem("utopiaCompactMode") === "1";
+    if (savedCompact) {
+      this.uiRoot?.classList.add("compact");
+      if (this.compactToggle) this.compactToggle.checked = true;
+    }
+
     this.sync();
   }
 
@@ -44,6 +58,10 @@
 
     if (this.aiToggle) {
       this.aiToggle.checked = this.state.ai.enabled;
+    }
+
+    if (this.compactToggle && this.uiRoot) {
+      this.compactToggle.checked = this.uiRoot.classList.contains("compact");
     }
   }
 }

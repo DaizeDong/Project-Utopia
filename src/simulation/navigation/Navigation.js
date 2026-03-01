@@ -10,7 +10,8 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.targetTile.ix === targetTile.ix &&
     entity.targetTile.iz === targetTile.iz &&
     entity.path &&
-    entity.pathIndex < entity.path.length
+    entity.pathIndex < entity.path.length &&
+    entity.pathGridVersion === state.grid.version
   ) {
     return true;
   }
@@ -22,6 +23,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   if (!path) {
     entity.path = null;
     entity.pathIndex = 0;
+    entity.pathGridVersion = -1;
     entity.targetTile = null;
     return false;
   }
@@ -32,6 +34,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
 
   entity.path = path;
   entity.pathIndex = 0;
+  entity.pathGridVersion = state.grid.version;
   entity.targetTile = targetTile;
   return true;
 }
@@ -75,5 +78,6 @@ export function followPath(entity, state, dt) {
 export function clearPath(entity) {
   entity.path = null;
   entity.pathIndex = 0;
+  entity.pathGridVersion = -1;
   entity.targetTile = null;
 }
