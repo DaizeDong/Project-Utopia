@@ -19,6 +19,7 @@
  *  targetTile: TileCoord|null,
  *  path: TileCoord[]|null,
  *  pathIndex: number,
+ *  pathGridVersion: number,
  *  blackboard: Record<string, unknown>,
  *  policy: Record<string, unknown>|null,
  *  memory: {recentEvents:string[], dangerTiles: TileCoord[]}
@@ -36,6 +37,7 @@
  *  targetTile: TileCoord|null,
  *  path: TileCoord[]|null,
  *  pathIndex: number,
+ *  pathGridVersion: number,
  *  policy: Record<string, unknown>|null,
  *  memory: {recentEvents:string[]}
  * }} AnimalState
@@ -78,7 +80,9 @@
  *  frameMs: number,
  *  frameCount: number,
  *  averageFps: number,
- *  warnings: string[]
+ *  benchmarkStatus: string,
+ *  benchmarkCsvReady: boolean,
+  *  warnings: string[]
  * }} MetricsState
  *
  * @typedef {{
@@ -93,7 +97,8 @@
  * @typedef {{
  *  farmRatio: number,
  *  selectedEntityId: string | null,
- *  tool: "road"|"farm"|"lumber"|"warehouse"|"wall"|"erase"
+ *  tool: "road"|"farm"|"lumber"|"warehouse"|"wall"|"erase",
+ *  stressExtraWorkers: number
  * }} ControlState
  *
  * @typedef {{
