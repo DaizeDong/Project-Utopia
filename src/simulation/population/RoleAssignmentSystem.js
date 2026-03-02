@@ -17,6 +17,8 @@ export class RoleAssignmentSystem {
     if (n === 0) return;
 
     let targetFarmRatio = state.controls.farmRatio;
+    const doctrineBias = Number(state.gameplay?.modifiers?.farmBias ?? 0);
+    targetFarmRatio = Math.max(0, Math.min(1, targetFarmRatio + doctrineBias));
     const workerPolicy = state.ai.groupPolicies.get("workers")?.data;
     if (workerPolicy?.intentWeights?.farm && workerPolicy?.intentWeights?.wood) {
       const farmW = Number(workerPolicy.intentWeights.farm);

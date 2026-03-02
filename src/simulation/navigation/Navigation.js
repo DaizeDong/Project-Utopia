@@ -1,9 +1,23 @@
-﻿import { BALANCE } from "../../config/balance.js";
+import { BALANCE } from "../../config/balance.js";
 import { worldToTile, tileToWorld } from "../../world/grid/Grid.js";
 import { aStar } from "./AStar.js";
 
+function nowMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
 export function setTargetAndPath(entity, targetTile, state, services) {
   if (!targetTile) return false;
+
+  const astarStats = state.debug?.astar;
+  if (astarStats) {
+    astarStats.requests += 1;
+    astarStats.lastFrom = worldToTile(entity.x, entity.z, state.grid);
+    astarStats.lastTo = { ix: targetTile.ix, iz: targetTile.iz };
+  }
 
   if (
     entity.targetTile &&
@@ -18,13 +32,31 @@ export function setTargetAndPath(entity, targetTile, state, services) {
 
   const start = worldToTile(entity.x, entity.z, state.grid);
   const cachedPath = services.pathCache.get(state.grid.version, start, targetTile);
-  const path = cachedPath ?? aStar(state.grid, start, targetTile, state.weather.moveCostMultiplier);
+
+  let path = cachedPath;
+  let durationMs = 0;
+  if (!path) {
+    const t0 = nowMs();
+    path = aStar(state.grid, start, targetTile, state.weather.moveCostMultiplier);
+    durationMs = nowMs() - t0;
+  }
+
+  if (astarStats) {
+    if (cachedPath) {
+      astarStats.cacheHits += 1;
+    } else {
+      astarStats.cacheMisses += 1;
+      astarStats.lastDurationMs = durationMs;
+      astarStats.avgDurationMs = astarStats.avgDurationMs * 0.92 + durationMs * 0.08;
+    }
+  }
 
   if (!path) {
     entity.path = null;
     entity.pathIndex = 0;
     entity.pathGridVersion = -1;
     entity.targetTile = null;
+    if (astarStats) astarStats.fail += 1;
     return false;
   }
 
@@ -36,6 +68,15 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   entity.pathIndex = 0;
   entity.pathGridVersion = state.grid.version;
   entity.targetTile = targetTile;
+  if (astarStats) {
+    astarStats.success += 1;
+    astarStats.lastPathLength = path.length;
+    astarStats.avgPathLength = astarStats.avgPathLength * 0.9 + path.length * 0.1;
+  }
+  if (entity.debug) {
+    entity.debug.lastPathLength = path.length;
+    entity.debug.lastPathRecalcSec = Number(state.metrics?.timeSec ?? 0);
+  }
   return true;
 }
 

@@ -1,8 +1,11 @@
-﻿import { BALANCE } from "../../config/balance.js";
+import { BALANCE } from "../../config/balance.js";
 import { ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
-import { findNearestTileOfTypes, randomPassableTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, randomPassableTile } from "../../world/grid/Grid.js";
 import { clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
+
+const TARGET_REFRESH_BASE_SEC = 1.2;
+const TARGET_REFRESH_JITTER_SEC = 0.7;
 
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = state.buildings.warehouses > 0;
@@ -26,6 +29,33 @@ function resolveWorkCooldown(worker, dt, amount, resourceType) {
   }
 }
 
+function isTargetTileType(worker, state, targetTileTypes) {
+  if (!worker.targetTile) return false;
+  const tile = getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+  return targetTileTypes.includes(tile);
+}
+
+function maybeRetarget(worker, state, services, intent, targetTileTypes) {
+  const nowSec = state.metrics.timeSec;
+  const blackboard = worker.blackboard ?? (worker.blackboard = {});
+
+  const intentChanged = blackboard.intentTargetIntent !== intent;
+  const targetExpired = nowSec >= Number(blackboard.nextTargetRefreshSec ?? -Infinity);
+  const targetInvalid = !isTargetTileType(worker, state, targetTileTypes);
+  const pathInvalid = !worker.path || worker.pathIndex >= worker.path.length || worker.pathGridVersion !== state.grid.version;
+
+  if (intentChanged || targetExpired || targetInvalid || pathInvalid) {
+    const target = findNearestTileOfTypes(state.grid, worker, targetTileTypes);
+    if (!target || !setTargetAndPath(worker, target, state, services)) {
+      return false;
+    }
+    blackboard.intentTargetIntent = intent;
+    blackboard.nextTargetRefreshSec = nowSec + TARGET_REFRESH_BASE_SEC + Math.random() * TARGET_REFRESH_JITTER_SEC;
+  }
+
+  return Boolean(worker.path && worker.pathIndex < worker.path.length);
+}
+
 export class WorkerAISystem {
   constructor() {
     this.name = "WorkerAISystem";
@@ -39,13 +69,14 @@ export class WorkerAISystem {
 
       const intent = chooseWorkerIntent(worker, state);
       worker.blackboard.intent = intent;
+      if (worker.debug) worker.debug.lastIntent = intent;
 
       if (intent === "eat") {
         worker.stateLabel = "Eat (Warehouse)";
-        const target = findNearestTileOfTypes(state.grid, worker, [TILE.WAREHOUSE]);
-        if (target && setTargetAndPath(worker, target, state, services)) {
+        if (maybeRetarget(worker, state, services, intent, [TILE.WAREHOUSE])) {
           const step = followPath(worker, state, dt);
           worker.desiredVel = step.desired;
+          if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
           if (step.done) {
             const eat = Math.min(BALANCE.hungerEatRatePerSecond * dt, state.resources.food);
             state.resources.food -= eat;
@@ -57,10 +88,10 @@ export class WorkerAISystem {
 
       if (intent === "deliver") {
         worker.stateLabel = "Deliver (Warehouse)";
-        const target = findNearestTileOfTypes(state.grid, worker, [TILE.WAREHOUSE]);
-        if (target && setTargetAndPath(worker, target, state, services)) {
+        if (maybeRetarget(worker, state, services, intent, [TILE.WAREHOUSE])) {
           const step = followPath(worker, state, dt);
           worker.desiredVel = step.desired;
+          if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
           if (step.done) {
             state.resources.food += worker.carry.food;
             state.resources.wood += worker.carry.wood;
@@ -73,12 +104,13 @@ export class WorkerAISystem {
 
       if (intent === "farm") {
         worker.stateLabel = "Work (Farm)";
-        const target = findNearestTileOfTypes(state.grid, worker, [TILE.FARM]);
-        if (target && setTargetAndPath(worker, target, state, services)) {
+        if (maybeRetarget(worker, state, services, intent, [TILE.FARM])) {
           const step = followPath(worker, state, dt);
           worker.desiredVel = step.desired;
+          if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
           if (step.done) {
-            resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.farmProductionMultiplier), "food");
+            const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
+            resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.farmProductionMultiplier * doctrine), "food");
           }
           continue;
         }
@@ -86,18 +118,22 @@ export class WorkerAISystem {
 
       if (intent === "lumber") {
         worker.stateLabel = "Work (Lumber)";
-        const target = findNearestTileOfTypes(state.grid, worker, [TILE.LUMBER]);
-        if (target && setTargetAndPath(worker, target, state, services)) {
+        if (maybeRetarget(worker, state, services, intent, [TILE.LUMBER])) {
           const step = followPath(worker, state, dt);
           worker.desiredVel = step.desired;
+          if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
           if (step.done) {
-            resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier), "wood");
+            const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
+            resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine), "wood");
           }
           continue;
         }
       }
 
       worker.stateLabel = "Wander";
+      if (worker.blackboard) {
+        worker.blackboard.intentTargetIntent = "wander";
+      }
       if (!worker.targetTile || !worker.path || worker.pathIndex >= worker.path.length) {
         clearPath(worker);
         setTargetAndPath(worker, randomPassableTile(state.grid), state, services);

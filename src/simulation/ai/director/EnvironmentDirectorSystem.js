@@ -11,9 +11,27 @@ export class EnvironmentDirectorSystem {
 
   update(_dt, state, services) {
     if (this.pendingResult) {
+      const now = state.metrics.timeSec;
       applyEnvironmentDirective(state, this.pendingResult.data);
-      state.ai.mode = this.pendingResult.fallback ? "fallback" : "llm";
-      state.ai.lastError = this.pendingResult.error ?? "";
+      const usedFallback = Boolean(this.pendingResult.fallback);
+      state.ai.mode = usedFallback ? "fallback" : "llm";
+      state.ai.lastEnvironmentSource = usedFallback ? "fallback" : "llm";
+      state.ai.lastEnvironmentResultSec = now;
+      state.ai.environmentDecisionCount += 1;
+      if (!usedFallback) state.ai.environmentLlmCount += 1;
+      state.ai.lastEnvironmentError = this.pendingResult.error ?? "";
+      state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
+      if (state.debug?.aiTrace) {
+        state.debug.aiTrace.unshift({
+          sec: now,
+          source: usedFallback ? "fallback" : "llm",
+          channel: "environment",
+          weather: this.pendingResult.data?.weather ?? "unknown",
+          events: (this.pendingResult.data?.eventSpawns ?? []).map((e) => `${e.type}:${e.intensity}`).join(", ") || "none",
+          error: this.pendingResult.error ?? "",
+        });
+        state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
+      }
       this.pendingResult = null;
     }
 
@@ -25,6 +43,17 @@ export class EnvironmentDirectorSystem {
 
     state.ai.lastEnvironmentDecisionSec = state.metrics.timeSec;
     const summary = buildWorldSummary(state);
+    if (state.debug?.aiTrace) {
+      state.debug.aiTrace.unshift({
+        sec: state.metrics.timeSec,
+        source: state.ai.enabled ? "llm" : "fallback",
+        channel: "environment-request",
+        weather: summary.weather.current,
+        events: summary.events.map((e) => e.type).join(", ") || "none",
+        error: "",
+      });
+      state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
+    }
     this.pendingPromise = services.llmClient
       .requestEnvironment(summary, state.ai.enabled)
       .then((result) => {

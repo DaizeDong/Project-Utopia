@@ -1,7 +1,10 @@
-﻿import { BALANCE } from "../../config/balance.js";
+import { BALANCE } from "../../config/balance.js";
 import { TILE, VISITOR_KIND } from "../../config/constants.js";
-import { findNearestTileOfTypes, listTilesByType, randomPassableTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile } from "../../world/grid/Grid.js";
 import { clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
+
+const TRADER_REFRESH_BASE_SEC = 1.4;
+const TRADER_REFRESH_JITTER_SEC = 0.8;
 
 function applySabotage(state, target) {
   const idx = target.ix + target.iz * state.grid.width;
@@ -27,15 +30,35 @@ function applySabotage(state, target) {
   });
 }
 
+function shouldTraderRetarget(visitor, state) {
+  if (!visitor.targetTile || !visitor.path || visitor.pathIndex >= visitor.path.length) return true;
+  if (visitor.pathGridVersion !== state.grid.version) return true;
+  if (getTile(state.grid, visitor.targetTile.ix, visitor.targetTile.iz) !== TILE.WAREHOUSE) return true;
+
+  const blackboard = visitor.blackboard ?? (visitor.blackboard = {});
+  const nowSec = state.metrics.timeSec;
+  return nowSec >= Number(blackboard.nextTargetRefreshSec ?? -Infinity);
+}
+
 function traderTick(visitor, state, dt, services) {
   visitor.stateLabel = "Trade";
-  const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
-  if (warehouse && setTargetAndPath(visitor, warehouse, state, services)) {
+  if (visitor.debug) visitor.debug.lastIntent = "trade";
+
+  if (shouldTraderRetarget(visitor, state)) {
+    const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
+    if (warehouse && setTargetAndPath(visitor, warehouse, state, services)) {
+      const blackboard = visitor.blackboard ?? (visitor.blackboard = {});
+      blackboard.nextTargetRefreshSec = state.metrics.timeSec + TRADER_REFRESH_BASE_SEC + Math.random() * TRADER_REFRESH_JITTER_SEC;
+    }
+  }
+
+  if (visitor.path && visitor.pathIndex < visitor.path.length) {
     const step = followPath(visitor, state, dt);
     visitor.desiredVel = step.desired;
     if (step.done) {
-      state.resources.food += 1.5 * dt;
-      state.resources.wood += 1.2 * dt;
+      const tradeYield = Number(state.gameplay?.modifiers?.tradeYield ?? 1);
+      state.resources.food += 1.5 * dt * tradeYield;
+      state.resources.wood += 1.2 * dt * tradeYield;
     }
     return;
   }
@@ -49,9 +72,12 @@ function traderTick(visitor, state, dt, services) {
 }
 
 function saboteurTick(visitor, state, dt, services) {
+  if (visitor.debug) visitor.debug.lastIntent = "sabotage";
   const policy = state.ai.groupPolicies.get("visitors")?.data;
   const sabotageWeight = Number(policy?.intentWeights?.sabotage ?? 1);
-  const chanceScale = Math.max(0.4, Math.min(2.4, sabotageWeight));
+  const resistance = Number(state.gameplay?.modifiers?.sabotageResistance ?? 1);
+  const threatFactor = 1 + Number(state.gameplay?.threat ?? 0) / 220;
+  const chanceScale = Math.max(0.35, Math.min(2.8, sabotageWeight * threatFactor / Math.max(0.6, resistance)));
 
   visitor.sabotageCooldown -= dt;
   if (visitor.sabotageCooldown <= 0) {

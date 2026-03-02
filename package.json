@@ -2,10 +2,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "node scripts/dev-full.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "ai-proxy": "node server/ai-proxy.js",
-    "test": "node --test"
+    "test": "node --test",
+    "a3:evidence:ai": "node scripts/capture-live-ai-evidence.mjs",
+    "verify:a3": "node scripts/verify-a3.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"
