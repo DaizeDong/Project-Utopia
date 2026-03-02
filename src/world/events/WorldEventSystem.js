@@ -34,19 +34,22 @@ function advanceLifecycle(event, dt) {
   if (event.status === "prepare" && event.elapsedSec >= 1) {
     event.status = "active";
     event.elapsedSec = 0;
-    return;
+    return true;
   }
 
   if (event.status === "active" && event.elapsedSec >= event.durationSec) {
     event.status = "resolve";
     event.elapsedSec = 0;
-    return;
+    return true;
   }
 
   if (event.status === "resolve" && event.elapsedSec >= 1) {
     event.status = "cooldown";
     event.elapsedSec = 0;
+    return true;
   }
+
+  return false;
 }
 
 export class WorldEventSystem {
@@ -56,14 +59,28 @@ export class WorldEventSystem {
 
   update(dt, state) {
     if (state.events.queue.length > 0) {
-      state.events.active.push(...state.events.queue.splice(0, state.events.queue.length));
+      const spawned = state.events.queue.splice(0, state.events.queue.length);
+      state.events.active.push(...spawned);
+      if (state.debug?.eventTrace) {
+        for (const event of spawned) {
+          state.debug.eventTrace.unshift(`[${state.metrics.timeSec.toFixed(1)}s] spawn ${event.type} status=${event.status}`);
+        }
+        state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);
+      }
     }
 
     for (const event of state.events.active) {
+      const prevStatus = event.status;
       if (event.status === "active") {
         applyActiveEvent(event, dt, state);
       }
-      advanceLifecycle(event, dt);
+      const changed = advanceLifecycle(event, dt);
+      if (changed && state.debug?.eventTrace) {
+        state.debug.eventTrace.unshift(
+          `[${state.metrics.timeSec.toFixed(1)}s] ${event.type} ${prevStatus} -> ${event.status}`,
+        );
+        state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);
+      }
     }
 
     state.events.active = state.events.active.filter((event) => {

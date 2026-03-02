@@ -1,4 +1,4 @@
-﻿import { BALANCE } from "../../config/balance.js";
+import { BALANCE } from "../../config/balance.js";
 import { clamp } from "../../app/math.js";
 import { buildSpatialHash, queryNeighbors } from "./SpatialHash.js";
 
@@ -8,76 +8,118 @@ function sameFlockGroup(a, b) {
   return true;
 }
 
-function boidsSteer(entity, neighbors, desired) {
-  const sep = { x: 0, z: 0 };
-  const ali = { x: 0, z: 0 };
-  const coh = { x: 0, z: 0 };
-
+function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
+  let sepX = 0;
+  let sepZ = 0;
+  let aliX = 0;
+  let aliZ = 0;
+  let cohX = 0;
+  let cohZ = 0;
   let count = 0;
+  const maxSamples = 24;
   const neighborR = BALANCE.boidsNeighborRadius;
   const sepR = BALANCE.boidsSeparationRadius;
 
-  for (const other of neighbors) {
+  for (let i = 0; i < neighbors.length; i += 1) {
+    const other = neighbors[i];
     if (other === entity) continue;
     if (!sameFlockGroup(entity, other)) continue;
 
     const dx = other.x - entity.x;
     const dz = other.z - entity.z;
-    const d = Math.hypot(dx, dz);
+    const dSq = dx * dx + dz * dz;
+    if (dSq <= 1e-12) continue;
+    const d = Math.sqrt(dSq);
     if (d <= 1e-6 || d > neighborR) continue;
 
-    ali.x += other.vx;
-    ali.z += other.vz;
-    coh.x += other.x;
-    coh.z += other.z;
+    aliX += other.vx;
+    aliZ += other.vz;
+    cohX += other.x;
+    cohZ += other.z;
     count += 1;
+    if (count >= maxSamples) break;
 
     if (d < sepR) {
-      sep.x += (-dx / d) / (d + 0.001);
-      sep.z += (-dz / d) / (d + 0.001);
+      const invD = 1 / (d + 0.001);
+      sepX += (-dx / d) * invD;
+      sepZ += (-dz / d) * invD;
     }
   }
 
   if (count > 0) {
-    ali.x /= count;
-    ali.z /= count;
-    coh.x = coh.x / count - entity.x;
-    coh.z = coh.z / count - entity.z;
+    aliX /= count;
+    aliZ /= count;
+    cohX = cohX / count - entity.x;
+    cohZ = cohZ / count - entity.z;
   }
 
-  return {
-    x:
-      sep.x * BALANCE.boidsWeights.separation +
-      ali.x * BALANCE.boidsWeights.alignment +
-      coh.x * BALANCE.boidsWeights.cohesion +
-      desired.x * BALANCE.boidsWeights.seek,
-    z:
-      sep.z * BALANCE.boidsWeights.separation +
-      ali.z * BALANCE.boidsWeights.alignment +
-      coh.z * BALANCE.boidsWeights.cohesion +
-      desired.z * BALANCE.boidsWeights.seek,
-  };
+  out.x =
+    sepX * BALANCE.boidsWeights.separation +
+    aliX * BALANCE.boidsWeights.alignment +
+    cohX * BALANCE.boidsWeights.cohesion +
+    desiredX * BALANCE.boidsWeights.seek;
+  out.z =
+    sepZ * BALANCE.boidsWeights.separation +
+    aliZ * BALANCE.boidsWeights.alignment +
+    cohZ * BALANCE.boidsWeights.cohesion +
+    desiredZ * BALANCE.boidsWeights.seek;
 }
 
 export class BoidsSystem {
   constructor() {
     this.name = "BoidsSystem";
+    this.entityBuffer = [];
+    this.neighborBuffer = [];
+    this.hash = { map: new Map(), cellSize: 2 };
+    this.steerOut = { x: 0, z: 0 };
+    this.highLoadEntityThreshold = 320;
+    this.highLoadStepSec = 1 / 15;
+    this.highLoadAccumulator = 0;
+  }
+
+  #collectEntities(state) {
+    this.entityBuffer.length = 0;
+    for (let i = 0; i < state.agents.length; i += 1) this.entityBuffer.push(state.agents[i]);
+    for (let i = 0; i < state.animals.length; i += 1) this.entityBuffer.push(state.animals[i]);
+    return this.entityBuffer;
   }
 
   update(dt, state) {
-    const entities = [...state.agents, ...state.animals];
-    const hash = buildSpatialHash(entities, 2.0);
+    const entities = this.#collectEntities(state);
+    if (entities.length === 0) return;
 
+    let simDt = dt;
+    let updateIntervalSec = dt;
+    if (entities.length >= this.highLoadEntityThreshold) {
+      this.highLoadAccumulator += dt;
+      updateIntervalSec = this.highLoadStepSec;
+      if (this.highLoadAccumulator < this.highLoadStepSec) {
+        return;
+      }
+      simDt = this.highLoadAccumulator;
+      this.highLoadAccumulator = 0;
+    } else {
+      this.highLoadAccumulator = 0;
+    }
+
+    const hash = buildSpatialHash(entities, 2.0, this.hash);
     const boundsX = (state.grid.width * state.grid.tileSize) / 2 - 0.5;
     const boundsZ = (state.grid.height * state.grid.tileSize) / 2 - 0.5;
+    let totalNeighbors = 0;
+    let totalSpeed = 0;
+    let maxSpeed = 0;
 
-    for (const e of entities) {
-      const desired = e.desiredVel ?? { x: 0, z: 0 };
-      const neighbors = queryNeighbors(hash, e);
-      const steer = boidsSteer(e, neighbors, desired);
+    for (let i = 0; i < entities.length; i += 1) {
+      const e = entities[i];
+      const desired = e.desiredVel;
+      const desiredX = desired ? desired.x : 0;
+      const desiredZ = desired ? desired.z : 0;
+      const neighbors = queryNeighbors(hash, e, this.neighborBuffer);
+      totalNeighbors += Math.max(0, neighbors.length - 1);
+      boidsSteer(e, neighbors, desiredX, desiredZ, this.steerOut);
 
-      e.vx = e.vx + (steer.x - e.vx) * 0.12;
-      e.vz = e.vz + (steer.z - e.vz) * 0.12;
+      e.vx = e.vx + (this.steerOut.x - e.vx) * 0.12;
+      e.vz = e.vz + (this.steerOut.z - e.vz) * 0.12;
 
       const maxV =
         e.type === "WORKER"
@@ -89,17 +131,30 @@ export class BoidsSystem {
               : BALANCE.herbivoreSpeed + 0.1;
 
       const speed = Math.hypot(e.vx, e.vz);
+      totalSpeed += speed;
+      if (speed > maxSpeed) maxSpeed = speed;
       if (speed > maxV) {
         const s = maxV / (speed + 1e-6);
         e.vx *= s;
         e.vz *= s;
       }
 
-      e.x += e.vx * dt;
-      e.z += e.vz * dt;
+      e.x += e.vx * simDt;
+      e.z += e.vz * simDt;
 
       e.x = clamp(e.x, -boundsX, boundsX);
       e.z = clamp(e.z, -boundsZ, boundsZ);
+    }
+
+    if (state.debug) {
+      const n = Math.max(1, entities.length);
+      state.debug.boids = {
+        entities: entities.length,
+        avgNeighbors: totalNeighbors / n,
+        avgSpeed: totalSpeed / n,
+        maxSpeed,
+        updateIntervalSec,
+      };
     }
   }
 }

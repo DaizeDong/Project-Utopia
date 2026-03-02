@@ -29,7 +29,7 @@ export class LLMClient {
 
   async requestEnvironment(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildEnvironmentFallback(summary), error: "llm disabled" };
+      return { fallback: true, data: buildEnvironmentFallback(summary), error: "" };
     }
 
     try {
@@ -57,7 +57,7 @@ export class LLMClient {
 
   async requestPolicies(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildPolicyFallback(summary), error: "llm disabled" };
+      return { fallback: true, data: buildPolicyFallback(summary), error: "" };
     }
 
     try {

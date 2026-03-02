@@ -21,7 +21,7 @@
   frame(now) {
     if (!this.running) return;
 
-    const dt = Math.min(0.033, (now - this.last) / 1000);
+    const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
 
     this.update(dt);

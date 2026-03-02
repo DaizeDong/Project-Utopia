@@ -1,28 +1,44 @@
-﻿export function buildSpatialHash(entities, cellSize = 2) {
-  const map = new Map();
-  const key = (cx, cz) => `${cx}:${cz}`;
+export function buildSpatialHash(entities, cellSize = 2, reuseHash = null) {
+  const hash = reuseHash ?? { map: new Map(), cellSize };
+  hash.map.clear();
+  hash.cellSize = cellSize;
 
-  for (const e of entities) {
-    const cx = Math.floor(e.x / cellSize);
-    const cz = Math.floor(e.z / cellSize);
-    const k = key(cx, cz);
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(e);
+  for (let i = 0; i < entities.length; i += 1) {
+    const entity = entities[i];
+    const cx = Math.floor(entity.x / cellSize);
+    const cz = Math.floor(entity.z / cellSize);
+
+    let column = hash.map.get(cx);
+    if (!column) {
+      column = new Map();
+      hash.map.set(cx, column);
+    }
+
+    let bucket = column.get(cz);
+    if (!bucket) {
+      bucket = [];
+      column.set(cz, bucket);
+    }
+    bucket.push(entity);
   }
 
-  return { map, cellSize };
+  return hash;
 }
 
-export function queryNeighbors(hash, entity) {
-  const out = [];
+export function queryNeighbors(hash, entity, out = []) {
+  out.length = 0;
   const cx = Math.floor(entity.x / hash.cellSize);
   const cz = Math.floor(entity.z / hash.cellSize);
 
   for (let dx = -1; dx <= 1; dx += 1) {
+    const column = hash.map.get(cx + dx);
+    if (!column) continue;
     for (let dz = -1; dz <= 1; dz += 1) {
-      const k = `${cx + dx}:${cz + dz}`;
-      const list = hash.map.get(k);
-      if (list) out.push(...list);
+      const list = column.get(cz + dz);
+      if (!list) continue;
+      for (let i = 0; i < list.length; i += 1) {
+        out.push(list[i]);
+      }
     }
   }
 
