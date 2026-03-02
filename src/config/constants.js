@@ -46,20 +46,20 @@ export const EVENT_TYPE = Object.freeze({
 });
 
 export const DEFAULT_GRID = Object.freeze({
-  width: 42,
-  height: 30,
+  width: 96,
+  height: 72,
   tileSize: 1,
 });
 
 export const TILE_INFO = Object.freeze({
-  [TILE.GRASS]: { passable: true, baseCost: 1.0, height: 0.05, color: 0x162a1a },
-  [TILE.ROAD]: { passable: true, baseCost: 0.65, height: 0.03, color: 0x33353a },
-  [TILE.FARM]: { passable: true, baseCost: 1.0, height: 0.12, color: 0x455c1f },
-  [TILE.LUMBER]: { passable: true, baseCost: 1.0, height: 0.12, color: 0x27422c },
-  [TILE.WAREHOUSE]: { passable: true, baseCost: 1.0, height: 0.2, color: 0x5b3f2b },
-  [TILE.WALL]: { passable: false, baseCost: 1000, height: 0.55, color: 0x2a2a2d },
-  [TILE.RUINS]: { passable: true, baseCost: 1.6, height: 0.08, color: 0x4a2f2b },
-  [TILE.WATER]: { passable: false, baseCost: 1000, height: 0.01, color: 0x1b3f61 },
+  [TILE.GRASS]: { passable: true, baseCost: 1.0, height: 0.04, color: 0x84c86a },
+  [TILE.ROAD]: { passable: true, baseCost: 0.65, height: 0.025, color: 0xc8b39a },
+  [TILE.FARM]: { passable: true, baseCost: 1.0, height: 0.09, color: 0xd9c86f },
+  [TILE.LUMBER]: { passable: true, baseCost: 1.0, height: 0.11, color: 0x6ea85a },
+  [TILE.WAREHOUSE]: { passable: true, baseCost: 1.0, height: 0.2, color: 0xce9468 },
+  [TILE.WALL]: { passable: false, baseCost: 1000, height: 0.58, color: 0x9ba9b7 },
+  [TILE.RUINS]: { passable: true, baseCost: 1.6, height: 0.07, color: 0xb98b73 },
+  [TILE.WATER]: { passable: false, baseCost: 1000, height: 0.018, color: 0x69b4ea },
 });
 
 export const MOVE_DIRECTIONS_4 = Object.freeze([
@@ -71,6 +71,7 @@ export const MOVE_DIRECTIONS_4 = Object.freeze([
 
 export const SYSTEM_ORDER = Object.freeze([
   "SimulationClock",
+  "ProgressionSystem",
   "RoleAssignmentSystem",
   "EnvironmentDirectorSystem",
   "WeatherSystem",

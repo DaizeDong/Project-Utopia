@@ -1,47 +1,126 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Project Utopia - Medieval Sandbox Prototype</title>
+  <link rel="icon" href="data:," />
+  <title>Project Utopia - Bright World Sandbox Prototype</title>
   <style>
     :root {
-      --bg: #0b1017;
-      --panel: rgba(255, 255, 255, 0.035);
-      --panel-border: rgba(255, 255, 255, 0.11);
-      --text: #e9eff8;
-      --muted: rgba(233, 239, 248, 0.76);
-      --accent: #83b6ff;
+      --bg: #eaf5ff;
+      --panel: rgba(255, 255, 255, 0.82);
+      --panel-border: rgba(53, 94, 129, 0.23);
+      --text: #17384f;
+      --muted: rgba(23, 56, 79, 0.74);
+      --accent: #2a86d1;
+      --dock-bg: rgba(241, 248, 255, 0.97);
     }
 
     html,
     body {
       margin: 0;
       height: 100%;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 12% 18%, rgba(173, 219, 255, 0.55) 0%, rgba(173, 219, 255, 0) 46%),
+        radial-gradient(circle at 86% 10%, rgba(212, 239, 190, 0.45) 0%, rgba(212, 239, 190, 0) 42%),
+        linear-gradient(180deg, #eaf5ff 0%, #d9ecfa 100%);
       color: var(--text);
-      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
     }
 
     #wrap {
       position: fixed;
       inset: 0;
-      display: flex;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      grid-template-rows: 1fr 270px;
+      gap: 0;
     }
 
     #ui {
-      width: 360px;
+      grid-column: 1;
+      grid-row: 1 / span 2;
       min-width: 320px;
       box-sizing: border-box;
       border-right: 1px solid var(--panel-border);
       padding: 14px;
       overflow: auto;
-      background: linear-gradient(180deg, rgba(22, 27, 36, 0.95), rgba(10, 12, 18, 0.94));
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(241, 248, 255, 0.92));
       backdrop-filter: blur(4px);
     }
 
     #ui.compact {
       width: 320px;
+    }
+
+    #viewport {
+      grid-column: 2;
+      grid-row: 1;
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #devDock {
+      grid-column: 2;
+      grid-row: 2;
+      border-top: 1px solid var(--panel-border);
+      background: var(--dock-bg);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    #devDockHeader {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    #devDockGrid {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(240px, 1fr));
+      gap: 10px;
+      padding: 10px;
+      overflow: auto;
+    }
+
+    .dock-card {
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.87);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .dock-title {
+      padding: 7px 9px;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .dock-body {
+      margin: 0;
+      padding: 8px 9px;
+      font-size: 11px;
+      line-height: 1.35;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: #21465f;
+      font-family: "Cascadia Code", "Consolas", monospace;
     }
 
     h1 {
@@ -65,6 +144,7 @@
       border-radius: 12px;
       padding: 10px;
       line-height: 1.35;
+      box-shadow: 0 8px 18px rgba(30, 79, 115, 0.08);
     }
 
     details.card {
@@ -107,13 +187,22 @@
     }
 
     .tool-grid button,
-    .benchmark-grid button {
+    .benchmark-grid button,
+    .management-grid button {
       width: 100%;
     }
 
-    .benchmark-grid {
+    .benchmark-grid,
+    .management-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
       margin-top: 8px;
     }
@@ -124,18 +213,44 @@
       accent-color: var(--accent);
     }
 
-    button {
-      background: #162235;
+    button,
+    select,
+    input[type="text"] {
+      background: rgba(255, 255, 255, 0.92);
       color: var(--text);
       border: 1px solid var(--panel-border);
       border-radius: 10px;
       padding: 8px 10px;
+      box-sizing: border-box;
+    }
+
+    input[type="text"],
+    select {
+      width: 100%;
+    }
+
+    button {
       cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, transform 0.06s ease;
+    }
+
+    button:hover:not(:disabled) {
+      background: #f2f9ff;
+      border-color: rgba(42, 134, 209, 0.45);
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
 
     button.active {
-      outline: 2px solid rgba(131, 182, 255, 0.56);
-      background: #1b2f4a;
+      outline: 2px solid rgba(42, 134, 209, 0.45);
+      background: #d9ecff;
     }
 
     .kv {
@@ -149,19 +264,14 @@
       height: 10px;
       margin-top: 4px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.09);
+      background: rgba(23, 56, 79, 0.15);
       overflow: hidden;
     }
 
     .bar > div {
       width: 0;
       height: 100%;
-      background: linear-gradient(90deg, #7ea9ff, #89f0c0);
-    }
-
-    canvas {
-      flex: 1;
-      display: block;
+      background: linear-gradient(90deg, #4b9ff0, #53d4a0);
     }
 
     .switch {
@@ -178,12 +288,78 @@
       line-height: 1.33;
     }
 
+    .legend-bar {
+      margin-top: 10px;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 8px;
+    }
+
+    .legend-grid {
+      margin-top: 6px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .legend-item img {
+      width: 16px;
+      height: 16px;
+      image-rendering: pixelated;
+      flex: 0 0 16px;
+    }
+
+    #ui.compact .hint,
     #ui.compact .optional-panel {
       display: none;
     }
 
-    #ui.compact .hint {
-      display: none;
+    @media (max-width: 1280px) {
+      #devDockGrid {
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+      }
+    }
+
+    @media (max-width: 980px) {
+      #wrap {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 50vh 270px;
+      }
+
+      #ui {
+        grid-column: 1;
+        grid-row: 1;
+        border-right: none;
+        border-bottom: 1px solid var(--panel-border);
+      }
+
+      #viewport {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      #devDock {
+        grid-column: 1;
+        grid-row: 3;
+      }
+
+      #devDockGrid {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+      }
+
+      .legend-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
     }
   </style>
 </head>
@@ -191,97 +367,181 @@
   <div id="wrap">
     <div id="ui">
       <h1>Project Utopia</h1>
-      <div class="small muted">Medieval sandbox: build, route, allocate workers, and watch AI-driven world pressure.</div>
+      <div class="small muted">Bright world sandbox: build roads and districts, route workers, and observe AI-driven system shifts.</div>
       <div class="switch">
         <input id="compactToggle" type="checkbox" />
         <label for="compactToggle">Compact Mode</label>
+      </div>
+      <div class="legend-bar">
+        <div class="small"><b>Visual Mode:</b> <span id="visualModeVal">Flat WorldSim</span></div>
+        <div class="legend-grid">
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Road" />Road</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/farm.png" alt="Farm" />Farm</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/lumber.png" alt="Lumber" />Lumber</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/warehouse.png" alt="Warehouse" />Warehouse</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/wall.png" alt="Wall" />Wall</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/ruins.png" alt="Ruins" />Ruins</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/water.png" alt="Water" />Water</div>
+          <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Preset" />Bright preset</div>
+        </div>
       </div>
 
       <details class="card" open>
         <summary>Build Tool</summary>
         <div class="panel-body">
-        <div class="tool-grid">
-          <button data-tool="road" class="active">Road</button>
-          <button data-tool="farm">Farm</button>
-          <button data-tool="lumber">Lumber</button>
-          <button data-tool="warehouse">Warehouse</button>
-          <button data-tool="wall">Wall</button>
-          <button data-tool="erase">Erase</button>
-        </div>
-        <div class="hint">Left click tile to build. Left click entity to inspect.</div>
+          <div class="tool-grid">
+            <button data-tool="road" class="active">Road</button>
+            <button data-tool="farm">Farm</button>
+            <button data-tool="lumber">Lumber</button>
+            <button data-tool="warehouse">Warehouse</button>
+            <button data-tool="wall">Wall</button>
+            <button data-tool="erase">Erase</button>
+          </div>
+          <div class="hint">Left click tile to build/select. Left click entity to inspect. Alt+Click tile for inspect-only.</div>
         </div>
       </details>
 
-      <details class="card optional-panel">
+      <details class="card" open>
         <summary>Management</summary>
         <div class="panel-body">
-        <div class="small muted" style="margin-top:7px">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
-        <input id="farmRatio" type="range" min="0" max="100" value="50" />
-        <div class="switch">
-          <input id="aiToggle" type="checkbox" />
-          <label for="aiToggle">Enable LLM Agent Mode</label>
-        </div>
+          <div class="small muted" style="margin-top:3px;">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
+          <input id="farmRatio" type="range" min="0" max="100" value="50" />
+
+          <div class="small muted" style="margin-top:10px;">Map Template</div>
+          <select id="mapTemplateSelect"></select>
+
+          <div class="management-grid" style="margin-top:6px;">
+            <input id="mapSeedInput" type="text" value="1337" placeholder="Map seed" />
+            <button id="regenerateMapBtn">Regenerate Map</button>
+          </div>
+
+          <div class="small muted" style="margin-top:10px;">Doctrine</div>
+          <select id="doctrineSelect"></select>
+
+          <div class="small muted" style="margin-top:12px;">Terrain Tuning</div>
+          <div class="small muted" style="margin-top:4px;">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
+          <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
+          <div class="small muted" style="margin-top:4px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
+          <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
+          <div class="small muted" style="margin-top:4px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
+          <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
+          <div class="small muted" style="margin-top:4px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
+          <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
+          <div class="small muted" style="margin-top:4px;">Mountain Strength: <span id="terrainMountainStrengthLabel">0.08</span></div>
+          <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
+          <div class="small muted" style="margin-top:4px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
+          <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
+          <div class="small muted" style="margin-top:4px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
+          <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
+          <div class="small muted" style="margin-top:4px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
+          <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
+          <div class="small muted" style="margin-top:4px;">Settlement Density: <span id="terrainSettlementDensityLabel">78%</span></div>
+          <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
+          <div class="small muted" style="margin-top:8px;">Wall Mode</div>
+          <select id="terrainWallModeSelect"></select>
+          <div class="small muted" style="margin-top:8px;">Ocean Side</div>
+          <select id="terrainOceanSideSelect"></select>
+          <div class="management-grid" style="margin-top:8px;">
+            <button id="resetTerrainTuningBtn">Reset Tuning</button>
+          </div>
+
+          <div class="small muted" style="margin-top:10px;">Population Targets</div>
+          <div class="small muted" style="margin-top:4px;">Workers: <span id="workerTargetLabel">0</span></div>
+          <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
+          <div class="small muted" style="margin-top:4px;">Visitors: <span id="visitorTargetLabel">0</span></div>
+          <input id="visitorTargetInput" type="range" min="0" max="300" value="0" />
+          <div class="small muted" style="margin-top:4px;">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
+          <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
+          <div class="small muted" style="margin-top:4px;">Predators: <span id="predatorTargetLabel">0</span></div>
+          <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+          <div class="management-grid" style="margin-top:8px;">
+            <button id="applyPopulationBtn">Apply Population</button>
+          </div>
+
+          <div class="switch">
+            <input id="aiToggle" type="checkbox" />
+            <label for="aiToggle">Enable LLM Agent Mode</label>
+          </div>
         </div>
       </details>
 
       <details class="card" open>
         <summary>Stress Test</summary>
         <div class="panel-body">
-        <div class="small muted" style="margin-top:7px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
-        <input id="extraWorkers" type="range" min="0" max="500" value="0" />
-        <div class="benchmark-grid">
-          <button id="applyStressBtn">Apply Load</button>
-          <button id="runBenchmarkBtn">Run Benchmark</button>
-          <button id="cancelBenchmarkBtn">Cancel</button>
-          <button id="downloadBenchmarkBtn">Download CSV</button>
-        </div>
-        <div class="small muted" id="benchmarkStatusVal" style="margin-top:7px">Benchmark: idle</div>
-        <div class="hint">Use this during demo: increase load and show FPS/frame time trends.</div>
+          <div class="small muted" style="margin-top:7px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
+          <input id="extraWorkers" type="range" min="0" max="500" value="0" />
+          <div class="benchmark-grid">
+            <button id="applyStressBtn">Apply Load</button>
+            <button id="runBenchmarkBtn">Run Benchmark</button>
+            <button id="cancelBenchmarkBtn">Cancel</button>
+            <button id="downloadBenchmarkBtn">Download CSV</button>
+          </div>
+          <div class="small muted" style="margin-top:9px">Time Controls: <span id="timeScaleLabel">1.00x</span></div>
+          <input id="timeScale" type="range" min="25" max="200" value="100" />
+          <div class="time-grid">
+            <button id="pauseBtn">Pause</button>
+            <button id="step1Btn">Step x1</button>
+            <button id="step5Btn">Step x5</button>
+          </div>
+          <div class="small muted" id="benchmarkStatusVal" style="margin-top:7px">Benchmark: idle</div>
+          <div class="small muted" id="simControlVal" style="margin-top:4px">Sim: running | simDt=0.000 | steps=0</div>
+          <div class="hint">Use this during demo: increase load and show FPS/frame time trends.</div>
         </div>
       </details>
 
       <details class="card optional-panel">
         <summary>Resources</summary>
         <div class="panel-body">
-        <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
-        <div class="bar"><div id="foodBar"></div></div>
-        <div class="kv" style="margin-top:8px"><div>Wood</div><div id="woodVal">0</div></div>
-        <div class="bar"><div id="woodBar"></div></div>
+          <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
+          <div class="bar"><div id="foodBar"></div></div>
+          <div class="kv" style="margin-top:8px"><div>Wood</div><div id="woodVal">0</div></div>
+          <div class="bar"><div id="woodBar"></div></div>
         </div>
       </details>
 
       <details class="card optional-panel">
         <summary>Population</summary>
         <div class="panel-body">
-        <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
-        <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
-        <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
-        <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
-        <div class="kv"><div>Assigned FARM</div><div id="farmersVal">0</div></div>
-        <div class="kv"><div>Assigned WOOD</div><div id="loggersVal">0</div></div>
+          <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
+          <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
+          <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
+          <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
+          <div class="kv"><div>Assigned FARM</div><div id="farmersVal">0</div></div>
+          <div class="kv"><div>Assigned WOOD</div><div id="loggersVal">0</div></div>
         </div>
       </details>
 
       <details class="card" open>
         <summary>World State</summary>
         <div class="panel-body">
-        <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
-        <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
-        <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
-        <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
-        <div class="kv"><div>FPS</div><div id="fpsVal">60.0</div></div>
-        <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
-        <div class="kv"><div>Total Entities</div><div id="agentVal">0</div></div>
-        <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
-        <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
+          <div class="kv"><div>Map</div><div id="mapVal">-</div></div>
+          <div class="kv"><div>Doctrine</div><div id="doctrineVal">balanced</div></div>
+          <div class="kv"><div>Prosperity</div><div id="prosperityVal">0</div></div>
+          <div class="kv"><div>Threat</div><div id="threatVal">0</div></div>
+          <div class="kv"><div>Objective</div><div id="objectiveVal">none</div></div>
+          <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
+          <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
+          <div class="kv"><div>AI Env</div><div id="aiEnvVal">none</div></div>
+          <div class="kv"><div>AI Policy</div><div id="aiPolicyVal">none</div></div>
+          <div class="kv"><div>AI Decisions</div><div id="aiDecisionVal">0 / 0</div></div>
+          <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
+          <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
+          <div class="kv"><div>Sim State</div><div id="simVal">running | steps=0</div></div>
+          <div class="kv"><div>Tool</div><div id="toolVal">road</div></div>
+          <div class="kv"><div>Action</div><div id="actionVal">Ready</div></div>
+          <div class="kv"><div>FPS</div><div id="fpsVal">60.0</div></div>
+          <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
+          <div class="kv"><div>Total Entities</div><div id="agentVal">0</div></div>
+          <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
+          <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
         </div>
       </details>
 
-      <details class="card optional-panel">
-        <summary>Selected Entity</summary>
+      <details class="card" open>
+        <summary>Inspector (Tile + Entity)</summary>
         <div class="panel-body" id="inspect">
-          <div><b>Selected Entity</b></div>
-          <div class="small muted">Click any unit.</div>
+          <div><b>Selected Tile</b></div>
+          <div class="small muted">Left click tile to inspect/build.</div>
         </div>
       </details>
 
@@ -300,7 +560,35 @@
       </details>
     </div>
 
-    <canvas id="c"></canvas>
+    <div id="viewport">
+      <canvas id="c"></canvas>
+    </div>
+
+    <section id="devDock" aria-label="Developer telemetry">
+      <div id="devDockHeader">Developer Telemetry</div>
+      <div id="devDockGrid">
+        <article class="dock-card">
+          <div class="dock-title">Global & Gameplay</div>
+          <pre id="devGlobalVal" class="dock-body">loading...</pre>
+        </article>
+        <article class="dock-card">
+          <div class="dock-title">A* + Boids</div>
+          <pre id="devAlgoVal" class="dock-body">loading...</pre>
+        </article>
+        <article class="dock-card">
+          <div class="dock-title">AI Trace</div>
+          <pre id="devAiTraceVal" class="dock-body">loading...</pre>
+        </article>
+        <article class="dock-card">
+          <div class="dock-title">System Timings</div>
+          <pre id="devSystemVal" class="dock-body">loading...</pre>
+        </article>
+        <article class="dock-card">
+          <div class="dock-title">Objective / Event Log</div>
+          <pre id="devEventTraceVal" class="dock-body">loading...</pre>
+        </article>
+      </div>
+    </section>
   </div>
 
   <script type="module" src="/src/main.js"></script>
