@@ -25,7 +25,7 @@ export function buildSpatialHash(entities, cellSize = 2, reuseHash = null) {
   return hash;
 }
 
-export function queryNeighbors(hash, entity, out = []) {
+export function queryNeighbors(hash, entity, out = [], maxOut = Infinity) {
   out.length = 0;
   const cx = Math.floor(entity.x / hash.cellSize);
   const cz = Math.floor(entity.z / hash.cellSize);
@@ -38,6 +38,7 @@ export function queryNeighbors(hash, entity, out = []) {
       if (!list) continue;
       for (let i = 0; i < list.length; i += 1) {
         out.push(list[i]);
+        if (out.length >= maxOut) return out;
       }
     }
   }

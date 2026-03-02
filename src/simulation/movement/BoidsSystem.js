@@ -114,7 +114,7 @@ export class BoidsSystem {
       const desired = e.desiredVel;
       const desiredX = desired ? desired.x : 0;
       const desiredZ = desired ? desired.z : 0;
-      const neighbors = queryNeighbors(hash, e, this.neighborBuffer);
+      const neighbors = queryNeighbors(hash, e, this.neighborBuffer, 72);
       totalNeighbors += Math.max(0, neighbors.length - 1);
       boidsSteer(e, neighbors, desiredX, desiredZ, this.steerOut);
 

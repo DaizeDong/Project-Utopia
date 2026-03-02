@@ -1,5 +1,6 @@
 import { rebuildBuildingStats, countTilesByType } from "../../world/grid/Grid.js";
 import { TILE } from "../../config/constants.js";
+import { pushWarning } from "../../app/warnings.js";
 
 export class ResourceSystem {
   constructor() {
@@ -41,13 +42,9 @@ export class ResourceSystem {
     }
 
     if (!Number.isFinite(state.resources.food) || !Number.isFinite(state.resources.wood)) {
-      state.metrics.warnings.push("Resource value became invalid and was reset");
+      pushWarning(state, "Resource value became invalid and was reset", "error", this.name);
       state.resources.food = Math.max(0, state.resources.food || 0);
       state.resources.wood = Math.max(0, state.resources.wood || 0);
-    }
-
-    if (state.metrics.warnings.length > 20) {
-      state.metrics.warnings = state.metrics.warnings.slice(-20);
     }
   }
 }

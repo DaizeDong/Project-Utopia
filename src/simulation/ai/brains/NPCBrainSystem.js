@@ -25,6 +25,8 @@ export class NPCBrainSystem {
       if (!usedFallback) state.ai.policyLlmCount += 1;
       state.ai.lastPolicyError = this.pendingResult.error ?? "";
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
+      state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
+      state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
       if (state.debug?.aiTrace) {
         const groups = this.pendingResult.data.policies.map((p) => p.groupId).join(", ");
         state.debug.aiTrace.unshift({
@@ -79,6 +81,7 @@ export class NPCBrainSystem {
         this.pendingResult = {
           fallback: true,
           data: services.fallbackPolicies(summary),
+          latencyMs: 0,
           error: String(err?.message ?? err),
         };
       })

@@ -1178,20 +1178,18 @@ export function listTilesByType(grid, targetTileTypes) {
 }
 
 export function findNearestTileOfTypes(grid, from, targetTileTypes) {
-  const asSet = new Set(targetTileTypes);
+  const list = listTilesByType(grid, targetTileTypes);
+  if (list.length === 0) return null;
   const { ix: sx, iz: sz } = worldToTile(from.x, from.z, grid);
   let best = null;
   let bestDist = Infinity;
 
-  for (let iz = 0; iz < grid.height; iz += 1) {
-    for (let ix = 0; ix < grid.width; ix += 1) {
-      const idx = toIndex(ix, iz, grid.width);
-      if (!asSet.has(grid.tiles[idx])) continue;
-      const d = Math.abs(ix - sx) + Math.abs(iz - sz);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { ix, iz };
-      }
+  for (let i = 0; i < list.length; i += 1) {
+    const tile = list[i];
+    const d = Math.abs(tile.ix - sx) + Math.abs(tile.iz - sz);
+    if (d < bestDist) {
+      bestDist = d;
+      best = tile;
     }
   }
   return best;

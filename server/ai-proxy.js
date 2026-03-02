@@ -30,7 +30,7 @@ function sendJson(res, code, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
   });
   res.end(JSON.stringify(payload));
 }
@@ -179,6 +179,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && req.url === "/health") {
+    sendJson(res, 200, {
+      ok: true,
+      service: "ai-proxy",
+      hasApiKey: Boolean(OPENAI_API_KEY),
+      model: OPENAI_MODEL,
+      port: PORT,
+      now: new Date().toISOString(),
+    });
+    return;
+  }
+
   if (req.method !== "POST") {
     sendJson(res, 405, { error: "method not allowed" });
     return;
@@ -212,4 +224,14 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[ai-proxy] listening on http://localhost:${PORT}`);
+});
+
+server.on("error", (err) => {
+  if (err?.code === "EADDRINUSE") {
+    console.error(`[ai-proxy] port ${PORT} is already in use. Set AI_PROXY_PORT or stop the existing process.`);
+    process.exit(1);
+    return;
+  }
+  console.error(`[ai-proxy] server error: ${String(err?.message ?? err)}`);
+  process.exit(1);
 });

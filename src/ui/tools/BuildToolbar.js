@@ -7,6 +7,9 @@ import {
 } from "../../world/grid/Grid.js";
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 
+const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
+const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress"]);
+
 export class BuildToolbar {
   constructor(state, handlers = {}) {
     this.state = state;
@@ -18,6 +21,13 @@ export class BuildToolbar {
     this.aiToggle = document.getElementById("aiToggle");
     this.compactToggle = document.getElementById("compactToggle");
     this.uiRoot = document.getElementById("ui");
+    this.wrapRoot = document.getElementById("wrap");
+    this.toggleSidebarBtn = document.getElementById("toggleSidebarBtn");
+    this.toggleDockBtn = document.getElementById("toggleDockBtn");
+    this.sidebarCollapseAllBtn = document.getElementById("sidebarCollapseAllBtn");
+    this.sidebarExpandCoreBtn = document.getElementById("sidebarExpandCoreBtn");
+    this.sidebarExpandAllBtn = document.getElementById("sidebarExpandAllBtn");
+    this.panelCards = Array.from(this.uiRoot?.querySelectorAll("details.card[data-panel-key]") ?? []);
     this.mapTemplateSelect = document.getElementById("mapTemplateSelect");
     this.mapSeedInput = document.getElementById("mapSeedInput");
     this.regenerateMapBtn = document.getElementById("regenerateMapBtn");
@@ -31,6 +41,14 @@ export class BuildToolbar {
     this.predatorTargetInput = document.getElementById("predatorTargetInput");
     this.predatorTargetLabel = document.getElementById("predatorTargetLabel");
     this.applyPopulationBtn = document.getElementById("applyPopulationBtn");
+    this.populationBreakdownVal = document.getElementById("populationBreakdownVal");
+    this.undoBuildBtn = document.getElementById("undoBuildBtn");
+    this.redoBuildBtn = document.getElementById("redoBuildBtn");
+    this.saveSlotInput = document.getElementById("saveSlotInput");
+    this.saveSnapshotBtn = document.getElementById("saveSnapshotBtn");
+    this.loadSnapshotBtn = document.getElementById("loadSnapshotBtn");
+    this.comparePresetsBtn = document.getElementById("comparePresetsBtn");
+    this.exportReplayBtn = document.getElementById("exportReplayBtn");
     this.terrainWaterLevel = document.getElementById("terrainWaterLevel");
     this.terrainWaterLevelLabel = document.getElementById("terrainWaterLevelLabel");
     this.terrainRiverCount = document.getElementById("terrainRiverCount");
@@ -52,14 +70,28 @@ export class BuildToolbar {
     this.terrainWallModeSelect = document.getElementById("terrainWallModeSelect");
     this.terrainOceanSideSelect = document.getElementById("terrainOceanSideSelect");
     this.resetTerrainTuningBtn = document.getElementById("resetTerrainTuningBtn");
+    this.showTileIconsToggle = document.getElementById("showTileIconsToggle");
+    this.showUnitSpritesToggle = document.getElementById("showUnitSpritesToggle");
+    this.fixedStepHz = document.getElementById("fixedStepHz");
+    this.fixedStepHzLabel = document.getElementById("fixedStepHzLabel");
+    this.cameraMinZoom = document.getElementById("cameraMinZoom");
+    this.cameraMinZoomLabel = document.getElementById("cameraMinZoomLabel");
+    this.cameraMaxZoom = document.getElementById("cameraMaxZoom");
+    this.cameraMaxZoomLabel = document.getElementById("cameraMaxZoomLabel");
+    this.renderDetailThreshold = document.getElementById("renderDetailThreshold");
+    this.renderDetailThresholdLabel = document.getElementById("renderDetailThresholdLabel");
 
     this.#ensurePopulationTargets();
     this.#ensureTerrainTuning();
+    this.#ensureAuxControls();
 
     this.#setupToolButtons();
     this.#setupManagementControls();
     this.#setupModeControls();
+    this.#setupSidebarPanelControls();
     this.#restoreCompactPreference();
+    this.#restoreLayoutPreference();
+    this.#restoreSidebarPanelState();
 
     this.sync();
   }
@@ -83,6 +115,7 @@ export class BuildToolbar {
     this.#populateTerrainModeOptions();
     this.#setupPopulationControls();
     this.#setupTerrainTuningControls();
+    this.#setupAdvancedControls();
 
     this.farmRatio?.addEventListener("input", () => {
       const pct = Number(this.farmRatio.value);
@@ -143,6 +176,39 @@ export class BuildToolbar {
       const targets = { ...this.state.controls.populationTargets };
       this.handlers.onApplyPopulationTargets?.(targets);
     });
+
+    this.undoBuildBtn?.addEventListener("click", () => {
+      this.handlers.onUndo?.();
+      this.sync();
+    });
+
+    this.redoBuildBtn?.addEventListener("click", () => {
+      this.handlers.onRedo?.();
+      this.sync();
+    });
+
+    this.saveSlotInput?.addEventListener("change", () => {
+      this.state.controls.saveSlotId = this.saveSlotInput.value.trim() || "default";
+      this.sync();
+    });
+
+    this.saveSnapshotBtn?.addEventListener("click", () => {
+      const slotId = this.state.controls.saveSlotId ?? this.saveSlotInput?.value ?? "default";
+      this.handlers.onSaveSnapshot?.(slotId);
+    });
+
+    this.loadSnapshotBtn?.addEventListener("click", () => {
+      const slotId = this.state.controls.saveSlotId ?? this.saveSlotInput?.value ?? "default";
+      this.handlers.onLoadSnapshot?.(slotId);
+    });
+
+    this.comparePresetsBtn?.addEventListener("click", () => {
+      this.handlers.onComparePresets?.();
+    });
+
+    this.exportReplayBtn?.addEventListener("click", () => {
+      this.handlers.onExportReplay?.();
+    });
   }
 
   #setupTerrainTuningControls() {
@@ -192,6 +258,72 @@ export class BuildToolbar {
     });
   }
 
+  #setupAdvancedControls() {
+    this.showTileIconsToggle?.addEventListener("change", () => {
+      const enabled = Boolean(this.showTileIconsToggle.checked);
+      this.handlers.onSetTileIconsVisible?.(enabled);
+      this.sync();
+    });
+
+    this.showUnitSpritesToggle?.addEventListener("change", () => {
+      const enabled = Boolean(this.showUnitSpritesToggle.checked);
+      this.handlers.onSetUnitSpritesVisible?.(enabled);
+      this.sync();
+    });
+
+    this.fixedStepHz?.addEventListener("input", () => {
+      const hz = Math.max(5, Math.min(120, Number(this.fixedStepHz.value) || 30));
+      this.handlers.onSetFixedStepHz?.(hz);
+      this.sync();
+    });
+
+    const syncZoom = () => {
+      const minZoom = (Number(this.cameraMinZoom?.value) || 55) / 100;
+      const maxZoom = (Number(this.cameraMaxZoom?.value) || 320) / 100;
+      this.handlers.onSetCameraZoomRange?.(minZoom, maxZoom);
+      this.sync();
+    };
+
+    this.cameraMinZoom?.addEventListener("input", syncZoom);
+    this.cameraMaxZoom?.addEventListener("input", syncZoom);
+
+    this.renderDetailThreshold?.addEventListener("input", () => {
+      const value = Math.max(80, Math.min(2000, Math.round(Number(this.renderDetailThreshold.value) || 260)));
+      this.handlers.onSetRenderDetailThreshold?.(value);
+      this.sync();
+    });
+  }
+
+  #setupSidebarPanelControls() {
+    this.panelCards.forEach((panel) => {
+      panel.addEventListener("toggle", () => {
+        this.#persistSidebarPanelState();
+      });
+    });
+
+    this.sidebarCollapseAllBtn?.addEventListener("click", () => {
+      this.panelCards.forEach((panel) => {
+        panel.open = false;
+      });
+      this.#persistSidebarPanelState();
+    });
+
+    this.sidebarExpandCoreBtn?.addEventListener("click", () => {
+      this.panelCards.forEach((panel) => {
+        const key = panel.dataset.panelKey ?? "";
+        panel.open = CORE_PANEL_KEYS.includes(key);
+      });
+      this.#persistSidebarPanelState();
+    });
+
+    this.sidebarExpandAllBtn?.addEventListener("click", () => {
+      this.panelCards.forEach((panel) => {
+        panel.open = true;
+      });
+      this.#persistSidebarPanelState();
+    });
+  }
+
   #setupModeControls() {
     this.aiToggle?.addEventListener("change", () => {
       this.state.ai.enabled = Boolean(this.aiToggle.checked);
@@ -209,6 +341,18 @@ export class BuildToolbar {
       this.uiRoot?.classList.toggle("compact", compact);
       localStorage.setItem("utopiaCompactMode", compact ? "1" : "0");
     });
+
+    this.toggleSidebarBtn?.addEventListener("click", () => {
+      const next = !this.wrapRoot?.classList.contains("sidebar-collapsed");
+      this.#setSidebarCollapsed(next);
+      this.sync();
+    });
+
+    this.toggleDockBtn?.addEventListener("click", () => {
+      const next = !this.wrapRoot?.classList.contains("dock-collapsed");
+      this.#setDockCollapsed(next);
+      this.sync();
+    });
   }
 
   #restoreCompactPreference() {
@@ -217,6 +361,66 @@ export class BuildToolbar {
       this.uiRoot?.classList.add("compact");
       if (this.compactToggle) this.compactToggle.checked = true;
     }
+  }
+
+  #restoreLayoutPreference() {
+    const sidebarCollapsed = localStorage.getItem("utopiaSidebarCollapsed") === "1";
+    const dockCollapsed = localStorage.getItem("utopiaDockCollapsed") === "1";
+    this.#setSidebarCollapsed(sidebarCollapsed);
+    this.#setDockCollapsed(dockCollapsed);
+  }
+
+  #restoreSidebarPanelState() {
+    if (!this.panelCards.length) return;
+    const raw = localStorage.getItem(SIDEBAR_PANELS_STORAGE_KEY);
+    if (!raw) {
+      this.panelCards.forEach((panel) => {
+        const key = panel.dataset.panelKey ?? "";
+        panel.open = CORE_PANEL_KEYS.includes(key);
+      });
+      this.#persistSidebarPanelState();
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      this.panelCards.forEach((panel) => {
+        const key = panel.dataset.panelKey ?? "";
+        const value = parsed?.[key];
+        if (typeof value === "boolean") {
+          panel.open = value;
+          return;
+        }
+        panel.open = CORE_PANEL_KEYS.includes(key);
+      });
+    } catch {
+      this.panelCards.forEach((panel) => {
+        const key = panel.dataset.panelKey ?? "";
+        panel.open = CORE_PANEL_KEYS.includes(key);
+      });
+      this.#persistSidebarPanelState();
+    }
+  }
+
+  #persistSidebarPanelState() {
+    if (!this.panelCards.length) return;
+    const state = {};
+    for (const panel of this.panelCards) {
+      const key = panel.dataset.panelKey ?? "";
+      if (!key) continue;
+      state[key] = Boolean(panel.open);
+    }
+    localStorage.setItem(SIDEBAR_PANELS_STORAGE_KEY, JSON.stringify(state));
+  }
+
+  #setSidebarCollapsed(collapsed) {
+    this.wrapRoot?.classList.toggle("sidebar-collapsed", Boolean(collapsed));
+    localStorage.setItem("utopiaSidebarCollapsed", collapsed ? "1" : "0");
+  }
+
+  #setDockCollapsed(collapsed) {
+    this.wrapRoot?.classList.toggle("dock-collapsed", Boolean(collapsed));
+    localStorage.setItem("utopiaDockCollapsed", collapsed ? "1" : "0");
   }
 
   #ensurePopulationTargets() {
@@ -236,6 +440,33 @@ export class BuildToolbar {
     controls.terrainTuning = getTerrainTuningDefaults(
       controls.mapTemplateId ?? this.state.world.mapTemplateId,
     );
+  }
+
+  #ensureAuxControls() {
+    const controls = this.state.controls;
+    if (typeof controls.saveSlotId !== "string") controls.saveSlotId = "default";
+    if (!Number.isFinite(controls.cameraMinZoom)) controls.cameraMinZoom = 0.55;
+    if (!Number.isFinite(controls.cameraMaxZoom)) controls.cameraMaxZoom = 3.2;
+    if (!Number.isFinite(controls.renderModelDisableThreshold)) controls.renderModelDisableThreshold = 260;
+    if (!controls.benchmarkConfig || typeof controls.benchmarkConfig !== "object") {
+      controls.benchmarkConfig = {
+        schedule: [0, 100, 200, 300, 400, 500],
+        stageDurationSec: 4,
+        sampleStartSec: 1.2,
+      };
+    }
+    if (!controls.populationBreakdown) {
+      const baseWorkers = this.state.agents.filter((a) => a.type === "WORKER" && !a.isStressWorker).length;
+      const stressWorkers = this.state.agents.filter((a) => a.type === "WORKER" && a.isStressWorker).length;
+      controls.populationBreakdown = {
+        baseWorkers,
+        stressWorkers,
+        totalWorkers: baseWorkers + stressWorkers,
+        totalEntities: this.state.agents.length + this.state.animals.length,
+      };
+    }
+    controls.canUndo = Boolean(controls.undoStack?.length);
+    controls.canRedo = Boolean(controls.redoStack?.length);
   }
 
   #populateMapTemplates() {
@@ -301,6 +532,48 @@ export class BuildToolbar {
       this.compactToggle.checked = this.uiRoot.classList.contains("compact");
     }
 
+    if (this.showTileIconsToggle) {
+      this.showTileIconsToggle.checked = Boolean(this.state.controls.showTileIcons);
+    }
+
+    if (this.showUnitSpritesToggle) {
+      this.showUnitSpritesToggle.checked = Boolean(this.state.controls.showUnitSprites);
+    }
+
+    if (this.fixedStepHz && this.fixedStepHzLabel) {
+      const hz = Math.max(5, Math.min(120, 1 / Math.max(1 / 120, this.state.controls.fixedStepSec || 1 / 30)));
+      this.fixedStepHz.value = String(Math.round(hz));
+      this.fixedStepHzLabel.textContent = `${hz.toFixed(1)} Hz`;
+    }
+
+    if (this.cameraMinZoom && this.cameraMinZoomLabel) {
+      const minZoom = Math.max(0.3, Math.min(5, Number(this.state.controls.cameraMinZoom) || 0.55));
+      this.cameraMinZoom.value = String(Math.round(minZoom * 100));
+      this.cameraMinZoomLabel.textContent = minZoom.toFixed(2);
+    }
+
+    if (this.cameraMaxZoom && this.cameraMaxZoomLabel) {
+      const maxZoom = Math.max(0.4, Math.min(6, Number(this.state.controls.cameraMaxZoom) || 3.2));
+      this.cameraMaxZoom.value = String(Math.round(maxZoom * 100));
+      this.cameraMaxZoomLabel.textContent = maxZoom.toFixed(2);
+    }
+
+    if (this.renderDetailThreshold && this.renderDetailThresholdLabel) {
+      const threshold = Math.max(80, Math.min(2000, Math.round(Number(this.state.controls.renderModelDisableThreshold) || 260)));
+      this.renderDetailThreshold.value = String(threshold);
+      this.renderDetailThresholdLabel.textContent = String(threshold);
+    }
+
+    if (this.toggleSidebarBtn && this.wrapRoot) {
+      const collapsed = this.wrapRoot.classList.contains("sidebar-collapsed");
+      this.toggleSidebarBtn.textContent = collapsed ? "Show Sidebar" : "Hide Sidebar";
+    }
+
+    if (this.toggleDockBtn && this.wrapRoot) {
+      const collapsed = this.wrapRoot.classList.contains("dock-collapsed");
+      this.toggleDockBtn.textContent = collapsed ? "Show Dev Dock" : "Hide Dev Dock";
+    }
+
     if (this.mapTemplateSelect) {
       this.mapTemplateSelect.value = this.state.controls.mapTemplateId ?? this.state.world.mapTemplateId;
     }
@@ -326,6 +599,22 @@ export class BuildToolbar {
 
       if (this.predatorTargetInput) this.predatorTargetInput.value = String(Math.max(0, Math.min(200, targets.predators | 0)));
       if (this.predatorTargetLabel) this.predatorTargetLabel.textContent = String(Math.max(0, Math.min(200, targets.predators | 0)));
+    }
+
+    if (this.saveSlotInput) {
+      this.saveSlotInput.value = this.state.controls.saveSlotId ?? "default";
+    }
+    if (this.undoBuildBtn) this.undoBuildBtn.disabled = !this.state.controls.canUndo;
+    if (this.redoBuildBtn) this.redoBuildBtn.disabled = !this.state.controls.canRedo;
+
+    if (this.populationBreakdownVal) {
+      const breakdown = this.state.controls.populationBreakdown ?? {
+        baseWorkers: 0,
+        stressWorkers: 0,
+        totalWorkers: 0,
+        totalEntities: this.state.agents.length + this.state.animals.length,
+      };
+      this.populationBreakdownVal.textContent = `Base W:${breakdown.baseWorkers} | Stress W:${breakdown.stressWorkers} | Total W:${breakdown.totalWorkers} | Entities:${breakdown.totalEntities}`;
     }
 
     const tuned = sanitizeTerrainTuning(

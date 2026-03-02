@@ -1,11 +1,13 @@
 import { ANIMAL_KIND, TILE } from "../../config/constants.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
-import { clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
 
 const HERBIVORE_TARGET_REFRESH_BASE_SEC = 1.5;
 const HERBIVORE_TARGET_REFRESH_JITTER_SEC = 0.6;
 const PREDATOR_HUNT_REFRESH_SEC = 0.45;
 const HERBIVORE_FLEE_REFRESH_SEC = 0.35;
+const WANDER_REFRESH_BASE_SEC = 2.2;
+const WANDER_REFRESH_JITTER_SEC = 1.4;
 
 function nearestPredator(herbivore, predators) {
   let best = null;
@@ -39,18 +41,42 @@ function nearestHerbivore(predator, herbivores) {
   return { prey: best, distance: Math.sqrt(bestDSq) };
 }
 
-function hasValidTarget(animal, state, targetTileTypes) {
-  if (!animal.targetTile || !animal.path || animal.pathIndex >= animal.path.length) return false;
-  if (animal.pathGridVersion !== state.grid.version) return false;
-  const tile = getTile(state.grid, animal.targetTile.ix, animal.targetTile.iz);
-  return targetTileTypes.includes(tile);
+function hasActivePath(animal, state) {
+  return Boolean(
+    animal.path &&
+      animal.pathIndex < animal.path.length &&
+      animal.pathGridVersion === state.grid.version,
+  );
 }
 
-function findNearbyGrazeTarget(animal, state, attempts = 12, radius = 7) {
+function isAtTargetTile(animal, state) {
+  if (!animal.targetTile) return false;
+  const tile = worldToTile(animal.x, animal.z, state.grid);
+  return tile.ix === animal.targetTile.ix && tile.iz === animal.targetTile.iz;
+}
+
+function hasValidTarget(animal, state, targetTileTypes) {
+  if (!animal.targetTile) return false;
+  if (animal.pathGridVersion !== state.grid.version) return false;
+  const tile = getTile(state.grid, animal.targetTile.ix, animal.targetTile.iz);
+  if (!targetTileTypes.includes(tile)) return false;
+  return hasActivePath(animal, state) || isAtTargetTile(animal, state);
+}
+
+function setIdleDesired(animal) {
+  if (!animal.desiredVel) {
+    animal.desiredVel = { x: 0, z: 0 };
+    return;
+  }
+  animal.desiredVel.x = 0;
+  animal.desiredVel.z = 0;
+}
+
+function findNearbyGrazeTarget(animal, state, rng, attempts = 12, radius = 7) {
   const center = worldToTile(animal.x, animal.z, state.grid);
   for (let i = 0; i < attempts; i += 1) {
-    const ix = center.ix + Math.floor((Math.random() * 2 - 1) * radius);
-    const iz = center.iz + Math.floor((Math.random() * 2 - 1) * radius);
+    const ix = center.ix + Math.floor((rng.next() * 2 - 1) * radius);
+    const iz = center.iz + Math.floor((rng.next() * 2 - 1) * radius);
     if (!inBounds(ix, iz, state.grid)) continue;
     const tile = getTile(state.grid, ix, iz);
     if (tile === TILE.GRASS || tile === TILE.FARM) {
@@ -68,7 +94,7 @@ function herbivoreTick(animal, predators, state, dt, services) {
     animal.stateLabel = "Flee";
     const nowSec = state.metrics.timeSec;
     const nextFleeRefresh = Number(animal.debug?.nextFleeRefreshSec ?? -Infinity);
-    if (!animal.path || animal.pathIndex >= animal.path.length || animal.pathGridVersion !== state.grid.version || nowSec >= nextFleeRefresh) {
+    if (((!hasActivePath(animal, state) && !isAtTargetTile(animal, state)) || nowSec >= nextFleeRefresh) && canAttemptPath(animal, state)) {
       const dx = animal.x - predator.x;
       const dz = animal.z - predator.z;
       const len = Math.hypot(dx, dz) || 1;
@@ -79,8 +105,12 @@ function herbivoreTick(animal, predators, state, dt, services) {
         animal.debug.nextFleeRefreshSec = nowSec + HERBIVORE_FLEE_REFRESH_SEC;
       }
     }
-    if (animal.path && animal.pathIndex < animal.path.length) {
+    if (hasActivePath(animal, state)) {
       animal.desiredVel = followPath(animal, state, dt).desired;
+      return;
+    }
+    if (isAtTargetTile(animal, state)) {
+      setIdleDesired(animal);
       return;
     }
   }
@@ -89,27 +119,38 @@ function herbivoreTick(animal, predators, state, dt, services) {
   const nowSec = state.metrics.timeSec;
   const nextRefreshSec = Number(animal.debug?.nextTargetRefreshSec ?? -Infinity);
   const shouldRefresh = nowSec >= nextRefreshSec;
-  if (shouldRefresh || !hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM])) {
-    const grassTarget = findNearbyGrazeTarget(animal, state) ?? findNearestTileOfTypes(state.grid, animal, [TILE.FARM]);
+  if ((shouldRefresh || !hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM])) && canAttemptPath(animal, state)) {
+    const grassTarget = findNearbyGrazeTarget(animal, state, services.rng) ?? findNearestTileOfTypes(state.grid, animal, [TILE.FARM]);
     if (grassTarget && setTargetAndPath(animal, grassTarget, state, services)) {
       if (animal.debug) {
-        animal.debug.nextTargetRefreshSec = nowSec + HERBIVORE_TARGET_REFRESH_BASE_SEC + Math.random() * HERBIVORE_TARGET_REFRESH_JITTER_SEC;
+        animal.debug.nextTargetRefreshSec = nowSec + HERBIVORE_TARGET_REFRESH_BASE_SEC + services.rng.next() * HERBIVORE_TARGET_REFRESH_JITTER_SEC;
       }
     }
   }
 
-  if (animal.path && animal.pathIndex < animal.path.length) {
+  if (hasActivePath(animal, state)) {
     const step = followPath(animal, state, dt);
     animal.desiredVel = step.desired;
     return;
   }
+  if (isAtTargetTile(animal, state)) {
+    setIdleDesired(animal);
+    return;
+  }
 
   animal.stateLabel = "Wander";
-  if (!animal.path || animal.pathIndex >= animal.path.length) {
+  const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
+  if (state.metrics.timeSec >= nextWanderRefreshSec && canAttemptPath(animal, state)) {
     clearPath(animal);
-    setTargetAndPath(animal, randomPassableTile(state.grid), state, services);
+    if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
+      animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
+    }
   }
-  animal.desiredVel = followPath(animal, state, dt).desired;
+  if (hasActivePath(animal, state)) {
+    animal.desiredVel = followPath(animal, state, dt).desired;
+  } else {
+    setIdleDesired(animal);
+  }
 }
 
 function predatorTick(animal, herbivores, state, dt, services) {
@@ -119,13 +160,13 @@ function predatorTick(animal, herbivores, state, dt, services) {
     animal.stateLabel = "Hunt";
     const nowSec = state.metrics.timeSec;
     const nextRefreshSec = Number(animal.debug?.nextHuntRefreshSec ?? -Infinity);
-    if (!animal.path || animal.pathIndex >= animal.path.length || animal.pathGridVersion !== state.grid.version || nowSec >= nextRefreshSec) {
+    if (((!hasActivePath(animal, state) && !isAtTargetTile(animal, state)) || nowSec >= nextRefreshSec) && canAttemptPath(animal, state)) {
       const preyTile = worldToTile(prey.x, prey.z, state.grid);
       setTargetAndPath(animal, preyTile, state, services);
       if (animal.debug) animal.debug.nextHuntRefreshSec = nowSec + PREDATOR_HUNT_REFRESH_SEC;
     }
 
-    if (animal.path && animal.pathIndex < animal.path.length) {
+    if (hasActivePath(animal, state)) {
       const step = followPath(animal, state, dt);
       animal.desiredVel = step.desired;
       if (distance < 0.9) {
@@ -135,14 +176,25 @@ function predatorTick(animal, herbivores, state, dt, services) {
       }
       return;
     }
+    if (isAtTargetTile(animal, state)) {
+      setIdleDesired(animal);
+      return;
+    }
   }
 
   animal.stateLabel = "Roam";
-  if (!animal.path || animal.pathIndex >= animal.path.length) {
+  const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
+  if (state.metrics.timeSec >= nextWanderRefreshSec && canAttemptPath(animal, state)) {
     clearPath(animal);
-    setTargetAndPath(animal, randomPassableTile(state.grid), state, services);
+    if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
+      animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
+    }
   }
-  animal.desiredVel = followPath(animal, state, dt).desired;
+  if (hasActivePath(animal, state)) {
+    animal.desiredVel = followPath(animal, state, dt).desired;
+  } else {
+    setIdleDesired(animal);
+  }
 }
 
 export class AnimalAISystem {
