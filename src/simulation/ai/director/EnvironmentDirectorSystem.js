@@ -21,6 +21,8 @@ export class EnvironmentDirectorSystem {
       if (!usedFallback) state.ai.environmentLlmCount += 1;
       state.ai.lastEnvironmentError = this.pendingResult.error ?? "";
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
+      state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
+      state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
       if (state.debug?.aiTrace) {
         state.debug.aiTrace.unshift({
           sec: now,
@@ -63,6 +65,7 @@ export class EnvironmentDirectorSystem {
         this.pendingResult = {
           fallback: true,
           data: services.fallbackEnvironment(summary),
+          latencyMs: 0,
           error: String(err?.message ?? err),
         };
       })

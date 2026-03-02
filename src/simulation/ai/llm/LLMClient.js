@@ -4,6 +4,7 @@ import { guardEnvironmentDirective, guardGroupPolicies } from "./Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "./ResponseSchema.js";
 
 async function postJson(url, body, timeoutMs) {
+  const started = performance.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
   try {
@@ -16,7 +17,8 @@ async function postJson(url, body, timeoutMs) {
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
-    return await resp.json();
+    const data = await resp.json();
+    return { data, latencyMs: performance.now() - started };
   } finally {
     clearTimeout(timer);
   }
@@ -25,6 +27,8 @@ async function postJson(url, body, timeoutMs) {
 export class LLMClient {
   constructor() {
     this.lastError = "";
+    this.lastLatencyMs = 0;
+    this.lastStatus = "unknown";
   }
 
   async requestEnvironment(summary, enabled) {
@@ -33,23 +37,29 @@ export class LLMClient {
     }
 
     try {
-      const payload = await postJson(AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const payload = result.data;
       const candidate = payload.directive ?? payload.data ?? payload;
       const validation = validateEnvironmentDirective(candidate);
       if (!validation.ok) {
         throw new Error(`schema: ${validation.error}`);
       }
+      this.lastLatencyMs = result.latencyMs;
+      this.lastStatus = "up";
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardEnvironmentDirective(validation.value),
+        latencyMs: result.latencyMs,
         error: "",
       };
     } catch (err) {
       this.lastError = String(err?.message ?? err);
+      this.lastStatus = "down";
       return {
         fallback: true,
         data: buildEnvironmentFallback(summary),
+        latencyMs: this.lastLatencyMs,
         error: this.lastError,
       };
     }
@@ -61,23 +71,29 @@ export class LLMClient {
     }
 
     try {
-      const payload = await postJson(AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const payload = result.data;
       const candidate = payload.policies ? payload : payload.data ?? payload;
       const validation = validateGroupPolicy(candidate);
       if (!validation.ok) {
         throw new Error(`schema: ${validation.error}`);
       }
+      this.lastLatencyMs = result.latencyMs;
+      this.lastStatus = "up";
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardGroupPolicies(validation.value),
+        latencyMs: result.latencyMs,
         error: "",
       };
     } catch (err) {
       this.lastError = String(err?.message ?? err);
+      this.lastStatus = "down";
       return {
         fallback: true,
         data: buildPolicyFallback(summary),
+        latencyMs: this.lastLatencyMs,
         error: this.lastError,
       };
     }

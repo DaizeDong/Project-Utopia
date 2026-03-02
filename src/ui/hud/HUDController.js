@@ -44,20 +44,22 @@
     this.foodBar.style.width = `${Math.min(100, (state.resources.food / 180) * 100)}%`;
     this.woodBar.style.width = `${Math.min(100, (state.resources.wood / 180) * 100)}%`;
 
-    const workers = state.agents.filter((a) => a.type === "WORKER");
-    const visitors = state.agents.filter((a) => a.type === "VISITOR");
-    const herbivores = state.animals.filter((a) => a.kind === "HERBIVORE");
-    const predators = state.animals.filter((a) => a.kind === "PREDATOR");
+    const stats = state.metrics.populationStats ?? {
+      workers: state.agents.filter((a) => a.type === "WORKER").length,
+      visitors: state.agents.filter((a) => a.type === "VISITOR").length,
+      herbivores: state.animals.filter((a) => a.kind === "HERBIVORE").length,
+      predators: state.animals.filter((a) => a.kind === "PREDATOR").length,
+      farmers: state.agents.filter((a) => a.type === "WORKER" && a.role === "FARM").length,
+      loggers: state.agents.filter((a) => a.type === "WORKER" && a.role === "WOOD").length,
+      totalEntities: state.agents.length + state.animals.length,
+    };
 
-    const farmers = workers.filter((w) => w.role === "FARM").length;
-    const loggers = workers.filter((w) => w.role === "WOOD").length;
-
-    this.workersVal.textContent = String(workers.length);
-    this.visitorsVal.textContent = String(visitors.length);
-    this.herbivoresVal.textContent = String(herbivores.length);
-    this.predatorsVal.textContent = String(predators.length);
-    this.farmersVal.textContent = String(farmers);
-    this.loggersVal.textContent = String(loggers);
+    this.workersVal.textContent = String(stats.workers);
+    this.visitorsVal.textContent = String(stats.visitors);
+    this.herbivoresVal.textContent = String(stats.herbivores);
+    this.predatorsVal.textContent = String(stats.predators);
+    this.farmersVal.textContent = String(stats.farmers);
+    this.loggersVal.textContent = String(stats.loggers);
 
     this.weatherVal.textContent = `${state.weather.current} (${Math.max(0, state.weather.timeLeftSec).toFixed(0)}s)`;
     if (this.mapVal) {
@@ -98,7 +100,7 @@
       const sprites = state.controls.showUnitSprites ? "sprites:on" : "sprites:off";
       this.visualModeVal.textContent = `${state.controls.visualPreset} | ${icons} | ${sprites}`;
     }
-    const totalAgents = state.agents.length + state.animals.length;
+    const totalAgents = stats.totalEntities;
     if (this.fpsVal) this.fpsVal.textContent = state.metrics.averageFps.toFixed(1);
     if (this.frameVal) this.frameVal.textContent = `${state.metrics.frameMs.toFixed(2)} ms`;
     if (this.agentVal) this.agentVal.textContent = String(totalAgents);

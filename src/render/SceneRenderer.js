@@ -5,6 +5,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildSystem.js";
+import { pushWarning } from "../app/warnings.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -33,6 +34,24 @@ function lerpAngle(a, b, t) {
   const full = Math.PI * 2;
   const delta = ((b - a + Math.PI) % full + full) % full - Math.PI;
   return a + delta * t;
+}
+
+function createRendererWithFallback(canvas) {
+  const attempts = [
+    { antialias: true, powerPreference: "high-performance" },
+    { antialias: false, powerPreference: "high-performance" },
+    { antialias: false, powerPreference: "default" },
+  ];
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const renderer = new THREE.WebGLRenderer({ canvas, ...attempt });
+      return { renderer, attempt };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError ?? new Error("Unable to initialize WebGL renderer.");
 }
 
 const MODEL_LIBRARY = Object.freeze({
@@ -150,17 +169,22 @@ export class SceneRenderer {
     this.onSelectEntity = onSelectEntity;
     this.hoverTile = null;
 
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.basePixelRatio = Math.min(1.4, window.devicePixelRatio || 1);
-    this.lowQualityPixelRatio = 1;
+    const { renderer, attempt: rendererAttempt } = createRendererWithFallback(canvas);
+    this.renderer = renderer;
+    this.rendererAttempt = rendererAttempt;
+    this.compatibilityRenderer = !rendererAttempt.antialias;
+    const deviceMemory = Number(globalThis?.navigator?.deviceMemory ?? 0);
+    this.lowMemoryMode = Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 8;
+    this.basePixelRatio = this.lowMemoryMode ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
+    this.lowQualityPixelRatio = this.lowMemoryMode ? 0.85 : 1;
     this.currentPixelRatio = this.basePixelRatio;
     this.renderer.setPixelRatio(this.currentPixelRatio);
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.28;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = !this.compatibilityRenderer && !this.lowMemoryMode;
+    this.renderer.shadowMap.type = this.lowMemoryMode ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xbfe6ff);
@@ -170,6 +194,7 @@ export class SceneRenderer {
     this.modelLoadPromises = new Map();
     this.modelTemplates = new Map();
     this.modelLoadErrors = new Map();
+    this.modelTemplatesRequested = false;
     this.entityById = new Map();
     this.workerEntities = [];
     this.visitorEntities = [];
@@ -187,12 +212,15 @@ export class SceneRenderer {
     this.entityShadowMaterialCache = new Map();
     this.useEntityModels = true;
     this.useTileModels = false;
-    this.modelDisableThreshold = 260;
-    this.modelEnableThreshold = 220;
+    this.modelDisableThreshold = Math.max(80, Math.round(state.controls.renderModelDisableThreshold ?? 260));
+    this.modelEnableThreshold = Math.max(40, this.modelDisableThreshold - 40);
 
     this.state.controls.visualPreset ??= "flat_worldsim";
     this.state.controls.showTileIcons ??= true;
     this.state.controls.showUnitSprites ??= true;
+    this.state.controls.cameraMinZoom ??= 0.55;
+    this.state.controls.cameraMaxZoom ??= 3.2;
+    this.state.controls.renderModelDisableThreshold ??= this.modelDisableThreshold;
     this.state.debug.visualAssetPack = "loading";
     this.state.debug.iconAtlasLoaded = false;
     this.state.debug.unitSpriteLoaded = false;
@@ -219,17 +247,21 @@ export class SceneRenderer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
-    this.controls.minZoom = 0.55;
-    this.controls.maxZoom = 3.2;
+    this.controls.minZoom = this.state.controls.cameraMinZoom;
+    this.controls.maxZoom = this.state.controls.cameraMaxZoom;
     this.controls.target.set(0, 0, 0);
+
+    this.lastShowTileIcons = null;
+    this.lastVisualPreset = this.state.controls.visualPreset;
+    this.lastEntityRenderSignature = "";
 
     this.scene.add(new THREE.AmbientLight(0xfff6e8, 1.08));
     this.scene.add(new THREE.HemisphereLight(0xe9f7ff, 0xc9d9a3, 0.45));
     const sun = new THREE.DirectionalLight(0xfff3cf, 1.1);
     sun.position.set(56, 120, 34);
     const shadowSpan = Math.max(state.grid.width, state.grid.height) * 0.8;
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.castShadow = this.renderer.shadowMap.enabled;
+    sun.shadow.mapSize.set(this.lowMemoryMode ? 1024 : 1536, this.lowMemoryMode ? 1024 : 1536);
     sun.shadow.camera.left = -shadowSpan;
     sun.shadow.camera.right = shadowSpan;
     sun.shadow.camera.top = shadowSpan;
@@ -257,10 +289,15 @@ export class SceneRenderer {
     this.#setupDebugPath();
     this.#setupOverlayMeshes();
     this.#loadWorldSimManifest();
-    this.#loadModelTemplates();
+    if (this.compatibilityRenderer) {
+      this.state.controls.actionMessage = "Compatibility renderer enabled (anti-alias off).";
+      this.state.controls.actionKind = "info";
+    }
 
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2();
+    this.lastPointerSampleMs = 0;
+    this.pointerSampleIntervalMs = 20;
 
     this.pickPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(700, 700),
@@ -269,12 +306,17 @@ export class SceneRenderer {
     this.pickPlane.rotation.x = -Math.PI / 2;
     this.scene.add(this.pickPlane);
 
-    this.canvas.addEventListener("pointermove", (e) => this.#onPointerMove(e));
-    this.canvas.addEventListener("pointerleave", () => {
+    this.boundOnPointerMove = (e) => this.#onPointerMove(e);
+    this.boundOnPointerLeave = () => {
       this.hoverTile = null;
-    });
-    this.canvas.addEventListener("pointerdown", (e) => this.#onPointerDown(e));
-    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    };
+    this.boundOnPointerDown = (e) => this.#onPointerDown(e);
+    this.boundOnContextMenu = (e) => e.preventDefault();
+
+    this.canvas.addEventListener("pointermove", this.boundOnPointerMove);
+    this.canvas.addEventListener("pointerleave", this.boundOnPointerLeave);
+    this.canvas.addEventListener("pointerdown", this.boundOnPointerDown);
+    this.canvas.addEventListener("contextmenu", this.boundOnContextMenu);
   }
 
   #hashAngle(ix, iz) {
@@ -351,6 +393,7 @@ export class SceneRenderer {
   }
 
   #attachEntityShadow(model, binding) {
+    if (!this.renderer.shadowMap.enabled) return;
     if (!binding.shadowRadius || binding.shadowRadius <= 0) return;
     const shadow = new THREE.Mesh(this.entityShadowGeometry, this.#getShadowMaterial(binding.shadowOpacity ?? 0.2));
     shadow.rotation.x = -Math.PI / 2;
@@ -415,6 +458,8 @@ export class SceneRenderer {
   }
 
   #loadModelTemplates() {
+    if (this.modelTemplatesRequested) return;
+    this.modelTemplatesRequested = true;
     const entries = Object.entries(MODEL_LIBRARY).filter(([key]) => {
       if (this.useTileModels) return true;
       return !key.endsWith("Tile");
@@ -436,6 +481,14 @@ export class SceneRenderer {
         this.state.controls.actionKind = "success";
       }
     });
+  }
+
+  #ensureModelTemplatesRequested() {
+    if (this.modelTemplatesRequested) return;
+    const needsModels = this.state.controls.visualPreset !== "flat_worldsim"
+      || !this.state.controls.showUnitSprites;
+    if (!needsModels) return;
+    this.#loadModelTemplates();
   }
 
   #cloneTemplate(key) {
@@ -593,6 +646,9 @@ export class SceneRenderer {
         this.#setTextureSampling(texture, { repeatX: binding.repeatX, repeatY: binding.repeatY });
         texture.offset.set((tileType % 3) * 0.07, (tileType % 4) * 0.05);
 
+        if (material.map && material.map !== texture) {
+          material.map.dispose?.();
+        }
         material.map = texture;
         material.color.setHex(binding.tint ?? 0xffffff);
         material.roughness = binding.roughness ?? 0.95;
@@ -606,7 +662,11 @@ export class SceneRenderer {
     }
 
     this.state.debug.tileTexturesLoaded = applied >= this.tileMaterialsByType.size;
-    if (warnings.length > 0) this.state.metrics.warnings.push(...warnings.slice(0, 8));
+    if (warnings.length > 0) {
+      for (const warning of warnings.slice(0, 8)) {
+        pushWarning(this.state, warning, "warn", "SceneRenderer");
+      }
+    }
   }
 
   async #loadWorldSimManifest() {
@@ -628,6 +688,9 @@ export class SceneRenderer {
         if (!mat || !relPath) return;
         const texture = await this.textureLoader.loadAsync(`/assets/worldsim/${encodeURI(relPath)}`);
         this.#setTextureSampling(texture);
+        if (mat.map && mat.map !== texture) {
+          mat.map.dispose?.();
+        }
         mat.map = texture;
         mat.opacity = 0.92;
         mat.needsUpdate = true;
@@ -639,6 +702,9 @@ export class SceneRenderer {
       }
       this.state.debug.iconAtlasLoaded = Array.from(this.tileIconMaterials.values()).some((mat) => Boolean(mat?.map));
 
+      for (const texture of this.unitSpriteTextures.values()) {
+        texture.dispose?.();
+      }
       this.unitSpriteTextures.clear();
       const unitEntries = Object.entries(manifest.unitSprites ?? {});
       const unitResults = await Promise.allSettled(unitEntries.map(async ([key, relPath]) => {
@@ -653,7 +719,11 @@ export class SceneRenderer {
         warnings.push(`unitSprite ${unitEntries[i][0]} failed: ${String(r.reason?.message ?? r.reason)}`);
       }
       this.state.debug.unitSpriteLoaded = this.unitSpriteTextures.size > 0;
-      if (warnings.length > 0) this.state.metrics.warnings.push(...warnings.slice(0, 6));
+      if (warnings.length > 0) {
+        for (const warning of warnings.slice(0, 6)) {
+          pushWarning(this.state, warning, "warn", "SceneRenderer");
+        }
+      }
 
       this.lastGridVersion = -1;
       this.#rebuildTilesIfNeeded();
@@ -661,7 +731,7 @@ export class SceneRenderer {
       this.state.debug.visualAssetPack = "manifest:error";
       this.state.debug.iconAtlasLoaded = false;
       this.state.debug.unitSpriteLoaded = false;
-      this.state.metrics.warnings.push(`WorldSim asset manifest load failed: ${String(err?.message ?? err)}`);
+      pushWarning(this.state, `WorldSim asset manifest load failed: ${String(err?.message ?? err)}`, "error", "SceneRenderer");
     }
   }
 
@@ -676,14 +746,15 @@ export class SceneRenderer {
     this.visitorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xffb866, roughness: 0.5 }), maxVisitors);
     this.herbivoreMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0x89d37f, roughness: 0.52 }), maxHerbivores);
     this.predatorMesh = new THREE.InstancedMesh(sphere, new THREE.MeshStandardMaterial({ color: 0xe07b7b, roughness: 0.52 }), maxPredators);
-    this.workerMesh.castShadow = true;
-    this.workerMesh.receiveShadow = true;
-    this.visitorMesh.castShadow = true;
-    this.visitorMesh.receiveShadow = true;
-    this.herbivoreMesh.castShadow = true;
-    this.herbivoreMesh.receiveShadow = true;
-    this.predatorMesh.castShadow = true;
-    this.predatorMesh.receiveShadow = true;
+    const shadowEnabled = this.renderer.shadowMap.enabled;
+    this.workerMesh.castShadow = shadowEnabled;
+    this.workerMesh.receiveShadow = shadowEnabled;
+    this.visitorMesh.castShadow = shadowEnabled;
+    this.visitorMesh.receiveShadow = shadowEnabled;
+    this.herbivoreMesh.castShadow = shadowEnabled;
+    this.herbivoreMesh.receiveShadow = shadowEnabled;
+    this.predatorMesh.castShadow = shadowEnabled;
+    this.predatorMesh.receiveShadow = shadowEnabled;
 
     this.scene.add(this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh);
   }
@@ -824,6 +895,7 @@ export class SceneRenderer {
     while (group.children.length > 0) {
       group.remove(group.children[group.children.length - 1]);
     }
+    this.renderer?.renderLists?.dispose?.();
   }
 
   #rebuildTileModels() {
@@ -923,8 +995,25 @@ export class SceneRenderer {
     return null;
   }
 
+  #disposeSpriteEntry(entry) {
+    if (!entry) return;
+    if (entry.sprite?.material) {
+      entry.sprite.material.dispose?.();
+    }
+  }
+
+  #clearEntitySpriteInstances() {
+    for (const entry of this.entitySpriteInstances.values()) {
+      this.#disposeSpriteEntry(entry);
+      this.entitySpriteRoot.remove(entry.group);
+    }
+    this.entitySpriteInstances.clear();
+    this.renderer?.renderLists?.dispose?.();
+  }
+
   #syncEntitySprites(entities) {
     const alive = new Set();
+    let removedAny = false;
 
     for (const entity of entities) {
       const binding = this.#entitySpriteBinding(entity);
@@ -936,8 +1025,10 @@ export class SceneRenderer {
       let entry = this.entitySpriteInstances.get(entity.id);
       if (!entry || entry.key !== binding.key) {
         if (entry) {
+          this.#disposeSpriteEntry(entry);
           this.entitySpriteRoot.remove(entry.group);
           this.entitySpriteInstances.delete(entity.id);
+          removedAny = true;
         }
 
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -985,9 +1076,12 @@ export class SceneRenderer {
 
     for (const [id, entry] of this.entitySpriteInstances.entries()) {
       if (alive.has(id)) continue;
+      this.#disposeSpriteEntry(entry);
       this.entitySpriteRoot.remove(entry.group);
       this.entitySpriteInstances.delete(id);
+      removedAny = true;
     }
+    if (removedAny) this.renderer?.renderLists?.dispose?.();
   }
 
   #entityModelKey(entity) {
@@ -1016,6 +1110,7 @@ export class SceneRenderer {
 
   #syncEntityModels(entities) {
     const alive = new Set();
+    let removedAny = false;
 
     for (const entity of entities) {
       if (!this.#entityModelEnabled(entity)) continue;
@@ -1030,6 +1125,7 @@ export class SceneRenderer {
         if (entry) {
           this.entityModelRoot.remove(entry.object);
           this.entityModelInstances.delete(entity.id);
+          removedAny = true;
         }
         const model = this.#cloneTemplate(modelKey);
         if (!model) continue;
@@ -1067,7 +1163,9 @@ export class SceneRenderer {
       if (alive.has(id)) continue;
       this.entityModelRoot.remove(entry.object);
       this.entityModelInstances.delete(id);
+      removedAny = true;
     }
+    if (removedAny) this.renderer?.renderLists?.dispose?.();
   }
 
   #extractEntityIdFromHitObject(object) {
@@ -1155,8 +1253,7 @@ export class SceneRenderer {
     }
 
     if (this.entitySpriteInstances.size > 0) {
-      this.#clearGroup(this.entitySpriteRoot);
-      this.entitySpriteInstances.clear();
+      this.#clearEntitySpriteInstances();
     }
 
     let shouldUseEntityModels = this.useEntityModels;
@@ -1322,6 +1419,9 @@ export class SceneRenderer {
   }
 
   #onPointerMove(event) {
+    const now = performance.now();
+    if (now - this.lastPointerSampleMs < this.pointerSampleIntervalMs) return;
+    this.lastPointerSampleMs = now;
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
@@ -1426,11 +1526,54 @@ export class SceneRenderer {
     this.selectionRing.position.set(selected.x, 0.22, selected.z);
   }
 
+  #applyRuntimeControlSettings() {
+    const minZoom = clamp(Number(this.state.controls.cameraMinZoom) || 0.55, 0.3, 5);
+    const maxZoom = clamp(Number(this.state.controls.cameraMaxZoom) || 3.2, minZoom + 0.1, 6);
+
+    this.state.controls.cameraMinZoom = minZoom;
+    this.state.controls.cameraMaxZoom = maxZoom;
+    this.controls.minZoom = minZoom;
+    this.controls.maxZoom = maxZoom;
+    this.camera.zoom = clamp(this.camera.zoom, minZoom, maxZoom);
+
+    const threshold = Math.max(80, Math.round(Number(this.state.controls.renderModelDisableThreshold) || 260));
+    this.state.controls.renderModelDisableThreshold = threshold;
+    this.modelDisableThreshold = threshold;
+    this.modelEnableThreshold = Math.max(40, threshold - 40);
+
+    const currentPreset = this.state.controls.visualPreset;
+    const showTileIconsNow = Boolean(this.state.controls.showTileIcons)
+      && currentPreset === "flat_worldsim";
+    const visualChanged = this.lastVisualPreset !== currentPreset;
+    const iconVisibilityChanged = this.lastShowTileIcons !== showTileIconsNow;
+    if (visualChanged || iconVisibilityChanged) {
+      this.lastVisualPreset = currentPreset;
+      this.lastShowTileIcons = showTileIconsNow;
+      this.#rebuildTileModels();
+      this.#rebuildTileIcons();
+      this.lastEntityRenderSignature = "";
+    }
+  }
+
   render(dt) {
+    this.#applyRuntimeControlSettings();
+    this.#ensureModelTemplatesRequested();
     this.controls.update();
 
     this.#rebuildTilesIfNeeded();
-    this.#updateEntityMeshes();
+    const entityRenderSignature = [
+      this.state.metrics.tick,
+      this.state.agents.length,
+      this.state.animals.length,
+      this.state.controls.showUnitSprites ? 1 : 0,
+      this.state.controls.visualPreset,
+      this.modelDisableThreshold,
+      this.modelTemplates.size,
+    ].join("|");
+    if (entityRenderSignature !== this.lastEntityRenderSignature) {
+      this.lastEntityRenderSignature = entityRenderSignature;
+      this.#updateEntityMeshes();
+    }
     this.#updatePathLine();
     this.#updateOverlayMeshes();
 
@@ -1446,5 +1589,42 @@ export class SceneRenderer {
     }
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  #disposeMaterial(material) {
+    if (!material) return;
+    const mats = Array.isArray(material) ? material : [material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      if (mat.map) mat.map.dispose?.();
+      mat.dispose?.();
+    }
+  }
+
+  #disposeObject3D(root) {
+    if (!root) return;
+    root.traverse((node) => {
+      if (node.geometry) node.geometry.dispose?.();
+      if (node.material) this.#disposeMaterial(node.material);
+    });
+  }
+
+  dispose() {
+    this.canvas.removeEventListener("pointermove", this.boundOnPointerMove);
+    this.canvas.removeEventListener("pointerleave", this.boundOnPointerLeave);
+    this.canvas.removeEventListener("pointerdown", this.boundOnPointerDown);
+    this.canvas.removeEventListener("contextmenu", this.boundOnContextMenu);
+
+    this.controls?.dispose?.();
+    this.#clearEntitySpriteInstances();
+    for (const texture of this.unitSpriteTextures.values()) {
+      texture.dispose?.();
+    }
+    this.unitSpriteTextures.clear();
+    this.#disposeObject3D(this.scene);
+    this.modelTemplates.clear();
+    this.modelLoadPromises.clear();
+    this.modelLoadErrors.clear();
+    this.renderer?.dispose?.();
   }
 }

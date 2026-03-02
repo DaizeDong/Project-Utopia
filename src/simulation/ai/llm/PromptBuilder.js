@@ -4,6 +4,9 @@ import { DEFAULT_GROUP_POLICIES } from "../../../config/aiConfig.js";
 export function buildEnvironmentFallback(summary) {
   const lowFood = summary.resources.food < 18;
   const congestionHigh = summary.traffic.congestion > 0.58;
+  const stabilitySignal = Number(summary.resources.food ?? 0) * 0.41
+    + Number(summary.resources.wood ?? 0) * 0.19
+    + Number(summary.traffic.congestion ?? 0) * 100 * 0.27;
 
   if (lowFood) {
     return {
@@ -24,7 +27,7 @@ export function buildEnvironmentFallback(summary) {
   }
 
   return {
-    weather: Math.random() > 0.8 ? WEATHER.STORM : WEATHER.CLEAR,
+    weather: stabilitySignal % 7 > 4.8 ? WEATHER.STORM : WEATHER.CLEAR,
     durationSec: 16,
     factionTension: 0.55,
     eventSpawns: [{ type: EVENT_TYPE.BANDIT_RAID, intensity: 0.8, durationSec: 12 }],

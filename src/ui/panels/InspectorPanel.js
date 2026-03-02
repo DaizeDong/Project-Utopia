@@ -23,6 +23,7 @@ export class InspectorPanel {
   constructor(state) {
     this.state = state;
     this.root = document.getElementById("inspect");
+    this.lastHtml = "";
   }
 
   #renderTileSection() {
@@ -123,6 +124,9 @@ export class InspectorPanel {
 
   render() {
     if (!this.root) return;
-    this.root.innerHTML = `${this.#renderTileSection()}${this.#renderEntitySection()}`;
+    const html = `${this.#renderTileSection()}${this.#renderEntitySection()}`;
+    if (html === this.lastHtml) return;
+    this.lastHtml = html;
+    this.root.innerHTML = html;
   }
 }

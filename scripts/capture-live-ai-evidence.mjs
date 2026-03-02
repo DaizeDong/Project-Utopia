@@ -9,6 +9,20 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForProxyReady(timeoutMs = 10000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const resp = await fetch(`http://localhost:${port}/health`);
+      if (resp.ok) return;
+    } catch {
+      // continue polling
+    }
+    await sleep(150);
+  }
+  throw new Error(`ai-proxy did not become healthy on :${port} within ${timeoutMs}ms`);
+}
+
 async function postJson(url, body) {
   const resp = await fetch(url, {
     method: "POST",
@@ -32,7 +46,7 @@ async function main() {
   const policyAttempts = [];
 
   try {
-    await sleep(900);
+    await waitForProxyReady();
 
     for (let i = 0; i < 12; i += 1) {
       const summary = {
