@@ -15,10 +15,10 @@ export const INITIAL_RESOURCES = Object.freeze({
 });
 
 export const INITIAL_POPULATION = Object.freeze({
-  workers: 72,
-  visitors: 20,
-  herbivores: 24,
-  predators: 4,
+  workers: 18,
+  visitors: 6,
+  herbivores: 5,
+  predators: 1,
 });
 
 export const WEATHER_MODIFIERS = Object.freeze({

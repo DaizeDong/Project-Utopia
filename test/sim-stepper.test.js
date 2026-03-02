@@ -50,3 +50,29 @@ test("computeSimulationStepPlan advances fixed steps while running", () => {
   assert.ok(plan.nextAccumulatorSec >= 0);
   assert.ok(plan.nextAccumulatorSec < 1 / 30);
 });
+
+test("computeSimulationStepPlan reflects changed fixedStepSec", () => {
+  const slowTick = computeSimulationStepPlan({
+    frameDt: 0.1,
+    accumulatorSec: 0,
+    isPaused: false,
+    stepFramesPending: 0,
+    fixedStepSec: 1 / 10,
+    timeScale: 1,
+    maxSteps: 10,
+  });
+
+  const fastTick = computeSimulationStepPlan({
+    frameDt: 0.1,
+    accumulatorSec: 0,
+    isPaused: false,
+    stepFramesPending: 0,
+    fixedStepSec: 1 / 60,
+    timeScale: 1,
+    maxSteps: 10,
+  });
+
+  assert.ok(fastTick.steps > slowTick.steps);
+  assert.ok(fastTick.simDt > 0);
+  assert.ok(slowTick.simDt > 0);
+});

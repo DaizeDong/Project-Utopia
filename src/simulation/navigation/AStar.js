@@ -77,12 +77,15 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
   const height = grid.height;
   const startKey = toIndex(start.ix, start.iz, width);
   const goalKey = toIndex(goal.ix, goal.iz, width);
+  const goalIx = goal.ix | 0;
+  const goalIz = goal.iz | 0;
 
   if (startKey === goalKey) return [start];
 
   const open = new MinHeap();
   const cameFrom = new Int32Array(width * height).fill(-1);
   const gScore = new Float32Array(width * height);
+  const closed = new Uint8Array(width * height);
   gScore.fill(Infinity);
 
   gScore[startKey] = 0;
@@ -90,6 +93,10 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
 
   while (!open.isEmpty()) {
     const current = open.pop();
+    if (current < 0) break;
+    if (closed[current]) continue;
+    closed[current] = 1;
+
     if (current === goalKey) {
       return reconstructPath(cameFrom, current, width);
     }
@@ -103,6 +110,7 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
       if (!inBounds(nx, nz, grid)) continue;
 
       const nKey = toIndex(nx, nz, width);
+      if (closed[nKey]) continue;
       const tileType = grid.tiles[nKey];
       const tileInfo = TILE_INFO[tileType];
       if (!tileInfo.passable) continue;
@@ -116,7 +124,7 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
       if (tentative < gScore[nKey]) {
         cameFrom[nKey] = current;
         gScore[nKey] = tentative;
-        open.push(nKey, tentative + heuristic({ ix: nx, iz: nz }, goal));
+        open.push(nKey, tentative + Math.abs(nx - goalIx) + Math.abs(nz - goalIz));
       }
     }
   }

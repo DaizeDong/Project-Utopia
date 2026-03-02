@@ -1,3 +1,22 @@
+const SCHEDULE_PRESETS = Object.freeze({
+  default: "0,100,200,300,400,500",
+  light: "0,50,100,150,200,250",
+  heavy: "0,200,400,600,800,1000",
+});
+
+function parseScheduleText(raw) {
+  if (typeof raw !== "string") return [];
+  return raw
+    .split(/[,\s]+/g)
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n))
+    .map((n) => Math.max(0, Math.round(n)));
+}
+
+function scheduleToText(schedule = []) {
+  return schedule.join(",");
+}
+
 export class PerformancePanel {
   constructor(state, handlers) {
     this.state = state;
@@ -14,6 +33,13 @@ export class PerformancePanel {
     this.step5Btn = document.getElementById("step5Btn");
     this.timeScaleInput = document.getElementById("timeScale");
     this.timeScaleLabel = document.getElementById("timeScaleLabel");
+    this.benchmarkStageDurationInput = document.getElementById("benchmarkStageDuration");
+    this.benchmarkStageDurationLabel = document.getElementById("benchmarkStageDurationLabel");
+    this.benchmarkSampleStartInput = document.getElementById("benchmarkSampleStart");
+    this.benchmarkSampleStartLabel = document.getElementById("benchmarkSampleStartLabel");
+    this.benchmarkSchedulePreset = document.getElementById("benchmarkSchedulePreset");
+    this.benchmarkScheduleInput = document.getElementById("benchmarkScheduleInput");
+    this.applyBenchmarkConfigBtn = document.getElementById("applyBenchmarkConfigBtn");
 
     this.benchmarkStatusVal = document.getElementById("benchmarkStatusVal");
     this.simControlVal = document.getElementById("simControlVal");
@@ -21,6 +47,8 @@ export class PerformancePanel {
     this.frameVal = document.getElementById("frameVal");
     this.agentVal = document.getElementById("agentVal");
     this.workerVal = document.getElementById("workerCountVal");
+    this.workerBreakdownVal = document.getElementById("workerBreakdownVal");
+    this.lastBenchmarkUiSignature = "";
 
     this.extraWorkersInput?.addEventListener("input", () => {
       const value = Number(this.extraWorkersInput.value);
@@ -62,8 +90,34 @@ export class PerformancePanel {
       this.#syncTimeScaleLabel();
     });
 
+    this.benchmarkStageDurationInput?.addEventListener("input", () => {
+      this.#syncBenchmarkConfigLabels();
+      this.#emitBenchmarkConfig();
+    });
+
+    this.benchmarkSampleStartInput?.addEventListener("input", () => {
+      this.#syncBenchmarkConfigLabels();
+      this.#emitBenchmarkConfig();
+    });
+
+    this.benchmarkSchedulePreset?.addEventListener("change", () => {
+      if (this.benchmarkSchedulePreset.value === "custom") return;
+      const presetValue = SCHEDULE_PRESETS[this.benchmarkSchedulePreset.value] ?? SCHEDULE_PRESETS.default;
+      if (this.benchmarkScheduleInput) this.benchmarkScheduleInput.value = presetValue;
+      this.#emitBenchmarkConfig();
+    });
+
+    this.applyBenchmarkConfigBtn?.addEventListener("click", () => {
+      this.#emitBenchmarkConfig();
+    });
+
+    this.benchmarkScheduleInput?.addEventListener("input", () => {
+      if (this.benchmarkSchedulePreset) this.benchmarkSchedulePreset.value = "custom";
+    });
+
     this.#syncInputLabel();
     this.#syncTimeScaleLabel();
+    this.#syncBenchmarkConfigSection();
   }
 
   #syncInputLabel() {
@@ -80,22 +134,83 @@ export class PerformancePanel {
     this.timeScaleLabel.textContent = `${value.toFixed(2)}x`;
   }
 
+  #syncBenchmarkConfigLabels() {
+    if (this.benchmarkStageDurationInput && this.benchmarkStageDurationLabel) {
+      const value = Math.max(10, Math.min(300, Number(this.benchmarkStageDurationInput.value) || 40)) / 10;
+      this.benchmarkStageDurationInput.value = String(Math.round(value * 10));
+      this.benchmarkStageDurationLabel.textContent = `${value.toFixed(1)}s`;
+    }
+    if (this.benchmarkSampleStartInput && this.benchmarkSampleStartLabel) {
+      const value = Math.max(0, Math.min(300, Number(this.benchmarkSampleStartInput.value) || 12)) / 10;
+      this.benchmarkSampleStartInput.value = String(Math.round(value * 10));
+      this.benchmarkSampleStartLabel.textContent = `${value.toFixed(1)}s`;
+    }
+  }
+
+  #syncBenchmarkConfigSection() {
+    const cfg = this.state.controls.benchmarkConfig ?? {
+      schedule: [0, 100, 200, 300, 400, 500],
+      stageDurationSec: 4,
+      sampleStartSec: 1.2,
+    };
+    const signature = `${cfg.stageDurationSec}|${cfg.sampleStartSec}|${scheduleToText(cfg.schedule)}`;
+    if (signature === this.lastBenchmarkUiSignature) return;
+    this.lastBenchmarkUiSignature = signature;
+
+    if (this.benchmarkStageDurationInput) {
+      this.benchmarkStageDurationInput.value = String(Math.round(cfg.stageDurationSec * 10));
+    }
+    if (this.benchmarkSampleStartInput) {
+      this.benchmarkSampleStartInput.value = String(Math.round(cfg.sampleStartSec * 10));
+    }
+    if (this.benchmarkScheduleInput) {
+      this.benchmarkScheduleInput.value = scheduleToText(cfg.schedule);
+    }
+
+    const scheduleText = scheduleToText(cfg.schedule);
+    let preset = "custom";
+    if (scheduleText === SCHEDULE_PRESETS.default) preset = "default";
+    else if (scheduleText === SCHEDULE_PRESETS.light) preset = "light";
+    else if (scheduleText === SCHEDULE_PRESETS.heavy) preset = "heavy";
+    if (this.benchmarkSchedulePreset) this.benchmarkSchedulePreset.value = preset;
+
+    this.#syncBenchmarkConfigLabels();
+  }
+
+  #emitBenchmarkConfig() {
+    if (!this.benchmarkStageDurationInput || !this.benchmarkSampleStartInput || !this.benchmarkScheduleInput) return;
+    const stageDurationSec = Math.max(1, Math.min(30, Number(this.benchmarkStageDurationInput.value) / 10));
+    const sampleStartSec = Math.max(0, Math.min(30, Number(this.benchmarkSampleStartInput.value) / 10));
+    const schedule = parseScheduleText(this.benchmarkScheduleInput.value);
+    this.handlers?.onSetBenchmarkConfig?.({ schedule, stageDurationSec, sampleStartSec });
+  }
+
   render() {
     this.#syncInputLabel();
     this.#syncTimeScaleLabel();
+    this.#syncBenchmarkConfigSection();
 
     const totalAgents = this.state.agents.length + this.state.animals.length;
+    const stats = this.state.metrics.populationStats ?? null;
     if (this.fpsVal) this.fpsVal.textContent = this.state.metrics.averageFps.toFixed(1);
     if (this.frameVal) this.frameVal.textContent = `${this.state.metrics.frameMs.toFixed(2)} ms`;
-    if (this.agentVal) this.agentVal.textContent = String(totalAgents);
-    if (this.workerVal) this.workerVal.textContent = String(this.state.agents.filter((a) => a.type === "WORKER").length);
+    if (this.agentVal) this.agentVal.textContent = String(stats?.totalEntities ?? totalAgents);
+    if (this.workerVal) this.workerVal.textContent = String(stats?.workers ?? this.state.agents.filter((a) => a.type === "WORKER").length);
     if (this.benchmarkStatusVal) this.benchmarkStatusVal.textContent = `Benchmark: ${this.state.metrics.benchmarkStatus}`;
     if (this.simControlVal) {
       const sim = this.state.controls.isPaused ? "paused" : "running";
-      this.simControlVal.textContent = `Sim: ${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simCost=${this.state.metrics.simCostMs.toFixed(2)}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
+      const aiLatency = Number(this.state.metrics.aiLatencyMs ?? 0).toFixed(1);
+      this.simControlVal.textContent = `Sim: ${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simCost=${this.state.metrics.simCostMs.toFixed(2)}ms | ui=${(this.state.metrics.uiCpuMs ?? 0).toFixed(2)}ms | render=${(this.state.metrics.renderCpuMs ?? 0).toFixed(2)}ms | ai=${aiLatency}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
+    }
+    if (this.workerBreakdownVal) {
+      const breakdown = this.state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0 };
+      this.workerBreakdownVal.textContent = `Workers: base=${breakdown.baseWorkers} stress=${breakdown.stressWorkers} total=${breakdown.totalWorkers}`;
     }
     if (this.downloadBenchmarkBtn) this.downloadBenchmarkBtn.disabled = !this.state.metrics.benchmarkCsvReady;
     if (this.pauseBtn) this.pauseBtn.textContent = this.state.controls.isPaused ? "Resume" : "Pause";
     if (this.runBenchmarkBtn) this.runBenchmarkBtn.disabled = this.state.controls.isPaused;
+    if (this.applyBenchmarkConfigBtn) {
+      this.applyBenchmarkConfigBtn.disabled = this.benchmarkSchedulePreset?.value !== "custom";
+    }
   }
 }

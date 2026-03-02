@@ -112,8 +112,15 @@
  *  simCostMs?: number,
  *  isDebugStepping: boolean,
  *  warnings: string[],
+ *  warningLog?: Array<{id:string, sec:number, level:string, source:string, message:string}>,
  *  memoryMb?: number,
- *  cpuBudgetMs?: number
+ *  cpuBudgetMs?: number,
+ *  uiCpuMs?: number,
+ *  renderCpuMs?: number,
+ *  aiLatencyMs?: number,
+ *  proxyHealth?: "unknown"|"up"|"down",
+ *  regressionFlags?: string[],
+ *  populationStats?: {workers:number, baseWorkers:number, stressWorkers:number, visitors:number, herbivores:number, predators:number, farmers:number, loggers:number, totalEntities:number}
  * }} MetricsState
  *
  * @typedef {{
@@ -150,6 +157,8 @@
  *  unitSpriteLoaded?: boolean,
  *  aiTrace: Array<Record<string, unknown>>,
  *  eventTrace: Array<Record<string, unknown>>,
+ *  rng?: {initialSeed:number, state:number, calls:number},
+ *  presetComparison?: Array<Record<string, unknown>>,
  *  roadCount?: number,
  *  gridStats?: Record<string, number>
  * }} DebugState
@@ -182,6 +191,10 @@
  *  stepFramesPending: number,
  *  timeScale: number,
  *  fixedStepSec: number,
+ *  cameraMinZoom: number,
+ *  cameraMaxZoom: number,
+ *  renderModelDisableThreshold: number,
+ *  benchmarkConfig: {schedule:number[], stageDurationSec:number, sampleStartSec:number},
  *  visualPreset: "flat_worldsim",
  *  showTileIcons: boolean,
  *  showUnitSprites: boolean,
@@ -189,6 +202,14 @@
  *  mapSeed: number|string,
  *  terrainTuning: Record<string, unknown>,
  *  populationTargets: {workers:number, visitors:number, herbivores:number, predators:number},
+ *  populationBreakdown?: {baseWorkers:number, stressWorkers:number, totalWorkers:number, totalEntities:number},
+ *  saveSlotId?: string,
+ *  canUndo?: boolean,
+ *  canRedo?: boolean,
+ *  showReplayPanel?: boolean,
+ *  showPresetComparator?: boolean,
+ *  undoStack?: Array<Record<string, unknown>>,
+ *  redoStack?: Array<Record<string, unknown>>,
  *  doctrine: string,
  *  actionMessage: string,
  *  actionKind: "info"|"success"|"error"

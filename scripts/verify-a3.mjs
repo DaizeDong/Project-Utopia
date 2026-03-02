@@ -28,6 +28,20 @@ async function waitFor(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForProxyReady(port, timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const health = await fetch(`http://localhost:${port}/health`);
+      if (health.ok) return;
+    } catch {
+      // wait and retry
+    }
+    await waitFor(150);
+  }
+  throw new Error(`ai-proxy did not become healthy on :${port} within ${timeoutMs}ms`);
+}
+
 async function verifyProxyContract() {
   const port = 8879;
   const env = {
@@ -40,7 +54,7 @@ async function verifyProxyContract() {
   });
 
   try {
-    await waitFor(900);
+    await waitForProxyReady(port);
     const body = {
       summary: {
         resources: { food: 20, wood: 30 },
