@@ -1,0 +1,32 @@
+{
+  "version": "2026-03-02",
+  "theme": "flat_worldsim",
+  "sources": {
+    "terrain": "tiles/pixel-art-top-down-basic/Texture",
+    "icons": "icons/pixel-art-icon-pack-rpg",
+    "units": "units/free-base-4-direction-female-character/PNG"
+  },
+  "tileTextures": {
+    "grass": "tiles/pixel-art-top-down-basic/Texture/TX Tileset Grass.png",
+    "road": "tiles/pixel-art-top-down-basic/Texture/TX Tileset Stone Ground.png",
+    "wall": "tiles/pixel-art-top-down-basic/Texture/TX Tileset Wall.png",
+    "structure": "tiles/pixel-art-top-down-basic/Texture/TX Struct.png",
+    "props": "tiles/pixel-art-top-down-basic/Texture/TX Props.png",
+    "plants": "tiles/pixel-art-top-down-basic/Texture/TX Plant.png"
+  },
+  "tileIcons": {
+    "ROAD": "icons/flat/road.png",
+    "FARM": "icons/flat/farm.png",
+    "LUMBER": "icons/flat/lumber.png",
+    "WAREHOUSE": "icons/flat/warehouse.png",
+    "WALL": "icons/flat/wall.png",
+    "RUINS": "icons/flat/ruins.png",
+    "WATER": "icons/flat/water.png"
+  },
+  "unitSprites": {
+    "WORKER": "units/flat/worker.png",
+    "VISITOR": "units/flat/visitor.png",
+    "HERBIVORE": "units/flat/herbivore.png",
+    "PREDATOR": "units/flat/predator.png"
+  }
+}

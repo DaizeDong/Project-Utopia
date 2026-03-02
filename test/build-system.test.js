@@ -12,6 +12,7 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
   state.resources.wood = 3;
   const noMoney = buildSystem.placeToolAt(state, "warehouse", 10, 10);
   assert.equal(noMoney.ok, false);
+  assert.equal(noMoney.reason, "insufficientResource");
   assert.equal(state.resources.wood, 3);
 
   const okRoad = buildSystem.placeToolAt(state, "road", 10, 10);
@@ -22,5 +23,16 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
   state.resources.wood = 0;
   const failWall = buildSystem.placeToolAt(state, "wall", 11, 10);
   assert.equal(failWall.ok, false);
+  assert.equal(failWall.reason, "insufficientResource");
   assert.ok(state.resources.wood >= 0);
+});
+
+test("BuildSystem preview reports water blocked placement", () => {
+  const state = createInitialGameState();
+  const buildSystem = new BuildSystem();
+
+  state.grid.tiles[12 + 12 * state.grid.width] = TILE.WATER;
+  const preview = buildSystem.previewToolAt(state, "farm", 12, 12);
+  assert.equal(preview.ok, false);
+  assert.equal(preview.reason, "waterBlocked");
 });
