@@ -5,10 +5,15 @@
     "dev:full": "node scripts/dev-full.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:full": "node scripts/preview-full.mjs",
+    "start:prod": "npm run build && npm run preview:full",
     "ai-proxy": "node server/ai-proxy.js",
     "test": "node --test",
+    "test:ui": "node --test test/ui-layout.test.js",
+    "bench:perf": "node scripts/bench-perf.mjs",
     "a3:evidence:ai": "node scripts/capture-live-ai-evidence.mjs",
-    "verify:a3": "node scripts/verify-a3.mjs"
+    "verify:a3": "node scripts/verify-a3.mjs",
+    "verify:full": "node scripts/verify-full.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"

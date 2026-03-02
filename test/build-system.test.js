@@ -36,3 +36,27 @@ test("BuildSystem preview reports water blocked placement", () => {
   assert.equal(preview.ok, false);
   assert.equal(preview.reason, "waterBlocked");
 });
+
+test("BuildSystem undo/redo restores tiles and resources", () => {
+  const state = createInitialGameState();
+  const buildSystem = new BuildSystem();
+  const ix = 9;
+  const iz = 9;
+  const idx = ix + iz * state.grid.width;
+  const beforeTile = state.grid.tiles[idx];
+  const beforeWood = state.resources.wood;
+
+  const placed = buildSystem.placeToolAt(state, "road", ix, iz);
+  assert.equal(placed.ok, true);
+  assert.equal(state.grid.tiles[idx], TILE.ROAD);
+  assert.equal(state.resources.wood, beforeWood - (placed.cost.wood ?? 0));
+
+  const undo = buildSystem.undo(state);
+  assert.equal(undo.ok, true);
+  assert.equal(state.grid.tiles[idx], beforeTile);
+  assert.equal(state.resources.wood, beforeWood);
+
+  const redo = buildSystem.redo(state);
+  assert.equal(redo.ok, true);
+  assert.equal(state.grid.tiles[idx], TILE.ROAD);
+});

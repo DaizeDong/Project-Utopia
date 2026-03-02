@@ -12,27 +12,36 @@ import {
   describeMapTemplate,
 } from "../world/grid/Grid.js";
 
+function createDeterministicRandom(seed) {
+  let s = Number(seed) >>> 0;
+  if (!s) s = 0x9e3779b9;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
 function withLabel(id, fallback) {
   const seq = id.includes("_") ? id.split("_")[1] : "?";
   return `${fallback}-${seq}`;
 }
 
-function baseAgent(id, type, x, z, displayName) {
+function baseAgent(id, type, x, z, displayName, random = Math.random) {
   return {
     id,
     displayName,
     type,
     x,
     z,
-    vx: (Math.random() - 0.5) * 0.3,
-    vz: (Math.random() - 0.5) * 0.3,
+    vx: (random() - 0.5) * 0.3,
+    vz: (random() - 0.5) * 0.3,
     desiredVel: { x: 0, z: 0 },
     hunger: 1,
     stamina: 1,
     carry: { food: 0, wood: 0 },
     stateLabel: "Idle",
     cooldown: 0,
-    sabotageCooldown: 8 + Math.random() * 6,
+    sabotageCooldown: 8 + random() * 6,
     targetTile: null,
     path: null,
     pathIndex: 0,
@@ -48,25 +57,25 @@ function baseAgent(id, type, x, z, displayName) {
   };
 }
 
-export function createWorker(x, z) {
+export function createWorker(x, z, random = Math.random) {
   const id = nextId("worker");
   return {
-    ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, withLabel(id, "Worker")),
+    ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, withLabel(id, "Worker"), random),
     role: ROLE.FARM,
     groupId: GROUP_IDS.WORKERS,
   };
 }
 
-export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR) {
+export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.random) {
   const id = nextId("visitor");
   return {
-    ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, withLabel(id, kind === VISITOR_KIND.TRADER ? "Trader" : "Saboteur")),
+    ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, withLabel(id, kind === VISITOR_KIND.TRADER ? "Trader" : "Saboteur"), random),
     kind,
     groupId: GROUP_IDS.VISITORS,
   };
 }
 
-export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE) {
+export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.random) {
   const id = nextId("animal");
   return {
     id,
@@ -75,8 +84,8 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE) {
     kind,
     x,
     z,
-    vx: (Math.random() - 0.5) * 0.25,
-    vz: (Math.random() - 0.5) * 0.25,
+    vx: (random() - 0.5) * 0.25,
+    vz: (random() - 0.5) * 0.25,
     desiredVel: { x: 0, z: 0 },
     stateLabel: "Wander",
     targetTile: null,
@@ -95,32 +104,36 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE) {
 }
 
 export function createInitialEntities(grid) {
+  return createInitialEntitiesWithRandom(grid, Math.random);
+}
+
+function createInitialEntitiesWithRandom(grid, random) {
   const agents = [];
   const animals = [];
 
   for (let i = 0; i < INITIAL_POPULATION.workers; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE]);
+    const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    agents.push(createWorker(p.x, p.z));
+    agents.push(createWorker(p.x, p.z, random));
   }
 
   for (let i = 0; i < INITIAL_POPULATION.visitors; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.GRASS]);
+    const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.GRASS], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
     const kind = i % 5 === 0 ? VISITOR_KIND.TRADER : VISITOR_KIND.SABOTEUR;
-    agents.push(createVisitor(p.x, p.z, kind));
+    agents.push(createVisitor(p.x, p.z, kind, random));
   }
 
   for (let i = 0; i < INITIAL_POPULATION.herbivores; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM]);
+    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.HERBIVORE));
+    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.HERBIVORE, random));
   }
 
   for (let i = 0; i < INITIAL_POPULATION.predators; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS]);
+    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR));
+    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR, random));
   }
 
   return { agents, animals };
@@ -135,7 +148,8 @@ export function createInitialGameState(options = {}) {
   const terrainTuning = options.terrainTuning ?? {};
   const grid = createInitialGrid({ templateId, seed, terrainTuning });
   const templateMeta = describeMapTemplate(grid.templateId);
-  const { agents, animals } = createInitialEntities(grid);
+  const random = createDeterministicRandom(grid.seed);
+  const { agents, animals } = createInitialEntitiesWithRandom(grid, random);
   const roads = countTilesByType(grid, [TILE.ROAD]);
   const farms = countTilesByType(grid, [TILE.FARM]);
   const lumbers = countTilesByType(grid, [TILE.LUMBER]);
@@ -186,8 +200,14 @@ export function createInitialGameState(options = {}) {
       simCostMs: 0,
       isDebugStepping: false,
       warnings: [],
+      warningLog: [],
       memoryMb: 0,
       cpuBudgetMs: 0,
+      uiCpuMs: 0,
+      renderCpuMs: 0,
+      aiLatencyMs: 0,
+      proxyHealth: "unknown",
+      regressionFlags: [],
     },
     ai: {
       enabled: false,
@@ -237,8 +257,10 @@ export function createInitialGameState(options = {}) {
       tileTexturesLoaded: false,
       iconAtlasLoaded: false,
       unitSpriteLoaded: false,
+      rng: { initialSeed: 0, state: 0, calls: 0 },
       aiTrace: [],
       eventTrace: [],
+      presetComparison: [],
       roadCount: roads,
       gridStats: {
         roads,
@@ -306,10 +328,31 @@ export function createInitialGameState(options = {}) {
         herbivores: animals.filter((a) => a.kind === ANIMAL_KIND.HERBIVORE).length,
         predators: animals.filter((a) => a.kind === ANIMAL_KIND.PREDATOR).length,
       },
+      populationBreakdown: {
+        baseWorkers: agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length,
+        stressWorkers: 0,
+        totalWorkers: agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length,
+        totalEntities: agents.length + animals.length,
+      },
+      saveSlotId: "default",
+      canUndo: false,
+      canRedo: false,
+      showReplayPanel: false,
+      showPresetComparator: false,
+      undoStack: [],
+      redoStack: [],
       isPaused: false,
       stepFramesPending: 0,
       timeScale: 1,
       fixedStepSec: 1 / 30,
+      cameraMinZoom: 0.55,
+      cameraMaxZoom: 3.2,
+      renderModelDisableThreshold: 260,
+      benchmarkConfig: {
+        schedule: [0, 100, 200, 300, 400, 500],
+        stageDurationSec: 4,
+        sampleStartSec: 1.2,
+      },
       visualPreset: "flat_worldsim",
       showTileIcons: true,
       showUnitSprites: true,

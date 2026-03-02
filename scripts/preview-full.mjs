@@ -5,9 +5,11 @@ const npmCmd = "npm";
 const proxyPort = Number(process.env.AI_PROXY_PORT ?? 8787);
 const proxyHost = process.env.AI_PROXY_HOST ?? "127.0.0.1";
 const proxyBaseUrl = `http://localhost:${proxyPort}`;
+const previewPort = Number(process.env.PREVIEW_PORT ?? 4173);
+const previewBindHost = process.env.PREVIEW_BIND_HOST ?? "0.0.0.0";
 
-function runScript(scriptName) {
-  const command = `${npmCmd} run ${scriptName}`;
+function runCommand(commandExpr) {
+  const command = `${npmCmd} run ${commandExpr}`;
   return spawn(command, {
     stdio: "inherit",
     env: process.env,
@@ -88,32 +90,36 @@ async function probeExistingProxy(baseUrl) {
 async function prepareProxyProcess() {
   const portInUse = await isTcpPortOpen(proxyPort, proxyHost);
   if (!portInUse) {
-    return { process: runScript("ai-proxy"), reused: false };
+    return { process: runCommand("ai-proxy"), reused: false };
   }
 
   const probe = await probeExistingProxy(proxyBaseUrl);
   if (probe.isProxyLike && probe.hasHealthEndpoint) {
-    console.log(`[dev:full] Reusing existing ai-proxy on ${proxyBaseUrl}`);
+    console.log(`[preview:full] Reusing existing ai-proxy on ${proxyBaseUrl}`);
     return { process: null, reused: true };
   }
 
   if (probe.isProxyLike && !probe.hasHealthEndpoint) {
     console.error(
-      `[dev:full] Detected a legacy ai-proxy on ${proxyBaseUrl} (missing /health).`
+      `[preview:full] Detected a legacy ai-proxy on ${proxyBaseUrl} (missing /health).`
     );
     console.error(
-      "[dev:full] Stop the existing process so dev:full can launch the current proxy version."
+      "[preview:full] Stop the existing process so preview:full can launch the current proxy version."
     );
     process.exit(1);
   }
 
-  console.error(`[dev:full] Port ${proxyPort} is already in use by a non-ai-proxy service.`);
-  console.error("[dev:full] Stop the process using that port, or set a different AI_PROXY_PORT in .env.");
+  console.error(
+    `[preview:full] Port ${proxyPort} is already in use by a non-ai-proxy service.`
+  );
+  console.error(
+    "[preview:full] Stop the process using that port, or set a different AI_PROXY_PORT in .env."
+  );
   process.exit(1);
 }
 
 const { process: proxyProc } = await prepareProxyProcess();
-const devProc = runScript("dev");
+const previewProc = runCommand(`preview -- --host ${previewBindHost} --port ${previewPort}`);
 
 let shuttingDown = false;
 const keepAlive = setInterval(() => {}, 1 << 30);
@@ -124,11 +130,11 @@ function terminateAll(exitCode = 0) {
   clearInterval(keepAlive);
 
   if (proxyProc) proxyProc.kill("SIGTERM");
-  devProc.kill("SIGTERM");
+  previewProc.kill("SIGTERM");
 
   setTimeout(() => {
     if (proxyProc) proxyProc.kill("SIGKILL");
-    devProc.kill("SIGKILL");
+    previewProc.kill("SIGKILL");
     process.exit(exitCode);
   }, 1200).unref();
 }
@@ -137,25 +143,25 @@ if (proxyProc) {
   proxyProc.on("exit", (code, signal) => {
     if (shuttingDown) return;
     const exitCode = code ?? (signal ? 1 : 0);
-    console.error(`[dev:full] ai-proxy exited (${signal ?? code}). Stopping dev server.`);
+    console.error(`[preview:full] ai-proxy exited (${signal ?? code}). Stopping preview server.`);
     terminateAll(exitCode);
   });
 
   proxyProc.on("error", (err) => {
-    console.error(`[dev:full] failed to start ai-proxy: ${String(err?.message ?? err)}`);
+    console.error(`[preview:full] failed to start ai-proxy: ${String(err?.message ?? err)}`);
     terminateAll(1);
   });
 }
 
-devProc.on("exit", (code, signal) => {
+previewProc.on("exit", (code, signal) => {
   if (shuttingDown) return;
   const exitCode = code ?? (signal ? 1 : 0);
-  console.error(`[dev:full] vite dev exited (${signal ?? code}). Stopping ${proxyProc ? "ai-proxy" : "session"}.`);
+  console.error(`[preview:full] vite preview exited (${signal ?? code}). Stopping ${proxyProc ? "ai-proxy" : "session"}.`);
   terminateAll(exitCode);
 });
 
-devProc.on("error", (err) => {
-  console.error(`[dev:full] failed to start vite dev: ${String(err?.message ?? err)}`);
+previewProc.on("error", (err) => {
+  console.error(`[preview:full] failed to start vite preview: ${String(err?.message ?? err)}`);
   terminateAll(1);
 });
 

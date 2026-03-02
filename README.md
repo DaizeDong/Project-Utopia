@@ -10,21 +10,48 @@ A real-time interactive crowd simulation built with Three.js. Users edit a tile-
 
 ## Quick Start
 
-```bash
-npm ci
-npm run dev
-```
+Install dependencies:
 
 ```bash
-npm test        # run regression tests
-npm run build   # production build
+npm ci
 ```
+
+Optional AI setup:
+
+```bash
+cp .env.example .env
+# set OPENAI_API_KEY=...
+```
+
+Choose one startup mode:
+
+```bash
+npm run dev:full
+```
+
+- `npm run dev:full`: recommended daily development (Vite + AI proxy)
+- `npm run start:prod`: production-like run (build + preview + AI proxy)
+- `npm run dev`: frontend only (no AI proxy)
+
+Verification:
+
+```bash
+npm run verify:full
+```
+
+If port `8787` is occupied, stop that process or set `AI_PROXY_PORT` in `.env`.
+
+If the page appears stuck and Developer Dock stays on `loading...`, open browser DevTools and check for:
+- `Error creating WebGL context`
+
+Recent runtime now surfaces this startup failure on-screen (`Startup failed: ...`) instead of silently stalling.
 
 ## Current Status
 
 For a concise implementation snapshot, read:
 
 - `docs/implementation-summary.md`
+- `docs/optimization-progress.md` (rolling execution tracker for full optimization plan)
 
 ## Visual Preset (Bright WorldSim)
 
@@ -38,9 +65,7 @@ Default runtime preset is `flat_worldsim`:
 - Developer telemetry dock for AI trace, A* / Boids, and system timings
 
 Reference captures:
-- `docs/assignment3/screenshots/worldsim-full-ui.png`
-- `docs/assignment3/screenshots/worldsim-viewport.png`
-- `docs/assignment3/screenshots/worldsim-devdock.png`
+- baseline capture set is tracked in assignment artifacts; current refresh run is pending in `docs/optimization-progress.md`.
 
 ## Core Gameplay Pillars
 
@@ -86,13 +111,12 @@ Validation includes:
 - unknown/empty tile safety checks
 
 Use **Management** panel in UI:
-- `Map Template`
-- `Map seed`
-- terrain tuning sliders/selects (`water`, `river`, `mountain`, `island`, `ocean`, `road`, `settlement`, `wall mode`)
-- `Reset Tuning` (restore selected preset defaults)
-- `Regenerate Map`
-- `Population Targets` for workers/visitors/herbivores/predators
-- `Apply Population` to spawn/despawn all creature categories
+- grouped sub-panels: `Map & Doctrine`, `Terrain Tuning`, `Population`, `Save / Replay`
+- advanced runtime controls: `Tile Icons`, `Unit Sprites`, `Simulation Tick (Hz)`, `Camera Min/Max Zoom`, `Detail Threshold`
+- template/seed/doctrine tuning and regenerate
+- terrain sliders/selects (`water`, `river`, `mountain`, `island`, `ocean`, `road`, `settlement`, `wall mode`)
+- population targets and apply for workers/visitors/herbivores/predators
+- undo/redo + snapshot save/load + preset compare + replay export
 
 ## Developer Telemetry
 
@@ -101,8 +125,14 @@ Bottom dock contains live diagnostics for development and grading demos:
 - `Global & Gameplay`: map seed/template, sim state, doctrine, prosperity/threat, objective progress
 - `A* + Boids`: pathfinding request/cache/success metrics and boid crowd stats
 - `AI Trace`: environment/policy request/result timeline with source and error
-- `System Timings`: per-system `last/avg/peak` ms
+- `System Timings`: per-system `last/avg/peak` ms plus UI/render CPU cost
 - `Objective / Event Log`: objective completions, active events, warning stream
+
+Layout controls:
+- top-right `Hide Sidebar` / `Hide Dev Dock` buttons collapse large UI regions for better viewport focus
+- sidebar panel controls: `Collapse All` / `Expand Core` / `Expand All`
+- each top-level sidebar panel persists open/closed state in local storage
+- each Developer Dock card can be collapsed independently
 
 ## Performance Optimizations (2026-03)
 
@@ -124,8 +154,11 @@ Recent runtime optimizations focused on CPU and render bottlenecks under stress 
   - reduced per-frame allocations in instanced matrix updates and selected-path rendering.
   - stopped recreating fog object each frame.
   - adaptive pixel ratio (`detailed` vs `fast` render mode).
+  - lazy-load 3D model templates only when visual settings actually require models.
+  - entity mesh synchronization now tracks simulation tick/config signature instead of forcing full rebuild every render frame.
 - UI update throttling:
   - heavy HUD/Inspector/Telemetry DOM writes now run at ~15Hz instead of every render frame.
+  - UI refresh now auto-throttles under very high entity counts.
 - Adaptive render detail:
   - high entity counts automatically switch to fast instanced rendering.
   - detail mode restores automatically when entity count drops.
@@ -134,37 +167,13 @@ Inspector panel now shows both:
 - selected tile internals (type, cost, passability, neighbors, grid version)
 - selected unit internals (state, role, policy, blackboard, memory, full path nodes)
 
-## Run With AI Proxy
+## Common Commands
 
-Copy `.env.example` and configure your key:
-
-```bash
-cp .env.example .env
-# set OPENAI_API_KEY=...
-```
-
-Start both services:
-
-```bash
-npm run dev:full
-```
-
-Or start them separately:
-
-```bash
-npm run ai-proxy
-npm run dev
-```
-
-## NPM Scripts
-
-- `npm run dev`: start Vite dev server
-- `npm run dev:full`: start both AI proxy and Vite dev server
-- `npm run ai-proxy`: start local AI proxy (`/api/ai/environment`, `/api/ai/policy`)
-- `npm run test`: run unit tests
-- `npm run build`: build `dist/`
-- `npm run a3:evidence:ai`: capture live-AI evidence JSON for Assignment 3
-- `npm run verify:a3`: run Assignment 3 verification (tests/build/docs/build zip/proxy contract)
+- `npm run dev:full`: main development entry (UI + AI proxy)
+- `npm run start:prod`: build and run production preview (recommended for demo)
+- `npm run verify:full`: one-command full verification
+- `npm run test`: unit tests
+- `npm run build`: production build
 
 ## Project Structure
 

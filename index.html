@@ -37,6 +37,56 @@
       gap: 0;
     }
 
+    #wrap.sidebar-collapsed {
+      grid-template-columns: 0 1fr;
+    }
+
+    #wrap.sidebar-collapsed #ui {
+      min-width: 0;
+      width: 0;
+      padding: 0;
+      border-right: none;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #wrap.dock-collapsed {
+      grid-template-rows: 1fr 0;
+    }
+
+    #wrap.dock-collapsed #devDock {
+      min-height: 0;
+      border-top: none;
+      overflow: hidden;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #wrap.dock-collapsed #viewport {
+      grid-row: 1 / span 2;
+    }
+
+    #layoutControls {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 20;
+      display: flex;
+      gap: 8px;
+    }
+
+    #layoutControls button {
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--panel-border);
+      color: var(--text);
+      box-shadow: 0 4px 10px rgba(18, 54, 79, 0.12);
+    }
+
     #ui {
       grid-column: 1;
       grid-row: 1 / span 2;
@@ -102,11 +152,24 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
+      overflow: hidden;
+    }
+
+    details.dock-card > summary {
+      cursor: pointer;
+      list-style: none;
+    }
+
+    details.dock-card > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.dock-card[open] > summary {
+      border-bottom: 1px solid var(--panel-border);
     }
 
     .dock-title {
       padding: 7px 9px;
-      border-bottom: 1px solid var(--panel-border);
       font-size: 12px;
       font-weight: 700;
       color: var(--muted);
@@ -169,6 +232,43 @@
     }
 
     .panel-body {
+      padding: 10px;
+    }
+
+    .panel-controls {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .subpanel {
+      margin-top: 10px;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.72);
+      overflow: hidden;
+    }
+
+    .subpanel > summary {
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      list-style: none;
+      color: var(--muted);
+      border-bottom: 1px solid transparent;
+    }
+
+    .subpanel > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .subpanel[open] > summary {
+      border-bottom-color: var(--panel-border);
+    }
+
+    .subpanel-body {
       padding: 10px;
     }
 
@@ -360,10 +460,47 @@
       .legend-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
+
+      #wrap.sidebar-collapsed {
+        grid-template-columns: 1fr;
+        grid-template-rows: 50vh 270px;
+      }
+
+      #wrap.sidebar-collapsed #viewport {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      #wrap.sidebar-collapsed #devDock {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      #wrap.dock-collapsed {
+        grid-template-rows: auto 1fr 0;
+      }
+
+      #wrap.dock-collapsed #viewport {
+        grid-column: 1;
+        grid-row: 2;
+      }
+
+      #wrap.sidebar-collapsed.dock-collapsed {
+        grid-template-rows: 1fr 0;
+      }
+
+      #wrap.sidebar-collapsed.dock-collapsed #viewport {
+        grid-column: 1;
+        grid-row: 1;
+      }
     }
   </style>
 </head>
 <body>
+  <div id="layoutControls" aria-label="Layout Controls">
+    <button id="toggleSidebarBtn" type="button">Hide Sidebar</button>
+    <button id="toggleDockBtn" type="button">Hide Dev Dock</button>
+  </div>
   <div id="wrap">
     <div id="ui">
       <h1>Project Utopia</h1>
@@ -385,8 +522,13 @@
           <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Preset" />Bright preset</div>
         </div>
       </div>
+      <div class="panel-controls">
+        <button id="sidebarCollapseAllBtn" type="button">Collapse All</button>
+        <button id="sidebarExpandCoreBtn" type="button">Expand Core</button>
+        <button id="sidebarExpandAllBtn" type="button">Expand All</button>
+      </div>
 
-      <details class="card" open>
+      <details class="card" data-panel-key="build" open>
         <summary>Build Tool</summary>
         <div class="panel-body">
           <div class="tool-grid">
@@ -401,95 +543,183 @@
         </div>
       </details>
 
-      <details class="card" open>
+      <details class="card" data-panel-key="management" open>
         <summary>Management</summary>
         <div class="panel-body">
-          <div class="small muted" style="margin-top:3px;">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
-          <input id="farmRatio" type="range" min="0" max="100" value="50" />
+          <details class="subpanel" open>
+            <summary>Map & Doctrine</summary>
+            <div class="subpanel-body">
+              <div class="small muted" style="margin-top:3px;">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
+              <input id="farmRatio" type="range" min="0" max="100" value="50" />
 
-          <div class="small muted" style="margin-top:10px;">Map Template</div>
-          <select id="mapTemplateSelect"></select>
+              <div class="small muted" style="margin-top:10px;">Map Template</div>
+              <select id="mapTemplateSelect"></select>
+              <div class="management-grid" style="margin-top:6px;">
+                <input id="mapSeedInput" type="text" value="1337" placeholder="Map seed" />
+                <button id="regenerateMapBtn">Regenerate Map</button>
+              </div>
 
-          <div class="management-grid" style="margin-top:6px;">
-            <input id="mapSeedInput" type="text" value="1337" placeholder="Map seed" />
-            <button id="regenerateMapBtn">Regenerate Map</button>
-          </div>
+              <div class="small muted" style="margin-top:10px;">Doctrine</div>
+              <select id="doctrineSelect"></select>
 
-          <div class="small muted" style="margin-top:10px;">Doctrine</div>
-          <select id="doctrineSelect"></select>
+              <div class="switch">
+                <input id="aiToggle" type="checkbox" />
+                <label for="aiToggle">Enable LLM Agent Mode</label>
+              </div>
 
-          <div class="small muted" style="margin-top:12px;">Terrain Tuning</div>
-          <div class="small muted" style="margin-top:4px;">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
-          <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
-          <div class="small muted" style="margin-top:4px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
-          <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
-          <div class="small muted" style="margin-top:4px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
-          <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
-          <div class="small muted" style="margin-top:4px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
-          <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
-          <div class="small muted" style="margin-top:4px;">Mountain Strength: <span id="terrainMountainStrengthLabel">0.08</span></div>
-          <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
-          <div class="small muted" style="margin-top:4px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
-          <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
-          <div class="small muted" style="margin-top:4px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
-          <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
-          <div class="small muted" style="margin-top:4px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
-          <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
-          <div class="small muted" style="margin-top:4px;">Settlement Density: <span id="terrainSettlementDensityLabel">78%</span></div>
-          <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
-          <div class="small muted" style="margin-top:8px;">Wall Mode</div>
-          <select id="terrainWallModeSelect"></select>
-          <div class="small muted" style="margin-top:8px;">Ocean Side</div>
-          <select id="terrainOceanSideSelect"></select>
-          <div class="management-grid" style="margin-top:8px;">
-            <button id="resetTerrainTuningBtn">Reset Tuning</button>
-          </div>
+              <details class="subpanel" style="margin-top:10px;">
+                <summary>Advanced Runtime Controls</summary>
+                <div class="subpanel-body">
+                  <div class="switch">
+                    <input id="showTileIconsToggle" type="checkbox" />
+                    <label for="showTileIconsToggle">Tile Icons</label>
+                  </div>
+                  <div class="switch">
+                    <input id="showUnitSpritesToggle" type="checkbox" />
+                    <label for="showUnitSpritesToggle">Unit Sprites</label>
+                  </div>
 
-          <div class="small muted" style="margin-top:10px;">Population Targets</div>
-          <div class="small muted" style="margin-top:4px;">Workers: <span id="workerTargetLabel">0</span></div>
-          <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
-          <div class="small muted" style="margin-top:4px;">Visitors: <span id="visitorTargetLabel">0</span></div>
-          <input id="visitorTargetInput" type="range" min="0" max="300" value="0" />
-          <div class="small muted" style="margin-top:4px;">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
-          <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
-          <div class="small muted" style="margin-top:4px;">Predators: <span id="predatorTargetLabel">0</span></div>
-          <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
-          <div class="management-grid" style="margin-top:8px;">
-            <button id="applyPopulationBtn">Apply Population</button>
-          </div>
+                  <div class="small muted" style="margin-top:8px;">Simulation Tick: <span id="fixedStepHzLabel">30.0 Hz</span></div>
+                  <input id="fixedStepHz" type="range" min="5" max="120" value="30" />
 
-          <div class="switch">
-            <input id="aiToggle" type="checkbox" />
-            <label for="aiToggle">Enable LLM Agent Mode</label>
-          </div>
+                  <div class="small muted" style="margin-top:8px;">Camera Min Zoom: <span id="cameraMinZoomLabel">0.55</span></div>
+                  <input id="cameraMinZoom" type="range" min="30" max="500" value="55" />
+                  <div class="small muted" style="margin-top:4px;">Camera Max Zoom: <span id="cameraMaxZoomLabel">3.20</span></div>
+                  <input id="cameraMaxZoom" type="range" min="40" max="600" value="320" />
+
+                  <div class="small muted" style="margin-top:8px;">Detail Threshold: <span id="renderDetailThresholdLabel">260</span></div>
+                  <input id="renderDetailThreshold" type="range" min="80" max="2000" value="260" />
+                </div>
+              </details>
+            </div>
+          </details>
+
+          <details class="subpanel">
+            <summary>Terrain Tuning</summary>
+            <div class="subpanel-body">
+              <div class="small muted" style="margin-top:4px;">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
+              <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
+              <div class="small muted" style="margin-top:4px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
+              <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
+              <div class="small muted" style="margin-top:4px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
+              <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
+              <div class="small muted" style="margin-top:4px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
+              <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
+              <div class="small muted" style="margin-top:4px;">Mountain Strength: <span id="terrainMountainStrengthLabel">0.08</span></div>
+              <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
+              <div class="small muted" style="margin-top:4px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
+              <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
+              <div class="small muted" style="margin-top:4px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
+              <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
+              <div class="small muted" style="margin-top:4px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
+              <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
+              <div class="small muted" style="margin-top:4px;">Settlement Density: <span id="terrainSettlementDensityLabel">78%</span></div>
+              <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
+              <div class="small muted" style="margin-top:8px;">Wall Mode</div>
+              <select id="terrainWallModeSelect"></select>
+              <div class="small muted" style="margin-top:8px;">Ocean Side</div>
+              <select id="terrainOceanSideSelect"></select>
+              <div class="management-grid" style="margin-top:8px;">
+                <button id="resetTerrainTuningBtn">Reset Tuning</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="subpanel">
+            <summary>Population</summary>
+            <div class="subpanel-body">
+              <div class="small muted" style="margin-top:3px;" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
+              <div class="small muted" style="margin-top:4px;">Workers: <span id="workerTargetLabel">0</span></div>
+              <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
+              <div class="small muted" style="margin-top:4px;">Visitors: <span id="visitorTargetLabel">0</span></div>
+              <input id="visitorTargetInput" type="range" min="0" max="300" value="0" />
+              <div class="small muted" style="margin-top:4px;">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
+              <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
+              <div class="small muted" style="margin-top:4px;">Predators: <span id="predatorTargetLabel">0</span></div>
+              <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+              <div class="management-grid" style="margin-top:8px;">
+                <button id="applyPopulationBtn">Apply Population</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="subpanel">
+            <summary>Save / Replay</summary>
+            <div class="subpanel-body">
+              <div class="management-grid" style="margin-top:2px;">
+                <button id="undoBuildBtn">Undo Build</button>
+                <button id="redoBuildBtn">Redo Build</button>
+                <input id="saveSlotInput" type="text" value="default" placeholder="snapshot slot" />
+                <button id="saveSnapshotBtn">Save Snapshot</button>
+                <button id="loadSnapshotBtn">Load Snapshot</button>
+                <button id="comparePresetsBtn">Compare Presets</button>
+                <button id="exportReplayBtn">Export Replay</button>
+              </div>
+            </div>
+          </details>
         </div>
       </details>
 
-      <details class="card" open>
+      <details class="card" data-panel-key="stress" open>
         <summary>Stress Test</summary>
         <div class="panel-body">
-          <div class="small muted" style="margin-top:7px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
-          <input id="extraWorkers" type="range" min="0" max="500" value="0" />
-          <div class="benchmark-grid">
-            <button id="applyStressBtn">Apply Load</button>
-            <button id="runBenchmarkBtn">Run Benchmark</button>
-            <button id="cancelBenchmarkBtn">Cancel</button>
-            <button id="downloadBenchmarkBtn">Download CSV</button>
-          </div>
-          <div class="small muted" style="margin-top:9px">Time Controls: <span id="timeScaleLabel">1.00x</span></div>
-          <input id="timeScale" type="range" min="25" max="200" value="100" />
-          <div class="time-grid">
-            <button id="pauseBtn">Pause</button>
-            <button id="step1Btn">Step x1</button>
-            <button id="step5Btn">Step x5</button>
-          </div>
-          <div class="small muted" id="benchmarkStatusVal" style="margin-top:7px">Benchmark: idle</div>
+          <details class="subpanel" open>
+            <summary>Load & Benchmark</summary>
+            <div class="subpanel-body">
+              <div class="small muted" style="margin-top:4px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
+              <input id="extraWorkers" type="range" min="0" max="500" value="0" />
+              <div class="benchmark-grid">
+                <button id="applyStressBtn">Apply Load</button>
+                <button id="runBenchmarkBtn">Run Benchmark</button>
+                <button id="cancelBenchmarkBtn">Cancel</button>
+                <button id="downloadBenchmarkBtn">Download CSV</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="subpanel" open>
+            <summary>Time Controls</summary>
+            <div class="subpanel-body">
+              <div class="small muted" style="margin-top:4px">Time Controls: <span id="timeScaleLabel">1.00x</span></div>
+              <input id="timeScale" type="range" min="25" max="200" value="100" />
+              <div class="time-grid">
+                <button id="pauseBtn">Pause</button>
+                <button id="step1Btn">Step x1</button>
+                <button id="step5Btn">Step x5</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="subpanel">
+            <summary>Benchmark Config</summary>
+            <div class="subpanel-body">
+              <div class="small muted">Stage Duration: <span id="benchmarkStageDurationLabel">4.0s</span></div>
+              <input id="benchmarkStageDuration" type="range" min="10" max="300" value="40" />
+              <div class="small muted" style="margin-top:6px;">Sample Start: <span id="benchmarkSampleStartLabel">1.2s</span></div>
+              <input id="benchmarkSampleStart" type="range" min="0" max="300" value="12" />
+              <div class="small muted" style="margin-top:8px;">Load Preset</div>
+              <select id="benchmarkSchedulePreset">
+                <option value="default">Default</option>
+                <option value="light">Light</option>
+                <option value="heavy">Heavy</option>
+                <option value="custom">Custom</option>
+              </select>
+              <div class="small muted" style="margin-top:8px;">Load Schedule (comma-separated)</div>
+              <input id="benchmarkScheduleInput" type="text" value="0,100,200,300,400,500" />
+              <div class="management-grid" style="margin-top:8px;">
+                <button id="applyBenchmarkConfigBtn">Apply Benchmark Config</button>
+              </div>
+            </div>
+          </details>
+
+          <div class="small muted" id="benchmarkStatusVal" style="margin-top:8px">Benchmark: idle</div>
           <div class="small muted" id="simControlVal" style="margin-top:4px">Sim: running | simDt=0.000 | steps=0</div>
+          <div class="small muted" id="workerBreakdownVal" style="margin-top:4px">Workers: base=0 stress=0 total=0</div>
           <div class="hint">Use this during demo: increase load and show FPS/frame time trends.</div>
         </div>
       </details>
 
-      <details class="card optional-panel">
+      <details class="card optional-panel" data-panel-key="resources">
         <summary>Resources</summary>
         <div class="panel-body">
           <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
@@ -499,7 +729,7 @@
         </div>
       </details>
 
-      <details class="card optional-panel">
+      <details class="card optional-panel" data-panel-key="population">
         <summary>Population</summary>
         <div class="panel-body">
           <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
@@ -511,7 +741,7 @@
         </div>
       </details>
 
-      <details class="card" open>
+      <details class="card" data-panel-key="world">
         <summary>World State</summary>
         <div class="panel-body">
           <div class="kv"><div>Map</div><div id="mapVal">-</div></div>
@@ -537,7 +767,7 @@
         </div>
       </details>
 
-      <details class="card" open>
+      <details class="card" data-panel-key="inspector">
         <summary>Inspector (Tile + Entity)</summary>
         <div class="panel-body" id="inspect">
           <div><b>Selected Tile</b></div>
@@ -545,14 +775,14 @@
         </div>
       </details>
 
-      <details class="card optional-panel">
+      <details class="card optional-panel" data-panel-key="events">
         <summary>Event Queue</summary>
         <div class="panel-body">
           <div id="eventsPanel" class="small muted" style="margin-top:6px">No active events.</div>
         </div>
       </details>
 
-      <details class="card optional-panel">
+      <details class="card optional-panel" data-panel-key="costs">
         <summary>Costs</summary>
         <div class="panel-body">
           <div class="small muted">Road 1w, Farm 5w, Lumber 5w, Warehouse 10w, Wall 2w</div>
@@ -567,26 +797,26 @@
     <section id="devDock" aria-label="Developer telemetry">
       <div id="devDockHeader">Developer Telemetry</div>
       <div id="devDockGrid">
-        <article class="dock-card">
-          <div class="dock-title">Global & Gameplay</div>
+        <details class="dock-card" open>
+          <summary class="dock-title">Global & Gameplay</summary>
           <pre id="devGlobalVal" class="dock-body">loading...</pre>
-        </article>
-        <article class="dock-card">
-          <div class="dock-title">A* + Boids</div>
+        </details>
+        <details class="dock-card" open>
+          <summary class="dock-title">A* + Boids</summary>
           <pre id="devAlgoVal" class="dock-body">loading...</pre>
-        </article>
-        <article class="dock-card">
-          <div class="dock-title">AI Trace</div>
+        </details>
+        <details class="dock-card" open>
+          <summary class="dock-title">AI Trace</summary>
           <pre id="devAiTraceVal" class="dock-body">loading...</pre>
-        </article>
-        <article class="dock-card">
-          <div class="dock-title">System Timings</div>
+        </details>
+        <details class="dock-card" open>
+          <summary class="dock-title">System Timings</summary>
           <pre id="devSystemVal" class="dock-body">loading...</pre>
-        </article>
-        <article class="dock-card">
-          <div class="dock-title">Objective / Event Log</div>
+        </details>
+        <details class="dock-card" open>
+          <summary class="dock-title">Objective / Event Log</summary>
           <pre id="devEventTraceVal" class="dock-body">loading...</pre>
-        </article>
+        </details>
       </div>
     </section>
   </div>

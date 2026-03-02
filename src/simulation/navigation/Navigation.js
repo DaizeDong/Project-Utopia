@@ -2,6 +2,11 @@ import { BALANCE } from "../../config/balance.js";
 import { worldToTile, tileToWorld } from "../../world/grid/Grid.js";
 import { aStar } from "./AStar.js";
 
+const PATH_RETRY_BUDGET_SKIP_BASE_SEC = 0.16;
+const PATH_RETRY_BUDGET_SKIP_JITTER_SEC = 0.08;
+const PATH_RETRY_FAIL_BASE_SEC = 0.45;
+const PATH_RETRY_FAIL_JITTER_SEC = 0.25;
+
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
     return performance.now();
@@ -9,14 +14,60 @@ function nowMs() {
   return Date.now();
 }
 
+function getPathBudget(services, state) {
+  const budget = services.pathBudget ?? (services.pathBudget = {
+    tick: -1,
+    usedMs: 0,
+    skipped: 0,
+    maxMs: 6,
+  });
+  const currentTick = Number(state.metrics?.tick ?? 0);
+  if (budget.tick !== currentTick) {
+    budget.tick = currentTick;
+    budget.usedMs = 0;
+    budget.skipped = 0;
+  }
+  return budget;
+}
+
+function getPathRetryState(entity) {
+  if (!entity || typeof entity !== "object") return null;
+  const blackboard = entity.blackboard ?? (entity.blackboard = {});
+  if (!Number.isFinite(blackboard.nextPathRetrySec)) {
+    blackboard.nextPathRetrySec = -Infinity;
+  }
+  return blackboard;
+}
+
+export function canAttemptPath(entity, state) {
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const retryState = getPathRetryState(entity);
+  return nowSec >= Number(retryState?.nextPathRetrySec ?? -Infinity);
+}
+
 export function setTargetAndPath(entity, targetTile, state, services) {
   if (!targetTile) return false;
 
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const retryState = getPathRetryState(entity);
+  const retryDeadline = Number(retryState?.nextPathRetrySec ?? -Infinity);
+  if (nowSec < retryDeadline) {
+    const astarStatsEarly = state.debug?.astar;
+    if (astarStatsEarly) {
+      astarStatsEarly.retrySkips = Number(astarStatsEarly.retrySkips ?? 0) + 1;
+    }
+    return false;
+  }
+
   const astarStats = state.debug?.astar;
+  const pathBudget = getPathBudget(services, state);
   if (astarStats) {
     astarStats.requests += 1;
     astarStats.lastFrom = worldToTile(entity.x, entity.z, state.grid);
     astarStats.lastTo = { ix: targetTile.ix, iz: targetTile.iz };
+    astarStats.budgetUsedMs = pathBudget.usedMs;
+    astarStats.budgetMaxMs = pathBudget.maxMs;
+    astarStats.budgetSkips = Number(astarStats.budgetSkips ?? 0);
   }
 
   if (
@@ -36,9 +87,19 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   let path = cachedPath;
   let durationMs = 0;
   if (!path) {
+    if (pathBudget.usedMs >= pathBudget.maxMs) {
+      pathBudget.skipped += 1;
+      if (astarStats) astarStats.budgetSkips += 1;
+      if (retryState) {
+        const jitter = services?.rng?.next ? services.rng.next() * PATH_RETRY_BUDGET_SKIP_JITTER_SEC : PATH_RETRY_BUDGET_SKIP_JITTER_SEC * 0.5;
+        retryState.nextPathRetrySec = nowSec + PATH_RETRY_BUDGET_SKIP_BASE_SEC + jitter;
+      }
+      return false;
+    }
     const t0 = nowMs();
     path = aStar(state.grid, start, targetTile, state.weather.moveCostMultiplier);
     durationMs = nowMs() - t0;
+    pathBudget.usedMs += durationMs;
   }
 
   if (astarStats) {
@@ -48,6 +109,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       astarStats.cacheMisses += 1;
       astarStats.lastDurationMs = durationMs;
       astarStats.avgDurationMs = astarStats.avgDurationMs * 0.92 + durationMs * 0.08;
+      astarStats.budgetUsedMs = pathBudget.usedMs;
     }
   }
 
@@ -57,6 +119,10 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.pathGridVersion = -1;
     entity.targetTile = null;
     if (astarStats) astarStats.fail += 1;
+    if (retryState) {
+      const jitter = services?.rng?.next ? services.rng.next() * PATH_RETRY_FAIL_JITTER_SEC : PATH_RETRY_FAIL_JITTER_SEC * 0.5;
+      retryState.nextPathRetrySec = nowSec + PATH_RETRY_FAIL_BASE_SEC + jitter;
+    }
     return false;
   }
 
@@ -77,6 +143,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.debug.lastPathLength = path.length;
     entity.debug.lastPathRecalcSec = Number(state.metrics?.timeSec ?? 0);
   }
+  if (retryState) retryState.nextPathRetrySec = -Infinity;
   return true;
 }
 

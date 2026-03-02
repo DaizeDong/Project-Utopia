@@ -16,10 +16,11 @@ export class DeveloperPanel {
   #renderGlobal() {
     if (!this.globalVal) return;
     const state = this.state;
-    const workers = state.agents.filter((a) => a.type === "WORKER").length;
-    const visitors = state.agents.filter((a) => a.type === "VISITOR").length;
-    const herbivores = state.animals.filter((a) => a.kind === "HERBIVORE").length;
-    const predators = state.animals.filter((a) => a.kind === "PREDATOR").length;
+    const popStats = state.metrics.populationStats ?? null;
+    const workers = popStats?.workers ?? state.agents.filter((a) => a.type === "WORKER").length;
+    const visitors = popStats?.visitors ?? state.agents.filter((a) => a.type === "VISITOR").length;
+    const herbivores = popStats?.herbivores ?? state.animals.filter((a) => a.kind === "HERBIVORE").length;
+    const predators = popStats?.predators ?? state.animals.filter((a) => a.kind === "PREDATOR").length;
     const objective = state.gameplay.objectives[state.gameplay.objectiveIndex] ?? null;
     const selectedTile = state.controls.selectedTile;
     const gridStats = state.debug.gridStats ?? {};
@@ -31,6 +32,8 @@ export class DeveloperPanel {
     const iconLoaded = state.debug.iconAtlasLoaded ? "yes" : "no";
     const unitLoaded = state.debug.unitSpriteLoaded ? "yes" : "no";
     const terrainTuning = state.controls.terrainTuning ?? {};
+    const popBreakdown = state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0, totalEntities: workers + visitors + herbivores + predators };
+    const rngSnapshot = state.debug?.rng ?? null;
 
     const lines = [
       `Map: ${state.world.mapTemplateName} (${state.world.mapTemplateId})`,
@@ -43,6 +46,7 @@ export class DeveloperPanel {
       `Visual: preset=${state.controls.visualPreset} pack=${visualPack} tileTextures=${tileLoaded} icons=${iconLoaded} unitSprites=${unitLoaded}`,
       `Resources: food=${Math.floor(state.resources.food)} wood=${Math.floor(state.resources.wood)} | buildings W/H/F/L=${state.buildings.walls}/${state.buildings.warehouses}/${state.buildings.farms}/${state.buildings.lumbers}`,
       `Population: workers=${workers} visitors=${visitors} herbivores=${herbivores} predators=${predators}`,
+      `Population Breakdown: baseW=${popBreakdown.baseWorkers} stressW=${popBreakdown.stressWorkers} totalW=${popBreakdown.totalWorkers} totalEntities=${popBreakdown.totalEntities}`,
       `Gameplay: doctrine=${state.gameplay.doctrine} prosperity=${this.#fmtNum(state.gameplay.prosperity, 1)} threat=${this.#fmtNum(state.gameplay.threat, 1)}`,
       objective
         ? `Objective: ${objective.title} (${this.#fmtNum(objective.progress, 1)}%)`
@@ -51,7 +55,8 @@ export class DeveloperPanel {
         ? `Selected Tile: (${selectedTile.ix}, ${selectedTile.iz}) type=${selectedTile.typeName}`
         : "Selected Tile: none",
       `Selected Entity: ${state.controls.selectedEntityId ?? "none"}`,
-      `AI: enabled=${state.ai.enabled} mode=${state.ai.mode} env(${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount}) policy(${state.ai.policyLlmCount}/${state.ai.policyDecisionCount})`,
+      `AI: enabled=${state.ai.enabled} mode=${state.ai.mode} env(${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount}) policy(${state.ai.policyLlmCount}/${state.ai.policyDecisionCount}) latency=${this.#fmtNum(state.metrics.aiLatencyMs, 1)}ms proxy=${state.metrics.proxyHealth ?? "unknown"}`,
+      rngSnapshot ? `RNG: seed=${rngSnapshot.initialSeed} state=${rngSnapshot.state} calls=${rngSnapshot.calls}` : "RNG: unavailable",
     ];
 
     this.globalVal.textContent = lines.join("\n");
@@ -126,6 +131,7 @@ export class DeveloperPanel {
     const objectiveLog = this.state.gameplay.objectiveLog ?? [];
     const eventTrace = this.state.debug.eventTrace ?? [];
     const warnings = this.state.metrics.warnings ?? [];
+    const presetComparison = this.state.debug.presetComparison ?? [];
     const lines = [];
 
     if (objectiveLog.length > 0) {
@@ -153,6 +159,14 @@ export class DeveloperPanel {
     if (warnings.length > 0) {
       lines.push("Warnings:");
       lines.push(...warnings.slice(-6));
+    }
+
+    if (presetComparison.length > 0) {
+      lines.push("");
+      lines.push("Preset Comparison:");
+      for (const row of presetComparison.slice(0, 8)) {
+        lines.push(`- ${row.templateId}: road=${row.roadPct}% water=${row.waterPct}% passable=${row.passablePct}% validation=${row.validation}`);
+      }
     }
 
     this.eventVal.textContent = lines.length > 0 ? lines.join("\n") : "No event/diagnostic logs yet.";
