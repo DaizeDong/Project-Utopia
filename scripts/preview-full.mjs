@@ -14,6 +14,7 @@ const previewPort = Number(process.env.PREVIEW_PORT ?? 4173);
 const previewBindHost = process.env.PREVIEW_BIND_HOST ?? "0.0.0.0";
 const expectedHasApiKey = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
 const expectedModel = (process.env.OPENAI_MODEL ?? "").trim() || DEFAULT_OPENAI_MODEL;
+const expectedProxyTimeoutMs = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 18000) || 18000);
 
 function runCommand(commandExpr) {
   const command = `${npmCmd} run ${commandExpr}`;
@@ -114,8 +115,9 @@ function printStartupSummary(mode, healthPayload) {
   const hasApiKey = Boolean(healthPayload?.hasApiKey);
   const model = healthPayload?.model ?? expectedModel;
   const port = healthPayload?.port ?? proxyPort;
+  const timeoutMs = healthPayload?.requestTimeoutMs ?? expectedProxyTimeoutMs;
   console.log(
-    `[preview:full] proxy ${mode}; hasApiKey=${hasApiKey}; model=${model}; port=${port}`
+    `[preview:full] proxy ${mode}; hasApiKey=${hasApiKey}; model=${model}; timeoutMs=${timeoutMs}; port=${port}`
   );
 }
 
@@ -130,6 +132,29 @@ async function prepareProxyProcess() {
 
   const probe = await probeExistingProxy(proxyBaseUrl);
   if (probe.isProxyLike && probe.hasHealthEndpoint) {
+    if (typeof probe.healthPayload?.requestTimeoutMs !== "number") {
+      console.error(
+        `[preview:full] Existing ai-proxy on ${proxyBaseUrl} is outdated (missing requestTimeoutMs in /health).`
+      );
+      console.error(
+        "[preview:full] Stop the existing proxy and rerun so preview:full can launch the current proxy version."
+      );
+      process.exit(1);
+    }
+
+    if (probe.healthPayload.requestTimeoutMs !== expectedProxyTimeoutMs) {
+      console.error(
+        `[preview:full] Existing ai-proxy timeout mismatch on ${proxyBaseUrl}.`
+      );
+      console.error(
+        `[preview:full] expected timeoutMs=${expectedProxyTimeoutMs}, actual timeoutMs=${probe.healthPayload.requestTimeoutMs}.`
+      );
+      console.error(
+        "[preview:full] Stop the existing proxy and rerun so the process can load current timeout settings."
+      );
+      process.exit(1);
+    }
+
     if (
       typeof probe.healthPayload?.hasApiKey === "boolean"
       && probe.healthPayload.hasApiKey !== expectedHasApiKey
@@ -230,4 +255,3 @@ process.on("SIGTERM", () => terminateAll(0));
 process.on("exit", () => {
   clearInterval(keepAlive);
 });
-

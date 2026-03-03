@@ -161,6 +161,17 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.WATER]: { key: "grass", tint: 0x86c8f8, repeatX: 12, repeatY: 12, roughness: 0.66, emissive: 0x1f527f, emissiveIntensity: 0.12 },
 });
 
+const RENDER_ORDER = Object.freeze({
+  TILE_BASE: 0,
+  TILE_BORDER: 6,
+  TILE_ICON: 12,
+  ENTITY_MODEL: 20,
+  ENTITY_SPRITE: 24,
+  DEBUG_PATH: 30,
+  TILE_OVERLAY: 36,
+  SELECTION_RING: 38,
+});
+
 export class SceneRenderer {
   constructor(canvas, state, buildSystem, onSelectEntity) {
     this.canvas = canvas;
@@ -298,6 +309,7 @@ export class SceneRenderer {
     this.mouse = new THREE.Vector2();
     this.lastPointerSampleMs = 0;
     this.pointerSampleIntervalMs = 20;
+    this.isCameraInteracting = false;
 
     this.pickPlane = new THREE.Mesh(
       new THREE.PlaneGeometry(700, 700),
@@ -312,11 +324,20 @@ export class SceneRenderer {
     };
     this.boundOnPointerDown = (e) => this.#onPointerDown(e);
     this.boundOnContextMenu = (e) => e.preventDefault();
+    this.boundOnControlsStart = () => {
+      this.isCameraInteracting = true;
+      this.hoverTile = null;
+    };
+    this.boundOnControlsEnd = () => {
+      this.isCameraInteracting = false;
+    };
 
     this.canvas.addEventListener("pointermove", this.boundOnPointerMove);
     this.canvas.addEventListener("pointerleave", this.boundOnPointerLeave);
     this.canvas.addEventListener("pointerdown", this.boundOnPointerDown);
     this.canvas.addEventListener("contextmenu", this.boundOnContextMenu);
+    this.controls.addEventListener("start", this.boundOnControlsStart);
+    this.controls.addEventListener("end", this.boundOnControlsEnd);
   }
 
   #hashAngle(ix, iz) {
@@ -540,6 +561,8 @@ export class SceneRenderer {
       mesh.castShadow = false;
       mesh.receiveShadow = true;
       mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = RENDER_ORDER.TILE_BASE;
       this.tileMeshesByType.set(type, mesh);
       this.tileMaterialsByType.set(type, material);
       this.scene.add(mesh);
@@ -564,8 +587,16 @@ export class SceneRenderer {
 
     const geom = new THREE.BufferGeometry();
     geom.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
-    const mat = new THREE.LineBasicMaterial({ color: 0x8fb0c9, transparent: true, opacity: 0.34 });
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x8fb0c9,
+      transparent: true,
+      opacity: 0.34,
+      depthTest: false,
+      depthWrite: false,
+    });
     this.tileBorderLines = new THREE.LineSegments(geom, mat);
+    this.tileBorderLines.frustumCulled = false;
+    this.tileBorderLines.renderOrder = RENDER_ORDER.TILE_BORDER;
     this.scene.add(this.tileBorderLines);
   }
 
@@ -579,6 +610,8 @@ export class SceneRenderer {
         color: 0xffffff,
         transparent: true,
         opacity: 0,
+        alphaTest: 0.12,
+        depthTest: false,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
@@ -586,6 +619,8 @@ export class SceneRenderer {
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.count = 0;
       mesh.visible = false;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = RENDER_ORDER.TILE_ICON;
       this.tileIconMaterials.set(key, mat);
       this.tileIconMeshes.set(key, mesh);
       this.scene.add(mesh);
@@ -755,6 +790,14 @@ export class SceneRenderer {
     this.herbivoreMesh.receiveShadow = shadowEnabled;
     this.predatorMesh.castShadow = shadowEnabled;
     this.predatorMesh.receiveShadow = shadowEnabled;
+    this.workerMesh.frustumCulled = false;
+    this.visitorMesh.frustumCulled = false;
+    this.herbivoreMesh.frustumCulled = false;
+    this.predatorMesh.frustumCulled = false;
+    this.workerMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
+    this.visitorMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
+    this.herbivoreMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
+    this.predatorMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
 
     this.scene.add(this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh);
   }
@@ -767,34 +810,86 @@ export class SceneRenderer {
     pathGeomB.setAttribute("position", new THREE.BufferAttribute(new Float32Array(3), 3));
     pathGeomB.setDrawRange(0, 0);
 
-    this.pathDoneLine = new THREE.Line(pathGeomA, new THREE.LineBasicMaterial({ color: 0x4aa3ff, transparent: true, opacity: 0.45 }));
-    this.pathFutureLine = new THREE.Line(pathGeomB, new THREE.LineBasicMaterial({ color: 0x00d1ff, transparent: true, opacity: 0.95 }));
+    this.pathDoneLine = new THREE.Line(pathGeomA, new THREE.LineBasicMaterial({
+      color: 0x4aa3ff,
+      transparent: true,
+      opacity: 0.45,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    this.pathFutureLine = new THREE.Line(pathGeomB, new THREE.LineBasicMaterial({
+      color: 0x00d1ff,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    this.pathDoneLine.frustumCulled = false;
+    this.pathFutureLine.frustumCulled = false;
+    this.pathDoneLine.renderOrder = RENDER_ORDER.DEBUG_PATH;
+    this.pathFutureLine.renderOrder = RENDER_ORDER.DEBUG_PATH + 1;
     this.scene.add(this.pathDoneLine, this.pathFutureLine);
   }
 
   #setupOverlayMeshes() {
     const tileSize = this.state.grid.tileSize * 0.94;
-    const hoverMat = new THREE.MeshBasicMaterial({ color: 0x7ec8ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
+    const hoverMat = new THREE.MeshBasicMaterial({
+      color: 0x7ec8ff,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    });
     this.hoverMesh = new THREE.Mesh(new THREE.PlaneGeometry(tileSize, tileSize), hoverMat);
     this.hoverMesh.rotation.x = -Math.PI / 2;
     this.hoverMesh.visible = false;
+    this.hoverMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY;
+    this.hoverMesh.frustumCulled = false;
 
-    const previewMat = new THREE.MeshBasicMaterial({ color: 0x6eeb83, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+    const previewMat = new THREE.MeshBasicMaterial({
+      color: 0x6eeb83,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    });
     this.previewMesh = new THREE.Mesh(new THREE.PlaneGeometry(tileSize * 0.92, tileSize * 0.92), previewMat);
     this.previewMesh.rotation.x = -Math.PI / 2;
     this.previewMesh.visible = false;
+    this.previewMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 1;
+    this.previewMesh.frustumCulled = false;
 
-    const selectedTileMat = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
+    const selectedTileMat = new THREE.MeshBasicMaterial({
+      color: 0xffd166,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    });
     this.selectedTileMesh = new THREE.Mesh(new THREE.PlaneGeometry(tileSize * 0.88, tileSize * 0.88), selectedTileMat);
     this.selectedTileMesh.rotation.x = -Math.PI / 2;
     this.selectedTileMesh.visible = false;
+    this.selectedTileMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 2;
+    this.selectedTileMesh.frustumCulled = false;
 
     this.selectionRing = new THREE.Mesh(
       new THREE.RingGeometry(0.45, 0.62, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        transparent: true,
+        opacity: 0.88,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
     );
     this.selectionRing.rotation.x = -Math.PI / 2;
     this.selectionRing.visible = false;
+    this.selectionRing.renderOrder = RENDER_ORDER.SELECTION_RING;
+    this.selectionRing.frustumCulled = false;
 
     this.scene.add(this.hoverMesh, this.previewMesh, this.selectedTileMesh, this.selectionRing);
   }
@@ -858,7 +953,7 @@ export class SceneRenderer {
       const node = selected.path[i];
       const p = tileToWorld(node.ix, node.iz, this.state.grid);
       const target = i < selected.pathIndex ? this.pathDoneVerts : this.pathFutureVerts;
-      target.push(p.x, 0.17, p.z);
+      target.push(p.x, 0.235, p.z);
     }
 
     this.#updateLineGeometry(this.pathDoneLine, this.pathDoneVerts);
@@ -1035,10 +1130,11 @@ export class SceneRenderer {
           map: texture,
           transparent: true,
           alphaTest: 0.15,
+          depthTest: true,
           depthWrite: false,
         }));
         sprite.userData.entityId = entity.id;
-        sprite.renderOrder = 3;
+        sprite.renderOrder = RENDER_ORDER.ENTITY_SPRITE;
 
         const shadow = new THREE.Mesh(
           this.entityShadowGeometry,
@@ -1047,6 +1143,7 @@ export class SceneRenderer {
         shadow.rotation.x = -Math.PI / 2;
         shadow.position.y = 0.012;
         shadow.userData.entityShadow = true;
+        shadow.renderOrder = RENDER_ORDER.ENTITY_MODEL - 1;
 
         const group = new THREE.Group();
         group.userData.entityId = entity.id;
@@ -1419,6 +1516,7 @@ export class SceneRenderer {
   }
 
   #onPointerMove(event) {
+    if (this.isCameraInteracting) return;
     const now = performance.now();
     if (now - this.lastPointerSampleMs < this.pointerSampleIntervalMs) return;
     this.lastPointerSampleMs = now;
@@ -1614,6 +1712,8 @@ export class SceneRenderer {
     this.canvas.removeEventListener("pointerleave", this.boundOnPointerLeave);
     this.canvas.removeEventListener("pointerdown", this.boundOnPointerDown);
     this.canvas.removeEventListener("contextmenu", this.boundOnContextMenu);
+    this.controls.removeEventListener("start", this.boundOnControlsStart);
+    this.controls.removeEventListener("end", this.boundOnControlsEnd);
 
     this.controls?.dispose?.();
     this.#clearEntitySpriteInstances();

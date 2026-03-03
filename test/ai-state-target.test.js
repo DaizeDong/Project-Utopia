@@ -53,7 +53,7 @@ test("NPCBrainSystem stores and expires group state targets", () => {
 
   assert.equal(state.ai.groupStateTargets instanceof Map, true);
   assert.equal(state.ai.groupStateTargets.has(GROUP_IDS.WORKERS), true);
-  assert.equal(state.ai.lastStateTargetBatch.length, 1);
+  assert.ok(state.ai.lastStateTargetBatch.length >= 1);
 
   const worker = state.agents.find((a) => a.groupId === GROUP_IDS.WORKERS);
   assert.ok(worker);

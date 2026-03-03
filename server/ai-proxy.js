@@ -40,6 +40,7 @@ const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
 const modelConfig = normalizeConfiguredModel(process.env.OPENAI_MODEL);
 const OPENAI_MODEL_RAW = modelConfig.configuredModel;
 const OPENAI_MODEL = modelConfig.model;
+const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 18000) || 18000);
 const MODEL_SOURCE = modelConfig.source;
 const API_KEY_SOURCE = OPENAI_API_KEY
   ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
@@ -127,10 +128,20 @@ function compactError(err) {
   return raw.slice(0, 180);
 }
 
+function buildPromptUserContent(summary) {
+  return JSON.stringify({
+    summary,
+    constraint: "Return strict JSON only. No markdown. No prose.",
+  });
+}
+
 function buildDebugPayload({
   requestedAtIso,
   endpoint,
   requestSummary,
+  promptSystem = "",
+  promptUser = "",
+  requestPayload = null,
   rawModelContent = "",
   parsedBeforeValidation = null,
   guardedOutput = null,
@@ -140,6 +151,9 @@ function buildDebugPayload({
     requestedAtIso,
     endpoint,
     requestSummary,
+    promptSystem: String(promptSystem ?? ""),
+    promptUser: String(promptUser ?? ""),
+    requestPayload,
     rawModelContent: String(rawModelContent ?? ""),
     parsedBeforeValidation,
     guardedOutput,
@@ -148,30 +162,36 @@ function buildDebugPayload({
 }
 
 async function callOpenAI(systemPrompt, summary, modelName) {
+  const userPrompt = buildPromptUserContent(summary);
   const body = {
     model: modelName,
     messages: [
       { role: "system", content: systemPrompt },
       {
         role: "user",
-        content: JSON.stringify({
-          summary,
-          constraint: "Return strict JSON only. No markdown. No prose.",
-        }),
+        content: userPrompt,
       },
     ],
     temperature: 0.3,
     response_format: { type: "json_object" },
   };
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort("timeout"), OPENAI_REQUEST_TIMEOUT_MS);
+  let resp;
+  try {
+    resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!resp.ok) {
     const text = await resp.text();
@@ -184,7 +204,18 @@ async function callOpenAI(systemPrompt, summary, modelName) {
   if (!parsed) {
     throw new Error("OpenAI returned non-JSON content");
   }
-  return { parsed, model: modelName, rawModelContent: String(content ?? "") };
+  return {
+    parsed,
+    model: modelName,
+    rawModelContent: String(content ?? ""),
+    promptSystem: systemPrompt,
+    promptUser: userPrompt,
+    requestPayload: {
+      model: modelName,
+      temperature: body.temperature,
+      responseFormat: body.response_format?.type ?? "json_object",
+    },
+  };
 }
 
 async function callOpenAIWithModelFallback(systemPrompt, summary) {
@@ -221,8 +252,10 @@ function readBody(req) {
 
 async function handleEnvironment(summary) {
   const requestedAtIso = new Date().toISOString();
+  const promptUser = buildPromptUserContent(summary);
   if (!OPENAI_API_KEY) {
-    const guarded = guardEnvironmentDirective(buildEnvironmentFallback(summary));
+    const fallbackRaw = buildEnvironmentFallback(summary);
+    const guarded = guardEnvironmentDirective(fallbackRaw);
     return {
       fallback: true,
       directive: guarded,
@@ -232,7 +265,15 @@ async function handleEnvironment(summary) {
         requestedAtIso,
         endpoint: "/api/ai/environment",
         requestSummary: summary,
-        parsedBeforeValidation: null,
+        promptSystem: envSystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+        },
+        rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+        parsedBeforeValidation: fallbackRaw,
         guardedOutput: guarded,
         error: "OPENAI_API_KEY missing",
       }),
@@ -255,6 +296,9 @@ async function handleEnvironment(summary) {
         requestedAtIso,
         endpoint: "/api/ai/environment",
         requestSummary: summary,
+        promptSystem: result.promptSystem,
+        promptUser: result.promptUser,
+        requestPayload: result.requestPayload,
         rawModelContent: result.rawModelContent,
         parsedBeforeValidation: result.parsed,
         guardedOutput: guarded,
@@ -263,7 +307,8 @@ async function handleEnvironment(summary) {
     };
   } catch (err) {
     const compact = compactError(err);
-    const guarded = guardEnvironmentDirective(buildEnvironmentFallback(summary));
+    const fallbackRaw = buildEnvironmentFallback(summary);
+    const guarded = guardEnvironmentDirective(fallbackRaw);
     return {
       fallback: true,
       directive: guarded,
@@ -273,7 +318,15 @@ async function handleEnvironment(summary) {
         requestedAtIso,
         endpoint: "/api/ai/environment",
         requestSummary: summary,
-        parsedBeforeValidation: null,
+        promptSystem: envSystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+        },
+        rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+        parsedBeforeValidation: fallbackRaw,
         guardedOutput: guarded,
         error: compact,
       }),
@@ -283,8 +336,10 @@ async function handleEnvironment(summary) {
 
 async function handlePolicies(summary) {
   const requestedAtIso = new Date().toISOString();
+  const promptUser = buildPromptUserContent(summary);
   if (!OPENAI_API_KEY) {
-    const guarded = guardGroupPolicies(buildPolicyFallback(summary));
+    const fallbackRaw = buildPolicyFallback(summary);
+    const guarded = guardGroupPolicies(fallbackRaw);
     return {
       fallback: true,
       ...guarded,
@@ -294,7 +349,15 @@ async function handlePolicies(summary) {
         requestedAtIso,
         endpoint: "/api/ai/policy",
         requestSummary: summary,
-        parsedBeforeValidation: null,
+        promptSystem: policySystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+        },
+        rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+        parsedBeforeValidation: fallbackRaw,
         guardedOutput: guarded,
         error: "OPENAI_API_KEY missing",
       }),
@@ -317,6 +380,9 @@ async function handlePolicies(summary) {
         requestedAtIso,
         endpoint: "/api/ai/policy",
         requestSummary: summary,
+        promptSystem: result.promptSystem,
+        promptUser: result.promptUser,
+        requestPayload: result.requestPayload,
         rawModelContent: result.rawModelContent,
         parsedBeforeValidation: result.parsed,
         guardedOutput: guarded,
@@ -325,7 +391,8 @@ async function handlePolicies(summary) {
     };
   } catch (err) {
     const compact = compactError(err);
-    const guarded = guardGroupPolicies(buildPolicyFallback(summary));
+    const fallbackRaw = buildPolicyFallback(summary);
+    const guarded = guardGroupPolicies(fallbackRaw);
     return {
       fallback: true,
       ...guarded,
@@ -335,7 +402,15 @@ async function handlePolicies(summary) {
         requestedAtIso,
         endpoint: "/api/ai/policy",
         requestSummary: summary,
-        parsedBeforeValidation: null,
+        promptSystem: policySystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+        },
+        rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+        parsedBeforeValidation: fallbackRaw,
         guardedOutput: guarded,
         error: compact,
       }),
@@ -357,6 +432,7 @@ const server = http.createServer(async (req, res) => {
       model: OPENAI_MODEL,
       configuredModel: OPENAI_MODEL_RAW || null,
       modelNormalized: Boolean(modelConfig.normalized),
+      requestTimeoutMs: OPENAI_REQUEST_TIMEOUT_MS,
       port: PORT,
       envLoaded: Boolean(envLoadResult.envLoaded),
       modelSource: MODEL_SOURCE,
