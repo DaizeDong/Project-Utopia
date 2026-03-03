@@ -119,6 +119,9 @@
  *  renderCpuMs?: number,
  *  aiLatencyMs?: number,
  *  proxyHealth?: "unknown"|"up"|"down",
+ *  proxyHasApiKey?: boolean,
+ *  proxyModel?: string,
+ *  proxyLastCheckSec?: number,
  *  regressionFlags?: string[],
  *  populationStats?: {workers:number, baseWorkers:number, stressWorkers:number, visitors:number, herbivores:number, predators:number, farmers:number, loggers:number, totalEntities:number}
  * }} MetricsState
@@ -139,7 +142,11 @@
  *  policyDecisionCount: number,
  *  environmentLlmCount: number,
  *  policyLlmCount: number,
- *  groupPolicies: Map<string, {expiresAtSec:number, data:Record<string, unknown>}>
+ *  groupPolicies: Map<string, {expiresAtSec:number, data:Record<string, unknown>}>,
+ *  lastEnvironmentDirective?: Record<string, unknown>|null,
+ *  lastPolicyBatch?: Array<Record<string, unknown>>,
+ *  lastEnvironmentModel?: string,
+ *  lastPolicyModel?: string
  * }} AIState
  *
  * @typedef {{

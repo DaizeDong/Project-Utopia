@@ -55,11 +55,17 @@ test("UI layout contains required control ids", () => {
     "exportReplayBtn",
     "workerBreakdownVal",
     "doctrineSelect",
+    "aiDecisionPanelBody",
+    "entityFocusOverlay",
+    "entityFocusBody",
     "devGlobalVal",
     "devAlgoVal",
     "devAiTraceVal",
     "devSystemVal",
     "devEventTraceVal",
+    "dockCollapseAllBtn",
+    "dockExpandAllBtn",
+    "dockResetLayoutBtn",
   ];
 
   for (const id of requiredIds) {

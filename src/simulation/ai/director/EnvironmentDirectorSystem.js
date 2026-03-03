@@ -20,6 +20,8 @@ export class EnvironmentDirectorSystem {
       state.ai.environmentDecisionCount += 1;
       if (!usedFallback) state.ai.environmentLlmCount += 1;
       state.ai.lastEnvironmentError = this.pendingResult.error ?? "";
+      state.ai.lastEnvironmentDirective = this.pendingResult.data ?? null;
+      state.ai.lastEnvironmentModel = this.pendingResult.model ?? state.ai.lastEnvironmentModel ?? "";
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
       state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
@@ -28,6 +30,8 @@ export class EnvironmentDirectorSystem {
           sec: now,
           source: usedFallback ? "fallback" : "llm",
           channel: "environment",
+          fallback: usedFallback,
+          model: this.pendingResult.model ?? services.llmClient.lastModel ?? "",
           weather: this.pendingResult.data?.weather ?? "unknown",
           events: (this.pendingResult.data?.eventSpawns ?? []).map((e) => `${e.type}:${e.intensity}`).join(", ") || "none",
           error: this.pendingResult.error ?? "",
@@ -50,6 +54,8 @@ export class EnvironmentDirectorSystem {
         sec: state.metrics.timeSec,
         source: state.ai.enabled ? "llm" : "fallback",
         channel: "environment-request",
+        fallback: !state.ai.enabled,
+        model: state.metrics.proxyModel ?? services.llmClient.lastModel ?? "",
         weather: summary.weather.current,
         events: summary.events.map((e) => e.type).join(", ") || "none",
         error: "",
@@ -67,6 +73,7 @@ export class EnvironmentDirectorSystem {
           data: services.fallbackEnvironment(summary),
           latencyMs: 0,
           error: String(err?.message ?? err),
+          model: services.llmClient.lastModel ?? "fallback",
         };
       })
       .finally(() => {

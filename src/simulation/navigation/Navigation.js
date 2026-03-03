@@ -39,6 +39,12 @@ function getPathRetryState(entity) {
   return blackboard;
 }
 
+function isEntityAtTile(entity, tile, grid) {
+  if (!entity || !tile || !grid) return false;
+  const current = worldToTile(entity.x, entity.z, grid);
+  return current.ix === tile.ix && current.iz === tile.iz;
+}
+
 export function canAttemptPath(entity, state) {
   const nowSec = Number(state.metrics?.timeSec ?? 0);
   const retryState = getPathRetryState(entity);
@@ -59,6 +65,30 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     return false;
   }
 
+  const sameTarget = Boolean(
+    entity.targetTile &&
+    entity.targetTile.ix === targetTile.ix &&
+    entity.targetTile.iz === targetTile.iz
+  );
+  if (sameTarget) {
+    const hasValidPath = Boolean(
+      entity.path &&
+        entity.pathIndex < entity.path.length &&
+        entity.pathGridVersion === state.grid.version
+    );
+    if (hasValidPath) {
+      return true;
+    }
+    if (isEntityAtTile(entity, targetTile, state.grid)) {
+      entity.path = null;
+      entity.pathIndex = 0;
+      entity.pathGridVersion = state.grid.version;
+      entity.targetTile = targetTile;
+      if (retryState) retryState.nextPathRetrySec = -Infinity;
+      return true;
+    }
+  }
+
   const astarStats = state.debug?.astar;
   const pathBudget = getPathBudget(services, state);
   if (astarStats) {
@@ -68,17 +98,6 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     astarStats.budgetUsedMs = pathBudget.usedMs;
     astarStats.budgetMaxMs = pathBudget.maxMs;
     astarStats.budgetSkips = Number(astarStats.budgetSkips ?? 0);
-  }
-
-  if (
-    entity.targetTile &&
-    entity.targetTile.ix === targetTile.ix &&
-    entity.targetTile.iz === targetTile.iz &&
-    entity.path &&
-    entity.pathIndex < entity.path.length &&
-    entity.pathGridVersion === state.grid.version
-  ) {
-    return true;
   }
 
   const start = worldToTile(entity.x, entity.z, state.grid);
