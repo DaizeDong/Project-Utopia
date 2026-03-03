@@ -32,6 +32,12 @@ Core player verbs:
 2. Pathing congestion and supply pressure emerge.
 3. Player adjusts layout, population targets, and doctrine to recover.
 
+## 2.4 Ecology and Attrition Loop
+1. Humans and animals consume hunger buffers over time.
+2. Predators can damage and kill herbivores in close range.
+3. Starvation and predation deaths permanently remove entities (no auto-respawn).
+4. Population structure shifts, feeding back into production and safety pressure.
+
 ## 3. Map Strategy and Identity
 
 Default map size:
@@ -93,7 +99,19 @@ Terrain controls:
 Diagnostics:
 - Inspector for selected tile/entity details
 - developer dock for A*/Boids/AI/system timings/events
+- `Entity Focus` with full AI exchange payloads (request + raw response + parsed + guarded)
 - stress benchmark and CSV export
+
+AI behavior groups (current):
+- workers
+- traders
+- saboteurs
+- herbivores
+- predators
+
+Movement behavior profile:
+- animals: higher cohesion/alignment for visible flocking
+- humans: lower cohesion and stronger separation to avoid unrealistic crowd clumps
 
 ## 6. Current Boundaries
 
@@ -116,4 +134,3 @@ Practical next steps that fit current architecture:
 2. area brush tools for faster macro planning
 3. richer event chains (fire, disease, convoy disruptions)
 4. template-specific victory conditions and score summaries
-

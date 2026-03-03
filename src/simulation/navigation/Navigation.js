@@ -6,6 +6,7 @@ const PATH_RETRY_BUDGET_SKIP_BASE_SEC = 0.16;
 const PATH_RETRY_BUDGET_SKIP_JITTER_SEC = 0.08;
 const PATH_RETRY_FAIL_BASE_SEC = 0.45;
 const PATH_RETRY_FAIL_JITTER_SEC = 0.25;
+const PATH_STUCK_DIST = 0.42;
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -176,9 +177,22 @@ export function followPath(entity, state, dt) {
   const dx = wp.x - entity.x;
   const dz = wp.z - entity.z;
   const dist = Math.hypot(dx, dz);
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  if (entity.debug) {
+    if (!Number.isFinite(entity.debug.lastPathProgressSec)) {
+      entity.debug.lastPathProgressSec = nowSec;
+    }
+    if (!Number.isFinite(entity.debug.lastPathObservedIndex)) {
+      entity.debug.lastPathObservedIndex = entity.pathIndex;
+    }
+  }
 
   if (dist < 0.16) {
     entity.pathIndex += 1;
+    if (entity.debug) {
+      entity.debug.lastPathObservedIndex = entity.pathIndex;
+      entity.debug.lastPathProgressSec = nowSec;
+    }
     if (entity.pathIndex >= entity.path.length) {
       return { done: true, desired: { x: 0, z: 0 } };
     }
@@ -200,6 +214,39 @@ export function followPath(entity, state, dt) {
       z: (dz / len) * speed,
     },
   };
+}
+
+export function isPathStuck(entity, state, timeoutSec = 2.2) {
+  if (!entity?.path || entity.pathIndex >= entity.path.length) return false;
+  if (entity.pathGridVersion !== state.grid.version) return false;
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const dbg = entity.debug ?? (entity.debug = {});
+
+  if (!Number.isFinite(dbg.lastPathProgressSec)) {
+    dbg.lastPathProgressSec = nowSec;
+  }
+  if (!Number.isFinite(dbg.lastPathObservedIndex)) {
+    dbg.lastPathObservedIndex = entity.pathIndex;
+    dbg.lastPathProgressSec = nowSec;
+    return false;
+  }
+
+  if (dbg.lastPathObservedIndex !== entity.pathIndex) {
+    dbg.lastPathObservedIndex = entity.pathIndex;
+    dbg.lastPathProgressSec = nowSec;
+    return false;
+  }
+
+  const tile = entity.path[entity.pathIndex];
+  if (!tile) return false;
+  const wp = tileToWorld(tile.ix, tile.iz, state.grid);
+  const dist = Math.hypot(wp.x - entity.x, wp.z - entity.z);
+  if (dist < PATH_STUCK_DIST) {
+    dbg.lastPathProgressSec = nowSec;
+    return false;
+  }
+
+  return nowSec - Number(dbg.lastPathProgressSec ?? nowSec) >= timeoutSec;
 }
 
 export function clearPath(entity) {

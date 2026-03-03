@@ -80,6 +80,7 @@ export const SYSTEM_ORDER = Object.freeze([
   "WorkerAISystem",
   "VisitorAISystem",
   "AnimalAISystem",
+  "MortalitySystem",
   "BoidsSystem",
   "ResourceSystem",
 ]);
