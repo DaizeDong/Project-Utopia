@@ -3,6 +3,51 @@ import { ANIMAL_KIND, ROLE, TILE } from "../../../config/constants.js";
 import { getTile, worldToTile } from "../../../world/grid/Grid.js";
 import { listGroupStates } from "./StateGraph.js";
 
+const POLICY_INTENT_TO_STATE = Object.freeze({
+  workers: Object.freeze({
+    eat: "seek_food",
+    deliver: "deliver",
+    farm: "seek_task",
+    wood: "seek_task",
+    wander: "wander",
+  }),
+  traders: Object.freeze({
+    trade: "seek_trade",
+    eat: "seek_food",
+    wander: "wander",
+  }),
+  saboteurs: Object.freeze({
+    sabotage: "sabotage",
+    scout: "scout",
+    evade: "evade",
+    eat: "seek_food",
+    wander: "wander",
+  }),
+  herbivores: Object.freeze({
+    flee: "flee",
+    graze: "graze",
+    migrate: "regroup",
+    wander: "wander",
+  }),
+  predators: Object.freeze({
+    hunt: "hunt",
+    stalk: "stalk",
+    feed: "feed",
+    rest: "rest",
+    wander: "roam",
+  }),
+});
+
+const HUMAN_POLICY_FOOD_OVERRIDE_HUNGER_MAX = 0.58;
+const HUMAN_AI_TARGET_FOOD_HUNGER_MAX = 0.52;
+
+function normalizeIntentKey(raw) {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
 function hasActivePath(entity, state) {
   return Boolean(
     entity.path &&
@@ -167,6 +212,75 @@ function isCriticalLocalState(groupId, localState) {
   return false;
 }
 
+function isHumanGroup(groupId) {
+  return groupId === "workers" || groupId === "traders" || groupId === "saboteurs";
+}
+
+function isFoodState(stateNode) {
+  return stateNode === "seek_food" || stateNode === "eat";
+}
+
+function applyPolicyIntentPreference(groupId, localDesired, localReason, entity, state) {
+  const policy = entity.policy ?? state.ai.groupPolicies?.get?.(groupId)?.data ?? null;
+  if (!policy || typeof policy !== "object") {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  const intentMap = POLICY_INTENT_TO_STATE[groupId] ?? null;
+  if (!intentMap) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  const intents = Object.entries(policy.intentWeights ?? {})
+    .map(([intent, value]) => ({ key: normalizeIntentKey(intent), value: Number(value) || 0 }))
+    .filter((entry) => entry.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (intents.length === 0) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  const top = intents[0];
+  const second = intents[1]?.value ?? 0;
+  const mappedState = intentMap[top.key] ?? null;
+  if (!mappedState || !listGroupStates(groupId).includes(mappedState)) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  if (
+    isHumanGroup(groupId)
+    && isFoodState(mappedState)
+    && !isFoodState(localDesired)
+    && Number(entity?.hunger ?? 1) > HUMAN_POLICY_FOOD_OVERRIDE_HUNGER_MAX
+  ) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  const dominance = top.value - second;
+  const strongSignal = top.value >= 0.95 && dominance >= 0.25;
+  const veryStrongSignal = top.value >= 1.35 && dominance >= 0.45;
+
+  if (mappedState !== localDesired && !strongSignal) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  if (isCriticalLocalState(groupId, localDesired) && mappedState !== localDesired && !veryStrongSignal) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
+
+  const reason = mappedState === localDesired
+    ? `${localReason}|policy-align:${top.key}`
+    : `policy-intent:${top.key}`;
+
+  return {
+    desiredState: mappedState,
+    reason,
+    policyApplied: mappedState !== localDesired,
+    topIntent: top.key,
+    topWeight: top.value,
+  };
+}
+
 function applyGroupTargetOverride(groupId, localDesired, localReason, entity, state, nowSec) {
   const entry = state.ai.groupStateTargets?.get?.(groupId);
   if (!entry) {
@@ -186,6 +300,15 @@ function applyGroupTargetOverride(groupId, localDesired, localReason, entity, st
 
   const priority = Number(entry.priority ?? 0);
   if (priority < 0.35) {
+    return { desiredState: localDesired, reason: localReason, aiApplied: false };
+  }
+
+  if (
+    isHumanGroup(groupId)
+    && isFoodState(targetState)
+    && !isFoodState(localDesired)
+    && Number(entity?.hunger ?? 1) > HUMAN_AI_TARGET_FOOD_HUNGER_MAX
+  ) {
     return { desiredState: localDesired, reason: localReason, aiApplied: false };
   }
 
@@ -244,11 +367,16 @@ export function planEntityDesiredState(entity, state, context = {}) {
     local = derivePredatorDesiredState(entity, context);
   }
 
-  const merged = applyGroupTargetOverride(groupId, local.desiredState, local.reason, entity, state, nowSec);
+  const policyMerged = applyPolicyIntentPreference(groupId, local.desiredState, local.reason, entity, state);
+  const merged = applyGroupTargetOverride(groupId, policyMerged.desiredState, policyMerged.reason, entity, state, nowSec);
   recordDesiredGoal(entity, merged.desiredState, state, nowSec);
 
   entity.debug ??= {};
   entity.debug.localDesiredState = local.desiredState;
+  entity.debug.policyDesiredState = policyMerged.desiredState;
+  entity.debug.policyApplied = Boolean(policyMerged.policyApplied);
+  entity.debug.policyTopIntent = policyMerged.topIntent ?? "";
+  entity.debug.policyTopWeight = Number(policyMerged.topWeight ?? 0);
   entity.debug.desiredStateNode = merged.desiredState;
   entity.debug.aiTargetApplied = Boolean(merged.aiApplied);
   entity.debug.aiTargetReason = merged.aiApplied ? merged.reason : "";
