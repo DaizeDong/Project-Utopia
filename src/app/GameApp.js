@@ -839,6 +839,7 @@ export class GameApp {
     this.state.metrics.invalidTransitionCount = invalidTransitions;
 
     this.state.metrics.goalFlipCount = Number(logic.goalFlipCount ?? 0);
+    this.state.metrics.avgGoalFlipPerEntity = this.state.metrics.goalFlipCount / Math.max(1, Number(this.state.metrics.populationStats?.totalEntities ?? (this.state.agents.length + this.state.animals.length)));
 
     const simMin = Math.max(1 / 60, Number(this.state.metrics.timeSec ?? 0) / 60);
     const totalEntities = Math.max(1, Number(this.state.metrics.populationStats?.totalEntities ?? (this.state.agents.length + this.state.animals.length)));

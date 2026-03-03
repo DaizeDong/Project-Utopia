@@ -13,7 +13,7 @@ function baseState() {
 test("Worker intent priority is Eat > Deliver > Role Work", () => {
   const state = baseState();
   const worker = {
-    hunger: 0.2,
+    hunger: 0.12,
     carry: { food: 2, wood: 0 },
     role: "WOOD",
     stateLabel: "Idle",
@@ -41,5 +41,19 @@ test("Worker keeps working with small carry until threshold", () => {
     stateLabel: "Work (Farm)",
   };
 
+  assert.equal(chooseWorkerIntent(worker, state), "farm");
+});
+
+test("Worker does not enter eat intent when only warehouse exists but food is zero", () => {
+  const state = {
+    resources: { food: 0, wood: 20 },
+    buildings: { warehouses: 1, farms: 2, lumbers: 1, walls: 0 },
+  };
+  const worker = {
+    hunger: 0.12,
+    carry: { food: 0, wood: 0 },
+    role: "FARM",
+    stateLabel: "Idle",
+  };
   assert.equal(chooseWorkerIntent(worker, state), "farm");
 });

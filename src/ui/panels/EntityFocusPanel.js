@@ -78,31 +78,31 @@ function renderExchange(label, exchange, emptyText = "No exchange captured yet."
       <div class="small"><b>Endpoint:</b> ${escapeHtml(normalized.endpoint || "-")} | <b>Error:</b> ${escapeHtml(normalized.error || "none")}</div>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-system`)}" style="margin-top:6px;">
         <summary class="small"><b>Prompt Input: System</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(promptSystemText || "(system prompt unavailable)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:prompt-system:pre`)}">${escapeHtml(promptSystemText || "(system prompt unavailable)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-user`)}" style="margin-top:6px;" open>
         <summary class="small"><b>Prompt Input: User</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(promptUserText || "(user prompt unavailable)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:prompt-user:pre`)}">${escapeHtml(promptUserText || "(user prompt unavailable)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:request-payload`)}" style="margin-top:6px;">
         <summary class="small"><b>Request Payload</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(requestPayloadText || "(empty)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:request-payload:pre`)}">${escapeHtml(requestPayloadText || "(empty)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:request`)}" style="margin-top:6px;">
         <summary class="small"><b>Request Summary (full)</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(requestText || "(empty)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:request:pre`)}">${escapeHtml(requestText || "(empty)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:raw`)}" style="margin-top:6px;" open>
         <summary class="small"><b>Raw Model Content (full)</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(rawContent || "(no raw model content captured)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:raw:pre`)}">${escapeHtml(rawContent || "(no raw model content captured)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:parsed`)}" style="margin-top:6px;">
         <summary class="small"><b>Parsed Before Validation</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(parsedText || "(empty)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:parsed:pre`)}">${escapeHtml(parsedText || "(empty)")}</pre>
       </details>
       <details data-focus-key="${escapeHtml(`${keyPrefix}:guarded`)}" style="margin-top:6px;">
         <summary class="small"><b>Guarded Output</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(guardedText || "(empty)")}</pre>
+        <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:guarded:pre`)}">${escapeHtml(guardedText || "(empty)")}</pre>
       </details>
     </details>
   `;
@@ -114,7 +114,65 @@ export class EntityFocusPanel {
     this.root = document.getElementById("entityFocusBody");
     this.wrapper = document.getElementById("entityFocusOverlay");
     this.lastHtml = "";
+    this.lastSelectedId = null;
     this.openStateByKey = new Map();
+    this.scrollStateByKey = new Map();
+    this.rootScrollTop = 0;
+    this.interactionUntilMs = 0;
+    this.pointerActive = false;
+    this.#bindInteractionGuards();
+  }
+
+  #nowMs() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  #bumpInteractionWindow(ms = 900) {
+    this.interactionUntilMs = Math.max(this.interactionUntilMs, this.#nowMs() + ms);
+  }
+
+  #isUserInteracting() {
+    return this.pointerActive || this.#nowMs() < this.interactionUntilMs;
+  }
+
+  #bindInteractionGuards() {
+    if (!this.root) return;
+
+    this.root.addEventListener(
+      "pointerdown",
+      () => {
+        this.pointerActive = true;
+        this.#bumpInteractionWindow(1400);
+      },
+      true,
+    );
+
+    const clearPointer = () => {
+      this.pointerActive = false;
+      this.#bumpInteractionWindow(300);
+    };
+    window.addEventListener("pointerup", clearPointer);
+    window.addEventListener("pointercancel", clearPointer);
+    window.addEventListener("blur", clearPointer);
+
+    this.root.addEventListener(
+      "wheel",
+      () => {
+        this.#bumpInteractionWindow(900);
+      },
+      { passive: true, capture: true },
+    );
+
+    this.root.addEventListener(
+      "scroll",
+      () => {
+        this.#bumpInteractionWindow(800);
+      },
+      { passive: true, capture: true },
+    );
   }
 
   #captureOpenStates() {
@@ -134,6 +192,28 @@ export class EntityFocusPanel {
       const key = node.dataset.focusKey;
       if (!key || !this.openStateByKey.has(key)) continue;
       node.open = Boolean(this.openStateByKey.get(key));
+    }
+  }
+
+  #captureScrollStates() {
+    if (!this.root) return;
+    this.rootScrollTop = Number(this.root.scrollTop ?? 0);
+    const scrollables = this.root.querySelectorAll("[data-focus-scroll]");
+    for (const node of scrollables) {
+      const key = node.dataset.focusScroll;
+      if (!key) continue;
+      this.scrollStateByKey.set(key, Number(node.scrollTop ?? 0));
+    }
+  }
+
+  #restoreScrollStates() {
+    if (!this.root) return;
+    this.root.scrollTop = Number(this.rootScrollTop ?? 0);
+    const scrollables = this.root.querySelectorAll("[data-focus-scroll]");
+    for (const node of scrollables) {
+      const key = node.dataset.focusScroll;
+      if (!key || !this.scrollStateByKey.has(key)) continue;
+      node.scrollTop = Number(this.scrollStateByKey.get(key) ?? 0);
     }
   }
 
@@ -165,6 +245,7 @@ export class EntityFocusPanel {
   render() {
     if (!this.root || !this.wrapper) return;
     this.#captureOpenStates();
+    this.#captureScrollStates();
     const selectedId = this.state.controls.selectedEntityId;
     if (!selectedId) {
       const html = `<div class="small muted">No entity selected. Click any worker/visitor/animal.</div>`;
@@ -182,6 +263,10 @@ export class EntityFocusPanel {
         this.root.innerHTML = html;
         this.lastHtml = html;
       }
+      return;
+    }
+
+    if (selectedId === this.lastSelectedId && this.#isUserInteracting()) {
       return;
     }
 
@@ -246,7 +331,9 @@ export class EntityFocusPanel {
 
     if (html === this.lastHtml) return;
     this.lastHtml = html;
+    this.lastSelectedId = selectedId;
     this.root.innerHTML = html;
     this.#restoreOpenStates();
+    this.#restoreScrollStates();
   }
 }

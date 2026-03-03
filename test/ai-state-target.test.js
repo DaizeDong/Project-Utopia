@@ -20,6 +20,10 @@ test("NPCBrainSystem stores and expires group state targets", () => {
   state.ai.lastPolicyDecisionSec = state.metrics.timeSec;
 
   const system = new NPCBrainSystem();
+  const worker = state.agents.find((a) => a.groupId === GROUP_IDS.WORKERS);
+  assert.ok(worker);
+  worker.carry.food = 3;
+
   system.pendingResult = {
     fallback: false,
     data: {
@@ -55,9 +59,11 @@ test("NPCBrainSystem stores and expires group state targets", () => {
   assert.equal(state.ai.groupStateTargets.has(GROUP_IDS.WORKERS), true);
   assert.ok(state.ai.lastStateTargetBatch.length >= 1);
 
-  const worker = state.agents.find((a) => a.groupId === GROUP_IDS.WORKERS);
-  assert.ok(worker);
   assert.equal(worker.blackboard.aiTargetState, "deliver");
+  const workerNoCarry = state.agents.find((a) => a.groupId === GROUP_IDS.WORKERS && a.id !== worker.id);
+  if (workerNoCarry) {
+    assert.equal(workerNoCarry.blackboard.aiTargetState, null);
+  }
 
   state.metrics.timeSec += 10;
   system.update(1 / 30, state, {
