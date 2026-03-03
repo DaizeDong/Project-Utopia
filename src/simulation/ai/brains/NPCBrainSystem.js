@@ -24,6 +24,8 @@ export class NPCBrainSystem {
       state.ai.policyDecisionCount += 1;
       if (!usedFallback) state.ai.policyLlmCount += 1;
       state.ai.lastPolicyError = this.pendingResult.error ?? "";
+      state.ai.lastPolicyBatch = [...(this.pendingResult.data?.policies ?? [])];
+      state.ai.lastPolicyModel = this.pendingResult.model ?? state.ai.lastPolicyModel ?? "";
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
       state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
@@ -33,6 +35,8 @@ export class NPCBrainSystem {
           sec: now,
           source: usedFallback ? "fallback" : "llm",
           channel: "policy",
+          fallback: usedFallback,
+          model: this.pendingResult.model ?? services.llmClient.lastModel ?? "",
           weather: state.weather.current,
           events: groups || "none",
           error: this.pendingResult.error ?? "",
@@ -66,6 +70,8 @@ export class NPCBrainSystem {
         sec: state.metrics.timeSec,
         source: state.ai.enabled ? "llm" : "fallback",
         channel: "policy-request",
+        fallback: !state.ai.enabled,
+        model: state.metrics.proxyModel ?? services.llmClient.lastModel ?? "",
         weather: summary.world.weather.current,
         events: Object.keys(summary.groups).join(", "),
         error: "",
@@ -83,6 +89,7 @@ export class NPCBrainSystem {
           data: services.fallbackPolicies(summary),
           latencyMs: 0,
           error: String(err?.message ?? err),
+          model: services.llmClient.lastModel ?? "fallback",
         };
       })
       .finally(() => {

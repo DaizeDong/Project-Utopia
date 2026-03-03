@@ -1,10 +1,10 @@
-﻿# Project Utopia System Design (Current Implementation)
+# Project Utopia System Design (Current Implementation)
 
 Updated: 2026-03-02
 
 ## 1. Runtime Architecture
 
-Project Utopia is a deterministic simulation-first architecture with a renderer and UI projection layer.
+Project Utopia follows a deterministic simulation-first architecture with renderer/UI projection layers.
 
 - `src/entities/*`: initial state creation and entity factories
 - `src/app/*`: app orchestration, fixed-step scheduling, loop, services
@@ -13,6 +13,7 @@ Project Utopia is a deterministic simulation-first architecture with a renderer 
 - `src/render/*`: Three.js scene, picking, overlays, texture/icon/sprite pipelines
 - `src/ui/*`: toolbar, HUD, inspector, telemetry panels
 - `server/ai-proxy.js`: local AI proxy and fallback contract
+- `scripts/env-loader.mjs`: shared Node-side `.env` loader (proxy/dev/preview)
 
 ## 2. State Model
 
@@ -26,7 +27,7 @@ Key branches:
 - `buildings`: aggregate building counts
 - `weather` and `events`: dynamic world pressure
 - `ai`: request counters, source mode, policy cache, errors
-- `metrics`: frame/sim timing, benchmark status, warnings
+- `metrics`: frame/sim timing, benchmark status, warnings, proxy health/model metadata
 - `debug`: A*/Boids/render/system diagnostics, trace streams
 - `gameplay`: doctrine, prosperity/threat, objective progress
 - `controls`: tool state, sim time controls, map regeneration controls, population targets
@@ -120,19 +121,38 @@ Sidebar:
 Inspector and telemetry:
 - selected tile internals
 - selected entity internals + path nodes
-- bottom telemetry dock for global stats, A*/Boids, AI trace, system timings, event logs
+- bottom developer dock for global stats, A*/Boids, AI trace, system timings, event logs
+- each dock card is independently scrollable and collapsible (`details` + local state persistence)
+- dock state persistence key: `utopiaDevDockPanels:v1`
 
-## 7. AI Pipeline
+## 7. AI Pipeline and Health Bootstrap
 
-- `EnvironmentDirectorSystem`: environment directives
-- `NPCBrainSystem`: group policy updates
+Core runtime chain:
+- `EnvironmentDirectorSystem`: periodic environment directives
+- `NPCBrainSystem`: periodic group policy updates
 - `LLMClient`: transport + schema enforcement + fallback contract
 - `server/ai-proxy.js`: local endpoint for environment/policy requests
+
+Proxy endpoints:
+- `POST /api/ai/environment`
+- `POST /api/ai/policy`
+- `GET /health`
+
+`/health` returns:
+- `hasApiKey`, `model`, `port`
+- `envLoaded`, `modelSource`, `apiKeySource`
+
+Startup sequence:
+1. Node scripts (`dev:full`, `preview:full`, `ai-proxy`) load `.env` via `env-loader`.
+2. Frontend boot probes `/health` asynchronously.
+3. If `hasApiKey=true`, AI is auto-enabled once.
+4. If key is missing or proxy unreachable, runtime remains in deterministic fallback mode.
 
 Resilience:
 - strict schema validation
 - guardrails clamping
 - deterministic fallback when API is unavailable/invalid
+- model mismatch tolerance in proxy: one-shot retry with default `gpt-4.1-mini`
 
 ## 8. Performance Notes
 

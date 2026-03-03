@@ -2,10 +2,8 @@ import { ANIMAL_KIND, TILE } from "../../config/constants.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { canAttemptPath, clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
 
-const HERBIVORE_TARGET_REFRESH_BASE_SEC = 1.5;
-const HERBIVORE_TARGET_REFRESH_JITTER_SEC = 0.6;
-const PREDATOR_HUNT_REFRESH_SEC = 0.45;
-const HERBIVORE_FLEE_REFRESH_SEC = 0.35;
+const PREDATOR_HUNT_REFRESH_SEC = 1.1;
+const HERBIVORE_FLEE_REFRESH_SEC = 0.85;
 const WANDER_REFRESH_BASE_SEC = 2.2;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
 
@@ -72,6 +70,11 @@ function setIdleDesired(animal) {
   animal.desiredVel.z = 0;
 }
 
+function tileDistance(a, b) {
+  if (!a || !b) return Infinity;
+  return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
+}
+
 function findNearbyGrazeTarget(animal, state, rng, attempts = 12, radius = 7) {
   const center = worldToTile(animal.x, animal.z, state.grid);
   for (let i = 0; i < attempts; i += 1) {
@@ -116,16 +119,9 @@ function herbivoreTick(animal, predators, state, dt, services) {
   }
 
   animal.stateLabel = "Graze";
-  const nowSec = state.metrics.timeSec;
-  const nextRefreshSec = Number(animal.debug?.nextTargetRefreshSec ?? -Infinity);
-  const shouldRefresh = nowSec >= nextRefreshSec;
-  if ((shouldRefresh || !hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM])) && canAttemptPath(animal, state)) {
+  if (!hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM]) && canAttemptPath(animal, state)) {
     const grassTarget = findNearbyGrazeTarget(animal, state, services.rng) ?? findNearestTileOfTypes(state.grid, animal, [TILE.FARM]);
-    if (grassTarget && setTargetAndPath(animal, grassTarget, state, services)) {
-      if (animal.debug) {
-        animal.debug.nextTargetRefreshSec = nowSec + HERBIVORE_TARGET_REFRESH_BASE_SEC + services.rng.next() * HERBIVORE_TARGET_REFRESH_JITTER_SEC;
-      }
-    }
+    if (grassTarget) setTargetAndPath(animal, grassTarget, state, services);
   }
 
   if (hasActivePath(animal, state)) {
@@ -160,10 +156,15 @@ function predatorTick(animal, herbivores, state, dt, services) {
     animal.stateLabel = "Hunt";
     const nowSec = state.metrics.timeSec;
     const nextRefreshSec = Number(animal.debug?.nextHuntRefreshSec ?? -Infinity);
-    if (((!hasActivePath(animal, state) && !isAtTargetTile(animal, state)) || nowSec >= nextRefreshSec) && canAttemptPath(animal, state)) {
-      const preyTile = worldToTile(prey.x, prey.z, state.grid);
-      setTargetAndPath(animal, preyTile, state, services);
-      if (animal.debug) animal.debug.nextHuntRefreshSec = nowSec + PREDATOR_HUNT_REFRESH_SEC;
+    const preyTile = worldToTile(prey.x, prey.z, state.grid);
+    const targetDrifted = tileDistance(animal.targetTile, preyTile) >= 2;
+    const pathStale = Boolean(animal.path) && animal.pathGridVersion !== state.grid.version;
+    const pathMissingAwayFromTarget = !hasActivePath(animal, state) && !isAtTargetTile(animal, state);
+    const shouldRetarget = pathStale || pathMissingAwayFromTarget || (targetDrifted && nowSec >= nextRefreshSec);
+    if (shouldRetarget && canAttemptPath(animal, state)) {
+      if (setTargetAndPath(animal, preyTile, state, services) && animal.debug) {
+        animal.debug.nextHuntRefreshSec = nowSec + PREDATOR_HUNT_REFRESH_SEC;
+      }
     }
 
     if (hasActivePath(animal, state)) {
