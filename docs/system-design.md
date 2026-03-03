@@ -169,7 +169,33 @@ AI exchange observability:
   - `requestedAtIso`, `endpoint`, `requestSummary`, `rawModelContent`, `parsedBeforeValidation`, `guardedOutput`, `error`
 - game state stores latest per-group exchanges and ring buffers for demo/debug views
 
-## 8. Performance Notes
+State target steering (new):
+- policy payload supports optional `stateTargets[]`
+- each target: `groupId`, `targetState`, `priority`, `ttlSec`, `reason`
+- runtime chain: `ResponseSchema` -> `Guardrails` -> `NPCBrainSystem` cache (`groupStateTargets`)
+- entity planning merges local desire with AI target (soft override, TTL-expiring)
+- invalid state targets are dropped safely
+
+## 8. NPC State-Machine Consistency
+
+State truth source:
+- `src/simulation/npc/state/StateGraph.js` defines legal nodes/edges for all 5 groups
+- `transitionEntityState` is the only place that mutates FSM state
+
+Planner layer:
+- `src/simulation/npc/state/StatePlanner.js` computes `desiredState + reason`
+- AI systems no longer free-mutate state labels in behavior handlers
+- handlers execute effects only (navigation/work/eat/hunt), then UI labels are projected from FSM state
+
+Consistency metrics:
+- `invalidTransitionCount`
+- `goalFlipCount`
+- `pathRecalcPerEntityPerMin`
+- `idleWithoutReasonSec` by group
+- `deathByReasonAndReachability`
+- exposed in Dev Dock `Logic Consistency` panel
+
+## 9. Performance Notes
 
 Current optimizations include:
 - grid tile query caching by `grid.version`
@@ -178,7 +204,7 @@ Current optimizations include:
 - render quality adaptation under high entity load
 - throttled UI panel refresh cadence
 
-## 9. Test and Build Status
+## 10. Test and Build Status
 
 Current baseline checks:
 - `node --test` passes

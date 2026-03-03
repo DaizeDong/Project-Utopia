@@ -187,6 +187,7 @@ export class GameApp {
     this.state.metrics.simCostMs = simCost;
     this.state.metrics.cpuBudgetMs = this.state.metrics.cpuBudgetMs * 0.9 + simCost * 0.1;
     this.#recomputePopulationBreakdown();
+    this.#refreshLogicMetrics();
 
     this.updateBenchmark(simDt);
   }
@@ -311,18 +312,39 @@ export class GameApp {
   }
 
   applyPopulationTargets(targets = {}) {
-    const safeTargets = {
-      workers: Math.max(0, Math.min(500, Number(targets.workers) || 0)),
-      visitors: Math.max(0, Math.min(300, Number(targets.visitors) || 0)),
-      herbivores: Math.max(0, Math.min(400, Number(targets.herbivores) || 0)),
-      predators: Math.max(0, Math.min(200, Number(targets.predators) || 0)),
-    };
-
     const baseWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && !a.isStressWorker);
     const stressWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && a.isStressWorker);
     const visitors = this.state.agents.filter((a) => a.type === ENTITY_TYPE.VISITOR);
+    const traders = visitors.filter((a) => a.kind === VISITOR_KIND.TRADER || a.groupId === "traders");
+    const saboteurs = visitors.filter((a) => !(a.kind === VISITOR_KIND.TRADER || a.groupId === "traders"));
     const herbivores = this.state.animals.filter((a) => a.kind === ANIMAL_KIND.HERBIVORE);
     const predators = this.state.animals.filter((a) => a.kind === ANIMAL_KIND.PREDATOR);
+
+    const clamp = (value, min, max, fallback = min) => {
+      const n = Number(value);
+      const safe = Number.isFinite(n) ? Math.round(n) : fallback;
+      return Math.max(min, Math.min(max, safe));
+    };
+    const visitorLegacy = Number.isFinite(Number(targets.visitors)) ? Number(targets.visitors) : null;
+    const tradersRaw = Number.isFinite(Number(targets.traders)) ? Number(targets.traders) : null;
+    const saboteursRaw = Number.isFinite(Number(targets.saboteurs)) ? Number(targets.saboteurs) : null;
+    let tradersTarget = tradersRaw;
+    let saboteursTarget = saboteursRaw;
+    if (tradersTarget == null && saboteursTarget == null && visitorLegacy != null) {
+      tradersTarget = Math.round(visitorLegacy * 0.2);
+      saboteursTarget = visitorLegacy - tradersTarget;
+    }
+    if (tradersTarget == null) tradersTarget = traders.length;
+    if (saboteursTarget == null) saboteursTarget = saboteurs.length;
+
+    const safeTargets = {
+      workers: clamp(targets.workers, 0, 500, baseWorkers.length),
+      traders: clamp(tradersTarget, 0, 300, traders.length),
+      saboteurs: clamp(saboteursTarget, 0, 300, saboteurs.length),
+      herbivores: clamp(targets.herbivores, 0, 400, herbivores.length),
+      predators: clamp(targets.predators, 0, 200, predators.length),
+    };
+    safeTargets.visitors = safeTargets.traders + safeTargets.saboteurs;
 
     const resizeList = (list, targetCount, spawnFactory) => {
       const next = list.slice(0, Math.max(0, targetCount));
@@ -338,11 +360,16 @@ export class GameApp {
       return createWorker(pos.x, pos.z, () => this.services.rng.next());
     });
 
-    const nextVisitors = resizeList(visitors, safeTargets.visitors, (i) => {
+    const nextTraders = resizeList(traders, safeTargets.traders, () => {
       const tile = randomPassableTile(this.state.grid, () => this.services.rng.next());
       const pos = tileToWorld(tile.ix, tile.iz, this.state.grid);
-      const kind = i % 5 === 0 ? VISITOR_KIND.TRADER : VISITOR_KIND.SABOTEUR;
-      return createVisitor(pos.x, pos.z, kind, () => this.services.rng.next());
+      return createVisitor(pos.x, pos.z, VISITOR_KIND.TRADER, () => this.services.rng.next());
+    });
+
+    const nextSaboteurs = resizeList(saboteurs, safeTargets.saboteurs, () => {
+      const tile = randomPassableTile(this.state.grid, () => this.services.rng.next());
+      const pos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      return createVisitor(pos.x, pos.z, VISITOR_KIND.SABOTEUR, () => this.services.rng.next());
     });
 
     const nextHerbivores = resizeList(herbivores, safeTargets.herbivores, () => {
@@ -357,7 +384,7 @@ export class GameApp {
       return createAnimal(pos.x, pos.z, ANIMAL_KIND.PREDATOR, () => this.services.rng.next());
     });
 
-    this.state.agents = [...nextWorkers, ...stressWorkers, ...nextVisitors];
+    this.state.agents = [...nextWorkers, ...stressWorkers, ...nextTraders, ...nextSaboteurs];
     this.state.animals = [...nextHerbivores, ...nextPredators];
     this.state.controls.populationTargets = { ...safeTargets };
     this.#recomputePopulationBreakdown();
@@ -368,7 +395,8 @@ export class GameApp {
       if (!exists) this.state.controls.selectedEntityId = null;
     }
 
-    this.state.controls.actionMessage = `Population applied (base): W${safeTargets.workers} V${safeTargets.visitors} H${safeTargets.herbivores} P${safeTargets.predators}.`;
+    this.state.controls.actionMessage =
+      `Population applied (base): W${safeTargets.workers} T${safeTargets.traders} S${safeTargets.saboteurs} (V${safeTargets.visitors}) H${safeTargets.herbivores} P${safeTargets.predators}.`;
     this.state.controls.actionKind = "success";
     this.services.replayService.push({
       channel: "population",
@@ -744,6 +772,8 @@ export class GameApp {
     let baseWorkers = 0;
     let stressWorkers = 0;
     let visitors = 0;
+    let traders = 0;
+    let saboteurs = 0;
     let farmers = 0;
     let loggers = 0;
     for (const agent of this.state.agents) {
@@ -754,6 +784,8 @@ export class GameApp {
         if (agent.role === "WOOD") loggers += 1;
       } else if (agent.type === ENTITY_TYPE.VISITOR) {
         visitors += 1;
+        if (agent.kind === VISITOR_KIND.TRADER || agent.groupId === "traders") traders += 1;
+        else saboteurs += 1;
       }
     }
     let herbivores = 0;
@@ -775,12 +807,43 @@ export class GameApp {
       baseWorkers,
       stressWorkers,
       visitors,
+      traders,
+      saboteurs,
       herbivores,
       predators,
       farmers,
       loggers,
       totalEntities,
     };
+  }
+
+  #refreshLogicMetrics() {
+    const logic = this.state.debug.logic ?? (this.state.debug.logic = {
+      invalidTransitions: 0,
+      goalFlipCount: 0,
+      totalPathRecalcs: 0,
+      idleWithoutReasonSecByGroup: {},
+      pathRecalcByEntity: {},
+      lastGoalsByEntity: {},
+      deathByReasonAndReachability: {},
+    });
+
+    let invalidTransitions = 0;
+    for (const entity of [...this.state.agents, ...this.state.animals]) {
+      invalidTransitions += Number(entity.debug?.invalidTransitionCount ?? 0);
+    }
+    logic.invalidTransitions = invalidTransitions;
+    this.state.metrics.invalidTransitionCount = invalidTransitions;
+
+    this.state.metrics.goalFlipCount = Number(logic.goalFlipCount ?? 0);
+
+    const simMin = Math.max(1 / 60, Number(this.state.metrics.timeSec ?? 0) / 60);
+    const totalEntities = Math.max(1, Number(this.state.metrics.populationStats?.totalEntities ?? (this.state.agents.length + this.state.animals.length)));
+    const totalPathRecalcs = Number(logic.totalPathRecalcs ?? 0);
+    this.state.metrics.pathRecalcPerEntityPerMin = totalPathRecalcs / totalEntities / simMin;
+
+    this.state.metrics.idleWithoutReasonSec = { ...(logic.idleWithoutReasonSecByGroup ?? {}) };
+    this.state.metrics.deathByReasonAndReachability = { ...(logic.deathByReasonAndReachability ?? {}) };
   }
 
   #queueAiHealthProbe(reason = "poll") {

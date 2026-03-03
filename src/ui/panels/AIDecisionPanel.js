@@ -77,6 +77,8 @@ export class AIDecisionPanel {
     const model = ai.lastPolicyModel || this.state.metrics.proxyModel || "-";
     const resultSec = fmtSec(ai.lastPolicyResultSec);
     const err = ai.lastPolicyError ? escapeHtml(ai.lastPolicyError) : "";
+    const groupTarget = ai.groupStateTargets?.get?.(groupId) ?? null;
+    const targetTtl = groupTarget ? fmtSec(Number(groupTarget.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0)) : "-";
 
     if (!policy) {
       return `
@@ -98,6 +100,7 @@ export class AIDecisionPanel {
         <summary class="small"><b>${escapeHtml(groupId)}</b> | ttl=${ttl}s | risk=${risk}</summary>
         <div class="small" style="margin-top:6px;"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
         <div class="small"><b>expires:</b> ${expiresAtSec}</div>
+        <div class="small"><b>stateTarget:</b> ${escapeHtml(groupTarget?.targetState ?? "none")} | <b>priority:</b> ${fmtNum(groupTarget?.priority ?? 0, 2)} | <b>targetTTL:</b> ${targetTtl}</div>
         <div class="small"><b>intentWeights:</b> ${escapeHtml(intents)}</div>
         <div class="small"><b>targetPriorities:</b> ${escapeHtml(targets)}</div>
         ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}

@@ -46,5 +46,23 @@ export function validateGroupPolicy(input) {
     if (!isNumber(policy.ttlSec)) return { ok: false, error: "ttlSec invalid" };
   }
 
+  if (input.stateTargets !== undefined) {
+    if (!Array.isArray(input.stateTargets)) return { ok: false, error: "stateTargets invalid" };
+    for (const target of input.stateTargets) {
+      if (!target || typeof target !== "object") return { ok: false, error: "stateTarget item invalid" };
+      if (typeof target.groupId !== "string" || target.groupId.length === 0) {
+        return { ok: false, error: "stateTarget groupId invalid" };
+      }
+      if (typeof target.targetState !== "string" || target.targetState.length === 0) {
+        return { ok: false, error: "stateTarget targetState invalid" };
+      }
+      if (!isNumber(target.priority)) return { ok: false, error: "stateTarget priority invalid" };
+      if (!isNumber(target.ttlSec)) return { ok: false, error: "stateTarget ttlSec invalid" };
+      if (target.reason !== undefined && typeof target.reason !== "string") {
+        return { ok: false, error: "stateTarget reason invalid" };
+      }
+    }
+  }
+
   return { ok: true, value: input };
 }

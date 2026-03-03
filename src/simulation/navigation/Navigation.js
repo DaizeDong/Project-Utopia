@@ -163,6 +163,19 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.debug.lastPathLength = path.length;
     entity.debug.lastPathRecalcSec = Number(state.metrics?.timeSec ?? 0);
   }
+  state.debug ??= {};
+  const logic = state.debug.logic ?? (state.debug.logic = {
+    invalidTransitions: 0,
+    goalFlipCount: 0,
+    totalPathRecalcs: 0,
+    idleWithoutReasonSecByGroup: {},
+    pathRecalcByEntity: {},
+    lastGoalsByEntity: {},
+    deathByReasonAndReachability: {},
+  });
+  logic.totalPathRecalcs = Number(logic.totalPathRecalcs ?? 0) + 1;
+  const entityId = String(entity.id ?? "unknown");
+  logic.pathRecalcByEntity[entityId] = Number(logic.pathRecalcByEntity[entityId] ?? 0) + 1;
   if (retryState) retryState.nextPathRetrySec = -Infinity;
   return true;
 }
