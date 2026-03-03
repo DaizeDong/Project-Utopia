@@ -214,7 +214,7 @@
       flex: 1;
       min-height: 0;
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       grid-auto-rows: minmax(0, 1fr);
       align-items: start;
       align-content: start;
@@ -404,6 +404,51 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
       margin-top: 8px;
+    }
+
+    .population-control {
+      margin-top: 8px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.66);
+      padding: 8px;
+    }
+
+    .population-control:first-of-type {
+      margin-top: 6px;
+    }
+
+    .population-slider-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 78px;
+      gap: 8px;
+      margin-top: 4px;
+      align-items: center;
+    }
+
+    .population-number {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 6px;
+      border-radius: 8px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--text);
+      font-size: 12px;
+      min-height: 30px;
+    }
+
+    .population-step-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .population-step-grid button {
+      width: 100%;
+      padding: 5px 6px;
+      font-size: 11px;
     }
 
     button,
@@ -732,15 +777,80 @@
             <summary>Population</summary>
             <div class="subpanel-body">
               <div class="small muted" style="margin-top:3px;" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
-              <div class="small muted" style="margin-top:4px;">Workers: <span id="workerTargetLabel">0</span></div>
-              <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
-              <div class="small muted" style="margin-top:4px;">Visitors: <span id="visitorTargetLabel">0</span></div>
-              <input id="visitorTargetInput" type="range" min="0" max="300" value="0" />
-              <div class="small muted" style="margin-top:4px;">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
-              <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
-              <div class="small muted" style="margin-top:4px;">Predators: <span id="predatorTargetLabel">0</span></div>
-              <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+              <div class="small muted" style="margin-top:4px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
+
+              <div class="population-control">
+                <div class="small muted">Workers Target: <span id="workerTargetLabel">0</span></div>
+                <div class="population-slider-row">
+                  <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
+                  <input id="workerTargetNumber" class="population-number" type="number" min="0" max="500" value="0" />
+                </div>
+                <div class="population-step-grid">
+                  <button data-pop-adjust="workers:-10">-10</button>
+                  <button data-pop-adjust="workers:-1">-1</button>
+                  <button data-pop-adjust="workers:1">+1</button>
+                  <button data-pop-adjust="workers:10">+10</button>
+                </div>
+              </div>
+
+              <div class="population-control">
+                <div class="small muted">Traders Target: <span id="traderTargetLabel">0</span></div>
+                <div class="population-slider-row">
+                  <input id="traderTargetInput" type="range" min="0" max="300" value="0" />
+                  <input id="traderTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+                </div>
+                <div class="population-step-grid">
+                  <button data-pop-adjust="traders:-10">-10</button>
+                  <button data-pop-adjust="traders:-1">-1</button>
+                  <button data-pop-adjust="traders:1">+1</button>
+                  <button data-pop-adjust="traders:10">+10</button>
+                </div>
+              </div>
+
+              <div class="population-control">
+                <div class="small muted">Saboteurs Target: <span id="saboteurTargetLabel">0</span></div>
+                <div class="population-slider-row">
+                  <input id="saboteurTargetInput" type="range" min="0" max="300" value="0" />
+                  <input id="saboteurTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+                </div>
+                <div class="population-step-grid">
+                  <button data-pop-adjust="saboteurs:-10">-10</button>
+                  <button data-pop-adjust="saboteurs:-1">-1</button>
+                  <button data-pop-adjust="saboteurs:1">+1</button>
+                  <button data-pop-adjust="saboteurs:10">+10</button>
+                </div>
+              </div>
+
+              <div class="population-control">
+                <div class="small muted">Herbivores Target: <span id="herbivoreTargetLabel">0</span></div>
+                <div class="population-slider-row">
+                  <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
+                  <input id="herbivoreTargetNumber" class="population-number" type="number" min="0" max="400" value="0" />
+                </div>
+                <div class="population-step-grid">
+                  <button data-pop-adjust="herbivores:-10">-10</button>
+                  <button data-pop-adjust="herbivores:-1">-1</button>
+                  <button data-pop-adjust="herbivores:1">+1</button>
+                  <button data-pop-adjust="herbivores:10">+10</button>
+                </div>
+              </div>
+
+              <div class="population-control">
+                <div class="small muted">Predators Target: <span id="predatorTargetLabel">0</span></div>
+                <div class="population-slider-row">
+                  <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+                  <input id="predatorTargetNumber" class="population-number" type="number" min="0" max="200" value="0" />
+                </div>
+                <div class="population-step-grid">
+                  <button data-pop-adjust="predators:-10">-10</button>
+                  <button data-pop-adjust="predators:-1">-1</button>
+                  <button data-pop-adjust="predators:1">+1</button>
+                  <button data-pop-adjust="predators:10">+10</button>
+                </div>
+              </div>
+
               <div class="management-grid" style="margin-top:8px;">
+                <button id="syncPopulationTargetsBtn">Sync Current</button>
                 <button id="applyPopulationBtn">Apply Population</button>
               </div>
             </div>
@@ -930,6 +1040,10 @@
         <details class="dock-card" data-dock-key="ai-trace" open>
           <summary class="dock-title">AI Trace</summary>
           <pre id="devAiTraceVal" class="dock-body">loading...</pre>
+        </details>
+        <details class="dock-card" data-dock-key="logic">
+          <summary class="dock-title">Logic Consistency</summary>
+          <pre id="devLogicVal" class="dock-body">loading...</pre>
         </details>
         <details class="dock-card" data-dock-key="timings">
           <summary class="dock-title">System Timings</summary>

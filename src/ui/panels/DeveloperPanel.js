@@ -9,6 +9,7 @@ export class DeveloperPanel {
     this.aiTraceVal = document.getElementById("devAiTraceVal");
     this.systemVal = document.getElementById("devSystemVal");
     this.eventVal = document.getElementById("devEventTraceVal");
+    this.logicVal = document.getElementById("devLogicVal");
 
     this.dockCards = Array.from(
       document.querySelectorAll("details.dock-card[data-dock-key]")
@@ -269,10 +270,46 @@ export class DeveloperPanel {
     this.eventVal.textContent = lines.length > 0 ? lines.join("\n") : "No event/diagnostic logs yet.";
   }
 
+  #renderLogicConsistency() {
+    if (!this.logicVal) return;
+    const logic = this.state.debug.logic ?? {};
+    const idleByGroup = logic.idleWithoutReasonSecByGroup ?? this.state.metrics.idleWithoutReasonSec ?? {};
+    const pathByEntity = logic.pathRecalcByEntity ?? {};
+    const topPathHotspots = Object.entries(pathByEntity)
+      .sort((a, b) => Number(b[1] ?? 0) - Number(a[1] ?? 0))
+      .slice(0, 5);
+    const reachabilityDeaths = this.state.metrics.deathByReasonAndReachability ?? logic.deathByReasonAndReachability ?? {};
+
+    const activeStateTargets = [];
+    if (this.state.ai.groupStateTargets instanceof Map) {
+      for (const [groupId, target] of this.state.ai.groupStateTargets.entries()) {
+        const ttl = Math.max(0, Number(target.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0));
+        activeStateTargets.push(`${groupId}->${target.targetState} p=${this.#fmtNum(target.priority, 2)} ttl=${this.#fmtNum(ttl, 1)}s src=${target.source ?? "-"}`);
+      }
+    }
+
+    const lines = [
+      `Invalid transitions: ${Number(this.state.metrics.invalidTransitionCount ?? 0)}`,
+      `Goal flips (rapid): ${Number(this.state.metrics.goalFlipCount ?? 0)}`,
+      `Path recalc/entity/min: ${this.#fmtNum(this.state.metrics.pathRecalcPerEntityPerMin, 3)}`,
+      `Total path recalcs: ${Number(logic.totalPathRecalcs ?? 0)}`,
+      `Idle without reason (sec): ${Object.keys(idleByGroup).length > 0 ? JSON.stringify(idleByGroup) : "{}"}`,
+      `Death reason+reachability: ${Object.keys(reachabilityDeaths).length > 0 ? JSON.stringify(reachabilityDeaths) : "{}"}`,
+      `Active AI state targets: ${activeStateTargets.length > 0 ? activeStateTargets.join(" | ") : "none"}`,
+      `Last AI target batch: ${Array.isArray(this.state.ai.lastStateTargetBatch) && this.state.ai.lastStateTargetBatch.length > 0 ? this.state.ai.lastStateTargetBatch.map((t) => `${t.groupId}:${t.targetState}`).join(", ") : "none"}`,
+      topPathHotspots.length > 0
+        ? `Path hotspot entities: ${topPathHotspots.map(([id, n]) => `${id}=${n}`).join(" | ")}`
+        : "Path hotspot entities: none",
+    ];
+
+    this.logicVal.textContent = lines.join("\n");
+  }
+
   render() {
     this.#renderGlobal();
     this.#renderAlgorithms();
     this.#renderAiTrace();
+    this.#renderLogicConsistency();
     this.#renderSystemTimings();
     this.#renderEventLog();
   }

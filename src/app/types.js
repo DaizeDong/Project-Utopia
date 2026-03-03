@@ -138,10 +138,15 @@
  *  proxyModel?: string,
  *  proxyLastCheckSec?: number,
  *  regressionFlags?: string[],
- *  populationStats?: {workers:number, baseWorkers:number, stressWorkers:number, visitors:number, herbivores:number, predators:number, farmers:number, loggers:number, totalEntities:number}
+ *  populationStats?: {workers:number, baseWorkers:number, stressWorkers:number, visitors:number, traders:number, saboteurs:number, herbivores:number, predators:number, farmers:number, loggers:number, totalEntities:number}
  *  deathsTotal?: number,
  *  deathsByReason?: Record<string, number>,
  *  deathsByGroup?: Record<string, number>
+ *  invalidTransitionCount?: number,
+ *  idleWithoutReasonSec?: Record<string, number>,
+ *  pathRecalcPerEntityPerMin?: number,
+ *  goalFlipCount?: number,
+ *  deathByReasonAndReachability?: Record<string, number>
  * }} MetricsState
  *
  * @typedef {{
@@ -169,7 +174,9 @@
  *  lastPolicyExchange?: Record<string, unknown>|null,
  *  lastPolicyExchangeByGroup?: Record<string, Record<string, unknown>>,
  *  policyExchanges?: Array<Record<string, unknown>>,
- *  environmentExchanges?: Array<Record<string, unknown>>
+ *  environmentExchanges?: Array<Record<string, unknown>>,
+ *  groupStateTargets?: Map<string, {targetState:string, expiresAtSec:number, priority:number, source:"llm"|"fallback", reason:string}>,
+ *  lastStateTargetBatch?: Array<Record<string, unknown>>
  * }} AIState
  *
  * @typedef {{
@@ -190,7 +197,16 @@
  *  rng?: {initialSeed:number, state:number, calls:number},
  *  presetComparison?: Array<Record<string, unknown>>,
  *  roadCount?: number,
- *  gridStats?: Record<string, number>
+ *  gridStats?: Record<string, number>,
+ *  logic?: {
+ *    invalidTransitions: number,
+ *    goalFlipCount: number,
+ *    totalPathRecalcs: number,
+ *    idleWithoutReasonSecByGroup: Record<string, number>,
+ *    pathRecalcByEntity: Record<string, number>,
+ *    lastGoalsByEntity: Record<string, string>,
+ *    deathByReasonAndReachability: Record<string, number>
+ *  }
  * }} DebugState
  *
  * @typedef {{
@@ -231,7 +247,7 @@
  *  mapTemplateId: string,
  *  mapSeed: number|string,
  *  terrainTuning: Record<string, unknown>,
- *  populationTargets: {workers:number, visitors:number, herbivores:number, predators:number},
+ *  populationTargets: {workers:number, traders:number, saboteurs:number, herbivores:number, predators:number, visitors:number},
  *  populationBreakdown?: {baseWorkers:number, stressWorkers:number, totalWorkers:number, totalEntities:number},
  *  saveSlotId?: string,
  *  canUndo?: boolean,

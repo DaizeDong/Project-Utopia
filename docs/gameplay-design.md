@@ -36,7 +36,8 @@ Core player verbs:
 1. Humans and animals consume hunger buffers over time.
 2. Predators can damage and kill herbivores in close range.
 3. Starvation and predation deaths permanently remove entities (no auto-respawn).
-4. Population structure shifts, feeding back into production and safety pressure.
+4. Human starvation is reachability-aware: only reachable warehouse food can prevent starvation.
+5. Population structure shifts, feeding back into production and safety pressure.
 
 ## 3. Map Strategy and Identity
 
@@ -108,6 +109,10 @@ AI behavior groups (current):
 - saboteurs
 - herbivores
 - predators
+
+AI steering mode:
+- AI policy may publish temporary group `stateTargets` (with priority + TTL).
+- Entities still obey legal FSM transitions; AI target is guidance, not arbitrary teleport between states.
 
 Movement behavior profile:
 - animals: higher cohesion/alignment for visible flocking

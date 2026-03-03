@@ -1,12 +1,20 @@
-import { BALANCE } from "../../config/balance.js";
+﻿import { BALANCE } from "../../config/balance.js";
 import { TILE, VISITOR_KIND } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
+import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
+import { planEntityDesiredState } from "./state/StatePlanner.js";
 
 const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
 const EAT_RECOVERY_TARGET = 0.76;
+
+function isAtTargetTile(visitor, state) {
+  if (!visitor.targetTile) return false;
+  const tile = worldToTile(visitor.x, visitor.z, state.grid);
+  return tile.ix === visitor.targetTile.ix && tile.iz === visitor.targetTile.iz;
+}
 
 function updateVisitorHunger(visitor, dt) {
   const decay = Number(BALANCE.visitorHungerDecayPerSecond ?? 0.01);
@@ -18,6 +26,16 @@ function restoreVisitorHunger(visitor, state, dt) {
   const foodCost = Math.max(0.08, eatRate * 0.45) * dt;
   if ((state.resources.food ?? 0) <= 0) return;
   const eat = Math.min(foodCost, state.resources.food);
+  state.resources.food -= eat;
+  visitor.hunger = clamp((visitor.hunger ?? 0) + eatRate * dt, 0, 1);
+}
+
+function consumeVisitorRation(visitor, state, dt) {
+  if ((state.resources.food ?? 0) <= 0) return;
+  const eatRate = Number(BALANCE.visitorHungerRecoveryPerSecond ?? 0.16) * 0.58;
+  const foodCost = Math.max(0.03, eatRate * 0.38) * dt;
+  const eat = Math.min(foodCost, state.resources.food);
+  if (eat <= 0) return;
   state.resources.food -= eat;
   visitor.hunger = clamp((visitor.hunger ?? 0) + eatRate * dt, 0, 1);
 }
@@ -52,17 +70,13 @@ function shouldTraderRetarget(visitor, state) {
   if (getTile(state.grid, visitor.targetTile.ix, visitor.targetTile.iz) !== TILE.WAREHOUSE) return true;
   if (isPathStuck(visitor, state, 2.3)) return true;
 
-  const atTarget = (() => {
-    const tile = worldToTile(visitor.x, visitor.z, state.grid);
-    return tile.ix === visitor.targetTile.ix && tile.iz === visitor.targetTile.iz;
-  })();
   const hasPath = Boolean(
     visitor.path &&
       visitor.pathIndex < visitor.path.length &&
       visitor.pathGridVersion === state.grid.version,
   );
 
-  if (!hasPath && !atTarget) return true;
+  if (!hasPath && !isAtTargetTile(visitor, state)) return true;
   return false;
 }
 
@@ -84,7 +98,6 @@ function setIdleDesired(visitor) {
 }
 
 function runWander(visitor, state, dt, services) {
-  visitor.stateLabel = "Wander";
   const blackboard = visitor.blackboard ?? (visitor.blackboard = {});
   const nowSec = state.metrics.timeSec;
   const nextWanderRefreshSec = Number(blackboard.nextWanderRefreshSec ?? -Infinity);
@@ -103,9 +116,8 @@ function runWander(visitor, state, dt, services) {
 }
 
 function runEatBehavior(visitor, state, dt, services) {
-  visitor.stateLabel = "Eat";
-  if (visitor.debug) visitor.debug.lastIntent = "eat";
-  if (canAttemptPath(visitor, state)) {
+  const hasWarehouse = state.buildings.warehouses > 0;
+  if (hasWarehouse && canAttemptPath(visitor, state)) {
     const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
     if (warehouse) {
       const stalePath = !hasActivePath(visitor, state) || isPathStuck(visitor, state, 2.0);
@@ -121,26 +133,21 @@ function runEatBehavior(visitor, state, dt, services) {
     setIdleDesired(visitor);
   }
 
-  if (visitor.targetTile) {
-    const tile = worldToTile(visitor.x, visitor.z, state.grid);
-    if (tile.ix === visitor.targetTile.ix && tile.iz === visitor.targetTile.iz) {
-      restoreVisitorHunger(visitor, state, dt);
-      if ((visitor.hunger ?? 0) >= EAT_RECOVERY_TARGET) {
-        clearPath(visitor);
-      }
+  if (visitor.targetTile && isAtTargetTile(visitor, state)) {
+    restoreVisitorHunger(visitor, state, dt);
+    if ((visitor.hunger ?? 0) >= EAT_RECOVERY_TARGET) {
+      clearPath(visitor);
     }
+    return;
+  }
+
+  consumeVisitorRation(visitor, state, dt);
+  if ((visitor.hunger ?? 0) >= EAT_RECOVERY_TARGET) {
+    clearPath(visitor);
   }
 }
 
 function traderTick(visitor, state, dt, services) {
-  if ((visitor.hunger ?? 1) < 0.22 && state.buildings.warehouses > 0) {
-    runEatBehavior(visitor, state, dt, services);
-    return;
-  }
-
-  visitor.stateLabel = "Trade";
-  if (visitor.debug) visitor.debug.lastIntent = "trade";
-
   const policy = state.ai.groupPolicies.get(visitor.groupId)?.data;
   const tradeWeight = Number(policy?.intentWeights?.trade ?? 1);
   const retargetWindowSec = Math.max(0.75, 1.5 / Math.max(0.35, tradeWeight));
@@ -163,27 +170,18 @@ function traderTick(visitor, state, dt, services) {
     setIdleDesired(visitor);
   }
 
-  if (visitor.targetTile) {
-    const tile = worldToTile(visitor.x, visitor.z, state.grid);
-    if (tile.ix === visitor.targetTile.ix && tile.iz === visitor.targetTile.iz) {
-      const tradeYield = Number(state.gameplay?.modifiers?.tradeYield ?? 1);
-      state.resources.food += 1.5 * dt * tradeYield;
-      state.resources.wood += 1.2 * dt * tradeYield;
-      restoreVisitorHunger(visitor, state, dt);
-      return;
-    }
+  if (visitor.targetTile && isAtTargetTile(visitor, state)) {
+    const tradeYield = Number(state.gameplay?.modifiers?.tradeYield ?? 1);
+    state.resources.food += 1.5 * dt * tradeYield;
+    state.resources.wood += 1.2 * dt * tradeYield;
+    restoreVisitorHunger(visitor, state, dt);
+    return;
   }
 
   runWander(visitor, state, dt, services);
 }
 
 function saboteurTick(visitor, state, dt, services) {
-  if ((visitor.hunger ?? 1) < 0.2 && state.buildings.warehouses > 0) {
-    runEatBehavior(visitor, state, dt, services);
-    return;
-  }
-
-  if (visitor.debug) visitor.debug.lastIntent = "sabotage";
   const policy = state.ai.groupPolicies.get(visitor.groupId)?.data;
   const sabotageWeight = Number(policy?.intentWeights?.sabotage ?? 1);
   const resistance = Number(state.gameplay?.modifiers?.sabotageResistance ?? 1);
@@ -201,7 +199,6 @@ function saboteurTick(visitor, state, dt, services) {
       if (canAttemptPath(visitor, state)) {
         setTargetAndPath(visitor, target, state, services);
       }
-      visitor.stateLabel = "Sabotage";
     }
   }
 
@@ -219,6 +216,27 @@ function saboteurTick(visitor, state, dt, services) {
   runWander(visitor, state, dt, services);
 }
 
+function updateIdleWithoutReasonMetric(visitor, stateNode, dt, state) {
+  if (stateNode !== "idle" && stateNode !== "wander") return;
+  const reason = String(visitor.blackboard?.fsm?.reason ?? "");
+  if (!reason.includes("idle") && !reason.includes("no-warehouse")) return;
+
+  state.metrics.idleWithoutReasonSec ??= {};
+  const group = String(visitor.groupId ?? "visitors");
+  state.metrics.idleWithoutReasonSec[group] = Number(state.metrics.idleWithoutReasonSec[group] ?? 0) + dt;
+
+  const logic = state.debug.logic ?? (state.debug.logic = {
+    invalidTransitions: 0,
+    goalFlipCount: 0,
+    totalPathRecalcs: 0,
+    idleWithoutReasonSecByGroup: {},
+    pathRecalcByEntity: {},
+    lastGoalsByEntity: {},
+    deathByReasonAndReachability: {},
+  });
+  logic.idleWithoutReasonSecByGroup[group] = Number(logic.idleWithoutReasonSecByGroup[group] ?? 0) + dt;
+}
+
 export class VisitorAISystem {
   constructor() {
     this.name = "VisitorAISystem";
@@ -229,11 +247,29 @@ export class VisitorAISystem {
       if (visitor.type !== "VISITOR") continue;
       if (visitor.alive === false) continue;
       updateVisitorHunger(visitor, dt);
-      if (visitor.kind === VISITOR_KIND.TRADER) {
+
+      const groupId = visitor.kind === VISITOR_KIND.TRADER ? "traders" : "saboteurs";
+      const plan = planEntityDesiredState(visitor, state);
+      const stateNode = transitionEntityState(visitor, groupId, plan.desiredState, state.metrics.timeSec, plan.reason);
+      visitor.blackboard.intent = stateNode;
+      visitor.stateLabel = mapStateToDisplayLabel(groupId, stateNode);
+      visitor.debug ??= {};
+      visitor.debug.lastIntent = stateNode;
+      visitor.debug.lastStateNode = stateNode;
+
+      if (stateNode === "seek_food" || stateNode === "eat") {
+        runEatBehavior(visitor, state, dt, services);
+      } else if (groupId === "traders" && (stateNode === "seek_trade" || stateNode === "trade")) {
         traderTick(visitor, state, dt, services);
-      } else {
+      } else if (groupId === "saboteurs" && (stateNode === "scout" || stateNode === "sabotage" || stateNode === "evade")) {
         saboteurTick(visitor, state, dt, services);
+      } else if (stateNode === "wander") {
+        runWander(visitor, state, dt, services);
+      } else {
+        setIdleDesired(visitor);
       }
+
+      updateIdleWithoutReasonMetric(visitor, stateNode, dt, state);
     }
   }
 }
