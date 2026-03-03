@@ -11,7 +11,8 @@
 
 export const GROUP_IDS = Object.freeze({
   WORKERS: "workers",
-  VISITORS: "visitors",
+  TRADERS: "traders",
+  SABOTEURS: "saboteurs",
   HERBIVORES: "herbivores",
   PREDATORS: "predators",
 });
@@ -24,11 +25,18 @@ export const DEFAULT_GROUP_POLICIES = Object.freeze({
     targetPriorities: { warehouse: 1.5, farm: 1.0, lumber: 1.0, safety: 1.2 },
     ttlSec: 24,
   },
-  [GROUP_IDS.VISITORS]: {
-    groupId: GROUP_IDS.VISITORS,
-    intentWeights: { trade: 0.5, sabotage: 1.0, wander: 0.7 },
-    riskTolerance: 0.65,
-    targetPriorities: { warehouse: 1.2, farm: 1.0, lumber: 1.0, exit: 0.8 },
+  [GROUP_IDS.TRADERS]: {
+    groupId: GROUP_IDS.TRADERS,
+    intentWeights: { trade: 1.6, eat: 0.8, wander: 0.35 },
+    riskTolerance: 0.42,
+    targetPriorities: { warehouse: 1.7, road: 1.2, safety: 1.1, farm: 0.7 },
+    ttlSec: 24,
+  },
+  [GROUP_IDS.SABOTEURS]: {
+    groupId: GROUP_IDS.SABOTEURS,
+    intentWeights: { sabotage: 1.5, scout: 1.0, evade: 0.9, wander: 0.2 },
+    riskTolerance: 0.74,
+    targetPriorities: { warehouse: 1.4, farm: 1.2, lumber: 1.1, exit: 0.8 },
     ttlSec: 24,
   },
   [GROUP_IDS.HERBIVORES]: {

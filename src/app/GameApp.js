@@ -20,6 +20,7 @@ import { NPCBrainSystem } from "../simulation/ai/brains/NPCBrainSystem.js";
 import { WorkerAISystem } from "../simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../simulation/npc/VisitorAISystem.js";
 import { AnimalAISystem } from "../simulation/npc/AnimalAISystem.js";
+import { MortalitySystem } from "../simulation/lifecycle/MortalitySystem.js";
 import { BoidsSystem } from "../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../simulation/economy/ResourceSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
@@ -150,6 +151,7 @@ export class GameApp {
       new WorkerAISystem(),
       new VisitorAISystem(),
       new AnimalAISystem(),
+      new MortalitySystem(),
       new BoidsSystem(),
       new ResourceSystem(),
     ];

@@ -38,6 +38,13 @@
  *  pathGridVersion: number,
  *  blackboard: Record<string, unknown>,
  *  policy: Record<string, unknown>|null,
+ *  alive?: boolean,
+ *  hp?: number,
+ *  maxHp?: number,
+ *  deathReason?: "starvation"|"predation"|"event"|string,
+ *  deathSec?: number,
+ *  starvationSec?: number,
+ *  attackCooldownSec?: number,
  *  memory: {recentEvents:string[], dangerTiles: TileCoord[]},
  *  debug: {lastIntent:string, lastPathLength:number, lastPathRecalcSec:number}
  * }} AgentState
@@ -59,6 +66,14 @@
  *  pathIndex: number,
  *  pathGridVersion: number,
  *  policy: Record<string, unknown>|null,
+ *  hunger?: number,
+ *  alive?: boolean,
+ *  hp?: number,
+ *  maxHp?: number,
+ *  deathReason?: "starvation"|"predation"|"event"|string,
+ *  deathSec?: number,
+ *  starvationSec?: number,
+ *  attackCooldownSec?: number,
  *  memory: {recentEvents:string[]},
  *  debug: {lastIntent:string, lastPathLength:number, lastPathRecalcSec:number}
  * }} AnimalState
@@ -124,6 +139,9 @@
  *  proxyLastCheckSec?: number,
  *  regressionFlags?: string[],
  *  populationStats?: {workers:number, baseWorkers:number, stressWorkers:number, visitors:number, herbivores:number, predators:number, farmers:number, loggers:number, totalEntities:number}
+ *  deathsTotal?: number,
+ *  deathsByReason?: Record<string, number>,
+ *  deathsByGroup?: Record<string, number>
  * }} MetricsState
  *
  * @typedef {{
@@ -146,7 +164,12 @@
  *  lastEnvironmentDirective?: Record<string, unknown>|null,
  *  lastPolicyBatch?: Array<Record<string, unknown>>,
  *  lastEnvironmentModel?: string,
- *  lastPolicyModel?: string
+ *  lastPolicyModel?: string,
+ *  lastEnvironmentExchange?: Record<string, unknown>|null,
+ *  lastPolicyExchange?: Record<string, unknown>|null,
+ *  lastPolicyExchangeByGroup?: Record<string, Record<string, unknown>>,
+ *  policyExchanges?: Array<Record<string, unknown>>,
+ *  environmentExchanges?: Array<Record<string, unknown>>
  * }} AIState
  *
  * @typedef {{
