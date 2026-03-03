@@ -22,22 +22,35 @@ function updateVisitorHunger(visitor, dt) {
 }
 
 function restoreVisitorHunger(visitor, state, dt) {
+  const currentHunger = Number(visitor.hunger ?? 0);
+  if (currentHunger >= EAT_RECOVERY_TARGET) return;
   const eatRate = Number(BALANCE.visitorHungerRecoveryPerSecond ?? 0.18);
-  const foodCost = Math.max(0.08, eatRate * 0.45) * dt;
+  const gainCap = Math.max(0, EAT_RECOVERY_TARGET - currentHunger);
+  const desiredGain = Math.min(eatRate * dt, gainCap);
+  const foodCost = desiredGain * 0.45;
+  if (foodCost <= 0) return;
   if ((state.resources.food ?? 0) <= 0) return;
-  const eat = Math.min(foodCost, state.resources.food);
-  state.resources.food -= eat;
-  visitor.hunger = clamp((visitor.hunger ?? 0) + eatRate * dt, 0, 1);
-}
-
-function consumeVisitorRation(visitor, state, dt) {
-  if ((state.resources.food ?? 0) <= 0) return;
-  const eatRate = Number(BALANCE.visitorHungerRecoveryPerSecond ?? 0.16) * 0.58;
-  const foodCost = Math.max(0.03, eatRate * 0.38) * dt;
   const eat = Math.min(foodCost, state.resources.food);
   if (eat <= 0) return;
   state.resources.food -= eat;
-  visitor.hunger = clamp((visitor.hunger ?? 0) + eatRate * dt, 0, 1);
+  const appliedGain = eat / 0.45;
+  visitor.hunger = clamp((visitor.hunger ?? 0) + appliedGain, 0, 1);
+}
+
+function consumeVisitorRation(visitor, state, dt) {
+  const currentHunger = Number(visitor.hunger ?? 0);
+  if (currentHunger >= EAT_RECOVERY_TARGET) return;
+  if ((state.resources.food ?? 0) <= 0) return;
+  const eatRate = Number(BALANCE.visitorHungerRecoveryPerSecond ?? 0.16) * 0.58;
+  const gainCap = Math.max(0, EAT_RECOVERY_TARGET - currentHunger);
+  const desiredGain = Math.min(eatRate * dt, gainCap);
+  const foodCost = desiredGain * 0.38;
+  if (foodCost <= 0) return;
+  const eat = Math.min(foodCost, state.resources.food);
+  if (eat <= 0) return;
+  state.resources.food -= eat;
+  const appliedGain = eat / 0.38;
+  visitor.hunger = clamp((visitor.hunger ?? 0) + appliedGain, 0, 1);
 }
 
 function applySabotage(state, target, rng) {
@@ -116,6 +129,12 @@ function runWander(visitor, state, dt, services) {
 }
 
 function runEatBehavior(visitor, state, dt, services) {
+  if ((visitor.hunger ?? 0) >= EAT_RECOVERY_TARGET) {
+    clearPath(visitor);
+    setIdleDesired(visitor);
+    return;
+  }
+
   const hasWarehouse = state.buildings.warehouses > 0;
   if (hasWarehouse && canAttemptPath(visitor, state)) {
     const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);

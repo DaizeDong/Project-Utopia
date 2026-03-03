@@ -35,6 +35,9 @@ export class EnvironmentDirectorSystem {
         endpoint: debugExchange.endpoint ?? "/api/ai/environment",
         requestedAtIso: debugExchange.requestedAtIso ?? "",
         requestSummary: debugExchange.requestSummary ?? null,
+        promptSystem: debugExchange.promptSystem ?? "",
+        promptUser: debugExchange.promptUser ?? "",
+        requestPayload: debugExchange.requestPayload ?? null,
         rawModelContent: debugExchange.rawModelContent ?? "",
         parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
@@ -88,9 +91,10 @@ export class EnvironmentDirectorSystem {
         this.pendingResult = result;
       })
       .catch((err) => {
+        const fallbackRaw = services.fallbackEnvironment(summary);
         this.pendingResult = {
           fallback: true,
-          data: services.fallbackEnvironment(summary),
+          data: fallbackRaw,
           latencyMs: 0,
           error: String(err?.message ?? err),
           model: services.llmClient.lastModel ?? "fallback",
@@ -98,9 +102,9 @@ export class EnvironmentDirectorSystem {
             requestedAtIso: new Date().toISOString(),
             endpoint: "/api/ai/environment",
             requestSummary: summary,
-            rawModelContent: "",
-            parsedBeforeValidation: null,
-            guardedOutput: services.fallbackEnvironment(summary),
+            rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+            parsedBeforeValidation: fallbackRaw,
+            guardedOutput: fallbackRaw,
             error: String(err?.message ?? err),
           },
         };

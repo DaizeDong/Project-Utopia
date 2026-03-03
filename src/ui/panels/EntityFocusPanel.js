@@ -40,36 +40,69 @@ function prettyJson(value) {
   }
 }
 
-function renderExchange(label, exchange, emptyText = "No exchange captured yet.") {
-  if (!exchange) {
-    return `<div class="small muted">${escapeHtml(emptyText)}</div>`;
-  }
-  const requestText = prettyJson(exchange.requestSummary);
-  const parsedText = prettyJson(exchange.parsedBeforeValidation);
-  const guardedText = prettyJson(exchange.guardedOutput);
-  const rawContent = String(exchange.rawModelContent ?? "");
+function renderExchange(label, exchange, emptyText = "No exchange captured yet.", keyPrefix = "exchange") {
+  const hasExchange = Boolean(exchange);
+  const normalized = hasExchange
+    ? exchange
+    : {
+        simSec: null,
+        requestedAtIso: "",
+      source: "none",
+      fallback: true,
+      model: "n/a",
+      endpoint: "-",
+      error: emptyText,
+      promptSystem: "",
+      promptUser: "",
+      requestPayload: null,
+      requestSummary: { note: emptyText },
+      parsedBeforeValidation: { note: emptyText },
+      guardedOutput: { note: emptyText },
+      rawModelContent: `(no model reply captured) ${emptyText}`,
+    };
+
+  const requestPayloadText = prettyJson(normalized.requestPayload);
+  const requestText = prettyJson(normalized.requestSummary);
+  const parsedText = prettyJson(normalized.parsedBeforeValidation);
+  const guardedText = prettyJson(normalized.guardedOutput);
+  const promptSystemText = String(normalized.promptSystem ?? "");
+  const promptUserText = String(normalized.promptUser ?? "");
+  const rawContent = String(normalized.rawModelContent ?? "");
 
   return `
-    <details style="margin-top:6px;" open>
+    <details data-focus-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:6px;" open>
       <summary class="small"><b>${escapeHtml(label)}</b></summary>
-      <div class="small" style="margin-top:6px;"><b>Time:</b> sim=${fmtSec(exchange.simSec)} | reqAt=${escapeHtml(exchange.requestedAtIso || "-")}</div>
-      <div class="small"><b>Source:</b> ${escapeHtml(exchange.source || "-")} | <b>Fallback:</b> ${String(Boolean(exchange.fallback))} | <b>Model:</b> ${escapeHtml(exchange.model || "-")}</div>
-      <div class="small"><b>Endpoint:</b> ${escapeHtml(exchange.endpoint || "-")} | <b>Error:</b> ${escapeHtml(exchange.error || "none")}</div>
-      <details style="margin-top:6px;">
+      <div class="small" style="margin-top:6px;"><b>Status:</b> ${hasExchange ? "captured" : "not-captured"}</div>
+      <div class="small"><b>Time:</b> sim=${fmtSec(normalized.simSec)} | reqAt=${escapeHtml(normalized.requestedAtIso || "-")}</div>
+      <div class="small"><b>Source:</b> ${escapeHtml(normalized.source || "-")} | <b>Fallback:</b> ${String(Boolean(normalized.fallback))} | <b>Model:</b> ${escapeHtml(normalized.model || "-")}</div>
+      <div class="small"><b>Endpoint:</b> ${escapeHtml(normalized.endpoint || "-")} | <b>Error:</b> ${escapeHtml(normalized.error || "none")}</div>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-system`)}" style="margin-top:6px;">
+        <summary class="small"><b>Prompt Input: System</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(promptSystemText || "(system prompt unavailable)")}</pre>
+      </details>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-user`)}" style="margin-top:6px;" open>
+        <summary class="small"><b>Prompt Input: User</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(promptUserText || "(user prompt unavailable)")}</pre>
+      </details>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:request-payload`)}" style="margin-top:6px;">
+        <summary class="small"><b>Request Payload</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(requestPayloadText || "(empty)")}</pre>
+      </details>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:request`)}" style="margin-top:6px;">
         <summary class="small"><b>Request Summary (full)</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(requestText)}</pre>
+        <pre class="entity-exchange-pre">${escapeHtml(requestText || "(empty)")}</pre>
       </details>
-      <details style="margin-top:6px;" open>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:raw`)}" style="margin-top:6px;" open>
         <summary class="small"><b>Raw Model Content (full)</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(rawContent || "(empty)")}</pre>
+        <pre class="entity-exchange-pre">${escapeHtml(rawContent || "(no raw model content captured)")}</pre>
       </details>
-      <details style="margin-top:6px;">
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:parsed`)}" style="margin-top:6px;">
         <summary class="small"><b>Parsed Before Validation</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(parsedText)}</pre>
+        <pre class="entity-exchange-pre">${escapeHtml(parsedText || "(empty)")}</pre>
       </details>
-      <details style="margin-top:6px;">
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:guarded`)}" style="margin-top:6px;">
         <summary class="small"><b>Guarded Output</b></summary>
-        <pre class="entity-exchange-pre">${escapeHtml(guardedText)}</pre>
+        <pre class="entity-exchange-pre">${escapeHtml(guardedText || "(empty)")}</pre>
       </details>
     </details>
   `;
@@ -81,6 +114,27 @@ export class EntityFocusPanel {
     this.root = document.getElementById("entityFocusBody");
     this.wrapper = document.getElementById("entityFocusOverlay");
     this.lastHtml = "";
+    this.openStateByKey = new Map();
+  }
+
+  #captureOpenStates() {
+    if (!this.root) return;
+    const details = this.root.querySelectorAll("details[data-focus-key]");
+    for (const node of details) {
+      const key = node.dataset.focusKey;
+      if (!key) continue;
+      this.openStateByKey.set(key, Boolean(node.open));
+    }
+  }
+
+  #restoreOpenStates() {
+    if (!this.root) return;
+    const details = this.root.querySelectorAll("details[data-focus-key]");
+    for (const node of details) {
+      const key = node.dataset.focusKey;
+      if (!key || !this.openStateByKey.has(key)) continue;
+      node.open = Boolean(this.openStateByKey.get(key));
+    }
   }
 
   #buildAiImpact(entity, groupPolicy) {
@@ -110,6 +164,7 @@ export class EntityFocusPanel {
 
   render() {
     if (!this.root || !this.wrapper) return;
+    this.#captureOpenStates();
     const selectedId = this.state.controls.selectedEntityId;
     if (!selectedId) {
       const html = `<div class="small muted">No entity selected. Click any worker/visitor/animal.</div>`;
@@ -164,6 +219,7 @@ export class EntityFocusPanel {
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}</div>
       <div class="small"><b>FSM:</b> current=${escapeHtml(fsmState)} prev=${escapeHtml(fsmPrev)} | nextPath=${escapeHtml(fsmPath || "-")}</div>
       <div class="small"><b>AI Target:</b> ${escapeHtml(aiTargetState)} | <b>TTL:</b> ${fmtSec(aiTargetTtl)} | <b>Priority:</b> ${fmtNum(aiTargetMeta?.priority ?? 0, 2)} | <b>Source:</b> ${escapeHtml(aiTargetMeta?.source ?? "-")}</div>
+      <div class="small"><b>Policy Influence:</b> applied=${String(Boolean(entity.debug?.policyApplied))} | topIntent=${escapeHtml(entity.debug?.policyTopIntent ?? "-")} | topWeight=${fmtNum(entity.debug?.policyTopWeight ?? 0, 2)} | policyDesired=${escapeHtml(entity.debug?.policyDesiredState ?? "-")}</div>
       <div class="small"><b>Decision Time:</b> sim=${simSec} | policyAt=${policySec} | envAt=${envSec}</div>
       <div class="small"><b>Position:</b> world=${vecFmt(entity.x, entity.z)} tile=(${posTile.ix}, ${posTile.iz})</div>
       <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx, entity.vz)} speed=${fmtNum(speed, 3)} | <b>Desired:</b> ${vecFmt(entity.desiredVel?.x, entity.desiredVel?.z)}</div>
@@ -177,19 +233,20 @@ export class EntityFocusPanel {
       <div class="small"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
       <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
       <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
-      <details style="margin-top:8px;">
+      <details data-focus-key="focus:path-nodes" style="margin-top:8px;">
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>
       </details>
-      <details style="margin-top:8px;" open>
+      <details data-focus-key="focus:last-ai-exchange" style="margin-top:8px;" open>
         <summary class="small"><b>Last AI Exchange (Full)</b></summary>
-        ${renderExchange(`Policy Exchange for ${entity.groupId ?? "unknown"}`, policyExchange, "No policy exchange for this group yet.")}
-        ${renderExchange("Environment Exchange (Global)", environmentExchange, "No environment exchange yet.")}
+        ${renderExchange(`Policy Exchange for ${entity.groupId ?? "unknown"}`, policyExchange, "No policy exchange for this group yet.", "focus:policy")}
+        ${renderExchange("Environment Exchange (Global)", environmentExchange, "No environment exchange yet.", "focus:environment")}
       </details>
     `;
 
     if (html === this.lastHtml) return;
     this.lastHtml = html;
     this.root.innerHTML = html;
+    this.#restoreOpenStates();
   }
 }
