@@ -1,7 +1,17 @@
-﻿import { AI_CONFIG } from "../../../config/aiConfig.js";
+import { AI_CONFIG } from "../../../config/aiConfig.js";
 import { buildEnvironmentFallback, buildPolicyFallback } from "./PromptBuilder.js";
 import { guardEnvironmentDirective, guardGroupPolicies } from "./Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "./ResponseSchema.js";
+
+function compactClientError(err) {
+  const raw = String(err?.message ?? err ?? "unknown error")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "unknown error";
+  if (raw.toLowerCase().includes("timeout") || raw.toLowerCase().includes("aborted")) return "request timeout";
+  if (raw.toLowerCase().includes("openai_api_key")) return "OPENAI_API_KEY missing";
+  return raw.slice(0, 180);
+}
 
 async function postJson(url, body, timeoutMs) {
   const started = performance.now();
@@ -15,7 +25,9 @@ async function postJson(url, body, timeoutMs) {
       signal: ctrl.signal,
     });
     if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
+      const text = await resp.text().catch(() => "");
+      const short = text ? text.replace(/\s+/g, " ").trim().slice(0, 140) : "";
+      throw new Error(short ? `HTTP ${resp.status}: ${short}` : `HTTP ${resp.status}`);
     }
     const data = await resp.json();
     return { data, latencyMs: performance.now() - started };
@@ -29,11 +41,12 @@ export class LLMClient {
     this.lastError = "";
     this.lastLatencyMs = 0;
     this.lastStatus = "unknown";
+    this.lastModel = "";
   }
 
   async requestEnvironment(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildEnvironmentFallback(summary), error: "" };
+      return { fallback: true, data: buildEnvironmentFallback(summary), error: "", model: "fallback" };
     }
 
     try {
@@ -46,28 +59,31 @@ export class LLMClient {
       }
       this.lastLatencyMs = result.latencyMs;
       this.lastStatus = "up";
+      this.lastModel = String(payload.model ?? this.lastModel ?? "").trim();
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardEnvironmentDirective(validation.value),
         latencyMs: result.latencyMs,
         error: "",
+        model: String(payload.model ?? ""),
       };
     } catch (err) {
-      this.lastError = String(err?.message ?? err);
+      this.lastError = compactClientError(err);
       this.lastStatus = "down";
       return {
         fallback: true,
         data: buildEnvironmentFallback(summary),
         latencyMs: this.lastLatencyMs,
         error: this.lastError,
+        model: this.lastModel || "fallback",
       };
     }
   }
 
   async requestPolicies(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildPolicyFallback(summary), error: "" };
+      return { fallback: true, data: buildPolicyFallback(summary), error: "", model: "fallback" };
     }
 
     try {
@@ -80,22 +96,26 @@ export class LLMClient {
       }
       this.lastLatencyMs = result.latencyMs;
       this.lastStatus = "up";
+      this.lastModel = String(payload.model ?? this.lastModel ?? "").trim();
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardGroupPolicies(validation.value),
         latencyMs: result.latencyMs,
         error: "",
+        model: String(payload.model ?? ""),
       };
     } catch (err) {
-      this.lastError = String(err?.message ?? err);
+      this.lastError = compactClientError(err);
       this.lastStatus = "down";
       return {
         fallback: true,
         data: buildPolicyFallback(summary),
         latencyMs: this.lastLatencyMs,
         error: this.lastError,
+        model: this.lastModel || "fallback",
       };
     }
   }
 }
+

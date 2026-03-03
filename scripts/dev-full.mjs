@@ -1,10 +1,17 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
 
+import { loadEnvIntoProcess } from "./env-loader.mjs";
+
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+loadEnvIntoProcess();
+
 const npmCmd = "npm";
 const proxyPort = Number(process.env.AI_PROXY_PORT ?? 8787);
 const proxyHost = process.env.AI_PROXY_HOST ?? "127.0.0.1";
 const proxyBaseUrl = `http://localhost:${proxyPort}`;
+const expectedHasApiKey = Boolean((process.env.OPENAI_API_KEY ?? "").trim());
+const expectedModel = (process.env.OPENAI_MODEL ?? "").trim() || DEFAULT_OPENAI_MODEL;
 
 function runScript(scriptName) {
   const command = `${npmCmd} run ${scriptName}`;
@@ -36,21 +43,35 @@ function isTcpPortOpen(port, host = "127.0.0.1", timeoutMs = 400) {
   });
 }
 
-async function probeExistingProxy(baseUrl) {
-  let hasHealthyEndpoint = false;
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchProxyHealth(baseUrl) {
   try {
     const healthResponse = await fetch(`${baseUrl}/health`, { method: "GET" });
-    if (healthResponse.ok) {
-      const healthPayload = await healthResponse.json().catch(() => null);
-      hasHealthyEndpoint = Boolean(
-        healthPayload &&
-          typeof healthPayload === "object" &&
-          healthPayload.service === "ai-proxy"
-      );
-    }
+    if (!healthResponse.ok) return null;
+    const payload = await healthResponse.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return null;
+    if (payload.service !== "ai-proxy") return null;
+    return payload;
   } catch {
-    hasHealthyEndpoint = false;
+    return null;
   }
+}
+
+async function waitForProxyHealth(baseUrl, attempts = 15, delayMs = 250) {
+  for (let i = 0; i < attempts; i += 1) {
+    const payload = await fetchProxyHealth(baseUrl);
+    if (payload) return payload;
+    await sleep(delayMs);
+  }
+  return null;
+}
+
+async function probeExistingProxy(baseUrl) {
+  const healthPayload = await fetchProxyHealth(baseUrl);
+  const hasHealthyEndpoint = Boolean(healthPayload);
 
   try {
     const response = await fetch(`${baseUrl}/api/ai/environment`, {
@@ -76,24 +97,63 @@ async function probeExistingProxy(baseUrl) {
     return {
       isProxyLike: hasEnvironmentContract,
       hasHealthEndpoint: hasHealthyEndpoint,
+      healthPayload,
     };
   } catch {
     return {
       isProxyLike: false,
       hasHealthEndpoint: hasHealthyEndpoint,
+      healthPayload,
     };
   }
+}
+
+function printStartupSummary(mode, healthPayload) {
+  const hasApiKey = Boolean(healthPayload?.hasApiKey);
+  const model = healthPayload?.model ?? expectedModel;
+  const port = healthPayload?.port ?? proxyPort;
+  console.log(
+    `[dev:full] proxy ${mode}; hasApiKey=${hasApiKey}; model=${model}; port=${port}`
+  );
 }
 
 async function prepareProxyProcess() {
   const portInUse = await isTcpPortOpen(proxyPort, proxyHost);
   if (!portInUse) {
-    return { process: runScript("ai-proxy"), reused: false };
+    const processHandle = runScript("ai-proxy");
+    const healthPayload = await waitForProxyHealth(proxyBaseUrl);
+    printStartupSummary("spawned", healthPayload);
+    return { process: processHandle, reused: false };
   }
 
   const probe = await probeExistingProxy(proxyBaseUrl);
   if (probe.isProxyLike && probe.hasHealthEndpoint) {
-    console.log(`[dev:full] Reusing existing ai-proxy on ${proxyBaseUrl}`);
+    if (
+      typeof probe.healthPayload?.hasApiKey === "boolean"
+      && probe.healthPayload.hasApiKey !== expectedHasApiKey
+    ) {
+      console.error(
+        `[dev:full] Existing ai-proxy key status mismatch on ${proxyBaseUrl}.`
+      );
+      console.error(
+        `[dev:full] expected hasApiKey=${expectedHasApiKey}, actual hasApiKey=${probe.healthPayload.hasApiKey}.`
+      );
+      console.error(
+        "[dev:full] Stop the existing proxy and rerun so the process can load the current .env."
+      );
+      process.exit(1);
+    }
+
+    if (
+      typeof probe.healthPayload?.model === "string"
+      && probe.healthPayload.model !== expectedModel
+    ) {
+      console.warn(
+        `[dev:full] Reusing proxy model=${probe.healthPayload.model} (expected ${expectedModel}).`
+      );
+    }
+
+    printStartupSummary("reused", probe.healthPayload);
     return { process: null, reused: true };
   }
 
@@ -164,3 +224,4 @@ process.on("SIGTERM", () => terminateAll(0));
 process.on("exit", () => {
   clearInterval(keepAlive);
 });
+

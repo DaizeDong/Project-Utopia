@@ -43,3 +43,31 @@ test("setTargetAndPath recomputes when grid version changes", () => {
   assert.ok(worker.path.length >= firstLen);
   assert.equal(worker.path.some((n) => n.ix === 2 && n.iz === 2), false);
 });
+
+test("setTargetAndPath does not recompute when already standing on same target", () => {
+  const grid = createGrid(5, 5, TILE.GRASS);
+  const state = {
+    grid,
+    weather: { moveCostMultiplier: 1 },
+    metrics: { timeSec: 0, tick: 0 },
+    debug: { astar: { requests: 0 } },
+  };
+  const services = { pathCache: new PathCache(8), pathBudget: { tick: -1, usedMs: 0, skipped: 0, maxMs: 6 } };
+
+  const worker = {
+    x: 0,
+    z: 0,
+    targetTile: { ix: 2, iz: 2 },
+    path: null,
+    pathIndex: 0,
+    pathGridVersion: 1,
+    blackboard: {},
+  };
+  const target = { ix: 2, iz: 2 };
+
+  const ok = setTargetAndPath(worker, target, state, services);
+  assert.equal(ok, true);
+  assert.equal(worker.path, null);
+  assert.equal(worker.pathGridVersion, 1);
+  assert.equal(state.debug.astar.requests, 0);
+});

@@ -5,9 +5,11 @@ import { SceneRenderer } from "../render/SceneRenderer.js";
 import { BuildToolbar } from "../ui/tools/BuildToolbar.js";
 import { HUDController } from "../ui/hud/HUDController.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
+import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
 import { EventPanel } from "../ui/panels/EventPanel.js";
 import { PerformancePanel } from "../ui/panels/PerformancePanel.js";
 import { DeveloperPanel } from "../ui/panels/DeveloperPanel.js";
+import { EntityFocusPanel } from "../ui/panels/EntityFocusPanel.js";
 import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
@@ -72,6 +74,8 @@ export class GameApp {
     });
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);
+    this.aiDecisionPanel = new AIDecisionPanel(this.state);
+    this.entityFocusPanel = new EntityFocusPanel(this.state);
     this.eventPanel = new EventPanel(this.state);
     this.performancePanel = new PerformancePanel(this.state, {
       onSetExtraWorkers: (count) => this.setExtraWorkers(count),
@@ -122,6 +126,15 @@ export class GameApp {
     };
     this.lastLoopErrorAtMs = -999999;
     this.lastLoopErrorText = "";
+    this.aiHealthMonitor = {
+      intervalSec: 15,
+      elapsedSec: 15,
+      inFlight: false,
+      autoEnabledOnce: false,
+      lastStatus: "unknown",
+      lastHasApiKey: null,
+    };
+    this.#queueAiHealthProbe("startup");
     this.#recomputePopulationBreakdown();
   }
 
@@ -227,6 +240,11 @@ export class GameApp {
       this.state.metrics.memoryMb = performance.memory.usedJSHeapSize / (1024 * 1024);
     }
     this.#applyMemoryPressureGuard();
+    this.aiHealthMonitor.elapsedSec += frameDt;
+    if (this.aiHealthMonitor.elapsedSec >= this.aiHealthMonitor.intervalSec) {
+      this.aiHealthMonitor.elapsedSec = 0;
+      this.#queueAiHealthProbe("poll");
+    }
     if (this.state.debug) {
       this.state.debug.rng = this.services.rng.snapshot();
     }
@@ -236,15 +254,20 @@ export class GameApp {
     const uiStart = performance.now();
     this.uiRefreshAccumulator += dt;
     if (this.uiRefreshAccumulator >= this.uiRefreshIntervalSec) {
-      this.#safeRenderPanel("HUD", () => this.hud.render());
-      this.#safeRenderPanel("Inspector", () => this.inspector.render());
-      this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());
-      this.#safeRenderPanel("PerformancePanel", () => this.performancePanel.render());
-      const wrapRoot = document.getElementById("wrap");
-      if (!wrapRoot?.classList.contains("dock-collapsed")) {
-        this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
+      const isTextInteractionActive = this.#isUiTextInteractionActive();
+      if (!isTextInteractionActive) {
+        this.#safeRenderPanel("HUD", () => this.hud.render());
+        this.#safeRenderPanel("AIDecisionPanel", () => this.aiDecisionPanel.render());
+        this.#safeRenderPanel("Inspector", () => this.inspector.render());
+        this.#safeRenderPanel("EntityFocusPanel", () => this.entityFocusPanel.render());
+        this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());
+        this.#safeRenderPanel("PerformancePanel", () => this.performancePanel.render());
+        const wrapRoot = document.getElementById("wrap");
+        if (!wrapRoot?.classList.contains("dock-collapsed")) {
+          this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
+        }
+        this.#safeRenderPanel("BuildToolbar", () => this.toolbar.sync());
       }
-      this.#safeRenderPanel("BuildToolbar", () => this.toolbar.sync());
       this.uiRefreshAccumulator = 0;
     }
     this.state.metrics.uiCpuMs = performance.now() - uiStart;
@@ -758,6 +781,62 @@ export class GameApp {
     };
   }
 
+  #queueAiHealthProbe(reason = "poll") {
+    if (this.aiHealthMonitor.inFlight) return;
+    this.aiHealthMonitor.inFlight = true;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort("timeout"), 3500);
+
+    fetch("/health", { method: "GET", signal: ctrl.signal })
+      .then((resp) => {
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+      })
+      .then((payload) => {
+        if (!payload || payload.service !== "ai-proxy") {
+          throw new Error("invalid ai-proxy health payload");
+        }
+        this.aiHealthMonitor.lastStatus = "up";
+        this.aiHealthMonitor.lastHasApiKey = Boolean(payload.hasApiKey);
+        this.state.metrics.proxyHealth = "up";
+        this.state.metrics.proxyHasApiKey = Boolean(payload.hasApiKey);
+        this.state.metrics.proxyModel = typeof payload.model === "string" ? payload.model : "";
+        this.state.metrics.proxyLastCheckSec = this.state.metrics.timeSec;
+
+        const hasApiKey = Boolean(payload.hasApiKey);
+        if (hasApiKey && !this.state.ai.enabled && !this.aiHealthMonitor.autoEnabledOnce) {
+          this.state.ai.enabled = true;
+          this.aiHealthMonitor.autoEnabledOnce = true;
+          this.state.controls.actionMessage = `AI auto-enabled (model: ${payload.model ?? "unknown"}).`;
+          this.state.controls.actionKind = "success";
+        } else if (!hasApiKey && (reason === "startup" || this.state.ai.enabled)) {
+          this.state.ai.enabled = false;
+          this.state.ai.mode = "fallback";
+          this.state.controls.actionMessage = "AI proxy has no API key. Running fallback mode.";
+          this.state.controls.actionKind = "info";
+        }
+      })
+      .catch((err) => {
+        const wasUp = this.aiHealthMonitor.lastStatus === "up";
+        this.aiHealthMonitor.lastStatus = "down";
+        this.aiHealthMonitor.lastHasApiKey = false;
+        this.state.metrics.proxyHealth = "down";
+        this.state.metrics.proxyHasApiKey = false;
+        this.state.metrics.proxyLastCheckSec = this.state.metrics.timeSec;
+        if (reason === "startup" || wasUp) {
+          this.state.ai.enabled = false;
+          this.state.ai.mode = "fallback";
+          this.state.controls.actionMessage = `AI proxy unreachable (${String(err?.message ?? err)}). Running fallback mode.`;
+          this.state.controls.actionKind = "error";
+        }
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        this.aiHealthMonitor.inFlight = false;
+      });
+  }
+
   #reportLoopError(err) {
     const messageCore = String(err?.message ?? err);
     const msg = `Main loop error: ${messageCore}`;
@@ -781,6 +860,35 @@ export class GameApp {
     } catch (err) {
       this.#reportLoopError(new Error(`${panelName}: ${String(err?.message ?? err)}`));
     }
+  }
+
+  #isUiTextInteractionActive() {
+    if (typeof document === "undefined") return false;
+    const active = document.activeElement;
+    if (active) {
+      const tag = String(active.tagName ?? "").toUpperCase();
+      if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && !active.disabled) {
+        return true;
+      }
+      if (active.isContentEditable) {
+        return true;
+      }
+    }
+    if (typeof window === "undefined" || typeof window.getSelection !== "function") {
+      return false;
+    }
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      return false;
+    }
+    return this.#isNodeInUiArea(selection.anchorNode) || this.#isNodeInUiArea(selection.focusNode);
+  }
+
+  #isNodeInUiArea(node) {
+    if (!node) return false;
+    const element = node.nodeType === 1 ? node : node.parentElement;
+    if (!element || typeof element.closest !== "function") return false;
+    return Boolean(element.closest("#ui, #devDock, #entityFocusOverlay"));
   }
 
   #sanitizeControls(notify = false) {

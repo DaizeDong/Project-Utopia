@@ -74,7 +74,8 @@
         ? `${currentObjective.title} (${currentObjective.progress.toFixed(0)}%)`
         : "All objectives completed";
     }
-    this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode}`;
+    const proxyModel = state.metrics.proxyModel || "-";
+    this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode} (${state.metrics.proxyHealth ?? "unknown"}, ${proxyModel})`;
     const fmtSec = (sec) => (sec >= 0 ? `${sec.toFixed(1)}s` : "-");
     if (this.aiEnvVal) {
       this.aiEnvVal.textContent = `${state.ai.lastEnvironmentSource} @ ${fmtSec(state.ai.lastEnvironmentResultSec)} (llm ${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount})`;
@@ -110,6 +111,8 @@
       const policyErr = state.ai.lastPolicyError ? `policy=${state.ai.lastPolicyError}` : "";
       const errorText = [envErr, policyErr].filter(Boolean).join(" | ");
       this.warningVal.textContent = `AI: ${errorText}`;
+    } else if (state.metrics.proxyHealth === "down") {
+      this.warningVal.textContent = "AI proxy is unreachable; running fallback.";
     } else if (state.metrics.warnings.length > 0) {
       this.warningVal.textContent = state.metrics.warnings[state.metrics.warnings.length - 1];
     } else {

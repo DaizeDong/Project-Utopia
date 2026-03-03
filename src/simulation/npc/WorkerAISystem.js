@@ -8,12 +8,23 @@ const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
+const DELIVER_THRESHOLD = 2.4;
 
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = state.buildings.warehouses > 0;
   const hasCarry = worker.carry.food + worker.carry.wood > 0;
+  const carryTotal = worker.carry.food + worker.carry.wood;
+  const noWorkSite = (worker.role === ROLE.FARM && state.buildings.farms <= 0)
+    || (worker.role === ROLE.WOOD && state.buildings.lumbers <= 0);
+  const alreadyDelivering = worker.stateLabel === "Deliver (Warehouse)";
   if (worker.hunger < 0.3 && state.resources.food > 0 && hasWarehouse) return "eat";
-  if (hasCarry && hasWarehouse) return "deliver";
+  if (
+    hasCarry &&
+    hasWarehouse &&
+    (carryTotal >= DELIVER_THRESHOLD || alreadyDelivering || noWorkSite)
+  ) {
+    return "deliver";
+  }
   if (worker.role === ROLE.FARM && state.buildings.farms > 0) return "farm";
   if (worker.role === ROLE.WOOD && state.buildings.lumbers > 0) return "lumber";
   return "wander";
@@ -65,12 +76,12 @@ function maybeRetarget(worker, state, services, intent, targetTileTypes) {
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
 
   const intentChanged = blackboard.intentTargetIntent !== intent;
-  const targetExpired = nowSec >= Number(blackboard.nextTargetRefreshSec ?? -Infinity);
   const targetInvalid = !isTargetTileType(worker, state, targetTileTypes);
   const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
   const pathMissingAwayFromTarget = !hasActivePath(worker, state) && !isAtTargetTile(worker, state);
+  const shouldRetarget = intentChanged || targetInvalid || pathStale || pathMissingAwayFromTarget;
 
-  if (intentChanged || targetExpired || targetInvalid || pathStale || pathMissingAwayFromTarget) {
+  if (shouldRetarget) {
     if (!canAttemptPath(worker, state)) {
       return hasActivePath(worker, state) || isAtTargetTile(worker, state);
     }

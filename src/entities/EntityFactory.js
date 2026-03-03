@@ -207,6 +207,9 @@ export function createInitialGameState(options = {}) {
       renderCpuMs: 0,
       aiLatencyMs: 0,
       proxyHealth: "unknown",
+      proxyHasApiKey: false,
+      proxyModel: "",
+      proxyLastCheckSec: -999,
       regressionFlags: [],
     },
     ai: {
@@ -226,6 +229,10 @@ export function createInitialGameState(options = {}) {
       environmentLlmCount: 0,
       policyLlmCount: 0,
       groupPolicies: new Map(),
+      lastEnvironmentDirective: null,
+      lastPolicyBatch: [],
+      lastEnvironmentModel: "",
+      lastPolicyModel: "",
     },
     debug: {
       selectedTile: null,
