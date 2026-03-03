@@ -103,6 +103,26 @@ function compactError(err) {
   return raw.slice(0, 180);
 }
 
+function buildDebugPayload({
+  requestedAtIso,
+  endpoint,
+  requestSummary,
+  rawModelContent = "",
+  parsedBeforeValidation = null,
+  guardedOutput = null,
+  error = "",
+}) {
+  return {
+    requestedAtIso,
+    endpoint,
+    requestSummary,
+    rawModelContent: String(rawModelContent ?? ""),
+    parsedBeforeValidation,
+    guardedOutput,
+    error: String(error ?? ""),
+  };
+}
+
 async function callOpenAI(systemPrompt, summary, modelName) {
   const body = {
     model: modelName,
@@ -140,7 +160,7 @@ async function callOpenAI(systemPrompt, summary, modelName) {
   if (!parsed) {
     throw new Error("OpenAI returned non-JSON content");
   }
-  return { parsed, model: modelName };
+  return { parsed, model: modelName, rawModelContent: String(content ?? "") };
 }
 
 async function callOpenAIWithModelFallback(systemPrompt, summary) {
@@ -176,12 +196,22 @@ function readBody(req) {
 }
 
 async function handleEnvironment(summary) {
+  const requestedAtIso = new Date().toISOString();
   if (!OPENAI_API_KEY) {
+    const guarded = guardEnvironmentDirective(buildEnvironmentFallback(summary));
     return {
       fallback: true,
-      directive: guardEnvironmentDirective(buildEnvironmentFallback(summary)),
+      directive: guarded,
       error: "OPENAI_API_KEY missing",
       model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        parsedBeforeValidation: null,
+        guardedOutput: guarded,
+        error: "OPENAI_API_KEY missing",
+      }),
     };
   }
 
@@ -191,29 +221,59 @@ async function handleEnvironment(summary) {
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);
     }
+    const guarded = guardEnvironmentDirective(validation.value);
     return {
       fallback: false,
-      directive: guardEnvironmentDirective(validation.value),
+      directive: guarded,
       error: "",
       model: result.model,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        rawModelContent: result.rawModelContent,
+        parsedBeforeValidation: result.parsed,
+        guardedOutput: guarded,
+        error: "",
+      }),
     };
   } catch (err) {
+    const compact = compactError(err);
+    const guarded = guardEnvironmentDirective(buildEnvironmentFallback(summary));
     return {
       fallback: true,
-      directive: guardEnvironmentDirective(buildEnvironmentFallback(summary)),
-      error: compactError(err),
+      directive: guarded,
+      error: compact,
       model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        parsedBeforeValidation: null,
+        guardedOutput: guarded,
+        error: compact,
+      }),
     };
   }
 }
 
 async function handlePolicies(summary) {
+  const requestedAtIso = new Date().toISOString();
   if (!OPENAI_API_KEY) {
+    const guarded = guardGroupPolicies(buildPolicyFallback(summary));
     return {
       fallback: true,
-      ...guardGroupPolicies(buildPolicyFallback(summary)),
+      ...guarded,
       error: "OPENAI_API_KEY missing",
       model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/policy",
+        requestSummary: summary,
+        parsedBeforeValidation: null,
+        guardedOutput: guarded,
+        error: "OPENAI_API_KEY missing",
+      }),
     };
   }
 
@@ -223,18 +283,38 @@ async function handlePolicies(summary) {
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);
     }
+    const guarded = guardGroupPolicies(validation.value);
     return {
       fallback: false,
-      ...guardGroupPolicies(validation.value),
+      ...guarded,
       error: "",
       model: result.model,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/policy",
+        requestSummary: summary,
+        rawModelContent: result.rawModelContent,
+        parsedBeforeValidation: result.parsed,
+        guardedOutput: guarded,
+        error: "",
+      }),
     };
   } catch (err) {
+    const compact = compactError(err);
+    const guarded = guardGroupPolicies(buildPolicyFallback(summary));
     return {
       fallback: true,
-      ...guardGroupPolicies(buildPolicyFallback(summary)),
-      error: compactError(err),
+      ...guarded,
+      error: compact,
       model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/policy",
+        requestSummary: summary,
+        parsedBeforeValidation: null,
+        guardedOutput: guarded,
+        error: compact,
+      }),
     };
   }
 }
@@ -305,4 +385,3 @@ server.on("error", (err) => {
   console.error(`[ai-proxy] server error: ${String(err?.message ?? err)}`);
   process.exit(1);
 });
-

@@ -23,6 +23,7 @@
     this.aiEnvVal = document.getElementById("aiEnvVal");
     this.aiPolicyVal = document.getElementById("aiPolicyVal");
     this.aiDecisionVal = document.getElementById("aiDecisionVal");
+    this.deathVal = document.getElementById("deathVal");
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
     this.warningVal = document.getElementById("warningVal");
@@ -85,6 +86,12 @@
     }
     if (this.aiDecisionVal) {
       this.aiDecisionVal.textContent = `env req ${fmtSec(state.ai.lastEnvironmentDecisionSec)} / policy req ${fmtSec(state.ai.lastPolicyDecisionSec)}`;
+    }
+    if (this.deathVal) {
+      const deathsTotal = Number(state.metrics.deathsTotal ?? 0);
+      const starvation = Number(state.metrics.deathsByReason?.starvation ?? 0);
+      const predation = Number(state.metrics.deathsByReason?.predation ?? 0);
+      this.deathVal.textContent = `${deathsTotal} (starve ${starvation} / pred ${predation})`;
     }
     this.eventVal.textContent = state.events.active.length > 0
       ? state.events.active.map((e) => `${e.type}:${e.status}`).join(", ")

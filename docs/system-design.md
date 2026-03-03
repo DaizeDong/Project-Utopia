@@ -27,7 +27,7 @@ Key branches:
 - `buildings`: aggregate building counts
 - `weather` and `events`: dynamic world pressure
 - `ai`: request counters, source mode, policy cache, errors
-- `metrics`: frame/sim timing, benchmark status, warnings, proxy health/model metadata
+- `metrics`: frame/sim timing, benchmark status, warnings, proxy health/model metadata, death counters
 - `debug`: A*/Boids/render/system diagnostics, trace streams
 - `gameplay`: doctrine, prosperity/threat, objective progress
 - `controls`: tool state, sim time controls, map regeneration controls, population targets
@@ -51,8 +51,9 @@ System order:
 8. `WorkerAISystem`
 9. `VisitorAISystem`
 10. `AnimalAISystem`
-11. `BoidsSystem`
-12. `ResourceSystem`
+11. `MortalitySystem`
+12. `BoidsSystem`
+13. `ResourceSystem`
 
 ## 4. Map Generation Design
 
@@ -124,6 +125,7 @@ Inspector and telemetry:
 - bottom developer dock for global stats, A*/Boids, AI trace, system timings, event logs
 - each dock card is independently scrollable and collapsible (`details` + local state persistence)
 - dock state persistence key: `utopiaDevDockPanels:v1`
+- right-top `Entity Focus` panel includes full AI exchange blocks with copyable request/response payloads
 
 ## 7. AI Pipeline and Health Bootstrap
 
@@ -137,6 +139,13 @@ Proxy endpoints:
 - `POST /api/ai/environment`
 - `POST /api/ai/policy`
 - `GET /health`
+
+Policy groups (runtime):
+- `workers`
+- `traders`
+- `saboteurs`
+- `herbivores`
+- `predators`
 
 `/health` returns:
 - `hasApiKey`, `model`, `port`
@@ -153,6 +162,12 @@ Resilience:
 - guardrails clamping
 - deterministic fallback when API is unavailable/invalid
 - model mismatch tolerance in proxy: one-shot retry with default `gpt-4.1-mini`
+- policy backward compatibility: legacy `visitors` policy is split to `traders + saboteurs`
+
+AI exchange observability:
+- proxy returns a `debug` envelope for both success and fallback:
+  - `requestedAtIso`, `endpoint`, `requestSummary`, `rawModelContent`, `parsedBeforeValidation`, `guardedOutput`, `error`
+- game state stores latest per-group exchanges and ring buffers for demo/debug views
 
 ## 8. Performance Notes
 
@@ -168,4 +183,3 @@ Current optimizations include:
 Current baseline checks:
 - `node --test` passes
 - `npm run build` passes
-

@@ -32,6 +32,49 @@ function summarizeTopWeights(weights = {}) {
   return rows.slice(0, 3).map(([k, v]) => `${k}:${fmtNum(v, 2)}`).join(" | ");
 }
 
+function prettyJson(value) {
+  try {
+    return JSON.stringify(value ?? null, null, 2);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function renderExchange(label, exchange, emptyText = "No exchange captured yet.") {
+  if (!exchange) {
+    return `<div class="small muted">${escapeHtml(emptyText)}</div>`;
+  }
+  const requestText = prettyJson(exchange.requestSummary);
+  const parsedText = prettyJson(exchange.parsedBeforeValidation);
+  const guardedText = prettyJson(exchange.guardedOutput);
+  const rawContent = String(exchange.rawModelContent ?? "");
+
+  return `
+    <details style="margin-top:6px;" open>
+      <summary class="small"><b>${escapeHtml(label)}</b></summary>
+      <div class="small" style="margin-top:6px;"><b>Time:</b> sim=${fmtSec(exchange.simSec)} | reqAt=${escapeHtml(exchange.requestedAtIso || "-")}</div>
+      <div class="small"><b>Source:</b> ${escapeHtml(exchange.source || "-")} | <b>Fallback:</b> ${String(Boolean(exchange.fallback))} | <b>Model:</b> ${escapeHtml(exchange.model || "-")}</div>
+      <div class="small"><b>Endpoint:</b> ${escapeHtml(exchange.endpoint || "-")} | <b>Error:</b> ${escapeHtml(exchange.error || "none")}</div>
+      <details style="margin-top:6px;">
+        <summary class="small"><b>Request Summary (full)</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(requestText)}</pre>
+      </details>
+      <details style="margin-top:6px;" open>
+        <summary class="small"><b>Raw Model Content (full)</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(rawContent || "(empty)")}</pre>
+      </details>
+      <details style="margin-top:6px;">
+        <summary class="small"><b>Parsed Before Validation</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(parsedText)}</pre>
+      </details>
+      <details style="margin-top:6px;">
+        <summary class="small"><b>Guarded Output</b></summary>
+        <pre class="entity-exchange-pre">${escapeHtml(guardedText)}</pre>
+      </details>
+    </details>
+  `;
+}
+
 export class EntityFocusPanel {
   constructor(state) {
     this.state = state;
@@ -53,9 +96,13 @@ export class EntityFocusPanel {
       }
       return "Worker policy has no farm/wood bias.";
     }
-    if (group === "visitors") {
+    if (group === "traders") {
+      const trade = Number(groupPolicy.intentWeights?.trade ?? 0);
+      return `Trader trade weight=${fmtNum(trade)}; higher value increases warehouse-focused behavior.`;
+    }
+    if (group === "saboteurs") {
       const sabotage = Number(groupPolicy.intentWeights?.sabotage ?? 0);
-      return `Visitor sabotage weight=${fmtNum(sabotage)}; higher value increases sabotage pressure.`;
+      return `Saboteur sabotage weight=${fmtNum(sabotage)}; higher value increases sabotage pressure.`;
     }
     const topIntent = summarizeTopWeights(groupPolicy.intentWeights ?? {});
     return `Top intents: ${topIntent}`;
@@ -97,6 +144,13 @@ export class EntityFocusPanel {
     const simSec = fmtSec(this.state.metrics.timeSec);
     const policySec = fmtSec(this.state.ai.lastPolicyResultSec);
     const envSec = fmtSec(this.state.ai.lastEnvironmentResultSec);
+    const hp = Number(entity.hp ?? entity.maxHp ?? 0);
+    const maxHp = Number(entity.maxHp ?? 0);
+
+    const policyExchangeByGroup = this.state.ai.lastPolicyExchangeByGroup?.[entity.groupId] ?? null;
+    const policyExchangeLatest = this.state.ai.lastPolicyExchange ?? null;
+    const policyExchange = policyExchangeByGroup ?? policyExchangeLatest;
+    const environmentExchange = this.state.ai.lastEnvironmentExchange ?? null;
 
     const html = `
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
@@ -107,7 +161,8 @@ export class EntityFocusPanel {
       <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx, entity.vz)} speed=${fmtNum(speed, 3)} | <b>Desired:</b> ${vecFmt(entity.desiredVel?.x, entity.desiredVel?.z)}</div>
       <div class="small"><b>Path:</b> idx=${entity.pathIndex ?? 0}/${pathLen} | next=${nextNode} | target=${target}</div>
       <div class="small"><b>Path Recalc:</b> ${fmtSec(entity.debug?.lastPathRecalcSec)} | <b>Path Grid:</b> ${entity.pathGridVersion ?? "-"}</div>
-      <div class="small"><b>Hunger:</b> ${fmtNum(entity.hunger, 3)} | <b>Carry:</b> food=${fmtNum(entity.carry?.food, 2)} wood=${fmtNum(entity.carry?.wood, 2)}</div>
+      <div class="small"><b>Vitals:</b> hp=${fmtNum(hp, 1)}/${fmtNum(maxHp, 1)} | hunger=${fmtNum(entity.hunger, 3)} | alive=${String(Boolean(entity.alive ?? true))}</div>
+      <div class="small"><b>Carry:</b> food=${fmtNum(entity.carry?.food, 2)} wood=${fmtNum(entity.carry?.wood, 2)} | <b>Attack CD:</b> ${fmtNum(entity.attackCooldownSec ?? 0, 2)}</div>
       <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" />
       <div class="small"><b>AI Agent Effect</b></div>
       <div class="small"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
@@ -118,6 +173,11 @@ export class EntityFocusPanel {
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>
       </details>
+      <details style="margin-top:8px;" open>
+        <summary class="small"><b>Last AI Exchange (Full)</b></summary>
+        ${renderExchange(`Policy Exchange for ${entity.groupId ?? "unknown"}`, policyExchange, "No policy exchange for this group yet.")}
+        ${renderExchange("Environment Exchange (Global)", environmentExchange, "No environment exchange yet.")}
+      </details>
     `;
 
     if (html === this.lastHtml) return;
@@ -125,4 +185,3 @@ export class EntityFocusPanel {
     this.root.innerHTML = html;
   }
 }
-

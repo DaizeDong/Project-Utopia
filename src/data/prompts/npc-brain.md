@@ -5,7 +5,7 @@ JSON schema:
 {
   "policies": [
     {
-      "groupId": "workers|visitors|herbivores|predators",
+      "groupId": "workers|traders|saboteurs|herbivores|predators",
       "intentWeights": { "string": number },
       "riskTolerance": number,
       "targetPriorities": { "string": number },

@@ -1,9 +1,11 @@
+import { BALANCE } from "../../config/balance.js";
 import { ANIMAL_KIND, TILE } from "../../config/constants.js";
+import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
-import { canAttemptPath, clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 
-const PREDATOR_HUNT_REFRESH_SEC = 1.1;
-const HERBIVORE_FLEE_REFRESH_SEC = 0.85;
+const PREDATOR_HUNT_REFRESH_SEC = 1.15;
+const HERBIVORE_FLEE_REFRESH_SEC = 0.9;
 const WANDER_REFRESH_BASE_SEC = 2.2;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
 
@@ -12,6 +14,7 @@ function nearestPredator(herbivore, predators) {
   let bestDSq = Infinity;
   for (let i = 0; i < predators.length; i += 1) {
     const predator = predators[i];
+    if (predator.alive === false) continue;
     const dx = herbivore.x - predator.x;
     const dz = herbivore.z - predator.z;
     const dSq = dx * dx + dz * dz;
@@ -28,6 +31,7 @@ function nearestHerbivore(predator, herbivores) {
   let bestDSq = Infinity;
   for (let i = 0; i < herbivores.length; i += 1) {
     const prey = herbivores[i];
+    if (prey.alive === false) continue;
     const dx = predator.x - prey.x;
     const dz = predator.z - prey.z;
     const dSq = dx * dx + dz * dz;
@@ -89,6 +93,23 @@ function findNearbyGrazeTarget(animal, state, rng, attempts = 12, radius = 7) {
   return null;
 }
 
+function updateAnimalHunger(animal, dt) {
+  const decay = animal.kind === ANIMAL_KIND.PREDATOR
+    ? Number(BALANCE.predatorHungerDecayPerSecond ?? 0.012)
+    : Number(BALANCE.herbivoreHungerDecayPerSecond ?? 0.009);
+  animal.hunger = clamp((animal.hunger ?? 1) - decay * dt, 0, 1);
+}
+
+function recoverHerbivoreHunger(animal, dt) {
+  const recover = Number(BALANCE.herbivoreGrazeRecoveryPerSecond ?? 0.08);
+  animal.hunger = clamp((animal.hunger ?? 0) + recover * dt, 0, 1);
+}
+
+function recoverPredatorHungerOnHit(animal) {
+  const recover = Number(BALANCE.predatorHungerRecoveryOnHit ?? 0.22);
+  animal.hunger = clamp((animal.hunger ?? 0) + recover, 0, 1);
+}
+
 function herbivoreTick(animal, predators, state, dt, services) {
   if (animal.debug) animal.debug.lastIntent = "graze";
   const { predator, distance } = nearestPredator(animal, predators);
@@ -97,7 +118,8 @@ function herbivoreTick(animal, predators, state, dt, services) {
     animal.stateLabel = "Flee";
     const nowSec = state.metrics.timeSec;
     const nextFleeRefresh = Number(animal.debug?.nextFleeRefreshSec ?? -Infinity);
-    if (((!hasActivePath(animal, state) && !isAtTargetTile(animal, state)) || nowSec >= nextFleeRefresh) && canAttemptPath(animal, state)) {
+    const stalePath = !hasActivePath(animal, state) || isPathStuck(animal, state, 1.8);
+    if ((stalePath || nowSec >= nextFleeRefresh) && canAttemptPath(animal, state)) {
       const dx = animal.x - predator.x;
       const dz = animal.z - predator.z;
       const len = Math.hypot(dx, dz) || 1;
@@ -131,12 +153,13 @@ function herbivoreTick(animal, predators, state, dt, services) {
   }
   if (isAtTargetTile(animal, state)) {
     setIdleDesired(animal);
+    recoverHerbivoreHunger(animal, dt);
     return;
   }
 
   animal.stateLabel = "Wander";
   const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
-  if (state.metrics.timeSec >= nextWanderRefreshSec && canAttemptPath(animal, state)) {
+  if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
     clearPath(animal);
     if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
       animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
@@ -151,6 +174,8 @@ function herbivoreTick(animal, predators, state, dt, services) {
 
 function predatorTick(animal, herbivores, state, dt, services) {
   if (animal.debug) animal.debug.lastIntent = "hunt";
+  animal.attackCooldownSec = Math.max(0, Number(animal.attackCooldownSec ?? 0) - dt);
+
   const { prey, distance } = nearestHerbivore(animal, herbivores);
   if (prey) {
     animal.stateLabel = "Hunt";
@@ -160,7 +185,8 @@ function predatorTick(animal, herbivores, state, dt, services) {
     const targetDrifted = tileDistance(animal.targetTile, preyTile) >= 2;
     const pathStale = Boolean(animal.path) && animal.pathGridVersion !== state.grid.version;
     const pathMissingAwayFromTarget = !hasActivePath(animal, state) && !isAtTargetTile(animal, state);
-    const shouldRetarget = pathStale || pathMissingAwayFromTarget || (targetDrifted && nowSec >= nextRefreshSec);
+    const pathStuck = isPathStuck(animal, state, 2.0);
+    const shouldRetarget = pathStale || pathMissingAwayFromTarget || pathStuck || (targetDrifted && nowSec >= nextRefreshSec);
     if (shouldRetarget && canAttemptPath(animal, state)) {
       if (setTargetAndPath(animal, preyTile, state, services) && animal.debug) {
         animal.debug.nextHuntRefreshSec = nowSec + PREDATOR_HUNT_REFRESH_SEC;
@@ -170,10 +196,19 @@ function predatorTick(animal, herbivores, state, dt, services) {
     if (hasActivePath(animal, state)) {
       const step = followPath(animal, state, dt);
       animal.desiredVel = step.desired;
-      if (distance < 0.9) {
-        // Predator pressure creates migration signal without killing entities.
-        prey.memory.recentEvents.unshift("predator-near");
+      if (distance < Number(BALANCE.predatorAttackDistance ?? 0.9) && animal.attackCooldownSec <= 0) {
+        const dmg = Number(BALANCE.predatorAttackDamage ?? 24);
+        prey.hp = Math.max(0, Number(prey.hp ?? 0) - dmg);
+        prey.memory.recentEvents.unshift("predator-hit");
         prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
+        animal.attackCooldownSec = Number(BALANCE.predatorAttackCooldownSec ?? 1.4);
+        recoverPredatorHungerOnHit(animal);
+        if (prey.hp <= 0 && prey.alive !== false) {
+          prey.alive = false;
+          prey.deathReason = "predation";
+          prey.deathSec = state.metrics.timeSec;
+          prey.starvationSec = 0;
+        }
       }
       return;
     }
@@ -185,7 +220,7 @@ function predatorTick(animal, herbivores, state, dt, services) {
 
   animal.stateLabel = "Roam";
   const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
-  if (state.metrics.timeSec >= nextWanderRefreshSec && canAttemptPath(animal, state)) {
+  if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
     clearPath(animal);
     if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
       animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
@@ -210,6 +245,7 @@ export class AnimalAISystem {
     this.predators.length = 0;
     for (let i = 0; i < state.animals.length; i += 1) {
       const animal = state.animals[i];
+      if (animal.alive === false) continue;
       if (animal.kind === ANIMAL_KIND.HERBIVORE) {
         this.herbivores.push(animal);
       } else if (animal.kind === ANIMAL_KIND.PREDATOR) {
@@ -221,6 +257,8 @@ export class AnimalAISystem {
   update(dt, state, services) {
     this.#partitionAnimals(state);
     for (const animal of state.animals) {
+      if (animal.alive === false) continue;
+      updateAnimalHunger(animal, dt);
       if (animal.kind === ANIMAL_KIND.HERBIVORE) {
         herbivoreTick(animal, this.predators, state, dt, services);
       } else {

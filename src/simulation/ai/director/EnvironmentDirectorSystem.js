@@ -1,4 +1,4 @@
-﻿import { BALANCE } from "../../../config/balance.js";
+import { BALANCE } from "../../../config/balance.js";
 import { applyEnvironmentDirective } from "./EnvironmentDirectiveApplier.js";
 import { buildWorldSummary } from "../memory/WorldSummary.js";
 
@@ -25,6 +25,26 @@ export class EnvironmentDirectorSystem {
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
       state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
+
+      const debugExchange = this.pendingResult.debug ?? {};
+      const environmentExchange = {
+        simSec: now,
+        source: usedFallback ? "fallback" : "llm",
+        fallback: usedFallback,
+        model: this.pendingResult.model ?? state.ai.lastEnvironmentModel ?? "",
+        endpoint: debugExchange.endpoint ?? "/api/ai/environment",
+        requestedAtIso: debugExchange.requestedAtIso ?? "",
+        requestSummary: debugExchange.requestSummary ?? null,
+        rawModelContent: debugExchange.rawModelContent ?? "",
+        parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
+        guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
+        error: this.pendingResult.error ?? debugExchange.error ?? "",
+      };
+      state.ai.lastEnvironmentExchange = environmentExchange;
+      state.ai.environmentExchanges ??= [];
+      state.ai.environmentExchanges.unshift(environmentExchange);
+      state.ai.environmentExchanges = state.ai.environmentExchanges.slice(0, 8);
+
       if (state.debug?.aiTrace) {
         state.debug.aiTrace.unshift({
           sec: now,
@@ -74,6 +94,15 @@ export class EnvironmentDirectorSystem {
           latencyMs: 0,
           error: String(err?.message ?? err),
           model: services.llmClient.lastModel ?? "fallback",
+          debug: {
+            requestedAtIso: new Date().toISOString(),
+            endpoint: "/api/ai/environment",
+            requestSummary: summary,
+            rawModelContent: "",
+            parsedBeforeValidation: null,
+            guardedOutput: services.fallbackEnvironment(summary),
+            error: String(err?.message ?? err),
+          },
         };
       })
       .finally(() => {

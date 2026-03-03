@@ -102,6 +102,8 @@ export class DeveloperPanel {
     const popStats = state.metrics.populationStats ?? null;
     const workers = popStats?.workers ?? state.agents.filter((a) => a.type === "WORKER").length;
     const visitors = popStats?.visitors ?? state.agents.filter((a) => a.type === "VISITOR").length;
+    const traders = state.agents.filter((a) => a.groupId === "traders").length;
+    const saboteurs = state.agents.filter((a) => a.groupId === "saboteurs").length;
     const herbivores = popStats?.herbivores ?? state.animals.filter((a) => a.kind === "HERBIVORE").length;
     const predators = popStats?.predators ?? state.animals.filter((a) => a.kind === "PREDATOR").length;
     const objective = state.gameplay.objectives[state.gameplay.objectiveIndex] ?? null;
@@ -122,6 +124,8 @@ export class DeveloperPanel {
       totalEntities: workers + visitors + herbivores + predators,
     };
     const rngSnapshot = state.debug?.rng ?? null;
+    const deathsTotal = Number(state.metrics.deathsTotal ?? 0);
+    const deathsByReason = state.metrics.deathsByReason ?? {};
 
     const lines = [
       `Map: ${state.world.mapTemplateName} (${state.world.mapTemplateId})`,
@@ -133,8 +137,9 @@ export class DeveloperPanel {
       `Render Mode: ${renderMode} (entities=${renderEntities}, switch@${state.debug.renderModelDisableThreshold ?? "-"}, pixelRatio=${renderPixelRatio})`,
       `Visual: preset=${state.controls.visualPreset} pack=${visualPack} tileTextures=${tileLoaded} icons=${iconLoaded} unitSprites=${unitLoaded}`,
       `Resources: food=${Math.floor(state.resources.food)} wood=${Math.floor(state.resources.wood)} | buildings W/H/F/L=${state.buildings.walls}/${state.buildings.warehouses}/${state.buildings.farms}/${state.buildings.lumbers}`,
-      `Population: workers=${workers} visitors=${visitors} herbivores=${herbivores} predators=${predators}`,
+      `Population: workers=${workers} visitors=${visitors} (traders=${traders}, saboteurs=${saboteurs}) herbivores=${herbivores} predators=${predators}`,
       `Population Breakdown: baseW=${popBreakdown.baseWorkers} stressW=${popBreakdown.stressWorkers} totalW=${popBreakdown.totalWorkers} totalEntities=${popBreakdown.totalEntities}`,
+      `Deaths: total=${deathsTotal} starvation=${Number(deathsByReason.starvation ?? 0)} predation=${Number(deathsByReason.predation ?? 0)} event=${Number(deathsByReason.event ?? 0)}`,
       `Gameplay: doctrine=${state.gameplay.doctrine} prosperity=${this.#fmtNum(state.gameplay.prosperity, 1)} threat=${this.#fmtNum(state.gameplay.threat, 1)}`,
       objective
         ? `Objective: ${objective.title} (${this.#fmtNum(objective.progress, 1)}%)`
@@ -272,4 +277,3 @@ export class DeveloperPanel {
     this.#renderEventLog();
   }
 }
-

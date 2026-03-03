@@ -4,8 +4,22 @@ import { buildSpatialHash, queryNeighbors } from "./SpatialHash.js";
 
 function sameFlockGroup(a, b) {
   if (a.type !== b.type) return false;
+  const ga = String(a.groupId ?? "");
+  const gb = String(b.groupId ?? "");
+  if (ga && gb) return ga === gb;
   if (a.type === "ANIMAL") return a.kind === b.kind;
-  return true;
+  return a.type === b.type;
+}
+
+function getGroupProfile(entity) {
+  const groupId = String(entity.groupId ?? "").trim();
+  const profile = BALANCE.boidsGroupProfiles?.[groupId] ?? null;
+  if (profile) return profile;
+  return {
+    neighborRadius: BALANCE.boidsNeighborRadius,
+    separationRadius: BALANCE.boidsSeparationRadius,
+    weights: BALANCE.boidsWeights,
+  };
 }
 
 function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
@@ -17,8 +31,10 @@ function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
   let cohZ = 0;
   let count = 0;
   const maxSamples = 24;
-  const neighborR = BALANCE.boidsNeighborRadius;
-  const sepR = BALANCE.boidsSeparationRadius;
+  const profile = getGroupProfile(entity);
+  const neighborR = Number(profile.neighborRadius ?? BALANCE.boidsNeighborRadius);
+  const sepR = Number(profile.separationRadius ?? BALANCE.boidsSeparationRadius);
+  const weights = profile.weights ?? BALANCE.boidsWeights;
 
   for (let i = 0; i < neighbors.length; i += 1) {
     const other = neighbors[i];
@@ -54,15 +70,15 @@ function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
   }
 
   out.x =
-    sepX * BALANCE.boidsWeights.separation +
-    aliX * BALANCE.boidsWeights.alignment +
-    cohX * BALANCE.boidsWeights.cohesion +
-    desiredX * BALANCE.boidsWeights.seek;
+    sepX * Number(weights.separation ?? BALANCE.boidsWeights.separation) +
+    aliX * Number(weights.alignment ?? BALANCE.boidsWeights.alignment) +
+    cohX * Number(weights.cohesion ?? BALANCE.boidsWeights.cohesion) +
+    desiredX * Number(weights.seek ?? BALANCE.boidsWeights.seek);
   out.z =
-    sepZ * BALANCE.boidsWeights.separation +
-    aliZ * BALANCE.boidsWeights.alignment +
-    cohZ * BALANCE.boidsWeights.cohesion +
-    desiredZ * BALANCE.boidsWeights.seek;
+    sepZ * Number(weights.separation ?? BALANCE.boidsWeights.separation) +
+    aliZ * Number(weights.alignment ?? BALANCE.boidsWeights.alignment) +
+    cohZ * Number(weights.cohesion ?? BALANCE.boidsWeights.cohesion) +
+    desiredZ * Number(weights.seek ?? BALANCE.boidsWeights.seek);
 }
 
 export class BoidsSystem {

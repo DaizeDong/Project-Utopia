@@ -36,6 +36,23 @@ async function postJson(url, body, timeoutMs) {
   }
 }
 
+function buildLocalDebug({
+  endpoint,
+  requestSummary,
+  guardedOutput,
+  error = "",
+}) {
+  return {
+    requestedAtIso: new Date().toISOString(),
+    endpoint,
+    requestSummary,
+    rawModelContent: "",
+    parsedBeforeValidation: null,
+    guardedOutput,
+    error,
+  };
+}
+
 export class LLMClient {
   constructor() {
     this.lastError = "";
@@ -46,7 +63,19 @@ export class LLMClient {
 
   async requestEnvironment(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildEnvironmentFallback(summary), error: "", model: "fallback" };
+      const guarded = buildEnvironmentFallback(summary);
+      return {
+        fallback: true,
+        data: guarded,
+        error: "",
+        model: "fallback",
+        debug: buildLocalDebug({
+          endpoint: AI_CONFIG.environmentEndpoint,
+          requestSummary: summary,
+          guardedOutput: guarded,
+          error: "",
+        }),
+      };
     }
 
     try {
@@ -67,23 +96,48 @@ export class LLMClient {
         latencyMs: result.latencyMs,
         error: "",
         model: String(payload.model ?? ""),
+        debug: payload.debug ?? buildLocalDebug({
+          endpoint: AI_CONFIG.environmentEndpoint,
+          requestSummary: summary,
+          guardedOutput: guardEnvironmentDirective(validation.value),
+          error: "",
+        }),
       };
     } catch (err) {
       this.lastError = compactClientError(err);
       this.lastStatus = "down";
+      const guarded = buildEnvironmentFallback(summary);
       return {
         fallback: true,
-        data: buildEnvironmentFallback(summary),
+        data: guarded,
         latencyMs: this.lastLatencyMs,
         error: this.lastError,
         model: this.lastModel || "fallback",
+        debug: buildLocalDebug({
+          endpoint: AI_CONFIG.environmentEndpoint,
+          requestSummary: summary,
+          guardedOutput: guarded,
+          error: this.lastError,
+        }),
       };
     }
   }
 
   async requestPolicies(summary, enabled) {
     if (!enabled) {
-      return { fallback: true, data: buildPolicyFallback(summary), error: "", model: "fallback" };
+      const guarded = buildPolicyFallback(summary);
+      return {
+        fallback: true,
+        data: guarded,
+        error: "",
+        model: "fallback",
+        debug: buildLocalDebug({
+          endpoint: AI_CONFIG.policyEndpoint,
+          requestSummary: summary,
+          guardedOutput: guarded,
+          error: "",
+        }),
+      };
     }
 
     try {
@@ -104,18 +158,30 @@ export class LLMClient {
         latencyMs: result.latencyMs,
         error: "",
         model: String(payload.model ?? ""),
+        debug: payload.debug ?? buildLocalDebug({
+          endpoint: AI_CONFIG.policyEndpoint,
+          requestSummary: summary,
+          guardedOutput: guardGroupPolicies(validation.value),
+          error: "",
+        }),
       };
     } catch (err) {
       this.lastError = compactClientError(err);
       this.lastStatus = "down";
+      const guarded = buildPolicyFallback(summary);
       return {
         fallback: true,
-        data: buildPolicyFallback(summary),
+        data: guarded,
         latencyMs: this.lastLatencyMs,
         error: this.lastError,
         model: this.lastModel || "fallback",
+        debug: buildLocalDebug({
+          endpoint: AI_CONFIG.policyEndpoint,
+          requestSummary: summary,
+          guardedOutput: guarded,
+          error: this.lastError,
+        }),
       };
     }
   }
 }
-

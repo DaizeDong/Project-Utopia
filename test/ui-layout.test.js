@@ -54,6 +54,7 @@ test("UI layout contains required control ids", () => {
     "comparePresetsBtn",
     "exportReplayBtn",
     "workerBreakdownVal",
+    "deathVal",
     "doctrineSelect",
     "aiDecisionPanelBody",
     "entityFocusOverlay",
