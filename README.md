@@ -13,7 +13,7 @@ A real-time interactive crowd simulation built with Three.js. Users edit a tile-
 ```bash
 npm ci
 cp .env.example .env
-# set OPENAI_API_KEY and optional OPENAI_MODEL / AI_PROXY_PORT
+# set OPENAI_API_KEY and optional OPENAI_MODEL / OPENAI_REQUEST_TIMEOUT_MS / AI_PROXY_PORT
 ```
 
 ```bash
@@ -68,7 +68,7 @@ If key is missing/unreachable, app stays in fallback mode by design.
 | Symptom | Root Cause | Fix |
 |---|---|---|
 | `OPENAI_API_KEY missing` | key not loaded into proxy process | set key in `.env`, restart `dev:full` |
-| `request timeout` | proxy can’t reach model endpoint | check network and API provider status |
+| `request timeout` | upstream call exceeded timeout | increase `OPENAI_REQUEST_TIMEOUT_MS` (for example `20000`) and verify network stability |
 | `OpenAI HTTP ... model ...` | invalid model name | set valid `OPENAI_MODEL` or remove to use default `gpt-4.1-mini` |
 | `proxy unreachable` in HUD | proxy process not running/port conflict | free `AI_PROXY_PORT` and rerun `dev:full` |
 

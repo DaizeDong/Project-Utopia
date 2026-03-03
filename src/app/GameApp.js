@@ -6,6 +6,7 @@ import { BuildToolbar } from "../ui/tools/BuildToolbar.js";
 import { HUDController } from "../ui/hud/HUDController.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
 import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
+import { AIExchangePanel } from "../ui/panels/AIExchangePanel.js";
 import { EventPanel } from "../ui/panels/EventPanel.js";
 import { PerformancePanel } from "../ui/panels/PerformancePanel.js";
 import { DeveloperPanel } from "../ui/panels/DeveloperPanel.js";
@@ -76,6 +77,7 @@ export class GameApp {
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);
     this.aiDecisionPanel = new AIDecisionPanel(this.state);
+    this.aiExchangePanel = new AIExchangePanel(this.state);
     this.entityFocusPanel = new EntityFocusPanel(this.state);
     this.eventPanel = new EventPanel(this.state);
     this.performancePanel = new PerformancePanel(this.state, {
@@ -261,6 +263,7 @@ export class GameApp {
       if (!isTextInteractionActive) {
         this.#safeRenderPanel("HUD", () => this.hud.render());
         this.#safeRenderPanel("AIDecisionPanel", () => this.aiDecisionPanel.render());
+        this.#safeRenderPanel("AIExchangePanel", () => this.aiExchangePanel.render());
         this.#safeRenderPanel("Inspector", () => this.inspector.render());
         this.#safeRenderPanel("EntityFocusPanel", () => this.entityFocusPanel.render());
         this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());

@@ -12,16 +12,123 @@ const REQUIRED_POLICY_GROUPS = Object.freeze([
   GROUP_IDS.PREDATORS,
 ]);
 
+const POLICY_INTENT_TO_STATE = Object.freeze({
+  [GROUP_IDS.WORKERS]: Object.freeze({
+    eat: "seek_food",
+    deliver: "deliver",
+    farm: "seek_task",
+    wood: "seek_task",
+    wander: "wander",
+  }),
+  [GROUP_IDS.TRADERS]: Object.freeze({
+    trade: "seek_trade",
+    eat: "seek_food",
+    wander: "wander",
+  }),
+  [GROUP_IDS.SABOTEURS]: Object.freeze({
+    sabotage: "sabotage",
+    scout: "scout",
+    evade: "evade",
+    eat: "seek_food",
+    wander: "wander",
+  }),
+  [GROUP_IDS.HERBIVORES]: Object.freeze({
+    flee: "flee",
+    graze: "graze",
+    migrate: "regroup",
+    wander: "wander",
+  }),
+  [GROUP_IDS.PREDATORS]: Object.freeze({
+    hunt: "hunt",
+    stalk: "stalk",
+    feed: "feed",
+    rest: "rest",
+    wander: "roam",
+  }),
+});
+
+function normalizeToken(raw) {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+function canonicalGroupId(raw) {
+  const token = normalizeToken(raw);
+  if (!token) return "";
+  if (token === "workers" || token === "worker" || token === "labor" || token === "labour") return GROUP_IDS.WORKERS;
+  if (token === "traders" || token === "trader" || token === "merchant" || token === "merchants") return GROUP_IDS.TRADERS;
+  if (token === "saboteurs" || token === "saboteur" || token === "raider" || token === "raiders") return GROUP_IDS.SABOTEURS;
+  if (token === "herbivores" || token === "herbivore" || token === "prey") return GROUP_IDS.HERBIVORES;
+  if (token === "predators" || token === "predator" || token === "hunter" || token === "hunters") return GROUP_IDS.PREDATORS;
+  if (token === "visitors" || token === "visitor") return "visitors";
+  return token;
+}
+
+function canonicalStateForGroup(groupId, rawState) {
+  const token = normalizeToken(rawState);
+  if (!token) return "";
+  const allowed = listGroupStates(groupId);
+  if (allowed.includes(token)) return token;
+  const byToken = new Map(allowed.map((state) => [normalizeToken(state), state]));
+  return byToken.get(token) ?? "";
+}
+
+function deriveStateTargetFromPolicy(policy) {
+  const groupId = canonicalGroupId(policy?.groupId);
+  const intentMap = POLICY_INTENT_TO_STATE[groupId];
+  if (!intentMap) return null;
+
+  const intents = Object.entries(policy?.intentWeights ?? {})
+    .map(([intent, value]) => ({ intent: normalizeToken(intent), value: Number(value) || 0 }))
+    .filter((entry) => entry.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (intents.length === 0) return null;
+  const top = intents[0];
+  const second = intents[1]?.value ?? 0;
+  const targetState = intentMap[top.intent];
+  if (!targetState) return null;
+  if (!listGroupStates(groupId).includes(targetState)) return null;
+
+  const dominance = Math.max(0, top.value - second);
+  const priority = Math.max(0.35, Math.min(0.82, 0.45 + dominance * 0.2));
+  const ttlSec = Math.max(6, Math.min(24, Math.round((Number(policy?.ttlSec) || 18) * 0.7)));
+
+  return {
+    groupId,
+    targetState,
+    priority,
+    ttlSec,
+    reason: `policy-intent:${top.intent}`,
+  };
+}
+
+function mergeStateTargetsWithPolicyFallback(policies, stateTargets) {
+  const merged = [...stateTargets];
+  const existingGroups = new Set(merged.map((target) => target.groupId));
+  for (const policy of policies) {
+    const groupId = canonicalGroupId(policy?.groupId);
+    if (!groupId || existingGroups.has(groupId)) continue;
+    const derived = deriveStateTargetFromPolicy(policy);
+    if (!derived) continue;
+    merged.push(derived);
+    existingGroups.add(groupId);
+  }
+  return merged;
+}
+
 function clonePolicy(policy) {
   return JSON.parse(JSON.stringify(policy));
 }
 
 function splitLegacyVisitorsPolicy(policy) {
-  const groupId = String(policy?.groupId ?? "").trim();
+  const groupId = canonicalGroupId(policy?.groupId);
   if (groupId !== "visitors") return [policy];
   return [
-    clonePolicy({ ...policy, groupId: GROUP_IDS.TRADERS }),
-    clonePolicy({ ...policy, groupId: GROUP_IDS.SABOTEURS }),
+    clonePolicy({ ...policy, groupId: GROUP_IDS.TRADERS, splitFrom: "visitors" }),
+    clonePolicy({ ...policy, groupId: GROUP_IDS.SABOTEURS, splitFrom: "visitors" }),
   ];
 }
 
@@ -34,9 +141,10 @@ function normalizePoliciesForRuntime(policies = [], state) {
     const expanded = splitLegacyVisitorsPolicy(candidate);
     if (expanded.length > 1) migratedLegacyVisitors = true;
     for (const policy of expanded) {
-      const groupId = String(policy.groupId ?? "").trim();
+      const groupId = canonicalGroupId(policy.groupId);
       if (!groupId) continue;
-      policyByGroup.set(groupId, policy);
+      if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
+      policyByGroup.set(groupId, { ...policy, groupId });
     }
   }
 
@@ -59,12 +167,10 @@ function normalizeStateTargetsForRuntime(stateTargets = [], state) {
 
   for (const candidate of stateTargets) {
     if (!candidate || typeof candidate !== "object") continue;
-    const groupId = String(candidate.groupId ?? "").trim();
-    const targetState = String(candidate.targetState ?? "").trim();
+    const groupId = canonicalGroupId(candidate.groupId);
+    const targetState = canonicalStateForGroup(groupId, candidate.targetState);
     if (!groupId || !targetState) continue;
     if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
-    const allowed = listGroupStates(groupId);
-    if (!allowed.includes(targetState)) continue;
 
     const key = `${groupId}:${targetState}`;
     if (seen.has(key)) continue;
@@ -97,7 +203,8 @@ export class NPCBrainSystem {
     if (this.pendingResult) {
       const now = state.metrics.timeSec;
       const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state);
-      const stateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
+      const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
+      const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets);
       for (const policy of policies) {
         state.ai.groupPolicies.set(policy.groupId, {
           expiresAtSec: now + policy.ttlSec,
@@ -137,6 +244,9 @@ export class NPCBrainSystem {
         endpoint: debugExchange.endpoint ?? "/api/ai/policy",
         requestedAtIso: debugExchange.requestedAtIso ?? "",
         requestSummary: debugExchange.requestSummary ?? null,
+        promptSystem: debugExchange.promptSystem ?? "",
+        promptUser: debugExchange.promptUser ?? "",
+        requestPayload: debugExchange.requestPayload ?? null,
         rawModelContent: debugExchange.rawModelContent ?? "",
         parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
@@ -228,9 +338,10 @@ export class NPCBrainSystem {
         this.pendingResult = result;
       })
       .catch((err) => {
+        const fallbackRaw = services.fallbackPolicies(summary);
         this.pendingResult = {
           fallback: true,
-          data: services.fallbackPolicies(summary),
+          data: fallbackRaw,
           latencyMs: 0,
           error: String(err?.message ?? err),
           model: services.llmClient.lastModel ?? "fallback",
@@ -238,9 +349,9 @@ export class NPCBrainSystem {
             requestedAtIso: new Date().toISOString(),
             endpoint: "/api/ai/policy",
             requestSummary: summary,
-            rawModelContent: "",
-            parsedBeforeValidation: null,
-            guardedOutput: services.fallbackPolicies(summary),
+            rawModelContent: JSON.stringify(fallbackRaw, null, 2),
+            parsedBeforeValidation: fallbackRaw,
+            guardedOutput: fallbackRaw,
             error: String(err?.message ?? err),
           },
         };

@@ -11,6 +11,7 @@ const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
 const DELIVER_THRESHOLD = 2.4;
+const WORKER_EAT_RECOVERY_TARGET = 0.84;
 
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
@@ -71,12 +72,17 @@ function setIdleDesired(worker) {
 }
 
 function consumeEmergencyRation(worker, state, dt) {
+  const hungerNow = Number(worker.hunger ?? 0);
+  if (hungerNow >= WORKER_EAT_RECOVERY_TARGET) return;
   if (Number(state.resources.food ?? 0) <= 0) return;
+  const recoveryPerFood = Math.max(1e-4, Number(BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04));
   const eatRate = Number(BALANCE.hungerEatRatePerSecond ?? 5) * 0.45;
-  const eat = Math.min(eatRate * dt, Number(state.resources.food ?? 0));
+  const gainCap = Math.max(0, WORKER_EAT_RECOVERY_TARGET - hungerNow);
+  const desiredFood = Math.min(eatRate * dt, gainCap / recoveryPerFood);
+  const eat = Math.min(desiredFood, Number(state.resources.food ?? 0));
   if (eat <= 0) return;
   state.resources.food -= eat;
-  worker.hunger = clamp(worker.hunger + eat * Number(BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04), 0, 1);
+  worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
 }
 
 function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
@@ -106,6 +112,12 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
 }
 
 function handleEat(worker, state, services, dt) {
+  if ((worker.hunger ?? 0) >= WORKER_EAT_RECOVERY_TARGET) {
+    clearPath(worker);
+    setIdleDesired(worker);
+    return;
+  }
+
   const canUseWarehouse = state.buildings.warehouses > 0;
   if (canUseWarehouse && maybeRetarget(worker, state, services, "seek_food", [TILE.WAREHOUSE])) {
     if (hasActivePath(worker, state)) {
@@ -116,9 +128,16 @@ function handleEat(worker, state, services, dt) {
       setIdleDesired(worker);
     }
     if (isAtTargetTile(worker, state)) {
-      const eat = Math.min(BALANCE.hungerEatRatePerSecond * dt, state.resources.food);
+      const recoveryPerFood = Math.max(1e-4, Number(BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04));
+      const gainCap = Math.max(0, WORKER_EAT_RECOVERY_TARGET - Number(worker.hunger ?? 0));
+      const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
+      const eat = Math.min(desiredFood, state.resources.food);
+      if (eat <= 0) return;
       state.resources.food -= eat;
-      worker.hunger = clamp(worker.hunger + eat * BALANCE.hungerEatRecoveryPerFoodUnit, 0, 1);
+      worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+      if ((worker.hunger ?? 0) >= WORKER_EAT_RECOVERY_TARGET) {
+        clearPath(worker);
+      }
     }
     return;
   }
