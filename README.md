@@ -52,36 +52,6 @@ Expected fields:
 
 If key is missing/unreachable, app stays in fallback mode by design.
 
-## Demo Focus: Full AI Exchange on Selected Entity
-
-1. Click any movable entity in viewport.
-2. Open top-right `Entity Focus` panel.
-3. Expand `Last AI Exchange (Full)`:
-   - `Policy Exchange for <group>`
-   - `Environment Exchange (Global)`
-4. For each exchange you can inspect and copy:
-   - request time and sim time
-   - source / fallback / model / error
-   - full `requestSummary`
-   - full raw model content
-   - parsed payload and guardrailed output
-
-This is the recommended demo evidence path for showing that AI decisions are both live and explainable.
-
-## Behavior and Lifecycle Updates
-
-- AI group strategy now runs with 5 groups:
-  - `workers`, `traders`, `saboteurs`, `herbivores`, `predators`
-- `VISITOR` entities are split by kind:
-  - `TRADER -> traders`
-  - `SABOTEUR -> saboteurs`
-- Mortality is enabled with permanent removal (no auto-respawn):
-  - starvation deaths for humans/animals
-  - predation deaths for herbivores
-- Boids steering now uses per-group profiles:
-  - animals: stronger cohesion/alignment (more flocking)
-  - humans: lower cohesion/higher separation (less flocking)
-
 ## Fallback Diagnostics
 
 | Symptom | Root Cause | Fix |
