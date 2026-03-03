@@ -133,6 +133,12 @@ const TILE_MODEL_BINDINGS = Object.freeze({
 const WORLD_SIM_MANIFEST_URL = "/assets/worldsim/asset-manifest.json";
 const TILE_ICON_SCALE = 0.34;
 const TILE_ICON_Y = 0.24;
+const TILE_ICON_BASE_OPACITY = 0.8;
+const TILE_ICON_FADE_START_ZOOM = 0.92;
+const TILE_ICON_FADE_FULL_ZOOM = 1.18;
+const TILE_BORDER_BASE_OPACITY = 0.24;
+const TILE_BORDER_FADE_START_ZOOM = 0.78;
+const TILE_BORDER_FADE_FULL_ZOOM = 1.1;
 const TILE_ICON_TYPES = Object.freeze({
   [TILE.ROAD]: "ROAD",
   [TILE.FARM]: "FARM",
@@ -590,8 +596,8 @@ export class SceneRenderer {
     const mat = new THREE.LineBasicMaterial({
       color: 0x8fb0c9,
       transparent: true,
-      opacity: 0.34,
-      depthTest: false,
+      opacity: TILE_BORDER_BASE_OPACITY,
+      depthTest: true,
       depthWrite: false,
     });
     this.tileBorderLines = new THREE.LineSegments(geom, mat);
@@ -610,10 +616,13 @@ export class SceneRenderer {
         color: 0xffffff,
         transparent: true,
         opacity: 0,
-        alphaTest: 0.12,
-        depthTest: false,
+        alphaTest: 0.24,
+        depthTest: true,
         depthWrite: false,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
       });
       const mesh = new THREE.InstancedMesh(geom, mat, maxCount);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -628,13 +637,21 @@ export class SceneRenderer {
   }
 
   #setTextureSampling(texture, options = {}) {
+    const pixelated = Boolean(options.pixelated);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.NearestFilter;
-    texture.magFilter = THREE.NearestFilter;
+    if (pixelated) {
+      texture.minFilter = THREE.NearestFilter;
+      texture.magFilter = THREE.NearestFilter;
+      texture.generateMipmaps = false;
+    } else {
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+      texture.anisotropy = 1;
+    }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(options.repeatX ?? 1, options.repeatY ?? 1);
-    texture.generateMipmaps = false;
     texture.needsUpdate = true;
   }
 
@@ -678,7 +695,7 @@ export class SceneRenderer {
         const sourceTexture = await getSourceTexture(relPath);
         if (!sourceTexture) continue;
         const texture = sourceTexture.clone();
-        this.#setTextureSampling(texture, { repeatX: binding.repeatX, repeatY: binding.repeatY });
+        this.#setTextureSampling(texture, { repeatX: binding.repeatX, repeatY: binding.repeatY, pixelated: false });
         texture.offset.set((tileType % 3) * 0.07, (tileType % 4) * 0.05);
 
         if (material.map && material.map !== texture) {
@@ -722,12 +739,12 @@ export class SceneRenderer {
         const mat = this.tileIconMaterials.get(key);
         if (!mat || !relPath) return;
         const texture = await this.textureLoader.loadAsync(`/assets/worldsim/${encodeURI(relPath)}`);
-        this.#setTextureSampling(texture);
+        this.#setTextureSampling(texture, { pixelated: true });
         if (mat.map && mat.map !== texture) {
           mat.map.dispose?.();
         }
         mat.map = texture;
-        mat.opacity = 0.92;
+        mat.opacity = TILE_ICON_BASE_OPACITY;
         mat.needsUpdate = true;
       }));
       for (let i = 0; i < iconResults.length; i += 1) {
@@ -745,7 +762,7 @@ export class SceneRenderer {
       const unitResults = await Promise.allSettled(unitEntries.map(async ([key, relPath]) => {
         if (!relPath) return;
         const texture = await this.textureLoader.loadAsync(`/assets/worldsim/${encodeURI(relPath)}`);
-        this.#setTextureSampling(texture);
+        this.#setTextureSampling(texture, { pixelated: true });
         this.unitSpriteTextures.set(key, texture);
       }));
       for (let i = 0; i < unitResults.length; i += 1) {
@@ -1078,6 +1095,39 @@ export class SceneRenderer {
       mesh.count = counts.get(key) ?? 0;
       mesh.visible = mesh.count > 0;
       mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.#updateTileLayerVisibilityByZoom();
+  }
+
+  #updateTileLayerVisibilityByZoom() {
+    const zoom = this.camera.zoom;
+    const borderFade = clamp(
+      (zoom - TILE_BORDER_FADE_START_ZOOM)
+      / Math.max(0.001, TILE_BORDER_FADE_FULL_ZOOM - TILE_BORDER_FADE_START_ZOOM),
+      0,
+      1,
+    );
+    const borderOpacity = TILE_BORDER_BASE_OPACITY * borderFade;
+    if (this.tileBorderLines?.material) {
+      this.tileBorderLines.material.opacity = borderOpacity;
+      this.tileBorderLines.visible = borderOpacity > 0.015;
+    }
+
+    const shouldShowIcons = Boolean(this.state.controls.showTileIcons)
+      && this.state.controls.visualPreset === "flat_worldsim";
+    const iconFade = clamp(
+      (zoom - TILE_ICON_FADE_START_ZOOM)
+      / Math.max(0.001, TILE_ICON_FADE_FULL_ZOOM - TILE_ICON_FADE_START_ZOOM),
+      0,
+      1,
+    );
+    const iconOpacity = TILE_ICON_BASE_OPACITY * iconFade;
+    const iconsVisible = shouldShowIcons && iconOpacity > 0.05;
+    for (const material of this.tileIconMaterials.values()) {
+      material.opacity = iconOpacity;
+    }
+    for (const mesh of this.tileIconMeshes.values()) {
+      mesh.visible = iconsVisible && mesh.count > 0;
     }
   }
 
@@ -1657,6 +1707,7 @@ export class SceneRenderer {
     this.#applyRuntimeControlSettings();
     this.#ensureModelTemplatesRequested();
     this.controls.update();
+    this.#updateTileLayerVisibilityByZoom();
 
     this.#rebuildTilesIfNeeded();
     const entityRenderSignature = [

@@ -36,7 +36,11 @@
  *  path: TileCoord[]|null,
  *  pathIndex: number,
  *  pathGridVersion: number,
- *  blackboard: Record<string, unknown>,
+ *  blackboard: Record<string, unknown> & {
+ *    taskLock?: {state:string, untilSec:number},
+ *    emergencyRationCooldownSec?: number,
+ *    lastFeasibilityReject?: {source:string, requestedState:string, reason:string, simSec:number}
+ *  },
  *  policy: Record<string, unknown>|null,
  *  alive?: boolean,
  *  hp?: number,
@@ -46,7 +50,15 @@
  *  starvationSec?: number,
  *  attackCooldownSec?: number,
  *  memory: {recentEvents:string[], dangerTiles: TileCoord[]},
- *  debug: {lastIntent:string, lastPathLength:number, lastPathRecalcSec:number}
+ *  debug: {
+ *    lastIntent:string,
+ *    lastPathLength:number,
+ *    lastPathRecalcSec:number,
+ *    policyRejectedReason?: string,
+ *    aiRejectedReason?: string,
+ *    finalDesiredState?: string,
+ *    feasibilityReject?: {source:string, requestedState:string, reason:string, simSec:number}
+ *  }
  * }} AgentState
  *
  * @typedef {{
@@ -146,6 +158,10 @@
  *  idleWithoutReasonSec?: Record<string, number>,
  *  pathRecalcPerEntityPerMin?: number,
  *  goalFlipCount?: number,
+ *  avgGoalFlipPerEntity?: number,
+ *  deliverWithoutCarryCount?: number,
+ *  feasibilityRejectCountByGroup?: Record<string, number>,
+ *  starvationRiskCount?: number,
  *  deathByReasonAndReachability?: Record<string, number>
  * }} MetricsState
  *

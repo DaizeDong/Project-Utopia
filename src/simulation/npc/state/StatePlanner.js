@@ -2,6 +2,12 @@
 import { ANIMAL_KIND, ROLE, TILE } from "../../../config/constants.js";
 import { getTile, worldToTile } from "../../../world/grid/Grid.js";
 import { listGroupStates } from "./StateGraph.js";
+import {
+  buildFeasibilityContext,
+  isStateFeasible,
+  normalizeDesiredStateWithFeasibility,
+  recordFeasibilityReject,
+} from "./StateFeasibility.js";
 
 const POLICY_INTENT_TO_STATE = Object.freeze({
   workers: Object.freeze({
@@ -38,14 +44,26 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
   }),
 });
 
-const HUMAN_POLICY_FOOD_OVERRIDE_HUNGER_MAX = 0.58;
-const HUMAN_AI_TARGET_FOOD_HUNGER_MAX = 0.52;
+function getWorkerHungerSeekThreshold(worker) {
+  const base = Number(BALANCE.workerHungerSeekThreshold ?? 0.14);
+  const override = Number(worker?.metabolism?.hungerSeekThreshold ?? base);
+  return Math.min(0.8, Math.max(0.05, override));
+}
 
 function normalizeIntentKey(raw) {
   return String(raw ?? "")
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
+}
+
+function defaultFallbackState(groupId) {
+  if (groupId === "workers") return "seek_task";
+  if (groupId === "traders") return "seek_trade";
+  if (groupId === "saboteurs") return "scout";
+  if (groupId === "herbivores") return "graze";
+  if (groupId === "predators") return "stalk";
+  return "idle";
 }
 
 function hasActivePath(entity, state) {
@@ -69,7 +87,7 @@ function isTargetTileType(entity, state, targetTileTypes) {
 }
 
 function deriveWorkerDesiredState(worker, state) {
-  if ((worker.hunger ?? 1) < 0.28 && (state.resources.food > 0 || state.buildings.warehouses > 0)) {
+  if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"
@@ -182,7 +200,10 @@ function countNearbyKind(entity, list, radius = 3.2) {
 function deriveHerbivoreDesiredState(animal, context) {
   const { predators = [], herbivores = [] } = context ?? {};
   const { predator, distance } = nearestPredator(animal, predators);
-  if (predator && distance < 4.6) return { desiredState: "flee", reason: "rule:predator-near" };
+  const fleeLatch = Boolean(animal.blackboard?.fleeLatch);
+  if (predator && (distance < 3.4 || (fleeLatch && distance < 4.8))) {
+    return { desiredState: "flee", reason: "rule:predator-near" };
+  }
   if ((animal.hunger ?? 1) < 0.55) return { desiredState: "graze", reason: "rule:hunger" };
   if (countNearbyKind(animal, herbivores, 3.4) >= 2) return { desiredState: "regroup", reason: "rule:herd" };
   return { desiredState: "wander", reason: "rule:wander" };
@@ -212,14 +233,6 @@ function isCriticalLocalState(groupId, localState) {
   return false;
 }
 
-function isHumanGroup(groupId) {
-  return groupId === "workers" || groupId === "traders" || groupId === "saboteurs";
-}
-
-function isFoodState(stateNode) {
-  return stateNode === "seek_food" || stateNode === "eat";
-}
-
 function applyPolicyIntentPreference(groupId, localDesired, localReason, entity, state) {
   const policy = entity.policy ?? state.ai.groupPolicies?.get?.(groupId)?.data ?? null;
   if (!policy || typeof policy !== "object") {
@@ -244,15 +257,6 @@ function applyPolicyIntentPreference(groupId, localDesired, localReason, entity,
   const second = intents[1]?.value ?? 0;
   const mappedState = intentMap[top.key] ?? null;
   if (!mappedState || !listGroupStates(groupId).includes(mappedState)) {
-    return { desiredState: localDesired, reason: localReason, policyApplied: false };
-  }
-
-  if (
-    isHumanGroup(groupId)
-    && isFoodState(mappedState)
-    && !isFoodState(localDesired)
-    && Number(entity?.hunger ?? 1) > HUMAN_POLICY_FOOD_OVERRIDE_HUNGER_MAX
-  ) {
     return { desiredState: localDesired, reason: localReason, policyApplied: false };
   }
 
@@ -300,15 +304,6 @@ function applyGroupTargetOverride(groupId, localDesired, localReason, entity, st
 
   const priority = Number(entry.priority ?? 0);
   if (priority < 0.35) {
-    return { desiredState: localDesired, reason: localReason, aiApplied: false };
-  }
-
-  if (
-    isHumanGroup(groupId)
-    && isFoodState(targetState)
-    && !isFoodState(localDesired)
-    && Number(entity?.hunger ?? 1) > HUMAN_AI_TARGET_FOOD_HUNGER_MAX
-  ) {
     return { desiredState: localDesired, reason: localReason, aiApplied: false };
   }
 
@@ -367,25 +362,77 @@ export function planEntityDesiredState(entity, state, context = {}) {
     local = derivePredatorDesiredState(entity, context);
   }
 
+  const feasibilityContext = buildFeasibilityContext(entity, groupId, state, context);
+  const checkState = (stateNode) =>
+    isStateFeasible(entity, groupId, stateNode, state, { ...context, feasibilityContext });
+  const fallbackState = defaultFallbackState(groupId);
+
   const policyMerged = applyPolicyIntentPreference(groupId, local.desiredState, local.reason, entity, state);
-  const merged = applyGroupTargetOverride(groupId, policyMerged.desiredState, policyMerged.reason, entity, state, nowSec);
-  recordDesiredGoal(entity, merged.desiredState, state, nowSec);
+  const aiMerged = applyGroupTargetOverride(groupId, policyMerged.desiredState, policyMerged.reason, entity, state, nowSec);
+  const resolved = normalizeDesiredStateWithFeasibility(
+    local.desiredState,
+    policyMerged.desiredState,
+    aiMerged.desiredState,
+    "strict",
+    {
+      checkState,
+      fallbackState,
+    },
+  );
+
+  const localReject = resolved.rejects.find((item) => item.source === "local") ?? null;
+  const policyReject = resolved.rejects.find((item) => item.source === "policy") ?? null;
+  const aiReject = resolved.rejects.find((item) => item.source === "ai") ?? null;
+  if (policyReject) {
+    recordFeasibilityReject(
+      entity,
+      state,
+      groupId,
+      "policy",
+      policyReject.requestedState,
+      policyReject.reason,
+    );
+  }
+  if (aiReject) {
+    recordFeasibilityReject(
+      entity,
+      state,
+      groupId,
+      "ai",
+      aiReject.requestedState,
+      aiReject.reason,
+    );
+  }
+
+  const finalReason = resolved.source === "ai"
+    ? aiMerged.reason
+    : resolved.source === "policy"
+      ? policyMerged.reason
+      : resolved.source === "local"
+        ? local.reason
+        : `fallback:${fallbackState}${localReject ? `(${localReject.reason})` : ""}`;
+
+  recordDesiredGoal(entity, resolved.desiredState, state, nowSec);
 
   entity.debug ??= {};
   entity.debug.localDesiredState = local.desiredState;
   entity.debug.policyDesiredState = policyMerged.desiredState;
-  entity.debug.policyApplied = Boolean(policyMerged.policyApplied);
+  entity.debug.aiDesiredState = aiMerged.desiredState;
+  entity.debug.finalDesiredState = resolved.desiredState;
+  entity.debug.policyApplied = resolved.source === "policy" && policyMerged.desiredState !== local.desiredState;
   entity.debug.policyTopIntent = policyMerged.topIntent ?? "";
   entity.debug.policyTopWeight = Number(policyMerged.topWeight ?? 0);
-  entity.debug.desiredStateNode = merged.desiredState;
-  entity.debug.aiTargetApplied = Boolean(merged.aiApplied);
-  entity.debug.aiTargetReason = merged.aiApplied ? merged.reason : "";
+  entity.debug.policyRejectedReason = policyReject?.reason ?? "";
+  entity.debug.aiRejectedReason = aiReject?.reason ?? "";
+  entity.debug.desiredStateNode = resolved.desiredState;
+  entity.debug.aiTargetApplied = resolved.source === "ai";
+  entity.debug.aiTargetReason = resolved.source === "ai" ? aiMerged.reason : "";
 
   return {
     groupId,
-    desiredState: merged.desiredState,
-    reason: merged.reason,
+    desiredState: resolved.desiredState,
+    reason: finalReason,
     localDesiredState: local.desiredState,
-    aiApplied: merged.aiApplied,
+    aiApplied: resolved.source === "ai",
   };
 }

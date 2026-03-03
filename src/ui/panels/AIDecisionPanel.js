@@ -33,6 +33,76 @@ export class AIDecisionPanel {
     this.state = state;
     this.root = document.getElementById("aiDecisionPanelBody");
     this.lastHtml = "";
+    this.openStateByKey = new Map();
+    this.rootScrollTop = 0;
+    this.pointerActive = false;
+    this.interactionUntilMs = 0;
+    this.#bindInteractionGuards();
+  }
+
+  #nowMs() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  #bumpInteractionWindow(ms = 850) {
+    this.interactionUntilMs = Math.max(this.interactionUntilMs, this.#nowMs() + ms);
+  }
+
+  #isUserInteracting() {
+    return this.pointerActive || this.#nowMs() < this.interactionUntilMs;
+  }
+
+  #bindInteractionGuards() {
+    if (!this.root) return;
+    this.root.addEventListener(
+      "pointerdown",
+      () => {
+        this.pointerActive = true;
+        this.#bumpInteractionWindow(1300);
+      },
+      true,
+    );
+    const clearPointer = () => {
+      this.pointerActive = false;
+      this.#bumpInteractionWindow(320);
+    };
+    window.addEventListener("pointerup", clearPointer);
+    window.addEventListener("pointercancel", clearPointer);
+    window.addEventListener("blur", clearPointer);
+
+    this.root.addEventListener(
+      "wheel",
+      () => this.#bumpInteractionWindow(950),
+      { passive: true, capture: true },
+    );
+    this.root.addEventListener(
+      "scroll",
+      () => this.#bumpInteractionWindow(850),
+      { passive: true, capture: true },
+    );
+  }
+
+  #captureOpenStates() {
+    if (!this.root) return;
+    const details = this.root.querySelectorAll("details[data-ai-decision-key]");
+    for (const node of details) {
+      const key = node.dataset.aiDecisionKey;
+      if (!key) continue;
+      this.openStateByKey.set(key, Boolean(node.open));
+    }
+  }
+
+  #restoreOpenStates() {
+    if (!this.root) return;
+    const details = this.root.querySelectorAll("details[data-ai-decision-key]");
+    for (const node of details) {
+      const key = node.dataset.aiDecisionKey;
+      if (!key || !this.openStateByKey.has(key)) continue;
+      node.open = Boolean(this.openStateByKey.get(key));
+    }
   }
 
   #renderEnvironmentBlock() {
@@ -82,7 +152,7 @@ export class AIDecisionPanel {
 
     if (!policy) {
       return `
-        <details style="margin-top:8px;">
+        <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;">
           <summary class="small"><b>${escapeHtml(groupId)}</b> (no policy)</summary>
           <div class="small muted" style="margin-top:6px;">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
           ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
@@ -96,7 +166,7 @@ export class AIDecisionPanel {
     const risk = fmtNum(policy.riskTolerance, 2);
 
     return `
-      <details style="margin-top:8px;" open>
+      <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;" open>
         <summary class="small"><b>${escapeHtml(groupId)}</b> | ttl=${ttl}s | risk=${risk}</summary>
         <div class="small" style="margin-top:6px;"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
         <div class="small"><b>expires:</b> ${expiresAtSec}</div>
@@ -110,6 +180,8 @@ export class AIDecisionPanel {
 
   render() {
     if (!this.root) return;
+    this.#captureOpenStates();
+    this.rootScrollTop = Number(this.root.scrollTop ?? 0);
     const html = `
       <div>
         <div class="small" style="font-weight:700;">World Directive (Parsed)</div>
@@ -122,7 +194,10 @@ export class AIDecisionPanel {
     `;
 
     if (html === this.lastHtml) return;
+    if (this.#isUserInteracting()) return;
     this.lastHtml = html;
     this.root.innerHTML = html;
+    this.#restoreOpenStates();
+    this.root.scrollTop = this.rootScrollTop;
   }
 }

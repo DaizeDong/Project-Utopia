@@ -109,6 +109,10 @@ export function restoreSnapshotState(serialized) {
   snapshot.metrics.idleWithoutReasonSec ??= {};
   snapshot.metrics.pathRecalcPerEntityPerMin ??= 0;
   snapshot.metrics.goalFlipCount ??= 0;
+  snapshot.metrics.avgGoalFlipPerEntity ??= 0;
+  snapshot.metrics.deliverWithoutCarryCount ??= 0;
+  snapshot.metrics.feasibilityRejectCountByGroup ??= {};
+  snapshot.metrics.starvationRiskCount ??= 0;
   snapshot.metrics.deathByReasonAndReachability ??= {};
   snapshot.debug.logic ??= {
     invalidTransitions: 0,
