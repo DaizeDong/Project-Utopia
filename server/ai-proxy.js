@@ -17,14 +17,38 @@ const __dirname = path.dirname(__filename);
 const envPromptPath = path.resolve(__dirname, "../src/data/prompts/environment-director.md");
 const policyPromptPath = path.resolve(__dirname, "../src/data/prompts/npc-brain.md");
 
+function normalizeConfiguredModel(rawModel) {
+  const raw = String(rawModel ?? "").trim();
+  if (!raw) {
+    return { model: DEFAULT_OPENAI_MODEL, source: "default", normalized: false, configuredModel: "" };
+  }
+
+  let normalized = raw;
+  if (/mimi/i.test(normalized)) {
+    normalized = normalized.replace(/mimi/gi, "mini");
+  }
+  if (!normalized) normalized = DEFAULT_OPENAI_MODEL;
+  return {
+    model: normalized,
+    source: "env",
+    normalized: normalized !== raw,
+    configuredModel: raw,
+  };
+}
+
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
-const OPENAI_MODEL_RAW = (process.env.OPENAI_MODEL ?? "").trim();
-const OPENAI_MODEL = OPENAI_MODEL_RAW || DEFAULT_OPENAI_MODEL;
-const MODEL_SOURCE = OPENAI_MODEL_RAW ? "env" : "default";
+const modelConfig = normalizeConfiguredModel(process.env.OPENAI_MODEL);
+const OPENAI_MODEL_RAW = modelConfig.configuredModel;
+const OPENAI_MODEL = modelConfig.model;
+const MODEL_SOURCE = modelConfig.source;
 const API_KEY_SOURCE = OPENAI_API_KEY
   ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
   : "missing";
 const PORT = Number(process.env.AI_PROXY_PORT ?? 8787);
+
+if (modelConfig.normalized) {
+  console.warn(`[ai-proxy] normalized OPENAI_MODEL '${OPENAI_MODEL_RAW}' -> '${OPENAI_MODEL}'.`);
+}
 
 const envSystemPrompt = fs.existsSync(envPromptPath)
   ? fs.readFileSync(envPromptPath, "utf8")
@@ -331,6 +355,8 @@ const server = http.createServer(async (req, res) => {
       service: "ai-proxy",
       hasApiKey: Boolean(OPENAI_API_KEY),
       model: OPENAI_MODEL,
+      configuredModel: OPENAI_MODEL_RAW || null,
+      modelNormalized: Boolean(modelConfig.normalized),
       port: PORT,
       envLoaded: Boolean(envLoadResult.envLoaded),
       modelSource: MODEL_SOURCE,

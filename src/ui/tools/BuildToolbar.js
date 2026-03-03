@@ -9,6 +9,21 @@ import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
 const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress", "ai-insights"]);
+const POPULATION_TARGET_LIMITS = Object.freeze({
+  workers: { min: 0, max: 500 },
+  traders: { min: 0, max: 300 },
+  saboteurs: { min: 0, max: 300 },
+  herbivores: { min: 0, max: 400 },
+  predators: { min: 0, max: 200 },
+});
+
+function clampPopulationTarget(key, rawValue, fallback = 0) {
+  const limits = POPULATION_TARGET_LIMITS[key];
+  if (!limits) return 0;
+  const parsed = Number(rawValue);
+  const safe = Number.isFinite(parsed) ? Math.round(parsed) : fallback;
+  return Math.max(limits.min, Math.min(limits.max, safe));
+}
 
 export class BuildToolbar {
   constructor(state, handlers = {}) {
@@ -33,13 +48,23 @@ export class BuildToolbar {
     this.regenerateMapBtn = document.getElementById("regenerateMapBtn");
     this.doctrineSelect = document.getElementById("doctrineSelect");
     this.workerTargetInput = document.getElementById("workerTargetInput");
+    this.workerTargetNumber = document.getElementById("workerTargetNumber");
     this.workerTargetLabel = document.getElementById("workerTargetLabel");
-    this.visitorTargetInput = document.getElementById("visitorTargetInput");
+    this.traderTargetInput = document.getElementById("traderTargetInput");
+    this.traderTargetNumber = document.getElementById("traderTargetNumber");
+    this.traderTargetLabel = document.getElementById("traderTargetLabel");
+    this.saboteurTargetInput = document.getElementById("saboteurTargetInput");
+    this.saboteurTargetNumber = document.getElementById("saboteurTargetNumber");
+    this.saboteurTargetLabel = document.getElementById("saboteurTargetLabel");
     this.visitorTargetLabel = document.getElementById("visitorTargetLabel");
     this.herbivoreTargetInput = document.getElementById("herbivoreTargetInput");
+    this.herbivoreTargetNumber = document.getElementById("herbivoreTargetNumber");
     this.herbivoreTargetLabel = document.getElementById("herbivoreTargetLabel");
     this.predatorTargetInput = document.getElementById("predatorTargetInput");
+    this.predatorTargetNumber = document.getElementById("predatorTargetNumber");
     this.predatorTargetLabel = document.getElementById("predatorTargetLabel");
+    this.populationAdjustButtons = Array.from(document.querySelectorAll("button[data-pop-adjust]"));
+    this.syncPopulationTargetsBtn = document.getElementById("syncPopulationTargetsBtn");
     this.applyPopulationBtn = document.getElementById("applyPopulationBtn");
     this.populationBreakdownVal = document.getElementById("populationBreakdownVal");
     this.undoBuildBtn = document.getElementById("undoBuildBtn");
@@ -158,19 +183,45 @@ export class BuildToolbar {
   }
 
   #setupPopulationControls() {
-    const bindInput = (input, key, min, max) => {
+    const bindInput = (input, key) => {
       input?.addEventListener("input", () => {
-        const raw = Number(input.value);
-        const value = Math.max(min, Math.min(max, Number.isFinite(raw) ? raw : min));
-        this.state.controls.populationTargets[key] = value;
-        this.sync();
+        this.#setPopulationTarget(key, input.value);
+      });
+      input?.addEventListener("change", () => {
+        this.#setPopulationTarget(key, input.value);
       });
     };
 
-    bindInput(this.workerTargetInput, "workers", 0, 500);
-    bindInput(this.visitorTargetInput, "visitors", 0, 300);
-    bindInput(this.herbivoreTargetInput, "herbivores", 0, 400);
-    bindInput(this.predatorTargetInput, "predators", 0, 200);
+    bindInput(this.workerTargetInput, "workers");
+    bindInput(this.workerTargetNumber, "workers");
+    bindInput(this.traderTargetInput, "traders");
+    bindInput(this.traderTargetNumber, "traders");
+    bindInput(this.saboteurTargetInput, "saboteurs");
+    bindInput(this.saboteurTargetNumber, "saboteurs");
+    bindInput(this.herbivoreTargetInput, "herbivores");
+    bindInput(this.herbivoreTargetNumber, "herbivores");
+    bindInput(this.predatorTargetInput, "predators");
+    bindInput(this.predatorTargetNumber, "predators");
+
+    this.populationAdjustButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const raw = btn.dataset.popAdjust ?? "";
+        const [key, deltaRaw] = raw.split(":");
+        const delta = Number(deltaRaw);
+        if (!key || !Number.isFinite(delta)) return;
+        const current = this.state.controls.populationTargets?.[key] ?? 0;
+        this.#setPopulationTarget(key, current + delta);
+      });
+    });
+
+    this.syncPopulationTargetsBtn?.addEventListener("click", () => {
+      this.#syncPopulationTargetsFromWorld();
+      const t = this.state.controls.populationTargets;
+      this.state.controls.actionMessage =
+        `Population targets synced: W${t.workers} T${t.traders} S${t.saboteurs} H${t.herbivores} P${t.predators}.`;
+      this.state.controls.actionKind = "info";
+      this.sync();
+    });
 
     this.applyPopulationBtn?.addEventListener("click", () => {
       const targets = { ...this.state.controls.populationTargets };
@@ -425,12 +476,35 @@ export class BuildToolbar {
 
   #ensurePopulationTargets() {
     const controls = this.state.controls;
-    if (controls.populationTargets) return;
+    if (!controls.populationTargets) {
+      this.#syncPopulationTargetsFromWorld();
+      return;
+    }
+
+    const existing = controls.populationTargets;
+    const visitorFallback = Number.isFinite(Number(existing.visitors)) ? Number(existing.visitors) : null;
+    let traders = Number(existing.traders);
+    let saboteurs = Number(existing.saboteurs);
+
+    if (!Number.isFinite(traders) && !Number.isFinite(saboteurs) && Number.isFinite(visitorFallback)) {
+      traders = Math.round(visitorFallback * 0.2);
+      saboteurs = Math.max(0, visitorFallback - traders);
+    }
+
+    if (!Number.isFinite(traders)) {
+      traders = this.state.agents.filter((a) => a.type === "VISITOR" && (a.kind === "TRADER" || a.groupId === "traders")).length;
+    }
+    if (!Number.isFinite(saboteurs)) {
+      saboteurs = this.state.agents.filter((a) => a.type === "VISITOR" && !(a.kind === "TRADER" || a.groupId === "traders")).length;
+    }
+
     controls.populationTargets = {
-      workers: this.state.agents.filter((a) => a.type === "WORKER").length,
-      visitors: this.state.agents.filter((a) => a.type === "VISITOR").length,
-      herbivores: this.state.animals.filter((a) => a.kind === "HERBIVORE").length,
-      predators: this.state.animals.filter((a) => a.kind === "PREDATOR").length,
+      workers: clampPopulationTarget("workers", existing.workers, 0),
+      traders: clampPopulationTarget("traders", traders, 0),
+      saboteurs: clampPopulationTarget("saboteurs", saboteurs, 0),
+      herbivores: clampPopulationTarget("herbivores", existing.herbivores, 0),
+      predators: clampPopulationTarget("predators", existing.predators, 0),
+      visitors: clampPopulationTarget("traders", traders, 0) + clampPopulationTarget("saboteurs", saboteurs, 0),
     };
   }
 
@@ -525,6 +599,46 @@ export class BuildToolbar {
     }
   }
 
+  #setPopulationTarget(key, value) {
+    if (!POPULATION_TARGET_LIMITS[key]) return;
+    const current = this.state.controls.populationTargets?.[key] ?? 0;
+    const nextValue = clampPopulationTarget(key, value, current);
+    this.state.controls.populationTargets[key] = nextValue;
+    this.state.controls.populationTargets.visitors =
+      (this.state.controls.populationTargets.traders | 0)
+      + (this.state.controls.populationTargets.saboteurs | 0);
+    this.sync();
+  }
+
+  #syncPopulationTargetsFromWorld() {
+    let workers = 0;
+    let traders = 0;
+    let saboteurs = 0;
+    let herbivores = 0;
+    let predators = 0;
+
+    for (const agent of this.state.agents) {
+      if (agent.type === "WORKER" && !agent.isStressWorker) workers += 1;
+      if (agent.type === "VISITOR") {
+        if (agent.kind === "TRADER" || agent.groupId === "traders") traders += 1;
+        else saboteurs += 1;
+      }
+    }
+    for (const animal of this.state.animals) {
+      if (animal.kind === "HERBIVORE") herbivores += 1;
+      if (animal.kind === "PREDATOR") predators += 1;
+    }
+
+    this.state.controls.populationTargets = {
+      workers: clampPopulationTarget("workers", workers),
+      traders: clampPopulationTarget("traders", traders),
+      saboteurs: clampPopulationTarget("saboteurs", saboteurs),
+      herbivores: clampPopulationTarget("herbivores", herbivores),
+      predators: clampPopulationTarget("predators", predators),
+      visitors: clampPopulationTarget("traders", traders) + clampPopulationTarget("saboteurs", saboteurs),
+    };
+  }
+
   sync() {
     this.toolButtons.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tool === this.state.controls.tool);
@@ -600,17 +714,37 @@ export class BuildToolbar {
 
     const targets = this.state.controls.populationTargets;
     if (targets) {
-      if (this.workerTargetInput) this.#setFieldValueIfIdle(this.workerTargetInput, Math.max(0, Math.min(500, targets.workers | 0)));
-      if (this.workerTargetLabel) this.workerTargetLabel.textContent = String(Math.max(0, Math.min(500, targets.workers | 0)));
+      const workers = clampPopulationTarget("workers", targets.workers, 0);
+      const traders = clampPopulationTarget("traders", targets.traders, 0);
+      const saboteurs = clampPopulationTarget("saboteurs", targets.saboteurs, 0);
+      const herbivores = clampPopulationTarget("herbivores", targets.herbivores, 0);
+      const predators = clampPopulationTarget("predators", targets.predators, 0);
+      const visitors = traders + saboteurs;
+      targets.visitors = visitors;
 
-      if (this.visitorTargetInput) this.#setFieldValueIfIdle(this.visitorTargetInput, Math.max(0, Math.min(300, targets.visitors | 0)));
-      if (this.visitorTargetLabel) this.visitorTargetLabel.textContent = String(Math.max(0, Math.min(300, targets.visitors | 0)));
+      if (this.workerTargetInput) this.#setFieldValueIfIdle(this.workerTargetInput, workers);
+      if (this.workerTargetNumber) this.#setFieldValueIfIdle(this.workerTargetNumber, workers);
+      if (this.workerTargetLabel) this.workerTargetLabel.textContent = String(workers);
 
-      if (this.herbivoreTargetInput) this.#setFieldValueIfIdle(this.herbivoreTargetInput, Math.max(0, Math.min(400, targets.herbivores | 0)));
-      if (this.herbivoreTargetLabel) this.herbivoreTargetLabel.textContent = String(Math.max(0, Math.min(400, targets.herbivores | 0)));
+      if (this.traderTargetInput) this.#setFieldValueIfIdle(this.traderTargetInput, traders);
+      if (this.traderTargetNumber) this.#setFieldValueIfIdle(this.traderTargetNumber, traders);
+      if (this.traderTargetLabel) this.traderTargetLabel.textContent = String(traders);
 
-      if (this.predatorTargetInput) this.#setFieldValueIfIdle(this.predatorTargetInput, Math.max(0, Math.min(200, targets.predators | 0)));
-      if (this.predatorTargetLabel) this.predatorTargetLabel.textContent = String(Math.max(0, Math.min(200, targets.predators | 0)));
+      if (this.saboteurTargetInput) this.#setFieldValueIfIdle(this.saboteurTargetInput, saboteurs);
+      if (this.saboteurTargetNumber) this.#setFieldValueIfIdle(this.saboteurTargetNumber, saboteurs);
+      if (this.saboteurTargetLabel) this.saboteurTargetLabel.textContent = String(saboteurs);
+
+      if (this.herbivoreTargetInput) this.#setFieldValueIfIdle(this.herbivoreTargetInput, herbivores);
+      if (this.herbivoreTargetNumber) this.#setFieldValueIfIdle(this.herbivoreTargetNumber, herbivores);
+      if (this.herbivoreTargetLabel) this.herbivoreTargetLabel.textContent = String(herbivores);
+
+      if (this.predatorTargetInput) this.#setFieldValueIfIdle(this.predatorTargetInput, predators);
+      if (this.predatorTargetNumber) this.#setFieldValueIfIdle(this.predatorTargetNumber, predators);
+      if (this.predatorTargetLabel) this.predatorTargetLabel.textContent = String(predators);
+
+      if (this.visitorTargetLabel) {
+        this.visitorTargetLabel.textContent = `Visitors Total: ${visitors} (Traders ${traders} / Saboteurs ${saboteurs})`;
+      }
     }
 
     if (this.saveSlotInput) {

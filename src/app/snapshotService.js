@@ -61,10 +61,34 @@ function migrateLegacyVisitorGroups(snapshot) {
   }
 }
 
+function migrateLegacyPopulationTargets(snapshot) {
+  const targets = snapshot?.controls?.populationTargets;
+  if (!targets || typeof targets !== "object") return;
+  const hasTraders = Number.isFinite(Number(targets.traders));
+  const hasSaboteurs = Number.isFinite(Number(targets.saboteurs));
+  if (hasTraders && hasSaboteurs) {
+    targets.visitors = (Number(targets.traders) | 0) + (Number(targets.saboteurs) | 0);
+    return;
+  }
+
+  const legacyVisitors = Number.isFinite(Number(targets.visitors))
+    ? Math.max(0, Math.round(Number(targets.visitors)))
+    : 0;
+  const traders = hasTraders ? Math.max(0, Math.round(Number(targets.traders))) : Math.round(legacyVisitors * 0.2);
+  const saboteurs = hasSaboteurs
+    ? Math.max(0, Math.round(Number(targets.saboteurs)))
+    : Math.max(0, legacyVisitors - traders);
+
+  targets.traders = traders;
+  targets.saboteurs = saboteurs;
+  targets.visitors = traders + saboteurs;
+}
+
 export function makeSerializableSnapshot(state, rngSnapshot = null) {
   const snapshot = ensureStructuredClone(state);
   snapshot.grid.tiles = Array.from(state.grid.tiles);
   snapshot.ai.groupPolicies = mapToEntries(state.ai.groupPolicies);
+  snapshot.ai.groupStateTargets = mapToEntries(state.ai.groupStateTargets);
   snapshot.meta = {
     capturedAt: new Date().toISOString(),
     rng: rngSnapshot ?? null,
@@ -76,8 +100,25 @@ export function restoreSnapshotState(serialized) {
   const snapshot = ensureStructuredClone(serialized);
   snapshot.grid.tiles = Uint8Array.from(snapshot.grid.tiles ?? []);
   snapshot.ai.groupPolicies = entriesToMap(snapshot.ai.groupPolicies);
+  snapshot.ai.groupStateTargets = entriesToMap(snapshot.ai.groupStateTargets);
+  snapshot.ai.lastStateTargetBatch ??= [];
   migrateLegacyVisitorGroups(snapshot);
+  migrateLegacyPopulationTargets(snapshot);
   snapshot.metrics.warningLog ??= [];
+  snapshot.metrics.invalidTransitionCount ??= 0;
+  snapshot.metrics.idleWithoutReasonSec ??= {};
+  snapshot.metrics.pathRecalcPerEntityPerMin ??= 0;
+  snapshot.metrics.goalFlipCount ??= 0;
+  snapshot.metrics.deathByReasonAndReachability ??= {};
+  snapshot.debug.logic ??= {
+    invalidTransitions: 0,
+    goalFlipCount: 0,
+    totalPathRecalcs: 0,
+    idleWithoutReasonSecByGroup: {},
+    pathRecalcByEntity: {},
+    lastGoalsByEntity: {},
+    deathByReasonAndReachability: {},
+  };
   return snapshot;
 }
 

@@ -2,6 +2,7 @@ import { BALANCE } from "../../../config/balance.js";
 import { DEFAULT_GROUP_POLICIES, GROUP_IDS } from "../../../config/aiConfig.js";
 import { pushWarning } from "../../../app/warnings.js";
 import { buildPolicySummary } from "../memory/WorldSummary.js";
+import { listGroupStates } from "../../npc/state/StateGraph.js";
 
 const REQUIRED_POLICY_GROUPS = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -52,6 +53,39 @@ function normalizePoliciesForRuntime(policies = [], state) {
   return REQUIRED_POLICY_GROUPS.map((groupId) => policyByGroup.get(groupId));
 }
 
+function normalizeStateTargetsForRuntime(stateTargets = [], state) {
+  const sanitized = [];
+  const seen = new Set();
+
+  for (const candidate of stateTargets) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const groupId = String(candidate.groupId ?? "").trim();
+    const targetState = String(candidate.targetState ?? "").trim();
+    if (!groupId || !targetState) continue;
+    if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
+    const allowed = listGroupStates(groupId);
+    if (!allowed.includes(targetState)) continue;
+
+    const key = `${groupId}:${targetState}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    sanitized.push({
+      groupId,
+      targetState,
+      priority: Math.max(0, Math.min(1, Number(candidate.priority) || 0.5)),
+      ttlSec: Math.max(4, Math.min(60, Number(candidate.ttlSec) || 14)),
+      reason: String(candidate.reason ?? "").slice(0, 160),
+    });
+  }
+
+  if ((stateTargets?.length ?? 0) > 0 && sanitized.length === 0) {
+    pushWarning(state, "Policy stateTargets were rejected by runtime validation.", "warn", "NPCBrainSystem");
+  }
+
+  return sanitized;
+}
+
 export class NPCBrainSystem {
   constructor() {
     this.name = "NPCBrainSystem";
@@ -63,10 +97,21 @@ export class NPCBrainSystem {
     if (this.pendingResult) {
       const now = state.metrics.timeSec;
       const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state);
+      const stateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
       for (const policy of policies) {
         state.ai.groupPolicies.set(policy.groupId, {
           expiresAtSec: now + policy.ttlSec,
           data: policy,
+        });
+      }
+      state.ai.groupStateTargets ??= new Map();
+      for (const target of stateTargets) {
+        state.ai.groupStateTargets.set(target.groupId, {
+          targetState: target.targetState,
+          expiresAtSec: now + target.ttlSec,
+          priority: target.priority,
+          source: this.pendingResult.fallback ? "fallback" : "llm",
+          reason: target.reason || `policy:${target.targetState}`,
         });
       }
       const usedFallback = Boolean(this.pendingResult.fallback);
@@ -77,6 +122,7 @@ export class NPCBrainSystem {
       if (!usedFallback) state.ai.policyLlmCount += 1;
       state.ai.lastPolicyError = this.pendingResult.error ?? "";
       state.ai.lastPolicyBatch = [...policies];
+      state.ai.lastStateTargetBatch = [...stateTargets];
       state.ai.lastPolicyModel = this.pendingResult.model ?? state.ai.lastPolicyModel ?? "";
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
@@ -110,6 +156,7 @@ export class NPCBrainSystem {
 
       if (state.debug?.aiTrace) {
         const groups = policies.map((p) => p.groupId).join(", ");
+        const targets = stateTargets.map((target) => `${target.groupId}:${target.targetState}`).join(" ");
         state.debug.aiTrace.unshift({
           sec: now,
           source: usedFallback ? "fallback" : "llm",
@@ -117,7 +164,7 @@ export class NPCBrainSystem {
           fallback: usedFallback,
           model: this.pendingResult.model ?? services.llmClient.lastModel ?? "",
           weather: state.weather.current,
-          events: groups || "none",
+          events: `${groups || "none"} ${targets ? `targets=${targets}` : ""}`.trim(),
           error: this.pendingResult.error ?? "",
         });
         state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
@@ -131,9 +178,27 @@ export class NPCBrainSystem {
         state.ai.groupPolicies.delete(groupId);
       }
     }
+    if (state.ai.groupStateTargets instanceof Map) {
+      for (const [groupId, target] of [...state.ai.groupStateTargets.entries()]) {
+        if (Number(target?.expiresAtSec ?? 0) <= now) {
+          state.ai.groupStateTargets.delete(groupId);
+        }
+      }
+    }
 
     for (const e of [...state.agents, ...state.animals]) {
       e.policy = state.ai.groupPolicies.get(e.groupId)?.data ?? null;
+      const groupTarget = state.ai.groupStateTargets?.get?.(e.groupId) ?? null;
+      e.blackboard ??= {};
+      e.blackboard.aiTargetState = groupTarget ? groupTarget.targetState : null;
+      e.blackboard.aiTargetMeta = groupTarget
+        ? {
+            expiresAtSec: groupTarget.expiresAtSec,
+            priority: groupTarget.priority,
+            source: groupTarget.source,
+            reason: groupTarget.reason,
+          }
+        : null;
     }
 
     if (this.pendingPromise) return;

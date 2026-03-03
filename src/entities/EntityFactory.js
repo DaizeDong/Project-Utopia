@@ -234,6 +234,11 @@ export function createInitialGameState(options = {}) {
         event: 0,
       },
       deathsByGroup: {},
+      invalidTransitionCount: 0,
+      idleWithoutReasonSec: {},
+      pathRecalcPerEntityPerMin: 0,
+      goalFlipCount: 0,
+      deathByReasonAndReachability: {},
     },
     ai: {
       enabled: false,
@@ -261,6 +266,8 @@ export function createInitialGameState(options = {}) {
       lastPolicyExchangeByGroup: {},
       policyExchanges: [],
       environmentExchanges: [],
+      groupStateTargets: new Map(),
+      lastStateTargetBatch: [],
     },
     debug: {
       selectedTile: null,
@@ -308,6 +315,15 @@ export function createInitialGameState(options = {}) {
         ruins,
         emptyBaseTiles: grid.emptyBaseTiles ?? 0,
         passableRatio: passable / grid.tiles.length,
+      },
+      logic: {
+        invalidTransitions: 0,
+        goalFlipCount: 0,
+        totalPathRecalcs: 0,
+        idleWithoutReasonSecByGroup: {},
+        pathRecalcByEntity: {},
+        lastGoalsByEntity: {},
+        deathByReasonAndReachability: {},
       },
     },
     gameplay: {
@@ -359,9 +375,11 @@ export function createInitialGameState(options = {}) {
       stressExtraWorkers: 0,
       populationTargets: {
         workers: agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length,
-        visitors: agents.filter((a) => a.type === ENTITY_TYPE.VISITOR).length,
+        traders: agents.filter((a) => a.type === ENTITY_TYPE.VISITOR && (a.kind === VISITOR_KIND.TRADER || a.groupId === GROUP_IDS.TRADERS)).length,
+        saboteurs: agents.filter((a) => a.type === ENTITY_TYPE.VISITOR && !(a.kind === VISITOR_KIND.TRADER || a.groupId === GROUP_IDS.TRADERS)).length,
         herbivores: animals.filter((a) => a.kind === ANIMAL_KIND.HERBIVORE).length,
         predators: animals.filter((a) => a.kind === ANIMAL_KIND.PREDATOR).length,
+        visitors: agents.filter((a) => a.type === ENTITY_TYPE.VISITOR).length,
       },
       populationBreakdown: {
         baseWorkers: agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length,
