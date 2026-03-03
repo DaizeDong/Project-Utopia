@@ -3,8 +3,6 @@ import { TILE, VISITOR_KIND } from "../../config/constants.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { canAttemptPath, clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
 
-const TRADER_REFRESH_BASE_SEC = 1.4;
-const TRADER_REFRESH_JITTER_SEC = 0.8;
 const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
 
@@ -48,10 +46,7 @@ function shouldTraderRetarget(visitor, state) {
   );
 
   if (!hasPath && !atTarget) return true;
-
-  const blackboard = visitor.blackboard ?? (visitor.blackboard = {});
-  const nowSec = state.metrics.timeSec;
-  return nowSec >= Number(blackboard.nextTargetRefreshSec ?? -Infinity);
+  return false;
 }
 
 function hasActivePath(visitor, state) {
@@ -77,10 +72,7 @@ function traderTick(visitor, state, dt, services) {
 
   if (shouldTraderRetarget(visitor, state) && canAttemptPath(visitor, state)) {
     const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
-    if (warehouse && setTargetAndPath(visitor, warehouse, state, services)) {
-      const blackboard = visitor.blackboard ?? (visitor.blackboard = {});
-      blackboard.nextTargetRefreshSec = state.metrics.timeSec + TRADER_REFRESH_BASE_SEC + services.rng.next() * TRADER_REFRESH_JITTER_SEC;
-    }
+    if (warehouse) setTargetAndPath(visitor, warehouse, state, services);
   }
 
   if (hasActivePath(visitor, state)) {

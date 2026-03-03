@@ -120,29 +120,41 @@ export class PerformancePanel {
     this.#syncBenchmarkConfigSection();
   }
 
+  #isElementFocused(el) {
+    return Boolean(el && typeof document !== "undefined" && document.activeElement === el);
+  }
+
+  #setFieldValueIfIdle(el, value) {
+    if (!el || this.#isElementFocused(el)) return;
+    const next = String(value ?? "");
+    if (el.value !== next) {
+      el.value = next;
+    }
+  }
+
   #syncInputLabel() {
     if (!this.extraWorkersInput || !this.extraWorkersLabel) return;
     const value = Math.max(0, Math.min(500, this.state.controls.stressExtraWorkers | 0));
-    this.extraWorkersInput.value = String(value);
+    this.#setFieldValueIfIdle(this.extraWorkersInput, value);
     this.extraWorkersLabel.textContent = String(value);
   }
 
   #syncTimeScaleLabel() {
     if (!this.timeScaleInput || !this.timeScaleLabel) return;
     const value = Math.max(0.25, Math.min(2, this.state.controls.timeScale || 1));
-    this.timeScaleInput.value = String(Math.round(value * 100));
+    this.#setFieldValueIfIdle(this.timeScaleInput, Math.round(value * 100));
     this.timeScaleLabel.textContent = `${value.toFixed(2)}x`;
   }
 
   #syncBenchmarkConfigLabels() {
     if (this.benchmarkStageDurationInput && this.benchmarkStageDurationLabel) {
       const value = Math.max(10, Math.min(300, Number(this.benchmarkStageDurationInput.value) || 40)) / 10;
-      this.benchmarkStageDurationInput.value = String(Math.round(value * 10));
+      this.#setFieldValueIfIdle(this.benchmarkStageDurationInput, Math.round(value * 10));
       this.benchmarkStageDurationLabel.textContent = `${value.toFixed(1)}s`;
     }
     if (this.benchmarkSampleStartInput && this.benchmarkSampleStartLabel) {
       const value = Math.max(0, Math.min(300, Number(this.benchmarkSampleStartInput.value) || 12)) / 10;
-      this.benchmarkSampleStartInput.value = String(Math.round(value * 10));
+      this.#setFieldValueIfIdle(this.benchmarkSampleStartInput, Math.round(value * 10));
       this.benchmarkSampleStartLabel.textContent = `${value.toFixed(1)}s`;
     }
   }
@@ -158,13 +170,13 @@ export class PerformancePanel {
     this.lastBenchmarkUiSignature = signature;
 
     if (this.benchmarkStageDurationInput) {
-      this.benchmarkStageDurationInput.value = String(Math.round(cfg.stageDurationSec * 10));
+      this.#setFieldValueIfIdle(this.benchmarkStageDurationInput, Math.round(cfg.stageDurationSec * 10));
     }
     if (this.benchmarkSampleStartInput) {
-      this.benchmarkSampleStartInput.value = String(Math.round(cfg.sampleStartSec * 10));
+      this.#setFieldValueIfIdle(this.benchmarkSampleStartInput, Math.round(cfg.sampleStartSec * 10));
     }
     if (this.benchmarkScheduleInput) {
-      this.benchmarkScheduleInput.value = scheduleToText(cfg.schedule);
+      this.#setFieldValueIfIdle(this.benchmarkScheduleInput, scheduleToText(cfg.schedule));
     }
 
     const scheduleText = scheduleToText(cfg.schedule);
@@ -172,7 +184,7 @@ export class PerformancePanel {
     if (scheduleText === SCHEDULE_PRESETS.default) preset = "default";
     else if (scheduleText === SCHEDULE_PRESETS.light) preset = "light";
     else if (scheduleText === SCHEDULE_PRESETS.heavy) preset = "heavy";
-    if (this.benchmarkSchedulePreset) this.benchmarkSchedulePreset.value = preset;
+    if (this.benchmarkSchedulePreset) this.#setFieldValueIfIdle(this.benchmarkSchedulePreset, preset);
 
     this.#syncBenchmarkConfigLabels();
   }

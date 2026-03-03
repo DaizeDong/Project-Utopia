@@ -1,20 +1,29 @@
-﻿import http from "node:http";
+import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { loadEnvIntoProcess } from "../scripts/env-loader.mjs";
 import { buildEnvironmentFallback, buildPolicyFallback } from "../src/simulation/ai/llm/PromptBuilder.js";
 import { guardEnvironmentDirective, guardGroupPolicies } from "../src/simulation/ai/llm/Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "../src/simulation/ai/llm/ResponseSchema.js";
+
+const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
+const envLoadResult = loadEnvIntoProcess();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const envPromptPath = path.resolve(__dirname, "../src/data/prompts/environment-director.md");
 const policyPromptPath = path.resolve(__dirname, "../src/data/prompts/npc-brain.md");
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
-const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
+const OPENAI_MODEL_RAW = (process.env.OPENAI_MODEL ?? "").trim();
+const OPENAI_MODEL = OPENAI_MODEL_RAW || DEFAULT_OPENAI_MODEL;
+const MODEL_SOURCE = OPENAI_MODEL_RAW ? "env" : "default";
+const API_KEY_SOURCE = OPENAI_API_KEY
+  ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
+  : "missing";
 const PORT = Number(process.env.AI_PROXY_PORT ?? 8787);
 
 const envSystemPrompt = fs.existsSync(envPromptPath)
@@ -54,9 +63,49 @@ function extractJsonCandidate(content) {
   }
 }
 
-async function callOpenAI(systemPrompt, summary) {
+function extractApiErrorMessage(text) {
+  if (typeof text !== "string" || !text.trim()) return "empty response";
+  try {
+    const parsed = JSON.parse(text);
+    const message = parsed?.error?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  } catch {
+    // ignore invalid json bodies
+  }
+  return text.replace(/\s+/g, " ").trim().slice(0, 220);
+}
+
+class OpenAIHttpError extends Error {
+  constructor(status, bodyMessage) {
+    super(`OpenAI HTTP ${status}: ${bodyMessage}`);
+    this.name = "OpenAIHttpError";
+    this.status = status;
+    this.bodyMessage = bodyMessage;
+  }
+}
+
+function isModelConfigError(err) {
+  if (!(err instanceof OpenAIHttpError)) return false;
+  const combined = `${err.bodyMessage ?? ""} ${err.message ?? ""}`.toLowerCase();
+  if (![400, 404].includes(Number(err.status))) return false;
+  return combined.includes("model");
+}
+
+function compactError(err) {
+  const raw = String(err?.message ?? err ?? "unknown error")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return "unknown error";
+  if (raw.toLowerCase().includes("openai_api_key")) return "OPENAI_API_KEY missing";
+  if (raw.toLowerCase().includes("aborted") || raw.toLowerCase().includes("timeout")) return "request timeout";
+  if (raw.toLowerCase().includes("schema failed")) return raw.slice(0, 180);
+  if (raw.toLowerCase().startsWith("openai http")) return raw.slice(0, 200);
+  return raw.slice(0, 180);
+}
+
+async function callOpenAI(systemPrompt, summary, modelName) {
   const body = {
-    model: OPENAI_MODEL,
+    model: modelName,
     messages: [
       { role: "system", content: systemPrompt },
       {
@@ -82,7 +131,7 @@ async function callOpenAI(systemPrompt, summary) {
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`OpenAI HTTP ${resp.status}: ${text}`);
+    throw new OpenAIHttpError(resp.status, extractApiErrorMessage(text));
   }
 
   const data = await resp.json();
@@ -91,7 +140,18 @@ async function callOpenAI(systemPrompt, summary) {
   if (!parsed) {
     throw new Error("OpenAI returned non-JSON content");
   }
-  return parsed;
+  return { parsed, model: modelName };
+}
+
+async function callOpenAIWithModelFallback(systemPrompt, summary) {
+  try {
+    return await callOpenAI(systemPrompt, summary, OPENAI_MODEL);
+  } catch (err) {
+    if (OPENAI_MODEL !== DEFAULT_OPENAI_MODEL && isModelConfigError(err)) {
+      return callOpenAI(systemPrompt, summary, DEFAULT_OPENAI_MODEL);
+    }
+    throw err;
+  }
 }
 
 function readBody(req) {
@@ -121,12 +181,13 @@ async function handleEnvironment(summary) {
       fallback: true,
       directive: guardEnvironmentDirective(buildEnvironmentFallback(summary)),
       error: "OPENAI_API_KEY missing",
+      model: OPENAI_MODEL,
     };
   }
 
   try {
-    const raw = await callOpenAI(envSystemPrompt, summary);
-    const validation = validateEnvironmentDirective(raw);
+    const result = await callOpenAIWithModelFallback(envSystemPrompt, summary);
+    const validation = validateEnvironmentDirective(result.parsed);
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);
     }
@@ -134,12 +195,14 @@ async function handleEnvironment(summary) {
       fallback: false,
       directive: guardEnvironmentDirective(validation.value),
       error: "",
+      model: result.model,
     };
   } catch (err) {
     return {
       fallback: true,
       directive: guardEnvironmentDirective(buildEnvironmentFallback(summary)),
-      error: String(err?.message ?? err),
+      error: compactError(err),
+      model: OPENAI_MODEL,
     };
   }
 }
@@ -150,12 +213,13 @@ async function handlePolicies(summary) {
       fallback: true,
       ...guardGroupPolicies(buildPolicyFallback(summary)),
       error: "OPENAI_API_KEY missing",
+      model: OPENAI_MODEL,
     };
   }
 
   try {
-    const raw = await callOpenAI(policySystemPrompt, summary);
-    const validation = validateGroupPolicy(raw);
+    const result = await callOpenAIWithModelFallback(policySystemPrompt, summary);
+    const validation = validateGroupPolicy(result.parsed);
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);
     }
@@ -163,12 +227,14 @@ async function handlePolicies(summary) {
       fallback: false,
       ...guardGroupPolicies(validation.value),
       error: "",
+      model: result.model,
     };
   } catch (err) {
     return {
       fallback: true,
       ...guardGroupPolicies(buildPolicyFallback(summary)),
-      error: String(err?.message ?? err),
+      error: compactError(err),
+      model: OPENAI_MODEL,
     };
   }
 }
@@ -186,6 +252,9 @@ const server = http.createServer(async (req, res) => {
       hasApiKey: Boolean(OPENAI_API_KEY),
       model: OPENAI_MODEL,
       port: PORT,
+      envLoaded: Boolean(envLoadResult.envLoaded),
+      modelSource: MODEL_SOURCE,
+      apiKeySource: API_KEY_SOURCE,
       now: new Date().toISOString(),
     });
     return;
@@ -216,7 +285,8 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     sendJson(res, 500, {
       fallback: true,
-      error: String(err?.message ?? err),
+      error: compactError(err),
+      model: OPENAI_MODEL,
     });
   }
 });
@@ -235,3 +305,4 @@ server.on("error", (err) => {
   console.error(`[ai-proxy] server error: ${String(err?.message ?? err)}`);
   process.exit(1);
 });
+

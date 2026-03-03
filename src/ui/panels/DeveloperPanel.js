@@ -1,3 +1,6 @@
+const DEV_DOCK_PANELS_STORAGE_KEY = "utopiaDevDockPanels:v1";
+const DEV_DOCK_DEFAULT_OPEN = Object.freeze(["global", "ai-trace"]);
+
 export class DeveloperPanel {
   constructor(state) {
     this.state = state;
@@ -6,6 +9,86 @@ export class DeveloperPanel {
     this.aiTraceVal = document.getElementById("devAiTraceVal");
     this.systemVal = document.getElementById("devSystemVal");
     this.eventVal = document.getElementById("devEventTraceVal");
+
+    this.dockCards = Array.from(
+      document.querySelectorAll("details.dock-card[data-dock-key]")
+    );
+    this.dockCollapseAllBtn = document.getElementById("dockCollapseAllBtn");
+    this.dockExpandAllBtn = document.getElementById("dockExpandAllBtn");
+    this.dockResetLayoutBtn = document.getElementById("dockResetLayoutBtn");
+
+    this.#setupDockLayoutControls();
+    this.#restoreDockPanelState();
+  }
+
+  #setupDockLayoutControls() {
+    this.dockCards.forEach((card) => {
+      card.addEventListener("toggle", () => this.#persistDockPanelState());
+    });
+
+    this.dockCollapseAllBtn?.addEventListener("click", () => {
+      this.#setAllDockPanels(false);
+    });
+
+    this.dockExpandAllBtn?.addEventListener("click", () => {
+      this.#setAllDockPanels(true);
+    });
+
+    this.dockResetLayoutBtn?.addEventListener("click", () => {
+      this.#applyDefaultDockLayout();
+      this.#persistDockPanelState();
+    });
+  }
+
+  #setAllDockPanels(open) {
+    this.dockCards.forEach((card) => {
+      card.open = Boolean(open);
+    });
+    this.#persistDockPanelState();
+  }
+
+  #applyDefaultDockLayout() {
+    this.dockCards.forEach((card) => {
+      const key = card.dataset.dockKey ?? "";
+      card.open = DEV_DOCK_DEFAULT_OPEN.includes(key);
+    });
+  }
+
+  #restoreDockPanelState() {
+    if (this.dockCards.length === 0) return;
+    const raw = localStorage.getItem(DEV_DOCK_PANELS_STORAGE_KEY);
+    if (!raw) {
+      this.#applyDefaultDockLayout();
+      this.#persistDockPanelState();
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      this.dockCards.forEach((card) => {
+        const key = card.dataset.dockKey ?? "";
+        const value = parsed?.[key];
+        if (typeof value === "boolean") {
+          card.open = value;
+        } else {
+          card.open = DEV_DOCK_DEFAULT_OPEN.includes(key);
+        }
+      });
+    } catch {
+      this.#applyDefaultDockLayout();
+      this.#persistDockPanelState();
+    }
+  }
+
+  #persistDockPanelState() {
+    if (this.dockCards.length === 0) return;
+    const saved = {};
+    for (const card of this.dockCards) {
+      const key = card.dataset.dockKey ?? "";
+      if (!key) continue;
+      saved[key] = Boolean(card.open);
+    }
+    localStorage.setItem(DEV_DOCK_PANELS_STORAGE_KEY, JSON.stringify(saved));
   }
 
   #fmtNum(value, digits = 2) {
@@ -32,7 +115,12 @@ export class DeveloperPanel {
     const iconLoaded = state.debug.iconAtlasLoaded ? "yes" : "no";
     const unitLoaded = state.debug.unitSpriteLoaded ? "yes" : "no";
     const terrainTuning = state.controls.terrainTuning ?? {};
-    const popBreakdown = state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0, totalEntities: workers + visitors + herbivores + predators };
+    const popBreakdown = state.controls.populationBreakdown ?? {
+      baseWorkers: 0,
+      stressWorkers: 0,
+      totalWorkers: 0,
+      totalEntities: workers + visitors + herbivores + predators,
+    };
     const rngSnapshot = state.debug?.rng ?? null;
 
     const lines = [
@@ -55,7 +143,7 @@ export class DeveloperPanel {
         ? `Selected Tile: (${selectedTile.ix}, ${selectedTile.iz}) type=${selectedTile.typeName}`
         : "Selected Tile: none",
       `Selected Entity: ${state.controls.selectedEntityId ?? "none"}`,
-      `AI: enabled=${state.ai.enabled} mode=${state.ai.mode} env(${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount}) policy(${state.ai.policyLlmCount}/${state.ai.policyDecisionCount}) latency=${this.#fmtNum(state.metrics.aiLatencyMs, 1)}ms proxy=${state.metrics.proxyHealth ?? "unknown"}`,
+      `AI: enabled=${state.ai.enabled} mode=${state.ai.mode} env(${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount}) policy(${state.ai.policyLlmCount}/${state.ai.policyDecisionCount}) latency=${this.#fmtNum(state.metrics.aiLatencyMs, 1)}ms proxy=${state.metrics.proxyHealth ?? "unknown"} hasKey=${Boolean(state.metrics.proxyHasApiKey)} model=${state.metrics.proxyModel || "-"}`,
       rngSnapshot ? `RNG: seed=${rngSnapshot.initialSeed} state=${rngSnapshot.state} calls=${rngSnapshot.calls}` : "RNG: unavailable",
     ];
 
@@ -97,10 +185,14 @@ export class DeveloperPanel {
       return;
     }
 
-    const lines = trace.slice(0, 12).map((entry) => {
+    const lines = trace.slice(0, 16).map((entry) => {
       const sec = this.#fmtNum(entry.sec, 1);
-      const err = entry.error ? ` err=${entry.error}` : "";
-      return `[${sec}s] ${entry.channel} ${entry.source} weather=${entry.weather} detail=${entry.events}${err}`;
+      const fallback = entry.fallback !== undefined
+        ? Boolean(entry.fallback)
+        : entry.source === "fallback";
+      const model = String(entry.model ?? this.state.metrics.proxyModel ?? "-").trim() || "-";
+      const err = entry.error ? ` err=${String(entry.error).slice(0, 110)}` : "";
+      return `[${sec}s] ${entry.channel} ${entry.source} fallback=${fallback} model=${model} weather=${entry.weather} detail=${entry.events}${err}`;
     });
 
     this.aiTraceVal.textContent = lines.join("\n");
@@ -180,3 +272,4 @@ export class DeveloperPanel {
     this.#renderEventLog();
   }
 }
+

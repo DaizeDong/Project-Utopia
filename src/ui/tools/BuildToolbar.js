@@ -8,7 +8,7 @@ import {
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
-const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress"]);
+const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress", "ai-insights"]);
 
 export class BuildToolbar {
   constructor(state, handlers = {}) {
@@ -513,6 +513,18 @@ export class BuildToolbar {
     }
   }
 
+  #isElementFocused(el) {
+    return Boolean(el && typeof document !== "undefined" && document.activeElement === el);
+  }
+
+  #setFieldValueIfIdle(el, value) {
+    if (!el || this.#isElementFocused(el)) return;
+    const next = String(value ?? "");
+    if (el.value !== next) {
+      el.value = next;
+    }
+  }
+
   sync() {
     this.toolButtons.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tool === this.state.controls.tool);
@@ -520,7 +532,7 @@ export class BuildToolbar {
 
     if (this.farmRatio && this.farmRatioLabel) {
       const pct = Math.round(this.state.controls.farmRatio * 100);
-      this.farmRatio.value = String(pct);
+      this.#setFieldValueIfIdle(this.farmRatio, pct);
       this.farmRatioLabel.textContent = `${pct}%`;
     }
 
@@ -542,25 +554,25 @@ export class BuildToolbar {
 
     if (this.fixedStepHz && this.fixedStepHzLabel) {
       const hz = Math.max(5, Math.min(120, 1 / Math.max(1 / 120, this.state.controls.fixedStepSec || 1 / 30)));
-      this.fixedStepHz.value = String(Math.round(hz));
+      this.#setFieldValueIfIdle(this.fixedStepHz, Math.round(hz));
       this.fixedStepHzLabel.textContent = `${hz.toFixed(1)} Hz`;
     }
 
     if (this.cameraMinZoom && this.cameraMinZoomLabel) {
       const minZoom = Math.max(0.3, Math.min(5, Number(this.state.controls.cameraMinZoom) || 0.55));
-      this.cameraMinZoom.value = String(Math.round(minZoom * 100));
+      this.#setFieldValueIfIdle(this.cameraMinZoom, Math.round(minZoom * 100));
       this.cameraMinZoomLabel.textContent = minZoom.toFixed(2);
     }
 
     if (this.cameraMaxZoom && this.cameraMaxZoomLabel) {
       const maxZoom = Math.max(0.4, Math.min(6, Number(this.state.controls.cameraMaxZoom) || 3.2));
-      this.cameraMaxZoom.value = String(Math.round(maxZoom * 100));
+      this.#setFieldValueIfIdle(this.cameraMaxZoom, Math.round(maxZoom * 100));
       this.cameraMaxZoomLabel.textContent = maxZoom.toFixed(2);
     }
 
     if (this.renderDetailThreshold && this.renderDetailThresholdLabel) {
       const threshold = Math.max(80, Math.min(2000, Math.round(Number(this.state.controls.renderModelDisableThreshold) || 260)));
-      this.renderDetailThreshold.value = String(threshold);
+      this.#setFieldValueIfIdle(this.renderDetailThreshold, threshold);
       this.renderDetailThresholdLabel.textContent = String(threshold);
     }
 
@@ -575,34 +587,34 @@ export class BuildToolbar {
     }
 
     if (this.mapTemplateSelect) {
-      this.mapTemplateSelect.value = this.state.controls.mapTemplateId ?? this.state.world.mapTemplateId;
+      this.#setFieldValueIfIdle(this.mapTemplateSelect, this.state.controls.mapTemplateId ?? this.state.world.mapTemplateId);
     }
 
     if (this.mapSeedInput) {
-      this.mapSeedInput.value = String(this.state.controls.mapSeed ?? this.state.world.mapSeed ?? 1337);
+      this.#setFieldValueIfIdle(this.mapSeedInput, this.state.controls.mapSeed ?? this.state.world.mapSeed ?? 1337);
     }
 
     if (this.doctrineSelect) {
-      this.doctrineSelect.value = this.state.controls.doctrine ?? this.state.gameplay.doctrine;
+      this.#setFieldValueIfIdle(this.doctrineSelect, this.state.controls.doctrine ?? this.state.gameplay.doctrine);
     }
 
     const targets = this.state.controls.populationTargets;
     if (targets) {
-      if (this.workerTargetInput) this.workerTargetInput.value = String(Math.max(0, Math.min(500, targets.workers | 0)));
+      if (this.workerTargetInput) this.#setFieldValueIfIdle(this.workerTargetInput, Math.max(0, Math.min(500, targets.workers | 0)));
       if (this.workerTargetLabel) this.workerTargetLabel.textContent = String(Math.max(0, Math.min(500, targets.workers | 0)));
 
-      if (this.visitorTargetInput) this.visitorTargetInput.value = String(Math.max(0, Math.min(300, targets.visitors | 0)));
+      if (this.visitorTargetInput) this.#setFieldValueIfIdle(this.visitorTargetInput, Math.max(0, Math.min(300, targets.visitors | 0)));
       if (this.visitorTargetLabel) this.visitorTargetLabel.textContent = String(Math.max(0, Math.min(300, targets.visitors | 0)));
 
-      if (this.herbivoreTargetInput) this.herbivoreTargetInput.value = String(Math.max(0, Math.min(400, targets.herbivores | 0)));
+      if (this.herbivoreTargetInput) this.#setFieldValueIfIdle(this.herbivoreTargetInput, Math.max(0, Math.min(400, targets.herbivores | 0)));
       if (this.herbivoreTargetLabel) this.herbivoreTargetLabel.textContent = String(Math.max(0, Math.min(400, targets.herbivores | 0)));
 
-      if (this.predatorTargetInput) this.predatorTargetInput.value = String(Math.max(0, Math.min(200, targets.predators | 0)));
+      if (this.predatorTargetInput) this.#setFieldValueIfIdle(this.predatorTargetInput, Math.max(0, Math.min(200, targets.predators | 0)));
       if (this.predatorTargetLabel) this.predatorTargetLabel.textContent = String(Math.max(0, Math.min(200, targets.predators | 0)));
     }
 
     if (this.saveSlotInput) {
-      this.saveSlotInput.value = this.state.controls.saveSlotId ?? "default";
+      this.#setFieldValueIfIdle(this.saveSlotInput, this.state.controls.saveSlotId ?? "default");
     }
     if (this.undoBuildBtn) this.undoBuildBtn.disabled = !this.state.controls.canUndo;
     if (this.redoBuildBtn) this.redoBuildBtn.disabled = !this.state.controls.canRedo;
@@ -623,25 +635,25 @@ export class BuildToolbar {
     );
     this.state.controls.terrainTuning = tuned;
 
-    if (this.terrainWaterLevel) this.terrainWaterLevel.value = String(Math.round(tuned.waterLevel * 100));
+    if (this.terrainWaterLevel) this.#setFieldValueIfIdle(this.terrainWaterLevel, Math.round(tuned.waterLevel * 100));
     if (this.terrainWaterLevelLabel) this.terrainWaterLevelLabel.textContent = tuned.waterLevel.toFixed(2);
-    if (this.terrainRiverCount) this.terrainRiverCount.value = String(tuned.riverCount);
+    if (this.terrainRiverCount) this.#setFieldValueIfIdle(this.terrainRiverCount, tuned.riverCount);
     if (this.terrainRiverCountLabel) this.terrainRiverCountLabel.textContent = String(tuned.riverCount);
-    if (this.terrainRiverWidth) this.terrainRiverWidth.value = String(Math.round(tuned.riverWidth * 10));
+    if (this.terrainRiverWidth) this.#setFieldValueIfIdle(this.terrainRiverWidth, Math.round(tuned.riverWidth * 10));
     if (this.terrainRiverWidthLabel) this.terrainRiverWidthLabel.textContent = tuned.riverWidth.toFixed(1);
-    if (this.terrainRiverAmp) this.terrainRiverAmp.value = String(Math.round(tuned.riverAmp * 100));
+    if (this.terrainRiverAmp) this.#setFieldValueIfIdle(this.terrainRiverAmp, Math.round(tuned.riverAmp * 100));
     if (this.terrainRiverAmpLabel) this.terrainRiverAmpLabel.textContent = tuned.riverAmp.toFixed(2);
-    if (this.terrainMountainStrength) this.terrainMountainStrength.value = String(Math.round(tuned.mountainStrength * 100));
+    if (this.terrainMountainStrength) this.#setFieldValueIfIdle(this.terrainMountainStrength, Math.round(tuned.mountainStrength * 100));
     if (this.terrainMountainStrengthLabel) this.terrainMountainStrengthLabel.textContent = tuned.mountainStrength.toFixed(2);
-    if (this.terrainIslandBias) this.terrainIslandBias.value = String(Math.round(tuned.islandBias * 100));
+    if (this.terrainIslandBias) this.#setFieldValueIfIdle(this.terrainIslandBias, Math.round(tuned.islandBias * 100));
     if (this.terrainIslandBiasLabel) this.terrainIslandBiasLabel.textContent = tuned.islandBias.toFixed(2);
-    if (this.terrainOceanBias) this.terrainOceanBias.value = String(Math.round(tuned.oceanBias * 100));
+    if (this.terrainOceanBias) this.#setFieldValueIfIdle(this.terrainOceanBias, Math.round(tuned.oceanBias * 100));
     if (this.terrainOceanBiasLabel) this.terrainOceanBiasLabel.textContent = tuned.oceanBias.toFixed(2);
-    if (this.terrainRoadDensity) this.terrainRoadDensity.value = String(Math.round(tuned.roadDensity * 100));
+    if (this.terrainRoadDensity) this.#setFieldValueIfIdle(this.terrainRoadDensity, Math.round(tuned.roadDensity * 100));
     if (this.terrainRoadDensityLabel) this.terrainRoadDensityLabel.textContent = `${Math.round(tuned.roadDensity * 100)}%`;
-    if (this.terrainSettlementDensity) this.terrainSettlementDensity.value = String(Math.round(tuned.settlementDensity * 100));
+    if (this.terrainSettlementDensity) this.#setFieldValueIfIdle(this.terrainSettlementDensity, Math.round(tuned.settlementDensity * 100));
     if (this.terrainSettlementDensityLabel) this.terrainSettlementDensityLabel.textContent = `${Math.round(tuned.settlementDensity * 100)}%`;
-    if (this.terrainWallModeSelect) this.terrainWallModeSelect.value = tuned.wallMode;
-    if (this.terrainOceanSideSelect) this.terrainOceanSideSelect.value = tuned.oceanSide;
+    if (this.terrainWallModeSelect) this.#setFieldValueIfIdle(this.terrainWallModeSelect, tuned.wallMode);
+    if (this.terrainOceanSideSelect) this.#setFieldValueIfIdle(this.terrainOceanSideSelect, tuned.oceanSide);
   }
 }
