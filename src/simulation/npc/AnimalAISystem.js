@@ -10,6 +10,9 @@ const PREDATOR_HUNT_REFRESH_SEC = 1.15;
 const HERBIVORE_FLEE_REFRESH_SEC = 0.9;
 const WANDER_REFRESH_BASE_SEC = 2.2;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
+const HERBIVORE_FLEE_ENTER_DIST = 3.4;
+const HERBIVORE_FLEE_EXIT_DIST = 4.8;
+const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
 
 function countNearbyKind(entity, list, radius = 3.2) {
   const r2 = radius * radius;
@@ -125,8 +128,18 @@ function recoverPredatorHungerOnHit(animal) {
 }
 
 function herbivoreTick(animal, predators, state, dt, services, stateNode) {
+  const bb = animal.blackboard ?? (animal.blackboard = {});
+  const threat = nearestPredator(animal, predators);
+  const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
+  const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
+  if (threatNear) {
+    bb.fleeLatch = true;
+  } else if (threatFar) {
+    bb.fleeLatch = false;
+  }
+
   if (stateNode === "flee") {
-    const { predator } = nearestPredator(animal, predators);
+    const predator = threat.predator;
     if (predator) {
       const nowSec = state.metrics.timeSec;
       const nextFleeRefresh = Number(animal.debug?.nextFleeRefreshSec ?? -Infinity);
@@ -189,6 +202,19 @@ function predatorTick(animal, herbivores, state, dt, services, stateNode) {
   const { prey, distance } = nearestHerbivore(animal, herbivores);
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
+    animal.debug ??= {};
+    const lastSwitchSec = Number(animal.debug.lastPredatorTargetSwitchSec ?? -Infinity);
+    const lastPreyId = String(animal.debug.lastPredatorTargetId ?? "");
+    const switchingTarget = lastPreyId && lastPreyId !== String(prey.id ?? "");
+    if (switchingTarget && nowSec - lastSwitchSec < PREDATOR_TARGET_SWITCH_MIN_SEC) {
+      setIdleDesired(animal);
+      return;
+    }
+    if (switchingTarget) {
+      animal.debug.lastPredatorTargetSwitchSec = nowSec;
+    }
+    animal.debug.lastPredatorTargetId = String(prey.id ?? "");
+
     const nextRefreshSec = Number(animal.debug?.nextHuntRefreshSec ?? -Infinity);
     const preyTile = worldToTile(prey.x, prey.z, state.grid);
     const targetDrifted = tileDistance(animal.targetTile, preyTile) >= 2;
@@ -300,6 +326,12 @@ export class AnimalAISystem {
       animal.debug.lastStateNode = stateNode;
 
       if (groupId === "herbivores") {
+        const bb = animal.blackboard ?? (animal.blackboard = {});
+        const threat = nearestPredator(animal, this.predators);
+        const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
+        const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
+        if (threatNear) bb.fleeLatch = true;
+        else if (threatFar) bb.fleeLatch = false;
         if (stateNode === "idle") setIdleDesired(animal);
         else herbivoreTick(animal, this.predators, state, dt, services, stateNode);
       } else {

@@ -15,7 +15,7 @@ function makeState() {
   };
 }
 
-test("StatePlanner applies strong policy intent when local state is not critical", () => {
+test("StatePlanner rejects infeasible deliver policy when worker has no carry", () => {
   const state = makeState();
   const worker = {
     id: "worker_1",
@@ -37,9 +37,10 @@ test("StatePlanner applies strong policy intent when local state is not critical
   };
 
   const result = planEntityDesiredState(worker, state);
-  assert.equal(result.desiredState, "deliver");
-  assert.equal(Boolean(worker.debug.policyApplied), true);
+  assert.notEqual(result.desiredState, "deliver");
+  assert.equal(Boolean(worker.debug.policyApplied), false);
   assert.equal(worker.debug.policyTopIntent, "deliver");
+  assert.equal(typeof worker.debug.policyRejectedReason, "string");
 });
 
 test("StatePlanner keeps critical hunger local state unless policy signal is very strong", () => {
@@ -70,7 +71,7 @@ test("StatePlanner keeps critical hunger local state unless policy signal is ver
   assert.equal(Boolean(worker.debug.policyApplied), false);
 });
 
-test("StatePlanner does not force food-seeking from policy when worker is already satiated", () => {
+test("StatePlanner can apply feasible food policy intent even when worker is satiated", () => {
   const state = makeState();
   const worker = {
     id: "worker_3",
@@ -92,11 +93,11 @@ test("StatePlanner does not force food-seeking from policy when worker is alread
   };
 
   const result = planEntityDesiredState(worker, state);
-  assert.equal(result.desiredState, "seek_task");
-  assert.equal(Boolean(worker.debug.policyApplied), false);
+  assert.equal(result.desiredState, "seek_food");
+  assert.equal(typeof worker.debug.policyTopIntent, "string");
 });
 
-test("StatePlanner ignores AI food target for humans when hunger is high", () => {
+test("StatePlanner applies feasible AI food target when priority is high", () => {
   const state = makeState();
   state.ai.groupStateTargets.set("workers", {
     targetState: "seek_food",
@@ -126,6 +127,41 @@ test("StatePlanner ignores AI food target for humans when hunger is high", () =>
   };
 
   const result = planEntityDesiredState(worker, state);
-  assert.equal(result.desiredState, "seek_task");
+  assert.equal(result.desiredState, "seek_food");
+  assert.equal(Boolean(worker.debug.aiTargetApplied), true);
+});
+
+test("StatePlanner rejects AI deliver target when worker has no carry", () => {
+  const state = makeState();
+  state.ai.groupStateTargets.set("workers", {
+    targetState: "deliver",
+    expiresAtSec: 60,
+    priority: 0.95,
+    source: "llm",
+    reason: "force-deliver",
+  });
+
+  const worker = {
+    id: "worker_5",
+    groupId: "workers",
+    role: ROLE.FARM,
+    hunger: 0.88,
+    carry: { food: 0, wood: 0 },
+    x: 0,
+    z: 0,
+    targetTile: null,
+    path: null,
+    pathIndex: 0,
+    pathGridVersion: -1,
+    blackboard: {},
+    debug: {},
+    policy: {
+      intentWeights: { farm: 1.1, wood: 0.7 },
+    },
+  };
+
+  const result = planEntityDesiredState(worker, state);
+  assert.notEqual(result.desiredState, "deliver");
   assert.equal(Boolean(worker.debug.aiTargetApplied), false);
+  assert.equal(typeof worker.debug.aiRejectedReason, "string");
 });

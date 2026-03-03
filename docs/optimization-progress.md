@@ -49,3 +49,32 @@
 3. 推进 `M3`：拾取与渲染脏更新进一步节流，建立固定负载前后对比表。
 4. 推进 `M4`：补快照 JSON 导入与 replay 复播执行器。
 5. 启动 `M5`：按模块拆分 `SceneRenderer` 与 `Grid`，每次拆分后全量回归。
+
+## LOGIC-BASELINE-2026-03 (new)
+
+Timestamp: 2026-03-03T05:27:43Z
+Command: `npm run bench:logic`
+Output: `docs/logic-baseline-2026-03.json`
+
+### Baseline Metrics
+- `goalFlipCount`: 163
+- `invalidTransitionCount`: 0
+- `deathsTotal`: 5
+- `deliverWithoutCarryCount`: 0
+- `pathRecalcByEntityTopN[0]`: `animal_30=86`
+
+### This Iteration (logic consistency hardening)
+- Added strict feasibility gate: `src/simulation/npc/state/StateFeasibility.js`
+- Planner now resolves `local -> policy -> ai` with strict feasibility checks
+- Worker `deliver` now hard-guards `carry>0` and breaks stale task-lock on invalid deliver
+- Worker emergency ration now has cooldown + hard hunger threshold + reachable-food guard
+- Visitor trade/saboteur loops now avoid immediate wander fallback jitter
+- Animal logic adds flee hysteresis and predator target-switch throttling
+- Mortality uses mixed nutrition reachability (carry/warehouse/nearby farm)
+- Added metrics: `avgGoalFlipPerEntity`, `deliverWithoutCarryCount`, `feasibilityRejectCountByGroup`, `starvationRiskCount`
+- Added script: `scripts/logic-baseline.mjs` + npm script `bench:logic`
+
+### Verification
+- `npm test`: pass (57/57)
+- `npm run build`: pass
+- `npm run bench:logic`: pass

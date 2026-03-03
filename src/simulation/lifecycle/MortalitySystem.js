@@ -1,7 +1,9 @@
-﻿import { ANIMAL_KIND, ENTITY_TYPE, TILE } from "../../config/constants.js";
+import { ANIMAL_KIND, ENTITY_TYPE, TILE } from "../../config/constants.js";
 import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
+
+const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
 
 function deathThresholdFor(entity) {
   if (entity.type === ENTITY_TYPE.WORKER) return { hunger: 0.045, holdSec: 34 };
@@ -46,30 +48,10 @@ function markDeath(entity, reason, nowSec, context = null) {
   entity.deathContext = context ?? null;
 }
 
-function hasReachableWarehouseFood(entity, state, services, nowSec) {
-  if (Number(state.resources?.food ?? 0) <= 0) return false;
-  if (state.buildings.warehouses <= 0) return false;
-  if (Number(entity.carry?.food ?? 0) > 0) return true;
-
-  const bb = entity.blackboard ?? (entity.blackboard = {});
-  const deathCtx = bb.deathContext ?? (bb.deathContext = {});
-  const lastCheckSec = Number(deathCtx.lastFoodReachCheckSec ?? -Infinity);
-  if (nowSec - lastCheckSec < 2.5 && typeof deathCtx.lastFoodReachable === "boolean") {
-    return deathCtx.lastFoodReachable;
-  }
-
-  const fromTile = worldToTile(entity.x, entity.z, state.grid);
-  const target = findNearestTileOfTypes(state.grid, entity, [TILE.WAREHOUSE]);
-  if (!target) {
-    deathCtx.lastFoodReachable = false;
-    deathCtx.lastFoodReachCheckSec = nowSec;
-    return false;
-  }
-
+function resolveReachability(entity, state, services, fromTile, target, sourceType) {
+  if (!target) return { reachable: false, sourceType: "none", pathLength: 0 };
   if (fromTile.ix === target.ix && fromTile.iz === target.iz) {
-    deathCtx.lastFoodReachable = true;
-    deathCtx.lastFoodReachCheckSec = nowSec;
-    return true;
+    return { reachable: true, sourceType, pathLength: 0 };
   }
 
   let path = services?.pathCache?.get?.(state.grid.version, fromTile, target) ?? null;
@@ -81,10 +63,62 @@ function hasReachableWarehouseFood(entity, state, services, nowSec) {
   }
 
   const reachable = Array.isArray(path) && path.length > 0;
-  deathCtx.lastFoodReachable = reachable;
+  return {
+    reachable,
+    sourceType: reachable ? sourceType : "none",
+    pathLength: reachable ? Number(path.length ?? 0) : 0,
+  };
+}
+
+function hasReachableNutritionSource(entity, state, services, nowSec) {
+  if (Number(entity.carry?.food ?? 0) > 0) {
+    return { reachable: true, sourceType: "carry", pathLength: 0 };
+  }
+
+  const bb = entity.blackboard ?? (entity.blackboard = {});
+  const deathCtx = bb.deathContext ?? (bb.deathContext = {});
+  const lastCheckSec = Number(deathCtx.lastFoodReachCheckSec ?? -Infinity);
+  if (nowSec - lastCheckSec < 2.5 && typeof deathCtx.lastFoodReachable === "boolean") {
+    return {
+      reachable: deathCtx.lastFoodReachable,
+      sourceType: String(deathCtx.lastFoodSourceType ?? "none"),
+      pathLength: Number(deathCtx.lastFoodPathLength ?? 0),
+    };
+  }
+
+  const fromTile = worldToTile(entity.x, entity.z, state.grid);
+
+  if (Number(state.resources?.food ?? 0) > 0 && Number(state.buildings?.warehouses ?? 0) > 0) {
+    const warehouse = findNearestTileOfTypes(state.grid, entity, [TILE.WAREHOUSE]);
+    const resolved = resolveReachability(entity, state, services, fromTile, warehouse, "warehouse");
+    if (resolved.reachable) {
+      deathCtx.lastFoodReachable = true;
+      deathCtx.lastFoodReachCheckSec = nowSec;
+      deathCtx.lastFoodSourceTile = warehouse;
+      deathCtx.lastFoodSourceType = resolved.sourceType;
+      deathCtx.lastFoodPathLength = resolved.pathLength;
+      return resolved;
+    }
+  }
+
+  if (Number(state.buildings?.farms ?? 0) > 0) {
+    const farm = findNearestTileOfTypes(state.grid, entity, [TILE.FARM]);
+    const resolved = resolveReachability(entity, state, services, fromTile, farm, "nearby-farm");
+    if (resolved.reachable && resolved.pathLength <= NEARBY_FARM_SUPPLY_MAX_PATH_LEN) {
+      deathCtx.lastFoodReachable = true;
+      deathCtx.lastFoodReachCheckSec = nowSec;
+      deathCtx.lastFoodSourceTile = farm;
+      deathCtx.lastFoodSourceType = resolved.sourceType;
+      deathCtx.lastFoodPathLength = resolved.pathLength;
+      return resolved;
+    }
+  }
+
+  deathCtx.lastFoodReachable = false;
   deathCtx.lastFoodReachCheckSec = nowSec;
-  deathCtx.lastFoodSourceTile = target;
-  return reachable;
+  deathCtx.lastFoodSourceType = "none";
+  deathCtx.lastFoodPathLength = 0;
+  return { reachable: false, sourceType: "none", pathLength: 0 };
 }
 
 function shouldStarve(entity, dt, state, services, nowSec) {
@@ -92,21 +126,25 @@ function shouldStarve(entity, dt, state, services, nowSec) {
   const current = Number(entity.hunger ?? 1);
 
   if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
-    const reachableFood = hasReachableWarehouseFood(entity, state, services, nowSec);
+    const nutrition = hasReachableNutritionSource(entity, state, services, nowSec);
     entity.debug ??= {};
-    entity.debug.reachableFood = reachableFood;
+    entity.debug.reachableFood = nutrition.reachable;
+    entity.debug.nutritionSourceType = nutrition.sourceType;
     if (current <= hunger) {
-      if (reachableFood) {
-        entity.starvationSec = Math.max(0, Number(entity.starvationSec ?? 0) - dt * 1.6);
+      if (nutrition.reachable) {
+        entity.starvationSec = Math.max(0, Number(entity.starvationSec ?? 0) - dt * 1.2);
       } else {
         entity.starvationSec = Number(entity.starvationSec ?? 0) + dt;
       }
     } else {
       entity.starvationSec = 0;
     }
+
     return {
-      shouldDie: Number(entity.starvationSec ?? 0) >= holdSec && !reachableFood,
-      reachableFood,
+      shouldDie: Number(entity.starvationSec ?? 0) >= holdSec && !nutrition.reachable,
+      reachableFood: nutrition.reachable,
+      nutritionSourceType: nutrition.sourceType,
+      isStarvationRisk: current <= hunger && !nutrition.reachable,
     };
   }
 
@@ -118,15 +156,20 @@ function shouldStarve(entity, dt, state, services, nowSec) {
   return {
     shouldDie: Number(entity.starvationSec ?? 0) >= holdSec,
     reachableFood: false,
+    nutritionSourceType: "none",
+    isStarvationRisk: current <= hunger,
   };
 }
 
-function buildDeathContext(entity, state, reason, reachableFood) {
+function buildDeathContext(entity, state, reason, reachableFood, nutritionSourceType = "none") {
   const fsm = entity.blackboard?.fsm ?? null;
   return {
     reason,
     simSec: Number(state.metrics.timeSec ?? 0),
     reachableFood: Boolean(reachableFood),
+    nutritionReachable: Boolean(reachableFood),
+    nutritionSourceType,
+    starvationSecAtDeath: Number(entity.starvationSec ?? 0),
     hunger: Number(entity.hunger ?? 0),
     hp: Number(entity.hp ?? 0),
     state: fsm?.state ?? entity.stateLabel ?? "-",
@@ -135,6 +178,7 @@ function buildDeathContext(entity, state, reason, reachableFood) {
     pathLength: Number(entity.path?.length ?? 0),
     pathGridVersion: Number(entity.pathGridVersion ?? -1),
     aiTarget: entity.blackboard?.aiTargetState ?? null,
+    lastFeasibilityReject: entity.blackboard?.lastFeasibilityReject ?? null,
   };
 }
 
@@ -147,6 +191,7 @@ export class MortalitySystem {
     const nowSec = Number(state.metrics.timeSec ?? 0);
     const deadIds = new Set();
     const deathEvents = [];
+    let starvationRiskCount = 0;
 
     for (const entity of state.agents) {
       if (entity.alive === false) {
@@ -155,14 +200,17 @@ export class MortalitySystem {
       }
 
       let reachableFood = Boolean(entity.debug?.reachableFood);
+      let nutritionSourceType = String(entity.debug?.nutritionSourceType ?? "none");
       if (Number(entity.hp ?? 1) <= 0) {
         const reason = entity.deathReason || "event";
-        markDeath(entity, reason, nowSec, buildDeathContext(entity, state, reason, reachableFood));
+        markDeath(entity, reason, nowSec, buildDeathContext(entity, state, reason, reachableFood, nutritionSourceType));
       } else {
         const starve = shouldStarve(entity, dt, state, services, nowSec);
         reachableFood = starve.reachableFood;
+        nutritionSourceType = starve.nutritionSourceType;
+        if (starve.isStarvationRisk) starvationRiskCount += 1;
         if (starve.shouldDie) {
-          markDeath(entity, "starvation", nowSec, buildDeathContext(entity, state, "starvation", reachableFood));
+          markDeath(entity, "starvation", nowSec, buildDeathContext(entity, state, "starvation", reachableFood, nutritionSourceType));
         }
       }
 
@@ -179,14 +227,15 @@ export class MortalitySystem {
         continue;
       }
 
-      let reachableFood = false;
+      const reachableFood = false;
       if (Number(animal.hp ?? 1) <= 0) {
         const reason = animal.deathReason || "predation";
-        markDeath(animal, reason, nowSec, buildDeathContext(animal, state, reason, reachableFood));
+        markDeath(animal, reason, nowSec, buildDeathContext(animal, state, reason, reachableFood, "none"));
       } else {
         const starve = shouldStarve(animal, dt, state, services, nowSec);
+        if (starve.isStarvationRisk) starvationRiskCount += 1;
         if (starve.shouldDie) {
-          markDeath(animal, "starvation", nowSec, buildDeathContext(animal, state, "starvation", reachableFood));
+          markDeath(animal, "starvation", nowSec, buildDeathContext(animal, state, "starvation", reachableFood, "none"));
         }
       }
 
@@ -196,6 +245,8 @@ export class MortalitySystem {
         deathEvents.push(`${animal.displayName ?? animal.id} died (${animal.deathReason || "event"}).`);
       }
     }
+
+    state.metrics.starvationRiskCount = starvationRiskCount;
 
     if (deadIds.size === 0) return;
 

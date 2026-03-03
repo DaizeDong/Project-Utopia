@@ -11,7 +11,33 @@ const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
 const DELIVER_THRESHOLD = 2.4;
-const WORKER_EAT_RECOVERY_TARGET = 0.84;
+const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
+const WORKER_TASK_LOCK_SEC = 1.2;
+const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
+
+function getWorkerHungerSeekThreshold(worker) {
+  const base = Number(BALANCE.workerHungerSeekThreshold ?? 0.14);
+  const override = Number(worker?.metabolism?.hungerSeekThreshold ?? base);
+  return clamp(override, 0.05, 0.8);
+}
+
+function getWorkerEatRecoveryTarget(worker) {
+  const base = Number(BALANCE.workerEatRecoveryTarget ?? 0.68);
+  const override = Number(worker?.metabolism?.eatRecoveryTarget ?? base);
+  return clamp(override, 0.2, 0.98);
+}
+
+function getWorkerHungerDecayPerSecond(worker) {
+  const base = Math.max(0, Number(BALANCE.workerHungerDecayPerSecond ?? BALANCE.hungerDecayPerSecond ?? 0.014));
+  const multiplier = Number(worker?.metabolism?.hungerDecayMultiplier ?? 1);
+  return Math.max(0, base * clamp(multiplier, 0.5, 1.5));
+}
+
+function getWorkerRecoveryPerFoodUnit(worker) {
+  const base = Number(BALANCE.workerHungerEatRecoveryPerFoodUnit ?? BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04);
+  const multiplier = Number(worker?.metabolism?.eatRecoveryPerFoodMultiplier ?? 1);
+  return Math.max(1e-4, base * clamp(multiplier, 0.5, 1.5));
+}
 
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
@@ -21,7 +47,7 @@ export function chooseWorkerIntent(worker, state) {
     || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0);
   const alreadyDelivering = String(worker.stateLabel ?? "").toLowerCase().includes("deliver");
 
-  if ((worker.hunger ?? 1) < 0.3 && Number(state.resources?.food ?? 0) > 0) return "eat";
+  if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && Number(state.resources?.food ?? 0) > 0) return "eat";
   if (hasCarry && hasWarehouse && (carryTotal >= DELIVER_THRESHOLD || alreadyDelivering || noWorkSite)) {
     return "deliver";
   }
@@ -71,30 +97,35 @@ function setIdleDesired(worker) {
   worker.desiredVel.z = 0;
 }
 
-function consumeEmergencyRation(worker, state, dt) {
+function consumeEmergencyRation(worker, state, dt, nowSec) {
+  const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   const hungerNow = Number(worker.hunger ?? 0);
-  if (hungerNow >= WORKER_EAT_RECOVERY_TARGET) return;
+  if (hungerNow >= WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD) return;
   if (Number(state.resources.food ?? 0) <= 0) return;
-  const recoveryPerFood = Math.max(1e-4, Number(BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04));
-  const eatRate = Number(BALANCE.hungerEatRatePerSecond ?? 5) * 0.45;
-  const gainCap = Math.max(0, WORKER_EAT_RECOVERY_TARGET - hungerNow);
+  if (worker.debug?.reachableFood) return;
+  worker.blackboard ??= {};
+  const nextAllowed = Number(worker.blackboard.emergencyRationCooldownSec ?? -Infinity);
+  if (nowSec < nextAllowed) return;
+  const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
+  const eatRate = Number(BALANCE.hungerEatRatePerSecond ?? 5) * 0.22;
+  const gainCap = Math.max(0, eatRecoveryTarget - hungerNow);
   const desiredFood = Math.min(eatRate * dt, gainCap / recoveryPerFood);
   const eat = Math.min(desiredFood, Number(state.resources.food ?? 0));
   if (eat <= 0) return;
   state.resources.food -= eat;
   worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  worker.blackboard.emergencyRationCooldownSec = nowSec + WORKER_EMERGENCY_RATION_COOLDOWN_SEC;
 }
 
 function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   const nowSec = state.metrics.timeSec;
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
 
-  const intentChanged = blackboard.intentTargetIntent !== intentKey;
   const targetInvalid = !isTargetTileType(worker, state, targetTileTypes);
   const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
   const pathMissingAwayFromTarget = !hasActivePath(worker, state) && !isAtTargetTile(worker, state);
   const pathStuck = isPathStuck(worker, state, 2.4);
-  const shouldRetarget = intentChanged || targetInvalid || pathStale || pathMissingAwayFromTarget || pathStuck;
+  const shouldRetarget = targetInvalid || pathStale || pathMissingAwayFromTarget || pathStuck;
 
   if (shouldRetarget) {
     if (!canAttemptPath(worker, state)) {
@@ -112,7 +143,8 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
 }
 
 function handleEat(worker, state, services, dt) {
-  if ((worker.hunger ?? 0) >= WORKER_EAT_RECOVERY_TARGET) {
+  const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
+  if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
     clearPath(worker);
     setIdleDesired(worker);
     return;
@@ -128,14 +160,14 @@ function handleEat(worker, state, services, dt) {
       setIdleDesired(worker);
     }
     if (isAtTargetTile(worker, state)) {
-      const recoveryPerFood = Math.max(1e-4, Number(BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04));
-      const gainCap = Math.max(0, WORKER_EAT_RECOVERY_TARGET - Number(worker.hunger ?? 0));
+      const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
+      const gainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
       const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
       const eat = Math.min(desiredFood, state.resources.food);
       if (eat <= 0) return;
       state.resources.food -= eat;
       worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
-      if ((worker.hunger ?? 0) >= WORKER_EAT_RECOVERY_TARGET) {
+      if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
         clearPath(worker);
       }
     }
@@ -143,10 +175,20 @@ function handleEat(worker, state, services, dt) {
   }
 
   setIdleDesired(worker);
-  consumeEmergencyRation(worker, state, dt);
+  consumeEmergencyRation(worker, state, dt, Number(state.metrics.timeSec ?? 0));
 }
 
 function handleDeliver(worker, state, services, dt) {
+  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  if (carryTotal <= 0 || Number(state.buildings?.warehouses ?? 0) <= 0) {
+    clearPath(worker);
+    setIdleDesired(worker);
+    worker.blackboard ??= {};
+    worker.blackboard.intentTargetIntent = "seek_task";
+    worker.blackboard.taskLock = { state: "", untilSec: -Infinity };
+    state.metrics.deliverWithoutCarryCount = Number(state.metrics.deliverWithoutCarryCount ?? 0) + 1;
+    return;
+  }
   if (!maybeRetarget(worker, state, services, "deliver", [TILE.WAREHOUSE])) return;
 
   if (hasActivePath(worker, state)) {
@@ -246,16 +288,43 @@ export class WorkerAISystem {
       if (worker.type !== "WORKER") continue;
       if (worker.alive === false) continue;
 
-      worker.hunger = clamp(worker.hunger - BALANCE.hungerDecayPerSecond * dt, 0, 1);
+      worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
 
       const plan = planEntityDesiredState(worker, state);
+      const nowSec = Number(state.metrics.timeSec ?? 0);
+      const fsm = worker.blackboard?.fsm ?? null;
+      worker.blackboard ??= {};
+      worker.blackboard.taskLock ??= { state: "", untilSec: -Infinity };
+      const lock = worker.blackboard.taskLock;
+      const lockState = String(lock.state ?? "");
+      const currentState = String(fsm?.state ?? "");
+      const inTaskLock = nowSec < Number(lock.untilSec ?? -Infinity) && lockState === currentState;
+      const interruptForSurvival = (plan.desiredState === "seek_food" || plan.desiredState === "eat")
+        && Number(worker.hunger ?? 1) < 0.16;
+      const desiredState = inTaskLock && plan.desiredState !== currentState && !interruptForSurvival
+        ? currentState
+        : plan.desiredState;
       const stateNode = transitionEntityState(
         worker,
         "workers",
-        plan.desiredState,
-        state.metrics.timeSec,
+        desiredState,
+        nowSec,
         plan.reason,
       );
+
+      const enteredTaskState = stateNode !== currentState
+        && (stateNode === "harvest" || stateNode === "deliver" || stateNode === "eat");
+      if (enteredTaskState) {
+        worker.blackboard.taskLock = {
+          state: stateNode,
+          untilSec: nowSec + WORKER_TASK_LOCK_SEC,
+        };
+      } else if (lockState && stateNode !== lockState) {
+        worker.blackboard.taskLock = {
+          state: "",
+          untilSec: -Infinity,
+        };
+      }
 
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);

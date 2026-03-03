@@ -1,6 +1,6 @@
 ﻿# Project Utopia Gameplay Design (Current Playable Scope)
 
-Updated: 2026-03-02
+Updated: 2026-03-03
 
 ## 1. Gameplay Positioning
 
@@ -36,7 +36,7 @@ Core player verbs:
 1. Humans and animals consume hunger buffers over time.
 2. Predators can damage and kill herbivores in close range.
 3. Starvation and predation deaths permanently remove entities (no auto-respawn).
-4. Human starvation is reachability-aware: only reachable warehouse food can prevent starvation.
+4. Human starvation uses mixed nutrition reachability: carry food, reachable warehouse food, or nearby farm supply can prevent starvation.
 5. Population structure shifts, feeding back into production and safety pressure.
 
 ## 3. Map Strategy and Identity
@@ -101,6 +101,7 @@ Diagnostics:
 - Inspector for selected tile/entity details
 - developer dock for A*/Boids/AI/system timings/events
 - `Entity Focus` with full AI exchange payloads (request + raw response + parsed + guarded)
+- Logic consistency counters include `deliverWithoutCarry`, feasibility rejects, and starvation risk entity counts
 - stress benchmark and CSV export
 
 AI behavior groups (current):
@@ -113,6 +114,7 @@ AI behavior groups (current):
 AI steering mode:
 - AI policy may publish temporary group `stateTargets` (with priority + TTL).
 - Entities still obey legal FSM transitions; AI target is guidance, not arbitrary teleport between states.
+- Infeasible AI/policy targets are rejected by the strict feasibility gate, then fall back to group default work states.
 
 Movement behavior profile:
 - animals: higher cohesion/alignment for visible flocking

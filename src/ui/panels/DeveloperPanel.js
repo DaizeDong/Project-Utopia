@@ -17,9 +17,72 @@ export class DeveloperPanel {
     this.dockCollapseAllBtn = document.getElementById("dockCollapseAllBtn");
     this.dockExpandAllBtn = document.getElementById("dockExpandAllBtn");
     this.dockResetLayoutBtn = document.getElementById("dockResetLayoutBtn");
+    this.lastPanelText = new Map();
+    this.interactionUntilByPanelKey = new Map();
 
     this.#setupDockLayoutControls();
+    this.#setupPanelInteractionGuards();
     this.#restoreDockPanelState();
+  }
+
+  #nowMs() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+      return performance.now();
+    }
+    return Date.now();
+  }
+
+  #bumpPanelInteraction(panelKey, ms = 850) {
+    if (!panelKey) return;
+    const until = this.#nowMs() + ms;
+    const prev = Number(this.interactionUntilByPanelKey.get(panelKey) ?? 0);
+    this.interactionUntilByPanelKey.set(panelKey, Math.max(prev, until));
+  }
+
+  #isPanelInteracting(panelKey) {
+    return this.#nowMs() < Number(this.interactionUntilByPanelKey.get(panelKey) ?? 0);
+  }
+
+  #setPanelText(node, panelKey, text) {
+    if (!node || !panelKey) return;
+    const prevText = this.lastPanelText.get(panelKey);
+    if (prevText === text) return;
+    if (this.#isPanelInteracting(panelKey)) return;
+
+    const prevTop = Number(node.scrollTop ?? 0);
+    node.textContent = text;
+    this.lastPanelText.set(panelKey, text);
+    const maxTop = Math.max(0, Number(node.scrollHeight ?? 0) - Number(node.clientHeight ?? 0));
+    node.scrollTop = Math.max(0, Math.min(prevTop, maxTop));
+  }
+
+  #setupPanelInteractionGuards() {
+    const panelEntries = [
+      ["global", this.globalVal],
+      ["algo", this.algoVal],
+      ["ai-trace", this.aiTraceVal],
+      ["logic", this.logicVal],
+      ["timings", this.systemVal],
+      ["events", this.eventVal],
+    ];
+    for (const [panelKey, node] of panelEntries) {
+      if (!node) continue;
+      node.addEventListener(
+        "pointerdown",
+        () => this.#bumpPanelInteraction(panelKey, 1300),
+        true,
+      );
+      node.addEventListener(
+        "wheel",
+        () => this.#bumpPanelInteraction(panelKey, 1000),
+        { passive: true, capture: true },
+      );
+      node.addEventListener(
+        "scroll",
+        () => this.#bumpPanelInteraction(panelKey, 900),
+        { passive: true, capture: true },
+      );
+    }
   }
 
   #setupDockLayoutControls() {
@@ -153,7 +216,7 @@ export class DeveloperPanel {
       rngSnapshot ? `RNG: seed=${rngSnapshot.initialSeed} state=${rngSnapshot.state} calls=${rngSnapshot.calls}` : "RNG: unavailable",
     ];
 
-    this.globalVal.textContent = lines.join("\n");
+    this.#setPanelText(this.globalVal, "global", lines.join("\n"));
   }
 
   #renderAlgorithms() {
@@ -180,14 +243,14 @@ export class DeveloperPanel {
       `avgSpeed=${this.#fmtNum(boids.avgSpeed, 3)} maxSpeed=${this.#fmtNum(boids.maxSpeed, 3)} update=${this.#fmtNum(boids.updateIntervalSec, 3)}s`,
     ];
 
-    this.algoVal.textContent = lines.join("\n");
+    this.#setPanelText(this.algoVal, "algo", lines.join("\n"));
   }
 
   #renderAiTrace() {
     if (!this.aiTraceVal) return;
     const trace = this.state.debug.aiTrace ?? [];
     if (trace.length === 0) {
-      this.aiTraceVal.textContent = "No AI traces yet.";
+      this.#setPanelText(this.aiTraceVal, "ai-trace", "No AI traces yet.");
       return;
     }
 
@@ -201,7 +264,7 @@ export class DeveloperPanel {
       return `[${sec}s] ${entry.channel} ${entry.source} fallback=${fallback} model=${model} weather=${entry.weather} detail=${entry.events}${err}`;
     });
 
-    this.aiTraceVal.textContent = lines.join("\n");
+    this.#setPanelText(this.aiTraceVal, "ai-trace", lines.join("\n"));
   }
 
   #renderSystemTimings() {
@@ -211,7 +274,7 @@ export class DeveloperPanel {
       .sort((a, b) => (b[1]?.avg ?? 0) - (a[1]?.avg ?? 0));
 
     if (entries.length === 0) {
-      this.systemVal.textContent = "No system timings collected yet.";
+      this.#setPanelText(this.systemVal, "timings", "No system timings collected yet.");
       return;
     }
 
@@ -221,7 +284,7 @@ export class DeveloperPanel {
         `${name.padEnd(22)} ${this.#fmtNum(stat.last, 3).padStart(8)} ${this.#fmtNum(stat.avg, 3).padStart(8)} ${this.#fmtNum(stat.peak, 3).padStart(8)}`,
       );
     }
-    this.systemVal.textContent = lines.join("\n");
+    this.#setPanelText(this.systemVal, "timings", lines.join("\n"));
   }
 
   #renderEventLog() {
@@ -267,7 +330,11 @@ export class DeveloperPanel {
       }
     }
 
-    this.eventVal.textContent = lines.length > 0 ? lines.join("\n") : "No event/diagnostic logs yet.";
+    this.#setPanelText(
+      this.eventVal,
+      "events",
+      lines.length > 0 ? lines.join("\n") : "No event/diagnostic logs yet.",
+    );
   }
 
   #renderLogicConsistency() {
@@ -291,8 +358,12 @@ export class DeveloperPanel {
     const lines = [
       `Invalid transitions: ${Number(this.state.metrics.invalidTransitionCount ?? 0)}`,
       `Goal flips (rapid): ${Number(this.state.metrics.goalFlipCount ?? 0)}`,
+      `Avg goal flips/entity: ${this.#fmtNum(this.state.metrics.avgGoalFlipPerEntity, 3)}`,
       `Path recalc/entity/min: ${this.#fmtNum(this.state.metrics.pathRecalcPerEntityPerMin, 3)}`,
       `Total path recalcs: ${Number(logic.totalPathRecalcs ?? 0)}`,
+      `Deliver without carry: ${Number(this.state.metrics.deliverWithoutCarryCount ?? 0)}`,
+      `Feasibility rejects: ${Object.keys(this.state.metrics.feasibilityRejectCountByGroup ?? {}).length > 0 ? JSON.stringify(this.state.metrics.feasibilityRejectCountByGroup) : "{}"}`,
+      `Starvation risk entities: ${Number(this.state.metrics.starvationRiskCount ?? 0)}`,
       `Idle without reason (sec): ${Object.keys(idleByGroup).length > 0 ? JSON.stringify(idleByGroup) : "{}"}`,
       `Death reason+reachability: ${Object.keys(reachabilityDeaths).length > 0 ? JSON.stringify(reachabilityDeaths) : "{}"}`,
       `Active AI state targets: ${activeStateTargets.length > 0 ? activeStateTargets.join(" | ") : "none"}`,
@@ -302,7 +373,7 @@ export class DeveloperPanel {
         : "Path hotspot entities: none",
     ];
 
-    this.logicVal.textContent = lines.join("\n");
+    this.#setPanelText(this.logicVal, "logic", lines.join("\n"));
   }
 
   render() {
