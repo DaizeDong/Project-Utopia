@@ -48,6 +48,13 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
     pathGridVersion: -1,
     blackboard: {},
     policy: null,
+    alive: true,
+    hp: 100,
+    maxHp: 100,
+    deathReason: "",
+    deathSec: -1,
+    starvationSec: 0,
+    attackCooldownSec: 0,
     memory: { recentEvents: [], dangerTiles: [] },
     debug: {
       lastIntent: "",
@@ -68,10 +75,11 @@ export function createWorker(x, z, random = Math.random) {
 
 export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.random) {
   const id = nextId("visitor");
+  const groupId = kind === VISITOR_KIND.TRADER ? GROUP_IDS.TRADERS : GROUP_IDS.SABOTEURS;
   return {
     ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, withLabel(id, kind === VISITOR_KIND.TRADER ? "Trader" : "Saboteur"), random),
     kind,
-    groupId: GROUP_IDS.VISITORS,
+    groupId,
   };
 }
 
@@ -87,6 +95,14 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
     vx: (random() - 0.5) * 0.25,
     vz: (random() - 0.5) * 0.25,
     desiredVel: { x: 0, z: 0 },
+    hunger: 1,
+    hp: kind === ANIMAL_KIND.PREDATOR ? 90 : 70,
+    maxHp: kind === ANIMAL_KIND.PREDATOR ? 90 : 70,
+    alive: true,
+    deathReason: "",
+    deathSec: -1,
+    starvationSec: 0,
+    attackCooldownSec: 0,
     stateLabel: "Wander",
     targetTile: null,
     path: null,
@@ -211,6 +227,13 @@ export function createInitialGameState(options = {}) {
       proxyModel: "",
       proxyLastCheckSec: -999,
       regressionFlags: [],
+      deathsTotal: 0,
+      deathsByReason: {
+        starvation: 0,
+        predation: 0,
+        event: 0,
+      },
+      deathsByGroup: {},
     },
     ai: {
       enabled: false,
@@ -233,6 +256,11 @@ export function createInitialGameState(options = {}) {
       lastPolicyBatch: [],
       lastEnvironmentModel: "",
       lastPolicyModel: "",
+      lastEnvironmentExchange: null,
+      lastPolicyExchange: null,
+      lastPolicyExchangeByGroup: {},
+      policyExchanges: [],
+      environmentExchanges: [],
     },
     debug: {
       selectedTile: null,

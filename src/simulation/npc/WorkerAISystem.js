@@ -2,7 +2,7 @@ import { BALANCE } from "../../config/balance.js";
 import { ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
-import { canAttemptPath, clearPath, followPath, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -79,7 +79,8 @@ function maybeRetarget(worker, state, services, intent, targetTileTypes) {
   const targetInvalid = !isTargetTileType(worker, state, targetTileTypes);
   const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
   const pathMissingAwayFromTarget = !hasActivePath(worker, state) && !isAtTargetTile(worker, state);
-  const shouldRetarget = intentChanged || targetInvalid || pathStale || pathMissingAwayFromTarget;
+  const pathStuck = isPathStuck(worker, state, 2.4);
+  const shouldRetarget = intentChanged || targetInvalid || pathStale || pathMissingAwayFromTarget || pathStuck;
 
   if (shouldRetarget) {
     if (!canAttemptPath(worker, state)) {
@@ -96,6 +97,30 @@ function maybeRetarget(worker, state, services, intent, targetTileTypes) {
   return hasActivePath(worker, state) || isAtTargetTile(worker, state);
 }
 
+function resolveLockedIntent(worker, state, rawIntent) {
+  const blackboard = worker.blackboard ?? (worker.blackboard = {});
+  const lockedIntent = blackboard.lockedIntent ?? "";
+  if (!lockedIntent || lockedIntent === rawIntent) {
+    blackboard.lockedIntent = rawIntent;
+    return rawIntent;
+  }
+
+  const carryTotal = (worker.carry?.food ?? 0) + (worker.carry?.wood ?? 0);
+  const lockCanRelease = (
+    (lockedIntent === "eat" && worker.hunger >= 0.74) ||
+    (lockedIntent === "deliver" && carryTotal <= 0.05) ||
+    ((lockedIntent === "farm" || lockedIntent === "lumber") && worker.cooldown <= 0.05 && isAtTargetTile(worker, state)) ||
+    (lockedIntent === "wander" && !hasActivePath(worker, state))
+  );
+
+  if (!lockCanRelease) {
+    return lockedIntent;
+  }
+
+  blackboard.lockedIntent = rawIntent;
+  return rawIntent;
+}
+
 export class WorkerAISystem {
   constructor() {
     this.name = "WorkerAISystem";
@@ -105,10 +130,12 @@ export class WorkerAISystem {
     const rng = services.rng;
     for (const worker of state.agents) {
       if (worker.type !== "WORKER") continue;
+      if (worker.alive === false) continue;
 
       worker.hunger = clamp(worker.hunger - BALANCE.hungerDecayPerSecond * dt, 0, 1);
 
-      const intent = chooseWorkerIntent(worker, state);
+      const rawIntent = chooseWorkerIntent(worker, state);
+      const intent = resolveLockedIntent(worker, state, rawIntent);
       worker.blackboard.intent = intent;
       if (worker.debug) worker.debug.lastIntent = intent;
 
@@ -193,9 +220,10 @@ export class WorkerAISystem {
       const nowSec = state.metrics.timeSec;
       const nextWanderRefreshSec = Number(blackboard.nextWanderRefreshSec ?? -Infinity);
       const stalePath = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
-      if (!hasActivePath(worker, state)) {
+      const pathStuck = isPathStuck(worker, state, 2.3);
+      if (!hasActivePath(worker, state) || pathStuck) {
         const driftedFromTarget = worker.targetTile ? !isAtTargetTile(worker, state) : true;
-        const shouldRetarget = stalePath || driftedFromTarget || nowSec >= nextWanderRefreshSec;
+        const shouldRetarget = stalePath || driftedFromTarget || nowSec >= nextWanderRefreshSec || pathStuck;
         if (shouldRetarget && canAttemptPath(worker, state)) {
           clearPath(worker);
           if (setTargetAndPath(worker, randomPassableTile(state.grid), state, services)) {

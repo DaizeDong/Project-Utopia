@@ -1,4 +1,4 @@
-const GROUP_ORDER = Object.freeze(["workers", "visitors", "herbivores", "predators"]);
+const GROUP_ORDER = Object.freeze(["workers", "traders", "saboteurs", "herbivores", "predators"]);
 
 function fmtNum(value, digits = 2) {
   const n = Number(value);
