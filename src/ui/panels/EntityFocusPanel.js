@@ -146,6 +146,12 @@ export class EntityFocusPanel {
     const envSec = fmtSec(this.state.ai.lastEnvironmentResultSec);
     const hp = Number(entity.hp ?? entity.maxHp ?? 0);
     const maxHp = Number(entity.maxHp ?? 0);
+    const fsmState = entity.blackboard?.fsm?.state ?? "-";
+    const fsmPrev = entity.blackboard?.fsm?.previousState ?? "-";
+    const fsmPath = Array.isArray(entity.blackboard?.fsm?.path) ? entity.blackboard.fsm.path.join(" -> ") : "-";
+    const aiTargetState = entity.blackboard?.aiTargetState ?? "-";
+    const aiTargetMeta = entity.blackboard?.aiTargetMeta ?? null;
+    const aiTargetTtl = aiTargetMeta ? Math.max(0, Number(aiTargetMeta.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0)) : 0;
 
     const policyExchangeByGroup = this.state.ai.lastPolicyExchangeByGroup?.[entity.groupId] ?? null;
     const policyExchangeLatest = this.state.ai.lastPolicyExchange ?? null;
@@ -156,6 +162,8 @@ export class EntityFocusPanel {
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}</div>
+      <div class="small"><b>FSM:</b> current=${escapeHtml(fsmState)} prev=${escapeHtml(fsmPrev)} | nextPath=${escapeHtml(fsmPath || "-")}</div>
+      <div class="small"><b>AI Target:</b> ${escapeHtml(aiTargetState)} | <b>TTL:</b> ${fmtSec(aiTargetTtl)} | <b>Priority:</b> ${fmtNum(aiTargetMeta?.priority ?? 0, 2)} | <b>Source:</b> ${escapeHtml(aiTargetMeta?.source ?? "-")}</div>
       <div class="small"><b>Decision Time:</b> sim=${simSec} | policyAt=${policySec} | envAt=${envSec}</div>
       <div class="small"><b>Position:</b> world=${vecFmt(entity.x, entity.z)} tile=(${posTile.ix}, ${posTile.iz})</div>
       <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx, entity.vz)} speed=${fmtNum(speed, 3)} | <b>Desired:</b> ${vecFmt(entity.desiredVel?.x, entity.desiredVel?.z)}</div>

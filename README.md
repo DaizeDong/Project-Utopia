@@ -52,6 +52,17 @@ Expected fields:
 
 If key is missing/unreachable, app stays in fallback mode by design.
 
+## Behavior/FSM Debug Highlights
+
+- Entity behavior now follows a unified `StatePlanner -> StateGraph transition -> state handler` chain.
+- AI policy can optionally include group-level `stateTargets` (`workers/traders/saboteurs/herbivores/predators`), with runtime TTL and guardrails.
+- `Developer Telemetry -> Logic Consistency` shows:
+  - invalid transitions
+  - rapid goal flips
+  - path recalcs per entity per minute
+  - death reason + food-reachability context
+- Human starvation rule is now reachability-based: global food stock alone is not enough; warehouse food must be reachable.
+
 ## Fallback Diagnostics
 
 | Symptom | Root Cause | Fix |
