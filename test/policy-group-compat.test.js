@@ -45,6 +45,8 @@ test("NPCBrainSystem maps legacy visitors policy to traders and saboteurs", () =
 test("NPCBrainSystem normalizes group ids and derives state targets from policies", () => {
   const state = createInitialGameState();
   state.ai.lastPolicyDecisionSec = state.metrics.timeSec;
+  const worker = state.agents.find((entity) => entity.type === "WORKER");
+  if (worker) worker.carry.food = 3;
 
   const system = new NPCBrainSystem();
   system.pendingResult = {

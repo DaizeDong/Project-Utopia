@@ -25,8 +25,10 @@ function adjustWorkerPolicy(policy, context, world) {
     boost(policy.intentWeights, "deliver", 0.35);
     boost(policy.intentWeights, "farm", -0.2);
   }
-  if (carrying > Math.max(4, Number(context?.count ?? 0) * 0.5) || dominant === "deliver") {
+  if (carrying > Math.max(4, Number(context?.count ?? 0) * 0.5)) {
     boost(policy.intentWeights, "deliver", 0.6);
+  } else {
+    boost(policy.intentWeights, "deliver", -0.25);
   }
   if (dominant === "wander" || dominant === "idle") {
     boost(policy.intentWeights, "farm", 0.25);
@@ -183,6 +185,47 @@ function pickStateTargetForGroup(groupId, summary) {
   };
 }
 
+function isFallbackTargetFeasible(groupId, targetState, summary, context) {
+  const world = summary?.world ?? {};
+  const resources = world.resources ?? {};
+  const buildings = world.buildings ?? {};
+  const population = world.population ?? {};
+  const carrying = Number(context?.carrying ?? 0);
+  const count = Number(context?.count ?? 0);
+
+  if (groupId === "workers") {
+    if (targetState === "deliver") {
+      const minCarry = Math.max(1, count * 0.15);
+      return Number(buildings.warehouses ?? 0) > 0 && carrying >= minCarry;
+    }
+    if (targetState === "seek_food" || targetState === "eat") {
+      return Number(resources.food ?? 0) > 0 && Number(buildings.warehouses ?? 0) > 0;
+    }
+  }
+  if (groupId === "traders" && (targetState === "seek_trade" || targetState === "trade")) {
+    return Number(buildings.warehouses ?? 0) > 0;
+  }
+  if (groupId === "saboteurs" && targetState === "sabotage") {
+    return Number(buildings.farms ?? 0) + Number(buildings.lumbers ?? 0) + Number(buildings.warehouses ?? 0) > 0;
+  }
+  if (groupId === "predators" && (targetState === "hunt" || targetState === "feed")) {
+    return Number(population.herbivores ?? 0) > 0;
+  }
+  if (groupId === "herbivores" && targetState === "flee") {
+    return Number(population.predators ?? 0) > 0;
+  }
+  return true;
+}
+
+function fallbackTargetForGroup(groupId) {
+  if (groupId === "workers") return "seek_task";
+  if (groupId === "traders") return "seek_trade";
+  if (groupId === "saboteurs") return "scout";
+  if (groupId === "herbivores") return "graze";
+  if (groupId === "predators") return "stalk";
+  return "idle";
+}
+
 function buildFallbackStateTargets(policies, summary) {
   const targets = [];
   const seen = new Set();
@@ -190,8 +233,19 @@ function buildFallbackStateTargets(policies, summary) {
     const groupId = String(policy.groupId ?? "").trim();
     if (!groupId || seen.has(groupId)) continue;
     seen.add(groupId);
+    const context = summary?.stateTransitions?.groups?.[groupId] ?? {};
     const target = pickStateTargetForGroup(groupId, summary);
-    if (target) targets.push(target);
+    if (!target) continue;
+    if (isFallbackTargetFeasible(groupId, target.targetState, summary, context)) {
+      targets.push(target);
+      continue;
+    }
+    targets.push({
+      ...target,
+      targetState: fallbackTargetForGroup(groupId),
+      priority: Math.min(Number(target.priority ?? 0.5), 0.55),
+      reason: `fallback-feasible:${fallbackTargetForGroup(groupId)}`,
+    });
   }
   return targets;
 }

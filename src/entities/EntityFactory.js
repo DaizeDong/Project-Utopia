@@ -46,7 +46,11 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
     path: null,
     pathIndex: 0,
     pathGridVersion: -1,
-    blackboard: {},
+    blackboard: {
+      taskLock: { state: "", untilSec: -Infinity },
+      emergencyRationCooldownSec: -Infinity,
+      lastFeasibilityReject: null,
+    },
     policy: null,
     alive: true,
     hp: 100,
@@ -66,11 +70,23 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
 
 export function createWorker(x, z, random = Math.random) {
   const id = nextId("worker");
-  return {
+  const hungerSeekThreshold = 0.12 + random() * 0.08;
+  const eatRecoveryTarget = 0.62 + random() * 0.12;
+  const worker = {
     ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, withLabel(id, "Worker"), random),
     role: ROLE.FARM,
     groupId: GROUP_IDS.WORKERS,
+    metabolism: {
+      hungerSeekThreshold,
+      eatRecoveryTarget,
+      hungerDecayMultiplier: 0.88 + random() * 0.24,
+      eatRecoveryPerFoodMultiplier: 0.9 + random() * 0.2,
+    },
   };
+  // Stagger worker hunger so they do not synchronize into warehouse meal waves.
+  worker.hunger = Math.max(eatRecoveryTarget + 0.05, 0.8) + random() * 0.15;
+  worker.hunger = Math.min(1, worker.hunger);
+  return worker;
 }
 
 export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.random) {
@@ -108,6 +124,9 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
     path: null,
     pathIndex: 0,
     pathGridVersion: -1,
+    blackboard: {
+      lastFeasibilityReject: null,
+    },
     policy: null,
     memory: { recentEvents: [] },
     debug: {
@@ -238,6 +257,10 @@ export function createInitialGameState(options = {}) {
       idleWithoutReasonSec: {},
       pathRecalcPerEntityPerMin: 0,
       goalFlipCount: 0,
+      avgGoalFlipPerEntity: 0,
+      deliverWithoutCarryCount: 0,
+      feasibilityRejectCountByGroup: {},
+      starvationRiskCount: 0,
       deathByReasonAndReachability: {},
     },
     ai: {

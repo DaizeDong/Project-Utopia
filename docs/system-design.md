@@ -1,6 +1,6 @@
 # Project Utopia System Design (Current Implementation)
 
-Updated: 2026-03-02
+Updated: 2026-03-03
 
 ## 1. Runtime Architecture
 
@@ -175,6 +175,9 @@ State target steering (new):
 - runtime chain: `ResponseSchema` -> `Guardrails` -> `NPCBrainSystem` cache (`groupStateTargets`)
 - entity planning merges local desire with AI target (soft override, TTL-expiring)
 - invalid state targets are dropped safely
+- runtime now applies an extra feasibility gate before using policy/AI states:
+  - `StateFeasibility -> StatePlanner -> transitionEntityState -> state handlers`
+  - infeasible targets are rejected with per-group counters and reject reasons
 
 ## 8. NPC State-Machine Consistency
 
@@ -190,10 +193,31 @@ Planner layer:
 Consistency metrics:
 - `invalidTransitionCount`
 - `goalFlipCount`
+- `avgGoalFlipPerEntity`
 - `pathRecalcPerEntityPerMin`
+- `deliverWithoutCarryCount`
+- `feasibilityRejectCountByGroup`
+- `starvationRiskCount`
 - `idleWithoutReasonSec` by group
 - `deathByReasonAndReachability`
 - exposed in Dev Dock `Logic Consistency` panel
+
+## 8.1 Feasibility Gate and Mortality Coupling
+
+Feasibility gate (`src/simulation/npc/state/StateFeasibility.js`) enforces runtime preconditions before any desired state can be applied:
+- workers `deliver` requires `carry>0` and warehouse
+- workers `seek_task/harvest` requires role-compatible worksite
+- traders `seek_trade/trade` requires warehouse
+- saboteurs `sabotage` requires destroyable targets
+- predators `hunt/feed` requires live herbivores
+- herbivores `flee` requires threat within enter radius
+
+Mortality uses mixed nutrition reachability:
+- carry food
+- reachable warehouse food
+- nearby farm supply (path length bounded)
+
+Death context now records nutrition reachability/source and last feasibility rejection for postmortem debugging.
 
 ## 9. Performance Notes
 

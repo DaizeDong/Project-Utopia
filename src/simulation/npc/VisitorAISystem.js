@@ -179,6 +179,10 @@ function traderTick(visitor, state, dt, services) {
     const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
     if (warehouse && setTargetAndPath(visitor, warehouse, state, services)) {
       bb.nextTradeRetargetSec = nowSec + retargetWindowSec;
+      bb.tradeRetargetMisses = 0;
+    } else {
+      bb.tradeRetargetMisses = Number(bb.tradeRetargetMisses ?? 0) + 1;
+      bb.nextTradeRetargetSec = nowSec + Math.min(3.5, 0.6 + bb.tradeRetargetMisses * 0.45);
     }
   }
 
@@ -197,10 +201,29 @@ function traderTick(visitor, state, dt, services) {
     return;
   }
 
-  runWander(visitor, state, dt, services);
+  setIdleDesired(visitor);
 }
 
-function saboteurTick(visitor, state, dt, services) {
+function runScoutBehavior(visitor, state, dt, services) {
+  const bb = visitor.blackboard ?? (visitor.blackboard = {});
+  const nowSec = Number(state.metrics.timeSec ?? 0);
+  const nextScoutMoveSec = Number(bb.nextScoutMoveSec ?? -Infinity);
+  if ((!hasActivePath(visitor, state) || isPathStuck(visitor, state, 2.4)) && nowSec >= nextScoutMoveSec && canAttemptPath(visitor, state)) {
+    clearPath(visitor);
+    if (setTargetAndPath(visitor, randomPassableTile(state.grid), state, services)) {
+      bb.nextScoutMoveSec = nowSec + 3.2 + services.rng.next() * 1.6;
+    } else {
+      bb.nextScoutMoveSec = nowSec + 1.8;
+    }
+  }
+  if (hasActivePath(visitor, state)) {
+    visitor.desiredVel = followPath(visitor, state, dt).desired;
+  } else {
+    setIdleDesired(visitor);
+  }
+}
+
+function saboteurTick(visitor, state, dt, services, stateNode) {
   const policy = state.ai.groupPolicies.get(visitor.groupId)?.data;
   const sabotageWeight = Number(policy?.intentWeights?.sabotage ?? 1);
   const resistance = Number(state.gameplay?.modifiers?.sabotageResistance ?? 1);
@@ -232,7 +255,11 @@ function saboteurTick(visitor, state, dt, services) {
     return;
   }
 
-  runWander(visitor, state, dt, services);
+  if (stateNode === "evade" || stateNode === "scout") {
+    runScoutBehavior(visitor, state, dt, services);
+    return;
+  }
+  setIdleDesired(visitor);
 }
 
 function updateIdleWithoutReasonMetric(visitor, stateNode, dt, state) {
@@ -281,7 +308,7 @@ export class VisitorAISystem {
       } else if (groupId === "traders" && (stateNode === "seek_trade" || stateNode === "trade")) {
         traderTick(visitor, state, dt, services);
       } else if (groupId === "saboteurs" && (stateNode === "scout" || stateNode === "sabotage" || stateNode === "evade")) {
-        saboteurTick(visitor, state, dt, services);
+        saboteurTick(visitor, state, dt, services, stateNode);
       } else if (stateNode === "wander") {
         runWander(visitor, state, dt, services);
       } else {

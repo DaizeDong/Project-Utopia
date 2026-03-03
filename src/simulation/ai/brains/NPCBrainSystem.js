@@ -3,6 +3,7 @@ import { DEFAULT_GROUP_POLICIES, GROUP_IDS } from "../../../config/aiConfig.js";
 import { pushWarning } from "../../../app/warnings.js";
 import { buildPolicySummary } from "../memory/WorldSummary.js";
 import { listGroupStates } from "../../npc/state/StateGraph.js";
+import { buildFeasibilityContext, isStateFeasible } from "../../npc/state/StateFeasibility.js";
 
 const REQUIRED_POLICY_GROUPS = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -192,6 +193,37 @@ function normalizeStateTargetsForRuntime(stateTargets = [], state) {
   return sanitized;
 }
 
+function entitiesByGroup(state, groupId) {
+  const list = [];
+  for (const entity of state.agents ?? []) {
+    if (entity?.alive === false) continue;
+    if (String(entity.groupId ?? "") === groupId) list.push(entity);
+  }
+  for (const entity of state.animals ?? []) {
+    if (entity?.alive === false) continue;
+    if (String(entity.groupId ?? "") === groupId) list.push(entity);
+  }
+  return list;
+}
+
+function isTargetFeasibleForGroup(state, target) {
+  const members = entitiesByGroup(state, target.groupId);
+  if (members.length === 0) return true;
+  const ctx = {
+    predators: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [],
+    herbivores: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [],
+  };
+  for (const entity of members) {
+    const feasibilityContext = buildFeasibilityContext(entity, target.groupId, state, ctx);
+    const feasible = isStateFeasible(entity, target.groupId, target.targetState, state, {
+      ...ctx,
+      feasibilityContext,
+    });
+    if (feasible.ok) return true;
+  }
+  return false;
+}
+
 export class NPCBrainSystem {
   constructor() {
     this.name = "NPCBrainSystem";
@@ -204,7 +236,19 @@ export class NPCBrainSystem {
       const now = state.metrics.timeSec;
       const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state);
       const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
-      const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets);
+      const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets)
+        .filter((target) => {
+          const feasible = isTargetFeasibleForGroup(state, target);
+          if (!feasible) {
+            pushWarning(
+              state,
+              `Dropped infeasible state target ${target.groupId}:${target.targetState}.`,
+              "warn",
+              "NPCBrainSystem",
+            );
+          }
+          return feasible;
+        });
       for (const policy of policies) {
         state.ai.groupPolicies.set(policy.groupId, {
           expiresAtSec: now + policy.ttlSec,
@@ -299,14 +343,29 @@ export class NPCBrainSystem {
     for (const e of [...state.agents, ...state.animals]) {
       e.policy = state.ai.groupPolicies.get(e.groupId)?.data ?? null;
       const groupTarget = state.ai.groupStateTargets?.get?.(e.groupId) ?? null;
+      let targetForEntity = groupTarget;
+      if (groupTarget) {
+        const context = {
+          predators: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [],
+          herbivores: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [],
+        };
+        const feasibilityContext = buildFeasibilityContext(e, String(e.groupId ?? ""), state, context);
+        const feasible = isStateFeasible(e, String(e.groupId ?? ""), groupTarget.targetState, state, {
+          ...context,
+          feasibilityContext,
+        });
+        if (!feasible.ok) {
+          targetForEntity = null;
+        }
+      }
       e.blackboard ??= {};
-      e.blackboard.aiTargetState = groupTarget ? groupTarget.targetState : null;
-      e.blackboard.aiTargetMeta = groupTarget
+      e.blackboard.aiTargetState = targetForEntity ? targetForEntity.targetState : null;
+      e.blackboard.aiTargetMeta = targetForEntity
         ? {
-            expiresAtSec: groupTarget.expiresAtSec,
-            priority: groupTarget.priority,
-            source: groupTarget.source,
-            reason: groupTarget.reason,
+            expiresAtSec: targetForEntity.expiresAtSec,
+            priority: targetForEntity.priority,
+            source: targetForEntity.source,
+            reason: targetForEntity.reason,
           }
         : null;
     }
