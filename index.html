@@ -240,6 +240,23 @@
       color: #f4fbff;
     }
 
+    #actionVal[data-kind="success"],
+    #warningVal[data-kind="success"] {
+      color: #1d6b31;
+      font-weight: 700;
+    }
+
+    #actionVal[data-kind="error"],
+    #warningVal[data-kind="error"] {
+      color: #a62d2d;
+      font-weight: 700;
+    }
+
+    #actionVal[data-kind="info"],
+    #warningVal[data-kind="info"] {
+      color: var(--text);
+    }
+
     canvas {
       width: 100%;
       height: 100%;
@@ -758,7 +775,7 @@
             <button data-tool="wall">Wall</button>
             <button data-tool="erase">Erase</button>
           </div>
-          <div class="hint">Left click tile to build/select. Left click entity to inspect. Alt+Click tile for inspect-only.</div>
+          <div class="hint">Left click tile to build/select. Left click entity to inspect. Alt+Left click tile for inspect-only. Right drag pans the camera. Shortcuts: 1-6 tools, Esc clear, Space pause, Ctrl/Cmd+Z undo.</div>
         </div>
       </details>
 
@@ -1094,7 +1111,7 @@
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
           <h2>Project Utopia Alpha</h2>
-          <p>Start the run, build infrastructure, and complete all three objectives before the colony collapses.</p>
+          <p>Start the run, expand the colony through map edits, and use the resulting reroutes to finish the objective chain before the colony collapses. Keyboard: <code>1-6</code> tools, <code>Esc</code> clear, <code>Space</code> pause, <code>Ctrl/Cmd+Z</code> undo.</p>
           <pre id="overlayMenuSummary" class="overlay-summary">loading objectives...</pre>
           <div class="overlay-actions">
             <button id="overlayStartBtn" class="primary" type="button">Start Run</button>

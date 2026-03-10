@@ -210,17 +210,24 @@ export class PerformancePanel {
     if (this.workerVal) this.workerVal.textContent = String(stats?.workers ?? this.state.agents.filter((a) => a.type === "WORKER").length);
     if (this.benchmarkStatusVal) this.benchmarkStatusVal.textContent = `Benchmark: ${this.state.metrics.benchmarkStatus}`;
     if (this.simControlVal) {
-      const sim = this.state.controls.isPaused ? "paused" : "running";
+      const phase = this.state.session?.phase ?? "menu";
+      const sim = phase !== "active" ? "locked" : this.state.controls.isPaused ? "paused" : "running";
       const aiLatency = Number(this.state.metrics.aiLatencyMs ?? 0).toFixed(1);
-      this.simControlVal.textContent = `Sim: ${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simCost=${this.state.metrics.simCostMs.toFixed(2)}ms | ui=${(this.state.metrics.uiCpuMs ?? 0).toFixed(2)}ms | render=${(this.state.metrics.renderCpuMs ?? 0).toFixed(2)}ms | ai=${aiLatency}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
+      this.simControlVal.textContent = `Sim: ${phase}/${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simCost=${this.state.metrics.simCostMs.toFixed(2)}ms | ui=${(this.state.metrics.uiCpuMs ?? 0).toFixed(2)}ms | render=${(this.state.metrics.renderCpuMs ?? 0).toFixed(2)}ms | ai=${aiLatency}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
     }
     if (this.workerBreakdownVal) {
       const breakdown = this.state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0 };
       this.workerBreakdownVal.textContent = `Workers: base=${breakdown.baseWorkers} stress=${breakdown.stressWorkers} total=${breakdown.totalWorkers}`;
     }
     if (this.downloadBenchmarkBtn) this.downloadBenchmarkBtn.disabled = !this.state.metrics.benchmarkCsvReady;
-    if (this.pauseBtn) this.pauseBtn.textContent = this.state.controls.isPaused ? "Resume" : "Pause";
-    if (this.runBenchmarkBtn) this.runBenchmarkBtn.disabled = this.state.controls.isPaused;
+    const activePhase = this.state.session?.phase === "active";
+    if (this.pauseBtn) {
+      this.pauseBtn.textContent = this.state.controls.isPaused ? "Resume" : "Pause";
+      this.pauseBtn.disabled = !activePhase;
+    }
+    if (this.step1Btn) this.step1Btn.disabled = !activePhase;
+    if (this.step5Btn) this.step5Btn.disabled = !activePhase;
+    if (this.runBenchmarkBtn) this.runBenchmarkBtn.disabled = !activePhase || this.state.controls.isPaused;
     if (this.applyBenchmarkConfigBtn) {
       this.applyBenchmarkConfigBtn.disabled = this.benchmarkSchedulePreset?.value !== "custom";
     }
