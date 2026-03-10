@@ -63,7 +63,7 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 `release-manifest.json` now records:
 
 - the final HW04 report path and stage coverage
-- the built `dist` asset inventory
+- the built `dist` asset inventory and bundle summary
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence
 - the current non-ignored git worktree status at release-check time
