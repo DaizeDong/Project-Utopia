@@ -1,5 +1,5 @@
 import { ENTITY_TYPE, ROLE, VISITOR_KIND, ANIMAL_KIND, TILE } from "../config/constants.js";
-import { INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balance.js";
+import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balance.js";
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
 import {
@@ -136,7 +136,16 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
       lastFeasibilityReject: null,
     },
     policy: null,
-    memory: { recentEvents: [] },
+    memory: {
+      recentEvents: [],
+      migrationTarget: null,
+      migrationLabel: "",
+      homeTile: null,
+      territoryAnchor: null,
+      territoryRadius: 0,
+      homeZoneId: "",
+      homeZoneLabel: "",
+    },
     debug: {
       lastIntent: "",
       lastPathLength: 0,
@@ -150,9 +159,36 @@ export function createInitialEntities(grid) {
   return createInitialEntitiesWithRandom(grid, Math.random);
 }
 
-function createInitialEntitiesWithRandom(grid, random) {
+function randomTileNearAnchorOfTypes(grid, anchor, radius, targetTypes, random) {
+  if (!anchor) return null;
+  const candidates = [];
+  for (let iz = anchor.iz - radius; iz <= anchor.iz + radius; iz += 1) {
+    for (let ix = anchor.ix - radius; ix <= anchor.ix + radius; ix += 1) {
+      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
+      if (Math.abs(ix - anchor.ix) + Math.abs(iz - anchor.iz) > radius) continue;
+      const tile = grid.tiles[ix + iz * grid.width];
+      if (!targetTypes.includes(tile)) continue;
+      candidates.push({ ix, iz });
+    }
+  }
+  if (candidates.length <= 0) return null;
+  return candidates[Math.floor(random() * candidates.length)];
+}
+
+function assignAnimalHabitat(animal, zone, anchor, spawnTile) {
+  animal.memory.homeTile = spawnTile ? { ix: spawnTile.ix, iz: spawnTile.iz } : null;
+  animal.memory.territoryAnchor = anchor ? { ix: anchor.ix, iz: anchor.iz } : null;
+  animal.memory.territoryRadius = Number(zone?.radius ?? 0);
+  animal.memory.homeZoneId = String(zone?.id ?? "");
+  animal.memory.homeZoneLabel = String(zone?.label ?? "");
+}
+
+function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   const agents = [];
   const animals = [];
+  const wildlifeZones = Array.isArray(scenario?.wildlifeZones) ? scenario.wildlifeZones : [];
+  const anchors = scenario?.anchors ?? {};
+  const wildlifeRadiusBonus = Number(BALANCE.wildlifeSpawnRadiusBonus ?? 3);
 
   for (let i = 0; i < INITIAL_POPULATION.workers; i += 1) {
     const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE], random);
@@ -168,15 +204,35 @@ function createInitialEntitiesWithRandom(grid, random) {
   }
 
   for (let i = 0; i < INITIAL_POPULATION.herbivores; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM], random);
+    const zone = wildlifeZones.length > 0 ? wildlifeZones[i % wildlifeZones.length] : null;
+    const anchor = zone ? anchors[zone.anchor] : null;
+    const tile = randomTileNearAnchorOfTypes(
+      grid,
+      anchor,
+      Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus),
+      [TILE.GRASS, TILE.FARM],
+      random,
+    ) ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.HERBIVORE, random));
+    const animal = createAnimal(p.x, p.z, ANIMAL_KIND.HERBIVORE, random);
+    assignAnimalHabitat(animal, zone, anchor, tile);
+    animals.push(animal);
   }
 
   for (let i = 0; i < INITIAL_POPULATION.predators; i += 1) {
-    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS], random);
+    const zone = wildlifeZones.length > 0 ? wildlifeZones[i % wildlifeZones.length] : null;
+    const anchor = zone ? anchors[zone.anchor] : null;
+    const tile = randomTileNearAnchorOfTypes(
+      grid,
+      anchor,
+      Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus),
+      [TILE.GRASS, TILE.LUMBER, TILE.RUINS, TILE.FARM],
+      random,
+    ) ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    animals.push(createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR, random));
+    const animal = createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR, random);
+    assignAnimalHabitat(animal, zone, anchor, tile);
+    animals.push(animal);
   }
 
   return { agents, animals };
@@ -193,7 +249,7 @@ export function createInitialGameState(options = {}) {
   const scenarioBundle = buildScenarioBundle(grid);
   const templateMeta = describeMapTemplate(grid.templateId);
   const random = createDeterministicRandom(grid.seed);
-  const { agents, animals } = createInitialEntitiesWithRandom(grid, random);
+  const { agents, animals } = createInitialEntitiesWithRandom(grid, random, scenarioBundle.scenario);
   const roads = countTilesByType(grid, [TILE.ROAD]);
   const farms = countTilesByType(grid, [TILE.FARM]);
   const lumbers = countTilesByType(grid, [TILE.LUMBER]);
@@ -292,6 +348,18 @@ export function createInitialGameState(options = {}) {
         isolatedWorksites: 0,
         warehouseLoadByKey: {},
         summary: "Logistics: idle",
+      },
+      ecology: {
+        activeGrazers: 0,
+        pressuredFarms: 0,
+        maxFarmPressure: 0,
+        frontierPredators: 0,
+        migrationHerds: 0,
+        farmPressureByKey: {},
+        hotspotFarms: [],
+        herbivoresByZone: {},
+        predatorsByZone: {},
+        summary: "Ecology: idle",
       },
     },
     ai: {

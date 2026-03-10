@@ -1,3 +1,4 @@
+import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE, WEATHER } from "../../config/constants.js";
 import { worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
@@ -107,8 +108,10 @@ export function getTileInsight(state, tile) {
     : new Set((state.weather.hazardTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
   const key = tileKey(tile.ix, tile.iz);
   const traffic = state.metrics?.traffic ?? null;
+  const ecology = state.metrics?.ecology ?? null;
   const trafficPenalty = Math.max(1, Number(traffic?.penaltyByKey?.[key] ?? 1));
   const trafficLoad = Number(traffic?.loadByKey?.[key] ?? 0);
+  const farmPressure = Math.max(0, Number(ecology?.farmPressureByKey?.[key] ?? 0));
   const hotspotKeys = new Set((traffic?.hotspotTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
 
   for (const route of scenario.routeLinks ?? []) {
@@ -132,6 +135,11 @@ export function getTileInsight(state, tile) {
     const anchor = anchors[wildlife.anchor];
     if (anchor && Math.abs(tile.ix - anchor.ix) + Math.abs(tile.iz - anchor.iz) <= (wildlife.radius ?? 2)) {
       insights.push(`Wildlife pressure: ${wildlife.label}.`);
+      const herbivores = Number(ecology?.herbivoresByZone?.[wildlife.id] ?? 0);
+      const predators = Number(ecology?.predatorsByZone?.[wildlife.id] ?? 0);
+      if (herbivores > 0 || predators > 0) {
+        insights.push(`Ecology: this zone currently holds ${herbivores} herbivores and ${predators} predators.`);
+      }
     }
   }
   if (anchors.coreWarehouse && Math.abs(tile.ix - anchors.coreWarehouse.ix) + Math.abs(tile.iz - anchors.coreWarehouse.iz) <= 2) {
@@ -146,6 +154,13 @@ export function getTileInsight(state, tile) {
     } else {
       insights.push(`Traffic: nearby crowding spills into this tile (x${trafficPenalty.toFixed(2)} path cost).`);
     }
+  }
+  if (farmPressure > 0.05) {
+    const penaltyPct = Math.round(Math.min(
+      Number(BALANCE.ecologyFarmYieldPenaltyMax ?? 0.7),
+      farmPressure * Number(BALANCE.ecologyFarmYieldPenaltyPerPressure ?? 0.44),
+    ) * 100);
+    insights.push(`Ecology: herbivores are stripping this farm lane, cutting yield by about ${penaltyPct}% until the herd is displaced.`);
   }
   for (const zone of eventZones) {
     const impactSuffix = zone.impacted ? " impact point" : " target zone";
@@ -166,6 +181,7 @@ export function getEntityInsight(state, entity) {
     ? state.weather.hazardTileSet
     : new Set((state.weather.hazardTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
   const traffic = state.metrics?.traffic ?? null;
+  const ecology = state.metrics?.ecology ?? null;
 
   if (entity.type === "WORKER") {
     if ((entity.hunger ?? 1) < 0.14 && state.resources.food > 0 && state.buildings.warehouses > 0) {
@@ -184,6 +200,17 @@ export function getEntityInsight(state, entity) {
       const load = Number(state.metrics.logistics.warehouseLoadByKey[key] ?? 0);
       if (load > 1) {
         insights.push(`Target warehouse currently has ${load} inbound workers, so unloading will be slower.`);
+      }
+    }
+    if (targetTile) {
+      const key = tileKey(targetTile.ix, targetTile.iz);
+      const pressure = Math.max(0, Number(ecology?.farmPressureByKey?.[key] ?? 0));
+      if (pressure > 0.05) {
+        const penaltyPct = Math.round(Math.min(
+          Number(BALANCE.ecologyFarmYieldPenaltyMax ?? 0.7),
+          pressure * Number(BALANCE.ecologyFarmYieldPenaltyPerPressure ?? 0.44),
+        ) * 100);
+        insights.push(`Wildlife pressure is suppressing the target farm by about ${penaltyPct}%, so this worker's current food loop is less efficient.`);
       }
     }
   }
@@ -207,8 +234,29 @@ export function getEntityInsight(state, entity) {
     }
   }
 
+  if (entity.kind === "HERBIVORE") {
+    if (entity.memory?.homeZoneLabel) {
+      insights.push(`This herd is anchored to ${entity.memory.homeZoneLabel} and prefers grazing near that frontier habitat before drifting toward the core.`);
+    }
+    if (Number(entity.debug?.lastGrazePressure ?? 0) > 0.05) {
+      const penaltyPct = Math.round(Math.min(
+        Number(BALANCE.ecologyFarmYieldPenaltyMax ?? 0.7),
+        Number(entity.debug.lastGrazePressure) * Number(BALANCE.ecologyFarmYieldPenaltyPerPressure ?? 0.44),
+      ) * 100);
+      insights.push(`Current grazing pressure is strong enough to suppress nearby farm output by about ${penaltyPct}%.`);
+    }
+  }
+
+  if (entity.kind === "PREDATOR") {
+    if (entity.memory?.homeZoneLabel) {
+      const patrolLabel = entity.debug?.lastPatrolLabel ? ` Current patrol focus: ${entity.debug.lastPatrolLabel}.` : "";
+      insights.push(`Predator is patrolling ${entity.memory.homeZoneLabel} and nearby pressure hotspots.${patrolLabel}`);
+    }
+  }
+
   if (entity.memory?.migrationTarget && entity.kind === "HERBIVORE") {
-    insights.push(`Migration order is steering this herd toward (${entity.memory.migrationTarget.ix}, ${entity.memory.migrationTarget.iz}).`);
+    const migrationLabel = entity.memory?.migrationLabel ? ` (${entity.memory.migrationLabel})` : "";
+    insights.push(`Migration order is steering this herd toward (${entity.memory.migrationTarget.ix}, ${entity.memory.migrationTarget.iz})${migrationLabel}.`);
   }
 
   if (hazardSet.has(tileKey(pathTile.ix, pathTile.iz))) {

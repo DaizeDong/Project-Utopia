@@ -1,4 +1,4 @@
-﻿import { BALANCE } from "../../config/balance.js";
+import { BALANCE } from "../../config/balance.js";
 import { ANIMAL_KIND, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
@@ -13,6 +13,10 @@ const WANDER_REFRESH_JITTER_SEC = 1.4;
 const HERBIVORE_FLEE_ENTER_DIST = 3.4;
 const HERBIVORE_FLEE_EXIT_DIST = 4.8;
 const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
+
+function tileKey(ix, iz) {
+  return `${ix},${iz}`;
+}
 
 function countNearbyKind(entity, list, radius = 3.2) {
   const r2 = radius * radius;
@@ -96,18 +100,264 @@ function tileDistance(a, b) {
   return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
 }
 
-function findNearbyGrazeTarget(animal, state, rng, attempts = 12, radius = 7) {
-  const center = worldToTile(animal.x, animal.z, state.grid);
-  for (let i = 0; i < attempts; i += 1) {
-    const ix = center.ix + Math.floor((rng.next() * 2 - 1) * radius);
-    const iz = center.iz + Math.floor((rng.next() * 2 - 1) * radius);
-    if (!inBounds(ix, iz, state.grid)) continue;
-    const tile = getTile(state.grid, ix, iz);
-    if (tile === TILE.GRASS || tile === TILE.FARM) {
-      return { ix, iz };
+function parseTileKey(key) {
+  const [ix, iz] = String(key ?? "").split(",").map((value) => Number(value));
+  if (!Number.isFinite(ix) || !Number.isFinite(iz)) return null;
+  return { ix, iz };
+}
+
+function getScenario(state) {
+  return state.gameplay?.scenario ?? {};
+}
+
+function getWildlifeZone(state, animal) {
+  const scenario = getScenario(state);
+  const zones = scenario.wildlifeZones ?? [];
+  if (zones.length <= 0) return null;
+  const homeZoneId = String(animal.memory?.homeZoneId ?? "");
+  if (homeZoneId) {
+    const byId = zones.find((zone) => zone.id === homeZoneId);
+    if (byId) return byId;
+  }
+  const anchors = scenario.anchors ?? {};
+  const homeTile = animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? worldToTile(animal.x, animal.z, state.grid);
+  let best = null;
+  let bestDist = Infinity;
+  for (const zone of zones) {
+    const anchor = anchors[zone.anchor];
+    if (!anchor) continue;
+    const dist = tileDistance(homeTile, anchor);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = zone;
     }
   }
-  return null;
+  return best;
+}
+
+function getZoneAnchor(state, zone) {
+  if (!zone) return null;
+  return getScenario(state).anchors?.[zone.anchor] ?? null;
+}
+
+function isWithinZone(tile, anchor, radius = 2) {
+  return Boolean(tile && anchor) && tileDistance(tile, anchor) <= radius;
+}
+
+function isNearCore(tile, state, radius = 4) {
+  const core = getScenario(state).anchors?.coreWarehouse ?? null;
+  return isWithinZone(tile, core, radius);
+}
+
+function countInfrastructurePenalty(state, tile, radius = 1) {
+  let penalty = 0;
+  for (let iz = tile.iz - radius; iz <= tile.iz + radius; iz += 1) {
+    for (let ix = tile.ix - radius; ix <= tile.ix + radius; ix += 1) {
+      if (!inBounds(ix, iz, state.grid)) continue;
+      if (Math.abs(ix - tile.ix) + Math.abs(iz - tile.iz) > radius) continue;
+      const current = getTile(state.grid, ix, iz);
+      if (current === TILE.WALL || current === TILE.WAREHOUSE) penalty += 0.38;
+      else if (current === TILE.ROAD) penalty += 0.08;
+    }
+  }
+  return penalty;
+}
+
+function collectNearbyTilesOfTypes(grid, center, targetTypes, radius = 8) {
+  if (!center) return [];
+  const candidates = [];
+  const seen = new Set();
+  for (let iz = center.iz - radius; iz <= center.iz + radius; iz += 1) {
+    for (let ix = center.ix - radius; ix <= center.ix + radius; ix += 1) {
+      if (!inBounds(ix, iz, grid)) continue;
+      if (Math.abs(ix - center.ix) + Math.abs(iz - center.iz) > radius) continue;
+      const tile = getTile(grid, ix, iz);
+      if (!targetTypes.includes(tile)) continue;
+      const key = tileKey(ix, iz);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ ix, iz });
+    }
+  }
+  return candidates;
+}
+
+function chooseHerbivoreGrazeTarget(animal, state, ecology) {
+  const zone = getWildlifeZone(state, animal);
+  const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
+  const current = worldToTile(animal.x, animal.z, state.grid);
+  const searchRadius = Number(BALANCE.herbivoreGrazeSearchRadius ?? 8);
+  const centers = [
+    animal.memory?.migrationTarget ?? null,
+    current,
+    zoneAnchor,
+    animal.memory?.homeTile ?? null,
+  ].filter(Boolean);
+  const candidates = [];
+  const seen = new Set();
+  for (const center of centers) {
+    for (const candidate of collectNearbyTilesOfTypes(state.grid, center, [TILE.GRASS, TILE.FARM], searchRadius)) {
+      const key = tileKey(candidate.ix, candidate.iz);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push(candidate);
+    }
+  }
+  if (candidates.length <= 0) {
+    return findNearestTileOfTypes(state.grid, animal, [TILE.FARM, TILE.GRASS]);
+  }
+
+  let best = null;
+  let bestScore = -Infinity;
+  const homeBias = Number(BALANCE.herbivoreHomeZoneBias ?? 0.68);
+  const farmBias = Number(BALANCE.herbivoreFarmAttractionBonus ?? 1.15);
+  const corePenalty = Number(BALANCE.herbivoreCoreAvoidancePenalty ?? 0.45);
+  for (const candidate of candidates) {
+    const currentType = getTile(state.grid, candidate.ix, candidate.iz);
+    const key = tileKey(candidate.ix, candidate.iz);
+    const pressure = Number(ecology.farmPressureByKey?.[key] ?? 0);
+    let score = currentType === TILE.FARM ? 1.1 + farmBias * (1.2 - clamp(animal.hunger ?? 0.6, 0, 1)) : 0.95;
+    score -= tileDistance(current, candidate) * 0.12;
+    score -= pressure * 0.28;
+    score -= countInfrastructurePenalty(state, candidate, 1) * corePenalty;
+    if (zoneAnchor && isWithinZone(candidate, zoneAnchor, Number(zone?.radius ?? 2) + 2)) score += homeBias;
+    if (animal.memory?.migrationTarget && tileDistance(candidate, animal.memory.migrationTarget) <= 3) score += 0.75;
+    if (isNearCore(candidate, state, 4)) score -= corePenalty;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function choosePredatorPatrolTile(animal, state, ecology, services) {
+  const zone = getWildlifeZone(state, animal);
+  const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
+  const current = worldToTile(animal.x, animal.z, state.grid);
+  const hotspotBias = Number(BALANCE.predatorFarmPressureAttraction ?? 1.05);
+  const homeBias = Number(BALANCE.predatorHomeZoneBias ?? 0.72);
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const [key, pressure] of Object.entries(ecology.farmPressureByKey ?? {})) {
+    if (Number(pressure) < 0.14) continue;
+    const tile = parseTileKey(key);
+    if (!tile) continue;
+    let score = Number(pressure) * hotspotBias;
+    score -= tileDistance(current, tile) * 0.08;
+    if (zoneAnchor && isWithinZone(tile, zoneAnchor, Number(zone?.radius ?? 2) + 5)) score += homeBias;
+    if (score > bestScore) {
+      bestScore = score;
+      best = tile;
+    }
+  }
+  if (best) {
+    animal.debug.lastPatrolLabel = "farm-pressure hotspot";
+    return best;
+  }
+
+  if (zoneAnchor) {
+    const radius = Math.max(2, Number(zone?.radius ?? 2) + 2);
+    const candidates = collectNearbyTilesOfTypes(state.grid, zoneAnchor, [TILE.GRASS, TILE.FARM, TILE.LUMBER, TILE.RUINS], radius);
+    if (candidates.length > 0) {
+      animal.debug.lastPatrolLabel = String(zone?.label ?? "frontier habitat");
+      return candidates[Math.floor(services.rng.next() * candidates.length)];
+    }
+    animal.debug.lastPatrolLabel = String(zone?.label ?? "frontier habitat");
+    return zoneAnchor;
+  }
+
+  animal.debug.lastPatrolLabel = "open frontier";
+  return randomPassableTile(state.grid);
+}
+
+function prepareEcologyMetrics(state, dt) {
+  const decay = Number(BALANCE.herbivoreFarmPressureDecayPerSecond ?? 0.16);
+  const previous = state.metrics.ecology ?? {};
+  const farmPressureByKey = {};
+  for (const [key, value] of Object.entries(previous.farmPressureByKey ?? {})) {
+    const next = Math.max(0, Number(value) - decay * dt);
+    if (next >= 0.02) {
+      farmPressureByKey[key] = Number(next.toFixed(3));
+    }
+  }
+  const ecology = {
+    activeGrazers: 0,
+    pressuredFarms: 0,
+    maxFarmPressure: 0,
+    frontierPredators: 0,
+    migrationHerds: 0,
+    farmPressureByKey,
+    hotspotFarms: [],
+    herbivoresByZone: {},
+    predatorsByZone: {},
+    summary: "Ecology: recalculating",
+  };
+  state.metrics.ecology = ecology;
+  state.debug.ecology = ecology;
+  return ecology;
+}
+
+function recordZonePresence(ecology, animal, state) {
+  const zone = getWildlifeZone(state, animal);
+  if (!zone) return;
+  const bucket = animal.kind === ANIMAL_KIND.PREDATOR ? ecology.predatorsByZone : ecology.herbivoresByZone;
+  bucket[zone.id] = Number(bucket[zone.id] ?? 0) + 1;
+}
+
+function recordFarmPressure(animal, state, dt, ecology) {
+  const tile = worldToTile(animal.x, animal.z, state.grid);
+  if (getTile(state.grid, tile.ix, tile.iz) !== TILE.FARM) {
+    animal.debug.lastGrazePressure = 0;
+    return;
+  }
+  const key = tileKey(tile.ix, tile.iz);
+  const add = Number(BALANCE.herbivoreFarmPressurePerSecond ?? 0.34) * dt;
+  const next = clamp(Number(ecology.farmPressureByKey[key] ?? 0) + add, 0, 1.6);
+  ecology.farmPressureByKey[key] = Number(next.toFixed(3));
+  ecology.activeGrazers += 1;
+  animal.debug.lastGrazePressure = next;
+  animal.debug.lastGrazeTile = tile;
+}
+
+function recordFrontierPredator(animal, state, ecology) {
+  const tile = worldToTile(animal.x, animal.z, state.grid);
+  const zone = getWildlifeZone(state, animal);
+  const zoneAnchor = getZoneAnchor(state, zone);
+  if (zoneAnchor && isWithinZone(tile, zoneAnchor, Number(zone?.radius ?? 2) + 3)) {
+    ecology.frontierPredators += 1;
+    return;
+  }
+  if (!isNearCore(tile, state, 4)) ecology.frontierPredators += 1;
+}
+
+function finalizeEcologyMetrics(state, ecology) {
+  const entries = Object.entries(ecology.farmPressureByKey ?? {})
+    .map(([key, pressure]) => ({ tile: parseTileKey(key), pressure: Number(pressure) }))
+    .filter((entry) => entry.tile)
+    .sort((a, b) => b.pressure - a.pressure);
+  ecology.pressuredFarms = entries.length;
+  ecology.maxFarmPressure = entries.length > 0 ? Number(entries[0].pressure.toFixed(2)) : 0;
+  ecology.hotspotFarms = entries.slice(0, 3).map((entry) => ({
+    ix: entry.tile.ix,
+    iz: entry.tile.iz,
+    pressure: Number(entry.pressure.toFixed(2)),
+  }));
+  const zoneNames = getScenario(state).wildlifeZones ?? [];
+  const topZone = zoneNames
+    .map((zone) => ({
+      label: zone.label,
+      herbivores: Number(ecology.herbivoresByZone[zone.id] ?? 0),
+      predators: Number(ecology.predatorsByZone[zone.id] ?? 0),
+    }))
+    .sort((a, b) => (b.herbivores + b.predators) - (a.herbivores + a.predators))[0] ?? null;
+  const hotspotSummary = entries.length > 0 ? `top farm pressure ${ecology.maxFarmPressure.toFixed(2)}` : "no active farm pressure";
+  const zoneSummary = topZone && (topZone.herbivores > 0 || topZone.predators > 0)
+    ? ` busiest zone ${topZone.label} (herds ${topZone.herbivores}, predators ${topZone.predators})`
+    : "";
+  ecology.summary = `Ecology: pressured farms ${ecology.pressuredFarms}, ${hotspotSummary}, frontier predators ${ecology.frontierPredators}, migration herds ${ecology.migrationHerds}.${zoneSummary}`;
+  state.debug.ecology = ecology;
 }
 
 function updateAnimalHunger(animal, dt) {
@@ -117,9 +367,10 @@ function updateAnimalHunger(animal, dt) {
   animal.hunger = clamp((animal.hunger ?? 1) - decay * dt, 0, 1);
 }
 
-function recoverHerbivoreHunger(animal, dt) {
+function recoverHerbivoreHunger(animal, dt, tileType = TILE.GRASS) {
   const recover = Number(BALANCE.herbivoreGrazeRecoveryPerSecond ?? 0.08);
-  animal.hunger = clamp((animal.hunger ?? 0) + recover * dt, 0, 1);
+  const bonus = tileType === TILE.FARM ? 1.18 : 1;
+  animal.hunger = clamp((animal.hunger ?? 0) + recover * dt * bonus, 0, 1);
 }
 
 function recoverPredatorHungerOnHit(animal) {
@@ -127,7 +378,7 @@ function recoverPredatorHungerOnHit(animal) {
   animal.hunger = clamp((animal.hunger ?? 0) + recover, 0, 1);
 }
 
-function herbivoreTick(animal, predators, state, dt, services, stateNode) {
+function herbivoreTick(animal, predators, state, dt, services, stateNode, ecology) {
   const bb = animal.blackboard ?? (animal.blackboard = {});
   const threat = nearestPredator(animal, predators);
   const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
@@ -164,10 +415,27 @@ function herbivoreTick(animal, predators, state, dt, services, stateNode) {
     }
   }
 
+  const migrationTarget = animal.memory?.migrationTarget ?? null;
+  if ((stateNode === "regroup" || stateNode === "wander") && migrationTarget) {
+    ecology.migrationHerds += 1;
+    const migrationDist = tileDistance(worldToTile(animal.x, animal.z, state.grid), migrationTarget);
+    if (migrationDist > 2 && canAttemptPath(animal, state)) {
+      setTargetAndPath(animal, migrationTarget, state, services);
+    }
+    if (hasActivePath(animal, state)) {
+      animal.desiredVel = followPath(animal, state, dt).desired;
+      return;
+    }
+    if (isAtTargetTile(animal, state)) {
+      animal.memory.migrationTarget = null;
+      animal.memory.migrationLabel = "";
+    }
+  }
+
   if (stateNode === "graze" || stateNode === "regroup") {
     if (!hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM]) && canAttemptPath(animal, state)) {
-      const grassTarget = findNearbyGrazeTarget(animal, state, services.rng) ?? findNearestTileOfTypes(state.grid, animal, [TILE.FARM]);
-      if (grassTarget) setTargetAndPath(animal, grassTarget, state, services);
+      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology);
+      if (grazeTarget) setTargetAndPath(animal, grazeTarget, state, services);
     }
 
     if (hasActivePath(animal, state)) {
@@ -176,16 +444,26 @@ function herbivoreTick(animal, predators, state, dt, services, stateNode) {
       return;
     }
     if (isAtTargetTile(animal, state)) {
+      const currentTile = worldToTile(animal.x, animal.z, state.grid);
+      const tileType = getTile(state.grid, currentTile.ix, currentTile.iz);
       setIdleDesired(animal);
-      recoverHerbivoreHunger(animal, dt);
+      recoverHerbivoreHunger(animal, dt, tileType);
+      if (tileType === TILE.FARM) {
+        recordFarmPressure(animal, state, dt, ecology);
+      }
       return;
     }
   }
 
+  const zone = getWildlifeZone(state, animal);
+  const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.homeTile ?? null;
+  const wanderTarget = zoneAnchor && tileDistance(worldToTile(animal.x, animal.z, state.grid), zoneAnchor) > 6
+    ? zoneAnchor
+    : randomPassableTile(state.grid);
   const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
   if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
     clearPath(animal);
-    if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
+    if (setTargetAndPath(animal, wanderTarget, state, services) && animal.debug) {
       animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
     }
   }
@@ -196,7 +474,7 @@ function herbivoreTick(animal, predators, state, dt, services, stateNode) {
   }
 }
 
-function predatorTick(animal, herbivores, state, dt, services, stateNode) {
+function predatorTick(animal, herbivores, state, dt, services, stateNode, ecology) {
   animal.attackCooldownSec = Math.max(0, Number(animal.attackCooldownSec ?? 0) - dt);
 
   const { prey, distance } = nearestHerbivore(animal, herbivores);
@@ -214,6 +492,7 @@ function predatorTick(animal, herbivores, state, dt, services, stateNode) {
       animal.debug.lastPredatorTargetSwitchSec = nowSec;
     }
     animal.debug.lastPredatorTargetId = String(prey.id ?? "");
+    animal.debug.lastPatrolLabel = "";
 
     const nextRefreshSec = Number(animal.debug?.nextHuntRefreshSec ?? -Infinity);
     const preyTile = worldToTile(prey.x, prey.z, state.grid);
@@ -253,13 +532,25 @@ function predatorTick(animal, herbivores, state, dt, services, stateNode) {
     }
   }
 
-  const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
-  if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
+  animal.hunger = clamp((animal.hunger ?? 0) + Number(BALANCE.predatorHungerRecoveryOnHit ?? 0.24) * dt * 0.12, 0, 1);
+  const nowSec = state.metrics.timeSec;
+  const nextPatrolRefreshSec = Number(animal.debug?.nextPatrolRefreshSec ?? -Infinity);
+  const pathStale = Boolean(animal.path) && animal.pathGridVersion !== state.grid.version;
+  const pathMissingAwayFromTarget = !hasActivePath(animal, state) && !isAtTargetTile(animal, state);
+  const pathStuck = isPathStuck(animal, state, 2.0);
+  const zone = getWildlifeZone(state, animal);
+  const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
+  const currentTile = worldToTile(animal.x, animal.z, state.grid);
+  const atTerritory = zoneAnchor ? isWithinZone(currentTile, zoneAnchor, Number(zone?.radius ?? 2) + 1) : false;
+  const shouldPatrol = stateNode === "stalk" || stateNode === "roam" || (stateNode === "rest" && !atTerritory);
+  if (shouldPatrol && canAttemptPath(animal, state) && (pathStale || pathMissingAwayFromTarget || pathStuck || nowSec >= nextPatrolRefreshSec)) {
     clearPath(animal);
-    if (setTargetAndPath(animal, randomPassableTile(state.grid), state, services) && animal.debug) {
-      animal.debug.nextWanderRefreshSec = state.metrics.timeSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
+    const patrolTarget = choosePredatorPatrolTile(animal, state, ecology, services);
+    if (patrolTarget && setTargetAndPath(animal, patrolTarget, state, services) && animal.debug) {
+      animal.debug.nextPatrolRefreshSec = nowSec + Number(BALANCE.predatorPatrolRefreshSec ?? 1.6);
     }
   }
+
   if (hasActivePath(animal, state)) {
     animal.desiredVel = followPath(animal, state, dt).desired;
   } else {
@@ -308,9 +599,11 @@ export class AnimalAISystem {
 
   update(dt, state, services) {
     this.#partitionAnimals(state);
+    const ecology = prepareEcologyMetrics(state, dt);
     for (const animal of state.animals) {
       if (animal.alive === false) continue;
       updateAnimalHunger(animal, dt);
+      recordZonePresence(ecology, animal, state);
 
       const groupId = animal.kind === ANIMAL_KIND.HERBIVORE ? "herbivores" : "predators";
       const plan = planEntityDesiredState(animal, state, {
@@ -333,17 +626,14 @@ export class AnimalAISystem {
         if (threatNear) bb.fleeLatch = true;
         else if (threatFar) bb.fleeLatch = false;
         if (stateNode === "idle") setIdleDesired(animal);
-        else herbivoreTick(animal, this.predators, state, dt, services, stateNode);
+        else herbivoreTick(animal, this.predators, state, dt, services, stateNode, ecology);
       } else {
-        if (stateNode === "rest" || stateNode === "idle") {
-          setIdleDesired(animal);
-          animal.hunger = clamp((animal.hunger ?? 0) + Number(BALANCE.predatorHungerRecoveryOnHit ?? 0.24) * dt * 0.12, 0, 1);
-        } else {
-          predatorTick(animal, this.herbivores, state, dt, services, stateNode);
-        }
+        predatorTick(animal, this.herbivores, state, dt, services, stateNode, ecology);
+        recordFrontierPredator(animal, state, ecology);
       }
 
       updateIdleWithoutReasonMetric(animal, stateNode, dt, state);
     }
+    finalizeEcologyMetrics(state, ecology);
   }
 }

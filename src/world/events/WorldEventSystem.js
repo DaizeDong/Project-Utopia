@@ -129,6 +129,7 @@ function applyActiveEvent(event, dt, state) {
         animal.memory.recentEvents.unshift(label);
         animal.memory.recentEvents = animal.memory.recentEvents.slice(0, 6);
         animal.memory.migrationTarget = focusTile;
+        animal.memory.migrationLabel = label;
       }
     }
   }
