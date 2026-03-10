@@ -12,6 +12,7 @@ const LOCAL_SOAK_PATH = path.resolve("docs/assignment4/metrics/soak-report.json"
 const LOCAL_PERF_PATH = path.resolve("docs/assignment4/metrics/perf-baseline.csv");
 const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 const SCREENSHOT_DIR = path.resolve("output/playwright");
+const DIST_ASSETS_DIR = path.resolve("dist/assets");
 
 const REQUIRED_A4_SECTIONS = [
   "## Current Alpha Diagnosis",
@@ -53,6 +54,24 @@ function getHeadCommit() {
   }
 }
 
+function listFilesRecursive(dirPath) {
+  if (!fs.existsSync(dirPath)) return [];
+  const out = [];
+  const stack = [dirPath];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile()) {
+        out.push(fullPath);
+      }
+    }
+  }
+  return out.sort();
+}
+
 function collectReleaseScreenshots(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
   return fs.readdirSync(dirPath, { withFileTypes: true })
@@ -62,6 +81,52 @@ function collectReleaseScreenshots(dirPath) {
     .sort()
     .map((filePath) => fileStatOrNull(filePath))
     .filter(Boolean);
+}
+
+function collectDistAssets(dirPath) {
+  return listFilesRecursive(dirPath)
+    .map((filePath) => {
+      const stat = fileStatOrNull(filePath);
+      if (!stat) return null;
+      return {
+        ...stat,
+        relativePath: path.relative(process.cwd(), filePath).replaceAll("\\", "/"),
+      };
+    })
+    .filter(Boolean);
+}
+
+function getWorktreeStatus() {
+  try {
+    const output = execSync("git status --porcelain", {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    });
+    const entries = output
+      .split(/\r?\n/u)
+      .map((line) => line.trimEnd())
+      .filter(Boolean)
+      .map((line) => {
+        const status = line.slice(0, 2);
+        const filePath = line.slice(3);
+        return {
+          status,
+          path: filePath,
+        };
+      });
+    return {
+      dirty: entries.length > 0,
+      entryCount: entries.length,
+      entries,
+    };
+  } catch {
+    return {
+      dirty: false,
+      entryCount: 0,
+      entries: [],
+    };
+  }
 }
 
 function main() {
@@ -88,6 +153,8 @@ function main() {
     perfBaseline: fs.existsSync(LOCAL_PERF_PATH),
   };
   const screenshotArtifacts = collectReleaseScreenshots(SCREENSHOT_DIR);
+  const distAssets = collectDistAssets(DIST_ASSETS_DIR);
+  const worktree = getWorktreeStatus();
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -99,6 +166,7 @@ function main() {
     },
     build: {
       indexHtml: fileStatOrNull(DIST_INDEX_PATH),
+      assets: distAssets,
     },
     proofs: {
       hw03Live: fileStatOrNull(LIVE_PROOF_PATH),
@@ -110,6 +178,7 @@ function main() {
       perfBaseline: fileStatOrNull(LOCAL_PERF_PATH),
     },
     screenshotArtifacts,
+    worktree,
   };
 
   fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
@@ -122,7 +191,9 @@ function main() {
   console.log(
     `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}`,
   );
+  console.log(`[release:check] dist assets: ${distAssets.length}`);
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
+  console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 
