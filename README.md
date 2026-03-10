@@ -80,6 +80,7 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 - the local release status summary, including whether `release:strict` would currently pass
 - the toolchain snapshot used for the release pass (`node`, `npm`, `vite`)
 - the exact release-script chain from `package.json`
+- per-artifact `sha256` hashes for the build, proofs, metrics, and optional screenshots
 - the built `dist` asset inventory and bundle summary
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence
