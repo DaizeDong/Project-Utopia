@@ -1,4 +1,5 @@
 import { worldToTile } from "../../world/grid/Grid.js";
+import { getEntityInsight } from "../interpretation/WorldExplain.js";
 
 function fmtNum(value, digits = 2) {
   const n = Number(value);
@@ -281,6 +282,7 @@ export class EntityFocusPanel {
     const topIntent = summarizeTopWeights(groupPolicy?.intentWeights ?? {});
     const topTargets = summarizeTopWeights(groupPolicy?.targetPriorities ?? {});
     const aiImpact = this.#buildAiImpact(entity, groupPolicy);
+    const entityInsights = getEntityInsight(this.state, entity);
     const simSec = fmtSec(this.state.metrics.timeSec);
     const policySec = fmtSec(this.state.ai.lastPolicyResultSec);
     const envSec = fmtSec(this.state.ai.lastEnvironmentResultSec);
@@ -318,6 +320,7 @@ export class EntityFocusPanel {
       <div class="small"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
       <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
       <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
+      <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
       <details data-focus-key="focus:path-nodes" style="margin-top:8px;">
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>
