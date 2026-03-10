@@ -1,4 +1,5 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
+import { getEntityInsight, getEventInsight, getFrontierStatus, getTileInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -29,15 +30,23 @@ export class InspectorPanel {
   #renderTileSection() {
     const tile = this.state.controls.selectedTile;
     if (!tile) {
+      const frontier = getFrontierStatus(this.state);
+      const weather = getWeatherInsight(this.state);
+      const events = getEventInsight(this.state);
       return `
         <div><b>Selected Tile</b></div>
-        <div class="small muted">Left click tile to build/select. Alt+Click tile for inspect-only.</div>
+        <div class="small muted">Left click tile to build/select. Alt+Left click tile for inspect-only. Right drag pans the camera.</div>
+        <div class="small" style="margin-top:8px;"><b>Objective Hint:</b> ${this.state.gameplay.objectiveHint ?? "none"}</div>
+        <div class="small"><b>Frontier:</b> ${frontier.summary}</div>
+        <div class="small"><b>Weather:</b> ${weather.summary}</div>
+        <div class="small"><b>Events:</b> ${events}</div>
       `;
     }
 
     const currentType = this.state.grid.tiles[tile.ix + tile.iz * this.state.grid.width];
     const info = TILE_INFO[currentType] ?? { passable: false, baseCost: 0, height: 0 };
     const idx = tile.ix + tile.iz * this.state.grid.width;
+    const tileInsights = getTileInsight(this.state, tile);
     const neighbors = [
       { label: "N", ix: tile.ix, iz: tile.iz - 1 },
       { label: "S", ix: tile.ix, iz: tile.iz + 1 },
@@ -59,6 +68,12 @@ export class InspectorPanel {
       <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
       <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
       <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
+      <details style="margin-top:8px;" open>
+        <summary class="small"><b>Tile Context</b></summary>
+        <div class="small" style="margin-top:6px;">
+          ${tileInsights.length > 0 ? tileInsights.join("<br />") : "No frontier-specific context on this tile."}
+        </div>
+      </details>
     `;
   }
 
@@ -88,6 +103,7 @@ export class InspectorPanel {
     const desired = entity.desiredVel ? vecFmt(entity.desiredVel.x || 0, entity.desiredVel.z || 0) : "(0, 0)";
     const blackboardIntent = entity.blackboard?.intent ?? entity.debug?.lastIntent ?? "-";
     const groupPolicy = this.state.ai.groupPolicies.get(entity.groupId)?.data ?? null;
+    const entityInsights = getEntityInsight(this.state, entity);
 
     return `
       <div style="margin-top:10px;"><b>Selected Entity</b> <span class="muted">(${entity.id})</span></div>
@@ -105,6 +121,12 @@ export class InspectorPanel {
       <div class="small"><b>Target Tile:</b> ${target}</div>
       <div class="small"><b>Path:</b> ${pathProgress}</div>
       <div class="small"><b>Path Grid Version:</b> ${entity.pathGridVersion}</div>
+      <details style="margin-top:8px;" open>
+        <summary class="small"><b>Decision Context</b></summary>
+        <div class="small" style="margin-top:6px;">
+          ${entityInsights.length > 0 ? entityInsights.join("<br />") : "No extra decision context for this entity."}
+        </div>
+      </details>
       <details style="margin-top:8px;">
         <summary class="small"><b>Path Detail</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${pathNodes}</div>
