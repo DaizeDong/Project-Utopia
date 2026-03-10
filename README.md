@@ -78,9 +78,11 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 - the final HW04 report path and stage coverage
 - the current `HEAD` commit and a recent commit history snapshot
 - the local release status summary, including whether `release:strict` would currently pass
+- the current `release:strict` blocker preview, including the first non-ignored dirty paths
 - the toolchain snapshot used for the release pass (`node`, `npm`, `vite`)
 - the exact release-script chain from `package.json`
 - per-artifact `sha256` hashes for the build, proofs, metrics, and optional screenshots
+- portable `relativePath` fields alongside the local absolute paths
 - the built `dist` asset inventory and bundle summary
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence

@@ -37,8 +37,10 @@ function requireFile(filePath, label) {
 function fileStatOrNull(filePath) {
   if (!fs.existsSync(filePath)) return null;
   const stat = fs.statSync(filePath);
+  const relativePath = path.relative(process.cwd(), filePath).replaceAll("\\", "/");
   return {
     path: filePath,
+    relativePath,
     sizeBytes: stat.size,
     modifiedAt: stat.mtime.toISOString(),
     sha256: crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex"),
@@ -223,6 +225,18 @@ function getWorktreeStatus() {
   }
 }
 
+function summarizeStrictBlockers(worktree, limit = 8) {
+  const entries = Array.isArray(worktree?.entries) ? worktree.entries : [];
+  const blockers = entries.map((entry) => ({
+    status: String(entry.status ?? "").trim(),
+    path: String(entry.path ?? ""),
+  }));
+  return {
+    count: blockers.length,
+    preview: blockers.slice(0, Math.max(1, limit)),
+  };
+}
+
 function main() {
   requireFile(A4_PATH, "HW04 report");
   requireFile(DIST_INDEX_PATH, "production build");
@@ -251,6 +265,7 @@ function main() {
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
   const distSummary = summarizeDistAssets(distAssets);
   const worktree = getWorktreeStatus();
+  const strictBlockers = summarizeStrictBlockers(worktree);
   const recentCommits = getRecentCommits();
   const toolchain = collectToolchain(packageJson);
   const commandChain = collectCommandChain(packageJson);
@@ -265,6 +280,7 @@ function main() {
     releaseStatus: {
       strictReady: !worktree.dirty,
       requireClean: REQUIRE_CLEAN,
+      strictBlockers,
       screenshotCount: screenshotArtifacts.length,
       distAssetCount: distSummary.assetCount,
     },
@@ -308,6 +324,11 @@ function main() {
   );
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
+  if (strictBlockers.count > 0) {
+    console.log(
+      `[release:check] strict blockers: ${strictBlockers.preview.map((entry) => `${entry.status} ${entry.path}`).join("; ")}`,
+    );
+  }
   console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
   console.log(`[release:check] recent commits: ${recentCommits.length}`);
   console.log(`[release:check] strict ready: ${!worktree.dirty}`);
