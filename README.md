@@ -21,12 +21,47 @@ npm run dev:full      # recommended: Vite + ai-proxy
 npm run start:prod    # build + preview + ai-proxy
 npm run test
 npm run build
+npm run verify:full
+npm run release:check
+npm run submit:local
 ```
 
 Notes:
 
 - `dev:full`, `preview:full`, and `ai-proxy` now auto-load root `.env`.
 - Existing shell env variables still override `.env` values.
+
+## Submission / Release Flow
+
+The authoritative submission artifact is the local production build, not an unverified hosted URL.
+
+Use this command for the full local submission gate:
+
+```bash
+npm run submit:local
+```
+
+That runs:
+
+- `npm run verify:full`
+- `npm run release:check`
+
+Generated verification artifacts are written to:
+
+- `docs/assignment4/metrics/`
+- `docs/assignment3/verification-summary.json`
+
+These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
+
+## Optional Live-AI Proof Refresh
+
+If `OPENAI_API_KEY` is configured and you want to refresh the stored live-AI evidence instead of relying on the existing HW03 proof files, run:
+
+```bash
+npm run a3:evidence:ai
+```
+
+Without a valid key, the app remains in deterministic fallback mode by design.
 
 ## AI Runtime Self-Check
 
