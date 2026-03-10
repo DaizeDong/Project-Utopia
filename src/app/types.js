@@ -280,6 +280,7 @@
  *
  * @typedef {{
  *  doctrine: string,
+ *  doctrineMastery?: number,
  *  modifiers: Record<string, number>,
  *  prosperity: number,
  *  threat: number,
@@ -287,6 +288,13 @@
  *  scenario?: ScenarioState,
  *  objectives: Array<{id:string,title:string,description:string,completed:boolean,progress:number,reward:string}>,
  *  objectiveHoldSec: number,
+ *  recovery?: {
+ *    charges:number,
+ *    activeBoostSec:number,
+ *    lastTriggerSec:number,
+ *    collapseRisk:number,
+ *    lastReason:string
+ *  },
  *  objectiveHint?: string,
  *  objectiveLog: string[]
  * }} GameplayState
