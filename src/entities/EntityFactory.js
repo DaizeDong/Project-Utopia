@@ -11,6 +11,7 @@ import {
   DEFAULT_MAP_TEMPLATE_ID,
   describeMapTemplate,
 } from "../world/grid/Grid.js";
+import { buildScenarioBundle } from "../world/scenarios/ScenarioFactory.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
   food: Math.min(INITIAL_RESOURCES.food, 42),
@@ -143,142 +144,6 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
   };
 }
 
-function clamp(v, min, max) {
-  return Math.max(min, Math.min(max, v));
-}
-
-function toIndex(ix, iz, width) {
-  return ix + iz * width;
-}
-
-function setTileDirect(grid, ix, iz, tileType) {
-  if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) return false;
-  grid.tiles[toIndex(ix, iz, grid.width)] = tileType;
-  return true;
-}
-
-function tileAt(grid, ix, iz) {
-  if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) return TILE.WATER;
-  return grid.tiles[toIndex(ix, iz, grid.width)];
-}
-
-function isPassableBaseTile(tileType) {
-  return tileType !== TILE.WATER;
-}
-
-function findNearestScenarioAnchor(grid, startIx, startIz, maxRadius = 24) {
-  for (let radius = 0; radius <= maxRadius; radius += 1) {
-    for (let iz = startIz - radius; iz <= startIz + radius; iz += 1) {
-      for (let ix = startIx - radius; ix <= startIx + radius; ix += 1) {
-        if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
-        if (Math.max(Math.abs(ix - startIx), Math.abs(iz - startIz)) !== radius) continue;
-        if (isPassableBaseTile(tileAt(grid, ix, iz))) return { ix, iz };
-      }
-    }
-  }
-  return {
-    ix: clamp(startIx, 0, grid.width - 1),
-    iz: clamp(startIz, 0, grid.height - 1),
-  };
-}
-
-function clearInfrastructure(grid) {
-  for (let i = 0; i < grid.tiles.length; i += 1) {
-    const tile = grid.tiles[i];
-    if (
-      tile === TILE.ROAD ||
-      tile === TILE.FARM ||
-      tile === TILE.LUMBER ||
-      tile === TILE.WAREHOUSE ||
-      tile === TILE.WALL ||
-      tile === TILE.RUINS
-    ) {
-      grid.tiles[i] = TILE.GRASS;
-    }
-  }
-}
-
-function clearFootprint(grid, center, radiusX, radiusZ) {
-  for (let iz = center.iz - radiusZ; iz <= center.iz + radiusZ; iz += 1) {
-    for (let ix = center.ix - radiusX; ix <= center.ix + radiusX; ix += 1) {
-      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
-      grid.tiles[toIndex(ix, iz, grid.width)] = TILE.GRASS;
-    }
-  }
-}
-
-function stampRoad(grid, x0, z0, x1, z1) {
-  let ix = x0;
-  let iz = z0;
-  setTileDirect(grid, ix, iz, TILE.ROAD);
-  while (ix !== x1) {
-    ix += ix < x1 ? 1 : -1;
-    setTileDirect(grid, ix, iz, TILE.ROAD);
-  }
-  while (iz !== z1) {
-    iz += iz < z1 ? 1 : -1;
-    setTileDirect(grid, ix, iz, TILE.ROAD);
-  }
-}
-
-function stampCluster(grid, center, offsets, tileType) {
-  for (const offset of offsets) {
-    setTileDirect(grid, center.ix + offset.x, center.iz + offset.z, tileType);
-  }
-}
-
-function applyAlphaScenarioLayout(grid) {
-  clearInfrastructure(grid);
-
-  const center = findNearestScenarioAnchor(grid, Math.floor(grid.width / 2), Math.floor(grid.height / 2));
-  const eastOutpost = {
-    ix: clamp(center.ix + 9, 3, grid.width - 4),
-    iz: clamp(center.iz + 3, 3, grid.height - 4),
-  };
-  const westOutpost = {
-    ix: clamp(center.ix - 9, 3, grid.width - 4),
-    iz: clamp(center.iz - 3, 3, grid.height - 4),
-  };
-
-  clearFootprint(grid, center, 8, 6);
-  clearFootprint(grid, eastOutpost, 5, 4);
-  clearFootprint(grid, westOutpost, 5, 4);
-
-  stampRoad(grid, center.ix - 2, center.iz, center.ix + 2, center.iz);
-  stampRoad(grid, center.ix, center.iz - 1, center.ix, center.iz + 2);
-  stampRoad(grid, center.ix - 4, center.iz - 1, center.ix - 2, center.iz);
-  stampRoad(grid, center.ix + 2, center.iz + 1, center.ix + 4, center.iz + 1);
-  stampRoad(grid, westOutpost.ix, westOutpost.iz, westOutpost.ix + 2, westOutpost.iz);
-  setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
-
-  stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }], TILE.FARM);
-  stampCluster(grid, westOutpost, [{ x: 0, z: 0 }], TILE.LUMBER);
-
-  setTileDirect(grid, westOutpost.ix + 3, westOutpost.iz, TILE.RUINS);
-  setTileDirect(grid, eastOutpost.ix + 1, eastOutpost.iz, TILE.RUINS);
-  setTileDirect(grid, eastOutpost.ix + 2, eastOutpost.iz, TILE.RUINS);
-
-  stampCluster(grid, eastOutpost, [{ x: 0, z: -1 }, { x: 0, z: 1 }, { x: 1, z: -1 }], TILE.WALL);
-
-  // Invalidate tile-type caches derived from the generated terrain layout.
-  grid.version = Number(grid.version ?? 0) + 1;
-
-  return {
-    id: "alpha_broken_frontier",
-    anchors: {
-      coreWarehouse: { ix: center.ix, iz: center.iz },
-      westLumberOutpost: { ix: westOutpost.ix, iz: westOutpost.iz },
-      eastDepot: { ix: eastOutpost.ix, iz: eastOutpost.iz },
-    },
-    routeGaps: [
-      { ix: center.ix - 5, iz: center.iz - 1 },
-      { ix: center.ix - 6, iz: center.iz - 1 },
-      { ix: westOutpost.ix + 3, iz: westOutpost.iz },
-      { ix: westOutpost.ix + 4, iz: westOutpost.iz },
-    ],
-  };
-}
-
 export function createInitialEntities(grid) {
   return createInitialEntitiesWithRandom(grid, Math.random);
 }
@@ -323,7 +188,7 @@ export function createInitialGameState(options = {}) {
   const seed = options.seed ?? 1337;
   const terrainTuning = options.terrainTuning ?? {};
   const grid = createInitialGrid({ templateId, seed, terrainTuning });
-  const alphaScenario = applyAlphaScenarioLayout(grid);
+  const scenarioBundle = buildScenarioBundle(grid);
   const templateMeta = describeMapTemplate(grid.templateId);
   const random = createDeterministicRandom(grid.seed);
   const { agents, animals } = createInitialEntitiesWithRandom(grid, random);
@@ -513,35 +378,10 @@ export function createInitialGameState(options = {}) {
       prosperity: 35,
       threat: 25,
       objectiveIndex: 0,
-      scenario: alphaScenario,
-      objectives: [
-        {
-          id: "logistics-1",
-          title: "Reconnect the Frontier",
-          description: "Reconnect the west lumber outpost, reclaim the east depot with a warehouse, then reach 4 farms, 3 lumbers, and 20 roads.",
-          completed: false,
-          progress: 0,
-          reward: "+18 food, +18 wood",
-        },
-        {
-          id: "stockpile-1",
-          title: "Refill the Stockpile",
-          description: "Reach 95 food and 90 wood after the network is expanded.",
-          completed: false,
-          progress: 0,
-          reward: "Spawn +4 workers",
-        },
-        {
-          id: "stability-1",
-          title: "Fortify and Stabilize",
-          description: "Build 12 walls, then hold prosperity >= 58 and threat <= 44 for 30 seconds.",
-          completed: false,
-          progress: 0,
-          reward: "Permanent doctrine bonus +8%",
-        },
-      ],
+      scenario: scenarioBundle.scenario,
+      objectives: scenarioBundle.objectives,
       objectiveHoldSec: 0,
-      objectiveHint: "Reconnect the west lumber route and reclaim the east depot before scaling up.",
+      objectiveHint: scenarioBundle.objectiveHint,
       objectiveLog: [],
     },
     controls: {
