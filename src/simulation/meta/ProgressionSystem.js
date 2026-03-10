@@ -249,10 +249,33 @@ function getRecoveryHint(state, runtime, recovery) {
   return `Collapse risk ${recovery.collapseRisk.toFixed(0)}%. Stabilize food, wood, and threat before the colony fails.`;
 }
 
+function getSpatialPressureHint(state) {
+  const spatial = state.metrics?.spatialPressure ?? {};
+  if (
+    Number(spatial.weatherPressure ?? 0) < 0.45
+    && Number(spatial.eventPressure ?? 0) < 0.85
+    && Number(spatial.contestedZones ?? 0) <= 0
+  ) {
+    return "";
+  }
+
+  const activeEvent = state.events.active?.[0] ?? null;
+  const targetLabel = String(activeEvent?.payload?.targetLabel ?? state.weather?.hazardFocusSummary ?? "").trim();
+  if (activeEvent?.type === "banditRaid") {
+    return `Spatial pressure is concentrated on ${targetLabel || "the frontier"}. Reopen a safer lane or add walls before holding objectives.`;
+  }
+  if (activeEvent?.type === "tradeCaravan" && Number(activeEvent.payload?.rewardMultiplier ?? 1) < 1.1) {
+    return `Trade lanes are weather-contested near ${targetLabel || "the depot corridor"}. Clear the route or place safer depot support before relying on caravan income.`;
+  }
+  return `Spatial pressure is spiking${targetLabel ? ` around ${targetLabel}` : ""}. Adjust roads, depots, or walls before waiting out the timer.`;
+}
+
 function applyPacingHint(state, runtime, coverage, recovery, baseHint) {
   const recoveryHint = getRecoveryHint(state, runtime, recovery);
   if (recoveryHint) return recoveryHint;
   if (coverage.progress < 1 && coverage.hint) return coverage.hint;
+  const spatialHint = getSpatialPressureHint(state, runtime);
+  if (spatialHint) return spatialHint;
   return baseHint;
 }
 
@@ -446,8 +469,12 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
 function computeProsperity(state) {
   const resScore = clamp((state.resources.food + state.resources.wood) / 300, 0, 1) * 45;
   const infraScore = clamp((state.buildings.warehouses * 3 + state.buildings.farms + state.buildings.lumbers) / 30, 0, 1) * 32;
-  const weatherPenalty = state.weather.current === "storm" ? 10 : state.weather.current === "drought" ? 8 : 0;
-  const eventPenalty = state.events.active.length * 2.6;
+  const spatial = state.metrics?.spatialPressure ?? {};
+  const weatherPenalty = (state.weather.current === "storm" ? 6 : state.weather.current === "drought" ? 5 : 0)
+    + Number(spatial.weatherPressure ?? 0) * Number(BALANCE.weatherPressureProsperityPenalty ?? 11.5);
+  const eventPenalty = state.events.active.length * 1.2
+    + Number(spatial.eventPressure ?? 0) * Number(BALANCE.eventPressureProsperityPenalty ?? 7.2)
+    + Number(spatial.contestedZones ?? 0) * Number(BALANCE.contestedZoneProsperityPenalty ?? 1.6);
   return clamp(resScore + infraScore - weatherPenalty - eventPenalty + 18, 0, 100);
 }
 
@@ -457,7 +484,15 @@ function computeThreat(state) {
   const lowFoodPenalty = state.resources.food < 25 ? (25 - state.resources.food) * 0.8 : 0;
   const wallMitigation = clamp(state.buildings.walls / 120, 0, 1) * 18;
   const chaos = clamp(state.debug.boids?.avgNeighbors ?? 0, 0, 4) * 6;
-  return clamp(18 + predators * 2.5 + sabotageEvents * 7 + lowFoodPenalty + chaos - wallMitigation, 0, 100);
+  const spatial = state.metrics?.spatialPressure ?? {};
+  const weatherThreat = Number(spatial.weatherPressure ?? 0) * Number(BALANCE.weatherPressureThreat ?? 4.8);
+  const eventThreat = Number(spatial.eventPressure ?? 0) * Number(BALANCE.eventPressureThreat ?? 11.2);
+  const contestedThreat = Number(spatial.contestedZones ?? 0) * Number(BALANCE.contestedZoneThreat ?? 3.4);
+  return clamp(
+    18 + predators * 2.5 + sabotageEvents * 7 + lowFoodPenalty + chaos + weatherThreat + eventThreat + contestedThreat - wallMitigation,
+    0,
+    100,
+  );
 }
 
 function applyDoctrine(state) {

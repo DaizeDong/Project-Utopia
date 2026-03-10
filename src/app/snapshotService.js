@@ -146,6 +146,41 @@ export function restoreSnapshotState(serialized) {
   snapshot.metrics.feasibilityRejectCountByGroup ??= {};
   snapshot.metrics.starvationRiskCount ??= 0;
   snapshot.metrics.deathByReasonAndReachability ??= {};
+  snapshot.metrics.ecology ??= {
+    activeGrazers: 0,
+    pressuredFarms: 0,
+    maxFarmPressure: 0,
+    frontierPredators: 0,
+    migrationHerds: 0,
+    farmPressureByKey: {},
+    hotspotFarms: [],
+    herbivoresByZone: {},
+    predatorsByZone: {},
+    summary: "Ecology: idle",
+  };
+  snapshot.metrics.spatialPressure ??= {
+    weatherPressure: 0,
+    eventPressure: 0,
+    contestedZones: 0,
+    contestedTiles: 0,
+    activeEventCount: 0,
+    peakEventSeverity: 0,
+    summary: "Spatial pressure: idle",
+  };
+  snapshot.metrics.spatialPressure.weatherPressure ??= 0;
+  snapshot.metrics.spatialPressure.eventPressure ??= 0;
+  snapshot.metrics.spatialPressure.contestedZones ??= 0;
+  snapshot.metrics.spatialPressure.contestedTiles ??= 0;
+  snapshot.metrics.spatialPressure.activeEventCount ??= 0;
+  snapshot.metrics.spatialPressure.peakEventSeverity ??= 0;
+  snapshot.metrics.spatialPressure.summary ??= "Spatial pressure: idle";
+  snapshot.weather.hazardTiles ??= [];
+  snapshot.weather.hazardTileSet = new Set((snapshot.weather.hazardTiles ?? []).map((tile) => `${tile.ix},${tile.iz}`));
+  snapshot.weather.hazardPenaltyByKey ??= {};
+  snapshot.weather.hazardLabelByKey ??= {};
+  snapshot.weather.hazardFronts ??= [];
+  snapshot.weather.hazardFocusSummary ??= "";
+  snapshot.weather.pressureScore ??= 0;
   snapshot.debug.logic ??= {
     invalidTransitions: 0,
     goalFlipCount: 0,
