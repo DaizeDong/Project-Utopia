@@ -177,6 +177,11 @@ const RENDER_ORDER = Object.freeze({
   TILE_OVERLAY: 36,
   SELECTION_RING: 38,
 });
+const DEFAULT_CAMERA_VIEW = Object.freeze({
+  targetX: 0,
+  targetZ: 0,
+  zoom: 1.12,
+});
 
 export class SceneRenderer {
   constructor(canvas, state, buildSystem, onSelectEntity) {
@@ -264,6 +269,8 @@ export class SceneRenderer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.screenSpacePanning = true;
+    this.controls.mouseButtons.LEFT = -1;
+    this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
     this.controls.minZoom = this.state.controls.cameraMinZoom;
     this.controls.maxZoom = this.state.controls.cameraMaxZoom;
     this.controls.target.set(0, 0, 0);
@@ -1579,6 +1586,7 @@ export class SceneRenderer {
   }
 
   #onPointerDown(event) {
+    if (event.button !== 0) return;
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
@@ -1586,6 +1594,8 @@ export class SceneRenderer {
     const selected = this.#pickEntity(this.mouse);
     if (selected) {
       this.state.controls.selectedEntityId = selected.id;
+      this.state.controls.selectedTile = null;
+      if (this.state.debug) this.state.debug.selectedTile = null;
       this.state.controls.actionMessage = `Selected ${selected.displayName ?? selected.id}`;
       this.state.controls.actionKind = "info";
       this.onSelectEntity?.(selected.id);
@@ -1596,8 +1606,9 @@ export class SceneRenderer {
     if (!picked) return;
 
     const { tile } = picked;
+    this.state.controls.selectedEntityId = null;
     this.#updateSelectedTile(tile.ix, tile.iz);
-    const inspectOnly = event.button === 2 || event.altKey;
+    const inspectOnly = event.altKey;
     if (inspectOnly) {
       this.state.controls.actionMessage = `Selected tile (${tile.ix}, ${tile.iz})`;
       this.state.controls.actionKind = "info";
@@ -1701,6 +1712,44 @@ export class SceneRenderer {
       this.#rebuildTileIcons();
       this.lastEntityRenderSignature = "";
     }
+  }
+
+  getViewState() {
+    return {
+      targetX: Number(this.controls.target.x) || DEFAULT_CAMERA_VIEW.targetX,
+      targetZ: Number(this.controls.target.z) || DEFAULT_CAMERA_VIEW.targetZ,
+      zoom: Number(this.camera.zoom) || DEFAULT_CAMERA_VIEW.zoom,
+    };
+  }
+
+  applyViewState(view = null) {
+    const nextTargetX = Number(view?.targetX);
+    const nextTargetZ = Number(view?.targetZ);
+    const nextZoom = Number(view?.zoom);
+    const targetX = Number.isFinite(nextTargetX) ? nextTargetX : DEFAULT_CAMERA_VIEW.targetX;
+    const targetZ = Number.isFinite(nextTargetZ) ? nextTargetZ : DEFAULT_CAMERA_VIEW.targetZ;
+    const zoom = Number.isFinite(nextZoom) ? nextZoom : DEFAULT_CAMERA_VIEW.zoom;
+
+    this.controls.target.set(targetX, 0, targetZ);
+    this.camera.position.set(targetX, this.camera.position.y, targetZ);
+    this.camera.zoom = clamp(zoom, this.controls.minZoom, this.controls.maxZoom);
+    this.camera.updateProjectionMatrix();
+
+    // OrbitControls keeps a damped pan delta internally, so flushing a few
+    // updates here prevents the previous drag gesture from leaking into a
+    // regenerated world or restored snapshot.
+    for (let i = 0; i < 24; i += 1) {
+      this.controls.update();
+    }
+
+    this.controls.target.set(targetX, 0, targetZ);
+    this.camera.position.set(targetX, this.camera.position.y, targetZ);
+    this.camera.updateProjectionMatrix();
+    this.isCameraInteracting = false;
+  }
+
+  resetView() {
+    this.applyViewState(DEFAULT_CAMERA_VIEW);
   }
 
   render(dt) {

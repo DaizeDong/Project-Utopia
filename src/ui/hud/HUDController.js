@@ -1,4 +1,6 @@
-﻿export class HUDController {
+import { getEventInsight, getFrontierStatus, getWeatherInsight } from "../interpretation/WorldExplain.js";
+
+export class HUDController {
   constructor(state) {
     this.state = state;
     this.foodVal = document.getElementById("foodVal");
@@ -38,6 +40,8 @@
 
   render() {
     const { state } = this;
+    const frontier = getFrontierStatus(state);
+    const weather = getWeatherInsight(state);
 
     this.foodVal.textContent = Math.floor(state.resources.food);
     this.woodVal.textContent = Math.floor(state.resources.wood);
@@ -62,7 +66,7 @@
     this.farmersVal.textContent = String(stats.farmers);
     this.loggersVal.textContent = String(stats.loggers);
 
-    this.weatherVal.textContent = `${state.weather.current} (${Math.max(0, state.weather.timeLeftSec).toFixed(0)}s)`;
+    this.weatherVal.textContent = weather.summary;
     if (this.mapVal) {
       this.mapVal.textContent = `${state.world.mapTemplateName} (seed ${state.world.mapSeed})`;
     }
@@ -93,16 +97,18 @@
       const predation = Number(state.metrics.deathsByReason?.predation ?? 0);
       this.deathVal.textContent = `${deathsTotal} (starve ${starvation} / pred ${predation})`;
     }
-    this.eventVal.textContent = state.events.active.length > 0
-      ? state.events.active.map((e) => `${e.type}:${e.status}`).join(", ")
-      : "none";
+    this.eventVal.textContent = getEventInsight(state);
     this.timeVal.textContent = `${state.metrics.timeSec.toFixed(1)}s`;
     if (this.toolVal) this.toolVal.textContent = state.controls.tool;
     if (this.simVal) {
-      const mode = state.controls.isPaused ? "paused" : "running";
-      this.simVal.textContent = `${mode} | steps=${state.metrics.simStepsThisFrame}`;
+      const phase = state.session?.phase ?? "menu";
+      const mode = phase !== "active" ? "locked" : state.controls.isPaused ? "paused" : "running";
+      this.simVal.textContent = `phase=${phase} | ${mode} | steps=${state.metrics.simStepsThisFrame}`;
     }
-    if (this.actionVal) this.actionVal.textContent = state.controls.actionMessage || "Ready";
+    if (this.actionVal) {
+      this.actionVal.textContent = state.controls.actionMessage || state.gameplay.objectiveHint || frontier.summary;
+      this.actionVal.setAttribute("data-kind", state.controls.actionKind ?? "info");
+    }
     if (this.visualModeVal) {
       const icons = state.controls.showTileIcons ? "icons:on" : "icons:off";
       const sprites = state.controls.showUnitSprites ? "sprites:on" : "sprites:off";
@@ -118,12 +124,16 @@
       const policyErr = state.ai.lastPolicyError ? `policy=${state.ai.lastPolicyError}` : "";
       const errorText = [envErr, policyErr].filter(Boolean).join(" | ");
       this.warningVal.textContent = `AI: ${errorText}`;
+      this.warningVal.setAttribute("data-kind", "error");
     } else if (state.metrics.proxyHealth === "down") {
       this.warningVal.textContent = "AI proxy is unreachable; running fallback.";
+      this.warningVal.setAttribute("data-kind", "error");
     } else if (state.metrics.warnings.length > 0) {
       this.warningVal.textContent = state.metrics.warnings[state.metrics.warnings.length - 1];
+      this.warningVal.setAttribute("data-kind", "error");
     } else {
-      this.warningVal.textContent = "none";
+      this.warningVal.textContent = frontier.summary;
+      this.warningVal.setAttribute("data-kind", "info");
     }
   }
 }

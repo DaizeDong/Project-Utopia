@@ -30,6 +30,7 @@ import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
 import { DEFAULT_BENCHMARK_CONFIG, sanitizeBenchmarkConfig, sanitizeControlSettings } from "./controlSanitizers.js";
+import { resolveGlobalShortcut } from "./shortcutResolver.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
 
@@ -98,12 +99,10 @@ export class GameApp {
       onRestart: () => this.restartSession(),
       onReset: () => this.resetSessionWorld(),
     });
-    this.runState = {
-      phase: "menu",
-      outcome: "none",
-      reason: "",
-      endedAtSec: -1,
-    };
+    this.boundOnGlobalKeyDown = (event) => this.#onGlobalKeyDown(event);
+    if (typeof window !== "undefined") {
+      window.addEventListener("keydown", this.boundOnGlobalKeyDown);
+    }
 
     this.benchmark = {
       running: false,
@@ -152,7 +151,7 @@ export class GameApp {
     this.#queueAiHealthProbe("startup");
     this.#recomputePopulationBreakdown();
     this.#setRunPhase("menu", {
-      actionMessage: "Ready. Press Start Run to begin the alpha build loop.",
+      actionMessage: "Ready. Press Start Run, expand the starter network, and watch the colony reroute around your edits.",
       actionKind: "info",
     });
   }
@@ -213,7 +212,7 @@ export class GameApp {
   update(frameDt) {
     const frameStart = performance.now();
     const controls = this.state.controls;
-    const runLocked = this.runState.phase !== "active";
+    const runLocked = this.state.session.phase !== "active";
     const fixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
     const stepPlan = computeSimulationStepPlan({
       frameDt,
@@ -295,7 +294,7 @@ export class GameApp {
       }
       this.uiRefreshAccumulator = 0;
     }
-    this.#safeRenderPanel("GameStateOverlay", () => this.gameStateOverlay.render(this.runState));
+    this.#safeRenderPanel("GameStateOverlay", () => this.gameStateOverlay.render(this.state.session));
     this.state.metrics.uiCpuMs = performance.now() - uiStart;
     const renderStart = performance.now();
     this.#safeRenderPanel("SceneRenderer", () => this.renderer.render(dt));
@@ -431,7 +430,7 @@ export class GameApp {
 
   startBenchmark() {
     if (this.benchmark.running) return;
-    if (this.runState.phase !== "active") {
+    if (this.state.session.phase !== "active") {
       this.state.controls.actionMessage = "Start the run first, then launch benchmark.";
       this.state.controls.actionKind = "error";
       return;
@@ -566,7 +565,7 @@ export class GameApp {
   }
 
   togglePause() {
-    if (this.runState.phase !== "active") {
+    if (this.state.session.phase !== "active") {
       this.state.controls.actionMessage = "Pause/Resume is only available during active run.";
       this.state.controls.actionKind = "error";
       return;
@@ -582,7 +581,7 @@ export class GameApp {
   }
 
   stepFrames(frameCount) {
-    if (this.runState.phase !== "active") {
+    if (this.state.session.phase !== "active") {
       this.state.controls.actionMessage = "Frame stepping is only available during active run.";
       this.state.controls.actionKind = "error";
       return;
@@ -705,6 +704,7 @@ export class GameApp {
     this.benchmark.csv = "";
     this.state.metrics.benchmarkCsvReady = false;
     this.state.metrics.benchmarkStatus = "idle";
+    this.renderer?.resetView?.();
     this.#recomputePopulationBreakdown();
 
     this.state.controls.actionMessage = `Regenerated map: ${this.state.world.mapTemplateName} (seed ${this.state.world.mapSeed})`;
@@ -717,7 +717,7 @@ export class GameApp {
     });
 
     const targetPhase = options.phase
-      ?? (options.autoStart ? "active" : this.runState.phase === "active" ? "active" : "menu");
+      ?? (options.autoStart ? "active" : this.state.session.phase === "active" ? "active" : "menu");
     this.#setRunPhase(targetPhase);
   }
 
@@ -745,7 +745,12 @@ export class GameApp {
   }
 
   saveSnapshot(slotId = this.state.controls.saveSlotId ?? "default") {
-    const result = this.services.snapshotService.saveToStorage(slotId, this.state, this.services.rng.snapshot());
+    const result = this.services.snapshotService.saveToStorage(
+      slotId,
+      this.state,
+      this.services.rng.snapshot(),
+      { view: this.renderer?.getViewState?.() ?? null },
+    );
     this.state.controls.saveSlotId = slotId;
     this.state.controls.actionMessage = `Snapshot saved (${slotId}, ${result.bytes} bytes).`;
     this.state.controls.actionKind = "success";
@@ -767,7 +772,9 @@ export class GameApp {
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
     this.#recomputePopulationBreakdown();
-    this.state.controls.actionMessage = `Snapshot loaded (${slotId}).`;
+    this.#normalizeRestoredSessionState();
+    this.renderer?.applyViewState?.(restored.meta?.view ?? null);
+    this.state.controls.actionMessage = `Snapshot loaded (${slotId}, phase ${this.state.session.phase}).`;
     this.state.controls.actionKind = "success";
   }
 
@@ -999,9 +1006,81 @@ export class GameApp {
     return Boolean(element.closest("#ui, #devDock, #entityFocusOverlay, #gameStateOverlay"));
   }
 
+  #clearSelection(actionMessage = "Selection cleared.") {
+    this.state.controls.selectedEntityId = null;
+    this.state.controls.selectedTile = null;
+    if (this.state.debug) this.state.debug.selectedTile = null;
+    this.state.controls.actionMessage = actionMessage;
+    this.state.controls.actionKind = "info";
+  }
+
+  #normalizeRestoredSessionState() {
+    const session = this.state.session ?? {
+      phase: "menu",
+      outcome: "none",
+      reason: "",
+      endedAtSec: -1,
+    };
+    const phase = session.phase === "active" || session.phase === "end" ? session.phase : "menu";
+    const outcome = session.outcome === "win" || session.outcome === "loss" ? session.outcome : "none";
+    this.state.session = {
+      phase,
+      outcome: phase === "end" ? outcome : "none",
+      reason: phase === "end" ? String(session.reason ?? "") : "",
+      endedAtSec: phase === "end"
+        ? (Number.isFinite(Number(session.endedAtSec)) ? Number(session.endedAtSec) : Number(this.state.metrics.timeSec ?? 0))
+        : -1,
+    };
+
+    if (phase !== "active") {
+      this.state.controls.isPaused = true;
+      this.state.controls.stepFramesPending = 0;
+    }
+  }
+
+  #shouldIgnoreGlobalShortcut(event) {
+    if (this.#isUiTextInteractionActive()) return true;
+    const target = event?.target?.nodeType === 1 ? event.target : document.activeElement;
+    if (!target || typeof target.closest !== "function") return false;
+    const tag = String(target.tagName ?? "").toUpperCase();
+    if (!target.closest("#ui, #devDock, #entityFocusOverlay, #gameStateOverlay")) return false;
+    return tag === "BUTTON" || tag === "SUMMARY";
+  }
+
+  #onGlobalKeyDown(event) {
+    if (this.#shouldIgnoreGlobalShortcut(event)) return;
+    const action = resolveGlobalShortcut(event, { phase: this.state.session.phase });
+    if (!action) return;
+
+    event.preventDefault();
+
+    if (action.type === "selectTool") {
+      this.state.controls.tool = action.tool;
+      this.state.controls.actionMessage = `Selected tool: ${action.tool} (shortcut).`;
+      this.state.controls.actionKind = "info";
+      this.toolbar?.sync?.();
+      return;
+    }
+    if (action.type === "clearSelection") {
+      this.#clearSelection();
+      return;
+    }
+    if (action.type === "togglePause") {
+      this.togglePause();
+      return;
+    }
+    if (action.type === "undo") {
+      this.undoLastBuild();
+      return;
+    }
+    if (action.type === "redo") {
+      this.redoLastBuild();
+    }
+  }
+
   startSession() {
     this.#setRunPhase("active", {
-      actionMessage: "Simulation started. Complete all objectives to win.",
+      actionMessage: "Simulation started. Build the starter network first, then push stockpile and stability.",
       actionKind: "success",
     });
   }
@@ -1027,10 +1106,10 @@ export class GameApp {
 
   #setRunPhase(phase, options = {}) {
     const next = phase === "active" ? "active" : phase === "end" ? "end" : "menu";
-    this.runState.phase = next;
-    this.runState.outcome = options.outcome ?? (next === "end" ? this.runState.outcome : "none");
-    this.runState.reason = options.reason ?? (next === "end" ? this.runState.reason : "");
-    this.runState.endedAtSec = next === "end" ? this.state.metrics.timeSec : -1;
+    this.state.session.phase = next;
+    this.state.session.outcome = options.outcome ?? (next === "end" ? this.state.session.outcome : "none");
+    this.state.session.reason = options.reason ?? (next === "end" ? this.state.session.reason : "");
+    this.state.session.endedAtSec = next === "end" ? this.state.metrics.timeSec : -1;
 
     this.state.controls.stepFramesPending = 0;
     this.state.controls.isPaused = next !== "active";
@@ -1045,7 +1124,7 @@ export class GameApp {
   }
 
   #evaluateRunOutcome() {
-    if (this.runState.phase !== "active") return;
+    if (this.state.session.phase !== "active") return;
     const allDone = this.state.gameplay.objectiveIndex >= this.state.gameplay.objectives.length;
     if (allDone) {
       this.#setRunPhase("end", {
@@ -1143,6 +1222,9 @@ export class GameApp {
 
   dispose() {
     this.stop();
+    if (typeof window !== "undefined" && this.boundOnGlobalKeyDown) {
+      window.removeEventListener("keydown", this.boundOnGlobalKeyDown);
+    }
     this.renderer?.dispose?.();
   }
 }
