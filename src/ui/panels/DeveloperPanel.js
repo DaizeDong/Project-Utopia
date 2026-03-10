@@ -322,7 +322,9 @@ export class DeveloperPanel {
       lines.push("Active Events:");
       for (const event of events.slice(0, 8)) {
         const remain = Math.max(0, event.durationSec - event.elapsedSec);
-        lines.push(`- ${event.type}/${event.status} intensity=${this.#fmtNum(event.intensity, 2)} remain=${this.#fmtNum(remain, 1)}s`);
+        lines.push(
+          `- ${event.type}/${event.status} intensity=${this.#fmtNum(event.intensity, 2)} p=${this.#fmtNum(event.payload?.pressure, 2)} severity=${event.payload?.severity ?? "-"} target=${event.payload?.targetLabel ?? "-"} contested=${Number(event.payload?.contestedTiles ?? 0)} remain=${this.#fmtNum(remain, 1)}s`,
+        );
       }
       lines.push("");
     }

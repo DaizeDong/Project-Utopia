@@ -1,9 +1,13 @@
 import { WEATHER, TILE } from "../../config/constants.js";
 import { WEATHER_MODIFIERS } from "../../config/balance.js";
-import { resolveScenarioFocusTiles } from "../scenarios/ScenarioFactory.js";
+import { getScenarioFocusZones, resolveScenarioFocusTiles } from "../scenarios/ScenarioFactory.js";
 
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
+}
+
+function roundMetric(value, digits = 3) {
+  return Number(Number(value ?? 0).toFixed(digits));
 }
 
 function expandHazardTiles(state, seeds = [], radius = 1) {
@@ -46,6 +50,77 @@ function buildWeatherHazardTiles(state, weatherName) {
   return expandHazardTiles(state, farmTiles.slice(0, 6), 1);
 }
 
+function basePenaltyForWeather(weatherName) {
+  if (weatherName === WEATHER.RAIN) return 1.22;
+  if (weatherName === WEATHER.STORM) return 1.52;
+  if (weatherName === WEATHER.WINTER) return 1.38;
+  if (weatherName === WEATHER.DROUGHT) return 1.18;
+  return 1;
+}
+
+function zonePenaltyForKind(kind) {
+  if (kind === "choke") return 0.28;
+  if (kind === "route") return 0.2;
+  if (kind === "depot") return 0.16;
+  if (kind === "wildlife") return 0.1;
+  if (kind === "farms") return 0.18;
+  return 0.08;
+}
+
+function buildWeatherFronts(state, weatherName) {
+  const refs = state.gameplay?.scenario?.weatherFocus?.[weatherName] ?? [];
+  const zones = refs.length > 0
+    ? getScenarioFocusZones(state, refs)
+    : weatherName === WEATHER.DROUGHT
+      ? [{ ref: { kind: "farms", id: "farm-belt", limit: 6 }, kind: "farms", label: "farm belt", tiles: buildWeatherHazardTiles(state, weatherName) }]
+      : [];
+  const fronts = [];
+  const penaltyByKey = {};
+  const labelsByKey = {};
+  const basePenalty = basePenaltyForWeather(weatherName);
+
+  for (const zone of zones) {
+    let peakPenalty = 1;
+    let contestedTiles = 0;
+    for (const tile of zone.tiles) {
+      const key = tileKey(tile.ix, tile.iz);
+      const nextPenalty = roundMetric(basePenalty + zonePenaltyForKind(zone.kind));
+      if (penaltyByKey[key]) {
+        contestedTiles += 1;
+        penaltyByKey[key] = roundMetric(Math.max(penaltyByKey[key], nextPenalty) + 0.12, 3);
+      } else {
+        penaltyByKey[key] = nextPenalty;
+      }
+      peakPenalty = Math.max(peakPenalty, penaltyByKey[key]);
+      labelsByKey[key] ??= [];
+      if (!labelsByKey[key].includes(zone.label)) labelsByKey[key].push(zone.label);
+    }
+    fronts.push({
+      label: zone.label,
+      kind: zone.kind,
+      tileCount: zone.tiles.length,
+      contestedTiles,
+      peakPenalty: roundMetric(peakPenalty, 2),
+    });
+  }
+
+  const entries = Object.entries(penaltyByKey);
+  const pressureScore = entries.length <= 0
+    ? 0
+    : roundMetric(entries.reduce((sum, [, penalty]) => sum + Math.max(0, Number(penalty) - 1), 0) / entries.length, 2);
+  return {
+    hazardTiles: entries.map(([key]) => {
+      const [ix, iz] = key.split(",").map(Number);
+      return { ix, iz };
+    }),
+    hazardPenaltyByKey: Object.fromEntries(entries.map(([key, penalty]) => [key, roundMetric(penalty, 3)])),
+    hazardLabelByKey: labelsByKey,
+    hazardFronts: fronts,
+    hazardFocusSummary: fronts.length > 0 ? fronts.map((front) => front.label).join(", ") : "",
+    pressureScore,
+  };
+}
+
 function hazardPenaltyForWeather(weatherName) {
   if (weatherName === WEATHER.RAIN) return 1.35;
   if (weatherName === WEATHER.STORM) return 1.85;
@@ -55,20 +130,35 @@ function hazardPenaltyForWeather(weatherName) {
 }
 
 function applyWeatherHazards(state, weatherName) {
-  const nextTiles = buildWeatherHazardTiles(state, weatherName);
+  const nextWeather = buildWeatherFronts(state, weatherName);
+  const nextTiles = nextWeather.hazardTiles;
   const nextKeys = nextTiles.map((tile) => tileKey(tile.ix, tile.iz)).sort();
   const prevKeys = Array.isArray(state.weather.hazardTiles)
     ? state.weather.hazardTiles.map((tile) => tileKey(tile.ix, tile.iz)).sort()
     : [];
   const nextPenalty = hazardPenaltyForWeather(weatherName);
   const prevPenalty = Number(state.weather.hazardPenaltyMultiplier ?? 1);
+  const prevPenaltyByKey = JSON.stringify(state.weather.hazardPenaltyByKey ?? {});
+  const nextPenaltyByKey = JSON.stringify(nextWeather.hazardPenaltyByKey ?? {});
+  const prevFronts = JSON.stringify(state.weather.hazardFronts ?? []);
+  const nextFronts = JSON.stringify(nextWeather.hazardFronts ?? []);
 
   state.weather.hazardTiles = nextTiles;
   state.weather.hazardTileSet = new Set(nextKeys);
   state.weather.hazardPenaltyMultiplier = nextPenalty;
   state.weather.hazardLabel = nextTiles.length > 0 ? `${weatherName}-front` : "clear";
+  state.weather.hazardPenaltyByKey = nextWeather.hazardPenaltyByKey;
+  state.weather.hazardLabelByKey = nextWeather.hazardLabelByKey;
+  state.weather.hazardFronts = nextWeather.hazardFronts;
+  state.weather.hazardFocusSummary = nextWeather.hazardFocusSummary;
+  state.weather.pressureScore = nextWeather.pressureScore;
 
-  if (nextKeys.join("|") !== prevKeys.join("|") || nextPenalty !== prevPenalty) {
+  if (
+    nextKeys.join("|") !== prevKeys.join("|")
+    || nextPenalty !== prevPenalty
+    || prevPenaltyByKey !== nextPenaltyByKey
+    || prevFronts !== nextFronts
+  ) {
     state.grid.version = Number(state.grid.version ?? 0) + 1;
   }
 }

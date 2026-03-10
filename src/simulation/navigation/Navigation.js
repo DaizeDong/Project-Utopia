@@ -50,6 +50,7 @@ function getWeatherHazardData(state) {
   return {
     tiles: state.weather?.hazardTileSet ?? null,
     penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
+    penaltyByKey: state.weather?.hazardPenaltyByKey ?? null,
   };
 }
 
