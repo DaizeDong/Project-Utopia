@@ -19,6 +19,10 @@ function manhattanTiles(a, b) {
   return Math.abs(Number(a?.ix ?? 0) - Number(b?.ix ?? 0)) + Math.abs(Number(a?.iz ?? 0) - Number(b?.iz ?? 0));
 }
 
+function resolveTargetPriority(policy, key, fallback = 1) {
+  return Math.max(0, Math.min(3, Number(policy?.targetPriorities?.[key] ?? fallback)));
+}
+
 function isAtTargetTile(visitor, state) {
   if (!visitor.targetTile) return false;
   const tile = worldToTile(visitor.x, visitor.z, state.grid);
@@ -43,6 +47,17 @@ function findScenarioZoneLabel(candidates, tile) {
     if (candidate.tiles.some((entry) => entry.ix === tile.ix && entry.iz === tile.iz)) {
       return candidate.label;
     }
+  }
+  return "";
+}
+
+function findScenarioAnchorLabel(state, zones = [], tile) {
+  const anchors = state.gameplay?.scenario?.anchors ?? {};
+  for (const zone of zones) {
+    const anchor = anchors[zone.anchor];
+    if (!anchor) continue;
+    const radius = Math.max(1, Number(zone.radius ?? 2));
+    if (manhattanTiles(anchor, tile) <= radius) return zone.label;
   }
   return "";
 }
@@ -72,7 +87,7 @@ function getTradeTargetContext(state, tile, runtime = getScenarioRuntime(state),
   };
 }
 
-function pickTraderTarget(visitor, state) {
+function pickTraderTarget(visitor, state, policy) {
   const candidates = listTilesByType(state.grid, [TILE.WAREHOUSE]);
   if (candidates.length === 0) return null;
 
@@ -83,7 +98,13 @@ function pickTraderTarget(visitor, state) {
 
   for (const candidate of candidates) {
     const context = getTradeTargetContext(state, candidate, runtime, tradeCandidates);
-    const score = context.tradeBonus - manhattanTiles(origin, candidate) * BALANCE.visitorTradeDistancePenalty;
+    const score = context.tradeBonus
+      + resolveTargetPriority(policy, "warehouse", 1) * 0.52
+      + resolveTargetPriority(policy, "road", 1) * context.roadNeighbors * 0.09
+      + resolveTargetPriority(policy, "safety", 1) * context.wallCoverage * 0.11
+      + resolveTargetPriority(policy, "depot", 1) * (context.zoneLabel ? 0.34 : 0)
+      + resolveTargetPriority(policy, "frontier", 1) * (context.routeSupport < 1 ? 0.22 : 0.05)
+      - manhattanTiles(origin, candidate) * BALANCE.visitorTradeDistancePenalty;
     if (!best || score > best.score) {
       best = { tile: candidate, context, score };
     }
@@ -95,22 +116,24 @@ function pickTraderTarget(visitor, state) {
 function getSabotageTargetContext(state, tile, raidCandidates = getScenarioEventCandidates(state, EVENT_TYPE.BANDIT_RAID), tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN)) {
   const frontierLabel = findScenarioZoneLabel(raidCandidates, tile);
   const depotLabel = findScenarioZoneLabel(tradeCandidates, tile);
+  const chokeLabel = findScenarioAnchorLabel(state, state.gameplay?.scenario?.chokePoints ?? [], tile);
   const wallCoverage = countNearbyTiles(state, tile, [TILE.WALL], 1);
   const roadNeighbors = countNearbyTiles(state, tile, [TILE.ROAD, TILE.WAREHOUSE], 1);
   const tileType = getTile(state.grid, tile.ix, tile.iz);
-  const label = depotLabel || frontierLabel || (tileType === TILE.WAREHOUSE ? "warehouse" : tileType === TILE.FARM ? "farm belt" : "lumber line");
+  const label = chokeLabel || depotLabel || frontierLabel || (tileType === TILE.WAREHOUSE ? "warehouse" : tileType === TILE.FARM ? "farm belt" : "lumber line");
 
   return {
     label,
     frontierLabel,
     depotLabel,
+    chokeLabel,
     wallCoverage,
     roadNeighbors,
     tileType,
   };
 }
 
-function pickSabotageTarget(visitor, state) {
+function pickSabotageTarget(visitor, state, policy) {
   const candidates = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE]);
   if (candidates.length === 0) return null;
 
@@ -126,7 +149,24 @@ function pickSabotageTarget(visitor, state) {
     const zoneBonus = (context.frontierLabel ? BALANCE.sabotageFrontierZoneBonus : 0) + (context.depotLabel ? BALANCE.sabotageDepotZoneBonus : 0);
     const roadBonus = Math.min(0.24, context.roadNeighbors * BALANCE.sabotageRoadNeighborBonus);
     const distancePenalty = manhattanTiles(origin, candidate) * 0.03;
-    const score = 1 + typeBonus + zoneBonus + roadBonus - wallPenalty - distancePenalty;
+    const candidatePriority = context.tileType === TILE.WAREHOUSE
+      ? resolveTargetPriority(policy, "warehouse", 1)
+      : context.tileType === TILE.FARM
+        ? resolveTargetPriority(policy, "farm", 1)
+        : resolveTargetPriority(policy, "lumber", 1);
+    const policyTypeBonus = context.tileType === TILE.WAREHOUSE
+      ? candidatePriority * 0.34
+      : context.tileType === TILE.FARM
+        ? candidatePriority * 0.36
+        : candidatePriority * 0.32;
+    const score = 1 + typeBonus + zoneBonus + roadBonus + policyTypeBonus
+      + (candidatePriority - 1) * 0.28
+      + resolveTargetPriority(policy, "frontier", 1) * (context.frontierLabel ? 0.24 : 0)
+      + resolveTargetPriority(policy, "choke", 1) * (context.chokeLabel ? 0.22 : 0)
+      + resolveTargetPriority(policy, "road", 1) * context.roadNeighbors * 0.07
+      + resolveTargetPriority(policy, "exit", 1) * (context.wallCoverage <= 0 ? 0.1 : 0)
+      - wallPenalty
+      - distancePenalty;
     if (!best || score > best.score) {
       best = { tile: candidate, context, score };
     }
@@ -312,7 +352,7 @@ function traderTick(visitor, state, dt, services) {
   if (!Number.isFinite(bb.nextTradeRetargetSec)) bb.nextTradeRetargetSec = -Infinity;
 
   if ((shouldTraderRetarget(visitor, state) || nowSec >= bb.nextTradeRetargetSec) && canAttemptPath(visitor, state)) {
-    const nextTarget = pickTraderTarget(visitor, state);
+    const nextTarget = pickTraderTarget(visitor, state, policy);
     if (nextTarget && setTargetAndPath(visitor, nextTarget.tile, state, services)) {
       bb.nextTradeRetargetSec = nowSec + retargetWindowSec;
       bb.tradeRetargetMisses = 0;
@@ -378,7 +418,7 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
     const base = BALANCE.sabotageCooldownMinSec + services.rng.next() * (BALANCE.sabotageCooldownMaxSec - BALANCE.sabotageCooldownMinSec);
     visitor.sabotageCooldown = base / chanceScale;
 
-    const nextTarget = pickSabotageTarget(visitor, state);
+    const nextTarget = pickSabotageTarget(visitor, state, policy);
     if (nextTarget && canAttemptPath(visitor, state) && setTargetAndPath(visitor, nextTarget.tile, state, services)) {
       bb.sabotageTargetLabel = nextTarget.context.label;
       bb.sabotageTargetDefense = nextTarget.context.wallCoverage;
