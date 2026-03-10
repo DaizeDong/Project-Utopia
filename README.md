@@ -58,6 +58,14 @@ Optional local screenshot evidence can be captured under:
 
 These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
 
+`release-manifest.json` now records:
+
+- the final HW04 report path and stage coverage
+- the built `dist` asset inventory
+- the stored HW03 proof files
+- the generated local metrics and optional screenshot evidence
+- the current non-ignored git worktree status at release-check time
+
 ## Optional Live-AI Proof Refresh
 
 If `OPENAI_API_KEY` is configured and you want to refresh the stored live-AI evidence instead of relying on the existing HW03 proof files, run:
