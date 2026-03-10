@@ -58,6 +58,7 @@ Optional local screenshot evidence can be captured under:
 
 These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
 That includes `output/playwright/`, which is treated as a local evidence/debug directory rather than a tracked source folder.
+The repo also ignores common local-only files such as `.env` and `.idea/` so release status stays focused on source changes.
 
 `release-manifest.json` now records:
 
