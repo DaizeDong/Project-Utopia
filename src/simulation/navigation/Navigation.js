@@ -53,6 +53,42 @@ function getWeatherHazardData(state) {
   };
 }
 
+function getTrafficCostData(state) {
+  return {
+    version: Number(state.metrics?.traffic?.version ?? 0),
+    penaltyByKey: state.metrics?.traffic?.penaltyByKey ?? null,
+    hotspotCount: Number(state.metrics?.traffic?.hotspotCount ?? 0),
+    peakLoad: Number(state.metrics?.traffic?.peakLoad ?? 0),
+  };
+}
+
+function getDynamicPathCosts(state) {
+  return {
+    hazards: getWeatherHazardData(state),
+    traffic: {
+      penaltyByKey: getTrafficCostData(state).penaltyByKey,
+    },
+  };
+}
+
+function getPathTrafficVersion(entity) {
+  const version = Number(entity?.pathTrafficVersion);
+  return Number.isFinite(version) ? version : 0;
+}
+
+function getDynamicPathVersion(state) {
+  return Number(getTrafficCostData(state).version ?? 0);
+}
+
+export function hasActivePath(entity, state) {
+  return Boolean(
+    entity?.path &&
+      entity.pathIndex < entity.path.length &&
+      entity.pathGridVersion === state.grid.version &&
+      getPathTrafficVersion(entity) === getDynamicPathVersion(state),
+  );
+}
+
 export function canAttemptPath(entity, state) {
   const nowSec = Number(state.metrics?.timeSec ?? 0);
   const retryState = getPathRetryState(entity);
@@ -79,11 +115,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.targetTile.iz === targetTile.iz
   );
   if (sameTarget) {
-    const hasValidPath = Boolean(
-      entity.path &&
-        entity.pathIndex < entity.path.length &&
-        entity.pathGridVersion === state.grid.version
-    );
+    const hasValidPath = hasActivePath(entity, state);
     if (hasValidPath) {
       return true;
     }
@@ -91,6 +123,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       entity.path = null;
       entity.pathIndex = 0;
       entity.pathGridVersion = state.grid.version;
+      entity.pathTrafficVersion = getDynamicPathVersion(state);
       entity.targetTile = targetTile;
       if (retryState) retryState.nextPathRetrySec = -Infinity;
       return true;
@@ -99,6 +132,8 @@ export function setTargetAndPath(entity, targetTile, state, services) {
 
   const astarStats = state.debug?.astar;
   const pathBudget = getPathBudget(services, state);
+  const trafficData = getTrafficCostData(state);
+  const pathCostVersion = getDynamicPathVersion(state);
   if (astarStats) {
     astarStats.requests += 1;
     astarStats.lastFrom = worldToTile(entity.x, entity.z, state.grid);
@@ -106,10 +141,13 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     astarStats.budgetUsedMs = pathBudget.usedMs;
     astarStats.budgetMaxMs = pathBudget.maxMs;
     astarStats.budgetSkips = Number(astarStats.budgetSkips ?? 0);
+    astarStats.trafficVersion = pathCostVersion;
+    astarStats.lastTrafficHotspots = trafficData.hotspotCount;
+    astarStats.lastTrafficPeakLoad = trafficData.peakLoad;
   }
 
   const start = worldToTile(entity.x, entity.z, state.grid);
-  const cachedPath = services.pathCache.get(state.grid.version, start, targetTile);
+  const cachedPath = services.pathCache.get(state.grid.version, start, targetTile, pathCostVersion);
 
   let path = cachedPath;
   let durationMs = 0;
@@ -129,7 +167,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       start,
       targetTile,
       state.weather.moveCostMultiplier,
-      getWeatherHazardData(state),
+      getDynamicPathCosts(state),
     );
     durationMs = nowMs() - t0;
     pathBudget.usedMs += durationMs;
@@ -150,6 +188,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     entity.path = null;
     entity.pathIndex = 0;
     entity.pathGridVersion = -1;
+    entity.pathTrafficVersion = 0;
     entity.targetTile = null;
     if (astarStats) astarStats.fail += 1;
     if (retryState) {
@@ -160,12 +199,13 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   }
 
   if (!cachedPath) {
-    services.pathCache.set(state.grid.version, start, targetTile, path);
+    services.pathCache.set(state.grid.version, start, targetTile, pathCostVersion, path);
   }
 
   entity.path = path;
   entity.pathIndex = 0;
   entity.pathGridVersion = state.grid.version;
+  entity.pathTrafficVersion = pathCostVersion;
   entity.targetTile = targetTile;
   if (astarStats) {
     astarStats.success += 1;
@@ -279,5 +319,6 @@ export function clearPath(entity) {
   entity.path = null;
   entity.pathIndex = 0;
   entity.pathGridVersion = -1;
+  entity.pathTrafficVersion = 0;
   entity.targetTile = null;
 }

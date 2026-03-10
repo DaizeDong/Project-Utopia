@@ -1,6 +1,15 @@
 import { BALANCE } from "../../config/balance.js";
 import { clamp } from "../../app/math.js";
+import { inBounds, worldToTile } from "../../world/grid/Grid.js";
 import { buildSpatialHash, queryNeighbors } from "./SpatialHash.js";
+
+const TRAFFIC_NEIGHBOR_OFFSETS = Object.freeze([
+  { dx: 0, dz: 0 },
+  { dx: 1, dz: 0 },
+  { dx: -1, dz: 0 },
+  { dx: 0, dz: 1 },
+  { dx: 0, dz: -1 },
+]);
 
 function sameFlockGroup(a, b) {
   if (a.type !== b.type) return false;
@@ -81,6 +90,114 @@ function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
     desiredZ * Number(weights.seek ?? BALANCE.boidsWeights.seek);
 }
 
+function tileKey(ix, iz) {
+  return `${ix},${iz}`;
+}
+
+function getTrafficWeight(entity) {
+  const weights = BALANCE.trafficCrowdWeights ?? {};
+  if (entity.type === "WORKER") return Math.max(0, Number(weights.worker ?? 1));
+  if (entity.type === "VISITOR") return Math.max(0, Number(weights.visitor ?? 0.92));
+  if (entity.kind === "PREDATOR") return Math.max(0, Number(weights.predator ?? 0.72));
+  return Math.max(0, Number(weights.herbivore ?? 0.58));
+}
+
+function setPeakPenalty(penaltyByKey, key, penalty) {
+  if (!key || penalty <= 1) return;
+  const next = Math.max(Number(penaltyByKey[key] ?? 1), penalty);
+  penaltyByKey[key] = Number(next.toFixed(2));
+}
+
+function buildTrafficMetrics(entities, state, previousTraffic, previousSignature = "") {
+  const loadByKeyRaw = {};
+  let totalLoad = 0;
+  for (const entity of entities) {
+    if (entity.alive === false) continue;
+    const tile = worldToTile(entity.x, entity.z, state.grid);
+    if (!inBounds(tile.ix, tile.iz, state.grid)) continue;
+    const weight = getTrafficWeight(entity);
+    if (weight <= 0) continue;
+    const key = tileKey(tile.ix, tile.iz);
+    loadByKeyRaw[key] = Number(loadByKeyRaw[key] ?? 0) + weight;
+    totalLoad += weight;
+  }
+
+  const softLoad = Math.max(1, Number(BALANCE.trafficSoftTileLoad ?? 2.15));
+  const hotspotLoad = Math.max(softLoad + 0.1, Number(BALANCE.trafficHotspotTileLoad ?? 3.2));
+  const penaltyPerLoad = Math.max(0.05, Number(BALANCE.trafficPenaltyPerLoad ?? 0.28));
+  const neighborRatio = clamp(Number(BALANCE.trafficNeighborPenaltyRatio ?? 0.46), 0, 1);
+  const maxPenalty = Math.max(1.05, Number(BALANCE.trafficMaxPenaltyMultiplier ?? 2.2));
+  const loadByKey = {};
+  const pressureTiles = Object.entries(loadByKeyRaw)
+    .map(([key, rawLoad]) => {
+      const [ix, iz] = key.split(",").map(Number);
+      const load = Number(rawLoad.toFixed(2));
+      loadByKey[key] = load;
+      const overflow = Math.max(0, load - softLoad);
+      const penalty = overflow > 0
+        ? Math.min(maxPenalty, 1 + overflow * penaltyPerLoad)
+        : 1;
+      return { key, ix, iz, load, penalty: Number(penalty.toFixed(2)) };
+    })
+    .filter((entry) => entry.penalty > 1)
+    .sort((a, b) => b.load - a.load || b.penalty - a.penalty);
+
+  const hotspotTiles = pressureTiles.filter((entry) => entry.load >= hotspotLoad);
+  const penaltyByKey = {};
+  for (const tile of pressureTiles) {
+    setPeakPenalty(penaltyByKey, tile.key, tile.penalty);
+    const spillPenalty = 1 + (tile.penalty - 1) * neighborRatio;
+    for (const offset of TRAFFIC_NEIGHBOR_OFFSETS) {
+      const nx = tile.ix + offset.dx;
+      const nz = tile.iz + offset.dz;
+      if (!inBounds(nx, nz, state.grid)) continue;
+      setPeakPenalty(penaltyByKey, tileKey(nx, nz), Math.min(maxPenalty, spillPenalty));
+    }
+  }
+
+  const penaltyValues = Object.values(penaltyByKey).map((value) => Number(value));
+  const peakLoad = Number(pressureTiles[0]?.load ?? 0);
+  const peakPenalty = penaltyValues.length > 0
+    ? Number(Math.max(...penaltyValues).toFixed(2))
+    : 1;
+  const occupiedTileCount = Math.max(0, Object.keys(loadByKey).length);
+  const avgLoad = occupiedTileCount > 0
+    ? Number((totalLoad / occupiedTileCount).toFixed(2))
+    : 0;
+  const signature = hotspotTiles
+    .slice(0, 6)
+    .map((tile) => tile.key)
+    .join("|");
+  const prevVersion = Number(previousTraffic?.version ?? 0);
+  const version = signature === previousSignature ? prevVersion : prevVersion + 1;
+
+  let summary = "Traffic: lanes clear.";
+  if (pressureTiles.length > 0 && hotspotTiles.length === 0) {
+    summary = `Traffic: ${pressureTiles.length} pressured lanes, avg load ${avgLoad.toFixed(1)}, peak load ${peakLoad.toFixed(1)}, peak path cost x${peakPenalty.toFixed(2)}.`;
+  } else if (hotspotTiles.length > 0) {
+    summary = `Traffic: ${hotspotTiles.length} hotspots, avg load ${avgLoad.toFixed(1)}, peak load ${peakLoad.toFixed(1)}, peak path cost x${peakPenalty.toFixed(2)}.`;
+  }
+
+  return {
+    version,
+    activeLaneCount: pressureTiles.length,
+    hotspotCount: hotspotTiles.length,
+    peakLoad,
+    avgLoad,
+    peakPenalty,
+    loadByKey,
+    penaltyByKey,
+    hotspotTiles: (hotspotTiles.length > 0 ? hotspotTiles : pressureTiles).slice(0, 6).map((tile) => ({
+      ix: tile.ix,
+      iz: tile.iz,
+      load: tile.load,
+      penalty: tile.penalty,
+    })),
+    summary,
+    signature,
+  };
+}
+
 export class BoidsSystem {
   constructor() {
     this.name = "BoidsSystem";
@@ -91,6 +208,8 @@ export class BoidsSystem {
     this.highLoadEntityThreshold = 320;
     this.highLoadStepSec = 1 / 15;
     this.highLoadAccumulator = 0;
+    this.nextTrafficSampleSec = -Infinity;
+    this.lastTrafficSignature = "";
   }
 
   #collectEntities(state) {
@@ -162,14 +281,39 @@ export class BoidsSystem {
       e.z = clamp(e.z, -boundsZ, boundsZ);
     }
 
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    if (!state.metrics?.traffic || nowSec >= this.nextTrafficSampleSec) {
+      const traffic = buildTrafficMetrics(entities, state, state.metrics?.traffic, this.lastTrafficSignature);
+      this.lastTrafficSignature = traffic.signature;
+      state.metrics.traffic = {
+        version: traffic.version,
+        activeLaneCount: traffic.activeLaneCount,
+        hotspotCount: traffic.hotspotCount,
+        peakLoad: traffic.peakLoad,
+        avgLoad: traffic.avgLoad,
+        peakPenalty: traffic.peakPenalty,
+        loadByKey: traffic.loadByKey,
+        penaltyByKey: traffic.penaltyByKey,
+        hotspotTiles: traffic.hotspotTiles,
+        summary: traffic.summary,
+      };
+      state.debug.traffic = state.metrics.traffic;
+      this.nextTrafficSampleSec = nowSec + Math.max(0.2, Number(BALANCE.trafficSampleIntervalSec ?? 0.45));
+    }
+
     if (state.debug) {
       const n = Math.max(1, entities.length);
+      const traffic = state.metrics?.traffic ?? {};
       state.debug.boids = {
         entities: entities.length,
         avgNeighbors: totalNeighbors / n,
         avgSpeed: totalSpeed / n,
         maxSpeed,
         updateIntervalSec,
+        congestionHotspots: Number(traffic.hotspotCount ?? 0),
+        peakTileLoad: Number(traffic.peakLoad ?? 0),
+        peakPenalty: Number(traffic.peakPenalty ?? 1),
+        trafficVersion: Number(traffic.version ?? 0),
       };
     }
   }
