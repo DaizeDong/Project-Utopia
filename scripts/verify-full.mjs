@@ -15,15 +15,17 @@ function run(label, args) {
 }
 
 async function main() {
-  console.log("[1/5] unit tests");
+  console.log("[1/6] unit tests");
   await run("test", ["test"]);
-  console.log("[2/5] ui tests");
+  console.log("[2/6] ui tests");
   await run("test:ui", ["run", "test:ui"]);
-  console.log("[3/5] build");
+  console.log("[3/6] build");
   await run("build", ["run", "build"]);
-  console.log("[4/5] performance baseline");
+  console.log("[4/6] performance baseline");
   await run("bench:perf", ["run", "bench:perf"]);
-  console.log("[5/5] a3 verification");
+  console.log("[5/6] soak simulation");
+  await run("soak:sim", ["run", "soak:sim"]);
+  console.log("[6/6] a3 verification");
   await run("verify:a3", ["run", "verify:a3"]);
   console.log("Full verification completed.");
 }
