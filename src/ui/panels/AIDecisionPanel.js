@@ -1,3 +1,5 @@
+import { getAiInsight, getCausalDigest } from "../interpretation/WorldExplain.js";
+
 const GROUP_ORDER = Object.freeze(["workers", "traders", "saboteurs", "herbivores", "predators"]);
 
 function fmtNum(value, digits = 2) {
@@ -105,6 +107,25 @@ export class AIDecisionPanel {
     }
   }
 
+  #renderCausalChain() {
+    const digest = getCausalDigest(this.state);
+    const aiInsight = getAiInsight(this.state);
+    const evidence = Array.isArray(digest.evidence) && digest.evidence.length > 0
+      ? digest.evidence.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+      : "<li>Evidence unavailable.</li>";
+
+    return `
+      <details data-ai-decision-key="causal:root" style="margin-bottom:10px;" open>
+        <summary class="small"><b>Live Causal Chain</b> | ${escapeHtml(digest.headline)}</summary>
+        <div class="small" style="margin-top:6px;"><b>Severity:</b> ${escapeHtml(digest.severity)} | <b>Headline:</b> ${escapeHtml(digest.headline)}</div>
+        <div class="small"><b>Next move:</b> ${escapeHtml(digest.action)}</div>
+        <div class="small"><b>Warning focus:</b> ${escapeHtml(digest.warning)}</div>
+        <div class="small"><b>AI summary:</b> ${escapeHtml(aiInsight.summary)}</div>
+        <ul class="small" style="margin:6px 0 0 18px; padding:0;">${evidence}</ul>
+      </details>
+    `;
+  }
+
   #renderEnvironmentBlock() {
     const ai = this.state.ai;
     const directive = ai.lastEnvironmentDirective;
@@ -199,6 +220,7 @@ export class AIDecisionPanel {
     this.#captureOpenStates();
     this.rootScrollTop = Number(this.root.scrollTop ?? 0);
     const html = `
+      ${this.#renderCausalChain()}
       <div>
         <div class="small" style="font-weight:700;">World Directive (Parsed)</div>
         <div style="margin-top:6px;">${this.#renderEnvironmentBlock()}</div>

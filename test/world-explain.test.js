@@ -6,7 +6,7 @@ import { EVENT_TYPE, TILE, WEATHER } from "../src/config/constants.js";
 import { enqueueEvent } from "../src/world/events/WorldEventQueue.js";
 import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
 import { setWeather } from "../src/world/weather/WeatherSystem.js";
-import { getEntityInsight, getEventInsight, getFrontierStatus, getTileInsight, getTrafficInsight, getWeatherInsight } from "../src/ui/interpretation/WorldExplain.js";
+import { getAiInsight, getCausalDigest, getEntityInsight, getEventInsight, getFrontierStatus, getTileInsight, getTrafficInsight, getWeatherInsight } from "../src/ui/interpretation/WorldExplain.js";
 
 test("world explain summarizes broken frontier opening state", () => {
   const state = createInitialGameState({ seed: 1337 });
@@ -167,4 +167,47 @@ test("world explain surfaces ecology pressure on tiles and animals", () => {
   assert.ok(tileInsights.some((line) => /stripping this farm lane/i.test(line)));
   assert.ok(tileInsights.some((line) => /2 herbivores and 1 predators/i.test(line)));
   assert.ok(predatorInsights.some((line) => /patrolling/i.test(line)));
+});
+
+test("world explain builds a shared causal digest from frontier pressure and AI focus", () => {
+  const state = createInitialGameState({ seed: 1337 });
+  state.metrics.logistics = {
+    isolatedWorksites: 1,
+    overloadedWarehouses: 0,
+    stretchedWorksites: 0,
+    summary: "Logistics: 1 isolated worksite needs depot access.",
+  };
+  state.ai.lastEnvironmentDirective = {
+    weather: WEATHER.RAIN,
+    durationSec: 14,
+    factionTension: 0.6,
+    focus: "contested logistics lane",
+    summary: "Maintain contested logistics lane for 14s without obscuring the map's main pressure.",
+    steeringNotes: ["Keep route pressure spatial and readable."],
+    eventSpawns: [],
+  };
+  state.ai.groupPolicies.set("workers", {
+    expiresAtSec: 24,
+    data: {
+      groupId: "workers",
+      ttlSec: 24,
+      riskTolerance: 0.35,
+      intentWeights: { deliver: 1.4, eat: 1.2, farm: 1.0 },
+      targetPriorities: { warehouse: 1.5, depot: 1.2, safety: 1.1 },
+      focus: "depot throughput",
+      summary: "Keep workers fed, reconnect routes, and unload cargo before harvest loops stall.",
+      steeringNotes: ["Protect delivery chains before raw output."],
+    },
+  });
+
+  const aiInsight = getAiInsight(state);
+  const digest = getCausalDigest(state);
+
+  assert.match(aiInsight.summary, /env=contested logistics lane/i);
+  assert.match(aiInsight.summary, /workers:depot throughput/i);
+  assert.equal(digest.severity, "error");
+  assert.match(digest.headline, /Reconnect 1 isolated worksite/i);
+  assert.match(digest.action, /route repair should outrank more expansion/i);
+  assert.ok(digest.evidence.some((line) => /Frontier:/i.test(line)));
+  assert.ok(digest.evidence.some((line) => /AI: env=contested logistics lane/i.test(line)));
 });

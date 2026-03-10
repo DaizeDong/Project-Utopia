@@ -108,6 +108,13 @@ function tileDistance(a, b) {
   return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
 }
 
+function distanceSq(a, b) {
+  if (!a || !b) return Infinity;
+  const dx = Number(a.x ?? 0) - Number(b.x ?? 0);
+  const dz = Number(a.z ?? 0) - Number(b.z ?? 0);
+  return dx * dx + dz * dz;
+}
+
 function parseTileKey(key) {
   const [ix, iz] = String(key ?? "").split(",").map((value) => Number(value));
   if (!Number.isFinite(ix) || !Number.isFinite(iz)) return null;
