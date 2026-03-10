@@ -188,6 +188,25 @@ export function getEntityInsight(state, entity) {
     }
   }
 
+  if (entity.type === "VISITOR" && entity.kind === "TRADER") {
+    const tradeLabel = String(entity.blackboard?.tradeTargetLabel ?? "");
+    const tradeBonus = Number(entity.blackboard?.tradeTargetBonus ?? entity.blackboard?.lastTradeYieldBonus ?? 0);
+    const defense = Number(entity.blackboard?.tradeTargetDefense ?? 0);
+    if (tradeLabel) {
+      const defenseText = defense > 0 ? ` with ${defense} nearby wall tiles` : "";
+      insights.push(`Trader is favoring ${tradeLabel}${defenseText}; current trade yield bonus is x${Math.max(1, tradeBonus).toFixed(2)}.`);
+    }
+  }
+
+  if (entity.type === "VISITOR" && entity.kind !== "TRADER") {
+    const sabotageLabel = String(entity.blackboard?.sabotageTargetLabel ?? entity.blackboard?.lastSabotageTargetLabel ?? "");
+    const defense = Number(entity.blackboard?.sabotageTargetDefense ?? entity.blackboard?.lastSabotageDefense ?? 0);
+    if (sabotageLabel) {
+      const blocked = entity.blackboard?.lastSabotageBlocked ? " Last sabotage run was blocked." : "";
+      insights.push(`Saboteur is pressuring ${sabotageLabel}; current target has ${defense} nearby wall tiles.${blocked}`);
+    }
+  }
+
   if (entity.memory?.migrationTarget && entity.kind === "HERBIVORE") {
     insights.push(`Migration order is steering this herd toward (${entity.memory.migrationTarget.ix}, ${entity.memory.migrationTarget.iz}).`);
   }
