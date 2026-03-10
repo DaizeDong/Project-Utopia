@@ -13,6 +13,7 @@ const LOCAL_PERF_PATH = path.resolve("docs/assignment4/metrics/perf-baseline.csv
 const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 const SCREENSHOT_DIR = path.resolve("output/playwright");
 const DIST_ASSETS_DIR = path.resolve("dist/assets");
+const REQUIRE_CLEAN = process.argv.includes("--require-clean");
 
 const REQUIRED_A4_SECTIONS = [
   "## Current Alpha Diagnosis",
@@ -182,6 +183,9 @@ function main() {
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
   const distSummary = summarizeDistAssets(distAssets);
   const worktree = getWorktreeStatus();
+  if (REQUIRE_CLEAN && worktree.dirty) {
+    fail(`worktree is not clean (${worktree.entryCount} entries)`);
+  }
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -224,6 +228,7 @@ function main() {
   );
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
+  console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 

@@ -46,6 +46,12 @@ That runs:
 - `npm run verify:full`
 - `npm run release:check`
 
+If you want the final gate to fail on any remaining non-ignored local changes, run:
+
+```bash
+npm run release:strict
+```
+
 Generated verification artifacts are written to:
 
 - `docs/assignment4/metrics/`
