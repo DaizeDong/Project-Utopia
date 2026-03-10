@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 
 import { loadEnvIntoProcess } from "../scripts/env-loader.mjs";
 import { buildEnvironmentFallback, buildPolicyFallback } from "../src/simulation/ai/llm/PromptBuilder.js";
+import {
+  buildEnvironmentPromptUserContent,
+  buildPolicyPromptUserContent,
+} from "../src/simulation/ai/llm/PromptPayload.js";
 import { guardEnvironmentDirective, guardGroupPolicies } from "../src/simulation/ai/llm/Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "../src/simulation/ai/llm/ResponseSchema.js";
 
@@ -128,13 +132,6 @@ function compactError(err) {
   return raw.slice(0, 180);
 }
 
-function buildPromptUserContent(summary) {
-  return JSON.stringify({
-    summary,
-    constraint: "Return strict JSON only. No markdown. No prose.",
-  });
-}
-
 function buildDebugPayload({
   requestedAtIso,
   endpoint,
@@ -161,8 +158,7 @@ function buildDebugPayload({
   };
 }
 
-async function callOpenAI(systemPrompt, summary, modelName) {
-  const userPrompt = buildPromptUserContent(summary);
+async function callOpenAI(systemPrompt, userPrompt, modelName) {
   const body = {
     model: modelName,
     messages: [
@@ -218,12 +214,12 @@ async function callOpenAI(systemPrompt, summary, modelName) {
   };
 }
 
-async function callOpenAIWithModelFallback(systemPrompt, summary) {
+async function callOpenAIWithModelFallback(systemPrompt, userPrompt) {
   try {
-    return await callOpenAI(systemPrompt, summary, OPENAI_MODEL);
+    return await callOpenAI(systemPrompt, userPrompt, OPENAI_MODEL);
   } catch (err) {
     if (OPENAI_MODEL !== DEFAULT_OPENAI_MODEL && isModelConfigError(err)) {
-      return callOpenAI(systemPrompt, summary, DEFAULT_OPENAI_MODEL);
+      return callOpenAI(systemPrompt, userPrompt, DEFAULT_OPENAI_MODEL);
     }
     throw err;
   }
@@ -252,7 +248,7 @@ function readBody(req) {
 
 async function handleEnvironment(summary) {
   const requestedAtIso = new Date().toISOString();
-  const promptUser = buildPromptUserContent(summary);
+  const promptUser = buildEnvironmentPromptUserContent(summary);
   if (!OPENAI_API_KEY) {
     const fallbackRaw = buildEnvironmentFallback(summary);
     const guarded = guardEnvironmentDirective(fallbackRaw);
@@ -281,7 +277,7 @@ async function handleEnvironment(summary) {
   }
 
   try {
-    const result = await callOpenAIWithModelFallback(envSystemPrompt, summary);
+    const result = await callOpenAIWithModelFallback(envSystemPrompt, promptUser);
     const validation = validateEnvironmentDirective(result.parsed);
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);
@@ -336,7 +332,7 @@ async function handleEnvironment(summary) {
 
 async function handlePolicies(summary) {
   const requestedAtIso = new Date().toISOString();
-  const promptUser = buildPromptUserContent(summary);
+  const promptUser = buildPolicyPromptUserContent(summary);
   if (!OPENAI_API_KEY) {
     const fallbackRaw = buildPolicyFallback(summary);
     const guarded = guardGroupPolicies(fallbackRaw);
@@ -365,7 +361,7 @@ async function handlePolicies(summary) {
   }
 
   try {
-    const result = await callOpenAIWithModelFallback(policySystemPrompt, summary);
+    const result = await callOpenAIWithModelFallback(policySystemPrompt, promptUser);
     const validation = validateGroupPolicy(result.parsed);
     if (!validation.ok) {
       throw new Error(`schema failed: ${validation.error}`);

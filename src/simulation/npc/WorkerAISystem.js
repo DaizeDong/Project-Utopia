@@ -1,10 +1,11 @@
 ﻿import { BALANCE } from "../../config/balance.js";
 import { ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
-import { findNearestTileOfTypes, getTile, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
+import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -13,6 +14,131 @@ const WANDER_REFRESH_JITTER_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 const WORKER_TASK_LOCK_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
+
+function tileKey(tile) {
+  return `${tile.ix},${tile.iz}`;
+}
+
+function manhattanTiles(a, b) {
+  return Math.abs(Number(a?.ix ?? 0) - Number(b?.ix ?? 0)) + Math.abs(Number(a?.iz ?? 0) - Number(b?.iz ?? 0));
+}
+
+function resolveTargetPriority(policy, key, fallback = 1) {
+  return Math.max(0, Math.min(3, Number(policy?.targetPriorities?.[key] ?? fallback)));
+}
+
+function countNearbyTiles(state, center, tileTypes, radius = 1) {
+  let count = 0;
+  const targets = new Set(tileTypes);
+  for (let iz = center.iz - radius; iz <= center.iz + radius; iz += 1) {
+    for (let ix = center.ix - radius; ix <= center.ix + radius; ix += 1) {
+      if (ix < 0 || iz < 0 || ix >= state.grid.width || iz >= state.grid.height) continue;
+      if (Math.abs(ix - center.ix) + Math.abs(iz - center.iz) > radius) continue;
+      if (targets.has(state.grid.tiles[ix + iz * state.grid.width])) count += 1;
+    }
+  }
+  return count;
+}
+
+function minDistanceToTiles(origin, tiles = []) {
+  let best = Infinity;
+  for (const tile of tiles) {
+    const dist = manhattanTiles(origin, tile);
+    if (dist < best) best = dist;
+  }
+  return best;
+}
+
+function getWorkerPolicy(worker, state) {
+  return worker.policy ?? state.ai.groupPolicies.get("workers")?.data ?? null;
+}
+
+function getBrokenRouteGapTiles(runtime) {
+  const out = [];
+  for (const route of runtime.routes ?? []) {
+    if (route.connected) continue;
+    for (const gap of route.gapTiles ?? []) out.push(gap);
+  }
+  return out;
+}
+
+function getUnreadyDepotAnchors(runtime) {
+  const anchors = runtime.scenario?.anchors ?? {};
+  return (runtime.depots ?? [])
+    .filter((depot) => !depot.ready)
+    .map((depot) => anchors[depot.anchor])
+    .filter(Boolean);
+}
+
+function chooseWorkerTarget(worker, state, targetTileTypes) {
+  const candidates = listTilesByType(state.grid, targetTileTypes);
+  if (candidates.length <= 0) return null;
+
+  const policy = getWorkerPolicy(worker, state);
+  const current = worldToTile(worker.x, worker.z, state.grid);
+  const runtime = getScenarioRuntime(state);
+  const brokenRouteTiles = getBrokenRouteGapTiles(runtime);
+  const depotAnchors = getUnreadyDepotAnchors(runtime);
+  let best = null;
+
+  for (const candidate of candidates) {
+    const distance = manhattanTiles(current, candidate);
+    const tileType = getTile(state.grid, candidate.ix, candidate.iz);
+    const wallCoverage = countNearbyTiles(state, candidate, [TILE.WALL], 1);
+    const roadNeighbors = countNearbyTiles(state, candidate, [TILE.ROAD, TILE.WAREHOUSE], 1);
+    const frontierDistance = minDistanceToTiles(candidate, brokenRouteTiles);
+    const depotDistance = minDistanceToTiles(candidate, depotAnchors);
+    const frontierAffinity = Number.isFinite(frontierDistance)
+      ? frontierDistance <= 2 ? 1 : frontierDistance <= 5 ? 0.45 : 0
+      : 0;
+    const depotAffinity = Number.isFinite(depotDistance)
+      ? depotDistance <= 2 ? 1 : depotDistance <= 4 ? 0.4 : 0
+      : 0;
+    const ecologyPressure = tileType === TILE.FARM
+      ? Math.max(0, Number(state.metrics?.ecology?.farmPressureByKey?.[tileKey(candidate)] ?? 0))
+      : 0;
+    const warehouseLoad = tileType === TILE.WAREHOUSE
+      ? Number(state.metrics?.logistics?.warehouseLoadByKey?.[tileKey(candidate)] ?? 0)
+      : 0;
+
+    let score = -distance * 0.08;
+    score += roadNeighbors * 0.1 * resolveTargetPriority(policy, "road", 1);
+    score += wallCoverage * 0.07 * resolveTargetPriority(policy, "safety", 1);
+    score += frontierAffinity * 0.42 * resolveTargetPriority(policy, "frontier", 1);
+    score += depotAffinity * 0.38 * resolveTargetPriority(policy, "depot", 1);
+
+    if (tileType === TILE.WAREHOUSE) {
+      score += 0.58 * resolveTargetPriority(policy, "warehouse", 1);
+      score -= Math.max(0, warehouseLoad - 1) * 0.18;
+    } else if (tileType === TILE.FARM) {
+      score += 0.54 * resolveTargetPriority(policy, "farm", 1);
+      score -= ecologyPressure * Math.max(0.18, resolveTargetPriority(policy, "safety", 1) * 0.12);
+    } else if (tileType === TILE.LUMBER) {
+      score += 0.54 * resolveTargetPriority(policy, "lumber", 1);
+    }
+
+    if (!best || score > best.score) {
+      best = {
+        tile: candidate,
+        score,
+        meta: {
+          frontierAffinity,
+          depotAffinity,
+          warehouseLoad,
+          ecologyPressure,
+        },
+      };
+    }
+  }
+
+  worker.debug ??= {};
+  worker.debug.policyTargetScore = Number(best?.score ?? 0);
+  worker.debug.policyTargetFrontier = Number(best?.meta?.frontierAffinity ?? 0);
+  worker.debug.policyTargetDepot = Number(best?.meta?.depotAffinity ?? 0);
+  worker.debug.policyTargetWarehouseLoad = Number(best?.meta?.warehouseLoad ?? 0);
+  worker.debug.policyTargetEcology = Number(best?.meta?.ecologyPressure ?? 0);
+  return best?.tile ?? null;
+}
 
 function getWorkerHungerSeekThreshold(worker) {
   const base = Number(BALANCE.workerHungerSeekThreshold ?? 0.14);
@@ -161,7 +287,8 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
     if (!canAttemptPath(worker, state)) {
       return hasActivePath(worker, state) || isAtTargetTile(worker, state);
     }
-    const target = findNearestTileOfTypes(state.grid, worker, targetTileTypes);
+    const target = chooseWorkerTarget(worker, state, targetTileTypes)
+      ?? findNearestTileOfTypes(state.grid, worker, targetTileTypes);
     if (!target || !setTargetAndPath(worker, target, state, services)) {
       return false;
     }

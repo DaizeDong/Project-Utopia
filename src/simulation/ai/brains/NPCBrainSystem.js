@@ -1,5 +1,12 @@
 import { BALANCE } from "../../../config/balance.js";
-import { DEFAULT_GROUP_POLICIES, GROUP_IDS } from "../../../config/aiConfig.js";
+import {
+  DEFAULT_GROUP_POLICIES,
+  GROUP_IDS,
+  canonicalizeAiGroupId,
+  listAllowedPolicyIntents,
+  listAllowedTargetPriorities,
+  normalizeAiToken,
+} from "../../../config/aiConfig.js";
 import { pushWarning } from "../../../app/warnings.js";
 import { buildPolicySummary } from "../memory/WorldSummary.js";
 import { listGroupStates } from "../../npc/state/StateGraph.js";
@@ -48,32 +55,43 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
   }),
 });
 
-function normalizeToken(raw) {
-  return String(raw ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, "_");
-}
-
-function canonicalGroupId(raw) {
-  const token = normalizeToken(raw);
-  if (!token) return "";
-  if (token === "workers" || token === "worker" || token === "labor" || token === "labour") return GROUP_IDS.WORKERS;
-  if (token === "traders" || token === "trader" || token === "merchant" || token === "merchants") return GROUP_IDS.TRADERS;
-  if (token === "saboteurs" || token === "saboteur" || token === "raider" || token === "raiders") return GROUP_IDS.SABOTEURS;
-  if (token === "herbivores" || token === "herbivore" || token === "prey") return GROUP_IDS.HERBIVORES;
-  if (token === "predators" || token === "predator" || token === "hunter" || token === "hunters") return GROUP_IDS.PREDATORS;
-  if (token === "visitors" || token === "visitor") return "visitors";
-  return token;
-}
-
 function canonicalStateForGroup(groupId, rawState) {
-  const token = normalizeToken(rawState);
+  const token = normalizeAiToken(rawState);
   if (!token) return "";
   const allowed = listGroupStates(groupId);
   if (allowed.includes(token)) return token;
-  const byToken = new Map(allowed.map((state) => [normalizeToken(state), state]));
+  const byToken = new Map(allowed.map((state) => [normalizeAiToken(state), state]));
   return byToken.get(token) ?? "";
+}
+
+function sanitizePolicyWeights(source, allowedKeys, fallbackWeights = {}) {
+  const out = {};
+  for (const key of allowedKeys) {
+    const raw = Object.prototype.hasOwnProperty.call(source ?? {}, key) ? source[key] : fallbackWeights[key];
+    if (raw === undefined) continue;
+    out[key] = Math.max(0, Math.min(3, Number(raw) || 0));
+  }
+  return out;
+}
+
+function sanitizePolicyForRuntime(policy, groupId) {
+  const fallback = DEFAULT_GROUP_POLICIES[groupId] ?? {};
+  return {
+    ...fallback,
+    ...policy,
+    groupId,
+    intentWeights: sanitizePolicyWeights(policy?.intentWeights ?? {}, listAllowedPolicyIntents(groupId), fallback.intentWeights ?? {}),
+    targetPriorities: sanitizePolicyWeights(policy?.targetPriorities ?? {}, listAllowedTargetPriorities(groupId), fallback.targetPriorities ?? {}),
+    riskTolerance: Math.max(0, Math.min(1, Number(policy?.riskTolerance) || Number(fallback.riskTolerance) || 0.5)),
+    ttlSec: Math.max(8, Math.min(60, Number(policy?.ttlSec) || Number(fallback.ttlSec) || 24)),
+    focus: String(policy?.focus ?? fallback.focus ?? "").slice(0, 72),
+    summary: String(policy?.summary ?? fallback.summary ?? "").slice(0, 140),
+    steeringNotes: Array.isArray(policy?.steeringNotes)
+      ? policy.steeringNotes.map((note) => String(note ?? "").slice(0, 120)).filter(Boolean).slice(0, 4)
+      : Array.isArray(fallback.steeringNotes)
+        ? [...fallback.steeringNotes]
+        : [],
+  };
 }
 
 function sanitizeStateTargetForRuntime(groupId, targetState) {
@@ -90,12 +108,12 @@ function sanitizeStateTargetForRuntime(groupId, targetState) {
 }
 
 function deriveStateTargetFromPolicy(policy) {
-  const groupId = canonicalGroupId(policy?.groupId);
+  const groupId = canonicalizeAiGroupId(policy?.groupId);
   const intentMap = POLICY_INTENT_TO_STATE[groupId];
   if (!intentMap) return null;
 
   const intents = Object.entries(policy?.intentWeights ?? {})
-    .map(([intent, value]) => ({ intent: normalizeToken(intent), value: Number(value) || 0 }))
+    .map(([intent, value]) => ({ intent: normalizeAiToken(intent), value: Number(value) || 0 }))
     .filter((entry) => entry.value > 0)
     .sort((a, b) => b.value - a.value);
 
@@ -123,7 +141,7 @@ function mergeStateTargetsWithPolicyFallback(policies, stateTargets) {
   const merged = [...stateTargets];
   const existingGroups = new Set(merged.map((target) => target.groupId));
   for (const policy of policies) {
-    const groupId = canonicalGroupId(policy?.groupId);
+    const groupId = canonicalizeAiGroupId(policy?.groupId);
     if (!groupId || existingGroups.has(groupId)) continue;
     const derived = deriveStateTargetFromPolicy(policy);
     if (!derived) continue;
@@ -138,7 +156,7 @@ function clonePolicy(policy) {
 }
 
 function splitLegacyVisitorsPolicy(policy) {
-  const groupId = canonicalGroupId(policy?.groupId);
+  const groupId = canonicalizeAiGroupId(policy?.groupId);
   if (groupId !== "visitors") return [policy];
   return [
     clonePolicy({ ...policy, groupId: GROUP_IDS.TRADERS, splitFrom: "visitors" }),
@@ -155,10 +173,10 @@ function normalizePoliciesForRuntime(policies = [], state) {
     const expanded = splitLegacyVisitorsPolicy(candidate);
     if (expanded.length > 1) migratedLegacyVisitors = true;
     for (const policy of expanded) {
-      const groupId = canonicalGroupId(policy.groupId);
+      const groupId = canonicalizeAiGroupId(policy.groupId);
       if (!groupId) continue;
       if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
-      policyByGroup.set(groupId, { ...policy, groupId });
+      policyByGroup.set(groupId, sanitizePolicyForRuntime(policy, groupId));
     }
   }
 
@@ -181,7 +199,7 @@ function normalizeStateTargetsForRuntime(stateTargets = [], state) {
 
   for (const candidate of stateTargets) {
     if (!candidate || typeof candidate !== "object") continue;
-    const groupId = canonicalGroupId(candidate.groupId);
+    const groupId = canonicalizeAiGroupId(candidate.groupId);
     const targetState = sanitizeStateTargetForRuntime(
       groupId,
       canonicalStateForGroup(groupId, candidate.targetState),

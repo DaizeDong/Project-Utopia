@@ -14,6 +14,14 @@ const HERBIVORE_FLEE_ENTER_DIST = 3.4;
 const HERBIVORE_FLEE_EXIT_DIST = 4.8;
 const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
 
+function resolveTargetPriority(policy, key, fallback = 1) {
+  return Math.max(0, Math.min(3, Number(policy?.targetPriorities?.[key] ?? fallback)));
+}
+
+function getAnimalPolicy(state, groupId) {
+  return state.ai.groupPolicies.get(groupId)?.data ?? null;
+}
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
@@ -182,7 +190,7 @@ function collectNearbyTilesOfTypes(grid, center, targetTypes, radius = 8) {
   return candidates;
 }
 
-function chooseHerbivoreGrazeTarget(animal, state, ecology) {
+function chooseHerbivoreGrazeTarget(animal, state, ecology, policy) {
   const zone = getWildlifeZone(state, animal);
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
   const current = worldToTile(animal.x, animal.z, state.grid);
@@ -216,13 +224,17 @@ function chooseHerbivoreGrazeTarget(animal, state, ecology) {
     const currentType = getTile(state.grid, candidate.ix, candidate.iz);
     const key = tileKey(candidate.ix, candidate.iz);
     const pressure = Number(ecology.farmPressureByKey?.[key] ?? 0);
-    let score = currentType === TILE.FARM ? 1.1 + farmBias * (1.2 - clamp(animal.hunger ?? 0.6, 0, 1)) : 0.95;
+    let score = currentType === TILE.FARM
+      ? 1.1 + farmBias * (1.2 - clamp(animal.hunger ?? 0.6, 0, 1)) + resolveTargetPriority(policy, "farm", 0.85) * 0.22
+      : 0.95 + resolveTargetPriority(policy, "grass", 1) * 0.18;
     score -= tileDistance(current, candidate) * 0.12;
-    score -= pressure * 0.28;
-    score -= countInfrastructurePenalty(state, candidate, 1) * corePenalty;
-    if (zoneAnchor && isWithinZone(candidate, zoneAnchor, Number(zone?.radius ?? 2) + 2)) score += homeBias;
+    score -= pressure * Math.max(0.18, resolveTargetPriority(policy, "safety", 1) * 0.12);
+    score -= countInfrastructurePenalty(state, candidate, 1) * corePenalty * resolveTargetPriority(policy, "road", 0.8);
+    if (zoneAnchor && isWithinZone(candidate, zoneAnchor, Number(zone?.radius ?? 2) + 2)) {
+      score += homeBias + resolveTargetPriority(policy, "wildlife", 1) * 0.16;
+    }
     if (animal.memory?.migrationTarget && tileDistance(candidate, animal.memory.migrationTarget) <= 3) score += 0.75;
-    if (isNearCore(candidate, state, 4)) score -= corePenalty;
+    if (isNearCore(candidate, state, 4)) score -= corePenalty * resolveTargetPriority(policy, "safety", 1);
     if (score > bestScore) {
       bestScore = score;
       best = candidate;
@@ -231,7 +243,7 @@ function chooseHerbivoreGrazeTarget(animal, state, ecology) {
   return best;
 }
 
-function choosePredatorPatrolTile(animal, state, ecology, services) {
+function choosePredatorPatrolTile(animal, state, ecology, services, policy) {
   const zone = getWildlifeZone(state, animal);
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
   const current = worldToTile(animal.x, animal.z, state.grid);
@@ -244,9 +256,11 @@ function choosePredatorPatrolTile(animal, state, ecology, services) {
     if (Number(pressure) < 0.14) continue;
     const tile = parseTileKey(key);
     if (!tile) continue;
-    let score = Number(pressure) * hotspotBias;
+    let score = Number(pressure) * hotspotBias + resolveTargetPriority(policy, "farm", 0.8) * 0.24;
     score -= tileDistance(current, tile) * 0.08;
-    if (zoneAnchor && isWithinZone(tile, zoneAnchor, Number(zone?.radius ?? 2) + 5)) score += homeBias;
+    if (zoneAnchor && isWithinZone(tile, zoneAnchor, Number(zone?.radius ?? 2) + 5)) {
+      score += homeBias + resolveTargetPriority(policy, "wildlife", 1) * 0.18;
+    }
     if (score > bestScore) {
       bestScore = score;
       best = tile;
@@ -270,6 +284,42 @@ function choosePredatorPatrolTile(animal, state, ecology, services) {
 
   animal.debug.lastPatrolLabel = "open frontier";
   return randomPassableTile(state.grid);
+}
+
+function choosePredatorPrey(animal, herbivores, state, policy) {
+  let best = null;
+  let bestScore = -Infinity;
+  const hotspotFarms = state.metrics?.ecology?.hotspotFarms ?? [];
+
+  for (const prey of herbivores ?? []) {
+    if (!prey || prey.alive === false) continue;
+    const preyTile = worldToTile(prey.x, prey.z, state.grid);
+    const dist = Math.sqrt(distanceSq(animal, prey));
+    const nearbyHerd = countNearbyKind(prey, herbivores, 3.2);
+    const isolation = Math.max(0, 3 - nearbyHerd);
+    const hotspotDistance = hotspotFarms.length > 0
+      ? Math.min(...hotspotFarms.map((hotspot) => tileDistance(preyTile, hotspot)))
+      : Infinity;
+    const hotspotBonus = Number.isFinite(hotspotDistance) && hotspotDistance <= 3 ? 1 : hotspotDistance <= 5 ? 0.4 : 0;
+    const zone = getWildlifeZone(state, prey);
+    const zoneAnchor = getZoneAnchor(state, zone);
+    const wildlifeBonus = zoneAnchor && isWithinZone(preyTile, zoneAnchor, Number(zone?.radius ?? 2) + 2) ? 1 : 0;
+    const safetyPenalty = countInfrastructurePenalty(state, preyTile, 1) * resolveTargetPriority(policy, "safety", 0.5) * 0.18;
+
+    const score = resolveTargetPriority(policy, "herbivore", 1) * 0.52
+      + resolveTargetPriority(policy, "isolation", 1) * isolation * 0.24
+      + resolveTargetPriority(policy, "farm", 0.8) * hotspotBonus * 0.18
+      + resolveTargetPriority(policy, "wildlife", 1) * wildlifeBonus * 0.12
+      - dist * 0.1
+      - safetyPenalty;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = prey;
+    }
+  }
+
+  return best;
 }
 
 function prepareEcologyMetrics(state, dt) {
@@ -380,6 +430,7 @@ function recoverPredatorHungerOnHit(animal) {
 
 function herbivoreTick(animal, predators, state, dt, services, stateNode, ecology) {
   const bb = animal.blackboard ?? (animal.blackboard = {});
+  const policy = getAnimalPolicy(state, "herbivores");
   const threat = nearestPredator(animal, predators);
   const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
   const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
@@ -434,7 +485,7 @@ function herbivoreTick(animal, predators, state, dt, services, stateNode, ecolog
 
   if (stateNode === "graze" || stateNode === "regroup") {
     if (!hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM]) && canAttemptPath(animal, state)) {
-      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology);
+      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology, policy);
       if (grazeTarget) setTargetAndPath(animal, grazeTarget, state, services);
     }
 
@@ -476,8 +527,10 @@ function herbivoreTick(animal, predators, state, dt, services, stateNode, ecolog
 
 function predatorTick(animal, herbivores, state, dt, services, stateNode, ecology) {
   animal.attackCooldownSec = Math.max(0, Number(animal.attackCooldownSec ?? 0) - dt);
+  const policy = getAnimalPolicy(state, "predators");
 
-  const { prey, distance } = nearestHerbivore(animal, herbivores);
+  const prey = choosePredatorPrey(animal, herbivores, state, policy);
+  const distance = prey ? Math.sqrt(distanceSq(animal, prey)) : Infinity;
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
     animal.debug ??= {};
@@ -542,10 +595,10 @@ function predatorTick(animal, herbivores, state, dt, services, stateNode, ecolog
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
   const currentTile = worldToTile(animal.x, animal.z, state.grid);
   const atTerritory = zoneAnchor ? isWithinZone(currentTile, zoneAnchor, Number(zone?.radius ?? 2) + 1) : false;
-  const shouldPatrol = stateNode === "stalk" || stateNode === "roam" || (stateNode === "rest" && !atTerritory);
+    const shouldPatrol = stateNode === "stalk" || stateNode === "roam" || (stateNode === "rest" && !atTerritory);
   if (shouldPatrol && canAttemptPath(animal, state) && (pathStale || pathMissingAwayFromTarget || pathStuck || nowSec >= nextPatrolRefreshSec)) {
     clearPath(animal);
-    const patrolTarget = choosePredatorPatrolTile(animal, state, ecology, services);
+    const patrolTarget = choosePredatorPatrolTile(animal, state, ecology, services, policy);
     if (patrolTarget && setTargetAndPath(animal, patrolTarget, state, services) && animal.debug) {
       animal.debug.nextPatrolRefreshSec = nowSec + Number(BALANCE.predatorPatrolRefreshSec ?? 1.6);
     }

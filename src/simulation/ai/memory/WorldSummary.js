@@ -5,6 +5,7 @@ import {
   listGroupStates,
   listGroupTransitions,
 } from "../../npc/state/StateGraph.js";
+import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
 
 const POLICY_GROUP_ORDER = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -77,13 +78,49 @@ function buildTransitionHints(groupId, world, groupStats) {
   return Array.from(new Set(hints)).slice(0, 3);
 }
 
+function buildFrontierSummary(runtime) {
+  return {
+    connectedRoutes: Number(runtime.connectedRoutes ?? 0),
+    totalRoutes: Number(runtime.routes?.length ?? 0),
+    readyDepots: Number(runtime.readyDepots ?? 0),
+    totalDepots: Number(runtime.depots?.length ?? 0),
+    brokenRouteCount: Number((runtime.routes ?? []).filter((route) => !route.connected).length),
+    brokenRoutes: (runtime.routes ?? []).filter((route) => !route.connected).map((route) => route.label).slice(0, 3),
+    readyDepotLabels: (runtime.depots ?? []).filter((depot) => depot.ready).map((depot) => depot.label).slice(0, 3),
+    unreadyDepotCount: Number((runtime.depots ?? []).filter((depot) => !depot.ready).length),
+    unreadyDepots: (runtime.depots ?? []).filter((depot) => !depot.ready).map((depot) => depot.label).slice(0, 3),
+  };
+}
+
+function buildOperationsSummary(world) {
+  const frontier = world.frontier ?? {};
+  const logistics = world.logistics ?? {};
+  const recovery = world.gameplay?.recovery ?? {};
+  const ecology = world.ecology ?? {};
+  const issues = [];
+
+  if ((frontier.brokenRoutes ?? []).length > 0) issues.push(`repair ${frontier.brokenRoutes[0]}`);
+  if ((frontier.unreadyDepots ?? []).length > 0) issues.push(`reclaim ${frontier.unreadyDepots[0]}`);
+  if (Number(logistics.overloadedWarehouses ?? 0) > 0) issues.push("relieve depot congestion");
+  if (Number(logistics.strandedCarryWorkers ?? 0) > 0) issues.push("unstick delivery paths");
+  if (Number(ecology.pressuredFarms ?? 0) > 0) issues.push("respond to farm pressure");
+  if (Number(recovery.collapseRisk ?? 0) >= 60) issues.push("preserve recovery window");
+
+  return {
+    keyIssues: issues.slice(0, 5),
+    focus: issues[0] ?? "maintain stable frontier throughput",
+  };
+}
+
 export function buildWorldSummary(state) {
   const workers = state.agents.filter((a) => a.type === "WORKER").length;
   const visitors = state.agents.filter((a) => a.type === "VISITOR").length;
   const herbivores = state.animals.filter((a) => a.kind === "HERBIVORE").length;
   const predators = state.animals.filter((a) => a.kind === "PREDATOR").length;
+  const runtime = getScenarioRuntime(state);
+  const currentObjective = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0] ?? null;
 
-  return {
+  const summary = {
     simTimeSec: Math.floor(state.metrics.timeSec),
     resources: {
       food: Number(state.resources.food.toFixed(2)),
@@ -91,6 +128,40 @@ export function buildWorldSummary(state) {
     },
     population: { workers, visitors, herbivores, predators },
     buildings: { ...state.buildings },
+    scenario: {
+      id: String(runtime.scenario?.id ?? ""),
+      title: String(runtime.scenario?.title ?? ""),
+      family: String(runtime.scenario?.family ?? ""),
+      summary: String(runtime.scenario?.summary ?? ""),
+    },
+    objective: currentObjective
+      ? {
+          id: currentObjective.id,
+          title: currentObjective.title,
+          description: currentObjective.description,
+          progress: Number(Number(currentObjective.progress ?? 0).toFixed(1)),
+          hint: String(state.gameplay?.objectiveHint ?? ""),
+        }
+      : {
+          id: "",
+          title: "All objectives completed",
+          description: "",
+          progress: 100,
+          hint: String(state.gameplay?.objectiveHint ?? ""),
+        },
+    gameplay: {
+      doctrine: String(state.gameplay?.doctrine ?? "balanced"),
+      prosperity: Number(Number(state.gameplay?.prosperity ?? 0).toFixed(2)),
+      threat: Number(Number(state.gameplay?.threat ?? 0).toFixed(2)),
+      doctrineMastery: Number(Number(state.gameplay?.doctrineMastery ?? 1).toFixed(3)),
+      recovery: {
+        charges: Number(state.gameplay?.recovery?.charges ?? 0),
+        activeBoostSec: Number(Number(state.gameplay?.recovery?.activeBoostSec ?? 0).toFixed(1)),
+        collapseRisk: Number(Number(state.gameplay?.recovery?.collapseRisk ?? 0).toFixed(1)),
+        lastReason: String(state.gameplay?.recovery?.lastReason ?? ""),
+      },
+    },
+    frontier: buildFrontierSummary(runtime),
     weather: {
       current: state.weather.current,
       timeLeftSec: Number(state.weather.timeLeftSec.toFixed(1)),
@@ -101,6 +172,25 @@ export function buildWorldSummary(state) {
     traffic: {
       congestion: Number(estimateCongestion(state).toFixed(3)),
       passableRatio: Number(countPassability(state.grid).toFixed(3)),
+    },
+    logistics: {
+      carryingWorkers: Number(state.metrics?.logistics?.carryingWorkers ?? 0),
+      totalCarryInTransit: Number(Number(state.metrics?.logistics?.totalCarryInTransit ?? 0).toFixed(2)),
+      avgDepotDistance: Number(Number(state.metrics?.logistics?.avgDepotDistance ?? 0).toFixed(2)),
+      strandedCarryWorkers: Number(state.metrics?.logistics?.strandedCarryWorkers ?? 0),
+      overloadedWarehouses: Number(state.metrics?.logistics?.overloadedWarehouses ?? 0),
+      busiestWarehouseLoad: Number(state.metrics?.logistics?.busiestWarehouseLoad ?? 0),
+      stretchedWorksites: Number(state.metrics?.logistics?.stretchedWorksites ?? 0),
+      isolatedWorksites: Number(state.metrics?.logistics?.isolatedWorksites ?? 0),
+      summary: String(state.metrics?.logistics?.summary ?? "Logistics: unavailable"),
+    },
+    ecology: {
+      pressuredFarms: Number(state.metrics?.ecology?.pressuredFarms ?? 0),
+      maxFarmPressure: Number(Number(state.metrics?.ecology?.maxFarmPressure ?? 0).toFixed(2)),
+      frontierPredators: Number(state.metrics?.ecology?.frontierPredators ?? 0),
+      migrationHerds: Number(state.metrics?.ecology?.migrationHerds ?? 0),
+      hotspotFarms: (state.metrics?.ecology?.hotspotFarms ?? []).slice(0, 3),
+      summary: String(state.metrics?.ecology?.summary ?? "Ecology: unavailable"),
     },
     events: state.events.active.map((e) => ({
       type: e.type,
@@ -120,6 +210,9 @@ export function buildWorldSummary(state) {
     },
     aiMode: state.ai.mode,
   };
+
+  summary.operations = buildOperationsSummary(summary);
+  return summary;
 }
 
 export function buildPolicySummary(state) {
