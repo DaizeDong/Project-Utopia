@@ -16,7 +16,8 @@
     "a3:evidence:ai": "node scripts/capture-live-ai-evidence.mjs",
     "verify:a3": "node scripts/verify-a3.mjs",
     "verify:full": "node scripts/verify-full.mjs",
-    "release:check": "node scripts/release-check.mjs"
+    "release:check": "node scripts/release-check.mjs",
+    "submit:local": "npm run verify:full && npm run release:check"
   },
   "dependencies": {
     "three": "^0.182.0"
