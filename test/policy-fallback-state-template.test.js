@@ -10,6 +10,18 @@ test("buildPolicyFallback adapts worker/trader intents from state transition con
       resources: { food: 9, wood: 80 },
       population: { workers: 16, visitors: 6, herbivores: 4, predators: 1 },
       events: [{ type: "bandit_raid" }],
+      objective: { id: "logistics-1", title: "Reconnect the Frontier", progress: 28, hint: "Repair the west route." },
+      frontier: {
+        brokenRouteCount: 1,
+        brokenRoutes: ["west lumber route"],
+        unreadyDepotCount: 1,
+        unreadyDepots: ["east ruined depot"],
+      },
+      logistics: {
+        isolatedWorksites: 1,
+        overloadedWarehouses: 1,
+        strandedCarryWorkers: 2,
+      },
     },
     stateTransitions: {
       groups: {
@@ -40,4 +52,9 @@ test("buildPolicyFallback adapts worker/trader intents from state transition con
   assert.ok(stateTargets.every((t) => !(t.groupId === "traders" && t.targetState === "seek_food")));
   assert.ok(workers.intentWeights.eat > DEFAULT_GROUP_POLICIES.workers.intentWeights.eat);
   assert.ok(traders.intentWeights.eat > DEFAULT_GROUP_POLICIES.traders.intentWeights.eat);
+  assert.ok(Number(workers.targetPriorities.road ?? 0) > Number(DEFAULT_GROUP_POLICIES.workers.targetPriorities.road ?? 0));
+  assert.ok(Number(workers.targetPriorities.depot ?? 0) > Number(DEFAULT_GROUP_POLICIES.workers.targetPriorities.depot ?? 0));
+  assert.match(String(workers.focus ?? ""), /route|depot|cargo/i);
+  assert.ok(String(workers.summary ?? "").length > 10);
+  assert.ok(Array.isArray(workers.steeringNotes) && workers.steeringNotes.length > 0);
 });

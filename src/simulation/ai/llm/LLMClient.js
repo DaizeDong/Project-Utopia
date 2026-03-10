@@ -1,5 +1,9 @@
 import { AI_CONFIG } from "../../../config/aiConfig.js";
 import { buildEnvironmentFallback, buildPolicyFallback } from "./PromptBuilder.js";
+import {
+  buildEnvironmentPromptUserContent,
+  buildPolicyPromptUserContent,
+} from "./PromptPayload.js";
 import { guardEnvironmentDirective, guardGroupPolicies } from "./Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "./ResponseSchema.js";
 
@@ -80,6 +84,7 @@ export class LLMClient {
   async requestEnvironment(summary, enabled) {
     if (!enabled) {
       const guarded = buildEnvironmentFallback(summary);
+      const promptUser = buildEnvironmentPromptUserContent(summary);
       return {
         fallback: true,
         data: guarded,
@@ -89,7 +94,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.environmentEndpoint,
           requestSummary: summary,
           promptSystem: "(local fallback: proxy call skipped)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser,
           requestPayload: { endpoint: AI_CONFIG.environmentEndpoint, mode: "fallback-local" },
           guardedOutput: guarded,
           error: "",
@@ -119,7 +124,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.environmentEndpoint,
           requestSummary: summary,
           promptSystem: "(proxy response missing prompt debug)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser: buildEnvironmentPromptUserContent(summary),
           requestPayload: { endpoint: AI_CONFIG.environmentEndpoint, mode: "proxy-response" },
           guardedOutput: guardEnvironmentDirective(validation.value),
           error: "",
@@ -139,7 +144,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.environmentEndpoint,
           requestSummary: summary,
           promptSystem: "(proxy request failed before debug payload)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser: buildEnvironmentPromptUserContent(summary),
           requestPayload: { endpoint: AI_CONFIG.environmentEndpoint, mode: "proxy-error" },
           guardedOutput: guarded,
           error: this.lastError,
@@ -151,6 +156,7 @@ export class LLMClient {
   async requestPolicies(summary, enabled) {
     if (!enabled) {
       const guarded = buildPolicyFallback(summary);
+      const promptUser = buildPolicyPromptUserContent(summary);
       return {
         fallback: true,
         data: guarded,
@@ -160,7 +166,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.policyEndpoint,
           requestSummary: summary,
           promptSystem: "(local fallback: proxy call skipped)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser,
           requestPayload: { endpoint: AI_CONFIG.policyEndpoint, mode: "fallback-local" },
           guardedOutput: guarded,
           error: "",
@@ -190,7 +196,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.policyEndpoint,
           requestSummary: summary,
           promptSystem: "(proxy response missing prompt debug)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser: buildPolicyPromptUserContent(summary),
           requestPayload: { endpoint: AI_CONFIG.policyEndpoint, mode: "proxy-response" },
           guardedOutput: guardGroupPolicies(validation.value),
           error: "",
@@ -210,7 +216,7 @@ export class LLMClient {
           endpoint: AI_CONFIG.policyEndpoint,
           requestSummary: summary,
           promptSystem: "(proxy request failed before debug payload)",
-          promptUser: JSON.stringify({ summary }, null, 2),
+          promptUser: buildPolicyPromptUserContent(summary),
           requestPayload: { endpoint: AI_CONFIG.policyEndpoint, mode: "proxy-error" },
           guardedOutput: guarded,
           error: this.lastError,
