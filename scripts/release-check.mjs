@@ -11,11 +11,13 @@ const FALLBACK_PROOF_PATH = path.resolve("assignments/homework3/proof/live-ai-ev
 const PERF_PROOF_PATH = path.resolve("assignments/homework3/metrics/perf-baseline.csv");
 const LOCAL_SOAK_PATH = path.resolve("docs/assignment4/metrics/soak-report.json");
 const LOCAL_PERF_PATH = path.resolve("docs/assignment4/metrics/perf-baseline.csv");
+const LOCAL_VERIFY_SUMMARY_PATH = path.resolve("docs/assignment3/verification-summary.json");
 const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 const SCREENSHOT_DIR = path.resolve("output/playwright");
 const DIST_ASSETS_DIR = path.resolve("dist/assets");
 const REQUIRE_CLEAN = process.argv.includes("--require-clean");
 const REQUIRE_FRESH_BUILD = process.argv.includes("--require-fresh-build");
+const REQUIRE_FRESH_VERIFY = process.argv.includes("--require-fresh-verify");
 const BUILD_INPUT_PATHS = [
   path.resolve("src"),
   path.resolve("index.html"),
@@ -236,6 +238,33 @@ function summarizeBuildFreshness(distIndexPath, inputPaths) {
   };
 }
 
+function summarizeArtifactFreshness(referenceStat, artifactPaths) {
+  const artifacts = artifactPaths
+    .map((artifactPath) => fileStatOrNull(artifactPath))
+    .filter(Boolean);
+  const staleArtifacts = [];
+  const missingPaths = artifactPaths
+    .filter((artifactPath) => !fs.existsSync(artifactPath))
+    .map((artifactPath) => path.relative(process.cwd(), artifactPath).replaceAll("\\", "/"));
+  if (referenceStat) {
+    for (const artifact of artifacts) {
+      if (Date.parse(String(artifact.modifiedAt)) < Date.parse(String(referenceStat.modifiedAt))) {
+        staleArtifacts.push({
+          relativePath: artifact.relativePath,
+          modifiedAt: artifact.modifiedAt,
+        });
+      }
+    }
+  }
+  return {
+    fresh: missingPaths.length === 0 && staleArtifacts.length === 0,
+    checkedArtifacts: artifactPaths.length,
+    missingPaths,
+    staleArtifacts,
+    reference: referenceStat,
+  };
+}
+
 function getWorktreeStatus() {
   try {
     const output = execSync("git status --porcelain", {
@@ -304,11 +333,17 @@ function main() {
   const localArtifacts = {
     soakReport: fs.existsSync(LOCAL_SOAK_PATH),
     perfBaseline: fs.existsSync(LOCAL_PERF_PATH),
+    verifySummary: fs.existsSync(LOCAL_VERIFY_SUMMARY_PATH),
   };
   const screenshotArtifacts = collectReleaseScreenshots(SCREENSHOT_DIR);
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
   const distSummary = summarizeDistAssets(distAssets);
   const buildFreshness = summarizeBuildFreshness(DIST_INDEX_PATH, BUILD_INPUT_PATHS);
+  const verifyFreshness = summarizeArtifactFreshness(buildFreshness.distIndex, [
+    LOCAL_SOAK_PATH,
+    LOCAL_PERF_PATH,
+    LOCAL_VERIFY_SUMMARY_PATH,
+  ]);
   const worktree = getWorktreeStatus();
   const strictBlockers = summarizeStrictBlockers(worktree);
   const recentCommits = getRecentCommits();
@@ -320,15 +355,24 @@ function main() {
   if (REQUIRE_FRESH_BUILD && !buildFreshness.fresh) {
     fail(`build is stale relative to checked inputs (${buildFreshness.latestInput?.relativePath ?? "unknown"})`);
   }
+  if (REQUIRE_FRESH_VERIFY && !verifyFreshness.fresh) {
+    if (verifyFreshness.missingPaths.length > 0) {
+      fail(`verification artifacts are missing (${verifyFreshness.missingPaths.join(", ")})`);
+    }
+    fail(
+      `verification artifacts are stale relative to dist (${verifyFreshness.staleArtifacts.map((artifact) => artifact.relativePath).join(", ")})`,
+    );
+  }
 
   const manifest = {
     generatedAt: new Date().toISOString(),
     headCommit: getHeadCommit(),
     recentCommits,
     releaseStatus: {
-      strictReady: !worktree.dirty && buildFreshness.fresh,
+      strictReady: !worktree.dirty && buildFreshness.fresh && verifyFreshness.fresh,
       requireClean: REQUIRE_CLEAN,
       requireFreshBuild: REQUIRE_FRESH_BUILD,
+      requireFreshVerify: REQUIRE_FRESH_VERIFY,
       strictBlockers,
       screenshotCount: screenshotArtifacts.length,
       distAssetCount: distSummary.assetCount,
@@ -354,6 +398,8 @@ function main() {
     localArtifacts: {
       soakReport: fileStatOrNull(LOCAL_SOAK_PATH),
       perfBaseline: fileStatOrNull(LOCAL_PERF_PATH),
+      verifySummary: fileStatOrNull(LOCAL_VERIFY_SUMMARY_PATH),
+      freshness: verifyFreshness,
     },
     screenshotArtifacts,
     worktree,
@@ -367,13 +413,16 @@ function main() {
   console.log(`[release:check] HW04 sections ok: ${REQUIRED_A4_SECTIONS.length} required markers present`);
   console.log(`[release:check] HW04 stages ok: ${stageMatches.join(", ")}`);
   console.log(
-    `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}`,
+    `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}, verify=${localArtifacts.verifySummary ? "present" : "missing"}`,
   );
   console.log(
     `[release:check] dist assets: ${distSummary.assetCount} total=${distSummary.totalSizeBytes}B js=${distSummary.jsCount}/${distSummary.jsSizeBytes}B`,
   );
   console.log(
     `[release:check] build freshness: ${buildFreshness.fresh ? "fresh" : "stale"} (${buildFreshness.checkedInputs} inputs, latest=${buildFreshness.latestInput?.relativePath ?? "n/a"})`,
+  );
+  console.log(
+    `[release:check] verify freshness: ${verifyFreshness.fresh ? "fresh" : "stale"} (${verifyFreshness.checkedArtifacts} artifacts, stale=${verifyFreshness.staleArtifacts.length}, missing=${verifyFreshness.missingPaths.length})`,
   );
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
@@ -384,8 +433,9 @@ function main() {
   }
   console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
   console.log(`[release:check] require fresh build: ${REQUIRE_FRESH_BUILD}`);
+  console.log(`[release:check] require fresh verify: ${REQUIRE_FRESH_VERIFY}`);
   console.log(`[release:check] recent commits: ${recentCommits.length}`);
-  console.log(`[release:check] strict ready: ${!worktree.dirty && buildFreshness.fresh}`);
+  console.log(`[release:check] strict ready: ${!worktree.dirty && buildFreshness.fresh && verifyFreshness.fresh}`);
   console.log(`[release:check] toolchain: node=${toolchain.node} npm=${toolchain.npm} vite=${toolchain.vite || "unknown"}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
