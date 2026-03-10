@@ -407,6 +407,7 @@ export function createInitialGameState(options = {}) {
       saveSlotId: "default",
       canUndo: false,
       canRedo: false,
+      buildPreview: null,
       showReplayPanel: false,
       showPresetComparator: false,
       undoStack: [],

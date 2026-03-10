@@ -6,6 +6,7 @@ import {
   sanitizeTerrainTuning,
 } from "../../world/grid/Grid.js";
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
+import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
 const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress", "ai-insights"]);
@@ -74,6 +75,11 @@ export class BuildToolbar {
     this.loadSnapshotBtn = document.getElementById("loadSnapshotBtn");
     this.comparePresetsBtn = document.getElementById("comparePresetsBtn");
     this.exportReplayBtn = document.getElementById("exportReplayBtn");
+    this.buildToolLabelVal = document.getElementById("buildToolLabelVal");
+    this.buildToolSummaryVal = document.getElementById("buildToolSummaryVal");
+    this.buildToolCostVal = document.getElementById("buildToolCostVal");
+    this.buildToolRulesVal = document.getElementById("buildToolRulesVal");
+    this.buildPreviewVal = document.getElementById("buildPreviewVal");
     this.terrainWaterLevel = document.getElementById("terrainWaterLevel");
     this.terrainWaterLevelLabel = document.getElementById("terrainWaterLevelLabel");
     this.terrainRiverCount = document.getElementById("terrainRiverCount");
@@ -752,6 +758,13 @@ export class BuildToolbar {
     }
     if (this.undoBuildBtn) this.undoBuildBtn.disabled = !this.state.controls.canUndo;
     if (this.redoBuildBtn) this.redoBuildBtn.disabled = !this.state.controls.canRedo;
+
+    const buildPanel = getBuildToolPanelState(this.state);
+    if (this.buildToolLabelVal) this.buildToolLabelVal.textContent = buildPanel.label;
+    if (this.buildToolSummaryVal) this.buildToolSummaryVal.textContent = buildPanel.summary;
+    if (this.buildToolCostVal) this.buildToolCostVal.textContent = `Cost: ${buildPanel.costLabel}`;
+    if (this.buildToolRulesVal) this.buildToolRulesVal.textContent = `Rules: ${buildPanel.rules}`;
+    if (this.buildPreviewVal) this.buildPreviewVal.textContent = buildPanel.previewSummary;
 
     if (this.populationBreakdownVal) {
       const breakdown = this.state.controls.populationBreakdown ?? {

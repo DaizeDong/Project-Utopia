@@ -29,6 +29,7 @@ export class InspectorPanel {
 
   #renderTileSection() {
     const tile = this.state.controls.selectedTile;
+    const preview = this.state.controls.buildPreview;
     if (!tile) {
       const frontier = getFrontierStatus(this.state);
       const weather = getWeatherInsight(this.state);
@@ -47,6 +48,7 @@ export class InspectorPanel {
     const info = TILE_INFO[currentType] ?? { passable: false, baseCost: 0, height: 0 };
     const idx = tile.ix + tile.iz * this.state.grid.width;
     const tileInsights = getTileInsight(this.state, tile);
+    const previewMatchesTile = preview && preview.ix === tile.ix && preview.iz === tile.iz;
     const neighbors = [
       { label: "N", ix: tile.ix, iz: tile.iz - 1 },
       { label: "S", ix: tile.ix, iz: tile.iz + 1 },
@@ -72,6 +74,23 @@ export class InspectorPanel {
         <summary class="small"><b>Tile Context</b></summary>
         <div class="small" style="margin-top:6px;">
           ${tileInsights.length > 0 ? tileInsights.join("<br />") : "No frontier-specific context on this tile."}
+        </div>
+      </details>
+      <details style="margin-top:8px;" ${previewMatchesTile ? "open" : ""}>
+        <summary class="small"><b>Build Preview</b></summary>
+        <div class="small" style="margin-top:6px;">
+          ${previewMatchesTile
+            ? [
+              `<b>Tool:</b> ${String(this.state.controls.tool)}`,
+              `<b>Status:</b> ${preview.ok ? "valid" : "blocked"}`,
+              preview.summary ? `<b>Summary:</b> ${preview.summary}` : "",
+              preview.reasonText ? `<b>Reason:</b> ${preview.reasonText}` : "",
+              preview.cost ? `<b>Cost:</b> food ${preview.cost.food ?? 0}, wood ${preview.cost.wood ?? 0}` : "",
+              preview.refund ? `<b>Salvage:</b> food ${preview.refund.food ?? 0}, wood ${preview.refund.wood ?? 0}` : "",
+              preview.effects?.length ? `<b>Effects:</b> ${preview.effects.join(" | ")}` : "",
+              preview.warnings?.length ? `<b>Warnings:</b> ${preview.warnings.join(" | ")}` : "",
+            ].filter(Boolean).join("<br />")
+            : "Hover the selected tile to inspect construction rules and scenario impact."}
         </div>
       </details>
     `;
