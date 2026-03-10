@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
-import { getEntityInsight, getEventInsight, getFrontierStatus, getTileInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -34,11 +34,13 @@ export class InspectorPanel {
       const frontier = getFrontierStatus(this.state);
       const weather = getWeatherInsight(this.state);
       const events = getEventInsight(this.state);
+      const logistics = getLogisticsInsight(this.state);
       return `
         <div><b>Selected Tile</b></div>
         <div class="small muted">Left click tile to build/select. Alt+Left click tile for inspect-only. Right drag pans the camera.</div>
         <div class="small" style="margin-top:8px;"><b>Objective Hint:</b> ${this.state.gameplay.objectiveHint ?? "none"}</div>
         <div class="small"><b>Frontier:</b> ${frontier.summary}</div>
+        <div class="small"><b>Logistics:</b> ${logistics}</div>
         <div class="small"><b>Weather:</b> ${weather.summary}</div>
         <div class="small"><b>Events:</b> ${events}</div>
       `;

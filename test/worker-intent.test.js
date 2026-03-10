@@ -44,6 +44,21 @@ test("Worker keeps working with small carry until threshold", () => {
   assert.equal(chooseWorkerIntent(worker, state), "farm");
 });
 
+test("Worker carry pressure forces delivery even below the raw threshold", () => {
+  const state = baseState();
+  const worker = {
+    hunger: 0.8,
+    carry: { food: 0.8, wood: 0.5 },
+    role: "FARM",
+    stateLabel: "Work (Farm)",
+    blackboard: {
+      carryAgeSec: 7.2,
+    },
+  };
+
+  assert.equal(chooseWorkerIntent(worker, state), "deliver");
+});
+
 test("Worker does not enter eat intent when only warehouse exists but food is zero", () => {
   const state = {
     resources: { food: 0, wood: 20 },

@@ -56,7 +56,10 @@ function resolveReachability(entity, state, services, fromTile, target, sourceTy
 
   let path = services?.pathCache?.get?.(state.grid.version, fromTile, target) ?? null;
   if (!path) {
-    path = aStar(state.grid, fromTile, target, state.weather.moveCostMultiplier);
+    path = aStar(state.grid, fromTile, target, state.weather.moveCostMultiplier, {
+      tiles: state.weather?.hazardTileSet ?? null,
+      penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
+    });
     if (path) {
       services?.pathCache?.set?.(state.grid.version, fromTile, target, path);
     }

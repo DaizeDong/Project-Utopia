@@ -9,6 +9,8 @@ import { findNearestTileOfTypes, tileToWorld } from "../src/world/grid/Grid.js";
 test("MortalitySystem removes starved worker permanently", () => {
   const state = createInitialGameState();
   state.resources.food = 0;
+  state.buildings.warehouses = 0;
+  state.buildings.farms = 0;
   const worker = createWorker(0, 0, () => 0.5);
   worker.hunger = 0;
   worker.starvationSec = 60;
@@ -45,6 +47,7 @@ test("MortalitySystem starves worker if food exists but no reachable warehouse",
   const state = createInitialGameState();
   state.resources.food = 25;
   state.buildings.warehouses = 0;
+  state.buildings.farms = 0;
   const worker = createWorker(0, 0, () => 0.5);
   worker.hunger = 0;
   worker.starvationSec = 60;

@@ -71,14 +71,17 @@ function reconstructPath(cameFrom, currentKey, width) {
  * @param {{ix:number,iz:number}} start
  * @param {{ix:number,iz:number}} goal
  * @param {number} weatherMoveCostMultiplier
+ * @param {{tiles?: Set<string>, penaltyMultiplier?: number}|null} weatherHazards
  */
-export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
+export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, weatherHazards = null) {
   const width = grid.width;
   const height = grid.height;
   const startKey = toIndex(start.ix, start.iz, width);
   const goalKey = toIndex(goal.ix, goal.iz, width);
   const goalIx = goal.ix | 0;
   const goalIz = goal.iz | 0;
+  const hazardTiles = weatherHazards?.tiles instanceof Set ? weatherHazards.tiles : null;
+  const hazardPenaltyMultiplier = Math.max(1, Number(weatherHazards?.penaltyMultiplier ?? 1));
 
   if (startKey === goalKey) return [start];
 
@@ -118,6 +121,9 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1) {
       let stepCost = tileInfo.baseCost;
       if (tileType !== 1) {
         stepCost *= weatherMoveCostMultiplier;
+      }
+      if (hazardTiles?.has?.(`${nx},${nz}`)) {
+        stepCost *= hazardPenaltyMultiplier;
       }
 
       const tentative = gScore[current] + stepCost;

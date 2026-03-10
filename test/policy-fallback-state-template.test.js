@@ -33,6 +33,11 @@ test("buildPolicyFallback adapts worker/trader intents from state transition con
   assert.ok(stateTargets.length >= 3);
   assert.ok(stateTargets.some((t) => t.groupId === "workers"));
   assert.ok(stateTargets.some((t) => t.groupId === "traders"));
+  assert.ok(stateTargets.every((t) => !(t.groupId === "workers" && t.targetState === "harvest")));
+  assert.ok(stateTargets.every((t) => !(t.groupId === "workers" && t.targetState === "seek_food")));
+  assert.ok(stateTargets.every((t) => !(t.groupId === "workers" && t.targetState === "idle")));
+  assert.ok(stateTargets.every((t) => !(t.groupId === "traders" && t.targetState === "trade")));
+  assert.ok(stateTargets.every((t) => !(t.groupId === "traders" && t.targetState === "seek_food")));
   assert.ok(workers.intentWeights.eat > DEFAULT_GROUP_POLICIES.workers.intentWeights.eat);
   assert.ok(traders.intentWeights.eat > DEFAULT_GROUP_POLICIES.traders.intentWeights.eat);
 });

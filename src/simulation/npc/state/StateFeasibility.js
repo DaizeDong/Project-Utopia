@@ -156,6 +156,10 @@ export function normalizeDesiredStateWithFeasibility(
       });
       if (strategy === "strict") continue;
     }
+    if (stateNode === chosen) {
+      if (chosenSource === "fallback") chosenSource = candidate.source;
+      continue;
+    }
     chosen = stateNode;
     chosenSource = candidate.source;
   }
@@ -166,4 +170,3 @@ export function normalizeDesiredStateWithFeasibility(
     rejects,
   };
 }
-
