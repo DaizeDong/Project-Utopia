@@ -1,7 +1,8 @@
-﻿import { BALANCE } from "../../config/balance.js";
-import { TILE, VISITOR_KIND } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
+import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { getScenarioEventCandidates, getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
@@ -10,10 +11,128 @@ const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
 const EAT_RECOVERY_TARGET = 0.76;
 
+function tileKey(ix, iz) {
+  return `${ix},${iz}`;
+}
+
+function manhattanTiles(a, b) {
+  return Math.abs(Number(a?.ix ?? 0) - Number(b?.ix ?? 0)) + Math.abs(Number(a?.iz ?? 0) - Number(b?.iz ?? 0));
+}
+
 function isAtTargetTile(visitor, state) {
   if (!visitor.targetTile) return false;
   const tile = worldToTile(visitor.x, visitor.z, state.grid);
   return tile.ix === visitor.targetTile.ix && tile.iz === visitor.targetTile.iz;
+}
+
+function countNearbyTiles(state, center, tileTypes, radius = 1) {
+  let count = 0;
+  const targets = new Set(tileTypes);
+  for (let iz = center.iz - radius; iz <= center.iz + radius; iz += 1) {
+    for (let ix = center.ix - radius; ix <= center.ix + radius; ix += 1) {
+      if (ix < 0 || iz < 0 || ix >= state.grid.width || iz >= state.grid.height) continue;
+      if (Math.abs(ix - center.ix) + Math.abs(iz - center.iz) > radius) continue;
+      if (targets.has(state.grid.tiles[ix + iz * state.grid.width])) count += 1;
+    }
+  }
+  return count;
+}
+
+function findScenarioZoneLabel(candidates, tile) {
+  for (const candidate of candidates) {
+    if (candidate.tiles.some((entry) => entry.ix === tile.ix && entry.iz === tile.iz)) {
+      return candidate.label;
+    }
+  }
+  return "";
+}
+
+function getTradeTargetContext(state, tile, runtime = getScenarioRuntime(state), tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN)) {
+  const zoneLabel = findScenarioZoneLabel(tradeCandidates, tile);
+  const wallCoverage = countNearbyTiles(state, tile, [TILE.WALL], 1);
+  const roadNeighbors = countNearbyTiles(state, tile, [TILE.ROAD], 1);
+  const routeSupport = runtime.routes.length > 0 ? runtime.connectedRoutes / runtime.routes.length : 1;
+  const defenseBonus = Math.min(BALANCE.visitorTradeMaxWallBonus, wallCoverage * BALANCE.visitorTradeWallBonusPerWall);
+  const roadBonus = Math.min(0.24, roadNeighbors * BALANCE.visitorTradeRoadNeighborBonus);
+  const tradeBonus = Number((
+    1
+    + (zoneLabel ? BALANCE.visitorTradeDepotZoneBonus : 0)
+    + routeSupport * BALANCE.visitorTradeConnectedRouteBonus
+    + defenseBonus
+    + roadBonus
+  ).toFixed(2));
+
+  return {
+    label: zoneLabel || "warehouse lane",
+    zoneLabel,
+    wallCoverage,
+    roadNeighbors,
+    routeSupport,
+    tradeBonus,
+  };
+}
+
+function pickTraderTarget(visitor, state) {
+  const candidates = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  if (candidates.length === 0) return null;
+
+  const runtime = getScenarioRuntime(state);
+  const tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN);
+  const origin = worldToTile(visitor.x, visitor.z, state.grid);
+  let best = null;
+
+  for (const candidate of candidates) {
+    const context = getTradeTargetContext(state, candidate, runtime, tradeCandidates);
+    const score = context.tradeBonus - manhattanTiles(origin, candidate) * BALANCE.visitorTradeDistancePenalty;
+    if (!best || score > best.score) {
+      best = { tile: candidate, context, score };
+    }
+  }
+
+  return best;
+}
+
+function getSabotageTargetContext(state, tile, raidCandidates = getScenarioEventCandidates(state, EVENT_TYPE.BANDIT_RAID), tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN)) {
+  const frontierLabel = findScenarioZoneLabel(raidCandidates, tile);
+  const depotLabel = findScenarioZoneLabel(tradeCandidates, tile);
+  const wallCoverage = countNearbyTiles(state, tile, [TILE.WALL], 1);
+  const roadNeighbors = countNearbyTiles(state, tile, [TILE.ROAD, TILE.WAREHOUSE], 1);
+  const tileType = getTile(state.grid, tile.ix, tile.iz);
+  const label = depotLabel || frontierLabel || (tileType === TILE.WAREHOUSE ? "warehouse" : tileType === TILE.FARM ? "farm belt" : "lumber line");
+
+  return {
+    label,
+    frontierLabel,
+    depotLabel,
+    wallCoverage,
+    roadNeighbors,
+    tileType,
+  };
+}
+
+function pickSabotageTarget(visitor, state) {
+  const candidates = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE]);
+  if (candidates.length === 0) return null;
+
+  const raidCandidates = getScenarioEventCandidates(state, EVENT_TYPE.BANDIT_RAID);
+  const tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN);
+  const origin = worldToTile(visitor.x, visitor.z, state.grid);
+  let best = null;
+
+  for (const candidate of candidates) {
+    const context = getSabotageTargetContext(state, candidate, raidCandidates, tradeCandidates);
+    const wallPenalty = Math.min(BALANCE.sabotageMaxWallPenalty, context.wallCoverage * BALANCE.sabotageWallPenaltyPerWall);
+    const typeBonus = context.tileType === TILE.WAREHOUSE ? BALANCE.sabotageWarehousePriorityBonus : 0;
+    const zoneBonus = (context.frontierLabel ? BALANCE.sabotageFrontierZoneBonus : 0) + (context.depotLabel ? BALANCE.sabotageDepotZoneBonus : 0);
+    const roadBonus = Math.min(0.24, context.roadNeighbors * BALANCE.sabotageRoadNeighborBonus);
+    const distancePenalty = manhattanTiles(origin, candidate) * 0.03;
+    const score = 1 + typeBonus + zoneBonus + roadBonus - wallPenalty - distancePenalty;
+    if (!best || score > best.score) {
+      best = { tile: candidate, context, score };
+    }
+  }
+
+  return best;
 }
 
 function updateVisitorHunger(visitor, dt) {
@@ -53,18 +172,19 @@ function consumeVisitorRation(visitor, state, dt) {
   visitor.hunger = clamp((visitor.hunger ?? 0) + appliedGain, 0, 1);
 }
 
-function applySabotage(state, target, rng) {
+function applySabotage(state, target, context, rng) {
   const idx = target.ix + target.iz * state.grid.width;
   const tile = state.grid.tiles[idx];
-  if (tile !== TILE.FARM && tile !== TILE.LUMBER && tile !== TILE.WAREHOUSE) return;
+  if (tile !== TILE.FARM && tile !== TILE.LUMBER && tile !== TILE.WAREHOUSE) return null;
 
-  state.grid.tiles[idx] = TILE.RUINS;
-  state.grid.version += 1;
-
-  if (tile === TILE.WAREHOUSE) {
-    state.resources.food = Math.max(0, state.resources.food - (3 + rng.next() * 6));
-    state.resources.wood = Math.max(0, state.resources.wood - (3 + rng.next() * 6));
-  }
+  const defenseScore = Number(context?.wallCoverage ?? countNearbyTiles(state, target, [TILE.WALL], 1));
+  const resistance = Math.max(0, Number(state.gameplay?.modifiers?.sabotageResistance ?? 1) - 1);
+  const blockChance = clamp(
+    defenseScore * BALANCE.sabotageDefenseBlockPerWall + resistance * BALANCE.sabotageResistanceBlockWeight,
+    0,
+    0.85,
+  );
+  const blocked = rng.next() < blockChance;
 
   state.events.active.push({
     id: `evt_sabotage_${state.metrics.tick}`,
@@ -73,8 +193,32 @@ function applySabotage(state, target, rng) {
     elapsedSec: 0,
     durationSec: 3,
     intensity: 1,
-    payload: { ix: target.ix, iz: target.iz },
+    payload: {
+      ix: target.ix,
+      iz: target.iz,
+      targetLabel: context?.label ?? "",
+      defenseScore,
+      blockedByWalls: blocked,
+    },
   });
+
+  if (blocked) {
+    return { blocked: true, targetLabel: context?.label ?? "", defenseScore };
+  }
+
+  state.grid.tiles[idx] = TILE.RUINS;
+  state.grid.version += 1;
+
+  if (tile === TILE.WAREHOUSE) {
+    state.resources.food = Math.max(0, state.resources.food - (3 + rng.next() * 6));
+    state.resources.wood = Math.max(0, state.resources.wood - (3 + rng.next() * 6));
+  } else if (tile === TILE.FARM) {
+    state.resources.food = Math.max(0, state.resources.food - (1.5 + rng.next() * 3.5));
+  } else if (tile === TILE.LUMBER) {
+    state.resources.wood = Math.max(0, state.resources.wood - (1.5 + rng.next() * 3.5));
+  }
+
+  return { blocked: false, targetLabel: context?.label ?? "", defenseScore };
 }
 
 function shouldTraderRetarget(visitor, state) {
@@ -168,10 +312,14 @@ function traderTick(visitor, state, dt, services) {
   if (!Number.isFinite(bb.nextTradeRetargetSec)) bb.nextTradeRetargetSec = -Infinity;
 
   if ((shouldTraderRetarget(visitor, state) || nowSec >= bb.nextTradeRetargetSec) && canAttemptPath(visitor, state)) {
-    const warehouse = findNearestTileOfTypes(state.grid, visitor, [TILE.WAREHOUSE]);
-    if (warehouse && setTargetAndPath(visitor, warehouse, state, services)) {
+    const nextTarget = pickTraderTarget(visitor, state);
+    if (nextTarget && setTargetAndPath(visitor, nextTarget.tile, state, services)) {
       bb.nextTradeRetargetSec = nowSec + retargetWindowSec;
       bb.tradeRetargetMisses = 0;
+      bb.tradeTargetLabel = nextTarget.context.label;
+      bb.tradeTargetBonus = nextTarget.context.tradeBonus;
+      bb.tradeTargetDefense = nextTarget.context.wallCoverage;
+      bb.tradeTargetRouteSupport = nextTarget.context.routeSupport;
     } else {
       bb.tradeRetargetMisses = Number(bb.tradeRetargetMisses ?? 0) + 1;
       bb.nextTradeRetargetSec = nowSec + Math.min(3.5, 0.6 + bb.tradeRetargetMisses * 0.45);
@@ -187,8 +335,10 @@ function traderTick(visitor, state, dt, services) {
 
   if (visitor.targetTile && isAtTargetTile(visitor, state)) {
     const tradeYield = Number(state.gameplay?.modifiers?.tradeYield ?? 1);
-    state.resources.food += 1.5 * dt * tradeYield;
-    state.resources.wood += 1.2 * dt * tradeYield;
+    const tradeBonus = Math.max(1, Number(bb.tradeTargetBonus ?? 1));
+    state.resources.food += 1.5 * dt * tradeYield * tradeBonus;
+    state.resources.wood += 1.2 * dt * tradeYield * tradeBonus;
+    bb.lastTradeYieldBonus = tradeBonus;
     restoreVisitorHunger(visitor, state, dt);
     return;
   }
@@ -222,17 +372,18 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
   const threatFactor = 1 + Number(state.gameplay?.threat ?? 0) / 220;
   const chanceScale = Math.max(0.35, Math.min(2.8, sabotageWeight * threatFactor / Math.max(0.6, resistance)));
 
+  const bb = visitor.blackboard ?? (visitor.blackboard = {});
   visitor.sabotageCooldown -= dt;
   if (visitor.sabotageCooldown <= 0) {
     const base = BALANCE.sabotageCooldownMinSec + services.rng.next() * (BALANCE.sabotageCooldownMaxSec - BALANCE.sabotageCooldownMinSec);
     visitor.sabotageCooldown = base / chanceScale;
 
-    const candidates = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE]);
-    if (candidates.length > 0) {
-      const target = candidates[Math.floor(services.rng.next() * candidates.length)];
-      if (canAttemptPath(visitor, state)) {
-        setTargetAndPath(visitor, target, state, services);
-      }
+    const nextTarget = pickSabotageTarget(visitor, state);
+    if (nextTarget && canAttemptPath(visitor, state) && setTargetAndPath(visitor, nextTarget.tile, state, services)) {
+      bb.sabotageTargetLabel = nextTarget.context.label;
+      bb.sabotageTargetDefense = nextTarget.context.wallCoverage;
+      bb.sabotageTargetScore = Number(nextTarget.score.toFixed(2));
+      bb.sabotageTargetType = nextTarget.context.tileType;
     }
   }
 
@@ -241,7 +392,13 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
     const step = followPath(visitor, state, dt);
     visitor.desiredVel = step.desired;
     if (step.done && visitor.targetTile) {
-      applySabotage(state, visitor.targetTile, services.rng);
+      const result = applySabotage(state, visitor.targetTile, {
+        label: bb.sabotageTargetLabel,
+        wallCoverage: bb.sabotageTargetDefense,
+      }, services.rng);
+      bb.lastSabotageBlocked = Boolean(result?.blocked);
+      bb.lastSabotageTargetLabel = result?.targetLabel ?? bb.sabotageTargetLabel ?? "";
+      bb.lastSabotageDefense = Number(result?.defenseScore ?? bb.sabotageTargetDefense ?? 0);
       clearPath(visitor);
     }
     return;
