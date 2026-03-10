@@ -57,6 +57,7 @@ npm run release:strict
 
 - a clean non-ignored worktree
 - a non-stale production build relative to the checked frontend inputs
+- fresh local verification artifacts relative to the current build
 
 Or run the full verification chain plus the strict clean-worktree gate together:
 
@@ -85,11 +86,13 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 - the local release status summary, including whether `release:strict` would currently pass
 - the current `release:strict` blocker preview, including the first non-ignored dirty paths
 - whether strict mode is also requiring a fresh build at check time
+- whether strict mode is also requiring fresh local verification artifacts
 - the toolchain snapshot used for the release pass (`node`, `npm`, `vite`)
 - the exact release-script chain from `package.json`
 - per-artifact `sha256` hashes for the build, proofs, metrics, and optional screenshots
 - portable `relativePath` fields alongside the local absolute paths
 - a build-freshness summary showing whether `dist` is older than the checked frontend build inputs
+- a verification-freshness summary showing whether the local Stage 12/13 verification artifacts are older than the current build
 - the built `dist` asset inventory and bundle summary
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence
