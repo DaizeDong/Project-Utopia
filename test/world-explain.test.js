@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
-import { EVENT_TYPE, WEATHER } from "../src/config/constants.js";
+import { EVENT_TYPE, TILE, WEATHER } from "../src/config/constants.js";
 import { enqueueEvent } from "../src/world/events/WorldEventQueue.js";
 import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
 import { setWeather } from "../src/world/weather/WeatherSystem.js";
@@ -134,4 +134,34 @@ test("world explain summarizes herbivore migration steering", () => {
   const insights = getEntityInsight(state, herbivore);
 
   assert.ok(insights.some((line) => /migration order is steering/i.test(line)));
+});
+
+test("world explain surfaces ecology pressure on tiles and animals", () => {
+  const state = createInitialGameState({ seed: 1337 });
+  const wildlifeZone = state.gameplay.scenario.wildlifeZones[0];
+  const wildlifeTile = state.gameplay.scenario.anchors[wildlifeZone.anchor];
+  const predator = state.animals.find((animal) => animal.kind === "PREDATOR");
+
+  state.metrics.ecology = {
+    activeGrazers: 1,
+    pressuredFarms: 1,
+    maxFarmPressure: 1.05,
+    frontierPredators: 1,
+    migrationHerds: 0,
+    farmPressureByKey: { [`${wildlifeTile.ix},${wildlifeTile.iz}`]: 1.05 },
+    hotspotFarms: [{ ix: wildlifeTile.ix, iz: wildlifeTile.iz, pressure: 1.05 }],
+    herbivoresByZone: { [wildlifeZone.id]: 2 },
+    predatorsByZone: { [wildlifeZone.id]: 1 },
+    summary: "Ecology: one pressured farm near the frontier habitat",
+  };
+  state.grid.tiles[wildlifeTile.ix + wildlifeTile.iz * state.grid.width] = TILE.FARM;
+  predator.memory.homeZoneLabel = wildlifeZone.label;
+  predator.debug.lastPatrolLabel = "farm-pressure hotspot";
+
+  const tileInsights = getTileInsight(state, wildlifeTile);
+  const predatorInsights = getEntityInsight(state, predator);
+
+  assert.ok(tileInsights.some((line) => /stripping this farm lane/i.test(line)));
+  assert.ok(tileInsights.some((line) => /2 herbivores and 1 predators/i.test(line)));
+  assert.ok(predatorInsights.some((line) => /patrolling/i.test(line)));
 });

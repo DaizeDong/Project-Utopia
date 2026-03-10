@@ -112,6 +112,21 @@ function setIdleDesired(worker) {
   worker.desiredVel.z = 0;
 }
 
+function getFarmEcologyYieldMultiplier(worker, state) {
+  const target = worker.targetTile ?? null;
+  if (!target) return { multiplier: 1, pressure: 0 };
+  const key = `${target.ix},${target.iz}`;
+  const pressure = Math.max(0, Number(state.metrics?.ecology?.farmPressureByKey?.[key] ?? 0));
+  const penalty = Math.min(
+    Number(BALANCE.ecologyFarmYieldPenaltyMax ?? 0.7),
+    pressure * Number(BALANCE.ecologyFarmYieldPenaltyPerPressure ?? 0.44),
+  );
+  return {
+    multiplier: Math.max(0.15, 1 - penalty),
+    pressure,
+  };
+}
+
 function consumeEmergencyRation(worker, state, dt, nowSec) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   const hungerNow = Number(worker.hunger ?? 0);
@@ -256,9 +271,22 @@ function handleHarvest(worker, state, services, dt) {
   if (!isAtTargetTile(worker, state)) return;
   if (worker.role === ROLE.FARM) {
     const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.farmProductionMultiplier * doctrine), "food", services.rng);
+    const ecology = getFarmEcologyYieldMultiplier(worker, state);
+    worker.debug ??= {};
+    worker.debug.lastFarmPressure = ecology.pressure;
+    worker.debug.lastFarmYieldMultiplier = ecology.multiplier;
+    resolveWorkCooldown(
+      worker,
+      dt,
+      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier),
+      "food",
+      services.rng,
+    );
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
+    worker.debug ??= {};
+    worker.debug.lastFarmPressure = 0;
+    worker.debug.lastFarmYieldMultiplier = 1;
     resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine), "wood", services.rng);
   }
 }
