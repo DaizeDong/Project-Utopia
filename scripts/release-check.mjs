@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 
 const A4_PATH = path.resolve("assignments/homework4/a4.md");
@@ -40,6 +41,7 @@ function fileStatOrNull(filePath) {
     path: filePath,
     sizeBytes: stat.size,
     modifiedAt: stat.mtime.toISOString(),
+    sha256: crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex"),
   };
 }
 
