@@ -11,6 +11,7 @@ const PERF_PROOF_PATH = path.resolve("assignments/homework3/metrics/perf-baselin
 const LOCAL_SOAK_PATH = path.resolve("docs/assignment4/metrics/soak-report.json");
 const LOCAL_PERF_PATH = path.resolve("docs/assignment4/metrics/perf-baseline.csv");
 const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
+const SCREENSHOT_DIR = path.resolve("output/playwright");
 
 const REQUIRED_A4_SECTIONS = [
   "## Current Alpha Diagnosis",
@@ -52,6 +53,17 @@ function getHeadCommit() {
   }
 }
 
+function collectReleaseScreenshots(dirPath) {
+  if (!fs.existsSync(dirPath)) return [];
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(dirPath, entry.name))
+    .filter((filePath) => /^release-.*\.(png|jpg|jpeg)$/iu.test(path.basename(filePath)))
+    .sort()
+    .map((filePath) => fileStatOrNull(filePath))
+    .filter(Boolean);
+}
+
 function main() {
   requireFile(A4_PATH, "HW04 report");
   requireFile(DIST_INDEX_PATH, "production build");
@@ -75,6 +87,7 @@ function main() {
     soakReport: fs.existsSync(LOCAL_SOAK_PATH),
     perfBaseline: fs.existsSync(LOCAL_PERF_PATH),
   };
+  const screenshotArtifacts = collectReleaseScreenshots(SCREENSHOT_DIR);
 
   const manifest = {
     generatedAt: new Date().toISOString(),
@@ -96,6 +109,7 @@ function main() {
       soakReport: fileStatOrNull(LOCAL_SOAK_PATH),
       perfBaseline: fileStatOrNull(LOCAL_PERF_PATH),
     },
+    screenshotArtifacts,
   };
 
   fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
@@ -108,6 +122,7 @@ function main() {
   console.log(
     `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}`,
   );
+  console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 

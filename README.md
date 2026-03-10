@@ -52,6 +52,10 @@ Generated verification artifacts are written to:
 - `docs/assignment4/release-manifest.json`
 - `docs/assignment3/verification-summary.json`
 
+Optional local screenshot evidence can be captured under:
+
+- `output/playwright/release-*.png`
+
 These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
 
 ## Optional Live-AI Proof Refresh
