@@ -12,6 +12,7 @@
     "test:ui": "node --test test/ui-layout.test.js",
     "bench:perf": "node scripts/bench-perf.mjs",
     "bench:logic": "node scripts/logic-baseline.mjs",
+    "soak:sim": "node scripts/soak-sim.mjs",
     "a3:evidence:ai": "node scripts/capture-live-ai-evidence.mjs",
     "verify:a3": "node scripts/verify-a3.mjs",
     "verify:full": "node scripts/verify-full.mjs"
