@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 
+import { SeededRng, deriveRngSeed } from "../src/app/rng.js";
 import { MAP_TEMPLATES, createInitialGrid, randomPassableTile } from "../src/world/grid/Grid.js";
 import { aStar } from "../src/simulation/navigation/AStar.js";
 
@@ -15,12 +16,13 @@ function run() {
 
   for (const template of MAP_TEMPLATES) {
     for (const seed of seeds) {
+      const rng = new SeededRng(deriveRngSeed(seed, `bench:${template.id}`));
       const t0 = performance.now();
       const grid = createInitialGrid({ templateId: template.id, seed });
       const genMs = performance.now() - t0;
 
-      const start = randomPassableTile(grid, Math.random);
-      const goal = randomPassableTile(grid, Math.random);
+      const start = randomPassableTile(grid, () => rng.next());
+      const goal = randomPassableTile(grid, () => rng.next());
       const t1 = performance.now();
       const path = aStar(grid, start, goal, 1);
       const astarMs = performance.now() - t1;
@@ -37,7 +39,7 @@ function run() {
     }
   }
 
-  const outDir = path.resolve(process.cwd(), "docs/assignment3/metrics");
+  const outDir = path.resolve(process.cwd(), "docs/assignment4/metrics");
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, "perf-baseline.csv");
   const header = "template,seed,grid_ms,astar_ms,path_len,width,height";
