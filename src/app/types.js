@@ -233,11 +233,31 @@
  * }} SessionState
  *
  * @typedef {{
+ *  id: string,
+ *  family: string,
+ *  title: string,
+ *  summary: string,
+ *  anchors: Record<string, {ix:number, iz:number}>,
+ *  routeLinks?: Array<{id:string, label:string, from:string, to:string, gapTiles:Array<{ix:number, iz:number}>, radius?:number, hint?:string}>,
+ *  depotZones?: Array<{id:string, label:string, anchor:string, radius?:number, hint?:string}>,
+ *  chokePoints?: Array<{id:string, label:string, anchor:string, radius?:number}>,
+ *  wildlifeZones?: Array<{id:string, label:string, anchor:string, radius?:number}>,
+ *  targets?: {
+ *    logistics?: {warehouses:number, farms:number, lumbers:number, roads:number, walls:number},
+ *    stockpile?: {food:number, wood:number},
+ *    stability?: {walls:number, prosperity:number, threat:number, holdSec:number}
+ *  },
+ *  objectiveCopy?: Record<string, string>,
+ *  hintCopy?: Record<string, string>
+ * }} ScenarioState
+ *
+ * @typedef {{
  *  doctrine: string,
  *  modifiers: Record<string, number>,
  *  prosperity: number,
  *  threat: number,
  *  objectiveIndex: number,
+ *  scenario?: ScenarioState,
  *  objectives: Array<{id:string,title:string,description:string,completed:boolean,progress:number,reward:string}>,
  *  objectiveHoldSec: number,
  *  objectiveHint?: string,
