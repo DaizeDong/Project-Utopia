@@ -57,6 +57,7 @@ Optional local screenshot evidence can be captured under:
 - `output/playwright/release-*.png`
 
 These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
+That includes `output/playwright/`, which is treated as a local evidence/debug directory rather than a tracked source folder.
 
 `release-manifest.json` now records:
 
