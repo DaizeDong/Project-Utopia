@@ -226,6 +226,13 @@
  * }} DebugState
  *
  * @typedef {{
+ *  phase: "menu"|"active"|"end",
+ *  outcome: "none"|"win"|"loss",
+ *  reason: string,
+ *  endedAtSec: number
+ * }} SessionState
+ *
+ * @typedef {{
  *  doctrine: string,
  *  modifiers: Record<string, number>,
  *  prosperity: number,
@@ -233,6 +240,7 @@
  *  objectiveIndex: number,
  *  objectives: Array<{id:string,title:string,description:string,completed:boolean,progress:number,reward:string}>,
  *  objectiveHoldSec: number,
+ *  objectiveHint?: string,
  *  objectiveLog: string[]
  * }} GameplayState
  *
@@ -279,6 +287,7 @@
  *
  * @typedef {{
  *  grid: GridState,
+ *  session: SessionState,
  *  world: WorldState,
  *  resources: ResourceState,
  *  agents: AgentState[],

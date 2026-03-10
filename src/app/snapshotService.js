@@ -84,6 +84,28 @@ function migrateLegacyPopulationTargets(snapshot) {
   targets.visitors = traders + saboteurs;
 }
 
+function migrateLegacySessionState(snapshot) {
+  const session = snapshot?.session;
+  if (!session || typeof session !== "object") {
+    snapshot.session = {
+      phase: "menu",
+      outcome: "none",
+      reason: "",
+      endedAtSec: -1,
+    };
+    return;
+  }
+
+  const phase = String(session.phase ?? "menu");
+  const outcome = String(session.outcome ?? "none");
+  snapshot.session = {
+    phase: phase === "active" || phase === "end" ? phase : "menu",
+    outcome: outcome === "win" || outcome === "loss" ? outcome : "none",
+    reason: typeof session.reason === "string" ? session.reason : "",
+    endedAtSec: Number.isFinite(Number(session.endedAtSec)) ? Number(session.endedAtSec) : -1,
+  };
+}
+
 export function makeSerializableSnapshot(state, rngSnapshot = null) {
   const snapshot = ensureStructuredClone(state);
   snapshot.grid.tiles = Array.from(state.grid.tiles);
@@ -96,6 +118,15 @@ export function makeSerializableSnapshot(state, rngSnapshot = null) {
   return snapshot;
 }
 
+function mergeSnapshotMeta(snapshot, extraMeta = null) {
+  if (!extraMeta || typeof extraMeta !== "object") return snapshot;
+  snapshot.meta = {
+    ...(snapshot.meta ?? {}),
+    ...ensureStructuredClone(extraMeta),
+  };
+  return snapshot;
+}
+
 export function restoreSnapshotState(serialized) {
   const snapshot = ensureStructuredClone(serialized);
   snapshot.grid.tiles = Uint8Array.from(snapshot.grid.tiles ?? []);
@@ -104,6 +135,7 @@ export function restoreSnapshotState(serialized) {
   snapshot.ai.lastStateTargetBatch ??= [];
   migrateLegacyVisitorGroups(snapshot);
   migrateLegacyPopulationTargets(snapshot);
+  migrateLegacySessionState(snapshot);
   snapshot.metrics.warningLog ??= [];
   snapshot.metrics.invalidTransitionCount ??= 0;
   snapshot.metrics.idleWithoutReasonSec ??= {};
@@ -133,9 +165,9 @@ export function createSnapshotService() {
       return `${STORAGE_PREFIX}${safe}`;
     },
 
-    saveToStorage(slotId, state, rngSnapshot = null) {
+    saveToStorage(slotId, state, rngSnapshot = null, extraMeta = null) {
       const key = this.slotKey(slotId);
-      const payload = makeSerializableSnapshot(state, rngSnapshot);
+      const payload = mergeSnapshotMeta(makeSerializableSnapshot(state, rngSnapshot), extraMeta);
       localStorage.setItem(key, JSON.stringify(payload));
       return { key, bytes: JSON.stringify(payload).length };
     },
@@ -148,8 +180,8 @@ export function createSnapshotService() {
       return restoreSnapshotState(parsed);
     },
 
-    exportJson(state, rngSnapshot = null) {
-      const payload = makeSerializableSnapshot(state, rngSnapshot);
+    exportJson(state, rngSnapshot = null, extraMeta = null) {
+      const payload = mergeSnapshotMeta(makeSerializableSnapshot(state, rngSnapshot), extraMeta);
       return `${JSON.stringify(payload, null, 2)}\n`;
     },
 
