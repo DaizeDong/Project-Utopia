@@ -55,6 +55,30 @@ function getHeadCommit() {
   }
 }
 
+function getRecentCommits(limit = 8) {
+  try {
+    const output = execSync(`git log --pretty=format:%H%x09%h%x09%cI%x09%s -n ${Math.max(1, limit)}`, {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    });
+    return output
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, shortHash, committedAt, subject] = line.split("\t");
+        return {
+          hash,
+          shortHash,
+          committedAt,
+          subject,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 function listFilesRecursive(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
   const out = [];
@@ -183,6 +207,7 @@ function main() {
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
   const distSummary = summarizeDistAssets(distAssets);
   const worktree = getWorktreeStatus();
+  const recentCommits = getRecentCommits();
   if (REQUIRE_CLEAN && worktree.dirty) {
     fail(`worktree is not clean (${worktree.entryCount} entries)`);
   }
@@ -190,6 +215,7 @@ function main() {
   const manifest = {
     generatedAt: new Date().toISOString(),
     headCommit: getHeadCommit(),
+    recentCommits,
     report: {
       path: A4_PATH,
       requiredSections: REQUIRED_A4_SECTIONS,
@@ -229,6 +255,7 @@ function main() {
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
   console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
+  console.log(`[release:check] recent commits: ${recentCommits.length}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 
