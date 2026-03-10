@@ -83,6 +83,7 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 
 - the final HW04 report path and stage coverage
 - the current `HEAD` commit and a recent commit history snapshot
+- the current git branch / `git describe` / upstream reference for release provenance
 - the local release status summary, including whether `release:strict` would currently pass
 - the current `release:strict` blocker preview, including the first non-ignored dirty paths
 - whether strict mode is also requiring a fresh build at check time

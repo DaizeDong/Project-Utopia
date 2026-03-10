@@ -68,6 +68,14 @@ function getHeadCommit() {
   }
 }
 
+function getGitContext() {
+  return {
+    branch: runCommandCapture("git branch --show-current"),
+    describe: runCommandCapture("git describe --always --tags --dirty"),
+    upstream: runCommandCapture('git rev-parse --abbrev-ref --symbolic-full-name "@{u}"'),
+  };
+}
+
 function getRecentCommits(limit = 8) {
   try {
     const output = execSync(`git log --pretty=format:%H%x09%h%x09%cI%x09%s -n ${Math.max(1, limit)}`, {
@@ -347,6 +355,7 @@ function main() {
   const worktree = getWorktreeStatus();
   const strictBlockers = summarizeStrictBlockers(worktree);
   const recentCommits = getRecentCommits();
+  const gitContext = getGitContext();
   const toolchain = collectToolchain(packageJson);
   const commandChain = collectCommandChain(packageJson);
   if (REQUIRE_CLEAN && worktree.dirty) {
@@ -367,6 +376,7 @@ function main() {
   const manifest = {
     generatedAt: new Date().toISOString(),
     headCommit: getHeadCommit(),
+    git: gitContext,
     recentCommits,
     releaseStatus: {
       strictReady: !worktree.dirty && buildFreshness.fresh && verifyFreshness.fresh,
@@ -435,6 +445,9 @@ function main() {
   console.log(`[release:check] require fresh build: ${REQUIRE_FRESH_BUILD}`);
   console.log(`[release:check] require fresh verify: ${REQUIRE_FRESH_VERIFY}`);
   console.log(`[release:check] recent commits: ${recentCommits.length}`);
+  console.log(
+    `[release:check] git: branch=${gitContext.branch || "unknown"} describe=${gitContext.describe || "unknown"} upstream=${gitContext.upstream || "none"}`,
+  );
   console.log(`[release:check] strict ready: ${!worktree.dirty && buildFreshness.fresh && verifyFreshness.fresh}`);
   console.log(`[release:check] toolchain: node=${toolchain.node} npm=${toolchain.npm} vite=${toolchain.vite || "unknown"}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
