@@ -74,6 +74,9 @@ test("HUDController shows session phase and action severity", () => {
     state.metrics.averageFps = 60;
     state.metrics.frameMs = 16;
     state.metrics.warnings = [];
+    state.metrics.logistics = {
+      summary: "Logistics: carriers 2, avg depot dist 6.0, overloaded depots 1, stretched worksites 1, isolated worksites 0",
+    };
 
     const hud = new HUDController(state);
     hud.render();
@@ -81,6 +84,7 @@ test("HUDController shows session phase and action severity", () => {
     assert.match(nodes.simVal.textContent, /phase=end/i);
     assert.equal(nodes.actionVal.attrs["data-kind"], "error");
     assert.equal(nodes.warningVal.attrs["data-kind"], "info");
+    assert.match(nodes.warningVal.textContent, /Logistics:/);
   } finally {
     globalThis.document = prevDocument;
   }

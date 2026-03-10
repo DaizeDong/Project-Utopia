@@ -126,6 +126,25 @@ function parsePreferredPath(pathText) {
     .filter(Boolean);
 }
 
+function sanitizeFallbackTargetState(groupId, targetState, context) {
+  const carrying = Number(context?.carrying ?? 0);
+  const count = Number(context?.count ?? 0);
+
+  if (groupId === "workers") {
+    if (targetState === "harvest" || targetState === "eat" || targetState === "seek_food" || targetState === "idle") {
+      return carrying >= Math.max(4, count * 0.4) ? "deliver" : "seek_task";
+    }
+  }
+
+  if (groupId === "traders") {
+    if (targetState === "trade" || targetState === "eat" || targetState === "seek_food" || targetState === "idle") {
+      return "seek_trade";
+    }
+  }
+
+  return targetState;
+}
+
 function pickStateTargetForGroup(groupId, summary) {
   const context = summary?.stateTransitions?.groups?.[groupId] ?? null;
   if (!context) return null;
@@ -158,9 +177,9 @@ function pickStateTargetForGroup(groupId, summary) {
     const states = parsePreferredPath(preferredPaths[0]);
     if (states.length > 0) {
       const first = states[0];
-      const second = states[1];
-      if (first === dominant && second && nodes.includes(second)) {
-        targetState = second;
+      const dominantIndex = states.indexOf(dominant);
+      if (dominantIndex >= 0 && states[dominantIndex + 1] && nodes.includes(states[dominantIndex + 1])) {
+        targetState = states[dominantIndex + 1];
       } else if (nodes.includes(first)) {
         targetState = first;
       }
@@ -170,6 +189,7 @@ function pickStateTargetForGroup(groupId, summary) {
   if (!nodes.includes(targetState)) {
     targetState = nodes.includes(dominant) ? dominant : nodes[0];
   }
+  targetState = sanitizeFallbackTargetState(groupId, targetState, context);
 
   const avgHunger = Number(context.avgHunger ?? 0.5);
   const basePriority = 0.45 + Math.max(0, Math.min(0.35, (0.5 - avgHunger) * 0.7));

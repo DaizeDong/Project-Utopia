@@ -71,7 +71,7 @@ test("StatePlanner keeps critical hunger local state unless policy signal is ver
   assert.equal(Boolean(worker.debug.policyApplied), false);
 });
 
-test("StatePlanner can apply feasible food policy intent even when worker is satiated", () => {
+test("StatePlanner does not force survival policy on a satiated worker", () => {
   const state = makeState();
   const worker = {
     id: "worker_3",
@@ -93,8 +93,9 @@ test("StatePlanner can apply feasible food policy intent even when worker is sat
   };
 
   const result = planEntityDesiredState(worker, state);
-  assert.equal(result.desiredState, "seek_food");
-  assert.equal(typeof worker.debug.policyTopIntent, "string");
+  assert.equal(result.desiredState, "seek_task");
+  assert.equal(Boolean(worker.debug.policyApplied), false);
+  assert.equal(worker.debug.policyTopIntent, "eat");
 });
 
 test("StatePlanner applies feasible AI food target when priority is high", () => {
@@ -164,4 +165,38 @@ test("StatePlanner rejects AI deliver target when worker has no carry", () => {
   assert.notEqual(result.desiredState, "deliver");
   assert.equal(Boolean(worker.debug.aiTargetApplied), false);
   assert.equal(typeof worker.debug.aiRejectedReason, "string");
+});
+
+test("StatePlanner keeps local deliver priority over AI harvest steering", () => {
+  const state = makeState();
+  state.ai.groupStateTargets.set("workers", {
+    targetState: "harvest",
+    expiresAtSec: 60,
+    priority: 0.95,
+    source: "fallback",
+    reason: "stale-harvest-target",
+  });
+
+  const worker = {
+    id: "worker_6",
+    groupId: "workers",
+    role: ROLE.FARM,
+    hunger: 0.9,
+    carry: { food: 3, wood: 0 },
+    x: 0,
+    z: 0,
+    targetTile: null,
+    path: null,
+    pathIndex: 0,
+    pathGridVersion: -1,
+    blackboard: {},
+    debug: {},
+    policy: {
+      intentWeights: { farm: 1.3, deliver: 0.2 },
+    },
+  };
+
+  const result = planEntityDesiredState(worker, state);
+  assert.equal(result.desiredState, "deliver");
+  assert.equal(Boolean(worker.debug.aiTargetApplied), false);
 });

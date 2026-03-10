@@ -162,7 +162,19 @@
  *  deliverWithoutCarryCount?: number,
  *  feasibilityRejectCountByGroup?: Record<string, number>,
  *  starvationRiskCount?: number,
- *  deathByReasonAndReachability?: Record<string, number>
+ *  deathByReasonAndReachability?: Record<string, number>,
+ *  logistics?: {
+ *    carryingWorkers: number,
+ *    totalCarryInTransit: number,
+ *    avgDepotDistance: number,
+ *    strandedCarryWorkers: number,
+ *    overloadedWarehouses: number,
+ *    busiestWarehouseLoad: number,
+ *    stretchedWorksites: number,
+ *    isolatedWorksites: number,
+ *    warehouseLoadByKey?: Record<string, number>,
+ *    summary?: string
+ *  }
  * }} MetricsState
  *
  * @typedef {{

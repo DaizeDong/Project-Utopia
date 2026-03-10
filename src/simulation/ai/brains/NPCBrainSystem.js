@@ -76,6 +76,19 @@ function canonicalStateForGroup(groupId, rawState) {
   return byToken.get(token) ?? "";
 }
 
+function sanitizeStateTargetForRuntime(groupId, targetState) {
+  if (groupId === GROUP_IDS.WORKERS) {
+    if (targetState === "harvest") return "seek_task";
+    if (targetState === "eat" || targetState === "seek_food" || targetState === "idle") return "seek_task";
+  }
+  if (groupId === GROUP_IDS.TRADERS) {
+    if (targetState === "trade" || targetState === "eat" || targetState === "seek_food" || targetState === "idle") {
+      return "seek_trade";
+    }
+  }
+  return targetState;
+}
+
 function deriveStateTargetFromPolicy(policy) {
   const groupId = canonicalGroupId(policy?.groupId);
   const intentMap = POLICY_INTENT_TO_STATE[groupId];
@@ -169,7 +182,10 @@ function normalizeStateTargetsForRuntime(stateTargets = [], state) {
   for (const candidate of stateTargets) {
     if (!candidate || typeof candidate !== "object") continue;
     const groupId = canonicalGroupId(candidate.groupId);
-    const targetState = canonicalStateForGroup(groupId, candidate.targetState);
+    const targetState = sanitizeStateTargetForRuntime(
+      groupId,
+      canonicalStateForGroup(groupId, candidate.targetState),
+    );
     if (!groupId || !targetState) continue;
     if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
 

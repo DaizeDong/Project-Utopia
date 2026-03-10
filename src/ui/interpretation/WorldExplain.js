@@ -77,6 +77,12 @@ export function getEventInsight(state) {
   return state.events.active.map((event) => summarizeEvent(event)).join(", ");
 }
 
+export function getLogisticsInsight(state) {
+  const logistics = state.metrics?.logistics ?? null;
+  if (!logistics) return "Logistics: unavailable";
+  return logistics.summary ?? "Logistics: unavailable";
+}
+
 export function getTileInsight(state, tile) {
   if (!tile) return [];
   const runtime = getScenarioRuntime(state);
@@ -142,8 +148,19 @@ export function getEntityInsight(state, entity) {
       insights.push("Local survival rule is prioritizing food access because hunger is below the worker seek-food threshold.");
     } else if (carryTotal > 0 && state.buildings.warehouses > 0) {
       insights.push(`Local logistics rule sees ${carryTotal.toFixed(2)} carried resources, so delivery should outrank more harvesting.`);
+      const carryAgeSec = Number(entity.debug?.carryAgeSec ?? entity.blackboard?.carryAgeSec ?? 0);
+      if (carryAgeSec >= 5.5) {
+        insights.push(`Carry pressure has been building for ${carryAgeSec.toFixed(1)}s, so the worker is being pushed back toward a depot.`);
+      }
     } else if ((entity.role === "FARM" && state.buildings.farms > 0) || (entity.role === "WOOD" && state.buildings.lumbers > 0)) {
       insights.push(`Worker is still in a gather loop because carry is low and a ${String(entity.role).toLowerCase()} worksite exists.`);
+    }
+    if (targetTile && state.metrics?.logistics?.warehouseLoadByKey) {
+      const key = tileKey(targetTile.ix, targetTile.iz);
+      const load = Number(state.metrics.logistics.warehouseLoadByKey[key] ?? 0);
+      if (load > 1) {
+        insights.push(`Target warehouse currently has ${load} inbound workers, so unloading will be slower.`);
+      }
     }
   }
 
