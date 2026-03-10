@@ -1,4 +1,4 @@
-import { getEventInsight, getFrontierStatus, getLogisticsInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getEventInsight, getFrontierStatus, getLogisticsInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 export class HUDController {
   constructor(state) {
@@ -43,6 +43,12 @@ export class HUDController {
     const frontier = getFrontierStatus(state);
     const weather = getWeatherInsight(state);
     const logistics = getLogisticsInsight(state);
+    const traffic = getTrafficInsight(state);
+    const latestWarningEvent = Array.isArray(state.metrics.warningLog) && state.metrics.warningLog.length > 0
+      ? state.metrics.warningLog[state.metrics.warningLog.length - 1]
+      : null;
+    const latestWarningText = latestWarningEvent?.message
+      ?? (state.metrics.warnings.length > 0 ? state.metrics.warnings[state.metrics.warnings.length - 1] : "");
 
     this.foodVal.textContent = Math.floor(state.resources.food);
     this.woodVal.textContent = Math.floor(state.resources.wood);
@@ -129,9 +135,15 @@ export class HUDController {
     } else if (state.metrics.proxyHealth === "down") {
       this.warningVal.textContent = "AI proxy is unreachable; running fallback.";
       this.warningVal.setAttribute("data-kind", "error");
-    } else if (state.metrics.warnings.length > 0) {
-      this.warningVal.textContent = state.metrics.warnings[state.metrics.warnings.length - 1];
+    } else if (latestWarningEvent?.level === "error" && latestWarningText) {
+      this.warningVal.textContent = latestWarningText;
       this.warningVal.setAttribute("data-kind", "error");
+    } else if (traffic.hasHotspots) {
+      this.warningVal.textContent = traffic.summary;
+      this.warningVal.setAttribute("data-kind", "info");
+    } else if (latestWarningText) {
+      this.warningVal.textContent = latestWarningText;
+      this.warningVal.setAttribute("data-kind", "info");
     } else {
       this.warningVal.textContent = logistics || frontier.summary;
       this.warningVal.setAttribute("data-kind", "info");

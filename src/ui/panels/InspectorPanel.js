@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
-import { getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -35,12 +35,14 @@ export class InspectorPanel {
       const weather = getWeatherInsight(this.state);
       const events = getEventInsight(this.state);
       const logistics = getLogisticsInsight(this.state);
+      const traffic = getTrafficInsight(this.state);
       return `
         <div><b>Selected Tile</b></div>
         <div class="small muted">Left click tile to build/select. Alt+Left click tile for inspect-only. Right drag pans the camera.</div>
         <div class="small" style="margin-top:8px;"><b>Objective Hint:</b> ${this.state.gameplay.objectiveHint ?? "none"}</div>
         <div class="small"><b>Frontier:</b> ${frontier.summary}</div>
         <div class="small"><b>Logistics:</b> ${logistics}</div>
+        <div class="small"><b>Traffic:</b> ${traffic.summary}</div>
         <div class="small"><b>Weather:</b> ${weather.summary}</div>
         <div class="small"><b>Events:</b> ${events}</div>
       `;
@@ -141,7 +143,7 @@ export class InspectorPanel {
       <div class="small"><b>Intent:</b> ${blackboardIntent}</div>
       <div class="small"><b>Target Tile:</b> ${target}</div>
       <div class="small"><b>Path:</b> ${pathProgress}</div>
-      <div class="small"><b>Path Grid Version:</b> ${entity.pathGridVersion}</div>
+      <div class="small"><b>Path Versions:</b> grid=${entity.pathGridVersion} traffic=${entity.pathTrafficVersion ?? 0}</div>
       <details style="margin-top:8px;" open>
         <summary class="small"><b>Decision Context</b></summary>
         <div class="small" style="margin-top:6px;">
