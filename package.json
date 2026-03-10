@@ -18,7 +18,8 @@
     "verify:full": "node scripts/verify-full.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:strict": "node scripts/release-check.mjs --require-clean",
-    "submit:local": "npm run verify:full && npm run release:check"
+    "submit:local": "npm run verify:full && npm run release:check",
+    "submit:strict": "npm run verify:full && npm run release:strict"
   },
   "dependencies": {
     "three": "^0.182.0"
