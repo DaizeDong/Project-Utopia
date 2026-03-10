@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
-import { TILE } from "../src/config/constants.js";
+import { EVENT_TYPE, TILE, WEATHER } from "../src/config/constants.js";
 import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
+import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
+import { enqueueEvent } from "../src/world/events/WorldEventQueue.js";
+import { setWeather } from "../src/world/weather/WeatherSystem.js";
 
 function setTile(state, ix, iz, tileType) {
   state.grid.tiles[ix + iz * state.grid.width] = tileType;
@@ -151,4 +154,17 @@ test("ProgressionSystem persists doctrine mastery after final stability objectiv
   system.update(0.2, state);
   assert.ok(state.gameplay.modifiers.tradeYield > baseTradeYield, "mastery should strengthen doctrine yields after completion");
   assert.ok(state.gameplay.modifiers.threatDamp < baseThreatDamp, "mastery should improve doctrine threat damping");
+});
+
+test("ProgressionSystem surfaces a reroute hint under concentrated spatial pressure", () => {
+  const state = createInitialGameState();
+  const progression = new ProgressionSystem();
+  const events = new WorldEventSystem();
+
+  setWeather(state, WEATHER.STORM, 18, "test");
+  enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  events.update(1.1, state);
+  progression.update(0.2, state);
+
+  assert.match(state.gameplay.objectiveHint, /Spatial pressure|safer lane|add walls/i);
 });

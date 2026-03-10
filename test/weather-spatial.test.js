@@ -18,6 +18,11 @@ test("setWeather generates localized scenario hazard tiles and bumps grid versio
     assert.ok(state.weather.hazardTiles.length > 0);
     assert.ok(state.weather.hazardTileSet instanceof Set);
     assert.ok(Number(state.weather.hazardPenaltyMultiplier) > 1);
+    assert.ok(Array.isArray(state.weather.hazardFronts));
+    assert.ok(state.weather.hazardFronts.length > 0);
+    assert.equal(typeof state.weather.hazardFocusSummary, "string");
+    assert.ok(Object.keys(state.weather.hazardPenaltyByKey ?? {}).length > 0);
+    assert.ok(Number(state.weather.pressureScore ?? 0) > 0);
     assert.ok(state.grid.version > prevVersion);
   }
 });

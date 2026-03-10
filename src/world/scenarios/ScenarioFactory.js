@@ -720,15 +720,22 @@ export function resolveScenarioFocusTiles(state, refs = []) {
   return out;
 }
 
+export function getScenarioFocusZones(state, refs = []) {
+  const scenario = state.gameplay?.scenario ?? {};
+  return refs
+    .map((ref) => ({
+      ref,
+      kind: ref?.kind ?? "unknown",
+      label: getScenarioRefLabel(scenario, ref),
+      tiles: resolveScenarioRefTiles(state, ref),
+    }))
+    .filter((entry) => entry.tiles.length > 0);
+}
+
 export function getScenarioEventCandidates(state, eventType) {
   const scenario = state.gameplay?.scenario ?? {};
   const refs = scenario.eventFocus?.[eventType] ?? [];
-  return refs
-    .map((ref) => ({
-      label: getScenarioRefLabel(scenario, ref),
-      tiles: resolveScenarioFocusTiles(state, [ref]),
-    }))
-    .filter((entry) => entry.tiles.length > 0);
+  return getScenarioFocusZones(state, refs);
 }
 
 export function getScenarioRuntime(state) {
@@ -767,4 +774,3 @@ export function getScenarioRuntime(state) {
     readyDepots,
   };
 }
-

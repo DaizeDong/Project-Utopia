@@ -32,9 +32,12 @@ test("world explain summarizes spatial weather fronts and event targets", () => 
 
   assert.equal(weather.hasHazards, true);
   assert.match(weather.summary, /storm/i);
+  assert.match(weather.summary, /fronts/i);
   assert.match(weather.summary, /hazard tiles/i);
+  assert.match(weather.summary, /pressure/i);
   assert.match(events, /bandit raid active/i);
   assert.match(events, /west lumber route|east ruined depot/i);
+  assert.match(events, /Spatial pressure:/i);
 });
 
 test("world explain marks frontier gap, weather front, and event impact on tiles", () => {
@@ -63,7 +66,7 @@ test("world explain marks frontier gap, weather front, and event impact on tiles
   const impactInsights = getTileInsight(state, raid.payload.impactTile);
 
   assert.ok(gapInsights.some((line) => /blocks the west lumber route/i.test(line)));
-  assert.ok(gapInsights.some((line) => /costs more to path through/i.test(line)));
+  assert.ok(gapInsights.some((line) => /path cost/i.test(line)));
   assert.ok(gapInsights.some((line) => /traffic:/i.test(line)));
   assert.ok(impactInsights.some((line) => /event:/i.test(line)));
 });

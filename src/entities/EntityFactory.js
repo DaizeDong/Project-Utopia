@@ -295,6 +295,11 @@ export function createInitialGameState(options = {}) {
       hazardTiles: [],
       hazardTileSet: new Set(),
       hazardPenaltyMultiplier: 1,
+      hazardPenaltyByKey: {},
+      hazardLabelByKey: {},
+      hazardFronts: [],
+      hazardFocusSummary: "",
+      pressureScore: 0,
       hazardLabel: "clear",
     },
     metrics: {
@@ -360,6 +365,15 @@ export function createInitialGameState(options = {}) {
         herbivoresByZone: {},
         predatorsByZone: {},
         summary: "Ecology: idle",
+      },
+      spatialPressure: {
+        weatherPressure: 0,
+        eventPressure: 0,
+        contestedZones: 0,
+        contestedTiles: 0,
+        activeEventCount: 0,
+        peakEventSeverity: 0,
+        summary: "Spatial pressure: idle",
       },
     },
     ai: {
