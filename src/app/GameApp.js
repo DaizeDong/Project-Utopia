@@ -724,7 +724,9 @@ export class GameApp {
   undoLastBuild() {
     const result = this.buildSystem.undo(this.state);
     if (!result.ok) {
-      this.state.controls.actionMessage = result.reason === "emptyHistory" ? "Nothing to undo." : "Undo failed.";
+      this.state.controls.actionMessage = result.reason === "emptyHistory"
+        ? "Nothing to undo."
+        : result.reasonText ?? "Undo failed.";
       this.state.controls.actionKind = "error";
       return;
     }
@@ -735,7 +737,9 @@ export class GameApp {
   redoLastBuild() {
     const result = this.buildSystem.redo(this.state);
     if (!result.ok) {
-      const msg = result.reason === "insufficientResource" ? "Redo failed: insufficient resources." : "Nothing to redo.";
+      const msg = result.reason === "emptyHistory"
+        ? "Nothing to redo."
+        : result.reasonText ?? (result.reason === "insufficientResource" ? "Redo failed: insufficient resources." : "Redo failed.");
       this.state.controls.actionMessage = msg;
       this.state.controls.actionKind = "error";
       return;

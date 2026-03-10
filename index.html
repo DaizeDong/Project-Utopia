@@ -1099,9 +1099,13 @@
       </details>
 
       <details class="card optional-panel" data-panel-key="costs">
-        <summary>Costs</summary>
+        <summary>Construction</summary>
         <div class="panel-body">
-          <div class="small muted">Road 1w, Farm 5w, Lumber 5w, Warehouse 10w, Wall 2w</div>
+          <div class="kv"><div>Selected Tool</div><div id="buildToolLabelVal">Road</div></div>
+          <div id="buildToolSummaryVal" class="small">Extends the logistics network and closes authored route gaps.</div>
+          <div id="buildToolCostVal" class="small" style="margin-top:6px;">Cost: 1w</div>
+          <div id="buildToolRulesVal" class="small">Rules: Roads must extend from existing infrastructure or repair a scenario gap.</div>
+          <div id="buildPreviewVal" class="small muted" style="margin-top:8px;">Hover a tile to preview cost, rules, and scenario impact.</div>
         </div>
       </details>
     </div>

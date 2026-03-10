@@ -9,6 +9,14 @@ export const BUILD_COST = Object.freeze({
   erase: { wood: 0 },
 });
 
+export const CONSTRUCTION_BALANCE = Object.freeze({
+  salvageRefundRatio: 0.5,
+  worksiteAccessRadius: 2,
+  warehouseRoadRadius: 1,
+  warehouseSpacingRadius: 5,
+  wallAnchorRadius: 1,
+});
+
 export const INITIAL_RESOURCES = Object.freeze({
   food: 55,
   wood: 70,
