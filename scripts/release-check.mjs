@@ -96,6 +96,32 @@ function collectDistAssets(dirPath) {
     .filter(Boolean);
 }
 
+function summarizeDistAssets(assets) {
+  const summary = {
+    assetCount: assets.length,
+    totalSizeBytes: 0,
+    jsCount: 0,
+    jsSizeBytes: 0,
+    rootJsChunks: [],
+  };
+  for (const asset of assets) {
+    summary.totalSizeBytes += Number(asset.sizeBytes ?? 0);
+    const relativePath = String(asset.relativePath ?? "");
+    if (relativePath.endsWith(".js")) {
+      summary.jsCount += 1;
+      summary.jsSizeBytes += Number(asset.sizeBytes ?? 0);
+      if (/^dist\/assets\/[^/]+\.js$/u.test(relativePath)) {
+        summary.rootJsChunks.push({
+          relativePath,
+          sizeBytes: Number(asset.sizeBytes ?? 0),
+        });
+      }
+    }
+  }
+  summary.rootJsChunks.sort((a, b) => b.sizeBytes - a.sizeBytes);
+  return summary;
+}
+
 function getWorktreeStatus() {
   try {
     const output = execSync("git status --porcelain", {
@@ -154,6 +180,7 @@ function main() {
   };
   const screenshotArtifacts = collectReleaseScreenshots(SCREENSHOT_DIR);
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
+  const distSummary = summarizeDistAssets(distAssets);
   const worktree = getWorktreeStatus();
 
   const manifest = {
@@ -166,6 +193,7 @@ function main() {
     },
     build: {
       indexHtml: fileStatOrNull(DIST_INDEX_PATH),
+      summary: distSummary,
       assets: distAssets,
     },
     proofs: {
@@ -191,7 +219,9 @@ function main() {
   console.log(
     `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}`,
   );
-  console.log(`[release:check] dist assets: ${distAssets.length}`);
+  console.log(
+    `[release:check] dist assets: ${distSummary.assetCount} total=${distSummary.totalSizeBytes}B js=${distSummary.jsCount}/${distSummary.jsSizeBytes}B`,
+  );
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
