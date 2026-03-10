@@ -15,6 +15,12 @@ const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 const SCREENSHOT_DIR = path.resolve("output/playwright");
 const DIST_ASSETS_DIR = path.resolve("dist/assets");
 const REQUIRE_CLEAN = process.argv.includes("--require-clean");
+const BUILD_INPUT_PATHS = [
+  path.resolve("src"),
+  path.resolve("index.html"),
+  path.resolve("package.json"),
+  path.resolve("vite.config.js"),
+];
 
 const REQUIRED_A4_SECTIONS = [
   "## Current Alpha Diagnosis",
@@ -166,6 +172,20 @@ function collectDistAssets(dirPath) {
     .filter(Boolean);
 }
 
+function listBuildInputFiles(inputPaths) {
+  const files = [];
+  for (const inputPath of inputPaths) {
+    if (!fs.existsSync(inputPath)) continue;
+    const stat = fs.statSync(inputPath);
+    if (stat.isDirectory()) {
+      files.push(...listFilesRecursive(inputPath));
+    } else if (stat.isFile()) {
+      files.push(inputPath);
+    }
+  }
+  return Array.from(new Set(files)).sort();
+}
+
 function summarizeDistAssets(assets) {
   const summary = {
     assetCount: assets.length,
@@ -190,6 +210,29 @@ function summarizeDistAssets(assets) {
   }
   summary.rootJsChunks.sort((a, b) => b.sizeBytes - a.sizeBytes);
   return summary;
+}
+
+function summarizeBuildFreshness(distIndexPath, inputPaths) {
+  const distStat = fileStatOrNull(distIndexPath);
+  const inputFiles = listBuildInputFiles(inputPaths);
+  let latestInput = null;
+  for (const filePath of inputFiles) {
+    const stat = fileStatOrNull(filePath);
+    if (!stat) continue;
+    if (!latestInput || String(stat.modifiedAt) > String(latestInput.modifiedAt)) {
+      latestInput = stat;
+    }
+  }
+  const fresh = Boolean(distStat && latestInput)
+    ? Date.parse(distStat.modifiedAt) >= Date.parse(latestInput.modifiedAt)
+    : true;
+  return {
+    fresh,
+    checkedInputs: inputFiles.length,
+    checkedRoots: inputPaths.map((inputPath) => path.relative(process.cwd(), inputPath).replaceAll("\\", "/")),
+    distIndex: distStat,
+    latestInput,
+  };
 }
 
 function getWorktreeStatus() {
@@ -264,6 +307,7 @@ function main() {
   const screenshotArtifacts = collectReleaseScreenshots(SCREENSHOT_DIR);
   const distAssets = collectDistAssets(DIST_ASSETS_DIR);
   const distSummary = summarizeDistAssets(distAssets);
+  const buildFreshness = summarizeBuildFreshness(DIST_INDEX_PATH, BUILD_INPUT_PATHS);
   const worktree = getWorktreeStatus();
   const strictBlockers = summarizeStrictBlockers(worktree);
   const recentCommits = getRecentCommits();
@@ -293,6 +337,7 @@ function main() {
     },
     build: {
       indexHtml: fileStatOrNull(DIST_INDEX_PATH),
+      freshness: buildFreshness,
       summary: distSummary,
       assets: distAssets,
     },
@@ -321,6 +366,9 @@ function main() {
   );
   console.log(
     `[release:check] dist assets: ${distSummary.assetCount} total=${distSummary.totalSizeBytes}B js=${distSummary.jsCount}/${distSummary.jsSizeBytes}B`,
+  );
+  console.log(
+    `[release:check] build freshness: ${buildFreshness.fresh ? "fresh" : "stale"} (${buildFreshness.checkedInputs} inputs, latest=${buildFreshness.latestInput?.relativePath ?? "n/a"})`,
   );
   console.log(`[release:check] screenshots: ${screenshotArtifacts.length}`);
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
