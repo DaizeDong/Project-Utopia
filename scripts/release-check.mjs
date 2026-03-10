@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { execSync } from "node:child_process";
 
 const A4_PATH = path.resolve("assignments/homework4/a4.md");
 const DIST_INDEX_PATH = path.resolve("dist/index.html");
@@ -9,6 +10,7 @@ const FALLBACK_PROOF_PATH = path.resolve("assignments/homework3/proof/live-ai-ev
 const PERF_PROOF_PATH = path.resolve("assignments/homework3/metrics/perf-baseline.csv");
 const LOCAL_SOAK_PATH = path.resolve("docs/assignment4/metrics/soak-report.json");
 const LOCAL_PERF_PATH = path.resolve("docs/assignment4/metrics/perf-baseline.csv");
+const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 
 const REQUIRED_A4_SECTIONS = [
   "## Current Alpha Diagnosis",
@@ -25,6 +27,28 @@ function fail(message) {
 function requireFile(filePath, label) {
   if (!fs.existsSync(filePath)) {
     fail(`${label} missing: ${filePath}`);
+  }
+}
+
+function fileStatOrNull(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const stat = fs.statSync(filePath);
+  return {
+    path: filePath,
+    sizeBytes: stat.size,
+    modifiedAt: stat.mtime.toISOString(),
+  };
+}
+
+function getHeadCommit() {
+  try {
+    return execSync("git rev-parse HEAD", {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "";
   }
 }
 
@@ -52,6 +76,31 @@ function main() {
     perfBaseline: fs.existsSync(LOCAL_PERF_PATH),
   };
 
+  const manifest = {
+    generatedAt: new Date().toISOString(),
+    headCommit: getHeadCommit(),
+    report: {
+      path: A4_PATH,
+      requiredSections: REQUIRED_A4_SECTIONS,
+      stages: stageMatches,
+    },
+    build: {
+      indexHtml: fileStatOrNull(DIST_INDEX_PATH),
+    },
+    proofs: {
+      hw03Live: fileStatOrNull(LIVE_PROOF_PATH),
+      hw03Fallback: fileStatOrNull(FALLBACK_PROOF_PATH),
+      hw03Perf: fileStatOrNull(PERF_PROOF_PATH),
+    },
+    localArtifacts: {
+      soakReport: fileStatOrNull(LOCAL_SOAK_PATH),
+      perfBaseline: fileStatOrNull(LOCAL_PERF_PATH),
+    },
+  };
+
+  fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
+  fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+
   console.log(`[release:check] dist ok: ${DIST_INDEX_PATH}`);
   console.log(`[release:check] HW03 proofs ok: live, fallback, perf`);
   console.log(`[release:check] HW04 sections ok: ${REQUIRED_A4_SECTIONS.length} required markers present`);
@@ -59,6 +108,7 @@ function main() {
   console.log(
     `[release:check] local artifacts: soak=${localArtifacts.soakReport ? "present" : "missing"}, perf=${localArtifacts.perfBaseline ? "present" : "missing"}`,
   );
+  console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 
 try {
