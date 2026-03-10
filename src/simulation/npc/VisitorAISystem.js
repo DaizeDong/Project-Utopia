@@ -2,7 +2,7 @@
 import { TILE, VISITOR_KIND } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
-import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 
@@ -91,14 +91,6 @@ function shouldTraderRetarget(visitor, state) {
 
   if (!hasPath && !isAtTargetTile(visitor, state)) return true;
   return false;
-}
-
-function hasActivePath(visitor, state) {
-  return Boolean(
-    visitor.path &&
-      visitor.pathIndex < visitor.path.length &&
-      visitor.pathGridVersion === state.grid.version,
-  );
 }
 
 function setIdleDesired(visitor) {

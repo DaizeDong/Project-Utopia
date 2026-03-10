@@ -36,6 +36,7 @@
  *  path: TileCoord[]|null,
  *  pathIndex: number,
  *  pathGridVersion: number,
+ *  pathTrafficVersion?: number,
  *  blackboard: Record<string, unknown> & {
  *    taskLock?: {state:string, untilSec:number},
  *    emergencyRationCooldownSec?: number,
@@ -77,6 +78,7 @@
  *  path: TileCoord[]|null,
  *  pathIndex: number,
  *  pathGridVersion: number,
+ *  pathTrafficVersion?: number,
  *  policy: Record<string, unknown>|null,
  *  hunger?: number,
  *  alive?: boolean,
@@ -174,6 +176,18 @@
  *    isolatedWorksites: number,
  *    warehouseLoadByKey?: Record<string, number>,
  *    summary?: string
+ *  },
+ *  traffic?: {
+ *    version: number,
+ *    activeLaneCount: number,
+ *    hotspotCount: number,
+ *    peakLoad: number,
+ *    avgLoad: number,
+ *    peakPenalty: number,
+ *    loadByKey?: Record<string, number>,
+ *    penaltyByKey?: Record<string, number>,
+ *    hotspotTiles?: Array<{ix:number, iz:number, load:number, penalty:number}>,
+ *    summary?: string
  *  }
  * }} MetricsState
  *
@@ -212,6 +226,7 @@
  *  systemTimingsMs: Record<string, {last:number, avg:number, peak:number}>,
  *  astar: Record<string, unknown>,
  *  boids: Record<string, unknown>,
+ *  traffic?: Record<string, unknown>,
  *  renderMode?: "detailed"|"fast"|"sprites",
  *  renderEntityCount?: number,
  *  renderModelDisableThreshold?: number,

@@ -2,7 +2,7 @@
 import { ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
-import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 
@@ -95,14 +95,6 @@ function isTargetTileType(worker, state, targetTileTypes) {
   if (!worker.targetTile) return false;
   const tile = getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
   return targetTileTypes.includes(tile);
-}
-
-function hasActivePath(worker, state) {
-  return Boolean(
-    worker.path &&
-      worker.pathIndex < worker.path.length &&
-      worker.pathGridVersion === state.grid.version,
-  );
 }
 
 function isAtTargetTile(worker, state) {

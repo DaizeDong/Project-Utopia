@@ -83,6 +83,18 @@ export function getLogisticsInsight(state) {
   return logistics.summary ?? "Logistics: unavailable";
 }
 
+export function getTrafficInsight(state) {
+  const traffic = state.metrics?.traffic ?? null;
+  if (!traffic) {
+    return { summary: "Traffic: unavailable", hasPressure: false, hasHotspots: false };
+  }
+  return {
+    summary: traffic.summary ?? "Traffic: unavailable",
+    hasPressure: Number(traffic.activeLaneCount ?? 0) > 0,
+    hasHotspots: Number(traffic.hotspotCount ?? 0) > 0,
+  };
+}
+
 export function getTileInsight(state, tile) {
   if (!tile) return [];
   const runtime = getScenarioRuntime(state);
@@ -94,6 +106,10 @@ export function getTileInsight(state, tile) {
     ? state.weather.hazardTileSet
     : new Set((state.weather.hazardTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
   const key = tileKey(tile.ix, tile.iz);
+  const traffic = state.metrics?.traffic ?? null;
+  const trafficPenalty = Math.max(1, Number(traffic?.penaltyByKey?.[key] ?? 1));
+  const trafficLoad = Number(traffic?.loadByKey?.[key] ?? 0);
+  const hotspotKeys = new Set((traffic?.hotspotTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
 
   for (const route of scenario.routeLinks ?? []) {
     if ((route.gapTiles ?? []).some((gap) => gap.ix === tile.ix && gap.iz === tile.iz)) {
@@ -124,6 +140,13 @@ export function getTileInsight(state, tile) {
   if (hazardSet.has(key)) {
     insights.push(`Weather: this tile is inside the ${state.weather.hazardLabel ?? state.weather.current} and costs more to path through.`);
   }
+  if (trafficPenalty > 1.01) {
+    if (hotspotKeys.has(key)) {
+      insights.push(`Traffic: this lane is overloaded (${trafficLoad.toFixed(1)} load, x${trafficPenalty.toFixed(2)} path cost) and should trigger reroutes.`);
+    } else {
+      insights.push(`Traffic: nearby crowding spills into this tile (x${trafficPenalty.toFixed(2)} path cost).`);
+    }
+  }
   for (const zone of eventZones) {
     const impactSuffix = zone.impacted ? " impact point" : " target zone";
     insights.push(`Event: ${summarizeEvent(zone)}${impactSuffix}.`);
@@ -142,6 +165,7 @@ export function getEntityInsight(state, entity) {
   const hazardSet = state.weather.hazardTileSet instanceof Set
     ? state.weather.hazardTileSet
     : new Set((state.weather.hazardTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
+  const traffic = state.metrics?.traffic ?? null;
 
   if (entity.type === "WORKER") {
     if ((entity.hunger ?? 1) < 0.14 && state.resources.food > 0 && state.buildings.warehouses > 0) {
@@ -170,6 +194,24 @@ export function getEntityInsight(state, entity) {
 
   if (hazardSet.has(tileKey(pathTile.ix, pathTile.iz))) {
     insights.push(`Current route touches the ${state.weather.hazardLabel ?? state.weather.current}, so path cost is elevated on the next leg.`);
+  }
+
+  if (entity.path && traffic?.penaltyByKey) {
+    let highestTrafficPenalty = 1;
+    let highestTrafficTile = null;
+    let highestTrafficLoad = 0;
+    for (let i = Math.max(0, Number(entity.pathIndex ?? 0)); i < entity.path.length; i += 1) {
+      const node = entity.path[i];
+      const key = tileKey(node.ix, node.iz);
+      const penalty = Math.max(1, Number(traffic.penaltyByKey[key] ?? 1));
+      if (penalty <= highestTrafficPenalty) continue;
+      highestTrafficPenalty = penalty;
+      highestTrafficTile = node;
+      highestTrafficLoad = Number(traffic.loadByKey?.[key] ?? 0);
+    }
+    if (highestTrafficTile) {
+      insights.push(`Current route crosses congestion near (${highestTrafficTile.ix}, ${highestTrafficTile.iz}) with lane load ${highestTrafficLoad.toFixed(1)} and x${highestTrafficPenalty.toFixed(2)} path cost.`);
+    }
   }
 
   for (const zone of eventZones) {

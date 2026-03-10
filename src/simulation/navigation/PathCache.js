@@ -4,12 +4,12 @@
     this.cache = new Map();
   }
 
-  #key(gridVersion, start, goal) {
-    return `${gridVersion}:${start.ix},${start.iz}->${goal.ix},${goal.iz}`;
+  #key(gridVersion, start, goal, costVersion = 0) {
+    return `${gridVersion}:${costVersion}:${start.ix},${start.iz}->${goal.ix},${goal.iz}`;
   }
 
-  get(gridVersion, start, goal) {
-    const key = this.#key(gridVersion, start, goal);
+  get(gridVersion, start, goal, costVersion = 0) {
+    const key = this.#key(gridVersion, start, goal, costVersion);
     const item = this.cache.get(key);
     if (!item) return null;
 
@@ -19,8 +19,8 @@
     return item.path;
   }
 
-  set(gridVersion, start, goal, path) {
-    const key = this.#key(gridVersion, start, goal);
+  set(gridVersion, start, goal, costVersion = 0, path) {
+    const key = this.#key(gridVersion, start, goal, costVersion);
     this.cache.set(key, { path });
 
     if (this.cache.size > this.maxEntries) {
