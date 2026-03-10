@@ -24,6 +24,7 @@ npm run build
 npm run verify:full
 npm run release:check
 npm run submit:local
+npm run submit:strict
 ```
 
 Notes:
@@ -52,6 +53,12 @@ If you want the final gate to fail on any remaining non-ignored local changes, r
 npm run release:strict
 ```
 
+Or run the full verification chain plus the strict clean-worktree gate together:
+
+```bash
+npm run submit:strict
+```
+
 Generated verification artifacts are written to:
 
 - `docs/assignment4/metrics/`
@@ -69,6 +76,7 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 `release-manifest.json` now records:
 
 - the final HW04 report path and stage coverage
+- the current `HEAD` commit and a recent commit history snapshot
 - the built `dist` asset inventory and bundle summary
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence
