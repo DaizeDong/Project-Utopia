@@ -17,7 +17,7 @@
     "verify:a3": "node scripts/verify-a3.mjs",
     "verify:full": "node scripts/verify-full.mjs",
     "release:check": "node scripts/release-check.mjs",
-    "release:strict": "node scripts/release-check.mjs --require-clean",
+    "release:strict": "node scripts/release-check.mjs --require-clean --require-fresh-build",
     "submit:local": "npm run verify:full && npm run release:check",
     "submit:strict": "npm run verify:full && npm run release:strict"
   },

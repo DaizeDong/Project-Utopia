@@ -53,6 +53,11 @@ If you want the final gate to fail on any remaining non-ignored local changes, r
 npm run release:strict
 ```
 
+`release:strict` now requires both:
+
+- a clean non-ignored worktree
+- a non-stale production build relative to the checked frontend inputs
+
 Or run the full verification chain plus the strict clean-worktree gate together:
 
 ```bash
@@ -79,6 +84,7 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 - the current `HEAD` commit and a recent commit history snapshot
 - the local release status summary, including whether `release:strict` would currently pass
 - the current `release:strict` blocker preview, including the first non-ignored dirty paths
+- whether strict mode is also requiring a fresh build at check time
 - the toolchain snapshot used for the release pass (`node`, `npm`, `vite`)
 - the exact release-script chain from `package.json`
 - per-artifact `sha256` hashes for the build, proofs, metrics, and optional screenshots
