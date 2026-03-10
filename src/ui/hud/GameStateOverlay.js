@@ -1,12 +1,18 @@
-function formatObjectives(objectives = [], objectiveIndex = 0) {
-  if (!Array.isArray(objectives) || objectives.length === 0) return "No objectives";
-  return objectives
+import { SHORTCUT_HINT } from "../../app/shortcutResolver.js";
+
+function formatObjectives(gameplay = {}) {
+  const objectives = gameplay.objectives ?? [];
+  const objectiveIndex = gameplay.objectiveIndex ?? 0;
+  if (!Array.isArray(objectives) || objectives.length === 0) return `No objectives\n\nControls\n${SHORTCUT_HINT}`;
+  const objectiveLines = objectives
     .map((objective, idx) => {
       const state = objective.completed ? "done" : idx === objectiveIndex ? "active" : "pending";
       const progress = Number(objective.progress ?? 0).toFixed(0);
       return `${state.toUpperCase()} - ${objective.title} (${progress}%)`;
     })
     .join("\n");
+  const hint = gameplay.objectiveHint ? `\n\nHint\n${gameplay.objectiveHint}` : "";
+  return `${objectiveLines}${hint}\n\nControls\n${SHORTCUT_HINT}`;
 }
 
 export class GameStateOverlay {
@@ -38,16 +44,17 @@ export class GameStateOverlay {
     const phase = session?.phase ?? "menu";
     const isMenu = phase === "menu";
     const isEnd = phase === "end";
-    this.root.hidden = !isMenu && !isEnd;
+    const isInteractive = isMenu || isEnd;
+    this.root.hidden = !isInteractive;
     this.root.setAttribute("data-phase", phase);
+    this.root.setAttribute("aria-hidden", isInteractive ? "false" : "true");
+    this.root.style.display = isInteractive ? "flex" : "none";
+    this.root.style.pointerEvents = isInteractive ? "auto" : "none";
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
     if (this.menuSummary) {
-      this.menuSummary.textContent = formatObjectives(
-        this.state.gameplay?.objectives ?? [],
-        this.state.gameplay?.objectiveIndex ?? 0,
-      );
+      this.menuSummary.textContent = formatObjectives(this.state.gameplay ?? {});
     }
 
     if (isEnd) {
