@@ -15,6 +15,7 @@ const MANIFEST_PATH = path.resolve("docs/assignment4/release-manifest.json");
 const SCREENSHOT_DIR = path.resolve("output/playwright");
 const DIST_ASSETS_DIR = path.resolve("dist/assets");
 const REQUIRE_CLEAN = process.argv.includes("--require-clean");
+const REQUIRE_FRESH_BUILD = process.argv.includes("--require-fresh-build");
 const BUILD_INPUT_PATHS = [
   path.resolve("src"),
   path.resolve("index.html"),
@@ -316,14 +317,18 @@ function main() {
   if (REQUIRE_CLEAN && worktree.dirty) {
     fail(`worktree is not clean (${worktree.entryCount} entries)`);
   }
+  if (REQUIRE_FRESH_BUILD && !buildFreshness.fresh) {
+    fail(`build is stale relative to checked inputs (${buildFreshness.latestInput?.relativePath ?? "unknown"})`);
+  }
 
   const manifest = {
     generatedAt: new Date().toISOString(),
     headCommit: getHeadCommit(),
     recentCommits,
     releaseStatus: {
-      strictReady: !worktree.dirty,
+      strictReady: !worktree.dirty && buildFreshness.fresh,
       requireClean: REQUIRE_CLEAN,
+      requireFreshBuild: REQUIRE_FRESH_BUILD,
       strictBlockers,
       screenshotCount: screenshotArtifacts.length,
       distAssetCount: distSummary.assetCount,
@@ -378,8 +383,9 @@ function main() {
     );
   }
   console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
+  console.log(`[release:check] require fresh build: ${REQUIRE_FRESH_BUILD}`);
   console.log(`[release:check] recent commits: ${recentCommits.length}`);
-  console.log(`[release:check] strict ready: ${!worktree.dirty}`);
+  console.log(`[release:check] strict ready: ${!worktree.dirty && buildFreshness.fresh}`);
   console.log(`[release:check] toolchain: node=${toolchain.node} npm=${toolchain.npm} vite=${toolchain.vite || "unknown"}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
