@@ -7,6 +7,10 @@ function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
 
+function roundMetric(value, digits = 2) {
+  return Number(Number(value ?? 0).toFixed(digits));
+}
+
 function findActiveEventZones(state, ix, iz) {
   const key = tileKey(ix, iz);
   return state.events.active
@@ -20,6 +24,9 @@ function findActiveEventZones(state, ix, iz) {
         type: event.type,
         status: event.status,
         targetLabel: event.payload?.targetLabel ?? "-",
+        pressure: Number(event.payload?.pressure ?? 0),
+        severity: event.payload?.severity ?? "",
+        contestedTiles: Number(event.payload?.contestedTiles ?? 0),
         impacted,
       };
     })
@@ -29,12 +36,21 @@ function findActiveEventZones(state, ix, iz) {
 function summarizeEvent(event) {
   const targetLabel = event.payload?.targetLabel ?? event.targetLabel ?? "";
   const impactTile = event.payload?.impactTile ?? event.impactTile ?? null;
+  const secondaryImpactTile = event.payload?.secondaryImpactTile ?? event.secondaryImpactTile ?? null;
+  const pressure = Number(event.payload?.pressure ?? event.pressure ?? 0);
+  const severity = String(event.payload?.severity ?? event.severity ?? "").trim();
+  const contestedTiles = Number(event.payload?.contestedTiles ?? event.contestedTiles ?? 0);
+  const weatherOverlap = Number(event.payload?.hazardOverlapTiles ?? event.hazardOverlapTiles ?? 0);
   const target = targetLabel ? ` @ ${targetLabel}` : "";
   const impact = impactTile ? ` impact (${impactTile.ix},${impactTile.iz})` : "";
-  if (event.type === EVENT_TYPE.BANDIT_RAID) return `bandit raid ${event.status}${target}${impact}`;
-  if (event.type === EVENT_TYPE.TRADE_CARAVAN) return `trade caravan ${event.status}${target}`;
-  if (event.type === EVENT_TYPE.ANIMAL_MIGRATION) return `animal migration ${event.status}${target}`;
-  return `${event.type}:${event.status}${target}${impact}`;
+  const secondaryImpact = secondaryImpactTile ? ` secondary (${secondaryImpactTile.ix},${secondaryImpactTile.iz})` : "";
+  const pressureText = pressure > 0 ? ` ${severity ? `${severity} ` : ""}pressure ${roundMetric(pressure, 2).toFixed(2)}` : "";
+  const overlapText = weatherOverlap > 0 ? ` weather overlap ${weatherOverlap}` : "";
+  const contestedText = contestedTiles > 0 ? ` contested ${contestedTiles}` : "";
+  if (event.type === EVENT_TYPE.BANDIT_RAID) return `bandit raid ${event.status}${target}${pressureText}${overlapText}${contestedText}${impact}${secondaryImpact}`;
+  if (event.type === EVENT_TYPE.TRADE_CARAVAN) return `trade caravan ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
+  if (event.type === EVENT_TYPE.ANIMAL_MIGRATION) return `animal migration ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
+  return `${event.type}:${event.status}${target}${pressureText}${overlapText}${contestedText}${impact}`;
 }
 
 export function getFrontierStatus(state) {
@@ -60,6 +76,10 @@ export function getWeatherInsight(state) {
   const hazardLabel = state.weather.hazardLabel && state.weather.hazardLabel !== "clear"
     ? state.weather.hazardLabel
     : "";
+  const fronts = Array.isArray(state.weather.hazardFronts) ? state.weather.hazardFronts : [];
+  const frontSummary = String(state.weather.hazardFocusSummary ?? "").trim();
+  const pressureScore = Number(state.weather.pressureScore ?? 0);
+  const peakPenalty = fronts.reduce((peak, front) => Math.max(peak, Number(front.peakPenalty ?? 1)), 1);
   if (!hazardLabel || hazardCount === 0) {
     return {
       summary: `${current} (${Math.max(0, Number(state.weather.timeLeftSec ?? 0)).toFixed(0)}s)`,
@@ -68,14 +88,17 @@ export function getWeatherInsight(state) {
   }
 
   return {
-    summary: `${current} (${Math.max(0, Number(state.weather.timeLeftSec ?? 0)).toFixed(0)}s, ${hazardLabel}, ${hazardCount} hazard tiles, x${Number(state.weather.hazardPenaltyMultiplier ?? 1).toFixed(2)} path cost)`,
+    summary: `${current} (${Math.max(0, Number(state.weather.timeLeftSec ?? 0)).toFixed(0)}s, ${fronts.length} fronts${frontSummary ? ` on ${frontSummary}` : ""}, ${hazardCount} hazard tiles, pressure ${pressureScore.toFixed(2)}, peak x${peakPenalty.toFixed(2)} path cost)`,
     hasHazards: true,
   };
 }
 
 export function getEventInsight(state) {
   if ((state.events.active?.length ?? 0) === 0) return "none";
-  return state.events.active.map((event) => summarizeEvent(event)).join(", ");
+  const events = state.events.active.map((event) => summarizeEvent(event)).join(", ");
+  const spatialSummary = String(state.metrics?.spatialPressure?.summary ?? "").trim();
+  if (!spatialSummary || spatialSummary === "Spatial pressure: idle") return events;
+  return `${events} | ${spatialSummary}`;
 }
 
 export function getLogisticsInsight(state) {
@@ -112,6 +135,8 @@ export function getTileInsight(state, tile) {
   const trafficPenalty = Math.max(1, Number(traffic?.penaltyByKey?.[key] ?? 1));
   const trafficLoad = Number(traffic?.loadByKey?.[key] ?? 0);
   const farmPressure = Math.max(0, Number(ecology?.farmPressureByKey?.[key] ?? 0));
+  const weatherPenalty = Math.max(1, Number(state.weather?.hazardPenaltyByKey?.[key] ?? state.weather?.hazardPenaltyMultiplier ?? 1));
+  const hazardLabels = Array.isArray(state.weather?.hazardLabelByKey?.[key]) ? state.weather.hazardLabelByKey[key] : [];
   const hotspotKeys = new Set((traffic?.hotspotTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
 
   for (const route of scenario.routeLinks ?? []) {
@@ -146,7 +171,8 @@ export function getTileInsight(state, tile) {
     insights.push("Zone: primary logistics core.");
   }
   if (hazardSet.has(key)) {
-    insights.push(`Weather: this tile is inside the ${state.weather.hazardLabel ?? state.weather.current} and costs more to path through.`);
+    const labelSummary = hazardLabels.length > 0 ? hazardLabels.join(", ") : (state.weather.hazardLabel ?? state.weather.current);
+    insights.push(`Weather: this tile sits inside ${labelSummary} (${state.weather.current} front, x${weatherPenalty.toFixed(2)} path cost).`);
   }
   if (trafficPenalty > 1.01) {
     if (hotspotKeys.has(key)) {
@@ -237,6 +263,9 @@ export function getEntityInsight(state, entity) {
   if (entity.kind === "HERBIVORE") {
     if (entity.memory?.homeZoneLabel) {
       insights.push(`This herd is anchored to ${entity.memory.homeZoneLabel} and prefers grazing near that frontier habitat before drifting toward the core.`);
+    }
+    if (Number(entity.debug?.lastMigrationPressure ?? 0) > 0.1) {
+      insights.push(`Current migration order is carrying spatial pressure ${Number(entity.debug.lastMigrationPressure).toFixed(2)}, so the herd is less likely to linger near the colony core.`);
     }
     if (Number(entity.debug?.lastGrazePressure ?? 0) > 0.05) {
       const penaltyPct = Math.round(Math.min(

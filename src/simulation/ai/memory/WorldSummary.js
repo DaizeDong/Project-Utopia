@@ -91,7 +91,13 @@ export function buildWorldSummary(state) {
     },
     population: { workers, visitors, herbivores, predators },
     buildings: { ...state.buildings },
-    weather: { current: state.weather.current, timeLeftSec: Number(state.weather.timeLeftSec.toFixed(1)) },
+    weather: {
+      current: state.weather.current,
+      timeLeftSec: Number(state.weather.timeLeftSec.toFixed(1)),
+      pressureScore: Number((state.weather.pressureScore ?? 0).toFixed(2)),
+      hazardFronts: Number(state.weather.hazardFronts?.length ?? 0),
+      hazardFocusSummary: String(state.weather.hazardFocusSummary ?? ""),
+    },
     traffic: {
       congestion: Number(estimateCongestion(state).toFixed(3)),
       passableRatio: Number(countPassability(state.grid).toFixed(3)),
@@ -100,8 +106,18 @@ export function buildWorldSummary(state) {
       type: e.type,
       status: e.status,
       intensity: e.intensity,
+      targetLabel: String(e.payload?.targetLabel ?? ""),
+      severity: String(e.payload?.severity ?? ""),
+      pressure: Number(Number(e.payload?.pressure ?? 0).toFixed(2)),
+      contestedTiles: Number(e.payload?.contestedTiles ?? 0),
       remainingSec: Number(Math.max(0, e.durationSec - e.elapsedSec).toFixed(1)),
     })),
+    spatialPressure: {
+      weatherPressure: Number((state.metrics.spatialPressure?.weatherPressure ?? 0).toFixed(2)),
+      eventPressure: Number((state.metrics.spatialPressure?.eventPressure ?? 0).toFixed(2)),
+      contestedZones: Number(state.metrics.spatialPressure?.contestedZones ?? 0),
+      activeEventCount: Number(state.metrics.spatialPressure?.activeEventCount ?? 0),
+    },
     aiMode: state.ai.mode,
   };
 }

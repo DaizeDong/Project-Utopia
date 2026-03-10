@@ -74,7 +74,7 @@ function reconstructPath(cameFrom, currentKey, width) {
  * @param {{
  *  tiles?: Set<string>,
  *  penaltyMultiplier?: number,
- *  hazards?: {tiles?: Set<string>, penaltyMultiplier?: number},
+ *  hazards?: {tiles?: Set<string>, penaltyMultiplier?: number, penaltyByKey?: Record<string, number>|null},
  *  traffic?: {penaltyByKey?: Record<string, number>|null}
  * }|null} dynamicCosts
  */
@@ -94,6 +94,9 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
     1,
     Number(dynamicCosts?.hazards?.penaltyMultiplier ?? dynamicCosts?.penaltyMultiplier ?? 1),
   );
+  const hazardPenaltyByKey = dynamicCosts?.hazards && typeof dynamicCosts.hazards.penaltyByKey === "object"
+    ? dynamicCosts.hazards.penaltyByKey
+    : null;
   const trafficPenaltyByKey = dynamicCosts?.traffic && typeof dynamicCosts.traffic.penaltyByKey === "object"
     ? dynamicCosts.traffic.penaltyByKey
     : null;
@@ -137,10 +140,11 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
       if (tileType !== 1) {
         stepCost *= weatherMoveCostMultiplier;
       }
-      if (hazardTiles?.has?.(`${nx},${nz}`)) {
-        stepCost *= hazardPenaltyMultiplier;
+      const hazardKey = `${nx},${nz}`;
+      if (hazardTiles?.has?.(hazardKey)) {
+        stepCost *= Math.max(1, Number(hazardPenaltyByKey?.[hazardKey] ?? hazardPenaltyMultiplier));
       }
-      const trafficPenalty = Math.max(1, Number(trafficPenaltyByKey?.[`${nx},${nz}`] ?? 1));
+      const trafficPenalty = Math.max(1, Number(trafficPenaltyByKey?.[hazardKey] ?? 1));
       if (trafficPenalty > 1) {
         stepCost *= trafficPenalty;
       }
