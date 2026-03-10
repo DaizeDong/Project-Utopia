@@ -1,5 +1,5 @@
 import { worldToTile } from "../../world/grid/Grid.js";
-import { getEntityInsight } from "../interpretation/WorldExplain.js";
+import { getCausalDigest, getEntityInsight } from "../interpretation/WorldExplain.js";
 
 function fmtNum(value, digits = 2) {
   const n = Number(value);
@@ -288,6 +288,7 @@ export class EntityFocusPanel {
       ? groupPolicy.steeringNotes.join(" | ")
       : "none";
     const entityInsights = getEntityInsight(this.state, entity);
+    const digest = getCausalDigest(this.state);
     const simSec = fmtSec(this.state.metrics.timeSec);
     const policySec = fmtSec(this.state.ai.lastPolicyResultSec);
     const envSec = fmtSec(this.state.ai.lastEnvironmentResultSec);
@@ -322,6 +323,8 @@ export class EntityFocusPanel {
       <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" />
       <div class="small"><b>AI Agent Effect</b></div>
       <div class="small"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
+      <div class="small"><b>Global Headline:</b> ${escapeHtml(digest.headline)}</div>
+      <div class="small"><b>Global Warning:</b> ${escapeHtml(digest.warning)}</div>
       <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
       <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>

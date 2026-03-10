@@ -1,5 +1,5 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
-import { getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getAiInsight, getCausalDigest, getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -30,6 +30,8 @@ export class InspectorPanel {
   #renderTileSection() {
     const tile = this.state.controls.selectedTile;
     const preview = this.state.controls.buildPreview;
+    const digest = getCausalDigest(this.state);
+    const aiInsight = getAiInsight(this.state);
     if (!tile) {
       const frontier = getFrontierStatus(this.state);
       const weather = getWeatherInsight(this.state);
@@ -40,6 +42,13 @@ export class InspectorPanel {
         <div><b>Selected Tile</b></div>
         <div class="small muted">Left click tile to build/select. Alt+Left click tile for inspect-only. Right drag pans the camera.</div>
         <div class="small" style="margin-top:8px;"><b>Objective Hint:</b> ${this.state.gameplay.objectiveHint ?? "none"}</div>
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>System Narrative</b></summary>
+          <div class="small" style="margin-top:6px;"><b>Headline:</b> ${digest.headline}</div>
+          <div class="small"><b>Next Move:</b> ${digest.action}</div>
+          <div class="small"><b>AI:</b> ${aiInsight.summary}</div>
+          <div class="small"><b>Evidence:</b><br />${digest.evidence.join("<br />")}</div>
+        </details>
         <div class="small"><b>Frontier:</b> ${frontier.summary}</div>
         <div class="small"><b>Logistics:</b> ${logistics}</div>
         <div class="small"><b>Traffic:</b> ${traffic.summary}</div>
@@ -127,6 +136,8 @@ export class InspectorPanel {
     const blackboardIntent = entity.blackboard?.intent ?? entity.debug?.lastIntent ?? "-";
     const groupPolicy = this.state.ai.groupPolicies.get(entity.groupId)?.data ?? null;
     const entityInsights = getEntityInsight(this.state, entity);
+    const digest = getCausalDigest(this.state);
+    const aiInsight = getAiInsight(this.state);
 
     return `
       <div style="margin-top:10px;"><b>Selected Entity</b> <span class="muted">(${entity.id})</span></div>
@@ -144,6 +155,12 @@ export class InspectorPanel {
       <div class="small"><b>Target Tile:</b> ${target}</div>
       <div class="small"><b>Path:</b> ${pathProgress}</div>
       <div class="small"><b>Path Versions:</b> grid=${entity.pathGridVersion} traffic=${entity.pathTrafficVersion ?? 0}</div>
+      <details style="margin-top:8px;" open>
+        <summary class="small"><b>Why It Matters</b></summary>
+        <div class="small" style="margin-top:6px;"><b>Global Headline:</b> ${digest.headline}</div>
+        <div class="small"><b>AI Narrative:</b> ${aiInsight.summary}</div>
+        <div class="small"><b>Current Warning:</b> ${digest.warning}</div>
+      </details>
       <details style="margin-top:8px;" open>
         <summary class="small"><b>Decision Context</b></summary>
         <div class="small" style="margin-top:6px;">
