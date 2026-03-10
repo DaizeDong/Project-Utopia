@@ -79,6 +79,47 @@ function getRecentCommits(limit = 8) {
   }
 }
 
+function readPackageJson() {
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve("package.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function runCommandCapture(command) {
+  try {
+    return execSync(command, {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function collectToolchain(packageJson) {
+  const devDependencies = packageJson.devDependencies ?? {};
+  const dependencies = packageJson.dependencies ?? {};
+  return {
+    node: process.version,
+    npm: runCommandCapture("npm --version"),
+    vite: String(devDependencies.vite ?? dependencies.vite ?? ""),
+  };
+}
+
+function collectCommandChain(packageJson) {
+  const scripts = packageJson.scripts ?? {};
+  return {
+    verifyFull: String(scripts["verify:full"] ?? ""),
+    releaseCheck: String(scripts["release:check"] ?? ""),
+    releaseStrict: String(scripts["release:strict"] ?? ""),
+    submitLocal: String(scripts["submit:local"] ?? ""),
+    submitStrict: String(scripts["submit:strict"] ?? ""),
+  };
+}
+
 function listFilesRecursive(dirPath) {
   if (!fs.existsSync(dirPath)) return [];
   const out = [];
@@ -188,6 +229,7 @@ function main() {
   requireFile(PERF_PROOF_PATH, "HW03 performance proof");
 
   const a4 = fs.readFileSync(A4_PATH, "utf8");
+  const packageJson = readPackageJson();
   for (const marker of REQUIRED_A4_SECTIONS) {
     if (!a4.includes(marker)) {
       fail(`HW04 report missing required section: ${marker}`);
@@ -208,6 +250,8 @@ function main() {
   const distSummary = summarizeDistAssets(distAssets);
   const worktree = getWorktreeStatus();
   const recentCommits = getRecentCommits();
+  const toolchain = collectToolchain(packageJson);
+  const commandChain = collectCommandChain(packageJson);
   if (REQUIRE_CLEAN && worktree.dirty) {
     fail(`worktree is not clean (${worktree.entryCount} entries)`);
   }
@@ -216,6 +260,14 @@ function main() {
     generatedAt: new Date().toISOString(),
     headCommit: getHeadCommit(),
     recentCommits,
+    releaseStatus: {
+      strictReady: !worktree.dirty,
+      requireClean: REQUIRE_CLEAN,
+      screenshotCount: screenshotArtifacts.length,
+      distAssetCount: distSummary.assetCount,
+    },
+    toolchain,
+    commandChain,
     report: {
       path: A4_PATH,
       requiredSections: REQUIRED_A4_SECTIONS,
@@ -256,6 +308,8 @@ function main() {
   console.log(`[release:check] worktree dirty: ${worktree.dirty} (${worktree.entryCount} entries)`);
   console.log(`[release:check] require clean: ${REQUIRE_CLEAN}`);
   console.log(`[release:check] recent commits: ${recentCommits.length}`);
+  console.log(`[release:check] strict ready: ${!worktree.dirty}`);
+  console.log(`[release:check] toolchain: node=${toolchain.node} npm=${toolchain.npm} vite=${toolchain.vite || "unknown"}`);
   console.log(`[release:check] manifest written: ${MANIFEST_PATH}`);
 }
 
