@@ -48,3 +48,25 @@ test("A* treats localized weather hazard tiles as high-cost frontier zones", () 
   assert.ok(rerouted);
   assert.equal(rerouted.some((node) => node.ix === 2 && node.iz === 2), false);
 });
+
+test("A* reroutes around congestion hotspot penalties", () => {
+  const grid = createGrid(5, 5, TILE.GRASS);
+  for (let ix = 0; ix < 5; ix += 1) {
+    grid.tiles[ix + 2 * grid.width] = TILE.ROAD;
+    grid.tiles[ix + 1 * grid.width] = TILE.ROAD;
+  }
+
+  const direct = aStar(grid, { ix: 0, iz: 2 }, { ix: 4, iz: 2 }, 1);
+  assert.ok(direct);
+  assert.equal(direct.some((node) => node.ix === 2 && node.iz === 2), true);
+
+  const rerouted = aStar(
+    grid,
+    { ix: 0, iz: 2 },
+    { ix: 4, iz: 2 },
+    1,
+    { traffic: { penaltyByKey: { "2,2": 8 } } },
+  );
+  assert.ok(rerouted);
+  assert.equal(rerouted.some((node) => node.ix === 2 && node.iz === 2), false);
+});

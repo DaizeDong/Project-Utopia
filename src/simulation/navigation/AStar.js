@@ -71,17 +71,32 @@ function reconstructPath(cameFrom, currentKey, width) {
  * @param {{ix:number,iz:number}} start
  * @param {{ix:number,iz:number}} goal
  * @param {number} weatherMoveCostMultiplier
- * @param {{tiles?: Set<string>, penaltyMultiplier?: number}|null} weatherHazards
+ * @param {{
+ *  tiles?: Set<string>,
+ *  penaltyMultiplier?: number,
+ *  hazards?: {tiles?: Set<string>, penaltyMultiplier?: number},
+ *  traffic?: {penaltyByKey?: Record<string, number>|null}
+ * }|null} dynamicCosts
  */
-export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, weatherHazards = null) {
+export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicCosts = null) {
   const width = grid.width;
   const height = grid.height;
   const startKey = toIndex(start.ix, start.iz, width);
   const goalKey = toIndex(goal.ix, goal.iz, width);
   const goalIx = goal.ix | 0;
   const goalIz = goal.iz | 0;
-  const hazardTiles = weatherHazards?.tiles instanceof Set ? weatherHazards.tiles : null;
-  const hazardPenaltyMultiplier = Math.max(1, Number(weatherHazards?.penaltyMultiplier ?? 1));
+  const hazardTiles = dynamicCosts?.hazards?.tiles instanceof Set
+    ? dynamicCosts.hazards.tiles
+    : dynamicCosts?.tiles instanceof Set
+      ? dynamicCosts.tiles
+      : null;
+  const hazardPenaltyMultiplier = Math.max(
+    1,
+    Number(dynamicCosts?.hazards?.penaltyMultiplier ?? dynamicCosts?.penaltyMultiplier ?? 1),
+  );
+  const trafficPenaltyByKey = dynamicCosts?.traffic && typeof dynamicCosts.traffic.penaltyByKey === "object"
+    ? dynamicCosts.traffic.penaltyByKey
+    : null;
 
   if (startKey === goalKey) return [start];
 
@@ -124,6 +139,10 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, weatherH
       }
       if (hazardTiles?.has?.(`${nx},${nz}`)) {
         stepCost *= hazardPenaltyMultiplier;
+      }
+      const trafficPenalty = Math.max(1, Number(trafficPenaltyByKey?.[`${nx},${nz}`] ?? 1));
+      if (trafficPenalty > 1) {
+        stepCost *= trafficPenalty;
       }
 
       const tentative = gScore[current] + stepCost;

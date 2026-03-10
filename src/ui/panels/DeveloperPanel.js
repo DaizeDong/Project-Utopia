@@ -223,10 +223,14 @@ export class DeveloperPanel {
     if (!this.algoVal) return;
     const astar = this.state.debug.astar ?? {};
     const boids = this.state.debug.boids ?? {};
+    const traffic = this.state.metrics?.traffic ?? this.state.debug?.traffic ?? {};
     const req = Number(astar.requests ?? 0);
     const success = Number(astar.success ?? 0);
     const fail = Number(astar.fail ?? 0);
     const successRate = req > 0 ? (success / req) * 100 : 0;
+    const hotspotRows = Array.isArray(traffic.hotspotTiles)
+      ? traffic.hotspotTiles.slice(0, 3).map((entry) => `(${entry.ix},${entry.iz}) load=${this.#fmtNum(entry.load, 1)} x${this.#fmtNum(entry.penalty, 2)}`)
+      : [];
 
     const lines = [
       "A*",
@@ -234,6 +238,7 @@ export class DeveloperPanel {
       `cache hits=${astar.cacheHits ?? 0} misses=${astar.cacheMisses ?? 0}`,
       `last duration=${this.#fmtNum(astar.lastDurationMs, 3)}ms avg duration=${this.#fmtNum(astar.avgDurationMs, 3)}ms`,
       `last path len=${this.#fmtNum(astar.lastPathLength, 1)} avg path len=${this.#fmtNum(astar.avgPathLength, 1)}`,
+      `traffic version=${astar.trafficVersion ?? 0} hotspots=${astar.lastTrafficHotspots ?? 0} peakLoad=${this.#fmtNum(astar.lastTrafficPeakLoad, 1)}`,
       astar.lastFrom && astar.lastTo
         ? `last query: (${astar.lastFrom.ix},${astar.lastFrom.iz}) -> (${astar.lastTo.ix},${astar.lastTo.iz})`
         : "last query: none",
@@ -241,6 +246,11 @@ export class DeveloperPanel {
       "Boids",
       `entities=${boids.entities ?? 0} avgNeighbors=${this.#fmtNum(boids.avgNeighbors, 2)}`,
       `avgSpeed=${this.#fmtNum(boids.avgSpeed, 3)} maxSpeed=${this.#fmtNum(boids.maxSpeed, 3)} update=${this.#fmtNum(boids.updateIntervalSec, 3)}s`,
+      "",
+      "Traffic",
+      `version=${traffic.version ?? 0} activeLanes=${traffic.activeLaneCount ?? 0} hotspots=${traffic.hotspotCount ?? 0}`,
+      `avgLoad=${this.#fmtNum(traffic.avgLoad, 2)} peakLoad=${this.#fmtNum(traffic.peakLoad, 2)} peakPenalty=x${this.#fmtNum(traffic.peakPenalty ?? 1, 2)}`,
+      hotspotRows.length > 0 ? `top hotspots: ${hotspotRows.join(" | ")}` : "top hotspots: none",
     ];
 
     this.#setPanelText(this.algoVal, "algo", lines.join("\n"));

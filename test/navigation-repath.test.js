@@ -71,3 +71,52 @@ test("setTargetAndPath does not recompute when already standing on same target",
   assert.equal(worker.pathGridVersion, 1);
   assert.equal(state.debug.astar.requests, 0);
 });
+
+test("setTargetAndPath recomputes when congestion version changes", () => {
+  const grid = createGrid(5, 5, TILE.GRASS);
+  for (let ix = 0; ix < 5; ix += 1) {
+    grid.tiles[ix + 2 * grid.width] = TILE.ROAD;
+    grid.tiles[ix + 1 * grid.width] = TILE.ROAD;
+  }
+  const state = {
+    grid,
+    weather: { moveCostMultiplier: 1 },
+    metrics: {
+      timeSec: 0,
+      tick: 0,
+      traffic: { version: 0, penaltyByKey: {}, hotspotCount: 0, peakLoad: 0 },
+    },
+    debug: { astar: { requests: 0 } },
+  };
+  const services = { pathCache: new PathCache(8), pathBudget: { tick: -1, usedMs: 0, skipped: 0, maxMs: 6 } };
+
+  const worker = {
+    x: -2,
+    z: 0,
+    targetTile: null,
+    path: null,
+    pathIndex: 0,
+    pathGridVersion: -1,
+    pathTrafficVersion: 0,
+    blackboard: {},
+  };
+  const target = { ix: 4, iz: 2 };
+
+  const ok = setTargetAndPath(worker, target, state, services);
+  assert.equal(ok, true);
+  assert.equal(worker.pathTrafficVersion, 0);
+  assert.equal(worker.path.some((node) => node.ix === 2 && node.iz === 2), true);
+
+  state.metrics.traffic = {
+    version: 1,
+    penaltyByKey: { "2,2": 8 },
+    hotspotCount: 1,
+    peakLoad: 4.2,
+  };
+
+  const rerouted = setTargetAndPath(worker, target, state, services);
+  assert.equal(rerouted, true);
+  assert.equal(worker.pathTrafficVersion, 1);
+  assert.equal(worker.path.some((node) => node.ix === 2 && node.iz === 2), false);
+  assert.equal(state.debug.astar.requests, 2);
+});
