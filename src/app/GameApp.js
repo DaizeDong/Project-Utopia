@@ -4,6 +4,7 @@ import { ENTITY_TYPE, ANIMAL_KIND, VISITOR_KIND, TILE } from "../config/constant
 import { SceneRenderer } from "../render/SceneRenderer.js";
 import { BuildToolbar } from "../ui/tools/BuildToolbar.js";
 import { HUDController } from "../ui/hud/HUDController.js";
+import { GameStateOverlay } from "../ui/hud/GameStateOverlay.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
 import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
 import { AIExchangePanel } from "../ui/panels/AIExchangePanel.js";
@@ -92,6 +93,17 @@ export class GameApp {
       onSetBenchmarkConfig: (config) => this.setBenchmarkConfig(config),
     });
     this.developerPanel = new DeveloperPanel(this.state);
+    this.gameStateOverlay = new GameStateOverlay(this.state, {
+      onStart: () => this.startSession(),
+      onRestart: () => this.restartSession(),
+      onReset: () => this.resetSessionWorld(),
+    });
+    this.runState = {
+      phase: "menu",
+      outcome: "none",
+      reason: "",
+      endedAtSec: -1,
+    };
 
     this.benchmark = {
       running: false,
@@ -139,6 +151,10 @@ export class GameApp {
     };
     this.#queueAiHealthProbe("startup");
     this.#recomputePopulationBreakdown();
+    this.#setRunPhase("menu", {
+      actionMessage: "Ready. Press Start Run to begin the alpha build loop.",
+      actionKind: "info",
+    });
   }
 
   createSystems() {
@@ -197,11 +213,12 @@ export class GameApp {
   update(frameDt) {
     const frameStart = performance.now();
     const controls = this.state.controls;
+    const runLocked = this.runState.phase !== "active";
     const fixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
     const stepPlan = computeSimulationStepPlan({
       frameDt,
       accumulatorSec: this.accumulatorSec,
-      isPaused: controls.isPaused,
+      isPaused: controls.isPaused || runLocked,
       stepFramesPending: controls.stepFramesPending,
       fixedStepSec,
       timeScale: controls.timeScale,
@@ -214,6 +231,8 @@ export class GameApp {
     for (let i = 0; i < stepPlan.steps; i += 1) {
       this.stepSimulation(fixedStepSec);
     }
+
+    this.#evaluateRunOutcome();
 
     if (controls.isPaused && this.benchmark.running && stepPlan.steps === 0) {
       this.state.metrics.benchmarkStatus = "paused";
@@ -276,6 +295,7 @@ export class GameApp {
       }
       this.uiRefreshAccumulator = 0;
     }
+    this.#safeRenderPanel("GameStateOverlay", () => this.gameStateOverlay.render(this.runState));
     this.state.metrics.uiCpuMs = performance.now() - uiStart;
     const renderStart = performance.now();
     this.#safeRenderPanel("SceneRenderer", () => this.renderer.render(dt));
@@ -411,6 +431,11 @@ export class GameApp {
 
   startBenchmark() {
     if (this.benchmark.running) return;
+    if (this.runState.phase !== "active") {
+      this.state.controls.actionMessage = "Start the run first, then launch benchmark.";
+      this.state.controls.actionKind = "error";
+      return;
+    }
     if (this.state.controls.isPaused) {
       this.state.controls.actionMessage = "Resume simulation before benchmark.";
       this.state.controls.actionKind = "error";
@@ -541,6 +566,11 @@ export class GameApp {
   }
 
   togglePause() {
+    if (this.runState.phase !== "active") {
+      this.state.controls.actionMessage = "Pause/Resume is only available during active run.";
+      this.state.controls.actionKind = "error";
+      return;
+    }
     this.state.controls.isPaused = !this.state.controls.isPaused;
     if (!this.state.controls.isPaused) {
       this.state.controls.stepFramesPending = 0;
@@ -552,6 +582,11 @@ export class GameApp {
   }
 
   stepFrames(frameCount) {
+    if (this.runState.phase !== "active") {
+      this.state.controls.actionMessage = "Frame stepping is only available during active run.";
+      this.state.controls.actionKind = "error";
+      return;
+    }
     const n = Math.max(1, frameCount | 0);
     this.state.controls.isPaused = true;
     this.state.controls.stepFramesPending = Math.min(240, this.state.controls.stepFramesPending + n);
@@ -637,7 +672,7 @@ export class GameApp {
     this.services.replayService.push({ channel: "doctrine", kind: "setDoctrine", value: doctrineId, simSec: this.state.metrics.timeSec });
   }
 
-  regenerateWorld({ templateId, seed, terrainTuning }) {
+  regenerateWorld({ templateId, seed, terrainTuning }, options = {}) {
     const next = createInitialGameState({ templateId, seed, terrainTuning });
 
     next.ai.enabled = this.state.ai.enabled;
@@ -680,6 +715,10 @@ export class GameApp {
       value: { templateId: this.state.world.mapTemplateId, seed: this.state.world.mapSeed },
       simSec: this.state.metrics.timeSec,
     });
+
+    const targetPhase = options.phase
+      ?? (options.autoStart ? "active" : this.runState.phase === "active" ? "active" : "menu");
+    this.#setRunPhase(targetPhase);
   }
 
   undoLastBuild() {
@@ -957,7 +996,89 @@ export class GameApp {
     if (!node) return false;
     const element = node.nodeType === 1 ? node : node.parentElement;
     if (!element || typeof element.closest !== "function") return false;
-    return Boolean(element.closest("#ui, #devDock, #entityFocusOverlay"));
+    return Boolean(element.closest("#ui, #devDock, #entityFocusOverlay, #gameStateOverlay"));
+  }
+
+  startSession() {
+    this.#setRunPhase("active", {
+      actionMessage: "Simulation started. Complete all objectives to win.",
+      actionKind: "success",
+    });
+  }
+
+  restartSession() {
+    this.resetSessionWorld({ autoStart: true });
+  }
+
+  resetSessionWorld(options = {}) {
+    this.regenerateWorld({
+      templateId: this.state.world.mapTemplateId,
+      seed: this.state.world.mapSeed,
+      terrainTuning: this.state.controls.terrainTuning,
+    }, {
+      autoStart: Boolean(options.autoStart),
+      phase: options.autoStart ? "active" : "menu",
+    });
+    if (!options.autoStart) {
+      this.state.controls.actionMessage = "World reset. Press Start Run when ready.";
+      this.state.controls.actionKind = "info";
+    }
+  }
+
+  #setRunPhase(phase, options = {}) {
+    const next = phase === "active" ? "active" : phase === "end" ? "end" : "menu";
+    this.runState.phase = next;
+    this.runState.outcome = options.outcome ?? (next === "end" ? this.runState.outcome : "none");
+    this.runState.reason = options.reason ?? (next === "end" ? this.runState.reason : "");
+    this.runState.endedAtSec = next === "end" ? this.state.metrics.timeSec : -1;
+
+    this.state.controls.stepFramesPending = 0;
+    this.state.controls.isPaused = next !== "active";
+    if (next === "active") {
+      this.state.metrics.benchmarkStatus = this.benchmark.running ? this.state.metrics.benchmarkStatus : "idle";
+    }
+
+    if (options.actionMessage) {
+      this.state.controls.actionMessage = options.actionMessage;
+      this.state.controls.actionKind = options.actionKind ?? "info";
+    }
+  }
+
+  #evaluateRunOutcome() {
+    if (this.runState.phase !== "active") return;
+    const allDone = this.state.gameplay.objectiveIndex >= this.state.gameplay.objectives.length;
+    if (allDone) {
+      this.#setRunPhase("end", {
+        outcome: "win",
+        reason: "All objectives completed. Colony is stable.",
+        actionMessage: "Victory achieved. You can restart or reset.",
+        actionKind: "success",
+      });
+      return;
+    }
+
+    const workers = Number(this.state.metrics.populationStats?.workers ?? 0);
+    const food = Number(this.state.resources.food ?? 0);
+    const wood = Number(this.state.resources.wood ?? 0);
+    const prosperity = Number(this.state.gameplay.prosperity ?? 0);
+    const threat = Number(this.state.gameplay.threat ?? 0);
+
+    let reason = "";
+    if (workers <= 0) {
+      reason = "All workers are gone.";
+    } else if (food <= 0 && wood <= 0) {
+      reason = "Both food and wood reached zero.";
+    } else if (prosperity <= 8 && threat >= 92) {
+      reason = "Colony collapsed under low prosperity and extreme threat.";
+    }
+    if (!reason) return;
+
+    this.#setRunPhase("end", {
+      outcome: "loss",
+      reason,
+      actionMessage: `Run ended: ${reason}`,
+      actionKind: "error",
+    });
   }
 
   #sanitizeControls(notify = false) {
