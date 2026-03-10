@@ -282,6 +282,11 @@ export class EntityFocusPanel {
     const topIntent = summarizeTopWeights(groupPolicy?.intentWeights ?? {});
     const topTargets = summarizeTopWeights(groupPolicy?.targetPriorities ?? {});
     const aiImpact = this.#buildAiImpact(entity, groupPolicy);
+    const policyFocus = String(groupPolicy?.focus ?? "none");
+    const policySummary = String(groupPolicy?.summary ?? "none");
+    const policyNotes = Array.isArray(groupPolicy?.steeringNotes) && groupPolicy.steeringNotes.length > 0
+      ? groupPolicy.steeringNotes.join(" | ")
+      : "none";
     const entityInsights = getEntityInsight(this.state, entity);
     const simSec = fmtSec(this.state.metrics.timeSec);
     const policySec = fmtSec(this.state.ai.lastPolicyResultSec);
@@ -317,10 +322,14 @@ export class EntityFocusPanel {
       <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" />
       <div class="small"><b>AI Agent Effect</b></div>
       <div class="small"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
+      <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
+      <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
       <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
+      <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
       <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
+      <div class="small"><b>Target Selection:</b> score=${fmtNum(entity.debug?.policyTargetScore ?? 0, 2)} | frontier=${fmtNum(entity.debug?.policyTargetFrontier ?? 0, 2)} | depot=${fmtNum(entity.debug?.policyTargetDepot ?? 0, 2)} | load=${fmtNum(entity.debug?.policyTargetWarehouseLoad ?? 0, 2)} | ecology=${fmtNum(entity.debug?.policyTargetEcology ?? 0, 2)}</div>
       <details data-focus-key="focus:path-nodes" style="margin-top:8px;">
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>

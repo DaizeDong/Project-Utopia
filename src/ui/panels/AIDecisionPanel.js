@@ -123,6 +123,11 @@ export class AIDecisionPanel {
     const weather = directive.weather ?? "-";
     const durationSec = directive.durationSec ?? "-";
     const tension = directive.factionTension ?? "-";
+    const focus = escapeHtml(directive.focus ?? "none");
+    const summary = escapeHtml(directive.summary ?? "none");
+    const notes = Array.isArray(directive.steeringNotes) && directive.steeringNotes.length > 0
+      ? directive.steeringNotes.map((note) => escapeHtml(note)).join("<br/>")
+      : "none";
     const events = Array.isArray(directive.eventSpawns) ? directive.eventSpawns : [];
     const eventLines = events.length > 0
       ? events.map((e) => `${escapeHtml(e.type)} i=${fmtNum(e.intensity, 2)} d=${fmtNum(e.durationSec, 1)}s`).join("<br/>")
@@ -131,6 +136,9 @@ export class AIDecisionPanel {
     return `
       <div class="small"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
       <div class="small"><b>weather:</b> ${escapeHtml(weather)} | <b>duration:</b> ${fmtNum(durationSec, 1)}s | <b>tension:</b> ${fmtNum(tension, 2)}</div>
+      <div class="small"><b>focus:</b> ${focus}</div>
+      <div class="small"><b>summary:</b> ${summary}</div>
+      <div class="small"><b>steeringNotes:</b><br/>${notes}</div>
       <div class="small" style="margin-top:4px;"><b>eventSpawns:</b><br/>${eventLines}</div>
       ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
     `;
@@ -164,6 +172,11 @@ export class AIDecisionPanel {
     const targets = summarizeWeights(policy.targetPriorities ?? {});
     const ttl = fmtNum(policy.ttlSec, 1);
     const risk = fmtNum(policy.riskTolerance, 2);
+    const focus = escapeHtml(policy.focus ?? "none");
+    const summary = escapeHtml(policy.summary ?? "none");
+    const notes = Array.isArray(policy.steeringNotes) && policy.steeringNotes.length > 0
+      ? policy.steeringNotes.map((note) => escapeHtml(note)).join("<br/>")
+      : "none";
 
     return `
       <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;" open>
@@ -171,8 +184,11 @@ export class AIDecisionPanel {
         <div class="small" style="margin-top:6px;"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
         <div class="small"><b>expires:</b> ${expiresAtSec}</div>
         <div class="small"><b>stateTarget:</b> ${escapeHtml(groupTarget?.targetState ?? "none")} | <b>priority:</b> ${fmtNum(groupTarget?.priority ?? 0, 2)} | <b>targetTTL:</b> ${targetTtl}</div>
+        <div class="small"><b>focus:</b> ${focus}</div>
+        <div class="small"><b>summary:</b> ${summary}</div>
         <div class="small"><b>intentWeights:</b> ${escapeHtml(intents)}</div>
         <div class="small"><b>targetPriorities:</b> ${escapeHtml(targets)}</div>
+        <div class="small"><b>steeringNotes:</b><br/>${notes}</div>
         ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
       </details>
     `;

@@ -9,24 +9,152 @@ function clonePolicies() {
   return Object.values(DEFAULT_GROUP_POLICIES).map((policy) => JSON.parse(JSON.stringify(policy)));
 }
 
+function getWorld(summary) {
+  return summary?.world ?? summary ?? {};
+}
+
+function getFrontier(summary) {
+  return getWorld(summary).frontier ?? {};
+}
+
+function getObjective(summary) {
+  return getWorld(summary).objective ?? {};
+}
+
+function getLogistics(summary) {
+  return getWorld(summary).logistics ?? {};
+}
+
+function getEcology(summary) {
+  return getWorld(summary).ecology ?? {};
+}
+
+function getGameplay(summary) {
+  return getWorld(summary).gameplay ?? {};
+}
+
 function boost(weights, key, delta) {
   const current = Number(weights[key] ?? 0);
   weights[key] = clamp(Number((current + delta).toFixed(3)), 0, 3);
 }
 
-function adjustWorkerPolicy(policy, context, world) {
+function boostTarget(policy, key, delta) {
+  const current = Number(policy.targetPriorities?.[key] ?? 0);
+  policy.targetPriorities[key] = clamp(Number((current + delta).toFixed(3)), 0, 3);
+}
+
+function addNote(notes, text) {
+  const clean = String(text ?? "").trim();
+  if (!clean || notes.includes(clean)) return;
+  notes.push(clean);
+}
+
+function buildEnvironmentNotes(summary, weather) {
+  const frontier = getFrontier(summary);
+  const logistics = getLogistics(summary);
+  const gameplay = getGameplay(summary);
+  const notes = [];
+
+  if ((frontier.brokenRoutes ?? []).length > 0) {
+    addNote(notes, `Keep pressure readable around ${frontier.brokenRoutes[0]} instead of spawning generic world noise.`);
+  }
+  if ((frontier.unreadyDepots ?? []).length > 0) {
+    addNote(notes, `Respect the unreclaimed depot at ${frontier.unreadyDepots[0]} so the player can see why route repair matters.`);
+  }
+  if (Number(logistics.isolatedWorksites ?? 0) > 0 || Number(logistics.overloadedWarehouses ?? 0) > 0) {
+    addNote(notes, "Use weather and events to sharpen logistics consequences, not to replace them.");
+  }
+  if (Number(gameplay.recovery?.collapseRisk ?? 0) >= 60) {
+    addNote(notes, "Recovery risk is already high, so keep the directive survivable.");
+  }
+  if (weather === WEATHER.STORM) {
+    addNote(notes, "Storms should contest routes and depots more than safe interior tiles.");
+  }
+  return notes.slice(0, 4);
+}
+
+function buildEnvironmentDirective(payload, summary, focus) {
+  return {
+    ...payload,
+    focus,
+    summary: `Pressure ${focus} for ${payload.durationSec.toFixed(0)}s while keeping the scenario legible.`,
+    steeringNotes: buildEnvironmentNotes(summary, payload.weather),
+  };
+}
+
+function describeWorkerFocus(summary, notes) {
+  const objective = getObjective(summary);
+  const frontier = getFrontier(summary);
+  const logistics = getLogistics(summary);
+  if ((frontier.brokenRoutes ?? []).length > 0 || (frontier.unreadyDepots ?? []).length > 0) {
+    return "route repair and depot relief";
+  }
+  if (Number(logistics.overloadedWarehouses ?? 0) > 0 || Number(logistics.strandedCarryWorkers ?? 0) > 0) {
+    return "cargo relief";
+  }
+  if (objective.id === "stockpile-1") {
+    return "stockpile throughput";
+  }
+  if (notes.some((note) => /weather|bandit|pressure/i.test(note))) {
+    return "safe frontier throughput";
+  }
+  return "frontier buildout";
+}
+
+function describeTraderFocus(summary) {
+  const frontier = getFrontier(summary);
+  const gameplay = getGameplay(summary);
+  if ((frontier.readyDepots ?? []).length > 0 && Number(gameplay.threat ?? 0) < 52) return "forward depot trade";
+  if ((frontier.unreadyDepots ?? []).length > 0) return "defended warehouse lanes";
+  return "warehouse circulation";
+}
+
+function describeSaboteurFocus(summary) {
+  const frontier = getFrontier(summary);
+  if ((frontier.brokenRoutes ?? []).length > 0) return "soft frontier corridor hits";
+  if ((frontier.unreadyDepots ?? []).length > 0) return "depot disruption";
+  return "economic harassment";
+}
+
+function describeHerbivoreFocus(summary) {
+  const ecology = getEcology(summary);
+  if (Number(ecology.pressuredFarms ?? 0) > 0) return "farm-edge grazing";
+  if (Number(ecology.frontierPredators ?? 0) > 0) return "habitat safety";
+  return "wildlife grazing";
+}
+
+function describePredatorFocus(summary) {
+  const ecology = getEcology(summary);
+  if (Number(ecology.pressuredFarms ?? 0) > 0) return "farm hotspot patrol";
+  if (Number(ecology.migrationHerds ?? 0) > 0) return "migration interception";
+  return "isolated prey patrol";
+}
+
+function adjustWorkerPolicy(policy, context, summary) {
+  const world = getWorld(summary);
+  const objective = getObjective(summary);
+  const frontier = getFrontier(summary);
+  const logistics = getLogistics(summary);
+  const gameplay = getGameplay(summary);
   const dominant = String(context?.dominantState ?? "");
   const avgHunger = Number(context?.avgHunger ?? 0.5);
   const food = Number(world?.resources?.food ?? 0);
+  const wood = Number(world?.resources?.wood ?? 0);
   const carrying = Number(context?.carrying ?? 0);
+  const notes = [];
 
   if (food < 20 || avgHunger < 0.34 || dominant === "seek_food" || dominant === "eat") {
     boost(policy.intentWeights, "eat", 0.7);
     boost(policy.intentWeights, "deliver", 0.35);
     boost(policy.intentWeights, "farm", -0.2);
+    boostTarget(policy, "warehouse", 0.2);
+    addNote(notes, "Food is fragile, so keep workers near depots and hunger-safe loops.");
   }
   if (carrying > Math.max(4, Number(context?.count ?? 0) * 0.5)) {
     boost(policy.intentWeights, "deliver", 0.6);
+    boostTarget(policy, "warehouse", 0.32);
+    boostTarget(policy, "depot", 0.22);
+    addNote(notes, "Cargo is accumulating; delivery should outrank more harvesting.");
   } else {
     boost(policy.intentWeights, "deliver", -0.25);
   }
@@ -34,34 +162,95 @@ function adjustWorkerPolicy(policy, context, world) {
     boost(policy.intentWeights, "farm", 0.25);
     boost(policy.intentWeights, "wood", 0.2);
     boost(policy.intentWeights, "wander", -0.2);
+    addNote(notes, "Workers are drifting; bias back toward active worksites.");
   }
+
+  if ((frontier.brokenRoutes ?? []).length > 0 || (frontier.unreadyDepots ?? []).length > 0) {
+    boost(policy.intentWeights, "deliver", 0.35);
+    boostTarget(policy, "road", 0.35);
+    boostTarget(policy, "depot", 0.35);
+    boostTarget(policy, "frontier", 0.2);
+    policy.ttlSec = clamp(policy.ttlSec - 4, 8, 60);
+    addNote(notes, "Broken routes mean workers should favor sites that reconnect or shorten logistics.");
+  }
+  if (Number(logistics.overloadedWarehouses ?? 0) > 0 || Number(logistics.strandedCarryWorkers ?? 0) > 0) {
+    boost(policy.intentWeights, "deliver", 0.45);
+    boostTarget(policy, "warehouse", 0.24);
+    boostTarget(policy, "safety", 0.16);
+    policy.riskTolerance = clamp(policy.riskTolerance - 0.05, 0, 1);
+    addNote(notes, "Depot congestion is real, so steering should reduce cargo stalls instead of amplifying them.");
+  }
+  if (objective.id === "stockpile-1") {
+    if (food <= wood) {
+      boost(policy.intentWeights, "farm", 0.25);
+      boostTarget(policy, "farm", 0.2);
+      addNote(notes, "The current objective needs food first, so farm pressure should lead wood pressure.");
+    } else {
+      boost(policy.intentWeights, "wood", 0.25);
+      boostTarget(policy, "lumber", 0.2);
+      addNote(notes, "The current objective needs wood support more than extra food.");
+    }
+  }
+  if (objective.id === "stability-1" || Number(gameplay.threat ?? 0) >= 56 || Number(world.spatialPressure?.eventPressure ?? 0) > 1.05) {
+    boostTarget(policy, "safety", 0.24);
+    addNote(notes, "Threat is elevated, so prefer safer paths and work clusters.");
+  }
+
+  policy.focus = describeWorkerFocus(summary, notes);
+  policy.summary = `Workers should sustain ${policy.focus} while keeping hunger and carried cargo from overriding the map's intended reroute pressure.`;
+  policy.steeringNotes = notes.slice(0, 4);
 }
 
-function adjustTraderPolicy(policy, context, world) {
+function adjustTraderPolicy(policy, context, summary) {
+  const world = getWorld(summary);
+  const frontier = getFrontier(summary);
   const dominant = String(context?.dominantState ?? "");
   const avgHunger = Number(context?.avgHunger ?? 0.5);
   const threatSignals = Number(world?.events?.length ?? 0);
+  const notes = [];
 
   if (avgHunger < 0.35 || dominant === "seek_food" || dominant === "eat") {
     boost(policy.intentWeights, "eat", 0.6);
     boost(policy.intentWeights, "trade", -0.25);
+    boostTarget(policy, "warehouse", 0.18);
+    addNote(notes, "Hungry traders should still route through food-safe warehouses.");
   }
   if (dominant === "seek_trade" || dominant === "trade") {
     boost(policy.intentWeights, "trade", 0.45);
     boost(policy.intentWeights, "wander", -0.2);
   }
-  if (threatSignals > 0) {
-    policy.ttlSec = clamp(policy.ttlSec - 4, 8, 60);
+  if ((frontier.readyDepots ?? []).length > 0) {
+    boostTarget(policy, "depot", 0.32);
+    boostTarget(policy, "road", 0.18);
+    addNote(notes, "Use reclaimed depots as the anchor for profitable trade runs.");
   }
+  if ((frontier.unreadyDepots ?? []).length > 0) {
+    boostTarget(policy, "warehouse", 0.18);
+    boostTarget(policy, "safety", 0.16);
+    addNote(notes, "When forward depots are still ruined, keep trade closer to defended warehouses.");
+  }
+  if (threatSignals > 0 || Number(world?.gameplay?.threat ?? 0) > 54) {
+    boostTarget(policy, "safety", 0.24);
+    policy.ttlSec = clamp(policy.ttlSec - 4, 8, 60);
+    addNote(notes, "Threat is active, so route choice should favor safer lanes.");
+  }
+
+  policy.focus = describeTraderFocus(summary);
+  policy.summary = `Traders should circulate through ${policy.focus} so route support and warehouse defense matter to the economy.`;
+  policy.steeringNotes = notes.slice(0, 4);
 }
 
-function adjustSaboteurPolicy(policy, context) {
+function adjustSaboteurPolicy(policy, context, summary) {
+  const world = getWorld(summary);
+  const frontier = getFrontier(summary);
   const dominant = String(context?.dominantState ?? "");
   const avgHunger = Number(context?.avgHunger ?? 0.5);
+  const notes = [];
 
   if (avgHunger < 0.35 || dominant === "seek_food" || dominant === "eat") {
     boost(policy.intentWeights, "evade", 0.35);
     boost(policy.intentWeights, "sabotage", -0.3);
+    addNote(notes, "Hungry saboteurs should preserve escape capacity instead of forcing bad sabotage loops.");
   }
   if (dominant === "evade") {
     boost(policy.intentWeights, "evade", 0.45);
@@ -70,25 +259,63 @@ function adjustSaboteurPolicy(policy, context) {
   if (dominant === "scout" || dominant === "sabotage") {
     boost(policy.intentWeights, "sabotage", 0.4);
   }
+  if ((frontier.brokenRoutes ?? []).length > 0) {
+    boostTarget(policy, "frontier", 0.3);
+    boostTarget(policy, "road", 0.16);
+    addNote(notes, "Broken corridors are easier to pressure than stable interiors.");
+  }
+  if ((frontier.unreadyDepots ?? []).length > 0) {
+    boostTarget(policy, "warehouse", 0.2);
+    boostTarget(policy, "choke", 0.16);
+    addNote(notes, "Exposed depots and gate tiles should matter more than random farms.");
+  }
+  if (Number(world?.gameplay?.threat ?? 0) > 58) {
+    boostTarget(policy, "exit", 0.12);
+    policy.riskTolerance = clamp(policy.riskTolerance + 0.04, 0, 1);
+  }
+
+  policy.focus = describeSaboteurFocus(summary);
+  policy.summary = `Saboteurs should create ${policy.focus} so frontier layout and depot defense remain strategically meaningful.`;
+  policy.steeringNotes = notes.slice(0, 4);
 }
 
-function adjustHerbivorePolicy(policy, context) {
+function adjustHerbivorePolicy(policy, context, summary) {
   const dominant = String(context?.dominantState ?? "");
+  const ecology = getEcology(summary);
+  const notes = [];
   if (dominant === "flee") {
     boost(policy.intentWeights, "flee", 0.55);
     boost(policy.intentWeights, "graze", -0.2);
+    boostTarget(policy, "safety", 0.28);
+    addNote(notes, "Predator pressure should keep flee behavior above opportunistic grazing.");
   }
   if (dominant === "regroup") {
     boost(policy.intentWeights, "migrate", 0.25);
+    boostTarget(policy, "wildlife", 0.16);
   }
   if (dominant === "graze") {
     boost(policy.intentWeights, "graze", 0.35);
   }
+  if (Number(ecology.pressuredFarms ?? 0) > 0) {
+    boostTarget(policy, "farm", 0.22);
+    addNote(notes, "Existing farm pressure should keep herds near the frontier food edge.");
+  }
+  if (Number(ecology.frontierPredators ?? 0) > 0) {
+    boostTarget(policy, "safety", 0.18);
+    boostTarget(policy, "wildlife", 0.12);
+  }
+
+  policy.focus = describeHerbivoreFocus(summary);
+  policy.summary = `Herbivores should sustain ${policy.focus} so wildlife becomes a readable spatial pressure instead of background motion.`;
+  policy.steeringNotes = notes.slice(0, 4);
 }
 
-function adjustPredatorPolicy(policy, context, world) {
+function adjustPredatorPolicy(policy, context, summary) {
   const dominant = String(context?.dominantState ?? "");
+  const world = getWorld(summary);
+  const ecology = getEcology(summary);
   const herbivores = Number(world?.population?.herbivores ?? 0);
+  const notes = [];
   if (dominant === "rest") {
     boost(policy.intentWeights, "stalk", 0.3);
     boost(policy.intentWeights, "hunt", 0.3);
@@ -99,20 +326,31 @@ function adjustPredatorPolicy(policy, context, world) {
   if (herbivores <= 0) {
     boost(policy.intentWeights, "wander", 0.4);
     boost(policy.intentWeights, "hunt", -0.5);
+    addNote(notes, "When no prey are present, patrol pressure should fall back to wildlife edges instead of fake hunting.");
   }
+  if (Number(ecology.pressuredFarms ?? 0) > 0) {
+    boostTarget(policy, "farm", 0.2);
+    addNote(notes, "Farm hotspots should pull patrols only as a secondary prey signal.");
+  }
+  if (Number(ecology.migrationHerds ?? 0) > 0) {
+    boostTarget(policy, "wildlife", 0.18);
+    boostTarget(policy, "herbivore", 0.16);
+  }
+
+  policy.focus = describePredatorFocus(summary);
+  policy.summary = `Predators should maintain ${policy.focus} so prey isolation and habitat edges remain visible gameplay pressures.`;
+  policy.steeringNotes = notes.slice(0, 4);
 }
 
 function applyStateAwareTemplate(policy, summary) {
   const context = summary?.stateTransitions?.groups?.[policy.groupId] ?? null;
-  const world = summary?.world ?? {};
-
   if (!context) return policy;
 
-  if (policy.groupId === "workers") adjustWorkerPolicy(policy, context, world);
-  else if (policy.groupId === "traders") adjustTraderPolicy(policy, context, world);
-  else if (policy.groupId === "saboteurs") adjustSaboteurPolicy(policy, context, world);
-  else if (policy.groupId === "herbivores") adjustHerbivorePolicy(policy, context);
-  else if (policy.groupId === "predators") adjustPredatorPolicy(policy, context, world);
+  if (policy.groupId === "workers") adjustWorkerPolicy(policy, context, summary);
+  else if (policy.groupId === "traders") adjustTraderPolicy(policy, context, summary);
+  else if (policy.groupId === "saboteurs") adjustSaboteurPolicy(policy, context, summary);
+  else if (policy.groupId === "herbivores") adjustHerbivorePolicy(policy, context, summary);
+  else if (policy.groupId === "predators") adjustPredatorPolicy(policy, context, summary);
 
   policy.ttlSec = clamp(Number(policy.ttlSec) || 24, 8, 60);
   policy.riskTolerance = clamp(Number(policy.riskTolerance) || 0.5, 0, 1);
@@ -192,7 +430,8 @@ function pickStateTargetForGroup(groupId, summary) {
   targetState = sanitizeFallbackTargetState(groupId, targetState, context);
 
   const avgHunger = Number(context.avgHunger ?? 0.5);
-  const basePriority = 0.45 + Math.max(0, Math.min(0.35, (0.5 - avgHunger) * 0.7));
+  const frontierPenalty = Math.max(0, Number(getFrontier(summary).brokenRouteCount ?? 0) * 0.06);
+  const basePriority = 0.45 + Math.max(0, Math.min(0.35, (0.5 - avgHunger) * 0.7)) + frontierPenalty;
   const priority = clamp(Number(basePriority.toFixed(3)), 0.2, 0.9);
   const ttlSec = clamp(Math.round(14 + Number(context.count ?? 0) * 0.2), 8, 28);
 
@@ -206,7 +445,7 @@ function pickStateTargetForGroup(groupId, summary) {
 }
 
 function isFallbackTargetFeasible(groupId, targetState, summary, context) {
-  const world = summary?.world ?? {};
+  const world = getWorld(summary);
   const resources = world.resources ?? {};
   const buildings = world.buildings ?? {};
   const population = world.population ?? {};
@@ -271,36 +510,50 @@ function buildFallbackStateTargets(policies, summary) {
 }
 
 export function buildEnvironmentFallback(summary) {
-  const lowFood = summary.resources.food < 18;
-  const congestionHigh = summary.traffic.congestion > 0.58;
-  const stabilitySignal = Number(summary.resources.food ?? 0) * 0.41
-    + Number(summary.resources.wood ?? 0) * 0.19
-    + Number(summary.traffic.congestion ?? 0) * 100 * 0.27;
+  const world = getWorld(summary);
+  const objective = world.objective ?? {};
+  const frontier = world.frontier ?? {};
+  const logistics = world.logistics ?? {};
+  const gameplay = world.gameplay ?? {};
+  const lowFood = Number(world.resources?.food ?? 0) < 18;
+  const congestionHigh = Number(world.traffic?.congestion ?? 0) > 0.58;
+  const brokenFrontier = Number(frontier.brokenRouteCount ?? frontier.brokenRoutes?.length ?? 0) > 0
+    || Number(frontier.unreadyDepotCount ?? frontier.unreadyDepots?.length ?? 0) > 0;
+  const collapseRisk = Number(gameplay.recovery?.collapseRisk ?? 0);
 
-  if (lowFood) {
-    return {
+  if (lowFood || collapseRisk >= 65) {
+    return buildEnvironmentDirective({
       weather: WEATHER.CLEAR,
       durationSec: 18,
-      factionTension: 0.45,
+      factionTension: 0.42,
       eventSpawns: [{ type: EVENT_TYPE.TRADE_CARAVAN, intensity: 1.2, durationSec: 16 }],
-    };
+    }, summary, "recovery lane");
   }
 
-  if (congestionHigh) {
-    return {
+  if (brokenFrontier && objective.id === "logistics-1") {
+    return buildEnvironmentDirective({
+      weather: WEATHER.RAIN,
+      durationSec: 16,
+      factionTension: 0.58,
+      eventSpawns: [{ type: EVENT_TYPE.BANDIT_RAID, intensity: 0.9, durationSec: 14 }],
+    }, summary, "broken frontier route");
+  }
+
+  if (congestionHigh || Number(logistics.overloadedWarehouses ?? 0) > 0) {
+    return buildEnvironmentDirective({
       weather: WEATHER.RAIN,
       durationSec: 14,
-      factionTension: 0.6,
+      factionTension: 0.56,
       eventSpawns: [{ type: EVENT_TYPE.ANIMAL_MIGRATION, intensity: 1.0, durationSec: 15 }],
-    };
+    }, summary, "congested logistics lane");
   }
 
-  return {
-    weather: stabilitySignal % 7 > 4.8 ? WEATHER.STORM : WEATHER.CLEAR,
+  return buildEnvironmentDirective({
+    weather: Number(world.spatialPressure?.eventPressure ?? 0) > 1.2 ? WEATHER.STORM : WEATHER.CLEAR,
     durationSec: 16,
     factionTension: 0.55,
     eventSpawns: [{ type: EVENT_TYPE.BANDIT_RAID, intensity: 0.8, durationSec: 12 }],
-  };
+  }, summary, brokenFrontier ? "contested frontier" : "stable frontier");
 }
 
 export function buildPolicyFallback(summary) {

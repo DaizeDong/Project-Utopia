@@ -33,6 +33,9 @@ test("Policy schema accepts optional stateTargets", () => {
         riskTolerance: 0.4,
         targetPriorities: { warehouse: 1.2 },
         ttlSec: 20,
+        focus: "depot throughput",
+        summary: "Keep workers close to warehouses while routes recover.",
+        steeringNotes: ["Delivery must stay feasible."],
       },
     ],
     stateTargets: [
@@ -52,11 +55,14 @@ test("Guardrails drop invalid stateTargets", () => {
   const guarded = guardGroupPolicies({
     policies: [
       {
-        groupId: "workers",
-        intentWeights: { farm: 1 },
+        groupId: "WORKERS",
+        intentWeights: { farm: 1, invalid: 2.4, deliver: 1.1 },
         riskTolerance: 0.4,
-        targetPriorities: { warehouse: 1.2 },
+        targetPriorities: { warehouse: 1.2, invalid: 2.2, road: 1.4 },
         ttlSec: 20,
+        focus: "frontier cargo",
+        summary: "Workers should hold the frontier.",
+        steeringNotes: ["Prefer roads.", "Ignore invalid keys."],
       },
     ],
     stateTargets: [
@@ -70,6 +76,12 @@ test("Guardrails drop invalid stateTargets", () => {
   assert.equal(guarded.stateTargets.length, 1);
   assert.equal(guarded.stateTargets[0].groupId, "workers");
   assert.equal(guarded.stateTargets[0].targetState, "seek_task");
+  assert.deepEqual(Object.keys(guarded.policies[0].intentWeights).sort(), ["deliver", "farm", "wood", "eat", "wander"].sort());
+  assert.equal(Object.prototype.hasOwnProperty.call(guarded.policies[0].intentWeights, "invalid"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(guarded.policies[0].targetPriorities, "invalid"), false);
+  assert.equal(guarded.policies[0].focus, "frontier cargo");
+  assert.equal(guarded.policies[0].summary, "Workers should hold the frontier.");
+  assert.equal(Array.isArray(guarded.policies[0].steeringNotes), true);
 });
 
 test("LLMClient returns fallback contract when disabled", async () => {
