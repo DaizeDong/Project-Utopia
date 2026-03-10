@@ -49,6 +49,7 @@ That runs:
 Generated verification artifacts are written to:
 
 - `docs/assignment4/metrics/`
+- `docs/assignment4/release-manifest.json`
 - `docs/assignment3/verification-summary.json`
 
 These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
