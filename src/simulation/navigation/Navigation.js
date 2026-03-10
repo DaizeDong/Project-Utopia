@@ -46,6 +46,13 @@ function isEntityAtTile(entity, tile, grid) {
   return current.ix === tile.ix && current.iz === tile.iz;
 }
 
+function getWeatherHazardData(state) {
+  return {
+    tiles: state.weather?.hazardTileSet ?? null,
+    penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
+  };
+}
+
 export function canAttemptPath(entity, state) {
   const nowSec = Number(state.metrics?.timeSec ?? 0);
   const retryState = getPathRetryState(entity);
@@ -117,7 +124,13 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       return false;
     }
     const t0 = nowMs();
-    path = aStar(state.grid, start, targetTile, state.weather.moveCostMultiplier);
+    path = aStar(
+      state.grid,
+      start,
+      targetTile,
+      state.weather.moveCostMultiplier,
+      getWeatherHazardData(state),
+    );
     durationMs = nowMs() - t0;
     pathBudget.usedMs += durationMs;
   }

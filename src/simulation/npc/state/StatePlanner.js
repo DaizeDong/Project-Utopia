@@ -233,6 +233,11 @@ function isCriticalLocalState(groupId, localState) {
   return false;
 }
 
+function isProtectedLocalState(groupId, localState) {
+  if (groupId === "workers" && localState === "deliver") return true;
+  return isCriticalLocalState(groupId, localState);
+}
+
 function applyPolicyIntentPreference(groupId, localDesired, localReason, entity, state) {
   const policy = entity.policy ?? state.ai.groupPolicies?.get?.(groupId)?.data ?? null;
   if (!policy || typeof policy !== "object") {
@@ -259,16 +264,30 @@ function applyPolicyIntentPreference(groupId, localDesired, localReason, entity,
   if (!mappedState || !listGroupStates(groupId).includes(mappedState)) {
     return { desiredState: localDesired, reason: localReason, policyApplied: false };
   }
+  if (groupId === "workers" && localDesired === "deliver" && mappedState !== localDesired) {
+    return { desiredState: localDesired, reason: localReason, policyApplied: false };
+  }
 
   const dominance = top.value - second;
   const strongSignal = top.value >= 0.95 && dominance >= 0.25;
   const veryStrongSignal = top.value >= 1.35 && dominance >= 0.45;
+  const mapsToSurvivalState = mappedState === "seek_food" || mappedState === "eat";
+
+  if (mapsToSurvivalState && !isCriticalLocalState(groupId, localDesired)) {
+    return {
+      desiredState: localDesired,
+      reason: localReason,
+      policyApplied: false,
+      topIntent: top.key,
+      topWeight: top.value,
+    };
+  }
 
   if (mappedState !== localDesired && !strongSignal) {
     return { desiredState: localDesired, reason: localReason, policyApplied: false };
   }
 
-  if (isCriticalLocalState(groupId, localDesired) && mappedState !== localDesired && !veryStrongSignal) {
+  if (isProtectedLocalState(groupId, localDesired) && mappedState !== localDesired && !veryStrongSignal) {
     return { desiredState: localDesired, reason: localReason, policyApplied: false };
   }
 
@@ -301,13 +320,16 @@ function applyGroupTargetOverride(groupId, localDesired, localReason, entity, st
   if (!allowed.includes(targetState)) {
     return { desiredState: localDesired, reason: localReason, aiApplied: false };
   }
+  if (groupId === "workers" && localDesired === "deliver" && targetState !== localDesired) {
+    return { desiredState: localDesired, reason: localReason, aiApplied: false };
+  }
 
   const priority = Number(entry.priority ?? 0);
   if (priority < 0.35) {
     return { desiredState: localDesired, reason: localReason, aiApplied: false };
   }
 
-  if (isCriticalLocalState(groupId, localDesired) && priority < 0.75) {
+  if (isProtectedLocalState(groupId, localDesired) && priority < 0.75) {
     return { desiredState: localDesired, reason: localReason, aiApplied: false };
   }
 

@@ -57,11 +57,11 @@ function buildTransitionHints(groupId, world, groupStats) {
 
   if (groupId === GROUP_IDS.WORKERS) {
     if (food < 20 || avgHunger < 0.34) hints.push("seek_food -> eat -> seek_task");
-    if ((groupStats.carrying ?? 0) > Math.max(4, groupStats.count * 0.5)) hints.push("harvest -> deliver -> seek_task");
+    if ((groupStats.carrying ?? 0) > Math.max(4, groupStats.count * 0.5)) hints.push("deliver -> seek_task");
     if (dominant === "wander" || dominant === "idle") hints.push("wander -> seek_task -> harvest");
   } else if (groupId === GROUP_IDS.TRADERS) {
     if (avgHunger < 0.36) hints.push("seek_food -> eat -> seek_trade");
-    if (dominant === "wander" || dominant === "idle") hints.push("wander -> seek_trade -> trade");
+    if (dominant === "wander" || dominant === "idle") hints.push("wander -> seek_trade");
     if (threatSignals > 0) hints.push("trade -> seek_trade (short ttl)");
   } else if (groupId === GROUP_IDS.SABOTEURS) {
     if (avgHunger < 0.34) hints.push("seek_food -> eat -> scout");
