@@ -1,3 +1,5 @@
+import { getAiInsight, getCausalDigest } from "../interpretation/WorldExplain.js";
+
 const DEV_DOCK_PANELS_STORAGE_KEY = "utopiaDevDockPanels:v1";
 const DEV_DOCK_DEFAULT_OPEN = Object.freeze(["global", "ai-trace"]);
 
@@ -265,11 +267,27 @@ export class DeveloperPanel {
   #renderAiTrace() {
     if (!this.aiTraceVal) return;
     const trace = this.state.debug.aiTrace ?? [];
+    const digest = getCausalDigest(this.state);
+    const aiInsight = getAiInsight(this.state);
     if (trace.length === 0) {
-      this.#setPanelText(this.aiTraceVal, "ai-trace", "No AI traces yet.");
+      this.#setPanelText(this.aiTraceVal, "ai-trace", [
+        "Narrative:",
+        `${digest.headline} | ${digest.action}`,
+        aiInsight.summary,
+        "",
+        "No AI traces yet.",
+      ].join("\n"));
       return;
     }
 
+    const headerLines = [
+      "Narrative:",
+      `${digest.headline} | ${digest.action}`,
+      aiInsight.summary,
+      `Warning focus: ${digest.warning}`,
+      "",
+      "Trace:",
+    ];
     const lines = trace.slice(0, 16).map((entry) => {
       const sec = this.#fmtNum(entry.sec, 1);
       const fallback = entry.fallback !== undefined
@@ -280,7 +298,7 @@ export class DeveloperPanel {
       return `[${sec}s] ${entry.channel} ${entry.source} fallback=${fallback} model=${model} weather=${entry.weather} detail=${entry.events}${err}`;
     });
 
-    this.#setPanelText(this.aiTraceVal, "ai-trace", lines.join("\n"));
+    this.#setPanelText(this.aiTraceVal, "ai-trace", [...headerLines, ...lines].join("\n"));
   }
 
   #renderSystemTimings() {

@@ -3,6 +3,8 @@ import { EVENT_TYPE, WEATHER } from "../../config/constants.js";
 import { worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
+const GROUP_FOCUS_ORDER = Object.freeze(["workers", "traders", "saboteurs", "herbivores", "predators"]);
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
@@ -51,6 +53,50 @@ function summarizeEvent(event) {
   if (event.type === EVENT_TYPE.TRADE_CARAVAN) return `trade caravan ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
   if (event.type === EVENT_TYPE.ANIMAL_MIGRATION) return `animal migration ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
   return `${event.type}:${event.status}${target}${pressureText}${overlapText}${contestedText}${impact}`;
+}
+
+function getCurrentObjective(state) {
+  return state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0] ?? null;
+}
+
+function pickTopFocusGroups(state, limit = 3) {
+  const rows = GROUP_FOCUS_ORDER
+    .map((groupId) => {
+      const policy = state.ai?.groupPolicies?.get?.(groupId)?.data ?? null;
+      const focus = String(policy?.focus ?? "").trim();
+      if (!focus) return null;
+      const topWeight = Object.values(policy?.intentWeights ?? {})
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => b - a)[0] ?? 0;
+      return {
+        groupId,
+        focus,
+        weight: topWeight,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.weight - a.weight);
+  return rows.slice(0, limit);
+}
+
+function getStrongestActiveEvent(state) {
+  const active = Array.isArray(state.events?.active) ? state.events.active : [];
+  if (active.length === 0) return null;
+  const severityScore = {
+    low: 1,
+    medium: 2,
+    high: 3,
+    critical: 4,
+  };
+  return active
+    .slice()
+    .sort((a, b) => {
+      const pressureDelta = Number(b.payload?.pressure ?? 0) - Number(a.payload?.pressure ?? 0);
+      if (Math.abs(pressureDelta) > 0.001) return pressureDelta;
+      return (severityScore[String(b.payload?.severity ?? "").toLowerCase()] ?? 0)
+        - (severityScore[String(a.payload?.severity ?? "").toLowerCase()] ?? 0);
+    })[0];
 }
 
 export function getFrontierStatus(state) {
@@ -116,6 +162,116 @@ export function getTrafficInsight(state) {
     summary: traffic.summary ?? "Traffic: unavailable",
     hasPressure: Number(traffic.activeLaneCount ?? 0) > 0,
     hasHotspots: Number(traffic.hotspotCount ?? 0) > 0,
+  };
+}
+
+export function getAiInsight(state) {
+  const ai = state.ai ?? {};
+  const directive = ai.lastEnvironmentDirective ?? null;
+  const envFocus = String(directive?.focus ?? "").trim();
+  const envSummary = String(directive?.summary ?? "").trim();
+  const groups = pickTopFocusGroups(state, 3);
+  const groupSummary = groups.length > 0
+    ? groups.map((entry) => `${entry.groupId}:${entry.focus}`).join(" | ")
+    : "no active group focuses";
+  const summaryParts = [];
+  if (envFocus) summaryParts.push(`env=${envFocus}`);
+  if (groups.length > 0) summaryParts.push(groupSummary);
+  return {
+    environmentFocus: envFocus || "none",
+    environmentSummary: envSummary || "none",
+    groupFocuses: groups,
+    summary: summaryParts.length > 0 ? `AI: ${summaryParts.join(" | ")}` : "AI: no active directive",
+  };
+}
+
+export function getCausalDigest(state) {
+  const runtime = getScenarioRuntime(state);
+  const objective = getCurrentObjective(state);
+  const frontier = getFrontierStatus(state);
+  const logistics = state.metrics?.logistics ?? {};
+  const logisticsSummary = getLogisticsInsight(state);
+  const traffic = getTrafficInsight(state);
+  const weather = getWeatherInsight(state);
+  const events = getEventInsight(state);
+  const ai = getAiInsight(state);
+  const workerFocus = String(state.ai?.groupPolicies?.get?.("workers")?.data?.focus ?? "").trim();
+  const ecology = state.metrics?.ecology ?? {};
+  const missingRoute = (runtime.routes ?? []).find((route) => !route.connected) ?? null;
+  const missingDepot = (runtime.depots ?? []).find((depot) => !depot.ready) ?? null;
+  const strongestEvent = getStrongestActiveEvent(state);
+  const isolatedWorksites = Number(logistics.isolatedWorksites ?? 0);
+  const overloadedWarehouses = Number(logistics.overloadedWarehouses ?? 0);
+  const stretchedWorksites = Number(logistics.stretchedWorksites ?? 0);
+  const pressuredFarms = Number(ecology.pressuredFarms ?? 0);
+
+  let severity = "info";
+  let headline = objective?.title ?? "Hold the colony together";
+  let action = objective?.description ?? objective?.title ?? "Observe the current pressure and keep the colony stable.";
+  let warning = "";
+
+  if (isolatedWorksites > 0) {
+    severity = "error";
+    headline = `Reconnect ${isolatedWorksites} isolated worksite${isolatedWorksites === 1 ? "" : "s"}`;
+    action = "At least one worksite is outside depot reach, so route repair should outrank more expansion.";
+    warning = logisticsSummary;
+  } else if (missingRoute) {
+    severity = "error";
+    headline = `Restore ${missingRoute.label}`;
+    action = missingRoute.hint || `Reconnect ${missingRoute.label} before scaling the colony.`;
+    warning = frontier.summary;
+  } else if (missingDepot) {
+    severity = "warn";
+    headline = `Claim ${missingDepot.label}`;
+    action = missingDepot.hint || `Build a warehouse near ${missingDepot.label} so the repaired route can pay off.`;
+    warning = frontier.summary;
+  } else if (strongestEvent?.type === EVENT_TYPE.BANDIT_RAID) {
+    const label = strongestEvent.payload?.targetLabel ?? "the active frontier lane";
+    severity = Number(strongestEvent.payload?.pressure ?? 0) >= 1.5 ? "error" : "warn";
+    headline = `Defend ${label}`;
+    action = `Bandit pressure is concentrated on ${label}, so reinforce or reroute that lane before throughput collapses.`;
+    warning = summarizeEvent(strongestEvent);
+  } else if (overloadedWarehouses > 0 || stretchedWorksites > 0) {
+    severity = "warn";
+    headline = "Relieve depot throughput";
+    action = "Warehouse load is starting to bottleneck delivery, so add storage or shorten the route before harvest loops stall.";
+    warning = logisticsSummary;
+  } else if (traffic.hasHotspots) {
+    severity = "warn";
+    headline = "Open an alternate lane";
+    action = "Traffic hotspots are visible enough to justify a reroute or route split before path costs stack higher.";
+    warning = traffic.summary;
+  } else if (weather.hasHazards) {
+    severity = "warn";
+    headline = `Work around the ${state.weather.current}`;
+    action = "Weather fronts are changing path cost in specific lanes, so route edits should favor the safer corridor.";
+    warning = weather.summary;
+  } else if (pressuredFarms > 0) {
+    severity = "warn";
+    headline = "Displace wildlife from pressured farms";
+    action = "Frontier grazing is suppressing harvest yield, so defend or reroute around the pressured farm lane.";
+    warning = String(ecology.summary ?? logisticsSummary);
+  }
+
+  const evidence = [
+    objective ? `Objective: ${objective.title} (${roundMetric(objective.progress ?? 0, 1).toFixed(1)}%)` : null,
+    `Frontier: ${frontier.summary}`,
+    logisticsSummary && logisticsSummary !== "Logistics: unavailable" ? logisticsSummary : null,
+    traffic.hasPressure ? traffic.summary : null,
+    weather.hasHazards ? `Weather: ${weather.summary}` : null,
+    events !== "none" ? `Events: ${events}` : null,
+    ai.summary,
+  ].filter(Boolean);
+
+  return {
+    severity,
+    headline,
+    action,
+    warning: warning || evidence[1] || action,
+    aiSummary: ai.summary,
+    environmentFocus: ai.environmentFocus,
+    workerFocus: workerFocus || "none",
+    evidence,
   };
 }
 

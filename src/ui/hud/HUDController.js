@@ -1,4 +1,12 @@
-import { getEventInsight, getFrontierStatus, getLogisticsInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+
+function shouldSuppressUserWarning(warningEvent, warningText = "") {
+  const source = String(warningEvent?.source ?? "").toLowerCase();
+  const text = String(warningEvent?.message ?? warningText ?? "").toLowerCase();
+  if (source === "npcbrainsystem" && text.includes("dropped infeasible state target")) return true;
+  if (text.includes("dropped infeasible state target")) return true;
+  return false;
+}
 
 export class HUDController {
   constructor(state) {
@@ -44,6 +52,8 @@ export class HUDController {
     const weather = getWeatherInsight(state);
     const logistics = getLogisticsInsight(state);
     const traffic = getTrafficInsight(state);
+    const aiInsight = getAiInsight(state);
+    const digest = getCausalDigest(state);
     const latestWarningEvent = Array.isArray(state.metrics.warningLog) && state.metrics.warningLog.length > 0
       ? state.metrics.warningLog[state.metrics.warningLog.length - 1]
       : null;
@@ -83,20 +93,20 @@ export class HUDController {
     if (this.objectiveVal) {
       const currentObjective = state.gameplay.objectives[state.gameplay.objectiveIndex];
       this.objectiveVal.textContent = currentObjective
-        ? `${currentObjective.title} (${currentObjective.progress.toFixed(0)}%)`
+        ? `${currentObjective.title} (${currentObjective.progress.toFixed(0)}%) | ${digest.headline}`
         : "All objectives completed";
     }
     const proxyModel = state.metrics.proxyModel || "-";
     this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode} (${state.metrics.proxyHealth ?? "unknown"}, ${proxyModel})`;
     const fmtSec = (sec) => (sec >= 0 ? `${sec.toFixed(1)}s` : "-");
     if (this.aiEnvVal) {
-      this.aiEnvVal.textContent = `${state.ai.lastEnvironmentSource} @ ${fmtSec(state.ai.lastEnvironmentResultSec)} (llm ${state.ai.environmentLlmCount}/${state.ai.environmentDecisionCount})`;
+      this.aiEnvVal.textContent = `${state.ai.lastEnvironmentSource} @ ${fmtSec(state.ai.lastEnvironmentResultSec)} | ${aiInsight.environmentFocus}`;
     }
     if (this.aiPolicyVal) {
-      this.aiPolicyVal.textContent = `${state.ai.lastPolicySource} @ ${fmtSec(state.ai.lastPolicyResultSec)} (llm ${state.ai.policyLlmCount}/${state.ai.policyDecisionCount})`;
+      this.aiPolicyVal.textContent = `${state.ai.lastPolicySource} @ ${fmtSec(state.ai.lastPolicyResultSec)} | workers=${digest.workerFocus}`;
     }
     if (this.aiDecisionVal) {
-      this.aiDecisionVal.textContent = `env req ${fmtSec(state.ai.lastEnvironmentDecisionSec)} / policy req ${fmtSec(state.ai.lastPolicyDecisionSec)}`;
+      this.aiDecisionVal.textContent = aiInsight.summary;
     }
     if (this.deathVal) {
       const deathsTotal = Number(state.metrics.deathsTotal ?? 0);
@@ -113,8 +123,9 @@ export class HUDController {
       this.simVal.textContent = `phase=${phase} | ${mode} | steps=${state.metrics.simStepsThisFrame}`;
     }
     if (this.actionVal) {
-      this.actionVal.textContent = state.controls.actionMessage || state.gameplay.objectiveHint || frontier.summary;
-      this.actionVal.setAttribute("data-kind", state.controls.actionKind ?? "info");
+      const actionKind = state.controls.actionMessage ? (state.controls.actionKind ?? "info") : digest.severity;
+      this.actionVal.textContent = state.controls.actionMessage || digest.action || state.gameplay.objectiveHint || frontier.summary;
+      this.actionVal.setAttribute("data-kind", actionKind);
     }
     if (this.visualModeVal) {
       const icons = state.controls.showTileIcons ? "icons:on" : "icons:off";
@@ -139,14 +150,14 @@ export class HUDController {
       this.warningVal.textContent = latestWarningText;
       this.warningVal.setAttribute("data-kind", "error");
     } else if (traffic.hasHotspots) {
-      this.warningVal.textContent = traffic.summary;
-      this.warningVal.setAttribute("data-kind", "info");
-    } else if (latestWarningText) {
+      this.warningVal.textContent = digest.warning || traffic.summary;
+      this.warningVal.setAttribute("data-kind", digest.severity === "error" ? "error" : "info");
+    } else if (latestWarningText && !shouldSuppressUserWarning(latestWarningEvent, latestWarningText)) {
       this.warningVal.textContent = latestWarningText;
       this.warningVal.setAttribute("data-kind", "info");
     } else {
-      this.warningVal.textContent = logistics || frontier.summary;
-      this.warningVal.setAttribute("data-kind", "info");
+      this.warningVal.textContent = digest.warning || logistics || frontier.summary;
+      this.warningVal.setAttribute("data-kind", digest.severity === "error" ? "error" : "info");
     }
   }
 }
