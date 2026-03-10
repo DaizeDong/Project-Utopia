@@ -10,7 +10,6 @@ const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
-const DELIVER_THRESHOLD = 2.4;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 const WORKER_TASK_LOCK_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
@@ -43,17 +42,41 @@ export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
   const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) > 0;
   const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  const carryAgeSec = Number(worker.blackboard?.carryAgeSec ?? 0);
   const noWorkSite = (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) <= 0)
     || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0);
   const alreadyDelivering = String(worker.stateLabel ?? "").toLowerCase().includes("deliver");
+  const nearestWarehouseDistance = estimateNearestWarehouseDistance(worker, state);
+  const deliverThreshold = Number(BALANCE.workerDeliverThreshold ?? 2.4);
+  const carryPressureSec = Number(BALANCE.workerCarryPressureSec ?? 6);
+  const farDepotDistance = Number(BALANCE.workerFarDepotDistance ?? 14);
 
   if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && Number(state.resources?.food ?? 0) > 0) return "eat";
-  if (hasCarry && hasWarehouse && (carryTotal >= DELIVER_THRESHOLD || alreadyDelivering || noWorkSite)) {
+  if (
+    hasCarry &&
+    hasWarehouse &&
+    (
+      carryTotal >= deliverThreshold
+      || alreadyDelivering
+      || noWorkSite
+      || carryAgeSec >= carryPressureSec
+      || nearestWarehouseDistance >= farDepotDistance
+    )
+  ) {
     return "deliver";
   }
   if (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) > 0) return "farm";
   if (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) > 0) return "lumber";
   return "wander";
+}
+
+function estimateNearestWarehouseDistance(worker, state) {
+  if (!state?.grid || !Number.isFinite(worker?.x) || !Number.isFinite(worker?.z)) return 0;
+  if (Number(state.buildings?.warehouses ?? 0) <= 0) return Infinity;
+  const nearest = findNearestTileOfTypes(state.grid, worker, [TILE.WAREHOUSE]);
+  if (!nearest) return Infinity;
+  const current = worldToTile(worker.x, worker.z, state.grid);
+  return Math.abs(current.ix - nearest.ix) + Math.abs(current.iz - nearest.iz);
 }
 
 function resolveWorkCooldown(worker, dt, amount, resourceType, rng) {
@@ -200,10 +223,28 @@ function handleDeliver(worker, state, services, dt) {
   }
 
   if (isAtTargetTile(worker, state)) {
-    state.resources.food += worker.carry.food;
-    state.resources.wood += worker.carry.wood;
-    worker.carry.food = 0;
-    worker.carry.wood = 0;
+    const key = `${worker.targetTile?.ix ?? -1},${worker.targetTile?.iz ?? -1}`;
+    const logistics = state.metrics?.logistics ?? {};
+    const inboundLoad = Math.max(1, Number(logistics.warehouseLoadByKey?.[key] ?? 1));
+    const penalty = Math.max(1, 1 + Math.max(0, inboundLoad - 1) * Number(BALANCE.warehouseQueuePenalty ?? 0.32));
+    const unloadBudget = Math.max(0.2, Number(BALANCE.workerUnloadRatePerSecond ?? 4.2) / penalty) * dt;
+    let remaining = unloadBudget;
+    const unloadFood = Math.min(Number(worker.carry.food ?? 0), remaining);
+    worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - unloadFood);
+    state.resources.food += unloadFood;
+    remaining -= unloadFood;
+    const unloadWood = Math.min(Number(worker.carry.wood ?? 0), remaining);
+    worker.carry.wood = Math.max(0, Number(worker.carry.wood ?? 0) - unloadWood);
+    state.resources.wood += unloadWood;
+    worker.debug ??= {};
+    worker.debug.targetWarehouseLoad = inboundLoad;
+    worker.debug.lastUnloadRate = unloadBudget;
+    if (Number(worker.carry.food ?? 0) + Number(worker.carry.wood ?? 0) <= 1e-4) {
+      worker.carry.food = 0;
+      worker.carry.wood = 0;
+      worker.blackboard ??= {};
+      worker.blackboard.carryAgeSec = 0;
+    }
   }
 }
 
@@ -289,11 +330,20 @@ export class WorkerAISystem {
       if (worker.alive === false) continue;
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
+      worker.blackboard ??= {};
+      const carryNow = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+      worker.blackboard.carryAgeSec = carryNow > 0
+        ? Number(worker.blackboard.carryAgeSec ?? 0) + dt
+        : 0;
+      worker.debug ??= {};
+      worker.debug.carryAgeSec = Number(worker.blackboard.carryAgeSec ?? 0);
+      worker.debug.nearestWarehouseDistance = Number.isFinite(estimateNearestWarehouseDistance(worker, state))
+        ? estimateNearestWarehouseDistance(worker, state)
+        : -1;
 
       const plan = planEntityDesiredState(worker, state);
       const nowSec = Number(state.metrics.timeSec ?? 0);
       const fsm = worker.blackboard?.fsm ?? null;
-      worker.blackboard ??= {};
       worker.blackboard.taskLock ??= { state: "", untilSec: -Infinity };
       const lock = worker.blackboard.taskLock;
       const lockState = String(lock.state ?? "");

@@ -279,6 +279,18 @@ export function createInitialGameState(options = {}) {
       feasibilityRejectCountByGroup: {},
       starvationRiskCount: 0,
       deathByReasonAndReachability: {},
+      logistics: {
+        carryingWorkers: 0,
+        totalCarryInTransit: 0,
+        avgDepotDistance: 0,
+        strandedCarryWorkers: 0,
+        overloadedWarehouses: 0,
+        busiestWarehouseLoad: 0,
+        stretchedWorksites: 0,
+        isolatedWorksites: 0,
+        warehouseLoadByKey: {},
+        summary: "Logistics: idle",
+      },
     },
     ai: {
       enabled: false,

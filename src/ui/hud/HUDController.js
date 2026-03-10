@@ -1,4 +1,4 @@
-import { getEventInsight, getFrontierStatus, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getEventInsight, getFrontierStatus, getLogisticsInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 export class HUDController {
   constructor(state) {
@@ -42,6 +42,7 @@ export class HUDController {
     const { state } = this;
     const frontier = getFrontierStatus(state);
     const weather = getWeatherInsight(state);
+    const logistics = getLogisticsInsight(state);
 
     this.foodVal.textContent = Math.floor(state.resources.food);
     this.woodVal.textContent = Math.floor(state.resources.wood);
@@ -132,7 +133,7 @@ export class HUDController {
       this.warningVal.textContent = state.metrics.warnings[state.metrics.warnings.length - 1];
       this.warningVal.setAttribute("data-kind", "error");
     } else {
-      this.warningVal.textContent = frontier.summary;
+      this.warningVal.textContent = logistics || frontier.summary;
       this.warningVal.setAttribute("data-kind", "info");
     }
   }
