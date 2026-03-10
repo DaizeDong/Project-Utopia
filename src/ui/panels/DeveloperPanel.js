@@ -190,6 +190,7 @@ export class DeveloperPanel {
     const rngSnapshot = state.debug?.rng ?? null;
     const deathsTotal = Number(state.metrics.deathsTotal ?? 0);
     const deathsByReason = state.metrics.deathsByReason ?? {};
+    const recovery = state.gameplay.recovery ?? null;
 
     const lines = [
       `Map: ${state.world.mapTemplateName} (${state.world.mapTemplateId})`,
@@ -205,6 +206,9 @@ export class DeveloperPanel {
       `Population Breakdown: baseW=${popBreakdown.baseWorkers} stressW=${popBreakdown.stressWorkers} totalW=${popBreakdown.totalWorkers} totalEntities=${popBreakdown.totalEntities}`,
       `Deaths: total=${deathsTotal} starvation=${Number(deathsByReason.starvation ?? 0)} predation=${Number(deathsByReason.predation ?? 0)} event=${Number(deathsByReason.event ?? 0)}`,
       `Gameplay: doctrine=${state.gameplay.doctrine} prosperity=${this.#fmtNum(state.gameplay.prosperity, 1)} threat=${this.#fmtNum(state.gameplay.threat, 1)}`,
+      recovery
+        ? `Progression: mastery=${this.#fmtNum(state.gameplay.doctrineMastery ?? 1, 2)} recovery=${Number(recovery.charges ?? 0)} active=${this.#fmtNum(recovery.activeBoostSec ?? 0, 1)}s risk=${this.#fmtNum(recovery.collapseRisk ?? 0, 1)}% reason=${recovery.lastReason || "-"}` 
+        : "Progression: recovery unavailable",
       objective
         ? `Objective: ${objective.title} (${this.#fmtNum(objective.progress, 1)}%)`
         : "Objective: all completed",
