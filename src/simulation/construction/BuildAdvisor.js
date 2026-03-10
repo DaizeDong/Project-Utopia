@@ -1,0 +1,331 @@
+import { BUILD_COST, CONSTRUCTION_BALANCE } from "../../config/balance.js";
+import { TILE } from "../../config/constants.js";
+import { getTile, inBounds, listTilesByType } from "../../world/grid/Grid.js";
+import { toolToTile } from "../../world/grid/TileTypes.js";
+
+const TOOL_INFO = Object.freeze({
+  road: {
+    label: "Road",
+    summary: "Extends the logistics network and closes authored route gaps.",
+    rules: "Place on grass or ruins. Roads must extend from existing infrastructure or repair a scenario gap.",
+    allowedOldTypes: [TILE.GRASS, TILE.RUINS],
+  },
+  farm: {
+    label: "Farm",
+    summary: "Adds food production but only works when it can feed back into the road / warehouse network.",
+    rules: "Place on grass, roads, or ruins. Farms need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  lumber: {
+    label: "Lumber",
+    summary: "Adds wood production and is strongest when the route back to storage is short and defensible.",
+    rules: "Place on grass, roads, or ruins. Lumber sites need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  warehouse: {
+    label: "Warehouse",
+    summary: "Creates a logistics anchor, unlocks depot reclaim objectives, and shortens worker delivery loops.",
+    rules: "Place on grass, roads, or ruins. Warehouses need road access and should be spread apart.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  wall: {
+    label: "Wall",
+    summary: "Shapes chokepoints, protects depots, and turns layout into visible defensive geometry.",
+    rules: "Place on grass, roads, or ruins. Walls must extend from a defense anchor or scenario chokepoint.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  erase: {
+    label: "Erase",
+    summary: "Clears the tile back to grass and salvages part of the old structure cost.",
+    rules: "Erase any non-water tile. Built structures return partial salvage.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS],
+  },
+});
+
+const BUILDABLE_TILE_LABEL = Object.freeze(
+  Object.entries(TILE).reduce((acc, [name, value]) => {
+    acc[value] = name.toLowerCase();
+    return acc;
+  }, {}),
+);
+
+const TILE_TO_TOOL = Object.freeze({
+  [TILE.ROAD]: "road",
+  [TILE.FARM]: "farm",
+  [TILE.LUMBER]: "lumber",
+  [TILE.WAREHOUSE]: "warehouse",
+  [TILE.WALL]: "wall",
+});
+
+function tileKey(ix, iz) {
+  return `${ix},${iz}`;
+}
+
+function addTileCost(a = {}, b = {}) {
+  return {
+    food: (a.food ?? 0) + (b.food ?? 0),
+    wood: (a.wood ?? 0) + (b.wood ?? 0),
+  };
+}
+
+function subtractTileCost(a = {}, b = {}) {
+  return {
+    food: Math.max(0, (a.food ?? 0) - (b.food ?? 0)),
+    wood: Math.max(0, (a.wood ?? 0) - (b.wood ?? 0)),
+  };
+}
+
+function formatCost(cost = {}) {
+  const parts = [];
+  if ((cost.food ?? 0) > 0) parts.push(`${cost.food}f`);
+  if ((cost.wood ?? 0) > 0) parts.push(`${cost.wood}w`);
+  return parts.length > 0 ? parts.join(" ") : "free";
+}
+
+function manhattan(a, b) {
+  return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
+}
+
+function isWithinRadius(a, b, radius = 1) {
+  return manhattan(a, b) <= radius;
+}
+
+function hasTypeWithinRadius(grid, tile, targetTypes, radius) {
+  const set = new Set(targetTypes);
+  for (let iz = tile.iz - radius; iz <= tile.iz + radius; iz += 1) {
+    for (let ix = tile.ix - radius; ix <= tile.ix + radius; ix += 1) {
+      if (Math.abs(ix - tile.ix) + Math.abs(iz - tile.iz) > radius) continue;
+      if (!inBounds(ix, iz, grid)) continue;
+      const nextType = getTile(grid, ix, iz);
+      if (set.has(nextType)) return true;
+    }
+  }
+  return false;
+}
+
+function findNearestDistance(grid, tile, targetTypes, maxRadius = 12) {
+  const candidates = listTilesByType(grid, targetTypes);
+  let best = Infinity;
+  for (const candidate of candidates) {
+    const distance = manhattan(tile, candidate);
+    if (distance < best) best = distance;
+    if (best <= 0) break;
+  }
+  return best;
+}
+
+function getScenarioTileTags(state, tile) {
+  const scenario = state.gameplay?.scenario ?? {};
+  const anchors = scenario.anchors ?? {};
+  const routeLinks = (scenario.routeLinks ?? []).filter((route) => (route.gapTiles ?? []).some((gap) => gap.ix === tile.ix && gap.iz === tile.iz));
+  const depotZones = (scenario.depotZones ?? []).filter((zone) => {
+    const anchor = anchors[zone.anchor];
+    return anchor && isWithinRadius(tile, anchor, zone.radius ?? 2);
+  });
+  const chokePoints = (scenario.chokePoints ?? []).filter((zone) => {
+    const anchor = anchors[zone.anchor];
+    return anchor && isWithinRadius(tile, anchor, zone.radius ?? 2);
+  });
+  const wildlifeZones = (scenario.wildlifeZones ?? []).filter((zone) => {
+    const anchor = anchors[zone.anchor];
+    return anchor && isWithinRadius(tile, anchor, zone.radius ?? 2);
+  });
+  const inCoreZone = anchors.coreWarehouse ? isWithinRadius(tile, anchors.coreWarehouse, 2) : false;
+  return { routeLinks, depotZones, chokePoints, wildlifeZones, inCoreZone };
+}
+
+function getTileRefund(oldType) {
+  const oldTool = TILE_TO_TOOL[oldType];
+  if (!oldTool) return { food: 0, wood: 0 };
+  const baseCost = BUILD_COST[oldTool] ?? { food: 0, wood: 0 };
+  return {
+    food: Math.floor((baseCost.food ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
+    wood: Math.floor((baseCost.wood ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
+  };
+}
+
+function buildFailure(reason, oldType, newType, cost, refund, tool, ix, iz, info, effects = [], warnings = []) {
+  return {
+    ok: false,
+    reason,
+    reasonText: explainBuildReason(reason, { oldType, tool }),
+    oldType,
+    newType,
+    cost,
+    refund,
+    netCost: subtractTileCost(cost, refund),
+    tool,
+    ix,
+    iz,
+    info,
+    effects,
+    warnings,
+  };
+}
+
+export function getBuildToolInfo(tool) {
+  return TOOL_INFO[tool] ?? TOOL_INFO.road;
+}
+
+export function describeBuildCost(tool) {
+  return formatCost(BUILD_COST[tool] ?? {});
+}
+
+export function canAfford(resources, cost) {
+  return resources.food >= (cost.food ?? 0) && resources.wood >= (cost.wood ?? 0);
+}
+
+export function spend(resources, cost) {
+  resources.food = Math.max(0, resources.food - (cost.food ?? 0));
+  resources.wood = Math.max(0, resources.wood - (cost.wood ?? 0));
+}
+
+export function refund(resources, amount) {
+  resources.food += amount.food ?? 0;
+  resources.wood += amount.wood ?? 0;
+}
+
+export function explainBuildReason(reason, context = {}) {
+  if (reason === "unchanged") return "Target tile is unchanged.";
+  if (reason === "waterBlocked") return "Cannot build on water tile.";
+  if (reason === "occupiedTile") return `Clear the ${BUILDABLE_TILE_LABEL[context.oldType] ?? "existing structure"} before building here.`;
+  if (reason === "insufficientResource") return "Insufficient resources.";
+  if (reason === "needsNetworkAnchor") return "Roads must extend from existing infrastructure or repair a scenario route gap.";
+  if (reason === "needsLogisticsAccess") return "This worksite needs nearby road or warehouse access.";
+  if (reason === "needsRoadAccess") return "Warehouses need to touch the road network.";
+  if (reason === "warehouseTooClose") return "Warehouses are too close together. Spread depots to widen logistics coverage.";
+  if (reason === "needsFortificationAnchor") return "Walls should extend from a road, warehouse, wall line, or scenario chokepoint.";
+  return "Build action failed.";
+}
+
+export function evaluateBuildPreview(state, tool, ix, iz) {
+  const info = getBuildToolInfo(tool);
+  const newType = toolToTile(tool);
+  const oldType = getTile(state.grid, ix, iz);
+  const tile = { ix, iz };
+  const cost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
+  const salvage = getTileRefund(oldType);
+  const activeRefund = tool === "erase" ? salvage : { food: 0, wood: 0 };
+  const effects = [];
+  const warnings = [];
+
+  if (newType === oldType || (tool === "erase" && oldType === TILE.GRASS)) {
+    return buildFailure("unchanged", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+  if (oldType === TILE.WATER) {
+    return buildFailure("waterBlocked", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+  if (!info.allowedOldTypes.includes(oldType)) {
+    return buildFailure("occupiedTile", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+  if (tool !== "erase" && !canAfford(state.resources, cost)) {
+    return buildFailure("insufficientResource", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+
+  const tags = getScenarioTileTags(state, tile);
+  const hasRoadAccess = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.worksiteAccessRadius);
+  const hasRoadTouch = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.warehouseRoadRadius);
+  const hasDefenseAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.WALL, TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.wallAnchorRadius);
+  const warehouseDistance = findNearestDistance(state.grid, tile, [TILE.WAREHOUSE]);
+
+  if (tool === "road") {
+    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER], 1);
+    if (!hasNetworkAnchor && tags.routeLinks.length === 0) {
+      return buildFailure("needsNetworkAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
+  }
+
+  if ((tool === "farm" || tool === "lumber") && !hasRoadAccess) {
+    return buildFailure("needsLogisticsAccess", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+
+  if (tool === "warehouse") {
+    if (!hasRoadTouch && tags.depotZones.length === 0 && !tags.inCoreZone) {
+      return buildFailure("needsRoadAccess", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
+    if (warehouseDistance <= CONSTRUCTION_BALANCE.warehouseSpacingRadius && tags.depotZones.length === 0) {
+      return buildFailure("warehouseTooClose", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
+  }
+
+  if (tool === "wall" && !hasDefenseAnchor && tags.chokePoints.length === 0) {
+    return buildFailure("needsFortificationAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+
+  if (tags.routeLinks.length > 0 && tool === "road") {
+    effects.push(`Advances ${tags.routeLinks[0].label}.`);
+  }
+  if (tags.depotZones.length > 0 && tool === "warehouse") {
+    effects.push(`Counts toward reclaiming ${tags.depotZones[0].label}.`);
+  }
+  if (tags.chokePoints.length > 0 && tool === "wall") {
+    effects.push(`Fortifies ${tags.chokePoints[0].label}.`);
+  }
+  if ((tool === "farm" || tool === "lumber") && hasRoadAccess) {
+    effects.push("Within haul range of the current logistics network.");
+  }
+  if (tool === "warehouse" && hasRoadTouch) {
+    effects.push("Creates a shorter delivery anchor for nearby workers.");
+  }
+  if (tool === "erase" && (activeRefund.food > 0 || activeRefund.wood > 0)) {
+    effects.push(`Returns ${formatCost(activeRefund)} in salvage.`);
+  }
+
+  if (tags.wildlifeZones.length > 0 && (tool === "farm" || tool === "lumber")) {
+    warnings.push(`Wildlife pressure is high near ${tags.wildlifeZones[0].label}.`);
+  }
+  const hazardKey = tileKey(ix, iz);
+  const hazardSet = state.weather.hazardTileSet instanceof Set
+    ? state.weather.hazardTileSet
+    : new Set((state.weather.hazardTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
+  if (hazardSet.has(hazardKey)) {
+    warnings.push(`This tile sits inside the ${state.weather.hazardLabel ?? state.weather.current} hazard zone.`);
+  }
+
+  const summary = tool === "erase"
+    ? activeRefund.food > 0 || activeRefund.wood > 0
+      ? `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} for ${formatCost(activeRefund)} salvage.`
+      : `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} back to grass.`
+    : `Build ${info.label.toLowerCase()}. ${effects[0] ?? info.summary}`;
+
+  return {
+    ok: true,
+    reason: "",
+    reasonText: "",
+    oldType,
+    newType,
+    cost,
+    refund: activeRefund,
+    netCost: subtractTileCost(cost, activeRefund),
+    tool,
+    ix,
+    iz,
+    info,
+    effects,
+    warnings,
+    summary,
+  };
+}
+
+export function summarizeBuildPreview(preview) {
+  if (!preview) return "";
+  if (!preview.ok) return preview.reasonText || explainBuildReason(preview.reason, preview);
+  const parts = [preview.summary];
+  if (preview.effects?.length > 1) parts.push(preview.effects.slice(1).join(" "));
+  if (preview.warnings?.length > 0) parts.push(`Warning: ${preview.warnings.join(" ")}`);
+  return parts.join(" ");
+}
+
+export function getBuildToolPanelState(state) {
+  const tool = state.controls.tool;
+  const info = getBuildToolInfo(tool);
+  const preview = state.controls.buildPreview ?? null;
+  return {
+    tool,
+    label: info.label,
+    summary: info.summary,
+    rules: info.rules,
+    costLabel: formatCost(BUILD_COST[tool] ?? {}),
+    previewSummary: preview ? summarizeBuildPreview(preview) : "Hover a tile to preview cost, rules, and scenario impact.",
+  };
+}

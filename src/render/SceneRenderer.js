@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
-import { explainBuildReason } from "../simulation/construction/BuildSystem.js";
+import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { pushWarning } from "../app/warnings.js";
 
 const TILE_LABEL = Object.freeze(
@@ -1616,12 +1616,13 @@ export class SceneRenderer {
     }
 
     const buildResult = this.buildSystem.placeToolAt(this.state, this.state.controls.tool, tile.ix, tile.iz);
+    this.state.controls.buildPreview = buildResult;
     if (buildResult.ok) {
       this.#updateSelectedTile(tile.ix, tile.iz);
-      this.state.controls.actionMessage = `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
+      this.state.controls.actionMessage = buildResult.message ?? `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
       this.state.controls.actionKind = "success";
     } else {
-      this.state.controls.actionMessage = explainBuildReason(buildResult.reason);
+      this.state.controls.actionMessage = buildResult.reasonText ?? explainBuildReason(buildResult.reason, buildResult);
       this.state.controls.actionKind = "error";
     }
   }
@@ -1648,12 +1649,14 @@ export class SceneRenderer {
     if (!this.hoverTile) {
       this.hoverMesh.visible = false;
       this.previewMesh.visible = false;
+      this.state.controls.buildPreview = null;
     } else {
       const p = tileToWorld(this.hoverTile.ix, this.hoverTile.iz, this.state.grid);
       this.hoverMesh.visible = true;
       this.hoverMesh.position.set(p.x, 0.17, p.z);
 
       const preview = this.buildSystem.previewToolAt(this.state, this.state.controls.tool, this.hoverTile.ix, this.hoverTile.iz);
+      this.state.controls.buildPreview = preview;
       this.previewMesh.visible = true;
       this.previewMesh.position.set(p.x, 0.2, p.z);
       const color = preview.ok ? 0x6eeb83 : 0xff6b6b;

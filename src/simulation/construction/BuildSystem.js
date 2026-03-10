@@ -1,23 +1,12 @@
-import { BUILD_COST } from "../../config/balance.js";
-import { TILE } from "../../config/constants.js";
-import { setTile, getTile, rebuildBuildingStats } from "../../world/grid/Grid.js";
-import { toolToTile } from "../../world/grid/TileTypes.js";
-
-export function canAfford(resources, cost) {
-  return resources.food >= (cost.food ?? 0) && resources.wood >= (cost.wood ?? 0);
-}
-
-export function pay(resources, cost) {
-  resources.food = Math.max(0, resources.food - (cost.food ?? 0));
-  resources.wood = Math.max(0, resources.wood - (cost.wood ?? 0));
-}
-
-export function explainBuildReason(reason) {
-  if (reason === "unchanged") return "Target tile is unchanged.";
-  if (reason === "waterBlocked") return "Cannot build on water tile.";
-  if (reason === "insufficientResource") return "Insufficient resources.";
-  return "Build action failed.";
-}
+import {
+  canAfford,
+  evaluateBuildPreview,
+  explainBuildReason,
+  refund,
+  spend,
+  summarizeBuildPreview,
+} from "./BuildAdvisor.js";
+import { setTile, rebuildBuildingStats } from "../../world/grid/Grid.js";
 
 export class BuildSystem {
   constructor(options = {}) {
@@ -49,19 +38,7 @@ export class BuildSystem {
   }
 
   previewToolAt(state, tool, ix, iz) {
-    const newType = toolToTile(tool);
-    const oldType = getTile(state.grid, ix, iz);
-    const cost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
-    if (newType === oldType) {
-      return { ok: false, reason: "unchanged", oldType, newType, cost };
-    }
-    if (oldType === TILE.WATER && newType !== TILE.WATER) {
-      return { ok: false, reason: "waterBlocked", oldType, newType, cost };
-    }
-    if (tool !== "erase" && !canAfford(state.resources, cost)) {
-      return { ok: false, reason: "insufficientResource", oldType, newType, cost };
-    }
-    return { ok: true, reason: "", oldType, newType, cost };
+    return evaluateBuildPreview(state, tool, ix, iz);
   }
 
   placeToolAt(state, tool, ix, iz, options = {}) {
@@ -69,10 +46,27 @@ export class BuildSystem {
     const preview = this.previewToolAt(state, tool, ix, iz);
     if (!preview.ok) return preview;
 
-    if (tool !== "erase") pay(state.resources, preview.cost);
+    if (tool !== "erase") spend(state.resources, preview.cost);
+    if (tool === "erase" && ((preview.refund?.food ?? 0) || (preview.refund?.wood ?? 0))) {
+      refund(state.resources, preview.refund);
+    }
 
     const changed = setTile(state.grid, ix, iz, preview.newType);
-    if (!changed) return { ok: false, reason: "unchanged", oldType: preview.oldType, newType: preview.newType, cost: preview.cost };
+    if (!changed) {
+      if (tool !== "erase") refund(state.resources, preview.cost);
+      if (tool === "erase" && ((preview.refund?.food ?? 0) || (preview.refund?.wood ?? 0))) {
+        spend(state.resources, preview.refund);
+      }
+      return {
+        ok: false,
+        reason: "unchanged",
+        reasonText: explainBuildReason("unchanged"),
+        oldType: preview.oldType,
+        newType: preview.newType,
+        cost: preview.cost,
+        refund: preview.refund,
+      };
+    }
 
     state.buildings = rebuildBuildingStats(state.grid);
     if (options.recordHistory !== false) {
@@ -84,10 +78,18 @@ export class BuildSystem {
         oldType: preview.oldType,
         newType: preview.newType,
         cost: preview.cost,
+        refund: preview.refund,
+        summary: preview.summary,
       });
     }
     this.onAction?.({ kind: "build", tool, ix, iz, oldType: preview.oldType, newType: preview.newType });
-    return { ok: true, reason: "", oldType: preview.oldType, newType: preview.newType, cost: preview.cost, tool, ix, iz };
+    return {
+      ...preview,
+      ok: true,
+      reason: "",
+      reasonText: "",
+      message: summarizeBuildPreview(preview),
+    };
   }
 
   undo(state) {
@@ -95,16 +97,24 @@ export class BuildSystem {
     if (state.controls.undoStack.length === 0) return { ok: false, reason: "emptyHistory" };
 
     const entry = state.controls.undoStack.pop();
+    if (entry.tool === "erase" && !canAfford(state.resources, entry.refund ?? {})) {
+      state.controls.undoStack.push(entry);
+      this.#syncHistoryFlags(state);
+      return {
+        ok: false,
+        reason: "insufficientResource",
+        reasonText: "Undo failed because the demolition salvage has already been spent.",
+      };
+    }
+
     const changed = setTile(state.grid, entry.ix, entry.iz, entry.oldType);
     if (!changed) {
       this.#syncHistoryFlags(state);
       return { ok: false, reason: "unchanged" };
     }
 
-    if (entry.tool !== "erase") {
-      state.resources.food += entry.cost?.food ?? 0;
-      state.resources.wood += entry.cost?.wood ?? 0;
-    }
+    if (entry.tool !== "erase") refund(state.resources, entry.cost ?? {});
+    if (entry.tool === "erase" && ((entry.refund?.food ?? 0) || (entry.refund?.wood ?? 0))) spend(state.resources, entry.refund);
 
     state.buildings = rebuildBuildingStats(state.grid);
     state.controls.redoStack.push(entry);
@@ -118,15 +128,23 @@ export class BuildSystem {
     if (state.controls.redoStack.length === 0) return { ok: false, reason: "emptyHistory" };
 
     const entry = state.controls.redoStack.pop();
-    if (entry.tool !== "erase" && !canAfford(state.resources, entry.cost ?? {})) {
+    const preview = evaluateBuildPreview(state, entry.tool, entry.ix, entry.iz);
+    if (!preview.ok) {
       state.controls.redoStack.push(entry);
       this.#syncHistoryFlags(state);
-      return { ok: false, reason: "insufficientResource" };
+      return {
+        ok: false,
+        reason: preview.reason || "unchanged",
+        reasonText: preview.reasonText || explainBuildReason(preview.reason),
+      };
     }
 
-    if (entry.tool !== "erase") pay(state.resources, entry.cost ?? {});
+    if (entry.tool !== "erase") spend(state.resources, entry.cost ?? {});
+    if (entry.tool === "erase" && ((entry.refund?.food ?? 0) || (entry.refund?.wood ?? 0))) refund(state.resources, entry.refund);
     const changed = setTile(state.grid, entry.ix, entry.iz, entry.newType);
     if (!changed) {
+      if (entry.tool !== "erase") refund(state.resources, entry.cost ?? {});
+      if (entry.tool === "erase" && ((entry.refund?.food ?? 0) || (entry.refund?.wood ?? 0))) spend(state.resources, entry.refund);
       this.#syncHistoryFlags(state);
       return { ok: false, reason: "unchanged" };
     }
