@@ -112,13 +112,14 @@ export class LLMClient {
       }
       this.lastLatencyMs = result.latencyMs;
       this.lastStatus = "up";
+      this.lastError = String(payload.error ?? "");
       this.lastModel = String(payload.model ?? this.lastModel ?? "").trim();
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardEnvironmentDirective(validation.value),
         latencyMs: result.latencyMs,
-        error: "",
+        error: String(payload.error ?? ""),
         model: String(payload.model ?? ""),
         debug: payload.debug ?? buildLocalDebug({
           endpoint: AI_CONFIG.environmentEndpoint,
@@ -184,13 +185,14 @@ export class LLMClient {
       }
       this.lastLatencyMs = result.latencyMs;
       this.lastStatus = "up";
+      this.lastError = String(payload.error ?? "");
       this.lastModel = String(payload.model ?? this.lastModel ?? "").trim();
 
       return {
         fallback: Boolean(payload.fallback),
         data: guardGroupPolicies(validation.value),
         latencyMs: result.latencyMs,
-        error: "",
+        error: String(payload.error ?? ""),
         model: String(payload.model ?? ""),
         debug: payload.debug ?? buildLocalDebug({
           endpoint: AI_CONFIG.policyEndpoint,
