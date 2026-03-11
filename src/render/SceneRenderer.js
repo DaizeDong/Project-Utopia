@@ -6,6 +6,8 @@ import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../conf
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { pushWarning } from "../app/warnings.js";
+import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
+import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -268,8 +270,10 @@ export class SceneRenderer {
     this.controls.enableRotate = false;
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
+    this.controls.zoomSpeed = 0.78;
     this.controls.screenSpacePanning = true;
     this.controls.mouseButtons.LEFT = -1;
+    this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
     this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
     this.controls.minZoom = this.state.controls.cameraMinZoom;
     this.controls.maxZoom = this.state.controls.cameraMaxZoom;
@@ -645,21 +649,64 @@ export class SceneRenderer {
 
   #setTextureSampling(texture, options = {}) {
     const pixelated = Boolean(options.pixelated);
+    const useMipmaps = options.mipmaps ?? !pixelated;
+    const maxAnisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
     texture.colorSpace = THREE.SRGBColorSpace;
     if (pixelated) {
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
       texture.generateMipmaps = false;
     } else {
-      texture.minFilter = THREE.LinearFilter;
+      texture.minFilter = useMipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = false;
-      texture.anisotropy = 1;
+      texture.generateMipmaps = useMipmaps;
+      texture.anisotropy = clamp(Number(options.anisotropy) || 4, 1, maxAnisotropy);
     }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(options.repeatX ?? 1, options.repeatY ?? 1);
     texture.needsUpdate = true;
+  }
+
+  #syncVisualAssetDebug() {
+    Object.assign(this.state.debug, deriveVisualAssetDebugState({
+      manifestTheme: this.worldSimManifest?.theme ?? this.state.debug.visualAssetPack ?? "flat_worldsim",
+      tileMaterials: this.tileMaterialsByType.values(),
+      iconMaterials: this.tileIconMaterials.values(),
+      unitSpriteCount: this.unitSpriteTextures.size,
+    }));
+  }
+
+  #applyProceduralTileTextures() {
+    let applied = 0;
+    for (const [tileTypeRaw, binding] of Object.entries(TILE_TEXTURE_BINDINGS)) {
+      const tileType = Number(tileTypeRaw);
+      const material = this.tileMaterialsByType.get(tileType);
+      if (!material) continue;
+
+      const texture = createProceduralTileTexture(tileType);
+      if (!texture) continue;
+      this.#setTextureSampling(texture, {
+        repeatX: texture.repeat.x,
+        repeatY: texture.repeat.y,
+        pixelated: false,
+        mipmaps: true,
+        anisotropy: 8,
+      });
+
+      if (material.map && material.map !== texture) {
+        material.map.dispose?.();
+      }
+      material.map = texture;
+      material.color.setHex(binding.tint ?? 0xffffff);
+      material.roughness = binding.roughness ?? 0.95;
+      material.emissive.setHex(binding.emissive ?? 0x202020);
+      material.emissiveIntensity = binding.emissiveIntensity ?? 0.06;
+      material.needsUpdate = true;
+      applied += 1;
+    }
+    this.#syncVisualAssetDebug();
+    return applied;
   }
 
   async #loadTileTexturesFromManifest(manifest) {
@@ -720,12 +767,13 @@ export class SceneRenderer {
       }
     }
 
-    this.state.debug.tileTexturesLoaded = applied >= this.tileMaterialsByType.size;
+    this.#syncVisualAssetDebug();
     if (warnings.length > 0) {
       for (const warning of warnings.slice(0, 8)) {
         pushWarning(this.state, warning, "warn", "SceneRenderer");
       }
     }
+    return applied;
   }
 
   async #loadWorldSimManifest() {
@@ -733,12 +781,18 @@ export class SceneRenderer {
       const resp = await fetch(WORLD_SIM_MANIFEST_URL);
       if (!resp.ok) {
         this.state.debug.visualAssetPack = `manifest:${resp.status}`;
+        this.#applyProceduralTileTextures();
         return;
       }
       const manifest = await resp.json();
       this.worldSimManifest = manifest;
       this.state.debug.visualAssetPack = manifest.theme ?? "flat_worldsim";
-      await this.#loadTileTexturesFromManifest(manifest);
+      const tileTextureMode = resolveTileTextureMode(manifest);
+      if (tileTextureMode === "atlas") {
+        await this.#loadTileTexturesFromManifest(manifest);
+      } else {
+        this.#applyProceduralTileTextures();
+      }
 
       const warnings = [];
       const iconEntries = Object.entries(manifest.tileIcons ?? {});
@@ -759,8 +813,6 @@ export class SceneRenderer {
         if (r.status !== "rejected") continue;
         warnings.push(`tileIcon ${iconEntries[i][0]} failed: ${String(r.reason?.message ?? r.reason)}`);
       }
-      this.state.debug.iconAtlasLoaded = Array.from(this.tileIconMaterials.values()).some((mat) => Boolean(mat?.map));
-
       for (const texture of this.unitSpriteTextures.values()) {
         texture.dispose?.();
       }
@@ -777,7 +829,7 @@ export class SceneRenderer {
         if (r.status !== "rejected") continue;
         warnings.push(`unitSprite ${unitEntries[i][0]} failed: ${String(r.reason?.message ?? r.reason)}`);
       }
-      this.state.debug.unitSpriteLoaded = this.unitSpriteTextures.size > 0;
+      this.#syncVisualAssetDebug();
       if (warnings.length > 0) {
         for (const warning of warnings.slice(0, 6)) {
           pushWarning(this.state, warning, "warn", "SceneRenderer");
@@ -787,9 +839,11 @@ export class SceneRenderer {
       this.lastGridVersion = -1;
       this.#rebuildTilesIfNeeded();
     } catch (err) {
-      this.state.debug.visualAssetPack = "manifest:error";
+      this.state.debug.visualAssetPack = "flat_worldsim:fallback";
+      this.#applyProceduralTileTextures();
       this.state.debug.iconAtlasLoaded = false;
       this.state.debug.unitSpriteLoaded = false;
+      this.#syncVisualAssetDebug();
       pushWarning(this.state, `WorldSim asset manifest load failed: ${String(err?.message ?? err)}`, "error", "SceneRenderer");
     }
   }
@@ -1757,6 +1811,7 @@ export class SceneRenderer {
 
   render(dt) {
     this.#applyRuntimeControlSettings();
+    this.#syncVisualAssetDebug();
     this.#ensureModelTemplatesRequested();
     this.controls.update();
     this.#updateTileLayerVisibilityByZoom();

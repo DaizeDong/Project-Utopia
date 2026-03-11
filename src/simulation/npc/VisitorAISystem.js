@@ -1,5 +1,6 @@
 import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
+import { getLongRunEventTuning, getLongRunVisitorTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
@@ -137,6 +138,7 @@ function pickSabotageTarget(visitor, state, policy) {
   const candidates = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE]);
   if (candidates.length === 0) return null;
 
+  const tuning = getLongRunVisitorTuning(state);
   const raidCandidates = getScenarioEventCandidates(state, EVENT_TYPE.BANDIT_RAID);
   const tradeCandidates = getScenarioEventCandidates(state, EVENT_TYPE.TRADE_CARAVAN);
   const origin = worldToTile(visitor.x, visitor.z, state.grid);
@@ -145,7 +147,12 @@ function pickSabotageTarget(visitor, state, policy) {
   for (const candidate of candidates) {
     const context = getSabotageTargetContext(state, candidate, raidCandidates, tradeCandidates);
     const wallPenalty = Math.min(BALANCE.sabotageMaxWallPenalty, context.wallCoverage * BALANCE.sabotageWallPenaltyPerWall);
-    const typeBonus = context.tileType === TILE.WAREHOUSE ? BALANCE.sabotageWarehousePriorityBonus : 0;
+    const warehousePriorityMultiplier = context.tileType === TILE.WAREHOUSE
+      ? Number(tuning.warehousePriorityMultiplier ?? 1)
+      : 1;
+    const typeBonus = context.tileType === TILE.WAREHOUSE
+      ? BALANCE.sabotageWarehousePriorityBonus * warehousePriorityMultiplier
+      : 0;
     const zoneBonus = (context.frontierLabel ? BALANCE.sabotageFrontierZoneBonus : 0) + (context.depotLabel ? BALANCE.sabotageDepotZoneBonus : 0);
     const roadBonus = Math.min(0.24, context.roadNeighbors * BALANCE.sabotageRoadNeighborBonus);
     const distancePenalty = manhattanTiles(origin, candidate) * 0.03;
@@ -155,7 +162,7 @@ function pickSabotageTarget(visitor, state, policy) {
         ? resolveTargetPriority(policy, "farm", 1)
         : resolveTargetPriority(policy, "lumber", 1);
     const policyTypeBonus = context.tileType === TILE.WAREHOUSE
-      ? candidatePriority * 0.34
+      ? candidatePriority * 0.34 * warehousePriorityMultiplier
       : context.tileType === TILE.FARM
         ? candidatePriority * 0.36
         : candidatePriority * 0.32;
@@ -173,6 +180,10 @@ function pickSabotageTarget(visitor, state, policy) {
   }
 
   return best;
+}
+
+function countWarehouseTiles(state) {
+  return listTilesByType(state.grid, [TILE.WAREHOUSE]).length;
 }
 
 function updateVisitorHunger(visitor, dt) {
@@ -217,6 +228,13 @@ function applySabotage(state, target, context, rng) {
   const tile = state.grid.tiles[idx];
   if (tile !== TILE.FARM && tile !== TILE.LUMBER && tile !== TILE.WAREHOUSE) return null;
 
+  const tuning = getLongRunVisitorTuning(state);
+  const eventTuning = getLongRunEventTuning(state);
+  const warehouseCount = tile === TILE.WAREHOUSE ? countWarehouseTiles(state) : 0;
+  const protectsLastWarehouse = tile === TILE.WAREHOUSE
+    && warehouseCount <= Number(tuning.protectLastWarehousesCount ?? 0);
+  const activeSabotageCount = (state.events.active ?? []).filter((event) => event.type === "sabotage").length;
+  const sabotageCapReached = activeSabotageCount >= Number(eventTuning.maxConcurrentByType?.sabotage ?? Infinity);
   const defenseScore = Number(context?.wallCoverage ?? countNearbyTiles(state, target, [TILE.WALL], 1));
   const resistance = Math.max(0, Number(state.gameplay?.modifiers?.sabotageResistance ?? 1) - 1);
   const blockChance = clamp(
@@ -224,25 +242,34 @@ function applySabotage(state, target, context, rng) {
     0,
     0.85,
   );
-  const blocked = rng.next() < blockChance;
+  const blocked = protectsLastWarehouse || sabotageCapReached || rng.next() < blockChance;
 
-  state.events.active.push({
-    id: `evt_sabotage_${state.metrics.tick}`,
-    type: "sabotage",
-    status: "active",
-    elapsedSec: 0,
-    durationSec: 3,
-    intensity: 1,
-    payload: {
-      ix: target.ix,
-      iz: target.iz,
-      targetLabel: context?.label ?? "",
-      defenseScore,
-      blockedByWalls: blocked,
-    },
-  });
+  if (!sabotageCapReached && !protectsLastWarehouse) {
+    state.events.active.push({
+      id: `evt_sabotage_${state.metrics.tick}`,
+      type: "sabotage",
+      status: "active",
+      elapsedSec: 0,
+      durationSec: 3,
+      intensity: 1,
+      payload: {
+        ix: target.ix,
+        iz: target.iz,
+        targetLabel: context?.label ?? "",
+        defenseScore,
+        blockedByWalls: blocked,
+        protectedWarehouse: protectsLastWarehouse,
+        suppressedByAlert: sabotageCapReached,
+      },
+    });
+  }
 
   if (blocked) {
+    if (protectsLastWarehouse) {
+      const lossScale = Math.max(0, Number(tuning.protectedWarehouseLossScale ?? 1));
+      state.resources.food = Math.max(0, state.resources.food - (3 + rng.next() * 6) * lossScale);
+      state.resources.wood = Math.max(0, state.resources.wood - (3 + rng.next() * 6) * lossScale);
+    }
     return { blocked: true, targetLabel: context?.label ?? "", defenseScore };
   }
 
@@ -416,7 +443,7 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
   visitor.sabotageCooldown -= dt;
   if (visitor.sabotageCooldown <= 0) {
     const base = BALANCE.sabotageCooldownMinSec + services.rng.next() * (BALANCE.sabotageCooldownMaxSec - BALANCE.sabotageCooldownMinSec);
-    visitor.sabotageCooldown = base / chanceScale;
+    visitor.sabotageCooldown = (base / chanceScale) * Number(getLongRunVisitorTuning(state).sabotageCooldownMultiplier ?? 1);
 
     const nextTarget = pickSabotageTarget(visitor, state, policy);
     if (nextTarget && canAttemptPath(visitor, state) && setTargetAndPath(visitor, nextTarget.tile, state, services)) {

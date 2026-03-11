@@ -1,6 +1,6 @@
 import "./types.js";
 import { createInitialGameState, createWorker, createVisitor, createAnimal } from "../entities/EntityFactory.js";
-import { ENTITY_TYPE, ANIMAL_KIND, VISITOR_KIND, TILE } from "../config/constants.js";
+import { ENTITY_TYPE, ANIMAL_KIND, VISITOR_KIND, TILE, TILE_INFO } from "../config/constants.js";
 import { SceneRenderer } from "../render/SceneRenderer.js";
 import { BuildToolbar } from "../ui/tools/BuildToolbar.js";
 import { HUDController } from "../ui/hud/HUDController.js";
@@ -33,12 +33,33 @@ import { DEFAULT_BENCHMARK_CONFIG, sanitizeBenchmarkConfig, sanitizeControlSetti
 import { resolveGlobalShortcut } from "./shortcutResolver.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
+import { buildLongRunTelemetry } from "./longRunTelemetry.js";
+import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
+import { evaluateRunOutcomeState } from "./runOutcome.js";
 
 function deepReplaceObject(target, next) {
   for (const key of Object.keys(target)) {
     delete target[key];
   }
   Object.assign(target, next);
+}
+
+function buildSelectedTileState(state, ix, iz) {
+  if (!state?.grid) return null;
+  if (ix < 0 || iz < 0 || ix >= state.grid.width || iz >= state.grid.height) return null;
+  const idx = ix + iz * state.grid.width;
+  const type = state.grid.tiles[idx];
+  const info = TILE_INFO[type];
+  return {
+    ix,
+    iz,
+    type,
+    typeName: Object.entries(TILE).find(([, value]) => value === type)?.[0] ?? `TILE_${type}`,
+    passable: Boolean(info?.passable),
+    baseCost: Number(info?.baseCost ?? 0),
+    height: Number(info?.height ?? 0),
+    gridVersion: state.grid.version,
+  };
 }
 
 export class GameApp {
@@ -274,6 +295,7 @@ export class GameApp {
   }
 
   render(dt) {
+    this.state.metrics.renderFrameCount += 1;
     const uiStart = performance.now();
     this.uiRefreshAccumulator += dt;
     if (this.uiRefreshAccumulator >= this.uiRefreshIntervalSec) {
@@ -671,10 +693,169 @@ export class GameApp {
     this.services.replayService.push({ channel: "doctrine", kind: "setDoctrine", value: doctrineId, simSec: this.state.metrics.timeSec });
   }
 
+  setAiEnabled(enabled, options = {}) {
+    const desired = Boolean(enabled);
+    const manualOverride = options.manualOverride !== false;
+    if (manualOverride) {
+      this.state.ai.manualModeLocked = true;
+      this.aiHealthMonitor.autoEnabledOnce = true;
+    }
+    this.state.ai.enabled = desired;
+    this.state.ai.coverageTarget = options.coverageTarget === "llm" || options.coverageTarget === "fallback"
+      ? options.coverageTarget
+      : desired ? "llm" : "fallback";
+    if (!desired) {
+      this.state.ai.mode = "fallback";
+    }
+    if (options.resetRuntimeStats) {
+      resetAiRuntimeStats(this.state);
+    }
+    if (options.quiet) return;
+    this.state.controls.actionMessage = desired
+      ? "AI enabled for long-run coverage."
+      : "AI disabled. Long-run coverage set to fallback.";
+    this.state.controls.actionKind = "info";
+  }
+
+  configureLongRunMode(options = {}) {
+    const runKind = options.runKind === "operator" ? "operator" : "idle";
+    const aiMode = options.aiMode === "llm" ? "llm" : "fallback";
+    const resetRuntimeStats = options.resetRuntimeStats !== false;
+    this.state.ai.runtimeProfile = "long_run";
+    this.state.controls.timeScale = 1;
+    this.state.controls.stepFramesPending = 0;
+    this.setAiEnabled(aiMode === "llm", {
+      manualOverride: true,
+      coverageTarget: aiMode,
+      resetRuntimeStats,
+      quiet: true,
+    });
+    this.state.controls.actionMessage = `Long-run ${runKind} profile armed (${aiMode}).`;
+    this.state.controls.actionKind = "info";
+  }
+
+  clearAiManualModeLock() {
+    this.state.ai.manualModeLocked = false;
+    this.aiHealthMonitor.autoEnabledOnce = false;
+    this.state.controls.actionMessage = "AI auto health management restored.";
+    this.state.controls.actionKind = "info";
+  }
+
+  getLongRunTelemetry() {
+    return buildLongRunTelemetry(this.state, this.renderer?.getViewState?.() ?? null);
+  }
+
+  selectTile(ix, iz, options = {}) {
+    const selected = buildSelectedTileState(this.state, ix, iz);
+    if (!selected) return null;
+    this.state.controls.selectedEntityId = null;
+    this.state.controls.selectedTile = selected;
+    if (this.state.debug) this.state.debug.selectedTile = selected;
+    if (!options.quiet) {
+      this.state.controls.actionMessage = `Selected tile (${ix}, ${iz})`;
+      this.state.controls.actionKind = "info";
+    }
+    return selected;
+  }
+
+  selectEntity(entityId, options = {}) {
+    const exists = this.state.agents.some((entity) => entity.id === entityId)
+      || this.state.animals.some((entity) => entity.id === entityId);
+    if (!exists) return false;
+    this.state.controls.selectedEntityId = entityId;
+    this.state.controls.selectedTile = null;
+    if (this.state.debug) this.state.debug.selectedTile = null;
+    if (!options.quiet) {
+      this.state.controls.actionMessage = `Selected ${entityId}`;
+      this.state.controls.actionKind = "info";
+    }
+    return true;
+  }
+
+  focusTile(ix, iz, zoom = null) {
+    const tile = buildSelectedTileState(this.state, ix, iz);
+    if (!tile) return null;
+    const world = tileToWorld(ix, iz, this.state.grid);
+    const currentView = this.renderer?.getViewState?.() ?? { zoom: 1.12 };
+    const nextView = {
+      targetX: world.x,
+      targetZ: world.z,
+      zoom: Number.isFinite(Number(zoom)) ? Number(zoom) : currentView.zoom,
+    };
+    this.renderer?.applyViewState?.(nextView);
+    return nextView;
+  }
+
+  focusEntity(entityId, zoom = null) {
+    const entity = this.state.agents.find((entry) => entry.id === entityId)
+      ?? this.state.animals.find((entry) => entry.id === entityId);
+    if (!entity) return null;
+    const currentView = this.renderer?.getViewState?.() ?? { zoom: 1.12 };
+    const nextView = {
+      targetX: entity.x,
+      targetZ: entity.z,
+      zoom: Number.isFinite(Number(zoom)) ? Number(zoom) : currentView.zoom,
+    };
+    this.renderer?.applyViewState?.(nextView);
+    return nextView;
+  }
+
+  findBuildCandidate(tool, centerIx, centerIz, radius = 4) {
+    const safeRadius = Math.max(0, Math.min(12, Math.round(Number(radius) || 0)));
+    for (let distance = 0; distance <= safeRadius; distance += 1) {
+      for (let dz = -distance; dz <= distance; dz += 1) {
+        for (let dx = -distance; dx <= distance; dx += 1) {
+          if (Math.abs(dx) + Math.abs(dz) !== distance) continue;
+          const ix = centerIx + dx;
+          const iz = centerIz + dz;
+          const preview = this.buildSystem.previewToolAt(this.state, tool, ix, iz);
+          if (preview.ok) {
+            return { ix, iz, preview };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  placeFirstValidBuild(tool, centerIx, centerIz, radius = 4) {
+    const candidate = this.findBuildCandidate(tool, centerIx, centerIz, radius);
+    if (!candidate) {
+      return {
+        ok: false,
+        reason: "noCandidate",
+        reasonText: `No valid ${tool} tile within radius ${radius} of (${centerIx}, ${centerIz}).`,
+      };
+    }
+    const result = this.placeToolAt(tool, candidate.ix, candidate.iz);
+    return {
+      ...result,
+      candidate: { ix: candidate.ix, iz: candidate.iz },
+    };
+  }
+
+  placeToolAt(tool, ix, iz) {
+    this.state.controls.tool = tool;
+    const result = this.buildSystem.placeToolAt(this.state, tool, ix, iz);
+    this.state.controls.buildPreview = result;
+    this.selectTile(ix, iz, { quiet: true });
+    if (result.ok) {
+      this.state.controls.actionMessage = result.message ?? `Built ${tool} at (${ix}, ${iz})`;
+      this.state.controls.actionKind = "success";
+    } else {
+      this.state.controls.actionMessage = result.reasonText ?? `Build failed for ${tool} at (${ix}, ${iz}).`;
+      this.state.controls.actionKind = "error";
+    }
+    return result;
+  }
+
   regenerateWorld({ templateId, seed, terrainTuning }, options = {}) {
     const next = createInitialGameState({ templateId, seed, terrainTuning });
 
     next.ai.enabled = this.state.ai.enabled;
+    next.ai.coverageTarget = this.state.ai.coverageTarget;
+    next.ai.runtimeProfile = this.state.ai.runtimeProfile;
+    next.ai.manualModeLocked = this.state.ai.manualModeLocked;
     next.controls.tool = this.state.controls.tool;
     next.controls.farmRatio = this.state.controls.farmRatio;
     next.controls.timeScale = this.state.controls.timeScale;
@@ -690,6 +871,7 @@ export class GameApp {
     next.controls.populationTargets = { ...this.state.controls.populationTargets };
     next.controls.terrainTuning = { ...(terrainTuning ?? next.controls.terrainTuning ?? this.state.controls.terrainTuning) };
     next.controls.saveSlotId = this.state.controls.saveSlotId ?? "default";
+    next.metrics.aiRuntime = { ...(this.state.metrics.aiRuntime ?? next.metrics.aiRuntime ?? {}) };
 
     deepReplaceObject(this.state, next);
     this.#sanitizeControls(false);
@@ -903,6 +1085,7 @@ export class GameApp {
   #queueAiHealthProbe(reason = "poll") {
     if (this.aiHealthMonitor.inFlight) return;
     this.aiHealthMonitor.inFlight = true;
+    const manualModeLocked = Boolean(this.state.ai.manualModeLocked);
 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort("timeout"), 3500);
@@ -924,13 +1107,15 @@ export class GameApp {
         this.state.metrics.proxyLastCheckSec = this.state.metrics.timeSec;
 
         const hasApiKey = Boolean(payload.hasApiKey);
-        if (hasApiKey && !this.state.ai.enabled && !this.aiHealthMonitor.autoEnabledOnce) {
+        if (hasApiKey && !manualModeLocked && !this.state.ai.enabled && !this.aiHealthMonitor.autoEnabledOnce) {
           this.state.ai.enabled = true;
           this.aiHealthMonitor.autoEnabledOnce = true;
+          this.state.ai.coverageTarget = "llm";
           this.state.controls.actionMessage = `AI auto-enabled (model: ${payload.model ?? "unknown"}).`;
           this.state.controls.actionKind = "success";
-        } else if (!hasApiKey && (reason === "startup" || this.state.ai.enabled)) {
+        } else if (!hasApiKey && !manualModeLocked && (reason === "startup" || this.state.ai.enabled)) {
           this.state.ai.enabled = false;
+          this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
           this.state.controls.actionMessage = "AI proxy has no API key. Running fallback mode.";
           this.state.controls.actionKind = "info";
@@ -943,8 +1128,9 @@ export class GameApp {
         this.state.metrics.proxyHealth = "down";
         this.state.metrics.proxyHasApiKey = false;
         this.state.metrics.proxyLastCheckSec = this.state.metrics.timeSec;
-        if (reason === "startup" || wasUp) {
+        if (!manualModeLocked && (reason === "startup" || wasUp)) {
           this.state.ai.enabled = false;
+          this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
           this.state.controls.actionMessage = `AI proxy unreachable (${String(err?.message ?? err)}). Running fallback mode.`;
           this.state.controls.actionKind = "error";
@@ -1073,6 +1259,12 @@ export class GameApp {
       this.togglePause();
       return;
     }
+    if (action.type === "resetCamera") {
+      this.renderer?.resetView?.();
+      this.state.controls.actionMessage = "Camera reset to default framing.";
+      this.state.controls.actionKind = "info";
+      return;
+    }
     if (action.type === "undo") {
       this.undoLastBuild();
       return;
@@ -1129,38 +1321,10 @@ export class GameApp {
 
   #evaluateRunOutcome() {
     if (this.state.session.phase !== "active") return;
-    const allDone = this.state.gameplay.objectiveIndex >= this.state.gameplay.objectives.length;
-    if (allDone) {
-      this.#setRunPhase("end", {
-        outcome: "win",
-        reason: "All objectives completed. Colony is stable.",
-        actionMessage: "Victory achieved. You can restart or reset.",
-        actionKind: "success",
-      });
-      return;
-    }
-
-    const workers = Number(this.state.metrics.populationStats?.workers ?? 0);
-    const food = Number(this.state.resources.food ?? 0);
-    const wood = Number(this.state.resources.wood ?? 0);
-    const prosperity = Number(this.state.gameplay.prosperity ?? 0);
-    const threat = Number(this.state.gameplay.threat ?? 0);
-
-    let reason = "";
-    if (workers <= 0) {
-      reason = "All workers are gone.";
-    } else if (food <= 0 && wood <= 0) {
-      reason = "Both food and wood reached zero.";
-    } else if (prosperity <= 8 && threat >= 92) {
-      reason = "Colony collapsed under low prosperity and extreme threat.";
-    }
-    if (!reason) return;
-
+    const outcome = evaluateRunOutcomeState(this.state);
+    if (!outcome) return;
     this.#setRunPhase("end", {
-      outcome: "loss",
-      reason,
-      actionMessage: `Run ended: ${reason}`,
-      actionKind: "error",
+      ...outcome,
     });
   }
 

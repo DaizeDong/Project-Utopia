@@ -22,6 +22,8 @@ npm run start:prod    # build + preview + ai-proxy
 npm run test
 npm run build
 npm run verify:full
+npm run verify:long:fallback
+npm run verify:long
 npm run release:check
 npm run submit:local
 npm run submit:strict
@@ -31,6 +33,24 @@ Notes:
 
 - `dev:full`, `preview:full`, and `ai-proxy` now auto-load root `.env`.
 - Existing shell env variables still override `.env` values.
+
+## Long-Run Validation
+
+`verify:full` stays short and is still the daily gate. Long browser soaks are separate and run against `npm run preview:full`.
+
+```bash
+npm run verify:long:fallback
+npm run verify:long:llm
+npm run verify:long
+```
+
+Notes:
+
+- `verify:long:fallback` runs the browser idle suite plus the scripted operator suite in deterministic fallback mode.
+- `verify:long:llm` runs the same suites with live LLM coverage and fails fast if `OPENAI_API_KEY` is missing, the local `ai-proxy /health` payload is not valid, or a live environment/policy probe falls back before the soak starts.
+- `verify:long` always runs the fallback suite first, then requires the live-LLM gate.
+- Long-run metrics are written to `docs/assignment4/metrics/`.
+- Browser screenshots and failure captures are written to `output/playwright/`.
 
 ## Submission / Release Flow
 

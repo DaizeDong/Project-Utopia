@@ -2,6 +2,7 @@ import { ENTITY_TYPE, ROLE, VISITOR_KIND, ANIMAL_KIND, TILE } from "../config/co
 import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balance.js";
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
+import { createDefaultAiRuntimeStats } from "../app/aiRuntimeStats.js";
 import {
   createInitialGrid,
   randomTileOfTypes,
@@ -307,6 +308,7 @@ export function createInitialGameState(options = {}) {
       tick: 0,
       frameMs: 0,
       frameCount: 0,
+      renderFrameCount: 0,
       averageFps: 60,
       benchmarkStatus: "idle",
       benchmarkCsvReady: false,
@@ -325,6 +327,7 @@ export function createInitialGameState(options = {}) {
       proxyHasApiKey: false,
       proxyModel: "",
       proxyLastCheckSec: -999,
+      aiRuntime: createDefaultAiRuntimeStats(),
       regressionFlags: [],
       deathsTotal: 0,
       deathsByReason: {
@@ -378,6 +381,9 @@ export function createInitialGameState(options = {}) {
     },
     ai: {
       enabled: false,
+      coverageTarget: "fallback",
+      runtimeProfile: "default",
+      manualModeLocked: false,
       mode: "fallback",
       lastError: "",
       lastEnvironmentError: "",

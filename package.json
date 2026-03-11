@@ -13,9 +13,14 @@
     "bench:perf": "node scripts/bench-perf.mjs",
     "bench:logic": "node scripts/logic-baseline.mjs",
     "soak:sim": "node scripts/soak-sim.mjs",
+    "soak:browser:idle": "node scripts/soak-browser-idle.mjs",
+    "soak:browser:operator": "node scripts/soak-browser-operator.mjs",
     "a3:evidence:ai": "node scripts/capture-live-ai-evidence.mjs",
     "verify:a3": "node scripts/verify-a3.mjs",
     "verify:full": "node scripts/verify-full.mjs",
+    "verify:long:fallback": "node scripts/verify-long-fallback.mjs",
+    "verify:long:llm": "node scripts/verify-long-llm.mjs",
+    "verify:long": "node scripts/verify-long.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:strict": "node scripts/release-check.mjs --require-clean --require-fresh-build --require-fresh-verify",
     "submit:local": "npm run verify:full && npm run release:check",
@@ -25,6 +30,7 @@
     "three": "^0.182.0"
   },
   "devDependencies": {
+    "playwright": "^1.58.2",
     "vite": "^7.3.1"
   }
 }

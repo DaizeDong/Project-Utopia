@@ -1,4 +1,3 @@
-import { BALANCE } from "../../../config/balance.js";
 import {
   DEFAULT_GROUP_POLICIES,
   GROUP_IDS,
@@ -7,10 +6,12 @@ import {
   listAllowedTargetPriorities,
   normalizeAiToken,
 } from "../../../config/aiConfig.js";
+import { getLongRunAiTuning } from "../../../config/longRunProfile.js";
 import { pushWarning } from "../../../app/warnings.js";
 import { buildPolicySummary } from "../memory/WorldSummary.js";
 import { listGroupStates } from "../../npc/state/StateGraph.js";
 import { buildFeasibilityContext, isStateFeasible } from "../../npc/state/StateFeasibility.js";
+import { markAiDecisionRequest, recordAiDecisionResult } from "../../../app/aiRuntimeStats.js";
 
 const REQUIRED_POLICY_GROUPS = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -74,8 +75,9 @@ function sanitizePolicyWeights(source, allowedKeys, fallbackWeights = {}) {
   return out;
 }
 
-function sanitizePolicyForRuntime(policy, groupId) {
+function sanitizePolicyForRuntime(policy, groupId, state) {
   const fallback = DEFAULT_GROUP_POLICIES[groupId] ?? {};
+  const tuning = getLongRunAiTuning(state);
   return {
     ...fallback,
     ...policy,
@@ -83,7 +85,7 @@ function sanitizePolicyForRuntime(policy, groupId) {
     intentWeights: sanitizePolicyWeights(policy?.intentWeights ?? {}, listAllowedPolicyIntents(groupId), fallback.intentWeights ?? {}),
     targetPriorities: sanitizePolicyWeights(policy?.targetPriorities ?? {}, listAllowedTargetPriorities(groupId), fallback.targetPriorities ?? {}),
     riskTolerance: Math.max(0, Math.min(1, Number(policy?.riskTolerance) || Number(fallback.riskTolerance) || 0.5)),
-    ttlSec: Math.max(8, Math.min(60, Number(policy?.ttlSec) || Number(fallback.ttlSec) || 24)),
+    ttlSec: Math.max(8, Math.min(90, Number(policy?.ttlSec) || Number(fallback.ttlSec) || Number(tuning.policyTtlDefaultSec) || 24)),
     focus: String(policy?.focus ?? fallback.focus ?? "").slice(0, 72),
     summary: String(policy?.summary ?? fallback.summary ?? "").slice(0, 140),
     steeringNotes: Array.isArray(policy?.steeringNotes)
@@ -107,10 +109,11 @@ function sanitizeStateTargetForRuntime(groupId, targetState) {
   return targetState;
 }
 
-function deriveStateTargetFromPolicy(policy) {
+function deriveStateTargetFromPolicy(policy, state) {
   const groupId = canonicalizeAiGroupId(policy?.groupId);
   const intentMap = POLICY_INTENT_TO_STATE[groupId];
   if (!intentMap) return null;
+  const tuning = getLongRunAiTuning(state);
 
   const intents = Object.entries(policy?.intentWeights ?? {})
     .map(([intent, value]) => ({ intent: normalizeAiToken(intent), value: Number(value) || 0 }))
@@ -126,7 +129,7 @@ function deriveStateTargetFromPolicy(policy) {
 
   const dominance = Math.max(0, top.value - second);
   const priority = Math.max(0.35, Math.min(0.82, 0.45 + dominance * 0.2));
-  const ttlSec = Math.max(6, Math.min(24, Math.round((Number(policy?.ttlSec) || 18) * 0.7)));
+  const ttlSec = Math.max(6, Math.min(36, Math.round((Number(policy?.ttlSec) || Number(tuning.policyTtlDefaultSec) || 18) * 0.7)));
 
   return {
     groupId,
@@ -137,13 +140,13 @@ function deriveStateTargetFromPolicy(policy) {
   };
 }
 
-function mergeStateTargetsWithPolicyFallback(policies, stateTargets) {
+function mergeStateTargetsWithPolicyFallback(policies, stateTargets, state) {
   const merged = [...stateTargets];
   const existingGroups = new Set(merged.map((target) => target.groupId));
   for (const policy of policies) {
     const groupId = canonicalizeAiGroupId(policy?.groupId);
     if (!groupId || existingGroups.has(groupId)) continue;
-    const derived = deriveStateTargetFromPolicy(policy);
+    const derived = deriveStateTargetFromPolicy(policy, state);
     if (!derived) continue;
     merged.push(derived);
     existingGroups.add(groupId);
@@ -176,7 +179,7 @@ function normalizePoliciesForRuntime(policies = [], state) {
       const groupId = canonicalizeAiGroupId(policy.groupId);
       if (!groupId) continue;
       if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
-      policyByGroup.set(groupId, sanitizePolicyForRuntime(policy, groupId));
+      policyByGroup.set(groupId, sanitizePolicyForRuntime(policy, groupId, state));
     }
   }
 
@@ -270,7 +273,7 @@ export class NPCBrainSystem {
       const now = state.metrics.timeSec;
       const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state);
       const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
-      const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets)
+      const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets, state)
         .filter((target) => {
           const feasible = isTargetFeasibleForGroup(state, target);
           if (!feasible) {
@@ -312,6 +315,7 @@ export class NPCBrainSystem {
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
       state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
+      recordAiDecisionResult(state, "policy", this.pendingResult, now);
 
       const debugExchange = this.pendingResult.debug ?? {};
       const baseExchange = {
@@ -406,11 +410,13 @@ export class NPCBrainSystem {
 
     if (this.pendingPromise) return;
 
-    if (state.metrics.timeSec - state.ai.lastPolicyDecisionSec < BALANCE.policyDecisionIntervalSec) {
+    const tuning = getLongRunAiTuning(state);
+    if (state.metrics.timeSec - state.ai.lastPolicyDecisionSec < tuning.policyDecisionIntervalSec) {
       return;
     }
 
     state.ai.lastPolicyDecisionSec = state.metrics.timeSec;
+    markAiDecisionRequest(state, "policy", state.metrics.timeSec);
     const summary = buildPolicySummary(state);
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({

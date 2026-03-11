@@ -33,6 +33,22 @@ try {
   app = new GameApp(canvas);
   app.start();
   window.__utopia = app;
+  window.__utopiaLongRun = {
+    getTelemetry: () => app?.getLongRunTelemetry?.() ?? null,
+    configure: (options) => app?.configureLongRunMode?.(options),
+    clearAiManualModeLock: () => app?.clearAiManualModeLock?.(),
+    setAiEnabled: (enabled, options) => app?.setAiEnabled?.(enabled, options),
+    startRun: () => app?.startSession?.(),
+    regenerate: (params, options) => app?.regenerateWorld?.(params, options),
+    focusTile: (ix, iz, zoom) => app?.focusTile?.(ix, iz, zoom) ?? null,
+    focusEntity: (entityId, zoom) => app?.focusEntity?.(entityId, zoom) ?? null,
+    selectTile: (ix, iz, options) => app?.selectTile?.(ix, iz, options) ?? null,
+    selectEntity: (entityId, options) => app?.selectEntity?.(entityId, options) ?? false,
+    placeToolAt: (tool, ix, iz) => app?.placeToolAt?.(tool, ix, iz) ?? null,
+    placeFirstValidBuild: (tool, centerIx, centerIz, radius) => app?.placeFirstValidBuild?.(tool, centerIx, centerIz, radius) ?? null,
+    saveSnapshot: (slotId) => app?.saveSnapshot?.(slotId),
+    loadSnapshot: (slotId) => app?.loadSnapshot?.(slotId),
+  };
 } catch (err) {
   const message = String(err?.message ?? err ?? "Unknown startup failure");
   console.error("[Project Utopia] startup failed:", err);
