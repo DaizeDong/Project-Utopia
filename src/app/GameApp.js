@@ -23,6 +23,7 @@ import { WorkerAISystem } from "../simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../simulation/npc/VisitorAISystem.js";
 import { AnimalAISystem } from "../simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../simulation/lifecycle/MortalitySystem.js";
+import { WildlifePopulationSystem } from "../simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../simulation/economy/ResourceSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
@@ -190,6 +191,7 @@ export class GameApp {
       new VisitorAISystem(),
       new AnimalAISystem(),
       new MortalitySystem(),
+      new WildlifePopulationSystem(),
       new BoidsSystem(),
       new ResourceSystem(),
     ];

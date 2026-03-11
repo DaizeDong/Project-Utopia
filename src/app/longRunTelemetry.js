@@ -50,11 +50,65 @@ function collectNonFiniteMetrics(sample) {
     .map(([key]) => key);
 }
 
+function buildPopulationByGroup(state) {
+  const agents = Array.isArray(state.agents) ? state.agents.filter((entity) => entity?.alive !== false) : [];
+  const animals = Array.isArray(state.animals) ? state.animals.filter((entity) => entity?.alive !== false) : [];
+  return {
+    workers: agents.filter((entity) => entity.type === "WORKER").length,
+    traders: agents.filter((entity) => entity.type === "VISITOR" && String(entity.kind ?? "") === "TRADER").length,
+    saboteurs: agents.filter((entity) => entity.type === "VISITOR" && String(entity.kind ?? "") !== "TRADER").length,
+    herbivores: animals.filter((entity) => entity.kind === "HERBIVORE").length,
+    predators: animals.filter((entity) => entity.kind === "PREDATOR").length,
+  };
+}
+
+function buildEcologyZoneStats(state) {
+  const scenario = state.gameplay?.scenario ?? {};
+  const ecology = state.metrics?.ecology ?? {};
+  const explicit = Array.isArray(ecology.zoneStats) ? ecology.zoneStats : [];
+  if (explicit.length > 0) {
+    return explicit.map((entry) => ({
+      id: String(entry.id ?? ""),
+      label: String(entry.label ?? ""),
+      herbivoreCount: Number(entry.herbivoreCount ?? 0),
+      predatorCount: Number(entry.predatorCount ?? 0),
+      herbivoreCapacity: { ...(entry.herbivoreCapacity ?? {}) },
+      predatorCapacity: { ...(entry.predatorCapacity ?? {}) },
+      recoveryCooldownSec: round(entry.recoveryCooldownSec ?? 0, 2),
+      breedingCooldownSec: round(entry.breedingCooldownSec ?? 0, 2),
+      predatorRecoveryCooldownSec: round(entry.predatorRecoveryCooldownSec ?? 0, 2),
+      herbivoreLowSec: round(entry.herbivoreLowSec ?? 0, 2),
+      predatorAbsentSec: round(entry.predatorAbsentSec ?? 0, 2),
+      stableSec: round(entry.stableSec ?? 0, 2),
+      extinctionSec: round(entry.extinctionSec ?? 0, 2),
+      crowdScore: round(entry.crowdScore ?? 0, 2),
+    }));
+  }
+  return (scenario.wildlifeZones ?? []).map((zone) => ({
+    id: String(zone.id ?? ""),
+    label: String(zone.label ?? ""),
+    herbivoreCount: Number(ecology.herbivoresByZone?.[zone.id] ?? 0),
+    predatorCount: Number(ecology.predatorsByZone?.[zone.id] ?? 0),
+    herbivoreCapacity: {},
+    predatorCapacity: {},
+    recoveryCooldownSec: 0,
+    breedingCooldownSec: 0,
+    predatorRecoveryCooldownSec: 0,
+    herbivoreLowSec: 0,
+    predatorAbsentSec: 0,
+    stableSec: 0,
+    extinctionSec: 0,
+    crowdScore: 0,
+  }));
+}
+
 export function buildLongRunTelemetry(state, viewState = null) {
   const runtime = getScenarioRuntime(state);
   const objective = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0] ?? null;
   const aiRuntime = ensureAiRuntimeStats(state);
   const errorWarnings = collectErrorWarnings(state);
+  const populationByGroup = buildPopulationByGroup(state);
+  const ecologyZoneStats = buildEcologyZoneStats(state);
   const telemetry = {
     capturedAtIso: new Date().toISOString(),
     phase: String(state.session?.phase ?? "menu"),
@@ -115,6 +169,9 @@ export function buildLongRunTelemetry(state, viewState = null) {
       food: round(state.resources?.food ?? 0, 2),
       wood: round(state.resources?.wood ?? 0, 2),
     },
+    population: {
+      byGroup: populationByGroup,
+    },
     deaths: {
       total: Number(state.metrics?.deathsTotal ?? 0),
       byReason: { ...(state.metrics?.deathsByReason ?? {}) },
@@ -138,6 +195,16 @@ export function buildLongRunTelemetry(state, viewState = null) {
       frontierPredators: Number(state.metrics?.ecology?.frontierPredators ?? 0),
       migrationHerds: Number(state.metrics?.ecology?.migrationHerds ?? 0),
       hotspotFarms: [...(state.metrics?.ecology?.hotspotFarms ?? [])],
+      zoneStats: ecologyZoneStats,
+      events: {
+        ...(state.metrics?.ecology?.events ?? {}),
+      },
+      clusters: {
+        ...(state.metrics?.ecology?.clusters ?? {}),
+      },
+      flags: {
+        ...(state.metrics?.ecology?.flags ?? {}),
+      },
       summary: String(state.metrics?.ecology?.summary ?? "Ecology: idle"),
       activePressure: round(
         Math.max(

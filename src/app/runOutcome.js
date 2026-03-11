@@ -1,3 +1,5 @@
+import { BALANCE } from "../config/balance.js";
+
 export function evaluateRunOutcomeState(state) {
   const objectiveCount = Array.isArray(state.gameplay?.objectives) ? state.gameplay.objectives.length : 0;
   const objectiveIndex = Number(state.gameplay?.objectiveIndex ?? 0);
@@ -19,12 +21,19 @@ export function evaluateRunOutcomeState(state) {
   const wood = Number(state.resources?.wood ?? 0);
   const prosperity = Number(state.gameplay?.prosperity ?? 0);
   const threat = Number(state.gameplay?.threat ?? 0);
+  const carryInTransit = Number(state.metrics?.logistics?.totalCarryInTransit ?? 0);
+  const carryingWorkers = Number(state.metrics?.logistics?.carryingWorkers ?? 0);
 
   let reason = "";
   if (workers <= 0) {
     reason = "All workers are gone.";
-  } else if (food <= 0 && wood <= 0) {
-    reason = "Both food and wood reached zero.";
+  } else if (
+    food <= 0
+    && wood <= 0
+    && carryingWorkers <= 0
+    && carryInTransit <= Number(BALANCE.resourceCollapseCarryGrace ?? 0.5)
+  ) {
+    reason = "Both food and wood reached zero with no supply still in transit.";
   } else if (prosperity <= 8 && threat >= 92) {
     reason = "Colony collapsed under low prosperity and extreme threat.";
   }

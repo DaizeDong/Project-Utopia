@@ -1,4 +1,9 @@
-import { LONG_RUN_PROFILE, createDefaultLongRunThresholdBaseline, getLongRunProfile } from "../config/longRunProfile.js";
+import {
+  LONG_RUN_PROFILE,
+  createDefaultLongRunThresholdBaseline,
+  getLongRunProfile,
+  getLongRunWildlifeTuning,
+} from "../config/longRunProfile.js";
 
 function round(value, digits = 2) {
   const safe = Number(value);
@@ -22,6 +27,11 @@ export function createLongRunEvaluationState() {
     lastHealthyFpsWallSec: 0,
     threatPinnedSinceSec: null,
     noWarehouseAnchorSinceSec: null,
+    avgDepotDistanceSinceSec: null,
+    herbivoreZeroSinceSec: null,
+    predatorWithoutPreySinceSec: null,
+    zoneOvergrowthSinceSec: {},
+    clusterSinceSec: {},
     firstRouteRepairAtSec: null,
     firstWeatherEventOverlapAtSec: null,
     firstFailure: null,
@@ -38,6 +48,7 @@ export function evaluateLongRunSample({
 }) {
   const profile = getLongRunProfile(runKind);
   const thresholds = LONG_RUN_PROFILE.thresholds;
+  const wildlife = getLongRunWildlifeTuning("long_run");
   const failures = [];
   const nextState = { ...evaluationState };
   const currentTemplateId = String(currentSample.world?.templateId ?? "");
@@ -46,6 +57,11 @@ export function evaluateLongRunSample({
     nextState.lastScenarioStartWallSec = elapsedWallSec;
     nextState.threatPinnedSinceSec = null;
     nextState.noWarehouseAnchorSinceSec = null;
+    nextState.avgDepotDistanceSinceSec = null;
+    nextState.herbivoreZeroSinceSec = null;
+    nextState.predatorWithoutPreySinceSec = null;
+    nextState.zoneOvergrowthSinceSec = {};
+    nextState.clusterSinceSec = {};
   } else if (!Number.isFinite(Number(nextState.lastScenarioStartWallSec))) {
     nextState.lastScenarioStartWallSec = 0;
   }
@@ -170,10 +186,15 @@ export function evaluateLongRunSample({
   }
 
   if (logisticsThresholdsActive && Number(currentSample.logistics?.avgDepotDistance ?? 0) > thresholds.maxAvgDepotDistance) {
-    failures.push({
-      kind: "logistics",
-      message: `Average depot distance exceeded ${thresholds.maxAvgDepotDistance}.`,
-    });
+    nextState.avgDepotDistanceSinceSec ??= elapsedWallSec;
+    if (elapsedWallSec - nextState.avgDepotDistanceSinceSec > Number(thresholds.maxAvgDepotDistanceHoldSec ?? 0)) {
+      failures.push({
+        kind: "logistics",
+        message: `Average depot distance exceeded ${thresholds.maxAvgDepotDistance} for more than ${thresholds.maxAvgDepotDistanceHoldSec}s.`,
+      });
+    }
+  } else {
+    nextState.avgDepotDistanceSinceSec = null;
   }
   if (logisticsThresholdsActive && Number(currentSample.logistics?.isolatedWorksites ?? 0) > thresholds.maxIsolatedWorksites) {
     failures.push({
@@ -217,6 +238,76 @@ export function evaluateLongRunSample({
       message: `Contested zones exceeded ${thresholds.maxContestedZones}.`,
     });
   }
+
+  const herbivoreCount = Number(currentSample.population?.byGroup?.herbivores ?? 0);
+  const predatorCount = Number(currentSample.population?.byGroup?.predators ?? 0);
+  if (scenarioWallSec >= Number(wildlife.ecologyGraceSec ?? 0)) {
+    if (herbivoreCount <= 0) {
+      nextState.herbivoreZeroSinceSec ??= elapsedWallSec;
+      if (elapsedWallSec - nextState.herbivoreZeroSinceSec > thresholds.speciesExtinctionHoldSec) {
+        failures.push({
+          kind: "species_extinction",
+          message: `Herbivores remained extinct for more than ${thresholds.speciesExtinctionHoldSec}s after the ecology grace window.`,
+        });
+      }
+    } else {
+      nextState.herbivoreZeroSinceSec = null;
+    }
+
+    if (predatorCount > 0 && herbivoreCount <= 0) {
+      nextState.predatorWithoutPreySinceSec ??= elapsedWallSec;
+      if (elapsedWallSec - nextState.predatorWithoutPreySinceSec > thresholds.predatorNoPreyHoldSec) {
+        failures.push({
+          kind: "species_response_gap",
+          message: `Predators stayed active without herbivore prey for more than ${thresholds.predatorNoPreyHoldSec}s.`,
+        });
+      }
+    } else {
+      nextState.predatorWithoutPreySinceSec = null;
+    }
+  }
+
+  const zoneStats = Array.isArray(currentSample.ecology?.zoneStats) ? currentSample.ecology.zoneStats : [];
+  const nextZoneOvergrowth = { ...(nextState.zoneOvergrowthSinceSec ?? {}) };
+  let hasActiveOvergrowth = false;
+  for (const zone of zoneStats) {
+    const zoneId = String(zone.id ?? zone.label ?? "unknown");
+    const herbivoreMax = Number(zone.herbivoreCapacity?.max ?? Infinity);
+    const predatorMax = Number(zone.predatorCapacity?.max ?? Infinity);
+    const herbivoreOver = Number(zone.herbivoreCount ?? 0) > herbivoreMax;
+    const predatorOver = Number(zone.predatorCount ?? 0) > predatorMax;
+    if (herbivoreOver || predatorOver) {
+      hasActiveOvergrowth = true;
+      nextZoneOvergrowth[zoneId] ??= elapsedWallSec;
+      if (elapsedWallSec - Number(nextZoneOvergrowth[zoneId] ?? elapsedWallSec) > thresholds.speciesOvergrowthHoldSec) {
+        failures.push({
+          kind: "species_overgrowth",
+          message: `Wildlife capacity stayed above max in zone '${zone.label ?? zoneId}' for more than ${thresholds.speciesOvergrowthHoldSec}s.`,
+        });
+      }
+    } else {
+      delete nextZoneOvergrowth[zoneId];
+    }
+  }
+  nextState.zoneOvergrowthSinceSec = hasActiveOvergrowth ? nextZoneOvergrowth : {};
+
+  const clusterByGroup = currentSample.ecology?.clusters?.byGroup ?? {};
+  const nextClusterSince = { ...(nextState.clusterSinceSec ?? {}) };
+  for (const groupId of ["herbivores", "predators"]) {
+    const ratio = Number(clusterByGroup?.[groupId]?.ratio ?? 0);
+    if (ratio >= Number(wildlife.clusterRatioThreshold ?? 0.7)) {
+      nextClusterSince[groupId] ??= elapsedWallSec;
+      if (elapsedWallSec - Number(nextClusterSince[groupId] ?? elapsedWallSec) > thresholds.speciesClumpingHoldSec) {
+        failures.push({
+          kind: "species_clumping",
+          message: `${groupId} stayed mechanically clumped above ${(Number(wildlife.clusterRatioThreshold ?? 0.7) * 100).toFixed(0)}% for more than ${thresholds.speciesClumpingHoldSec}s.`,
+        });
+      }
+    } else {
+      delete nextClusterSince[groupId];
+    }
+  }
+  nextState.clusterSinceSec = nextClusterSince;
 
   if (failures.length > 0 && !nextState.firstFailure) {
     nextState.firstFailure = failures[0];

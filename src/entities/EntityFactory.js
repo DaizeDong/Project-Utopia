@@ -184,6 +184,55 @@ function assignAnimalHabitat(animal, zone, anchor, spawnTile) {
   animal.memory.homeZoneLabel = String(zone?.label ?? "");
 }
 
+export function createDefaultEcologyMetrics() {
+  return {
+    activeGrazers: 0,
+    pressuredFarms: 0,
+    maxFarmPressure: 0,
+    frontierPredators: 0,
+    migrationHerds: 0,
+    farmPressureByKey: {},
+    hotspotFarms: [],
+    herbivoresByZone: {},
+    predatorsByZone: {},
+    zoneStats: [],
+    events: {
+      births: 0,
+      breedingSpawns: 0,
+      recoverySpawns: 0,
+      predatorRecoverySpawns: 0,
+      predatorRetreats: 0,
+      predationDeaths: 0,
+      starvationDeaths: 0,
+    },
+    clusters: {
+      maxSameSpeciesClusterSize: 0,
+      stuckClusterCount: 0,
+      longestClusterDurationSec: 0,
+      byGroup: {},
+    },
+    flags: {
+      extinctionRisk: false,
+      overgrowthRisk: false,
+      clumpingRisk: false,
+      predatorWithoutPrey: false,
+    },
+    summary: "Ecology: idle",
+  };
+}
+
+export function createDefaultWildlifeRuntime() {
+  return {
+    zoneControl: {},
+    clusterState: {},
+    audit: {
+      herbivoreZeroSinceSec: null,
+      predatorWithoutPreySinceSec: null,
+      predatorRetreats: 0,
+    },
+  };
+}
+
 function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   const agents = [];
   const animals = [];
@@ -345,6 +394,11 @@ export function createInitialGameState(options = {}) {
       feasibilityRejectCountByGroup: {},
       starvationRiskCount: 0,
       deathByReasonAndReachability: {},
+      ecologyPendingDeaths: {
+        predation: 0,
+        starvation: 0,
+        event: 0,
+      },
       logistics: {
         carryingWorkers: 0,
         totalCarryInTransit: 0,
@@ -357,18 +411,7 @@ export function createInitialGameState(options = {}) {
         warehouseLoadByKey: {},
         summary: "Logistics: idle",
       },
-      ecology: {
-        activeGrazers: 0,
-        pressuredFarms: 0,
-        maxFarmPressure: 0,
-        frontierPredators: 0,
-        migrationHerds: 0,
-        farmPressureByKey: {},
-        hotspotFarms: [],
-        herbivoresByZone: {},
-        predatorsByZone: {},
-        summary: "Ecology: idle",
-      },
+      ecology: createDefaultEcologyMetrics(),
       spatialPressure: {
         weatherPressure: 0,
         eventPressure: 0,
@@ -515,6 +558,7 @@ export function createInitialGameState(options = {}) {
       threat: 25,
       objectiveIndex: 0,
       scenario: scenarioBundle.scenario,
+      wildlifeRuntime: createDefaultWildlifeRuntime(),
       objectives: scenarioBundle.objectives,
       objectiveHoldSec: 0,
       recovery: {
