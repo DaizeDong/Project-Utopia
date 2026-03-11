@@ -88,6 +88,32 @@ test("snapshot roundtrip preserves maps and sets across repeated serialize/resto
     predatorsByZone: { "north-islet": 1 },
     summary: "Ecology: pressured farms 1, top farm pressure 0.84, frontier predators 1, migration herds 1.",
   };
+  state.gameplay.wildlifeRuntime = {
+    zoneControl: {
+      "north-islet": {
+        herbivoreLowSec: 12,
+        predatorAbsentSec: 48,
+        predatorPressureSec: 0,
+        stableSec: 60,
+        extinctionSec: 0,
+        nextRecoveryAtSec: 90,
+        nextBreedAtSec: 180,
+        nextPredatorRecoveryAtSec: 240,
+      },
+    },
+    clusterState: {
+      herbivores: { activeSinceSec: 18, longestDurationSec: 22 },
+    },
+    audit: {
+      births: 2,
+      breedingSpawns: 1,
+      recoverySpawns: 1,
+      predatorRecoverySpawns: 0,
+      predatorRetreats: 1,
+      predationDeaths: 1,
+      starvationDeaths: 0,
+    },
+  };
 
   for (let i = 0; i < 3; i += 1) {
     state = restoreSnapshotState(makeSerializableSnapshot(state, { initialSeed: 1, state: 2 + i, calls: 3 + i }));
@@ -106,4 +132,6 @@ test("snapshot roundtrip preserves maps and sets across repeated serialize/resto
   assert.equal(state.weather.hazardTileSet.has("12,18"), true);
   assert.equal(state.weather.hazardFronts[0]?.label, "central relay depot");
   assert.equal(state.metrics.ecology.hotspotFarms[0]?.pressure, 0.84);
+  assert.equal(state.gameplay.wildlifeRuntime.zoneControl["north-islet"]?.stableSec, 60);
+  assert.equal(state.gameplay.wildlifeRuntime.clusterState.herbivores?.longestDurationSec, 22);
 });

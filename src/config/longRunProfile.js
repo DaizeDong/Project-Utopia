@@ -23,6 +23,48 @@ const EVENT_LONG_RUN_TUNING = Object.freeze({
   maxBanditRaidPressure: 1.75,
   maxEventPressurePerEvent: 1.9,
 });
+const WILDLIFE_LONG_RUN_TUNING = Object.freeze({
+  zoneDefaults: Object.freeze({
+    herbivores: Object.freeze({ min: 3, target: 4, max: 6 }),
+    predators: Object.freeze({ min: 0, target: 1, max: 2 }),
+  }),
+  scenarioOverrides: Object.freeze({
+    fortified_basin: Object.freeze({
+      herbivores: Object.freeze({ min: 3, target: 5, max: 6 }),
+      predators: Object.freeze({ min: 0, target: 1, max: 1 }),
+    }),
+    archipelago_isles: Object.freeze({
+      herbivores: Object.freeze({ min: 3, target: 5, max: 7 }),
+      predators: Object.freeze({ min: 0, target: 1, max: 2 }),
+    }),
+  }),
+  ecologyGraceSec: 45,
+  herbivoreLowWatermark: 2,
+  herbivoreStableFloor: 2,
+  herbivoreRecoveryDelaySec: 45,
+  herbivoreRecoverySpawnCount: 2,
+  herbivoreSpawnAvoidPredatorRadius: 3,
+  predatorRecoveryDelaySec: 90,
+  predatorRecoverySpawnCount: 1,
+  predatorHuntPreyFloor: 2,
+  predatorRetreatPreyFloor: 0,
+  predatorRetreatDelaySec: 18,
+  herbivoreBreedStableSec: 60,
+  herbivoreBreedSpawnCount: 1,
+  herbivoreBreedCooldownSec: 120,
+  herbivoreRecoveryCooldownSec: 75,
+  predatorRecoveryCooldownSec: 120,
+  lowPressureWeatherMax: 1.1,
+  lowPressureEventMax: 1.15,
+  maxHazardPenaltyForSpawn: 1.45,
+  coreAvoidRadius: 4,
+  clusterRadius: 1.25,
+  clusterRatioThreshold: 0.7,
+  clusterHoldSec: 30,
+  spreadCrowdRadius: 1.5,
+  spreadCrowdNeighbors: 2,
+  spreadCrowdPersistSec: 6,
+});
 
 export const LONG_RUN_PROFILE = Object.freeze({
   baseline: Object.freeze({
@@ -73,6 +115,9 @@ export const LONG_RUN_PROFILE = Object.freeze({
   events: Object.freeze({
     tuning: EVENT_LONG_RUN_TUNING,
   }),
+  wildlife: Object.freeze({
+    tuning: WILDLIFE_LONG_RUN_TUNING,
+  }),
   thresholds: Object.freeze({
     absoluteMinAvgFps: 28,
     absoluteMinP5Fps: 24,
@@ -82,6 +127,7 @@ export const LONG_RUN_PROFILE = Object.freeze({
     noWarehouseAnchorMessage: "Logistics: no warehouse anchors online.",
     maxNoWarehouseAnchorSec: 180,
     maxAvgDepotDistance: 18,
+    maxAvgDepotDistanceHoldSec: 30,
     maxIsolatedWorksites: 2,
     maxStretchedWorksites: 3,
     maxStrandedCarryWorkers: 10,
@@ -92,6 +138,10 @@ export const LONG_RUN_PROFILE = Object.freeze({
     maxEventPressure: 2.1,
     maxEcologyPressure: 1.25,
     maxContestedZones: 4,
+    speciesExtinctionHoldSec: 90,
+    predatorNoPreyHoldSec: 60,
+    speciesOvergrowthHoldSec: 120,
+    speciesClumpingHoldSec: 30,
   }),
 });
 
@@ -140,6 +190,27 @@ export function getLongRunEventTuning(stateOrProfile = null) {
     maxConcurrentByType: Object.freeze({}),
     maxBanditRaidPressure: Infinity,
     maxEventPressurePerEvent: Infinity,
+  });
+}
+
+export function getLongRunWildlifeTuning(stateOrProfile = null) {
+  const runtimeProfile = typeof stateOrProfile === "string"
+    ? stateOrProfile
+    : String(stateOrProfile?.ai?.runtimeProfile ?? "");
+  if (runtimeProfile === "long_run") {
+    return LONG_RUN_PROFILE.wildlife.tuning;
+  }
+  return LONG_RUN_PROFILE.wildlife.tuning;
+}
+
+export function getWildlifeZoneLimits(templateId = "", kind = "herbivores", tuning = LONG_RUN_PROFILE.wildlife.tuning) {
+  const safeKind = kind === "predators" ? "predators" : "herbivores";
+  const defaults = tuning?.zoneDefaults?.[safeKind] ?? LONG_RUN_PROFILE.wildlife.tuning.zoneDefaults[safeKind];
+  const overrides = tuning?.scenarioOverrides?.[String(templateId ?? "")]?.[safeKind] ?? null;
+  return Object.freeze({
+    min: Number(overrides?.min ?? defaults?.min ?? 0),
+    target: Number(overrides?.target ?? defaults?.target ?? 0),
+    max: Number(overrides?.max ?? defaults?.max ?? 0),
   });
 }
 

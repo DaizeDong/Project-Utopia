@@ -18,7 +18,7 @@ import {
   launchHarnessPage,
   parseArgs,
   performCameraSurveyStep,
-  probeLiveLlmCoverage,
+  probeAndRecordLiveLlmGate,
   resolveAiMode,
   resolveHeadless,
   resolveThresholdBaseline,
@@ -206,8 +206,11 @@ async function main() {
   const previewSession = await startPreviewSession();
   try {
     if (aiMode === "llm") {
-      await ensureLiveLlmGate(previewSession.proxyUrl);
-      await probeLiveLlmCoverage(previewSession.baseUrl);
+      await probeAndRecordLiveLlmGate({
+        proxyUrl: previewSession.proxyUrl,
+        baseUrl: previewSession.baseUrl,
+        stage: "operator-suite",
+      });
     }
 
     let thresholdBaseline = resolveThresholdBaseline(thresholdPath);

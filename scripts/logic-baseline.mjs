@@ -9,6 +9,7 @@ import { WorkerAISystem } from "../src/simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../src/simulation/npc/VisitorAISystem.js";
 import { AnimalAISystem } from "../src/simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js";
+import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 
@@ -38,6 +39,7 @@ const systems = [
   new VisitorAISystem(),
   new AnimalAISystem(),
   new MortalitySystem(),
+  new WildlifePopulationSystem(),
   new BoidsSystem(),
   new ResourceSystem(),
 ];

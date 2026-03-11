@@ -212,3 +212,38 @@ test("predator patrols frontier farm pressure hotspots when prey is absent", () 
   assert.equal(predator.targetTile?.iz, hotspot.iz);
   assert.match(String(predator.debug?.lastPatrolLabel ?? ""), /farm-pressure hotspot/i);
 });
+
+test("herbivores spread out when crowding persists", () => {
+  const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
+  const herbivores = state.animals.filter((animal) => animal.kind === ANIMAL_KIND.HERBIVORE).slice(0, 3);
+  assert.equal(herbivores.length, 3);
+  const sharedTile = herbivores[0].memory?.homeTile ?? herbivores[0].targetTile ?? { ix: 0, iz: 0 };
+  const sharedPos = tileToWorld(sharedTile.ix, sharedTile.iz, state.grid);
+  state.animals = herbivores;
+  state.metrics.timeSec = 24;
+
+  for (const herbivore of herbivores) {
+    herbivore.x = sharedPos.x;
+    herbivore.z = sharedPos.z;
+    herbivore.debug.crowdingSec = 6;
+    herbivore.path = null;
+    herbivore.targetTile = null;
+    herbivore.blackboard = {
+      fsm: {
+        state: "wander",
+        previousState: "graze",
+        changedAtSec: 0,
+        reason: "test",
+        history: [],
+        path: [],
+      },
+      intent: "wander",
+    };
+  }
+
+  const animalSystem = new AnimalAISystem();
+  animalSystem.update(0.2, state, makeServices([0.6]));
+
+  assert.equal(herbivores.some((animal) => String(animal.debug?.lastCrowdResponse ?? "") === "spread"), true);
+  assert.equal(herbivores.some((animal) => animal.targetTile && (animal.targetTile.ix !== sharedTile.ix || animal.targetTile.iz !== sharedTile.iz)), true);
+});

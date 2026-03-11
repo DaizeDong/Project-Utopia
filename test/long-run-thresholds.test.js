@@ -32,7 +32,38 @@ function createSample(overrides = {}) {
         contestedZones: 0,
       },
     },
-    ecology: { maxFarmPressure: 0.3 },
+    population: {
+      byGroup: {
+        workers: 18,
+        traders: 1,
+        saboteurs: 5,
+        herbivores: 4,
+        predators: 1,
+      },
+    },
+    ecology: {
+      maxFarmPressure: 0.3,
+      zoneStats: [{
+        id: "west-wilds",
+        label: "west frontier wilds",
+        herbivoreCount: 4,
+        predatorCount: 1,
+        herbivoreCapacity: { min: 3, target: 4, max: 6 },
+        predatorCapacity: { min: 0, target: 1, max: 2 },
+      }],
+      clusters: {
+        byGroup: {
+          herbivores: { ratio: 0.1 },
+          predators: { ratio: 0.1 },
+        },
+      },
+      flags: {
+        extinctionRisk: false,
+        overgrowthRisk: false,
+        clumpingRisk: false,
+        predatorWithoutPrey: false,
+      },
+    },
     performance: { fps: 58, frameMs: 16.5 },
     ai: {
       coverageTarget: "fallback",
@@ -75,6 +106,83 @@ test("threshold evaluator flags live AI outage churn", () => {
   assert.equal(result.failures.some((failure) => failure.kind === "ai_outage"), true);
 });
 
+test("threshold evaluator flags species extinction and predator-without-prey gaps", () => {
+  const result = evaluateLongRunSample({
+    currentSample: createSample({
+      population: {
+        byGroup: {
+          workers: 18,
+          traders: 1,
+          saboteurs: 5,
+          herbivores: 0,
+          predators: 1,
+        },
+      },
+      ecology: {
+        maxFarmPressure: 0.3,
+        zoneStats: [{
+          id: "west-wilds",
+          label: "west frontier wilds",
+          herbivoreCount: 0,
+          predatorCount: 1,
+          herbivoreCapacity: { min: 3, target: 4, max: 6 },
+          predatorCapacity: { min: 0, target: 1, max: 2 },
+        }],
+        clusters: {
+          byGroup: {
+            herbivores: { ratio: 0 },
+            predators: { ratio: 0.1 },
+          },
+        },
+      },
+    }),
+    evaluationState: {
+      ...createLongRunEvaluationState(),
+      herbivoreZeroSinceSec: 10,
+      predatorWithoutPreySinceSec: 35,
+      lastScenarioStartWallSec: 0,
+    },
+    elapsedWallSec: 130,
+    runKind: "idle",
+  });
+  assert.equal(result.failures.some((failure) => failure.kind === "species_extinction"), true);
+  assert.equal(result.failures.some((failure) => failure.kind === "species_response_gap"), true);
+});
+
+test("threshold evaluator flags species overgrowth and clumping", () => {
+  const result = evaluateLongRunSample({
+    currentSample: createSample({
+      ecology: {
+        maxFarmPressure: 0.3,
+        zoneStats: [{
+          id: "west-wilds",
+          label: "west frontier wilds",
+          herbivoreCount: 7,
+          predatorCount: 1,
+          herbivoreCapacity: { min: 3, target: 4, max: 6 },
+          predatorCapacity: { min: 0, target: 1, max: 2 },
+        }],
+        clusters: {
+          byGroup: {
+            herbivores: { ratio: 0.82 },
+            predators: { ratio: 0.1 },
+          },
+        },
+      },
+    }),
+    evaluationState: {
+      ...createLongRunEvaluationState(),
+      zoneOvergrowthSinceSec: { "west-wilds": 5 },
+      clusterSinceSec: { herbivores: 20 },
+      lastScenarioStartWallSec: 0,
+    },
+    elapsedWallSec: 140,
+    runKind: "idle",
+  });
+  assert.equal(result.failures.some((failure) => failure.kind === "species_overgrowth"), true);
+  assert.equal(result.failures.some((failure) => failure.kind === "species_clumping"), true);
+});
+
 test("threshold evaluator respects idle logistics grace before hard failures", () => {
   const early = evaluateLongRunSample({
     currentSample: createSample({
@@ -92,7 +200,7 @@ test("threshold evaluator respects idle logistics grace before hard failures", (
   });
   assert.equal(early.failures.some((failure) => failure.kind === "logistics"), false);
 
-  const late = evaluateLongRunSample({
+  const transient = evaluateLongRunSample({
     currentSample: createSample({
       logistics: {
         summary: "Logistics: stressed",
@@ -106,7 +214,45 @@ test("threshold evaluator respects idle logistics grace before hard failures", (
     elapsedWallSec: 240,
     runKind: "idle",
   });
-  assert.equal(late.failures.some((failure) => failure.kind === "logistics"), true);
+  assert.equal(transient.failures.some((failure) => failure.kind === "logistics"), true);
+
+  const sustained = evaluateLongRunSample({
+    currentSample: createSample({
+      logistics: {
+        summary: "Logistics: stressed",
+        avgDepotDistance: 24,
+        isolatedWorksites: 0,
+        stretchedWorksites: 0,
+        strandedCarryWorkers: 0,
+      },
+    }),
+    evaluationState: {
+      ...createLongRunEvaluationState(),
+      lastScenarioStartWallSec: 0,
+      avgDepotDistanceSinceSec: 205,
+    },
+    elapsedWallSec: 240,
+    runKind: "idle",
+  });
+  assert.equal(sustained.failures.some((failure) => failure.message.includes("Average depot distance")), true);
+});
+
+test("threshold evaluator ignores transient average depot distance spikes", () => {
+  const result = evaluateLongRunSample({
+    currentSample: createSample({
+      logistics: {
+        summary: "Logistics: stressed",
+        avgDepotDistance: 24,
+        isolatedWorksites: 0,
+        stretchedWorksites: 0,
+        strandedCarryWorkers: 0,
+      },
+    }),
+    evaluationState: createLongRunEvaluationState(),
+    elapsedWallSec: 240,
+    runKind: "idle",
+  });
+  assert.equal(result.failures.some((failure) => String(failure.message ?? "").includes("Average depot distance")), false);
 });
 
 test("threshold evaluator resets operator logistics grace after the scenario changes", () => {
