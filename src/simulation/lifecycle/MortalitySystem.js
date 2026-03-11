@@ -185,6 +185,19 @@ function buildDeathContext(entity, state, reason, reachableFood, nutritionSource
   };
 }
 
+function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEvents) {
+  incrementDeathCounters(state, entity, entity.deathReason || "event", reachableFood);
+  if (entity.kind === ANIMAL_KIND.HERBIVORE || entity.kind === ANIMAL_KIND.PREDATOR) {
+    const reason = String(entity.deathReason || "event");
+    state.metrics.ecologyPendingDeaths[reason] = Number(state.metrics.ecologyPendingDeaths[reason] ?? 0) + 1;
+  }
+  deathEvents.push(`${entity.displayName ?? entity.id} died (${entity.deathReason || "event"}).`);
+  entity.deathRecorded = true;
+  if (!entity.deathContext) {
+    entity.deathContext = buildDeathContext(entity, state, entity.deathReason || "event", reachableFood, nutritionSourceType);
+  }
+}
+
 export class MortalitySystem {
   constructor() {
     this.name = "MortalitySystem";
@@ -195,10 +208,18 @@ export class MortalitySystem {
     const deadIds = new Set();
     const deathEvents = [];
     let starvationRiskCount = 0;
+    state.metrics.ecologyPendingDeaths ??= {
+      predation: 0,
+      starvation: 0,
+      event: 0,
+    };
 
     for (const entity of state.agents) {
       if (entity.alive === false) {
         deadIds.add(entity.id);
+        if (!entity.deathRecorded) {
+          recordDeath(state, entity, Boolean(entity.debug?.reachableFood), String(entity.debug?.nutritionSourceType ?? "none"), deathEvents);
+        }
         continue;
       }
 
@@ -219,14 +240,16 @@ export class MortalitySystem {
 
       if (entity.alive === false) {
         deadIds.add(entity.id);
-        incrementDeathCounters(state, entity, entity.deathReason || "event", reachableFood);
-        deathEvents.push(`${entity.displayName ?? entity.id} died (${entity.deathReason || "event"}).`);
+        recordDeath(state, entity, reachableFood, nutritionSourceType, deathEvents);
       }
     }
 
     for (const animal of state.animals) {
       if (animal.alive === false) {
         deadIds.add(animal.id);
+        if (!animal.deathRecorded) {
+          recordDeath(state, animal, false, "none", deathEvents);
+        }
         continue;
       }
 
@@ -244,8 +267,7 @@ export class MortalitySystem {
 
       if (animal.alive === false) {
         deadIds.add(animal.id);
-        incrementDeathCounters(state, animal, animal.deathReason || "event", reachableFood);
-        deathEvents.push(`${animal.displayName ?? animal.id} died (${animal.deathReason || "event"}).`);
+        recordDeath(state, animal, reachableFood, "none", deathEvents);
       }
     }
 

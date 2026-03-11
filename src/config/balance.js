@@ -45,6 +45,7 @@ export const BALANCE = Object.freeze({
   workerHungerSeekThreshold: 0.14,
   workerEatRecoveryTarget: 0.68,
   workerHungerEatRecoveryPerFoodUnit: 0.11,
+  resourceCollapseCarryGrace: 0.5,
   visitorHungerDecayPerSecond: 0.0085,
   visitorHungerRecoveryPerSecond: 0.16,
   herbivoreHungerDecayPerSecond: 0.0095,

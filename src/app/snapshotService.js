@@ -1,3 +1,5 @@
+import { createDefaultEcologyMetrics, createDefaultWildlifeRuntime } from "../entities/EntityFactory.js";
+
 const STORAGE_PREFIX = "utopia:snapshot:";
 const GROUP_VISITORS = "visitors";
 const GROUP_TRADERS = "traders";
@@ -179,17 +181,33 @@ export function restoreSnapshotState(serialized) {
   snapshot.metrics.feasibilityRejectCountByGroup ??= {};
   snapshot.metrics.starvationRiskCount ??= 0;
   snapshot.metrics.deathByReasonAndReachability ??= {};
-  snapshot.metrics.ecology ??= {
-    activeGrazers: 0,
-    pressuredFarms: 0,
-    maxFarmPressure: 0,
-    frontierPredators: 0,
-    migrationHerds: 0,
-    farmPressureByKey: {},
-    hotspotFarms: [],
-    herbivoresByZone: {},
-    predatorsByZone: {},
-    summary: "Ecology: idle",
+  snapshot.metrics.ecologyPendingDeaths ??= {
+    predation: 0,
+    starvation: 0,
+    event: 0,
+  };
+  snapshot.metrics.ecology ??= createDefaultEcologyMetrics();
+  snapshot.metrics.ecology.zoneStats ??= [];
+  snapshot.metrics.ecology.events ??= {
+    births: 0,
+    breedingSpawns: 0,
+    recoverySpawns: 0,
+    predatorRecoverySpawns: 0,
+    predatorRetreats: 0,
+    predationDeaths: 0,
+    starvationDeaths: 0,
+  };
+  snapshot.metrics.ecology.clusters ??= {
+    maxSameSpeciesClusterSize: 0,
+    stuckClusterCount: 0,
+    longestClusterDurationSec: 0,
+    byGroup: {},
+  };
+  snapshot.metrics.ecology.flags ??= {
+    extinctionRisk: false,
+    overgrowthRisk: false,
+    clumpingRisk: false,
+    predatorWithoutPrey: false,
   };
   snapshot.metrics.spatialPressure ??= {
     weatherPressure: 0,
@@ -214,6 +232,7 @@ export function restoreSnapshotState(serialized) {
   snapshot.weather.hazardFronts ??= [];
   snapshot.weather.hazardFocusSummary ??= "";
   snapshot.weather.pressureScore ??= 0;
+  snapshot.gameplay.wildlifeRuntime ??= createDefaultWildlifeRuntime();
   snapshot.debug.logic ??= {
     invalidTransitions: 0,
     goalFlipCount: 0,

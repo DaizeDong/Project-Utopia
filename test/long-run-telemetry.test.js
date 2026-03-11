@@ -12,8 +12,57 @@ test("buildLongRunTelemetry exposes the browser harness contract", () => {
   state.metrics.averageFps = 57.8;
   state.metrics.frameMs = 16.9;
   state.metrics.memoryMb = 182.4;
+  state.gameplay.wildlifeRuntime.zoneControl["west-wilds"] = {
+    herbivoreLowSec: 12,
+    predatorAbsentSec: 24,
+    predatorPressureSec: 0,
+    stableSec: 60,
+    extinctionSec: 0,
+    nextRecoveryAtSec: 70,
+    nextBreedAtSec: 140,
+    nextPredatorRecoveryAtSec: 190,
+  };
   state.metrics.logistics.summary = "Logistics: carriers 7, avg depot dist 4.2";
   state.metrics.ecology.summary = "Ecology: pressured farms 1, frontier predators 1.";
+  state.metrics.ecology.zoneStats = [{
+    id: "west-wilds",
+    label: "west frontier wilds",
+    herbivoreCount: 4,
+    predatorCount: 1,
+    herbivoreCapacity: { min: 3, target: 4, max: 6 },
+    predatorCapacity: { min: 0, target: 1, max: 2 },
+    recoveryCooldownSec: 12,
+    breedingCooldownSec: 34,
+    predatorRecoveryCooldownSec: 56,
+    herbivoreLowSec: 0,
+    predatorAbsentSec: 0,
+    stableSec: 44,
+    extinctionSec: 0,
+    crowdScore: 0.25,
+  }];
+  state.metrics.ecology.events = {
+    births: 3,
+    breedingSpawns: 1,
+    recoverySpawns: 2,
+    predatorRecoverySpawns: 0,
+    predatorRetreats: 1,
+    predationDeaths: 1,
+    starvationDeaths: 0,
+  };
+  state.metrics.ecology.clusters = {
+    maxSameSpeciesClusterSize: 3,
+    stuckClusterCount: 0,
+    longestClusterDurationSec: 8,
+    byGroup: {
+      herbivores: { ratio: 0.5, maxClusterSize: 3, currentDurationSec: 8 },
+    },
+  };
+  state.metrics.ecology.flags = {
+    extinctionRisk: false,
+    overgrowthRisk: false,
+    clumpingRisk: false,
+    predatorWithoutPrey: false,
+  };
   state.metrics.warningLog.push({
     id: "warn_1",
     sec: 40,
@@ -40,6 +89,11 @@ test("buildLongRunTelemetry exposes the browser harness contract", () => {
   assert.equal(telemetry.objective.index, 0);
   assert.equal(telemetry.logistics.summary.includes("carriers"), true);
   assert.equal(telemetry.ecology.summary.includes("pressured farms"), true);
+  assert.equal(telemetry.population.byGroup.herbivores > 0, true);
+  assert.equal(Array.isArray(telemetry.ecology.zoneStats), true);
+  assert.equal(telemetry.ecology.zoneStats[0]?.label, "west frontier wilds");
+  assert.equal(Number(telemetry.ecology.events?.births ?? 0), 3);
+  assert.equal(Number(telemetry.ecology.events?.predatorRetreats ?? 0), 1);
   assert.equal(telemetry.warnings.errorCount, 1);
   assert.equal(telemetry.ai.coverageTarget, "llm");
   assert.equal(telemetry.ai.requestCount, 4);
