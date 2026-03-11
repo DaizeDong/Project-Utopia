@@ -14,7 +14,7 @@ import {
   ensureOutputDirs,
   launchHarnessPage,
   parseArgs,
-  probeLiveLlmCoverage,
+  probeAndRecordLiveLlmGate,
   resolveAiMode,
   resolveHeadless,
   resolveThresholdBaseline,
@@ -66,8 +66,11 @@ async function main() {
     const baselinePreviewSession = await startPreviewSession();
     try {
       if (aiMode === "llm") {
-        await ensureLiveLlmGate(baselinePreviewSession.proxyUrl);
-        await probeLiveLlmCoverage(baselinePreviewSession.baseUrl);
+        await probeAndRecordLiveLlmGate({
+          proxyUrl: baselinePreviewSession.proxyUrl,
+          baseUrl: baselinePreviewSession.baseUrl,
+          stage: "baseline-capture",
+        });
       }
       thresholdBaseline = await captureThresholdBaseline({
         baseUrl: baselinePreviewSession.baseUrl,
@@ -85,8 +88,11 @@ async function main() {
     const previewSession = await startPreviewSession();
     try {
       if (aiMode === "llm") {
-        await ensureLiveLlmGate(previewSession.proxyUrl);
-        await probeLiveLlmCoverage(previewSession.baseUrl);
+        await probeAndRecordLiveLlmGate({
+          proxyUrl: previewSession.proxyUrl,
+          baseUrl: previewSession.baseUrl,
+          stage: `idle-${templateId}`,
+        });
       }
 
       const browserSession = await launchHarnessPage(previewSession.baseUrl, { headless });

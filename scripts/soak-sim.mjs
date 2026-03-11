@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { createServices } from "../src/app/createServices.js";
@@ -14,6 +15,7 @@ import { WorkerAISystem } from "../src/simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../src/simulation/npc/VisitorAISystem.js";
 import { AnimalAISystem } from "../src/simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js";
+import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { makeSerializableSnapshot, restoreSnapshotState } from "../src/app/snapshotService.js";
@@ -27,7 +29,7 @@ const SCENARIOS = Object.freeze([
   { templateId: "fortified_basin", seed: 1337 },
   { templateId: "archipelago_isles", seed: 1337 },
 ]);
-const PRESETS = Object.freeze({
+export const PRESETS = Object.freeze({
   default: Object.freeze({
     name: "default",
     durationSec: 90,
@@ -45,10 +47,20 @@ const PRESETS = Object.freeze({
     durationSec: 10 * 60,
     sampleIntervalSec: 15,
     aiEnabled: true,
+    aiMode: "offline-fallback",
+    aiOfflineFallback: true,
+  }),
+  "ecology-long": Object.freeze({
+    name: "ecology-long",
+    durationSec: 20 * 60,
+    sampleIntervalSec: 15,
+    aiEnabled: true,
+    aiMode: "offline-fallback",
+    aiOfflineFallback: true,
   }),
 });
 
-function parseArgs(argv = process.argv.slice(2)) {
+export function parseArgs(argv = process.argv.slice(2)) {
   const args = {};
   for (const token of argv) {
     if (!token.startsWith("--")) continue;
@@ -81,6 +93,7 @@ function buildSystems() {
     new VisitorAISystem(),
     new AnimalAISystem(),
     new MortalitySystem(),
+    new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
   ];
@@ -109,7 +122,7 @@ function assertFiniteMetrics(state, label) {
   }
 }
 
-function resolvePreset(args) {
+export function resolvePreset(args) {
   const presetName = String(args.preset ?? "default").trim().toLowerCase();
   const preset = PRESETS[presetName] ?? PRESETS.default;
   const durationSec = Number.isFinite(Number(args.duration)) ? Math.max(30, Number(args.duration)) : preset.durationSec;
@@ -238,7 +251,9 @@ async function runScenario({ templateId, seed }, preset) {
   state.ai.coverageTarget = preset.aiEnabled ? "fallback" : "fallback";
   state.ai.runtimeProfile = "long_run";
 
-  const services = createServices(state.world.mapSeed);
+  const services = createServices(state.world.mapSeed, {
+    offlineAiFallback: Boolean(preset.aiOfflineFallback),
+  });
   const systems = buildSystems();
   const totalTicks = Math.max(60, Math.round(preset.durationSec / DT_SEC));
   const sampleEveryTicks = Math.max(1, Math.round(preset.sampleIntervalSec / DT_SEC));
@@ -304,6 +319,7 @@ async function runScenario({ templateId, seed }, preset) {
     preset: preset.name,
     durationSec: preset.durationSec,
     aiEnabled: Boolean(preset.aiEnabled),
+    aiMode: String(preset.aiMode ?? (preset.aiEnabled ? "fallback" : "disabled")),
     tickCount: Number(state.metrics.tick ?? 0),
     maxEntities,
     peakThreat: round(peakThreat, 2),
@@ -352,6 +368,7 @@ async function main() {
     durationSec: preset.durationSec,
     sampleIntervalSec: preset.sampleIntervalSec,
     aiEnabled: Boolean(preset.aiEnabled),
+    aiMode: String(preset.aiMode ?? (preset.aiEnabled ? "fallback" : "disabled")),
     scenarios: results,
   };
 
@@ -360,7 +377,11 @@ async function main() {
   console.log(`Soak report written: ${outPath}`);
 }
 
-main().catch((err) => {
-  console.error(err.message ?? err);
-  process.exit(1);
-});
+const __filename = fileURLToPath(import.meta.url);
+
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((err) => {
+    console.error(err.message ?? err);
+    process.exit(1);
+  });
+}

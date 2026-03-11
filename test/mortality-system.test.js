@@ -125,3 +125,20 @@ test("MortalitySystem removes predated herbivore", () => {
   assert.equal(state.metrics.deathsTotal, 1);
   assert.equal(state.metrics.deathsByReason.predation, 1);
 });
+
+test("MortalitySystem records predated herbivores that were already marked dead by AI", () => {
+  const state = createInitialGameState();
+  const herbivore = createAnimal(0, 0, ANIMAL_KIND.HERBIVORE, () => 0.5);
+  herbivore.alive = false;
+  herbivore.deathReason = "predation";
+  state.agents = [];
+  state.animals = [herbivore];
+
+  const system = new MortalitySystem();
+  system.update(1 / 30, state, { pathCache: { get: () => null, set: () => {} } });
+
+  assert.equal(state.animals.length, 0);
+  assert.equal(state.metrics.deathsTotal, 1);
+  assert.equal(state.metrics.deathsByReason.predation, 1);
+  assert.equal(Number(state.metrics.ecologyPendingDeaths.predation ?? 0), 1);
+});

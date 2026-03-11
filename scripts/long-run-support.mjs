@@ -24,6 +24,7 @@ const __dirname = path.dirname(__filename);
 export const REPO_ROOT = path.resolve(__dirname, "..");
 export const METRICS_DIR = path.resolve(REPO_ROOT, "docs/assignment4/metrics");
 export const PLAYWRIGHT_OUTPUT_DIR = path.resolve(REPO_ROOT, "output/playwright");
+export const LLM_PROBE_PATH = path.resolve(METRICS_DIR, "long-run-llm-probe.json");
 const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
 
 export function parseArgs(argv = process.argv.slice(2)) {
@@ -191,6 +192,15 @@ export async function ensureLiveLlmGate(proxyUrl) {
   return payload;
 }
 
+export async function writeLlmProbeArtifact(payload) {
+  ensureOutputDirs();
+  await writeJson(LLM_PROBE_PATH, {
+    generatedAt: new Date().toISOString(),
+    ...payload,
+  });
+  return LLM_PROBE_PATH;
+}
+
 export async function probeLiveLlmCoverage(baseUrl) {
   const probeSummary = {
     world: {
@@ -232,15 +242,64 @@ export async function probeLiveLlmCoverage(baseUrl) {
 export async function assertLiveLlmGateAvailable() {
   loadEnvIntoProcess();
   if (!String(process.env.OPENAI_API_KEY ?? "").trim()) {
+    await writeLlmProbeArtifact({
+      status: "failed",
+      stage: "env-check",
+      error: "LLM gate unavailable: OPENAI_API_KEY missing.",
+    });
     throw new Error("LLM gate unavailable: OPENAI_API_KEY missing.");
   }
   const previewSession = await startPreviewSession();
   try {
     const healthPayload = await ensureLiveLlmGate(previewSession.proxyUrl);
-    await probeLiveLlmCoverage(previewSession.baseUrl);
+    const probePayload = await probeLiveLlmCoverage(previewSession.baseUrl);
+    await writeLlmProbeArtifact({
+      status: "ok",
+      stage: "preflight",
+      health: healthPayload,
+      probe: {
+        environmentModel: String(probePayload.environmentPayload?.model ?? ""),
+        policyModel: String(probePayload.policyPayload?.model ?? ""),
+        environmentFallback: Boolean(probePayload.environmentPayload?.fallback),
+        policyFallback: Boolean(probePayload.policyPayload?.fallback),
+      },
+    });
     return healthPayload;
+  } catch (err) {
+    await writeLlmProbeArtifact({
+      status: "failed",
+      stage: "preflight",
+      error: String(err?.message ?? err),
+    });
+    throw err;
   } finally {
     await previewSession.stop();
+  }
+}
+
+export async function probeAndRecordLiveLlmGate({ proxyUrl, baseUrl, stage = "soak-preflight" }) {
+  try {
+    const healthPayload = await ensureLiveLlmGate(proxyUrl);
+    const probePayload = await probeLiveLlmCoverage(baseUrl);
+    await writeLlmProbeArtifact({
+      status: "ok",
+      stage,
+      health: healthPayload,
+      probe: {
+        environmentModel: String(probePayload.environmentPayload?.model ?? ""),
+        policyModel: String(probePayload.policyPayload?.model ?? ""),
+        environmentFallback: Boolean(probePayload.environmentPayload?.fallback),
+        policyFallback: Boolean(probePayload.policyPayload?.fallback),
+      },
+    });
+    return { healthPayload, probePayload };
+  } catch (err) {
+    await writeLlmProbeArtifact({
+      status: "failed",
+      stage,
+      error: String(err?.message ?? err),
+    });
+    throw err;
   }
 }
 
