@@ -324,13 +324,13 @@ function buildGateChokepointScenario(grid) {
   clearFootprint(grid, southGranary, 5, 4);
   clearFootprint(grid, westWilds, 3, 3);
 
-  setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
   stampRoad(grid, center.ix - 2, center.iz, center.ix + 2, center.iz);
   stampRoad(grid, center.ix, center.iz - 2, center.ix, center.iz + 2);
   stampRoad(grid, northTimber.ix, northTimber.iz, northTimber.ix, northGate.iz - 2);
   stampRoad(grid, center.ix, center.iz - 1, center.ix, northGate.iz + 1);
   stampRoad(grid, southGranary.ix, southGranary.iz, southGranary.ix, southGate.iz + 2);
   stampRoad(grid, center.ix + 1, center.iz + 1, center.ix + 2, southGate.iz - 1);
+  setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
 
   stampCluster(grid, center, [{ x: 1, z: 2 }], TILE.FARM);
   stampCluster(grid, southGranary, [{ x: 0, z: 0 }, { x: -1, z: 0 }], TILE.FARM);
@@ -475,11 +475,11 @@ function buildIslandRelayScenario(grid) {
   stampGrassCorridor(grid, relayDepot.ix + 2, relayDepot.iz, eastFields.ix - 2, eastFields.iz, 1);
   stampGrassCorridor(grid, relayDepot.ix, relayDepot.iz - 2, northTimber.ix, northTimber.iz + 2, 1);
 
-  setTileDirect(grid, harbor.ix, harbor.iz, TILE.WAREHOUSE);
   stampRoad(grid, harbor.ix - 1, harbor.iz, harbor.ix + 1, harbor.iz);
   stampRoad(grid, eastFields.ix - 1, eastFields.iz, eastFields.ix + 1, eastFields.iz);
   stampRoad(grid, relayDepot.ix, relayDepot.iz - 1, relayDepot.ix, relayDepot.iz + 1);
   setTileDirect(grid, relayDepot.ix, relayDepot.iz, TILE.ROAD);
+  setTileDirect(grid, harbor.ix, harbor.iz, TILE.WAREHOUSE);
 
   stampCluster(grid, eastFields, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);

@@ -106,6 +106,38 @@ function migrateLegacySessionState(snapshot) {
   };
 }
 
+function ensureAiRuntimeDefaults(snapshot) {
+  snapshot.metrics.aiRuntime ??= {
+    requestCount: 0,
+    responseCount: 0,
+    environmentRequests: 0,
+    policyRequests: 0,
+    environmentResponses: 0,
+    policyResponses: 0,
+    llmResponseCount: 0,
+    fallbackResponseCount: 0,
+    timeoutCount: 0,
+    errorCount: 0,
+    recoveryCount: 0,
+    avgLatencyMs: 0,
+    lastLatencyMs: 0,
+    lastRequestSec: -999,
+    lastResponseSec: -999,
+    lastLiveSec: -999,
+    lastFallbackSec: -999,
+    maxUnrecoveredFallbackSec: 0,
+    consecutiveFallbackResponses: 0,
+    lastErrorKind: "none",
+    lastErrorMessage: "",
+    lastResultSource: "none",
+    coverageTarget: "fallback",
+    liveCoverageSatisfied: false,
+  };
+  snapshot.ai.coverageTarget ??= "fallback";
+  snapshot.ai.runtimeProfile ??= "default";
+  snapshot.ai.manualModeLocked ??= false;
+}
+
 export function makeSerializableSnapshot(state, rngSnapshot = null) {
   const snapshot = ensureStructuredClone(state);
   snapshot.grid.tiles = Array.from(state.grid.tiles);
@@ -136,6 +168,7 @@ export function restoreSnapshotState(serialized) {
   migrateLegacyVisitorGroups(snapshot);
   migrateLegacyPopulationTargets(snapshot);
   migrateLegacySessionState(snapshot);
+  ensureAiRuntimeDefaults(snapshot);
   snapshot.metrics.warningLog ??= [];
   snapshot.metrics.invalidTransitionCount ??= 0;
   snapshot.metrics.idleWithoutReasonSec ??= {};

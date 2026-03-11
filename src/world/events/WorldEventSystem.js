@@ -1,5 +1,6 @@
 import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
+import { getLongRunEventTuning } from "../../config/longRunProfile.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../scenarios/ScenarioFactory.js";
 
 function tileKey(ix, iz) {
@@ -202,6 +203,7 @@ function pickImpactTile(state, tiles, targetKind, excludeKeys = new Set()) {
 
 function ensureSpatialPayload(event, state) {
   event.payload ??= {};
+  const tuning = getLongRunEventTuning(state);
 
   if (!Array.isArray(event.payload.targetTiles)) {
     if (event.type === EVENT_TYPE.BANDIT_RAID) {
@@ -265,7 +267,7 @@ function ensureSpatialPayload(event, state) {
     if (kind === "route") pressure += Number(BALANCE.banditRaidRouteBonus ?? 0.28) + (route?.connected ? 0.18 : 0.08);
     else if (kind === "depot") pressure += Number(BALANCE.banditRaidDepotBonus ?? 0.22) + (depotReady ? 0.16 : 0.05);
     else if (kind === "choke") pressure += Number(BALANCE.banditRaidChokeBonus ?? 0.34);
-    pressure = clamp(pressure, 0.35, 2.6);
+    pressure = clamp(pressure, 0.35, Math.min(2.6, Number(tuning.maxBanditRaidPressure ?? 2.6)));
     lossMultiplier = 1 + pressure * Number(BALANCE.banditRaidLossPerPressure ?? 0.36);
   } else if (event.type === EVENT_TYPE.TRADE_CARAVAN) {
     const safetyBonus = Math.min(
@@ -299,6 +301,7 @@ function ensureSpatialPayload(event, state) {
       2.2,
     );
   }
+  pressure = Math.min(pressure, Number(tuning.maxEventPressurePerEvent ?? pressure));
 
   event.payload.targetTiles = targetTiles;
   event.payload.focusTile ??= targetTiles[0] ?? null;
@@ -336,6 +339,7 @@ function collectCoverageKeys(event) {
 
 function applyContestedEventPressure(state) {
   const activeEvents = state.events.active ?? [];
+  const tuning = getLongRunEventTuning(state);
   const eventOccupancy = new Map();
 
   for (const event of activeEvents) {
@@ -351,7 +355,11 @@ function applyContestedEventPressure(state) {
     const hazardOverlapTiles = Number(event.payload?.hazardOverlapTiles ?? 0);
     const contestedTiles = hazardOverlapTiles + eventOverlapTiles;
     const basePressure = Number(event.payload?.basePressure ?? event.payload?.pressure ?? event.intensity ?? 0);
-    const nextPressure = clamp(basePressure + eventOverlapTiles * 0.12, 0, 2.8);
+    const nextPressure = clamp(
+      basePressure + eventOverlapTiles * 0.12,
+      0,
+      Math.min(2.8, Number(tuning.maxEventPressurePerEvent ?? 2.8)),
+    );
 
     event.payload.eventOverlapTiles = eventOverlapTiles;
     event.payload.contestedTiles = contestedTiles;
