@@ -1,6 +1,7 @@
-import { BALANCE } from "../../../config/balance.js";
+import { getLongRunAiTuning } from "../../../config/longRunProfile.js";
 import { applyEnvironmentDirective } from "./EnvironmentDirectiveApplier.js";
 import { buildWorldSummary } from "../memory/WorldSummary.js";
+import { markAiDecisionRequest, recordAiDecisionResult } from "../../../app/aiRuntimeStats.js";
 
 export class EnvironmentDirectorSystem {
   constructor() {
@@ -25,6 +26,7 @@ export class EnvironmentDirectorSystem {
       state.ai.lastError = state.ai.lastEnvironmentError || state.ai.lastPolicyError || "";
       state.metrics.aiLatencyMs = Number(this.pendingResult.latencyMs ?? state.metrics.aiLatencyMs ?? 0);
       state.metrics.proxyHealth = services.llmClient.lastStatus ?? state.metrics.proxyHealth;
+      recordAiDecisionResult(state, "environment", this.pendingResult, now);
 
       const debugExchange = this.pendingResult.debug ?? {};
       const environmentExchange = {
@@ -66,11 +68,13 @@ export class EnvironmentDirectorSystem {
 
     if (this.pendingPromise) return;
 
-    if (state.metrics.timeSec - state.ai.lastEnvironmentDecisionSec < BALANCE.environmentDecisionIntervalSec) {
+    const tuning = getLongRunAiTuning(state);
+    if (state.metrics.timeSec - state.ai.lastEnvironmentDecisionSec < tuning.environmentDecisionIntervalSec) {
       return;
     }
 
     state.ai.lastEnvironmentDecisionSec = state.metrics.timeSec;
+    markAiDecisionRequest(state, "environment", state.metrics.timeSec);
     const summary = buildWorldSummary(state);
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({

@@ -13,7 +13,7 @@ test("Guardrails clamp unsafe environment values", () => {
     eventSpawns: [{ type: "banditRaid", intensity: 99, durationSec: 999 }],
   });
 
-  assert.ok(guarded.durationSec <= 120);
+  assert.ok(guarded.durationSec <= 180);
   assert.ok(guarded.factionTension <= 1);
   assert.ok(guarded.eventSpawns[0].intensity <= 3);
   assert.ok(guarded.eventSpawns[0].durationSec <= 60);

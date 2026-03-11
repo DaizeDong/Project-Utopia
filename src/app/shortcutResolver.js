@@ -8,7 +8,7 @@ export const TOOL_SHORTCUTS = Object.freeze({
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-6 tools | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-6 tools | 0 reset camera | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -38,6 +38,9 @@ export function resolveGlobalShortcut(event, context = {}) {
 
   if (alt) return null;
 
+  if (code === "Digit0" || code === "Numpad0" || code === "Home" || key === "0" || key === "home") {
+    return { type: "resetCamera" };
+  }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
   if (code === "Space" || key === " ") {
     return context.phase === "active" ? { type: "togglePause" } : null;

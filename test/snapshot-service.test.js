@@ -66,6 +66,12 @@ test("snapshot roundtrip preserves maps and sets across repeated serialize/resto
     priority: 0.45,
     ttlSec: 15,
   });
+  state.ai.coverageTarget = "llm";
+  state.ai.runtimeProfile = "long_run";
+  state.ai.manualModeLocked = true;
+  state.metrics.aiRuntime.requestCount = 4;
+  state.metrics.aiRuntime.timeoutCount = 1;
+  state.metrics.aiRuntime.fallbackResponseCount = 1;
   state.weather.hazardTiles = [{ ix: 12, iz: 18 }, { ix: 13, iz: 18 }];
   state.weather.hazardPenaltyByKey = { "12,18": 1.4, "13,18": 1.6 };
   state.weather.hazardLabelByKey = { "12,18": ["storm front"], "13,18": ["storm front"] };
@@ -91,6 +97,11 @@ test("snapshot roundtrip preserves maps and sets across repeated serialize/resto
   assert.equal(state.ai.groupStateTargets instanceof Map, true);
   assert.equal(state.ai.groupPolicies.get("workers")?.data?.focus, "depot throughput");
   assert.equal(state.ai.groupStateTargets.get("workers")?.targetState, "seek_task");
+  assert.equal(state.ai.coverageTarget, "llm");
+  assert.equal(state.ai.runtimeProfile, "long_run");
+  assert.equal(state.ai.manualModeLocked, true);
+  assert.equal(state.metrics.aiRuntime.requestCount, 4);
+  assert.equal(state.metrics.aiRuntime.timeoutCount, 1);
   assert.equal(state.weather.hazardTileSet instanceof Set, true);
   assert.equal(state.weather.hazardTileSet.has("12,18"), true);
   assert.equal(state.weather.hazardFronts[0]?.label, "central relay depot");
