@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" href="data:," />
-  <title>Project Utopia - Bright World Sandbox Prototype</title>
+  <title>Project Utopia - Beta Build</title>
   <style>
     :root {
       --bg: #eaf5ff;
@@ -177,25 +177,47 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(180deg, rgba(12, 29, 44, 0.64), rgba(8, 20, 32, 0.72));
-      backdrop-filter: blur(2px);
+      background:
+        radial-gradient(circle at 18% 18%, rgba(112, 173, 226, 0.16) 0%, rgba(112, 173, 226, 0) 36%),
+        radial-gradient(circle at 82% 16%, rgba(248, 215, 138, 0.14) 0%, rgba(248, 215, 138, 0) 34%),
+        linear-gradient(180deg, rgba(8, 18, 28, 0.72), rgba(8, 18, 28, 0.8));
+      backdrop-filter: blur(3px);
       padding: 18px;
       pointer-events: auto;
     }
 
     .overlay-panel {
       width: min(560px, calc(100% - 24px));
-      border: 1px solid rgba(255, 255, 255, 0.32);
-      border-radius: 14px;
-      background: rgba(238, 247, 255, 0.96);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
-      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(241, 248, 255, 0.97), rgba(225, 239, 251, 0.94));
+      box-shadow:
+        0 22px 48px rgba(3, 13, 24, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      padding: 22px;
       color: #153247;
     }
 
+    .overlay-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(17, 52, 79, 0.08);
+      border: 1px solid rgba(23, 56, 79, 0.12);
+      color: rgba(17, 52, 79, 0.8);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
     .overlay-panel h2 {
-      margin: 0 0 8px 0;
-      font-size: 24px;
+      margin: 14px 0 8px 0;
+      font-size: 28px;
+      line-height: 1.05;
     }
 
     .overlay-panel p {
@@ -203,17 +225,44 @@
       line-height: 1.45;
     }
 
+    .overlay-meta {
+      margin-top: 10px;
+      color: rgba(21, 50, 71, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .overlay-tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .overlay-tag {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(23, 56, 79, 0.14);
+      font-size: 12px;
+      font-weight: 700;
+      color: #17384f;
+    }
+
     .overlay-summary {
-      margin-top: 12px;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px solid var(--panel-border);
-      background: rgba(255, 255, 255, 0.88);
+      margin-top: 16px;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(23, 56, 79, 0.12);
+      background: rgba(255, 255, 255, 0.78);
       white-space: pre-wrap;
       line-height: 1.4;
       max-height: 220px;
       overflow: auto;
       font-size: 12px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
     }
 
     .overlay-actions {
@@ -1114,8 +1163,15 @@
       <canvas id="c"></canvas>
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
-          <h2>Project Utopia Alpha</h2>
-          <p>Start the run, expand the colony through map edits, and use the resulting reroutes to finish the objective chain before the colony collapses. Keyboard: <code>1-6</code> tools, <code>0</code> reset camera, <code>Esc</code> clear, <code>Space</code> pause, <code>Ctrl/Cmd+Z</code> undo.</p>
+          <div class="overlay-kicker">Assignment 5 Beta Build</div>
+          <h2 id="overlayMenuTitle">Project Utopia Beta</h2>
+          <p id="overlayMenuLead">Start the run, expand the colony through map edits, and use the resulting reroutes to finish the objective chain before the colony collapses. Keyboard: <code>1-6</code> tools, <code>0</code> reset camera, <code>Esc</code> clear, <code>Space</code> pause, <code>Ctrl/Cmd+Z</code> undo.</p>
+          <div id="overlayMenuMeta" class="overlay-meta">Beta build briefing</div>
+          <div class="overlay-tag-row" aria-hidden="true">
+            <span class="overlay-tag">NPC AI / Behavior Trees</span>
+            <span class="overlay-tag">Swarm &amp; Boids Modeling</span>
+            <span class="overlay-tag">Pathfinding &amp; Navigation</span>
+          </div>
           <pre id="overlayMenuSummary" class="overlay-summary">loading objectives...</pre>
           <div class="overlay-actions">
             <button id="overlayStartBtn" class="primary" type="button">Start Run</button>
@@ -1123,7 +1179,9 @@
           </div>
         </section>
         <section id="overlayEndPanel" class="overlay-panel" hidden>
+          <div class="overlay-kicker">Beta Run Summary</div>
           <h2 id="overlayEndTitle">Run Ended</h2>
+          <div id="overlayEndMeta" class="overlay-meta">Scenario</div>
           <p id="overlayEndReason">-</p>
           <pre id="overlayEndStats" class="overlay-summary">-</pre>
           <div class="overlay-actions">
