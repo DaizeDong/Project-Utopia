@@ -21,7 +21,11 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
     gameStateOverlay: makeElement(),
     overlayMenuPanel: makeElement(),
     overlayEndPanel: makeElement(),
+    overlayMenuTitle: makeElement(),
+    overlayMenuLead: makeElement(),
+    overlayMenuMeta: makeElement(),
     overlayMenuSummary: makeElement(),
+    overlayEndMeta: makeElement(),
     overlayEndTitle: makeElement(),
     overlayEndReason: makeElement(),
     overlayEndStats: makeElement(),
@@ -41,6 +45,11 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
   try {
     const overlay = new GameStateOverlay({
       gameplay: {
+        scenario: {
+          title: "Broken Frontier",
+          family: "frontier_repair",
+          summary: "Reconnect the west lumber line and reclaim the east depot.",
+        },
         objectiveIndex: 0,
         objectives: [{ title: "Build Network", completed: false, progress: 25 }],
       },
@@ -60,6 +69,8 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
     assert.equal(nodes.gameStateOverlay.hidden, false);
     assert.equal(nodes.gameStateOverlay.style.display, "flex");
     assert.equal(nodes.gameStateOverlay.style.pointerEvents, "auto");
+    assert.match(nodes.overlayMenuTitle.textContent, /Project Utopia Beta/i);
+    assert.match(nodes.overlayMenuMeta.textContent, /Broken Frontier/i);
   } finally {
     globalThis.document = prevDocument;
   }

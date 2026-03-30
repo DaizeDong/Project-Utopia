@@ -6,7 +6,9 @@ import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../conf
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { pushWarning } from "../app/warnings.js";
+import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
+import { buildPressureLens } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 
 const TILE_LABEL = Object.freeze(
@@ -20,6 +22,8 @@ const MAT_TMP = new THREE.Matrix4();
 const MAT_Q = new THREE.Quaternion();
 const MAT_P = new THREE.Vector3();
 const MAT_S = new THREE.Vector3();
+const COLOR_TMP = new THREE.Color();
+const VEC_TMP = new THREE.Vector3();
 
 function setInstancedMatrix(mesh, index, x, y, z, sx = 1, sy = 1, sz = 1) {
   MAT_P.set(x, y, z);
@@ -176,6 +180,7 @@ const RENDER_ORDER = Object.freeze({
   ENTITY_MODEL: 20,
   ENTITY_SPRITE: 24,
   DEBUG_PATH: 30,
+  PRESSURE_LENS: 34,
   TILE_OVERLAY: 36,
   SELECTION_RING: 38,
 });
@@ -183,6 +188,17 @@ const DEFAULT_CAMERA_VIEW = Object.freeze({
   targetX: 0,
   targetZ: 0,
   zoom: 1.12,
+});
+const PRESSURE_MARKER_STYLE = Object.freeze({
+  route: Object.freeze({ ring: 0xffa75a, fill: 0xffe0b8, ringOpacity: 0.58, fillOpacity: 0.16 }),
+  depot: Object.freeze({ ring: 0x71d9ff, fill: 0xc8f4ff, ringOpacity: 0.54, fillOpacity: 0.14 }),
+  weather: Object.freeze({ ring: 0x72b9ff, fill: 0xd0e8ff, ringOpacity: 0.5, fillOpacity: 0.13 }),
+  bandit_raid: Object.freeze({ ring: 0xff6d6d, fill: 0xffcbc4, ringOpacity: 0.62, fillOpacity: 0.15 }),
+  trade_caravan: Object.freeze({ ring: 0xf0cf78, fill: 0xffefbe, ringOpacity: 0.5, fillOpacity: 0.12 }),
+  animal_migration: Object.freeze({ ring: 0x9bde84, fill: 0xdaf2c7, ringOpacity: 0.48, fillOpacity: 0.12 }),
+  traffic: Object.freeze({ ring: 0xffcd6c, fill: 0xffefc5, ringOpacity: 0.52, fillOpacity: 0.13 }),
+  ecology: Object.freeze({ ring: 0x8ed66f, fill: 0xd8efb7, ringOpacity: 0.48, fillOpacity: 0.12 }),
+  event: Object.freeze({ ring: 0xff9d80, fill: 0xffdccb, ringOpacity: 0.5, fillOpacity: 0.12 }),
 });
 
 export class SceneRenderer {
@@ -210,9 +226,11 @@ export class SceneRenderer {
     this.renderer.shadowMap.enabled = !this.compatibilityRenderer && !this.lowMemoryMode;
     this.renderer.shadowMap.type = this.lowMemoryMode ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
 
+    const initialAtmosphere = deriveAtmosphereProfile(state);
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xbfe6ff);
-    this.scene.fog = new THREE.Fog(0xcfefff, 85, 265);
+    this.scene.background = new THREE.Color(initialAtmosphere.background);
+    this.scene.fog = new THREE.Fog(initialAtmosphere.fogColor, initialAtmosphere.fogNear, initialAtmosphere.fogFar);
+    this.renderer.toneMappingExposure = initialAtmosphere.exposure;
 
     this.modelLoader = new GLTFLoader();
     this.modelLoadPromises = new Map();
@@ -282,11 +300,21 @@ export class SceneRenderer {
     this.lastShowTileIcons = null;
     this.lastVisualPreset = this.state.controls.visualPreset;
     this.lastEntityRenderSignature = "";
+    this.pressureLensMarkers = [];
+    this.lastPressureLensSignature = "";
 
-    this.scene.add(new THREE.AmbientLight(0xfff6e8, 1.08));
-    this.scene.add(new THREE.HemisphereLight(0xe9f7ff, 0xc9d9a3, 0.45));
-    const sun = new THREE.DirectionalLight(0xfff3cf, 1.1);
-    sun.position.set(56, 120, 34);
+    this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
+    this.hemiLight = new THREE.HemisphereLight(
+      initialAtmosphere.hemiSkyColor,
+      initialAtmosphere.hemiGroundColor,
+      initialAtmosphere.hemiIntensity,
+    );
+    const sun = new THREE.DirectionalLight(initialAtmosphere.sunColor, initialAtmosphere.sunIntensity);
+    sun.position.set(
+      initialAtmosphere.sunPosition.x,
+      initialAtmosphere.sunPosition.y,
+      initialAtmosphere.sunPosition.z,
+    );
     const shadowSpan = Math.max(state.grid.width, state.grid.height) * 0.8;
     sun.castShadow = this.renderer.shadowMap.enabled;
     sun.shadow.mapSize.set(this.lowMemoryMode ? 1024 : 1536, this.lowMemoryMode ? 1024 : 1536);
@@ -297,9 +325,14 @@ export class SceneRenderer {
     sun.shadow.camera.near = 8;
     sun.shadow.camera.far = 280;
     sun.shadow.bias = -0.00012;
-    const fill = new THREE.DirectionalLight(0xc7e5ff, 0.32);
-    fill.position.set(-62, 72, -40);
-    this.scene.add(sun, fill);
+    this.sunLight = sun;
+    this.fillLight = new THREE.DirectionalLight(initialAtmosphere.fillColor, initialAtmosphere.fillIntensity);
+    this.fillLight.position.set(
+      initialAtmosphere.fillPosition.x,
+      initialAtmosphere.fillPosition.y,
+      initialAtmosphere.fillPosition.z,
+    );
+    this.scene.add(this.ambientLight, this.hemiLight, this.sunLight, this.fillLight);
 
     this.tileModelRoot = new THREE.Group();
     this.entitySpriteRoot = new THREE.Group();
@@ -316,6 +349,7 @@ export class SceneRenderer {
     this.#setupEntityMeshes();
     this.#setupDebugPath();
     this.#setupOverlayMeshes();
+    this.#setupPressureLensMeshes();
     this.#loadWorldSimManifest();
     if (this.compatibilityRenderer) {
       this.state.controls.actionMessage = "Compatibility renderer enabled (anti-alias off).";
@@ -970,6 +1004,144 @@ export class SceneRenderer {
     this.selectionRing.frustumCulled = false;
 
     this.scene.add(this.hoverMesh, this.previewMesh, this.selectedTileMesh, this.selectionRing);
+  }
+
+  #setupPressureLensMeshes() {
+    this.pressureLensRoot = new THREE.Group();
+    this.pressureDiscGeometry = new THREE.CircleGeometry(1, 36);
+    this.pressureRingGeometry = new THREE.RingGeometry(0.82, 1, 40);
+    this.pressureMarkerPool = [];
+    this.scene.add(this.pressureLensRoot);
+  }
+
+  #createPressureMarkerEntry() {
+    const disc = new THREE.Mesh(this.pressureDiscGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    disc.rotation.x = -Math.PI / 2;
+    disc.renderOrder = RENDER_ORDER.PRESSURE_LENS;
+    disc.frustumCulled = false;
+
+    const ring = new THREE.Mesh(this.pressureRingGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.renderOrder = RENDER_ORDER.PRESSURE_LENS + 1;
+    ring.frustumCulled = false;
+
+    const group = new THREE.Group();
+    group.visible = false;
+    group.add(disc, ring);
+    this.pressureLensRoot.add(group);
+    return {
+      group,
+      disc,
+      ring,
+      phase: Math.random() * Math.PI * 2,
+    };
+  }
+
+  #ensurePressureMarkerPool(count) {
+    while (this.pressureMarkerPool.length < count) {
+      this.pressureMarkerPool.push(this.#createPressureMarkerEntry());
+    }
+  }
+
+  #lerpColor(targetColor, hex, t) {
+    COLOR_TMP.setHex(hex);
+    targetColor.lerp(COLOR_TMP, t);
+  }
+
+  #applyAtmosphere(dt) {
+    const target = deriveAtmosphereProfile(this.state);
+    const blend = clamp(Math.max(0.08, Number(dt) * 3.1), 0.08, 0.24);
+
+    this.#lerpColor(this.scene.background, target.background, blend);
+    if (this.scene.fog) {
+      this.#lerpColor(this.scene.fog.color, target.fogColor, blend);
+      this.scene.fog.near += (target.fogNear - this.scene.fog.near) * blend;
+      this.scene.fog.far += (target.fogFar - this.scene.fog.far) * blend;
+    }
+    this.#lerpColor(this.ambientLight.color, target.ambientColor, blend);
+    this.ambientLight.intensity += (target.ambientIntensity - this.ambientLight.intensity) * blend;
+    this.#lerpColor(this.hemiLight.color, target.hemiSkyColor, blend);
+    this.#lerpColor(this.hemiLight.groundColor, target.hemiGroundColor, blend);
+    this.hemiLight.intensity += (target.hemiIntensity - this.hemiLight.intensity) * blend;
+    this.#lerpColor(this.sunLight.color, target.sunColor, blend);
+    this.sunLight.intensity += (target.sunIntensity - this.sunLight.intensity) * blend;
+    VEC_TMP.set(target.sunPosition.x, target.sunPosition.y, target.sunPosition.z);
+    this.sunLight.position.lerp(VEC_TMP, blend);
+    this.#lerpColor(this.fillLight.color, target.fillColor, blend);
+    this.fillLight.intensity += (target.fillIntensity - this.fillLight.intensity) * blend;
+    VEC_TMP.set(target.fillPosition.x, target.fillPosition.y, target.fillPosition.z);
+    this.fillLight.position.lerp(VEC_TMP, blend);
+    this.renderer.toneMappingExposure += (target.exposure - this.renderer.toneMappingExposure) * blend;
+  }
+
+  #pressureLensSignature() {
+    const events = (this.state.events?.active ?? [])
+      .map((event) => `${event.type}:${event.status}:${event.payload?.targetLabel ?? "-"}:${Number(event.payload?.pressure ?? 0).toFixed(2)}`)
+      .join("|");
+    const ecology = (this.state.metrics?.ecology?.hotspotFarms ?? [])
+      .map((entry) => `${entry.ix},${entry.iz}:${Number(entry.pressure ?? 0).toFixed(2)}`)
+      .join("|");
+    return [
+      this.state.grid.version,
+      this.state.gameplay?.objectiveIndex ?? 0,
+      this.state.weather?.current ?? "clear",
+      this.state.weather?.hazardFocusSummary ?? "",
+      this.state.weather?.pressureScore ?? 0,
+      this.state.metrics?.traffic?.version ?? 0,
+      this.state.metrics?.traffic?.hotspotCount ?? 0,
+      this.state.metrics?.spatialPressure?.summary ?? "",
+      events,
+      ecology,
+    ].join("||");
+  }
+
+  #updatePressureLens() {
+    const signature = this.#pressureLensSignature();
+    if (signature !== this.lastPressureLensSignature) {
+      this.lastPressureLensSignature = signature;
+      this.pressureLensMarkers = buildPressureLens(this.state);
+    }
+
+    this.#ensurePressureMarkerPool(this.pressureLensMarkers.length);
+    const timeSec = Number(this.state.metrics?.timeSec ?? 0);
+
+    for (let i = 0; i < this.pressureMarkerPool.length; i += 1) {
+      const entry = this.pressureMarkerPool[i];
+      const marker = this.pressureLensMarkers[i];
+      if (!marker) {
+        entry.group.visible = false;
+        continue;
+      }
+
+      const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.event;
+      const pulse = 1 + Math.sin(timeSec * (1.9 + Number(marker.weight ?? 0) * 0.9) + entry.phase) * 0.08;
+      const ringPulse = 1 + Math.cos(timeSec * (1.4 + Number(marker.weight ?? 0) * 0.7) + entry.phase) * 0.12;
+      const worldRadius = this.state.grid.tileSize * (Number(marker.radius ?? 1) * 0.7 + 0.28);
+      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+
+      entry.group.visible = true;
+      entry.group.position.set(p.x, 0.16 + (Number(marker.weight ?? 0) * 0.02), p.z);
+      entry.disc.scale.set(worldRadius * pulse, worldRadius * pulse, 1);
+      entry.ring.scale.set(worldRadius * ringPulse, worldRadius * ringPulse, 1);
+      entry.disc.material.color.setHex(style.fill);
+      entry.ring.material.color.setHex(style.ring);
+      entry.disc.material.opacity = (style.fillOpacity ?? 0.12) * (0.8 + Number(marker.weight ?? 0) * 0.5);
+      entry.ring.material.opacity = (style.ringOpacity ?? 0.5) * (0.78 + Number(marker.weight ?? 0) * 0.4);
+    }
   }
 
   #updateLineGeometry(line, sourceVerts) {
@@ -1815,6 +1987,7 @@ export class SceneRenderer {
     this.#ensureModelTemplatesRequested();
     this.controls.update();
     this.#updateTileLayerVisibilityByZoom();
+    this.#applyAtmosphere(dt);
 
     this.#rebuildTilesIfNeeded();
     const entityRenderSignature = [
@@ -1831,6 +2004,7 @@ export class SceneRenderer {
       this.#updateEntityMeshes();
     }
     this.#updatePathLine();
+    this.#updatePressureLens();
     this.#updateOverlayMeshes();
 
     const pixelRatio = this.renderer.getPixelRatio();

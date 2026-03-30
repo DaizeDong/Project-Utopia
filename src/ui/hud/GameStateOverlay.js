@@ -1,6 +1,24 @@
 import { SHORTCUT_HINT } from "../../app/shortcutResolver.js";
+import { getAiInsight, getCausalDigest, getFrontierStatus, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
-function formatObjectives(gameplay = {}) {
+function safeCall(factory, fallback) {
+  try {
+    return factory();
+  } catch {
+    return fallback;
+  }
+}
+
+function formatObjectives(state) {
+  const gameplay = state?.gameplay ?? {};
+  const scenario = gameplay.scenario ?? {};
+  const frontier = safeCall(() => getFrontierStatus(state), { summary: "Frontier: unavailable" });
+  const weather = safeCall(() => getWeatherInsight(state), { summary: "clear (0s)" });
+  const digest = safeCall(() => getCausalDigest(state), {
+    headline: gameplay.objectives?.[gameplay.objectiveIndex ?? 0]?.title ?? "Hold the colony together",
+    action: gameplay.objectiveHint ?? "Keep the colony stable and expand deliberately.",
+  });
+  const ai = safeCall(() => getAiInsight(state), { summary: "AI: unavailable" });
   const objectives = gameplay.objectives ?? [];
   const objectiveIndex = gameplay.objectiveIndex ?? 0;
   if (!Array.isArray(objectives) || objectives.length === 0) return `No objectives\n\nControls\n${SHORTCUT_HINT}`;
@@ -11,8 +29,30 @@ function formatObjectives(gameplay = {}) {
       return `${state.toUpperCase()} - ${objective.title} (${progress}%)`;
     })
     .join("\n");
-  const hint = gameplay.objectiveHint ? `\n\nHint\n${gameplay.objectiveHint}` : "";
-  return `${objectiveLines}${hint}\n\nControls\n${SHORTCUT_HINT}`;
+  const sections = [
+    scenario.title ? `Scenario\n${scenario.title} - ${scenario.summary ?? "No scenario summary."}` : null,
+    `Objectives\n${objectiveLines}`,
+    `Focus\n${digest.headline}\n${digest.action}`,
+    `Pressure\n${frontier.summary}\nWeather: ${weather.summary}\n${ai.summary}`,
+    gameplay.objectiveHint ? `Hint\n${gameplay.objectiveHint}` : null,
+    `Controls\n${SHORTCUT_HINT}`,
+  ].filter(Boolean);
+  return sections.join("\n\n");
+}
+
+function formatOverlayMeta(state) {
+  const scenario = state?.gameplay?.scenario ?? {};
+  const family = String(scenario.family ?? "").replaceAll("_", " ");
+  if (!scenario.title && !family) return "Beta build briefing";
+  if (!family) return scenario.title;
+  return `${scenario.title} · ${family}`;
+}
+
+function formatOutcomeMeta(state) {
+  const scenarioTitle = state?.gameplay?.scenario?.title ?? "Scenario";
+  const totalObjectives = Number(state?.gameplay?.objectives?.length ?? 0);
+  const completedObjectives = (state?.gameplay?.objectives ?? []).filter((objective) => objective.completed).length;
+  return `${scenarioTitle} · objectives ${completedObjectives}/${totalObjectives}`;
 }
 
 export class GameStateOverlay {
@@ -23,7 +63,11 @@ export class GameStateOverlay {
     this.root = document.getElementById("gameStateOverlay");
     this.menuPanel = document.getElementById("overlayMenuPanel");
     this.endPanel = document.getElementById("overlayEndPanel");
+    this.menuTitle = document.getElementById("overlayMenuTitle");
+    this.menuLead = document.getElementById("overlayMenuLead");
+    this.menuMeta = document.getElementById("overlayMenuMeta");
     this.menuSummary = document.getElementById("overlayMenuSummary");
+    this.endMeta = document.getElementById("overlayEndMeta");
     this.endTitle = document.getElementById("overlayEndTitle");
     this.endReason = document.getElementById("overlayEndReason");
     this.endStats = document.getElementById("overlayEndStats");
@@ -54,7 +98,17 @@ export class GameStateOverlay {
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
     if (this.menuSummary) {
-      this.menuSummary.textContent = formatObjectives(this.state.gameplay ?? {});
+      this.menuSummary.textContent = formatObjectives(this.state);
+    }
+    if (this.menuTitle) {
+      this.menuTitle.textContent = "Project Utopia Beta";
+    }
+    if (this.menuLead) {
+      this.menuLead.textContent = this.state.gameplay?.scenario?.summary
+        ?? "Keep the colony readable under pressure while logistics, wildlife, and weather collide in one Beta loop.";
+    }
+    if (this.menuMeta) {
+      this.menuMeta.textContent = formatOverlayMeta(this.state);
     }
 
     if (isEnd) {
@@ -64,6 +118,9 @@ export class GameStateOverlay {
       }
       if (this.endReason) {
         this.endReason.textContent = session?.reason ?? "";
+      }
+      if (this.endMeta) {
+        this.endMeta.textContent = formatOutcomeMeta(this.state);
       }
       if (this.endStats) {
         const workers = Number(this.state.metrics.populationStats?.workers ?? 0);
