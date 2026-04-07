@@ -48,7 +48,7 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
     carry: { food: 0, wood: 0 },
     stateLabel: "Idle",
     cooldown: 0,
-    sabotageCooldown: 8 + random() * 6,
+    sabotageCooldown: 25 + random() * 15,
     targetTile: null,
     path: null,
     pathIndex: 0,
@@ -249,7 +249,7 @@ function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   for (let i = 0; i < INITIAL_POPULATION.visitors; i += 1) {
     const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.GRASS], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    const kind = i % 5 === 0 ? VISITOR_KIND.TRADER : VISITOR_KIND.SABOTEUR;
+    const kind = i % 2 === 0 ? VISITOR_KIND.TRADER : VISITOR_KIND.SABOTEUR;
     agents.push(createVisitor(p.x, p.z, kind, random));
   }
 
