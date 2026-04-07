@@ -699,12 +699,12 @@ export class BuildToolbar {
 
     if (this.toggleSidebarBtn && this.wrapRoot) {
       const collapsed = this.wrapRoot.classList.contains("sidebar-collapsed");
-      this.toggleSidebarBtn.textContent = collapsed ? "Show Sidebar" : "Hide Sidebar";
+      this.toggleSidebarBtn.textContent = collapsed ? "☰ Menu" : "✕ Close";
     }
 
     if (this.toggleDockBtn && this.wrapRoot) {
       const collapsed = this.wrapRoot.classList.contains("dock-collapsed");
-      this.toggleDockBtn.textContent = collapsed ? "Show Dev Dock" : "Hide Dev Dock";
+      this.toggleDockBtn.textContent = collapsed ? "Debug" : "Hide Debug";
     }
 
     if (this.mapTemplateSelect) {

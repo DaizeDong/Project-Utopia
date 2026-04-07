@@ -69,22 +69,29 @@
 
     #layoutControls {
       position: fixed;
-      top: 12px;
+      top: 8px;
       right: 12px;
       z-index: 20;
       display: flex;
-      gap: 8px;
+      gap: 6px;
     }
 
     #layoutControls button {
-      padding: 7px 10px;
-      font-size: 12px;
+      padding: 6px 10px;
+      font-size: 11px;
       font-weight: 700;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid var(--panel-border);
-      color: var(--text);
-      box-shadow: 0 4px 10px rgba(18, 54, 79, 0.12);
+      border-radius: 8px;
+      background: rgba(20,35,50,0.85);
+      border: 1px solid rgba(80,160,220,0.25);
+      color: #d0e8ff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    #layoutControls button:hover {
+      background: rgba(30,50,70,0.9);
+      border-color: rgba(80,160,220,0.4);
     }
 
 
@@ -538,9 +545,10 @@
     }
 
     h1 {
-      margin: 0 0 8px 0;
-      font-size: 17px;
+      margin: 0 0 6px 0;
+      font-size: 16px;
       letter-spacing: 0.2px;
+      color: #1a5276;
     }
 
     .small {
@@ -803,6 +811,12 @@
       line-height: 1.33;
     }
 
+    #ui > .small.muted:first-of-type,
+    #ui > .switch:has(#compactToggle),
+    #ui > .legend-bar {
+      display: none;
+    }
+
     .legend-bar {
       margin-top: 10px;
       border: 1px solid var(--panel-border);
@@ -917,12 +931,12 @@
 </head>
 <body>
   <div id="layoutControls" aria-label="Layout Controls">
-    <button id="toggleSidebarBtn" type="button">Hide Sidebar</button>
-    <button id="toggleDockBtn" type="button">Show Dev Dock</button>
+    <button id="toggleSidebarBtn" type="button">☰ Menu</button>
+    <button id="toggleDockBtn" type="button">Debug</button>
   </div>
   <div id="wrap">
     <div id="ui">
-      <h1>Project Utopia</h1>
+      <h1>Colony Manager</h1>
       <div class="small muted">Bright world sandbox: build roads and districts, route workers, and observe AI-driven system shifts.</div>
       <div class="switch">
         <input id="compactToggle" type="checkbox" />
