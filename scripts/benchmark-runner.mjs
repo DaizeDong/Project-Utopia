@@ -35,6 +35,17 @@ import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { computeTaskScore, computeCostMetrics } from "../src/benchmark/BenchmarkMetrics.js";
 
+// ── Node.js fetch patch: resolve relative URLs to AI proxy ────────────
+
+const AI_PROXY_BASE = process.env.AI_PROXY_BASE ?? "http://localhost:8787";
+const _origFetch = globalThis.fetch;
+globalThis.fetch = (url, opts) => {
+  if (typeof url === "string" && url.startsWith("/")) {
+    url = `${AI_PROXY_BASE}${url}`;
+  }
+  return _origFetch(url, opts);
+};
+
 // ── Configuration ──────────────────────────────────────────────────────
 
 const SCENARIOS = [
@@ -126,7 +137,7 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
 
   const memoryStore = new MemoryStore();
   const services = createServices(state.world.mapSeed, {
-    offlineAiFallback: true,
+    offlineAiFallback: !condition.aiEnabled,
   });
   services.memoryStore = memoryStore;
   const systems = buildSystems(memoryStore);
