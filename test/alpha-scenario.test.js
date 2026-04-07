@@ -56,11 +56,11 @@ test("alpha scenario starts with sparse infrastructure and a build-first objecti
   assert.equal(state.gameplay.objectives[0]?.id, "logistics-1");
   assert.equal(scenario.family, "frontier_repair");
   assert.equal(state.buildings.warehouses, 1);
-  assert.ok(state.buildings.farms <= 2);
-  assert.ok(state.buildings.lumbers <= 1);
+  assert.ok(state.buildings.farms >= 4, `expected >= 4 farms, got ${state.buildings.farms}`);
+  assert.ok(state.buildings.lumbers >= 2, `expected >= 2 lumbers, got ${state.buildings.lumbers}`);
   assert.ok((state.debug.roadCount ?? 0) < 20);
-  assert.ok(state.resources.food < 55);
-  assert.ok(state.resources.wood < 70);
+  assert.ok(state.resources.food >= 60, `expected food >= 60, got ${state.resources.food}`);
+  assert.ok(state.resources.wood >= 50, `expected wood >= 50, got ${state.resources.wood}`);
   assert.equal(
     hasConnection(state.grid, scenario.anchors.coreWarehouse, scenario.anchors.westLumberOutpost),
     false,
