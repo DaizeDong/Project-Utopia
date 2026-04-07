@@ -60,8 +60,8 @@ function createOfflineFallbackClient(baseClient) {
 export function createServices(seed = 1337, options = {}) {
   const rng = new SeededRng(deriveRngSeed(seed, "simulation"));
   const llmClient = options.offlineAiFallback
-    ? createOfflineFallbackClient(new LLMClient())
-    : new LLMClient();
+    ? createOfflineFallbackClient(new LLMClient({ baseUrl: options.baseUrl ?? "" }))
+    : new LLMClient({ baseUrl: options.baseUrl ?? "" });
   return {
     pathCache: new PathCache(700),
     pathBudget: {
