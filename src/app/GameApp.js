@@ -15,6 +15,8 @@ import { EntityFocusPanel } from "../ui/panels/EntityFocusPanel.js";
 import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
+import { MemoryStore } from "../simulation/ai/memory/MemoryStore.js";
+import { StrategicDirector } from "../simulation/ai/strategic/StrategicDirector.js";
 import { EnvironmentDirectorSystem } from "../simulation/ai/director/EnvironmentDirectorSystem.js";
 import { WeatherSystem } from "../world/weather/WeatherSystem.js";
 import { WorldEventSystem } from "../world/events/WorldEventSystem.js";
@@ -139,6 +141,7 @@ export class GameApp {
     };
 
     this.systems = this.createSystems();
+    this.services.memoryStore = this.memoryStore;
 
     this.loop = new GameLoop(
       (dt) => this.update(dt),
@@ -179,10 +182,12 @@ export class GameApp {
   }
 
   createSystems() {
+    this.memoryStore = new MemoryStore();
     return [
       new SimulationClock(),
       new ProgressionSystem(),
       new RoleAssignmentSystem(),
+      new StrategicDirector(this.memoryStore),
       new EnvironmentDirectorSystem(),
       new WeatherSystem(),
       new WorldEventSystem(),
@@ -228,6 +233,7 @@ export class GameApp {
     this.state.metrics.cpuBudgetMs = this.state.metrics.cpuBudgetMs * 0.9 + simCost * 0.1;
     this.#recomputePopulationBreakdown();
     this.#refreshLogicMetrics();
+    this.#recordMemoryObservations();
 
     this.updateBenchmark(simDt);
   }
@@ -880,6 +886,7 @@ export class GameApp {
 
     this.systems = this.createSystems();
     this.services = createServices(this.state.world.mapSeed);
+    this.services.memoryStore = this.memoryStore;
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
 
@@ -956,6 +963,7 @@ export class GameApp {
     this.services = createServices(this.state.world.mapSeed);
     if (restored.meta?.rng) this.services.rng.restore(restored.meta.rng);
     this.systems = this.createSystems();
+    this.services.memoryStore = this.memoryStore;
     this.state.controls.saveSlotId = slotId;
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
@@ -1052,6 +1060,43 @@ export class GameApp {
       loggers,
       totalEntities,
     };
+  }
+
+  #recordMemoryObservations() {
+    if (!this.memoryStore || this.state.session.phase !== "active") return;
+    const t = this.state.metrics.timeSec;
+    const mem = this.memoryStore;
+
+    const deaths = this.state.metrics.deathsTotal ?? 0;
+    if (deaths > (this._lastObservedDeaths ?? 0)) {
+      const diff = deaths - (this._lastObservedDeaths ?? 0);
+      const reasons = this.state.metrics.deathsByReason ?? {};
+      const detail = Object.entries(reasons).filter(([, v]) => v > 0).map(([k, v]) => `${k}:${v}`).join(", ");
+      mem.addObservation(t, `${diff} death(s) (${detail || "unknown"})`, "death", 3);
+      this._lastObservedDeaths = deaths;
+    }
+
+    if (this.state.resources.food < 15 && !this._lastFoodCritical) {
+      mem.addObservation(t, `Food critically low: ${Math.floor(this.state.resources.food)}`, "resource_critical", 2);
+      this._lastFoodCritical = true;
+    } else if (this.state.resources.food >= 15) {
+      this._lastFoodCritical = false;
+    }
+
+    const objIdx = this.state.gameplay.objectiveIndex ?? 0;
+    if (objIdx > (this._lastObservedObjIdx ?? 0)) {
+      const obj = this.state.gameplay.objectives?.[objIdx - 1];
+      mem.addObservation(t, `Completed objective: ${obj?.title ?? "unknown"}`, "objective", 3);
+      this._lastObservedObjIdx = objIdx;
+    }
+
+    const weather = this.state.weather?.current ?? "clear";
+    if (weather !== "clear" && weather !== (this._lastObservedWeather ?? "clear")) {
+      mem.addObservation(t, `Weather changed to ${weather}`, "weather", 1);
+      this._lastObservedWeather = weather;
+    } else if (weather === "clear") {
+      this._lastObservedWeather = "clear";
+    }
   }
 
   #refreshLogicMetrics() {

@@ -68,7 +68,7 @@ function buildGroupContracts() {
 }
 
 export function buildEnvironmentPromptUserContent(summary) {
-  return JSON.stringify({
+  const payload = {
     channel: "environment-director",
     summary,
     operationalHighlights: pickHighlights(summary),
@@ -81,11 +81,14 @@ export function buildEnvironmentPromptUserContent(summary) {
       "If resources or recovery are fragile, lower pressure rather than escalating.",
     ],
     constraint: "Return strict JSON only. No markdown. No prose outside the JSON fields.",
-  }, null, 2);
+  };
+  if (summary._strategyContext) payload.strategyContext = summary._strategyContext;
+  if (summary._memoryContext) payload.recentMemory = summary._memoryContext;
+  return JSON.stringify(payload, null, 2);
 }
 
 export function buildPolicyPromptUserContent(summary) {
-  return JSON.stringify({
+  const payload = {
     channel: "npc-policy",
     summary,
     operationalHighlights: pickHighlights(summary),
@@ -98,5 +101,8 @@ export function buildPolicyPromptUserContent(summary) {
       "State targets should reinforce the current route/depot/objective pressure, not contradict it.",
     ],
     constraint: "Return strict JSON only. No markdown. No prose outside the JSON fields.",
-  }, null, 2);
+  };
+  if (summary._strategyContext) payload.strategyContext = summary._strategyContext;
+  if (summary._memoryContext) payload.recentMemory = summary._memoryContext;
+  return JSON.stringify(payload, null, 2);
 }

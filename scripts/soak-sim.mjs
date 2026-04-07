@@ -7,6 +7,8 @@ import { createServices } from "../src/app/createServices.js";
 import { SimulationClock } from "../src/app/SimulationClock.js";
 import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
+import { MemoryStore } from "../src/simulation/ai/memory/MemoryStore.js";
+import { StrategicDirector } from "../src/simulation/ai/strategic/StrategicDirector.js";
 import { EnvironmentDirectorSystem } from "../src/simulation/ai/director/EnvironmentDirectorSystem.js";
 import { WeatherSystem } from "../src/world/weather/WeatherSystem.js";
 import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
@@ -80,11 +82,12 @@ function round(value, digits = 2) {
   return Number(safe.toFixed(digits));
 }
 
-function buildSystems() {
+function buildSystems(memoryStore) {
   return [
     new SimulationClock(),
     new ProgressionSystem(),
     new RoleAssignmentSystem(),
+    new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
     new WorldEventSystem(),
@@ -251,10 +254,12 @@ async function runScenario({ templateId, seed }, preset) {
   state.ai.coverageTarget = preset.aiEnabled ? "fallback" : "fallback";
   state.ai.runtimeProfile = "long_run";
 
+  const memoryStore = new MemoryStore();
   const services = createServices(state.world.mapSeed, {
     offlineAiFallback: Boolean(preset.aiOfflineFallback),
   });
-  const systems = buildSystems();
+  services.memoryStore = memoryStore;
+  const systems = buildSystems(memoryStore);
   const totalTicks = Math.max(60, Math.round(preset.durationSec / DT_SEC));
   const sampleEveryTicks = Math.max(1, Math.round(preset.sampleIntervalSec / DT_SEC));
   let maxEntities = state.agents.length + state.animals.length;
