@@ -183,4 +183,5 @@ export const BALANCE = Object.freeze({
   tradeCaravanHazardPenaltyPerPressure: 0.22,
   animalMigrationPressurePerHazard: 0.38,
   animalMigrationWildlifeZoneBonus: 0.18,
+  lossGracePeriodSec: 90,
 });

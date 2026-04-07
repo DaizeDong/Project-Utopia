@@ -23,6 +23,7 @@ export function evaluateRunOutcomeState(state) {
   const threat = Number(state.gameplay?.threat ?? 0);
   const carryInTransit = Number(state.metrics?.logistics?.totalCarryInTransit ?? 0);
   const carryingWorkers = Number(state.metrics?.logistics?.carryingWorkers ?? 0);
+  const simTime = Number(state.metrics?.simTimeSec ?? 0);
 
   let reason = "";
   if (workers <= 0) {
@@ -34,7 +35,11 @@ export function evaluateRunOutcomeState(state) {
     && carryInTransit <= Number(BALANCE.resourceCollapseCarryGrace ?? 0.5)
   ) {
     reason = "Both food and wood reached zero with no supply still in transit.";
-  } else if (prosperity <= 8 && threat >= 92) {
+  } else if (
+    simTime >= Number(BALANCE.lossGracePeriodSec ?? 90)
+    && prosperity <= 8
+    && threat >= 92
+  ) {
     reason = "Colony collapsed under low prosperity and extreme threat.";
   }
   if (!reason) return null;
