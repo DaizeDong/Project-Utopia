@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   computeTaskScore,
@@ -113,6 +113,28 @@ describe("computeCostMetrics", () => {
     // C_fb = fallbackDecisions / totalDecisions = 2/5
     assert.equal(result.C_fb, 2 / 5);
   });
+});
+
+test("computeCostMetrics handles empty decisions array", () => {
+  const result = computeCostMetrics([], 5, 0.00001);
+  assert.equal(result.totalDecisions, 0);
+  assert.equal(result.llmDecisions, 0);
+  assert.equal(result.C_tok, 0);
+  assert.equal(result.C_min, 0);
+  assert.equal(result.C_fb, 0);
+});
+
+test("computeCostMetrics handles all-fallback decisions", () => {
+  const decisions = [
+    { t: 18, source: "fallback", tokens: 0, latencyMs: 0 },
+    { t: 36, source: "fallback", tokens: 0, latencyMs: 0 },
+  ];
+  const result = computeCostMetrics(decisions, 1, 0.00001);
+  assert.equal(result.totalDecisions, 2);
+  assert.equal(result.llmDecisions, 0);
+  assert.equal(result.fallbackDecisions, 2);
+  assert.equal(result.C_tok, 0);
+  assert.equal(result.C_fb, 1);
 });
 
 describe("computeDecisionQuality", () => {

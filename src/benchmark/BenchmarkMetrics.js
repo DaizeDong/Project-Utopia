@@ -78,7 +78,7 @@ export function computeTaskScore(samples, config) {
   } = config;
 
   const T_surv = clamp01(safeDivide(survivalSec, maxSurvivalSec, 0));
-  const T_obj = safeDivide(completedObjectives, totalObjectives, 0);
+  const T_obj = clamp01(safeDivide(completedObjectives, totalObjectives, 0));
 
   // T_res: resource stability via coefficient of variation
   const foodValues = samples.map((s) => s.food);
