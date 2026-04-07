@@ -52,6 +52,13 @@ export class HUDController {
     this.statusThreat = document.getElementById("statusThreat");
     this.statusObjective = document.getElementById("statusObjective");
     this.statusAction = document.getElementById("statusAction");
+    this.statusFoodBar = document.getElementById("statusFoodBar");
+    this.statusWoodBar = document.getElementById("statusWoodBar");
+    this.statusProsperityBar = document.getElementById("statusProsperityBar");
+    this.statusThreatBar = document.getElementById("statusThreatBar");
+    this.hudFood = document.getElementById("hudFood");
+    this.hudWood = document.getElementById("hudWood");
+    this.hudWorkers = document.getElementById("hudWorkers");
   }
 
   render() {
@@ -150,6 +157,21 @@ export class HUDController {
     if (this.statusWorkers) this.statusWorkers.textContent = state.metrics?.populationStats?.workers ?? 0;
     if (this.statusProsperity) this.statusProsperity.textContent = (state.gameplay?.prosperity ?? 0).toFixed(0);
     if (this.statusThreat) this.statusThreat.textContent = (state.gameplay?.threat ?? 0).toFixed(0);
+
+    const foodPct = Math.min(100, (state.resources.food / 120) * 100);
+    const woodPct = Math.min(100, (state.resources.wood / 120) * 100);
+    const prosperityPct = Math.min(100, state.gameplay?.prosperity ?? 0);
+    const threatPct = Math.min(100, state.gameplay?.threat ?? 0);
+
+    if (this.statusFoodBar) this.statusFoodBar.style.width = `${foodPct}%`;
+    if (this.statusWoodBar) this.statusWoodBar.style.width = `${woodPct}%`;
+    if (this.statusProsperityBar) this.statusProsperityBar.style.width = `${prosperityPct}%`;
+    if (this.statusThreatBar) this.statusThreatBar.style.width = `${threatPct}%`;
+
+    if (this.hudFood) this.hudFood.setAttribute("data-urgency", state.resources.food < 20 ? "low" : "");
+    if (this.hudWood) this.hudWood.setAttribute("data-urgency", state.resources.wood < 15 ? "low" : "");
+    if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
+
     if (this.statusObjective) {
       const obj = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0];
       this.statusObjective.textContent = obj ? `${obj.title} (${obj.progress}%)` : "";
@@ -158,7 +180,8 @@ export class HUDController {
       if (state.controls.actionMessage) {
         this.statusAction.textContent = state.controls.actionMessage;
         this.statusAction.style.opacity = "1";
-        this.statusAction.style.color = state.controls.actionKind === "error" ? "#a62d2d" : "#1d6b31";
+        this.statusAction.style.background = state.controls.actionKind === "error" ? "rgba(244,67,54,0.3)" : "rgba(76,175,80,0.3)";
+        this.statusAction.style.color = state.controls.actionKind === "error" ? "#ff8a80" : "#a5d6a7";
       } else {
         this.statusAction.style.opacity = "0";
       }
