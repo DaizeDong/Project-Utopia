@@ -59,6 +59,27 @@ export class HUDController {
     this.hudFood = document.getElementById("hudFood");
     this.hudWood = document.getElementById("hudWood");
     this.hudWorkers = document.getElementById("hudWorkers");
+
+    this.speedPauseBtn = document.getElementById("speedPauseBtn");
+    this.speedPlayBtn = document.getElementById("speedPlayBtn");
+    this.speedFastBtn = document.getElementById("speedFastBtn");
+    this.gameTimer = document.getElementById("gameTimer");
+
+    this.setupSpeedControls();
+  }
+
+  setupSpeedControls() {
+    this.speedPauseBtn?.addEventListener("click", () => {
+      this.state.controls.isPaused = !this.state.controls.isPaused;
+    });
+    this.speedPlayBtn?.addEventListener("click", () => {
+      this.state.controls.isPaused = false;
+      this.state.controls.timeScale = 1.0;
+    });
+    this.speedFastBtn?.addEventListener("click", () => {
+      this.state.controls.isPaused = false;
+      this.state.controls.timeScale = 2.0;
+    });
   }
 
   render() {
@@ -209,5 +230,17 @@ export class HUDController {
       this.warningVal.textContent = digest.warning || logistics || frontier.summary;
       this.warningVal.setAttribute("data-kind", digest.severity === "error" ? "error" : "info");
     }
+
+    if (this.gameTimer) {
+      const totalSec = Math.floor(state.metrics.timeSec ?? 0);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      this.gameTimer.textContent = `${min}:${sec.toString().padStart(2, "0")}`;
+    }
+    const paused = state.controls.isPaused;
+    const fast = (state.controls.timeScale ?? 1) > 1.2;
+    this.speedPauseBtn?.classList.toggle("active", paused);
+    this.speedPlayBtn?.classList.toggle("active", !paused && !fast);
+    this.speedFastBtn?.classList.toggle("active", fast && !paused);
   }
 }
