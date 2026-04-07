@@ -17,7 +17,8 @@ function compactClientError(err) {
   return raw.slice(0, 180);
 }
 
-async function postJson(url, body, timeoutMs) {
+async function postJson(baseUrl, endpoint, body, timeoutMs) {
+  const url = endpoint.startsWith("http") ? endpoint : `${baseUrl.replace(/\/$/, "")}${endpoint}`;
   const started = performance.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
@@ -74,7 +75,8 @@ function buildLocalDebug({
 }
 
 export class LLMClient {
-  constructor() {
+  constructor(options = {}) {
+    this.baseUrl = options.baseUrl ?? "";
     this.lastError = "";
     this.lastLatencyMs = 0;
     this.lastStatus = "unknown";
@@ -103,7 +105,7 @@ export class LLMClient {
     }
 
     try {
-      const result = await postJson(AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(this.baseUrl, AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
       const payload = result.data;
       const candidate = payload.directive ?? payload.data ?? payload;
       const validation = validateEnvironmentDirective(candidate);
@@ -176,7 +178,7 @@ export class LLMClient {
     }
 
     try {
-      const result = await postJson(AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(this.baseUrl, AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
       const payload = result.data;
       const candidate = payload.policies ? payload : payload.data ?? payload;
       const validation = validateGroupPolicy(candidate);
