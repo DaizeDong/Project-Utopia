@@ -35,6 +35,7 @@ import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { computeTaskScore, computeCostMetrics } from "../src/benchmark/BenchmarkMetrics.js";
+import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 
 // ── Configuration ──────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ function refreshPopulationStats(state) {
 
 // ── Single run ─────────────────────────────────────────────────────────
 
-async function runSingle(scenario, condition, seed, durationSec, sampleIntervalSec) {
+async function runSingle(scenario, condition, seed, durationSec, sampleIntervalSec, preset = null) {
   const state = createInitialGameState({ templateId: scenario.templateId, seed });
   state.session.phase = "active";
   state.controls.isPaused = false;
@@ -123,6 +124,7 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   state.ai.enabled = Boolean(condition.aiEnabled);
   state.ai.coverageTarget = "fallback";
   state.ai.runtimeProfile = "long_run";
+  if (preset) applyPreset(state, preset);
 
   const memoryStore = new MemoryStore();
   const memoryObserver = new MemoryObserver(memoryStore);
@@ -278,36 +280,73 @@ async function main() {
     ? Math.max(1, Number(args["sample-interval"]))
     : SAMPLE_INTERVAL_SEC;
 
+  const usePresets = Boolean(args.presets);
   const activeScenarios = SCENARIOS.slice(0, scenarioLimit);
   const activeSeeds = SEEDS.slice(0, seedLimit);
-  const totalRuns = activeScenarios.length * CONDITIONS.length * activeSeeds.length;
 
-  console.error(`Benchmark: ${activeScenarios.length} scenarios x ${CONDITIONS.length} conditions x ${activeSeeds.length} seeds = ${totalRuns} runs`);
   console.error(`Duration: ${durationSec}s per run, sample every ${sampleIntervalSec}s`);
 
   const results = [];
   let runIndex = 0;
 
-  for (const scenario of activeScenarios) {
-    for (const condition of CONDITIONS) {
-      for (const seed of activeSeeds) {
-        runIndex += 1;
-        console.error(`[${runIndex}/${totalRuns}] ${scenario.label} | ${condition.label} | seed=${seed}`);
+  if (!usePresets) {
+    const totalRuns = activeScenarios.length * CONDITIONS.length * activeSeeds.length;
+    console.error(`Benchmark: ${activeScenarios.length} scenarios x ${CONDITIONS.length} conditions x ${activeSeeds.length} seeds = ${totalRuns} runs`);
 
-        try {
-          const result = await runSingle(scenario, condition, seed, durationSec, sampleIntervalSec);
-          results.push(result);
-        } catch (err) {
-          console.error(`  ERROR: ${err.message ?? err}`);
-          results.push({
-            scenario: scenario.label,
-            templateId: scenario.templateId,
-            condition: condition.id,
-            conditionLabel: condition.label,
-            seed,
-            durationSec,
-            error: String(err.message ?? err),
-          });
+    for (const scenario of activeScenarios) {
+      for (const condition of CONDITIONS) {
+        for (const seed of activeSeeds) {
+          runIndex += 1;
+          console.error(`[${runIndex}/${totalRuns}] ${scenario.label} | ${condition.label} | seed=${seed}`);
+
+          try {
+            const result = await runSingle(scenario, condition, seed, durationSec, sampleIntervalSec);
+            results.push(result);
+          } catch (err) {
+            console.error(`  ERROR: ${err.message ?? err}`);
+            results.push({
+              scenario: scenario.label,
+              templateId: scenario.templateId,
+              condition: condition.id,
+              conditionLabel: condition.label,
+              seed,
+              durationSec,
+              error: String(err.message ?? err),
+            });
+          }
+        }
+      }
+    }
+  } else {
+    const totalPresetRuns = BENCHMARK_PRESETS.length * CONDITIONS.length * activeSeeds.length;
+    console.error(`Preset benchmark: ${BENCHMARK_PRESETS.length} presets x ${CONDITIONS.length} conditions x ${activeSeeds.length} seeds = ${totalPresetRuns} runs`);
+
+    for (const preset of BENCHMARK_PRESETS) {
+      for (const condition of CONDITIONS) {
+        for (const seed of activeSeeds) {
+          runIndex += 1;
+          console.error(`[${runIndex}/${totalPresetRuns}] ${preset.label} | ${condition.label} | seed=${seed}`);
+          try {
+            const result = await runSingle(
+              { templateId: preset.templateId, label: preset.label },
+              condition, seed, durationSec, sampleIntervalSec, preset,
+            );
+            result.presetId = preset.id;
+            result.presetCategory = preset.category;
+            results.push(result);
+          } catch (err) {
+            console.error(`  ERROR: ${err.message ?? err}`);
+            results.push({
+              scenario: preset.label,
+              templateId: preset.templateId,
+              condition: condition.id,
+              conditionLabel: condition.label,
+              presetId: preset.id,
+              presetCategory: preset.category,
+              seed,
+              error: String(err.message ?? err),
+            });
+          }
         }
       }
     }
