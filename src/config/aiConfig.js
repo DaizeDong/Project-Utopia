@@ -92,6 +92,13 @@ export function listAllowedTargetPriorities(groupId) {
   return [...(getGroupPolicyContract(groupId)?.allowedTargets ?? [])];
 }
 
+export const STRATEGY_CONFIG = {
+  heartbeatSec: 90,
+  cooldownSec: 15,
+  maxObservations: 50,
+  maxReflections: 20,
+};
+
 export const DEFAULT_GROUP_POLICIES = Object.freeze({
   [GROUP_IDS.WORKERS]: {
     groupId: GROUP_IDS.WORKERS,

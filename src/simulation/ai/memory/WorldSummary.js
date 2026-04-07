@@ -212,6 +212,18 @@ export function buildWorldSummary(state) {
   };
 
   summary.operations = buildOperationsSummary(summary);
+
+  if (state.ai?.strategy) {
+    summary._strategyContext = {
+      priority: state.ai.strategy.priority,
+      resourceFocus: state.ai.strategy.resourceFocus,
+      defensePosture: state.ai.strategy.defensePosture,
+      riskTolerance: state.ai.strategy.riskTolerance,
+      workerFocus: state.ai.strategy.workerFocus,
+      environmentPreference: state.ai.strategy.environmentPreference,
+    };
+  }
+
   return summary;
 }
 
