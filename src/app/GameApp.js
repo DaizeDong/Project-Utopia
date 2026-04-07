@@ -183,6 +183,10 @@ export class GameApp {
 
   createSystems() {
     this.memoryStore = new MemoryStore();
+    this._lastObservedDeaths = 0;
+    this._lastFoodCritical = false;
+    this._lastObservedObjIdx = 0;
+    this._lastObservedWeather = "clear";
     return [
       new SimulationClock(),
       new ProgressionSystem(),

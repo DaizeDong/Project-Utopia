@@ -418,6 +418,13 @@ export class NPCBrainSystem {
     state.ai.lastPolicyDecisionSec = state.metrics.timeSec;
     markAiDecisionRequest(state, "policy", state.metrics.timeSec);
     const summary = buildPolicySummary(state);
+    if (services.memoryStore) {
+      const memCtx = services.memoryStore.formatForPrompt(
+        "workers food wood task policy",
+        state.metrics.timeSec,
+      );
+      if (memCtx) summary._memoryContext = memCtx;
+    }
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
