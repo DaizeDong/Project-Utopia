@@ -1,40 +1,22 @@
 import { SHORTCUT_HINT } from "../../app/shortcutResolver.js";
-import { getAiInsight, getCausalDigest, getFrontierStatus, getWeatherInsight } from "../interpretation/WorldExplain.js";
-
-function safeCall(factory, fallback) {
-  try {
-    return factory();
-  } catch {
-    return fallback;
-  }
-}
 
 function formatObjectives(state) {
   const gameplay = state?.gameplay ?? {};
   const scenario = gameplay.scenario ?? {};
-  const frontier = safeCall(() => getFrontierStatus(state), { summary: "Frontier: unavailable" });
-  const weather = safeCall(() => getWeatherInsight(state), { summary: "clear (0s)" });
-  const digest = safeCall(() => getCausalDigest(state), {
-    headline: gameplay.objectives?.[gameplay.objectiveIndex ?? 0]?.title ?? "Hold the colony together",
-    action: gameplay.objectiveHint ?? "Keep the colony stable and expand deliberately.",
-  });
-  const ai = safeCall(() => getAiInsight(state), { summary: "AI: unavailable" });
   const objectives = gameplay.objectives ?? [];
   const objectiveIndex = gameplay.objectiveIndex ?? 0;
   if (!Array.isArray(objectives) || objectives.length === 0) return `No objectives\n\nControls\n${SHORTCUT_HINT}`;
   const objectiveLines = objectives
     .map((objective, idx) => {
-      const state = objective.completed ? "done" : idx === objectiveIndex ? "active" : "pending";
+      const label = objective.completed ? "DONE" : idx === objectiveIndex ? "CURRENT" : "NEXT";
       const progress = Number(objective.progress ?? 0).toFixed(0);
-      return `${state.toUpperCase()} - ${objective.title} (${progress}%)`;
+      return `${label} - ${objective.title} (${progress}%)`;
     })
     .join("\n");
   const sections = [
-    scenario.title ? `Scenario\n${scenario.title} - ${scenario.summary ?? "No scenario summary."}` : null,
+    scenario.title ? `Map: ${scenario.title}` : null,
     `Objectives\n${objectiveLines}`,
-    `Focus\n${digest.headline}\n${digest.action}`,
-    `Pressure\n${frontier.summary}\nWeather: ${weather.summary}\n${ai.summary}`,
-    gameplay.objectiveHint ? `Hint\n${gameplay.objectiveHint}` : null,
+    gameplay.objectiveHint ? `Tip: ${gameplay.objectiveHint}` : null,
     `Controls\n${SHORTCUT_HINT}`,
   ].filter(Boolean);
   return sections.join("\n\n");
@@ -43,7 +25,7 @@ function formatObjectives(state) {
 function formatOverlayMeta(state) {
   const scenario = state?.gameplay?.scenario ?? {};
   const family = String(scenario.family ?? "").replaceAll("_", " ");
-  if (!scenario.title && !family) return "Beta build briefing";
+  if (!scenario.title && !family) return "Quick Start Guide";
   if (!family) return scenario.title;
   return `${scenario.title} · ${family}`;
 }
@@ -105,7 +87,7 @@ export class GameStateOverlay {
     }
     if (this.menuLead) {
       this.menuLead.textContent = this.state.gameplay?.scenario?.summary
-        ?? "Keep the colony readable under pressure while logistics, wildlife, and weather collide in one Beta loop.";
+        ?? "Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them.";
     }
     if (this.menuMeta) {
       this.menuMeta.textContent = formatOverlayMeta(this.state);
