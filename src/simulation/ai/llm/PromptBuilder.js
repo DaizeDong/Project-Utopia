@@ -511,49 +511,51 @@ function buildFallbackStateTargets(policies, summary) {
 
 export function buildEnvironmentFallback(summary) {
   const world = getWorld(summary);
-  const objective = world.objective ?? {};
-  const frontier = world.frontier ?? {};
-  const logistics = world.logistics ?? {};
-  const gameplay = world.gameplay ?? {};
+  const gameplay = getGameplay(summary);
   const lowFood = Number(world.resources?.food ?? 0) < 18;
-  const congestionHigh = Number(world.traffic?.congestion ?? 0) > 0.58;
-  const brokenFrontier = Number(frontier.brokenRouteCount ?? frontier.brokenRoutes?.length ?? 0) > 0
-    || Number(frontier.unreadyDepotCount ?? frontier.unreadyDepots?.length ?? 0) > 0;
   const collapseRisk = Number(gameplay.recovery?.collapseRisk ?? 0);
+  const prosperity = Number(gameplay.prosperity ?? 50);
+  const threat = Number(gameplay.threat ?? 25);
 
+  // 1. Colony in crisis: calm everything, send help
   if (lowFood || collapseRisk >= 65) {
     return buildEnvironmentDirective({
       weather: WEATHER.CLEAR,
-      durationSec: 18,
-      factionTension: 0.42,
+      durationSec: 25,
+      factionTension: 0.3,
       eventSpawns: [{ type: EVENT_TYPE.TRADE_CARAVAN, intensity: 1.2, durationSec: 16 }],
     }, summary, "recovery lane");
   }
 
-  if (brokenFrontier && objective.id === "logistics-1") {
+  // 2. Colony struggling (prosperity < 55 or threat > 60): calm, no pressure
+  if (prosperity < 55 || threat > 60) {
+    return buildEnvironmentDirective({
+      weather: WEATHER.CLEAR,
+      durationSec: 22,
+      factionTension: 0.35,
+      eventSpawns: [],
+    }, summary, "stabilization");
+  }
+
+  // 3. Colony thriving (prosperity >= 70 and threat <= 25): apply light challenge
+  if (prosperity >= 70 && threat <= 25) {
     return buildEnvironmentDirective({
       weather: WEATHER.RAIN,
       durationSec: 16,
-      factionTension: 0.58,
-      eventSpawns: [{ type: EVENT_TYPE.BANDIT_RAID, intensity: 0.9, durationSec: 14 }],
-    }, summary, "broken frontier route");
+      factionTension: 0.55,
+      eventSpawns: [{ type: EVENT_TYPE.ANIMAL_MIGRATION, intensity: 0.5, durationSec: 12 }],
+    }, summary, "light challenge");
   }
 
-  if (congestionHigh || Number(logistics.overloadedWarehouses ?? 0) > 0) {
-    return buildEnvironmentDirective({
-      weather: WEATHER.RAIN,
-      durationSec: 14,
-      factionTension: 0.56,
-      eventSpawns: [{ type: EVENT_TYPE.ANIMAL_MIGRATION, intensity: 1.0, durationSec: 15 }],
-    }, summary, "congested logistics lane");
-  }
-
+  // 4. Default stable: clear weather, optional mild event
   return buildEnvironmentDirective({
-    weather: Number(world.spatialPressure?.eventPressure ?? 0) > 1.2 ? WEATHER.STORM : WEATHER.CLEAR,
-    durationSec: 16,
-    factionTension: 0.55,
-    eventSpawns: [{ type: EVENT_TYPE.BANDIT_RAID, intensity: 0.8, durationSec: 12 }],
-  }, summary, brokenFrontier ? "contested frontier" : "stable frontier");
+    weather: WEATHER.CLEAR,
+    durationSec: 20,
+    factionTension: 0.4,
+    eventSpawns: prosperity >= 55
+      ? [{ type: EVENT_TYPE.TRADE_CARAVAN, intensity: 0.8, durationSec: 12 }]
+      : [],
+  }, summary, "steady state");
 }
 
 export function buildPolicyFallback(summary) {
