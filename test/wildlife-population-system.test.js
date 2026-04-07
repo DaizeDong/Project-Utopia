@@ -67,8 +67,8 @@ test("wildlife breeding respects max capacity and cooldown", () => {
   system.update(0.2, state, makeServices([0.3]));
   const afterSecond = state.animals.filter((animal) => animal.kind === ANIMAL_KIND.HERBIVORE).length;
 
-  assert.equal(afterFirst, 6);
-  assert.equal(afterSecond, 6);
+  assert.equal(afterFirst, 4);
+  assert.equal(afterSecond, 4);
   assert.equal(Number(state.metrics.ecology.events?.breedingSpawns ?? 0), 1);
 });
 

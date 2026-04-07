@@ -23,9 +23,9 @@ export const INITIAL_RESOURCES = Object.freeze({
 });
 
 export const INITIAL_POPULATION = Object.freeze({
-  workers: 18,
-  visitors: 6,
-  herbivores: 5,
+  workers: 12,
+  visitors: 4,
+  herbivores: 3,
   predators: 1,
 });
 
