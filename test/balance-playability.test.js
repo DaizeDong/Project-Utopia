@@ -81,3 +81,26 @@ test("All-workers-gone loss triggers immediately with no grace period", () => {
   assert.equal(result.outcome, "loss");
   assert.match(result.reason, /workers/i);
 });
+
+// --- Pressure multiplier tests (Task 3) ---
+
+test("eventPressureThreat is <= 5.0 to prevent single-event threat spikes", () => {
+  assert.ok(
+    BALANCE.eventPressureThreat <= 5.0,
+    `eventPressureThreat is ${BALANCE.eventPressureThreat}, expected <= 5.0`,
+  );
+});
+
+test("eventPressureProsperityPenalty is <= 4.0 to prevent single-event prosperity collapse", () => {
+  assert.ok(
+    BALANCE.eventPressureProsperityPenalty <= 4.0,
+    `eventPressureProsperityPenalty is ${BALANCE.eventPressureProsperityPenalty}, expected <= 4.0`,
+  );
+});
+
+test("weatherPressureProsperityPenalty is <= 5.0 to prevent weather-driven prosperity collapse", () => {
+  assert.ok(
+    BALANCE.weatherPressureProsperityPenalty <= 5.0,
+    `weatherPressureProsperityPenalty is ${BALANCE.weatherPressureProsperityPenalty}, expected <= 5.0`,
+  );
+});
