@@ -51,6 +51,7 @@ export class HUDController {
     this.statusProsperity = document.getElementById("statusProsperity");
     this.statusThreat = document.getElementById("statusThreat");
     this.statusObjective = document.getElementById("statusObjective");
+    this.statusAction = document.getElementById("statusAction");
   }
 
   render() {
@@ -152,6 +153,15 @@ export class HUDController {
     if (this.statusObjective) {
       const obj = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0];
       this.statusObjective.textContent = obj ? `${obj.title} (${obj.progress}%)` : "";
+    }
+    if (this.statusAction) {
+      if (state.controls.actionMessage) {
+        this.statusAction.textContent = state.controls.actionMessage;
+        this.statusAction.style.opacity = "1";
+        this.statusAction.style.color = state.controls.actionKind === "error" ? "#a62d2d" : "#1d6b31";
+      } else {
+        this.statusAction.style.opacity = "0";
+      }
     }
 
     if (state.ai.lastEnvironmentError || state.ai.lastPolicyError) {
