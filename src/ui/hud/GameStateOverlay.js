@@ -1,26 +1,3 @@
-import { SHORTCUT_HINT } from "../../app/shortcutResolver.js";
-
-function formatObjectives(state) {
-  const gameplay = state?.gameplay ?? {};
-  const scenario = gameplay.scenario ?? {};
-  const objectives = gameplay.objectives ?? [];
-  const objectiveIndex = gameplay.objectiveIndex ?? 0;
-  if (!Array.isArray(objectives) || objectives.length === 0) return `No objectives\n\nControls\n${SHORTCUT_HINT}`;
-  const objectiveLines = objectives
-    .map((objective, idx) => {
-      const label = objective.completed ? "DONE" : idx === objectiveIndex ? "CURRENT" : "NEXT";
-      const progress = Number(objective.progress ?? 0).toFixed(0);
-      return `${label} - ${objective.title} (${progress}%)`;
-    })
-    .join("\n");
-  const sections = [
-    scenario.title ? `Map: ${scenario.title}` : null,
-    `Objectives\n${objectiveLines}`,
-    gameplay.objectiveHint ? `Tip: ${gameplay.objectiveHint}` : null,
-    `Controls\n${SHORTCUT_HINT}`,
-  ].filter(Boolean);
-  return sections.join("\n\n");
-}
 
 function formatOverlayMeta(state) {
   const scenario = state?.gameplay?.scenario ?? {};
@@ -48,7 +25,7 @@ export class GameStateOverlay {
     this.menuTitle = document.getElementById("overlayMenuTitle");
     this.menuLead = document.getElementById("overlayMenuLead");
     this.menuMeta = document.getElementById("overlayMenuMeta");
-    this.menuSummary = document.getElementById("overlayMenuSummary");
+    this.objectiveCards = document.getElementById("overlayObjectiveCards");
     this.endMeta = document.getElementById("overlayEndMeta");
     this.endTitle = document.getElementById("overlayEndTitle");
     this.endReason = document.getElementById("overlayEndReason");
@@ -83,11 +60,22 @@ export class GameStateOverlay {
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
-    if (this.menuSummary) {
-      this.menuSummary.textContent = formatObjectives(this.state);
+    if (this.objectiveCards) {
+      const objectives = this.state.gameplay?.objectives ?? [];
+      const objectiveIndex = this.state.gameplay?.objectiveIndex ?? 0;
+      this.objectiveCards.innerHTML = objectives.map((obj, idx) => {
+        const isCurrent = idx === objectiveIndex && !obj.completed;
+        const label = obj.completed ? "✓" : String(idx + 1);
+        const pct = Number(obj.progress ?? 0).toFixed(0);
+        return `<div class="overlay-obj-card${isCurrent ? " current" : ""}">
+      <div class="overlay-obj-num">${label}</div>
+      <div class="overlay-obj-text">${obj.title}</div>
+      <div class="overlay-obj-pct">${pct}%</div>
+    </div>`;
+      }).join("");
     }
     if (this.menuTitle) {
-      this.menuTitle.textContent = "Project Utopia Beta";
+      this.menuTitle.textContent = "Project Utopia";
     }
     if (this.menuLead) {
       this.menuLead.textContent = this.state.gameplay?.scenario?.summary
@@ -100,7 +88,13 @@ export class GameStateOverlay {
     if (isEnd) {
       const outcome = session?.outcome ?? "loss";
       if (this.endTitle) {
-        this.endTitle.textContent = outcome === "win" ? "Victory" : "Defeat";
+        this.endTitle.textContent = outcome === "win" ? "Victory!" : "Colony Lost";
+        this.endTitle.style.background = outcome === "win"
+          ? "linear-gradient(135deg, #1b7a3d, #27ae60)"
+          : "linear-gradient(135deg, #922b21, #e74c3c)";
+        this.endTitle.style.webkitBackgroundClip = "text";
+        this.endTitle.style.webkitTextFillColor = "transparent";
+        this.endTitle.style.backgroundClip = "text";
       }
       if (this.endReason) {
         this.endReason.textContent = session?.reason ?? "";
@@ -112,13 +106,13 @@ export class GameStateOverlay {
         const workers = Number(this.state.metrics.populationStats?.workers ?? 0);
         const total = Number(this.state.metrics.populationStats?.totalEntities ?? (this.state.agents.length + this.state.animals.length));
         const deaths = Number(this.state.metrics.deathsTotal ?? 0);
-        const timeSec = Number(this.state.metrics.timeSec ?? 0).toFixed(1);
+        const totalSec = Math.floor(Number(this.state.metrics.timeSec ?? 0));
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
         this.endStats.textContent = [
-          `Sim Time: ${timeSec}s`,
-          `Workers: ${workers}`,
-          `Total Entities: ${total}`,
-          `Prosperity: ${Number(this.state.gameplay?.prosperity ?? 0).toFixed(1)}`,
-          `Threat: ${Number(this.state.gameplay?.threat ?? 0).toFixed(1)}`,
+          `Time Survived: ${min}:${sec.toString().padStart(2, "0")}`,
+          `Workers: ${workers}  |  Total Entities: ${total}`,
+          `Prosperity: ${Number(this.state.gameplay?.prosperity ?? 0).toFixed(0)}  |  Threat: ${Number(this.state.gameplay?.threat ?? 0).toFixed(0)}`,
           `Deaths: ${deaths}`,
         ].join("\n");
       }

@@ -291,9 +291,125 @@
     }
 
     .overlay-actions button.primary {
-      background: linear-gradient(180deg, #2d8ad7, #256fb2);
-      border-color: rgba(15, 59, 93, 0.48);
+      background: linear-gradient(180deg, #2d8ad7, #1a6bb5);
+      border-color: rgba(15,59,93,0.48);
       color: #f4fbff;
+      font-size: 15px;
+      padding: 10px 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(42,134,209,0.3);
+      transition: transform 0.1s ease, box-shadow 0.15s ease;
+    }
+
+    .overlay-actions button.primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(42,134,209,0.4);
+    }
+
+    .overlay-game-title {
+      margin: 0 0 8px 0;
+      font-size: 36px;
+      font-weight: 900;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #1a5276, #2e86c1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .overlay-lead {
+      margin: 0 0 16px 0;
+      font-size: 14px;
+      line-height: 1.5;
+      color: rgba(21,50,71,0.8);
+    }
+
+    .overlay-scenario-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: rgba(42,134,209,0.12);
+      border: 1px solid rgba(42,134,209,0.2);
+      color: #1a5276;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    .overlay-objectives {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .overlay-obj-card {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid rgba(23,56,79,0.1);
+    }
+
+    .overlay-obj-card.current {
+      border-color: rgba(42,134,209,0.35);
+      background: rgba(42,134,209,0.06);
+    }
+
+    .overlay-obj-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: rgba(42,134,209,0.15);
+      color: #1a5276;
+      font-size: 13px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex: 0 0 28px;
+    }
+
+    .overlay-obj-card.current .overlay-obj-num {
+      background: #2a86d1;
+      color: #fff;
+    }
+
+    .overlay-obj-text {
+      font-size: 13px; font-weight: 600;
+      color: #153247;
+    }
+
+    .overlay-obj-pct {
+      margin-left: auto;
+      font-size: 12px; font-weight: 700;
+      color: rgba(21,50,71,0.5);
+    }
+
+    .overlay-controls-hint {
+      margin-bottom: 14px;
+      font-size: 11px;
+      color: rgba(21,50,71,0.5);
+      text-align: center;
+    }
+
+    .overlay-controls-hint span {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(23,56,79,0.08);
+      font-weight: 700;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 10px;
+    }
+
+    .overlay-end-stats {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(23,56,79,0.12);
+      background: rgba(255,255,255,0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 14px;
+      white-space: pre-wrap;
     }
 
     #actionVal[data-kind="success"],
@@ -1357,30 +1473,26 @@
       <canvas id="c"></canvas>
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
-          <div class="overlay-kicker">Colony Simulation</div>
-          <h2 id="overlayMenuTitle">Project Utopia Beta</h2>
-          <p id="overlayMenuLead">Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
-          <div id="overlayMenuMeta" class="overlay-meta">Quick Start Guide</div>
-          <div class="overlay-tag-row" aria-hidden="true">
-            <span class="overlay-tag">1. Build farms &amp; lumbers for resources</span>
-            <span class="overlay-tag">2. Connect buildings with roads</span>
-            <span class="overlay-tag">3. Build walls to defend</span>
+          <h2 id="overlayMenuTitle" class="overlay-game-title">Project Utopia</h2>
+          <p id="overlayMenuLead" class="overlay-lead">Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
+          <div id="overlayMenuMeta" class="overlay-scenario-badge">Quick Start Guide</div>
+          <div id="overlayObjectiveCards" class="overlay-objectives"></div>
+          <div class="overlay-controls-hint">
+            <span>LMB</span> build &nbsp; <span>RMB</span> pan &nbsp; <span>1-6</span> tools &nbsp; <span>Space</span> pause
           </div>
-          <pre id="overlayMenuSummary" class="overlay-summary">loading objectives...</pre>
           <div class="overlay-actions">
-            <button id="overlayStartBtn" class="primary" type="button">Start Run</button>
-            <button id="overlayResetFromMenuBtn" type="button">Reset World</button>
+            <button id="overlayStartBtn" class="primary" type="button">Start Colony</button>
+            <button id="overlayResetFromMenuBtn" type="button">New Map</button>
           </div>
         </section>
         <section id="overlayEndPanel" class="overlay-panel" hidden>
-          <div class="overlay-kicker">Beta Run Summary</div>
-          <h2 id="overlayEndTitle">Run Ended</h2>
-          <div id="overlayEndMeta" class="overlay-meta">Scenario</div>
-          <p id="overlayEndReason">-</p>
-          <pre id="overlayEndStats" class="overlay-summary">-</pre>
+          <h2 id="overlayEndTitle" class="overlay-game-title">Run Ended</h2>
+          <div id="overlayEndMeta" class="overlay-scenario-badge">Scenario</div>
+          <p id="overlayEndReason" class="overlay-lead">-</p>
+          <div id="overlayEndStats" class="overlay-end-stats">-</div>
           <div class="overlay-actions">
-            <button id="overlayRestartBtn" class="primary" type="button">Restart Run</button>
-            <button id="overlayResetBtn" type="button">Reset to Menu</button>
+            <button id="overlayRestartBtn" class="primary" type="button">Try Again</button>
+            <button id="overlayResetBtn" type="button">New Map</button>
           </div>
         </section>
       </div>
