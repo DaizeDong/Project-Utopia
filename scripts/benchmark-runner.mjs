@@ -19,6 +19,7 @@ import { SimulationClock } from "../src/app/SimulationClock.js";
 import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
 import { MemoryStore } from "../src/simulation/ai/memory/MemoryStore.js";
+import { MemoryObserver } from "../src/simulation/ai/memory/MemoryObserver.js";
 import { StrategicDirector } from "../src/simulation/ai/strategic/StrategicDirector.js";
 import { EnvironmentDirectorSystem } from "../src/simulation/ai/director/EnvironmentDirectorSystem.js";
 import { WeatherSystem } from "../src/world/weather/WeatherSystem.js";
@@ -124,6 +125,7 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   state.ai.runtimeProfile = "long_run";
 
   const memoryStore = new MemoryStore();
+  const memoryObserver = new MemoryObserver(memoryStore);
   const services = createServices(state.world.mapSeed, {
     offlineAiFallback: !condition.aiEnabled,
     baseUrl: condition.aiEnabled ? (process.env.AI_PROXY_BASE ?? "http://localhost:8787") : "",
@@ -146,6 +148,7 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
       system.update(DT_SEC, state, services);
     }
     refreshPopulationStats(state);
+    memoryObserver.observe(state);
     await flushAsyncSystems();
 
     // Check for game-ending conditions
