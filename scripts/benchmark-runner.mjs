@@ -18,6 +18,8 @@ import { createServices } from "../src/app/createServices.js";
 import { SimulationClock } from "../src/app/SimulationClock.js";
 import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
+import { MemoryStore } from "../src/simulation/ai/memory/MemoryStore.js";
+import { StrategicDirector } from "../src/simulation/ai/strategic/StrategicDirector.js";
 import { EnvironmentDirectorSystem } from "../src/simulation/ai/director/EnvironmentDirectorSystem.js";
 import { WeatherSystem } from "../src/world/weather/WeatherSystem.js";
 import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
@@ -76,11 +78,12 @@ function round(value, digits = 2) {
   return Number(safe.toFixed(digits));
 }
 
-function buildSystems() {
+function buildSystems(memoryStore) {
   return [
     new SimulationClock(),
     new ProgressionSystem(),
     new RoleAssignmentSystem(),
+    new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
     new WorldEventSystem(),
@@ -100,6 +103,16 @@ async function flushAsyncSystems() {
   await Promise.resolve();
 }
 
+/** Compute populationStats that GameApp normally provides via #refreshLogicMetrics. */
+function refreshPopulationStats(state) {
+  const workers = state.agents.filter((a) => a.type === "WORKER" && a.alive !== false);
+  state.metrics.populationStats = {
+    workers: workers.length,
+    totalEntities: state.agents.length + (state.animals?.length ?? 0),
+  };
+  state.metrics.deathsTotal = state.metrics.deathsTotal ?? 0;
+}
+
 // ── Single run ─────────────────────────────────────────────────────────
 
 async function runSingle(scenario, condition, seed, durationSec, sampleIntervalSec) {
@@ -111,10 +124,12 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   state.ai.coverageTarget = "fallback";
   state.ai.runtimeProfile = "long_run";
 
+  const memoryStore = new MemoryStore();
   const services = createServices(state.world.mapSeed, {
     offlineAiFallback: true,
   });
-  const systems = buildSystems();
+  services.memoryStore = memoryStore;
+  const systems = buildSystems(memoryStore);
 
   const totalTicks = Math.max(60, Math.round(durationSec / DT_SEC));
   const sampleEveryTicks = Math.max(1, Math.round(sampleIntervalSec / DT_SEC));
@@ -124,10 +139,13 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   let finalPhase = "active";
   let survivalSec = durationSec;
 
+  refreshPopulationStats(state);
+
   for (let tick = 0; tick < totalTicks; tick += 1) {
     for (const system of systems) {
       system.update(DT_SEC, state, services);
     }
+    refreshPopulationStats(state);
     await flushAsyncSystems();
 
     // Check for game-ending conditions
@@ -170,7 +188,8 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   }
 
   // Gather AI decision data from state
-  const aiDecisionCount = Number(state.ai.environmentDecisionCount ?? 0) + Number(state.ai.policyDecisionCount ?? 0);
+  const strategyCount = Number(state.ai.strategyDecisionCount ?? 0);
+  const aiDecisionCount = Number(state.ai.environmentDecisionCount ?? 0) + Number(state.ai.policyDecisionCount ?? 0) + strategyCount;
   const aiLlmCount = Number(state.ai.environmentLlmCount ?? 0) + Number(state.ai.policyLlmCount ?? 0);
   const aiFallbackCount = aiDecisionCount - aiLlmCount;
 
@@ -223,8 +242,13 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
     ai: {
       enabled: Boolean(condition.aiEnabled),
       decisionCount: aiDecisionCount,
+      strategyCount,
       llmCount: aiLlmCount,
       fallbackCount: Math.max(0, aiFallbackCount),
+    },
+    memory: {
+      observations: memoryStore.observations.length,
+      reflections: memoryStore.reflections.length,
     },
     sampleCount: timeSeries.length,
     timeSeries,

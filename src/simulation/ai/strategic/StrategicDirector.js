@@ -83,7 +83,7 @@ export class StrategicDirector {
    */
   buildFallbackStrategy(state) {
     const { food, wood } = state.resources;
-    const workers = state.metrics.populationStats.workers;
+    const workers = state.metrics.populationStats?.workers ?? 0;
     const { threat, prosperity, objectiveIndex, objectives } = state.gameplay;
 
     // Survival checks
@@ -151,7 +151,7 @@ export class StrategicDirector {
       channel: "strategic-director",
       summary: {
         timeSec: state.metrics.timeSec,
-        workers: state.metrics.populationStats.workers,
+        workers: state.metrics.populationStats?.workers ?? 0,
         deaths: state.metrics.deathsTotal,
         food: state.resources.food,
         wood: state.resources.wood,

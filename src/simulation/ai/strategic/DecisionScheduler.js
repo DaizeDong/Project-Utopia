@@ -42,7 +42,7 @@ export class DecisionScheduler {
     if (elapsed < this.cooldownSec) return false;
 
     // 5. Critical events (immediate, past cooldown)
-    const { workers } = state.metrics.populationStats;
+    const workers = state.metrics.populationStats?.workers ?? 0;
     const { food, wood } = state.resources;
     const { threat } = state.gameplay;
 
