@@ -67,6 +67,10 @@
       grid-row: 1 / span 2;
     }
 
+    #wrap.game-active .pregame-only {
+      display: none;
+    }
+
     #layoutControls {
       position: fixed;
       top: 8px;
@@ -121,10 +125,10 @@
 
     #entityFocusOverlay {
       position: absolute;
-      top: 44px;
+      bottom: 56px;
       right: 12px;
-      width: min(320px, calc(100% - 24px));
-      max-height: calc(100% - 56px);
+      width: min(280px, calc(100% - 24px));
+      max-height: calc(100% - 100px);
       z-index: 12;
       border: 1px solid rgba(80,160,220,0.25);
       border-radius: 10px;
@@ -1073,7 +1077,7 @@
           <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Preset" />Bright preset</div>
         </div>
       </div>
-      <div class="panel-controls">
+      <div class="panel-controls" style="display:none;">
         <button id="sidebarCollapseAllBtn" type="button">Collapse All</button>
         <button id="sidebarExpandCoreBtn" type="button">Expand Core</button>
         <button id="sidebarExpandAllBtn" type="button">Expand All</button>
@@ -1090,7 +1094,7 @@
             <button data-tool="wall"><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
             <button data-tool="erase"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Erase</button>
           </div>
-          <div class="hint">Left click tile to build/select. Left click entity to inspect. Alt+Left click tile for inspect-only. Right drag pans the camera. Shortcuts: 1-6 tools, 0 reset camera, Esc clear, Space pause, Ctrl/Cmd+Z undo.</div>
+          <div class="hint">LMB build · RMB pan · 1-6 tools · Space pause · Ctrl+Z undo</div>
         </div>
       </details>
 
@@ -1103,6 +1107,7 @@
               <div class="small muted" style="margin-top:3px;">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
               <input id="farmRatio" type="range" min="0" max="100" value="50" />
 
+              <div class="pregame-only">
               <div class="small muted" style="margin-top:10px;">Map Template</div>
               <select id="mapTemplateSelect"></select>
               <div class="management-grid" style="margin-top:6px;">
@@ -1116,6 +1121,7 @@
               <div class="switch">
                 <input id="aiToggle" type="checkbox" />
                 <label for="aiToggle">Enable LLM Agent Mode</label>
+              </div>
               </div>
 
               <details class="subpanel" style="margin-top:10px;">
@@ -1498,7 +1504,7 @@
           </div>
         </section>
       </div>
-      <details id="entityFocusOverlay" open>
+      <details id="entityFocusOverlay">
         <summary>Entity Focus</summary>
         <div id="entityFocusBody" class="small">Click a worker, visitor, or animal to inspect.</div>
       </details>

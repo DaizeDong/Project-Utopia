@@ -1309,6 +1309,9 @@ export class GameApp {
     this.state.session.reason = options.reason ?? (next === "end" ? this.state.session.reason : "");
     this.state.session.endedAtSec = next === "end" ? this.state.metrics.timeSec : -1;
 
+    const wrapRoot = document.getElementById("wrap");
+    wrapRoot?.classList.toggle("game-active", next === "active");
+
     this.state.controls.stepFramesPending = 0;
     this.state.controls.isPaused = next !== "active";
     if (next === "active") {
