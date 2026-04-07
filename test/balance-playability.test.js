@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { VISITOR_KIND, TILE } from "../src/config/constants.js";
-import { BALANCE, INITIAL_RESOURCES } from "../src/config/balance.js";
+import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../src/config/balance.js";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { countTilesByType } from "../src/world/grid/Grid.js";
@@ -130,4 +130,20 @@ test("Frontier repair scenario has >= 4 farms, >= 2 lumbers, >= 4 walls after bu
   assert.ok(farms >= 4, `Frontier repair scenario has ${farms} farms, expected >= 4`);
   assert.ok(lumbers >= 2, `Frontier repair scenario has ${lumbers} lumbers, expected >= 2`);
   assert.ok(walls >= 4, `Frontier repair scenario has ${walls} walls, expected >= 4`);
+});
+
+// --- Initial population cap tests (Task 5) ---
+
+test("INITIAL_POPULATION.workers is <= 14 to match starting farm capacity", () => {
+  assert.ok(
+    INITIAL_POPULATION.workers <= 14,
+    `INITIAL_POPULATION.workers is ${INITIAL_POPULATION.workers}, expected <= 14`,
+  );
+});
+
+test("INITIAL_POPULATION.visitors is <= 4 to reduce early-game food pressure", () => {
+  assert.ok(
+    INITIAL_POPULATION.visitors <= 4,
+    `INITIAL_POPULATION.visitors is ${INITIAL_POPULATION.visitors}, expected <= 4`,
+  );
 });
