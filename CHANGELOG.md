@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.4.0] - 2026-04-07 — AI Architecture Reform (Phase 1-3)
+
+Research-driven reform of the LLM agent system, implementing hierarchical architecture with memory and benchmarking infrastructure.
+
+### Research & Analysis
+
+- **Architecture analysis** — Identified 7 critical problems in current AI system vs SOTA, referencing 20+ papers from UIST/NeurIPS/ICML/ICLR/AAAI/ACL 2023-2026
+- **Benchmark design** — 20+ quantifiable metrics with composite scoring (T_composite), automated evaluation pipeline
+- **Reform proposal** — Hierarchical agent architecture (Strategic Director -> Tactical Planner -> Executors) with memory stream, CoT reasoning, spatial task graphs
+
+### Benchmark Infrastructure (Phase 1)
+
+- **BenchmarkMetrics module** — Task composite score (T_surv, T_obj, T_res, T_pop, T_pros, T_threat), cost metrics (C_tok, C_min, C_lat, C_fb), decision quality metrics
+- **Benchmark runner** — Automated headless runner: 3 scenarios x 2 conditions x N seeds, CLI flags for smoke testing, JSON + markdown output
+- **Baseline results** — 60 runs establishing deterministic baseline (T_composite ~0.606-0.614)
+
+### Memory Stream (Phase 2)
+
+- **MemoryStore** — Observation stream with keyword-based retrieval, recency x relevance x importance scoring (inspired by Generative Agents, Park et al. 2023)
+- **Game event recording** — Deaths, food-critical, objective completion, weather changes automatically recorded as observations
+
+### Hierarchical Architecture (Phase 3)
+
+- **StrategicDirector** — New top-level system with CoT reasoning prompt, deterministic fallback strategy, async LLM pattern
+- **DecisionScheduler** — Event-driven + heartbeat trigger system replacing fixed intervals; critical events (workers=0, food<=5, threat>=85) trigger immediate decisions
+- **Prompt engineering** — Strategic director prompt with ReAct-style reasoning (Observe -> Reflect -> Plan -> Act)
+- **Full integration** — StrategicDirector and MemoryStore wired into GameApp, soak-sim, benchmark runner, and prompt pipeline
+
+### New Files
+
+- `src/benchmark/BenchmarkMetrics.js` — Metric computation
+- `src/simulation/ai/memory/MemoryStore.js` — Memory stream
+- `src/simulation/ai/strategic/DecisionScheduler.js` — Event-driven scheduling
+- `src/simulation/ai/strategic/StrategicDirector.js` — Hierarchical strategy layer
+- `src/data/prompts/strategic-director.md` — CoT system prompt
+- `scripts/benchmark-runner.mjs` — Automated benchmark
+- `docs/ai-research/` — Research documents (5 files)
+- `test/benchmark-metrics.test.js` — 8 tests
+- `test/memory-store.test.js` — 10 tests
+- `test/decision-scheduler.test.js` — 14 tests
+- `test/strategic-director.test.js` — 15 tests
+
+### Modified Files
+
+- `src/app/GameApp.js` — MemoryStore + StrategicDirector integration, memory observation recording
+- `src/config/aiConfig.js` — STRATEGY_CONFIG
+- `src/simulation/ai/llm/PromptPayload.js` — Strategy + memory context injection
+- `src/simulation/ai/memory/WorldSummary.js` — Strategy context attachment
+- `scripts/soak-sim.mjs` — StrategicDirector + MemoryStore integration
+
+---
+
 ## [0.3.1] - 2026-04-07 — Gameplay Polish
 
 - **Entity Focus repositioned** — Moved from top-right to bottom-right (`bottom: 56px`), collapsed by default to avoid overlapping layout buttons (`11943e9`)
