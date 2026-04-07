@@ -147,3 +147,56 @@ test("INITIAL_POPULATION.visitors is <= 4 to reduce early-game food pressure", (
     `INITIAL_POPULATION.visitors is ${INITIAL_POPULATION.visitors}, expected <= 4`,
   );
 });
+
+// --- Integration test: colony survives 60 seconds unattended (Task 6) ---
+
+import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
+
+test("colony does not trigger loss within 60 simulated seconds unattended", () => {
+  const state = createInitialGameState({ seed: 1337 });
+  const progression = new ProgressionSystem();
+
+  // Populate metrics.populationStats so evaluateRunOutcomeState can read worker count
+  const workerCount = state.agents.filter((a) => a.type === "WORKER" && a.alive !== false).length;
+  state.metrics.populationStats = {
+    workers: workerCount,
+    totalEntities: state.agents.length + state.animals.length,
+  };
+
+  const FPS = 30;
+  const dt = 1 / FPS;
+  const TOTAL_TICKS = 60 * FPS; // 1800 ticks = 60 seconds
+
+  for (let tick = 0; tick < TOTAL_TICKS; tick += 1) {
+    state.metrics.timeSec += dt;
+    state.metrics.simTimeSec = state.metrics.timeSec;
+    state.metrics.tick = tick;
+
+    // Run the ProgressionSystem which computes prosperity and threat
+    progression.update(dt, state);
+
+    // Check for loss after each tick
+    const outcome = evaluateRunOutcomeState(state);
+    if (outcome !== null && outcome.outcome === "loss") {
+      assert.fail(
+        `Colony triggered loss at tick ${tick} (${state.metrics.timeSec.toFixed(1)}s): ${outcome.reason} ` +
+        `[prosperity=${state.gameplay.prosperity.toFixed(1)}, threat=${state.gameplay.threat.toFixed(1)}, ` +
+        `food=${state.resources.food}, wood=${state.resources.wood}]`,
+      );
+    }
+  }
+
+  // Final sanity checks
+  assert.ok(
+    state.gameplay.prosperity > 8,
+    `Final prosperity ${state.gameplay.prosperity.toFixed(1)} should be above loss threshold (8)`,
+  );
+  assert.ok(
+    state.gameplay.threat < 92,
+    `Final threat ${state.gameplay.threat.toFixed(1)} should be below loss threshold (92)`,
+  );
+  assert.ok(
+    state.resources.food > 0 || state.resources.wood > 0,
+    `Colony should still have some resources at 60s (food=${state.resources.food}, wood=${state.resources.wood})`,
+  );
+});
