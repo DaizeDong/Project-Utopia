@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.0] - 2026-04-07 — Game UI Overhaul
+
+Visual transformation from developer-tool aesthetics to game-like interface.
+
+### HUD & Viewport
+
+- **Icon-rich resource bar** — Replaced plain-text status bar with dark-themed HUD featuring pixel-art icons (Apple, Wood Log, Gear, Golden Coin, Skull), colored progress bars, and low-resource urgency highlights (`f4dae4a`)
+- **Build tool icons** — Added pixel-art icons to all 6 build buttons (Road, Farm, Lumber, Warehouse, Wall, Erase) (`29f6382`)
+- **In-viewport speed controls** — Added pause/play/2x speed buttons and mm:ss game timer at bottom-center of viewport (`046394f`)
+- **Dark Entity Focus panel** — Restyled entity inspector with dark translucent background matching the HUD theme (`de854da`)
+- **Dark layout controls** — "☰ Menu" / "Debug" buttons with dark game-style appearance (`8fe9e28`)
+
+### Start & End Screens
+
+- **Objective cards** — Replaced monospace `<pre>` objectives dump with styled numbered cards showing current/next status (`265e680`)
+- **Gradient title** — "Project Utopia" with blue gradient text, scenario badge, keyboard controls hint bar
+- **Game-style buttons** — "Start Colony" / "New Map" / "Try Again" with prominent primary styling
+- **Victory/Defeat display** — End screen shows green "Victory!" or red "Colony Lost" gradient, time as mm:ss
+
+### Sidebar Cleanup
+
+- **"Colony Manager" heading** — Replaced "Project Utopia" developer-facing header (`8fe9e28`)
+- **Hidden dev clutter** — Compact Mode checkbox, Visual Mode legend, developer description text all hidden via CSS
+- **Page title** — Changed from "Project Utopia - Beta Build" to "Project Utopia"
+
+### Files Changed
+
+- `index.html` — Status bar, build buttons, speed controls, overlay, entity focus, layout controls (CSS + HTML)
+- `src/ui/hud/HUDController.js` — Icon HUD rendering, progress bars, urgency cues, speed control wiring, game timer
+- `src/ui/hud/GameStateOverlay.js` — Objective cards, victory/defeat styling, speed controls visibility
+- `src/ui/tools/BuildToolbar.js` — Layout button labels
+- `test/game-state-overlay.test.js` — Updated for renamed title
+
+---
+
 ## [0.2.0] - 2026-04-07 — Game Playability Overhaul
 
 Major architecture-level rework to transform the colony simulation from an unplayable prototype (dying in ~13 seconds) into a stable, guided gameplay loop.
