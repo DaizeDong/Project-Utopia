@@ -76,6 +76,13 @@ export class EnvironmentDirectorSystem {
     state.ai.lastEnvironmentDecisionSec = state.metrics.timeSec;
     markAiDecisionRequest(state, "environment", state.metrics.timeSec);
     const summary = buildWorldSummary(state);
+    if (services.memoryStore) {
+      const memCtx = services.memoryStore.formatForPrompt(
+        "weather event threat prosperity",
+        state.metrics.timeSec,
+      );
+      if (memCtx) summary._memoryContext = memCtx;
+    }
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
