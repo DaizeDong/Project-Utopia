@@ -143,12 +143,19 @@ function adjustWorkerPolicy(policy, context, summary) {
   const carrying = Number(context?.carrying ?? 0);
   const notes = [];
 
-  if (food < 20 || avgHunger < 0.34 || dominant === "seek_food" || dominant === "eat") {
-    boost(policy.intentWeights, "eat", 0.7);
-    boost(policy.intentWeights, "deliver", 0.35);
-    boost(policy.intentWeights, "farm", -0.2);
-    boostTarget(policy, "warehouse", 0.2);
-    addNote(notes, "Food is fragile, so keep workers near depots and hunger-safe loops.");
+  // Food scarcity — two tiers
+  if (food < 8 || avgHunger < 0.25) {
+    // Critical: eat immediately, deliver what you have
+    boost(policy.intentWeights, "eat", 0.9);
+    boost(policy.intentWeights, "deliver", 0.5);
+    boostTarget(policy, "warehouse", 0.25);
+    addNote(notes, "Food critical: workers must eat and deliver reserves first.");
+  } else if (food < 25 || avgHunger < 0.4 || dominant === "seek_food" || dominant === "eat") {
+    // Low: boost BOTH farm AND eat (produce more food while staying alive)
+    boost(policy.intentWeights, "eat", 0.4);
+    boost(policy.intentWeights, "farm", 0.35);
+    boost(policy.intentWeights, "deliver", 0.2);
+    addNote(notes, "Food is low: balance eating with increased farm output.");
   }
   if (carrying > Math.max(4, Number(context?.count ?? 0) * 0.5)) {
     boost(policy.intentWeights, "deliver", 0.6);
@@ -194,6 +201,31 @@ function adjustWorkerPolicy(policy, context, summary) {
   if (objective.id === "stability-1" || Number(gameplay.threat ?? 0) >= 56 || Number(world.spatialPressure?.eventPressure ?? 0) > 1.05) {
     boostTarget(policy, "safety", 0.24);
     addNote(notes, "Threat is elevated, so prefer safer paths and work clusters.");
+  }
+
+  // Predator awareness
+  const predators = Number(world?.population?.predators ?? 0);
+  if (predators >= 3) {
+    policy.riskTolerance = clamp(policy.riskTolerance - 0.1, 0, 1);
+    boostTarget(policy, "safety", 0.2);
+    boostTarget(policy, "warehouse", 0.15);
+    addNote(notes, "Multiple predators present: workers should avoid exposed positions.");
+  }
+
+  // Population-aware adjustments
+  const workerCount = Number(context?.count ?? 0);
+  if (workerCount <= 5) {
+    // Small crew: be conservative, focus on essentials
+    policy.riskTolerance = clamp(policy.riskTolerance - 0.08, 0, 1);
+    boost(policy.intentWeights, "eat", 0.2);
+    boost(policy.intentWeights, "farm", 0.15);
+    addNote(notes, "Skeleton crew: every worker matters, minimize risk.");
+  } else if (workerCount >= 16) {
+    // Large crew: diversify and build
+    boost(policy.intentWeights, "wood", 0.15);
+    boost(policy.intentWeights, "build", 0.2);
+    boost(policy.intentWeights, "deliver", 0.15);
+    addNote(notes, "Large workforce: diversify into wood and building.");
   }
 
   policy.focus = describeWorkerFocus(summary, notes);
@@ -535,6 +567,17 @@ export function buildEnvironmentFallback(summary) {
       factionTension: 0.35,
       eventSpawns: [],
     }, summary, "stabilization");
+  }
+
+  // 2b. High predator count: clear weather, calm conditions to reduce death rate
+  const predatorCount = Number(world.population?.predators ?? 0);
+  if (predatorCount >= 3 && prosperity < 60) {
+    return buildEnvironmentDirective({
+      weather: WEATHER.CLEAR,
+      durationSec: 22,
+      factionTension: 0.3,
+      eventSpawns: [],
+    }, summary, "predator mitigation");
   }
 
   // 3. Colony thriving (prosperity >= 70 and threat <= 25): apply light challenge
