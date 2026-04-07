@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-04-07 — Gameplay Polish
+
+- **Entity Focus repositioned** — Moved from top-right to bottom-right (`bottom: 56px`), collapsed by default to avoid overlapping layout buttons (`11943e9`)
+- **Pre-game controls hidden** — Map Template, seed, Regenerate Map, Doctrine, and AI toggle hidden during active gameplay via `.game-active .pregame-only` CSS class toggled in `#setRunPhase` (`11943e9`)
+- **Sidebar decluttered** — Admin buttons (Collapse All / Expand Core / Expand All) hidden; build tool hint shortened to one-liner (`11943e9`)
+- **Stale files removed** — Deleted unused `index.html.bak` and `main.js` (`11943e9`)
+
+### Files Changed
+
+- `index.html` — Entity Focus position, pregame-only wrapper, panel-controls hidden, hint text
+- `src/app/GameApp.js` — Toggle `game-active` class on `#wrap` in `#setRunPhase`
+
+---
+
 ## [0.3.0] - 2026-04-07 — Game UI Overhaul
 
 Visual transformation from developer-tool aesthetics to game-like interface.
