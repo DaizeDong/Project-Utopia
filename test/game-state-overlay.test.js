@@ -24,7 +24,7 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
     overlayMenuTitle: makeElement(),
     overlayMenuLead: makeElement(),
     overlayMenuMeta: makeElement(),
-    overlayMenuSummary: makeElement(),
+    overlayObjectiveCards: makeElement(),
     overlayEndMeta: makeElement(),
     overlayEndTitle: makeElement(),
     overlayEndReason: makeElement(),
@@ -69,7 +69,7 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
     assert.equal(nodes.gameStateOverlay.hidden, false);
     assert.equal(nodes.gameStateOverlay.style.display, "flex");
     assert.equal(nodes.gameStateOverlay.style.pointerEvents, "auto");
-    assert.match(nodes.overlayMenuTitle.textContent, /Project Utopia Beta/i);
+    assert.match(nodes.overlayMenuTitle.textContent, /Project Utopia/i);
     assert.match(nodes.overlayMenuMeta.textContent, /Broken Frontier/i);
   } finally {
     globalThis.document = prevDocument;
