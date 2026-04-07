@@ -15,8 +15,8 @@ import {
 import { buildScenarioBundle } from "../world/scenarios/ScenarioFactory.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
-  food: Math.min(INITIAL_RESOURCES.food, 42),
-  wood: Math.min(INITIAL_RESOURCES.wood, 32),
+  food: INITIAL_RESOURCES.food,
+  wood: INITIAL_RESOURCES.wood,
 });
 
 function createDeterministicRandom(seed) {

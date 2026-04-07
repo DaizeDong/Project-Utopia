@@ -197,7 +197,8 @@ function buildFrontierRepairScenario(grid) {
   stampRoad(grid, westOutpost.ix, westOutpost.iz, westOutpost.ix + 2, westOutpost.iz);
   setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
 
-  stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }], TILE.FARM);
+  stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }, { x: -1, z: 2 }, { x: -2, z: 2 }], TILE.FARM);
+  stampCluster(grid, center, [{ x: 3, z: -1 }], TILE.LUMBER);
   stampCluster(grid, westOutpost, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
@@ -206,6 +207,7 @@ function buildFrontierRepairScenario(grid) {
   setTileDirect(grid, eastDepot.ix + 2, eastDepot.iz, TILE.RUINS);
 
   stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }, { x: 1, z: -1 }], TILE.WALL);
+  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: -1, z: 3 }, { x: 1, z: 3 }], TILE.WALL);
   grid.version = Number(grid.version ?? 0) + 1;
 
   return {
@@ -273,7 +275,7 @@ function buildFrontierRepairScenario(grid) {
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "west-wilds" }],
     },
     targets: {
-      logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 0 },
+      logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 4 },
       stockpile: { food: 95, wood: 90 },
       stability: { walls: 12, prosperity: 58, threat: 44, holdSec: 30 },
     },

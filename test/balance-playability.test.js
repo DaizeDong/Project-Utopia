@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { VISITOR_KIND } from "../src/config/constants.js";
-import { BALANCE } from "../src/config/balance.js";
+import { VISITOR_KIND, TILE } from "../src/config/constants.js";
+import { BALANCE, INITIAL_RESOURCES } from "../src/config/balance.js";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
+import { countTilesByType } from "../src/world/grid/Grid.js";
 
 test("Trader ratio is >= 40% of all visitors", () => {
   const state = createInitialGameState();
@@ -103,4 +104,30 @@ test("weatherPressureProsperityPenalty is <= 5.0 to prevent weather-driven prosp
     BALANCE.weatherPressureProsperityPenalty <= 5.0,
     `weatherPressureProsperityPenalty is ${BALANCE.weatherPressureProsperityPenalty}, expected <= 5.0`,
   );
+});
+
+// --- Starting infrastructure and resources tests (Task 4) ---
+
+test("INITIAL_RESOURCES.food is >= 60 for viable early game", () => {
+  assert.ok(
+    INITIAL_RESOURCES.food >= 60,
+    `INITIAL_RESOURCES.food is ${INITIAL_RESOURCES.food}, expected >= 60`,
+  );
+});
+
+test("INITIAL_RESOURCES.wood is >= 50 for viable early game", () => {
+  assert.ok(
+    INITIAL_RESOURCES.wood >= 50,
+    `INITIAL_RESOURCES.wood is ${INITIAL_RESOURCES.wood}, expected >= 50`,
+  );
+});
+
+test("Frontier repair scenario has >= 4 farms, >= 2 lumbers, >= 4 walls after building", () => {
+  const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
+  const farms = countTilesByType(state.grid, [TILE.FARM]);
+  const lumbers = countTilesByType(state.grid, [TILE.LUMBER]);
+  const walls = countTilesByType(state.grid, [TILE.WALL]);
+  assert.ok(farms >= 4, `Frontier repair scenario has ${farms} farms, expected >= 4`);
+  assert.ok(lumbers >= 2, `Frontier repair scenario has ${lumbers} lumbers, expected >= 2`);
+  assert.ok(walls >= 4, `Frontier repair scenario has ${walls} walls, expected >= 4`);
 });
