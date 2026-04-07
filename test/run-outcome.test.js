@@ -9,6 +9,7 @@ test("evaluateRunOutcomeState returns loss for collapse spiral", () => {
   state.gameplay.prosperity = 7.5;
   state.gameplay.threat = 93;
   state.metrics.populationStats = { workers: 12 };
+  state.metrics.simTimeSec = 120;
 
   const outcome = evaluateRunOutcomeState(state);
   assert.equal(outcome?.outcome, "loss");
