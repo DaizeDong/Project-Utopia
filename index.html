@@ -598,6 +598,18 @@
       margin-top: 8px;
     }
 
+    .tool-icon {
+      width: 18px; height: 18px;
+      image-rendering: pixelated;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    .tool-grid button {
+      display: flex; align-items: center; justify-content: center; gap: 4px;
+      font-weight: 700;
+    }
+
     .tool-grid button,
     .benchmark-grid button,
     .management-grid button {
@@ -893,12 +905,12 @@
         <summary>Build Tool</summary>
         <div class="panel-body">
           <div class="tool-grid">
-            <button data-tool="road" class="active">Road</button>
-            <button data-tool="farm">Farm</button>
-            <button data-tool="lumber">Lumber</button>
-            <button data-tool="warehouse">Warehouse</button>
-            <button data-tool="wall">Wall</button>
-            <button data-tool="erase">Erase</button>
+            <button data-tool="road" class="active"><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
+            <button data-tool="farm"><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
+            <button data-tool="lumber"><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
+            <button data-tool="warehouse"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
+            <button data-tool="wall"><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
+            <button data-tool="erase"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Erase</button>
           </div>
           <div class="hint">Left click tile to build/select. Left click entity to inspect. Alt+Left click tile for inspect-only. Right drag pans the camera. Shortcuts: 1-6 tools, 0 reset camera, Esc clear, Space pause, Ctrl/Cmd+Z undo.</div>
         </div>
