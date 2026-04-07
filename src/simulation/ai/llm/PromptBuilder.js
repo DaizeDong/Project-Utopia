@@ -215,11 +215,10 @@ function adjustWorkerPolicy(policy, context, summary) {
   // Population-aware adjustments
   const workerCount = Number(context?.count ?? 0);
   if (workerCount <= 5) {
-    // Small crew: be conservative, focus on essentials
-    policy.riskTolerance = clamp(policy.riskTolerance - 0.08, 0, 1);
-    boost(policy.intentWeights, "eat", 0.2);
-    boost(policy.intentWeights, "farm", 0.15);
-    addNote(notes, "Skeleton crew: every worker matters, minimize risk.");
+    // Small crew: focus on food production (being overly conservative hurts output)
+    boost(policy.intentWeights, "farm", 0.25);
+    boost(policy.intentWeights, "eat", 0.15);
+    addNote(notes, "Skeleton crew: prioritize food production to sustain the colony.");
   } else if (workerCount >= 16) {
     // Large crew: diversify and build
     boost(policy.intentWeights, "wood", 0.15);

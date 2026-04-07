@@ -102,11 +102,11 @@ describe("buildPolicyFallback strategy awareness", () => {
     assert.ok(workerPolicy.riskTolerance < 0.35, "risk should be lower with many predators");
   });
 
-  it("makes skeleton crew more conservative", () => {
+  it("makes skeleton crew prioritize food production", () => {
     const summary = makePolicySummary();
     summary.stateTransitions.groups.workers.count = 4;
     const result = buildPolicyFallback(summary);
     const workerPolicy = result.policies.find((p) => p.groupId === "workers");
-    assert.ok(workerPolicy.riskTolerance < 0.35, "small crew should have lower risk tolerance");
+    assert.ok(workerPolicy.intentWeights.farm > 1.0, "small crew should boost farm intent");
   });
 });
