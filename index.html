@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" href="data:," />
-  <title>Project Utopia - Beta Build</title>
+  <title>Project Utopia</title>
   <style>
     :root {
       --bg: #eaf5ff;
@@ -121,17 +121,18 @@
 
     #entityFocusOverlay {
       position: absolute;
-      top: 12px;
+      top: 44px;
       right: 12px;
-      width: min(420px, calc(100% - 24px));
-      max-height: calc(100% - 24px);
+      width: min(320px, calc(100% - 24px));
+      max-height: calc(100% - 56px);
       z-index: 12;
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.9);
-      box-shadow: 0 10px 22px rgba(30, 79, 115, 0.18);
+      border: 1px solid rgba(80,160,220,0.25);
+      border-radius: 10px;
+      background: rgba(20,35,50,0.9);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
       overflow: hidden;
-      backdrop-filter: blur(4px);
+      backdrop-filter: blur(6px);
+      color: #d0e8ff;
     }
 
     #entityFocusOverlay > summary {
@@ -140,7 +141,7 @@
       padding: 8px 10px;
       font-size: 12px;
       font-weight: 700;
-      color: var(--muted);
+      color: rgba(208,232,255,0.6);
       border-bottom: 1px solid transparent;
     }
 
@@ -149,7 +150,7 @@
     }
 
     #entityFocusOverlay[open] > summary {
-      border-bottom-color: var(--panel-border);
+      border-bottom-color: rgba(80,160,220,0.2);
     }
 
     #entityFocusBody {
@@ -159,7 +160,7 @@
       padding: 9px 10px;
       font-size: 12px;
       line-height: 1.35;
-      color: #21465f;
+      color: rgba(208,232,255,0.85);
     }
 
     .entity-exchange-pre {
@@ -167,14 +168,15 @@
       padding: 8px;
       max-height: 180px;
       overflow: auto;
-      border: 1px solid var(--panel-border);
+      border: 1px solid rgba(80,160,220,0.2);
       border-radius: 8px;
-      background: rgba(255, 255, 255, 0.86);
+      background: rgba(0,0,0,0.2);
       white-space: pre-wrap;
       user-select: text;
       font-family: "Cascadia Code", "Consolas", monospace;
       font-size: 11px;
       line-height: 1.32;
+      color: rgba(208,232,255,0.8);
     }
 
     #gameStateOverlay {
@@ -1498,7 +1500,7 @@
       </div>
       <details id="entityFocusOverlay" open>
         <summary>Entity Focus</summary>
-        <div id="entityFocusBody" class="small muted">No entity selected. Click an entity to inspect.</div>
+        <div id="entityFocusBody" class="small">Click a worker, visitor, or animal to inspect.</div>
       </details>
     </div>
 
