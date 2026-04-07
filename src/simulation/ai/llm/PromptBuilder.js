@@ -558,9 +558,49 @@ export function buildEnvironmentFallback(summary) {
   }, summary, "steady state");
 }
 
+function applyStrategyToPolicy(policy, strategy) {
+  if (policy.groupId !== "workers") return;
+
+  // Resource focus
+  if (strategy.workerFocus === "farm" || strategy.resourceFocus === "food") {
+    policy.intentWeights.farm = Math.max(policy.intentWeights.farm, 1.6);
+    policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.6);
+    if (policy.notes) addNote(policy.notes, "Strategy: food focus prioritized.");
+  } else if (strategy.workerFocus === "wood" || strategy.resourceFocus === "wood") {
+    policy.intentWeights.wood = Math.max(policy.intentWeights.wood, 1.6);
+    policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.6);
+    if (policy.notes) addNote(policy.notes, "Strategy: wood focus prioritized.");
+  } else if (strategy.workerFocus === "deliver") {
+    policy.intentWeights.deliver = Math.max(policy.intentWeights.deliver ?? 1.0, 1.6);
+    if (policy.notes) addNote(policy.notes, "Strategy: delivery focus prioritized.");
+  }
+
+  // Survival mode
+  if (strategy.priority === "survive") {
+    policy.riskTolerance = Math.min(policy.riskTolerance, 0.25);
+    policy.intentWeights.eat = Math.max(policy.intentWeights.eat, 1.8);
+    if (policy.notes) addNote(policy.notes, "Strategy: survival mode active.");
+  }
+
+  // Defense mode
+  if (strategy.priority === "defend" || strategy.defensePosture === "defensive") {
+    policy.riskTolerance = Math.min(policy.riskTolerance, 0.3);
+    if (policy.notes) addNote(policy.notes, "Strategy: defensive posture.");
+  }
+}
+
 export function buildPolicyFallback(summary) {
   const basePolicies = clonePolicies();
   const policies = basePolicies.map((policy) => applyStateAwareTemplate(policy, summary));
+
+  // Apply strategy context if available
+  const strategy = getWorld(summary)._strategyContext ?? null;
+  if (strategy) {
+    for (const policy of policies) {
+      applyStrategyToPolicy(policy, strategy);
+    }
+  }
+
   const stateTargets = buildFallbackStateTargets(policies, summary);
   return { policies, stateTargets };
 }
