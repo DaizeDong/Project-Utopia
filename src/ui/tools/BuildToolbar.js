@@ -9,7 +9,7 @@ import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
-const CORE_PANEL_KEYS = Object.freeze(["build", "management", "stress", "ai-insights"]);
+const CORE_PANEL_KEYS = Object.freeze(["build", "management"]);
 const POPULATION_TARGET_LIMITS = Object.freeze({
   workers: { min: 0, max: 500 },
   traders: { min: 0, max: 300 },
@@ -422,7 +422,8 @@ export class BuildToolbar {
 
   #restoreLayoutPreference() {
     const sidebarCollapsed = localStorage.getItem("utopiaSidebarCollapsed") === "1";
-    const dockCollapsed = localStorage.getItem("utopiaDockCollapsed") === "1";
+    const storedDock = localStorage.getItem("utopiaDockCollapsed");
+    const dockCollapsed = storedDock === null ? true : storedDock === "1";
     this.#setSidebarCollapsed(sidebarCollapsed);
     this.#setDockCollapsed(dockCollapsed);
   }
