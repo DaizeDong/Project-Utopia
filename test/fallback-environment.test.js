@@ -86,4 +86,15 @@ describe("buildEnvironmentFallback", () => {
     const caravans = (result.eventSpawns ?? []).filter((e) => e.type === "tradeCaravan");
     assert.ok(caravans.length > 0, "high collapse risk should spawn trade caravan");
   });
+
+  it("provides calm conditions under predator threat", () => {
+    const summary = makeSummary({
+      population: { workers: 12, predators: 4 },
+      gameplay: { prosperity: 45, threat: 35, recovery: { collapseRisk: 5 } },
+    });
+    const result = buildEnvironmentFallback(summary);
+    assert.equal(result.weather, "clear");
+    const raids = (result.eventSpawns ?? []).filter((e) => e.type === "banditRaid");
+    assert.equal(raids.length, 0, "should not add raids when predators are already a threat");
+  });
 });

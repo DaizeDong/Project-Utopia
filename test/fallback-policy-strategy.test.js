@@ -84,4 +84,29 @@ describe("buildPolicyFallback strategy awareness", () => {
     assert.ok(result.policies.length > 0, "should produce policies without strategy");
     assert.ok(result.stateTargets, "should produce state targets");
   });
+
+  it("boosts farm intent when food is low (not critical)", () => {
+    const summary = makePolicySummary();
+    summary.world.resources = { food: 18, wood: 40 };
+    summary.stateTransitions.groups.workers.avgHunger = 0.6;
+    const result = buildPolicyFallback(summary);
+    const workerPolicy = result.policies.find((p) => p.groupId === "workers");
+    assert.ok(workerPolicy.intentWeights.farm > 1.0, "farm intent should be boosted when food is low");
+  });
+
+  it("reduces risk tolerance when predators are numerous", () => {
+    const summary = makePolicySummary();
+    summary.world.population = { workers: 12, predators: 4 };
+    const result = buildPolicyFallback(summary);
+    const workerPolicy = result.policies.find((p) => p.groupId === "workers");
+    assert.ok(workerPolicy.riskTolerance < 0.35, "risk should be lower with many predators");
+  });
+
+  it("makes skeleton crew more conservative", () => {
+    const summary = makePolicySummary();
+    summary.stateTransitions.groups.workers.count = 4;
+    const result = buildPolicyFallback(summary);
+    const workerPolicy = result.policies.find((p) => p.groupId === "workers");
+    assert.ok(workerPolicy.riskTolerance < 0.35, "small crew should have lower risk tolerance");
+  });
 });
