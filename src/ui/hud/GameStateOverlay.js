@@ -78,6 +78,8 @@ export class GameStateOverlay {
     this.root.style.pointerEvents = isInteractive ? "auto" : "none";
     const statusBar = document.getElementById("statusBar");
     if (statusBar) statusBar.style.display = isInteractive ? "none" : "flex";
+    const speedControls = document.getElementById("speedControls");
+    if (speedControls) speedControls.style.display = isInteractive ? "none" : "flex";
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
