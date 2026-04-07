@@ -76,6 +76,8 @@ export class GameStateOverlay {
     this.root.setAttribute("aria-hidden", isInteractive ? "false" : "true");
     this.root.style.display = isInteractive ? "flex" : "none";
     this.root.style.pointerEvents = isInteractive ? "auto" : "none";
+    const statusBar = document.getElementById("statusBar");
+    if (statusBar) statusBar.style.display = isInteractive ? "none" : "flex";
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 

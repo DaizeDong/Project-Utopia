@@ -44,6 +44,13 @@ export class HUDController {
     this.frameVal = document.getElementById("frameVal");
     this.agentVal = document.getElementById("agentVal");
     this.visualModeVal = document.getElementById("visualModeVal");
+
+    this.statusFood = document.getElementById("statusFood");
+    this.statusWood = document.getElementById("statusWood");
+    this.statusWorkers = document.getElementById("statusWorkers");
+    this.statusProsperity = document.getElementById("statusProsperity");
+    this.statusThreat = document.getElementById("statusThreat");
+    this.statusObjective = document.getElementById("statusObjective");
   }
 
   render() {
@@ -136,6 +143,16 @@ export class HUDController {
     if (this.fpsVal) this.fpsVal.textContent = state.metrics.averageFps.toFixed(1);
     if (this.frameVal) this.frameVal.textContent = `${state.metrics.frameMs.toFixed(2)} ms`;
     if (this.agentVal) this.agentVal.textContent = String(totalAgents);
+
+    if (this.statusFood) this.statusFood.textContent = Math.floor(state.resources.food);
+    if (this.statusWood) this.statusWood.textContent = Math.floor(state.resources.wood);
+    if (this.statusWorkers) this.statusWorkers.textContent = state.metrics?.populationStats?.workers ?? 0;
+    if (this.statusProsperity) this.statusProsperity.textContent = (state.gameplay?.prosperity ?? 0).toFixed(0);
+    if (this.statusThreat) this.statusThreat.textContent = (state.gameplay?.threat ?? 0).toFixed(0);
+    if (this.statusObjective) {
+      const obj = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0];
+      this.statusObjective.textContent = obj ? `${obj.title} (${obj.progress}%)` : "";
+    }
 
     if (state.ai.lastEnvironmentError || state.ai.lastPolicyError) {
       const envErr = state.ai.lastEnvironmentError ? `env=${state.ai.lastEnvironmentError}` : "";

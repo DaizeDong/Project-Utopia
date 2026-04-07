@@ -1160,6 +1160,22 @@
     </div>
 
     <div id="viewport">
+      <div id="statusBar" style="
+        position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+        display: flex; align-items: center; gap: 16px; padding: 8px 14px;
+        background: rgba(255,255,255,0.88); backdrop-filter: blur(4px);
+        border-bottom: 1px solid var(--panel-border);
+        font-size: 12px; font-weight: 700; color: var(--text);
+        pointer-events: none;
+      ">
+        <span>Food: <span id="statusFood">0</span></span>
+        <span>Wood: <span id="statusWood">0</span></span>
+        <span>Workers: <span id="statusWorkers">0</span></span>
+        <span>Prosperity: <span id="statusProsperity">0</span></span>
+        <span>Threat: <span id="statusThreat">0</span></span>
+        <span id="statusObjective" style="flex:1; text-align:right; opacity:0.75;">-</span>
+        <span id="statusAction" style="flex:0 0 auto; padding:2px 8px; border-radius:6px; font-size:11px; transition:opacity 0.3s;"></span>
+      </div>
       <canvas id="c"></canvas>
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
