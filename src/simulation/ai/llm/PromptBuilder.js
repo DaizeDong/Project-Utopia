@@ -247,6 +247,36 @@ function adjustWorkerPolicy(policy, context, summary) {
     addNote(notes, "Large workforce: diversify into wood and building.");
   }
 
+  // Auto-build queue: construct buildings when resources allow
+  // Priority: food production > logistics > defense (inspired by RimWorld colony priorities)
+  const buildQueue = [];
+  const farms = Number(world?.buildings?.farms ?? 0);
+  const lumbers = Number(world?.buildings?.lumbers ?? 0);
+  const warehouses = Number(world?.buildings?.warehouses ?? 0);
+  const roads = Number(world?.buildings?.roads ?? 0);
+  const walls = Number(world?.buildings?.walls ?? 0);
+
+  if (food < 30 && wood >= 8 && farms < Math.max(4, workerCount)) {
+    buildQueue.push({ type: "farm", priority: 3, reason: "food-scarcity" });
+  }
+  if (wood >= 6 && lumbers < Math.max(3, Math.ceil(workerCount * 0.4))) {
+    buildQueue.push({ type: "lumber", priority: 2, reason: "wood-production" });
+  }
+  if (wood >= 3 && roads < Math.max(8, workerCount)) {
+    buildQueue.push({ type: "road", priority: 1, reason: "connectivity" });
+  }
+  if (Number(world?.logistics?.overloadedWarehouses ?? 0) > 0 && wood >= 12) {
+    buildQueue.push({ type: "warehouse", priority: 2, reason: "storage-overload" });
+  }
+  if (objective.id === "stability-1" && wood >= 4 && walls < 12) {
+    buildQueue.push({ type: "wall", priority: 1, reason: "stability-objective" });
+  }
+
+  if (buildQueue.length > 0) {
+    policy.buildQueue = buildQueue.sort((a, b) => b.priority - a.priority);
+    addNote(notes, `Auto-build queued: ${buildQueue.map((b) => b.type).join(", ")}`);
+  }
+
   policy.focus = describeWorkerFocus(summary, notes);
   policy.summary = `Workers should sustain ${policy.focus} while keeping hunger and carried cargo from overriding the map's intended reroute pressure.`;
   policy.steeringNotes = notes.slice(0, 4);
@@ -650,6 +680,8 @@ function applyStrategyToPolicy(policy, strategy) {
     if (policy.notes) addNote(policy.notes, "Strategy: defensive posture.");
   }
 }
+
+export { adjustWorkerPolicy as adjustWorkerPolicyExported };
 
 export function buildPolicyFallback(summary) {
   const basePolicies = clonePolicies();
