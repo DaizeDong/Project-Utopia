@@ -120,7 +120,7 @@ async function flush() {
 
 // ── Core simulation runner ─────────────────────────────────────────────
 
-function runSimulation(config) {
+async function runSimulation(config) {
   const {
     templateId = "temperate_plains",
     seed = 1337,
@@ -223,6 +223,8 @@ function runSimulation(config) {
         tracker.errors.push({ tick, system: system.name, message: err.message });
       }
     }
+    // Flush microtasks periodically so async AI decisions resolve
+    if (tick % 30 === 0) await flush();
     refreshPopulationStats(state);
     memoryObserver.observe(state);
 
@@ -956,7 +958,7 @@ async function main() {
     process.stdout.write(`  [${i + 1}/${scenarios.length}] ${sc.id} (${sc.durationSec}s) ... `);
 
     try {
-      const result = runSimulation(sc);
+      const result = await runSimulation(sc);
       result.config = sc;
       results.push(result);
       totalSimTime += sc.durationSec;
