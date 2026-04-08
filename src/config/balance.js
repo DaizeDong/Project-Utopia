@@ -7,6 +7,11 @@ export const BUILD_COST = Object.freeze({
   warehouse: { wood: 10 },
   wall: { wood: 2 },
   erase: { wood: 0 },
+  quarry: { wood: 6 },
+  herb_garden: { wood: 4 },
+  kitchen: { wood: 8, stone: 3 },
+  smithy: { wood: 6, stone: 8 },
+  clinic: { wood: 6, herbs: 4 },
 });
 
 export const CONSTRUCTION_BALANCE = Object.freeze({
@@ -184,4 +189,24 @@ export const BALANCE = Object.freeze({
   animalMigrationPressurePerHazard: 0.38,
   animalMigrationWildlifeZoneBonus: 0.18,
   lossGracePeriodSec: 90,
+  // Phase 1: Resource chain production rates
+  quarryProductionPerSecond: 0.35,
+  herbGardenProductionPerSecond: 0.28,
+  kitchenCycleSec: 3,
+  kitchenFoodCost: 2,
+  kitchenMealOutput: 1,
+  smithyCycleSec: 8,
+  smithyStoneCost: 3,
+  smithyWoodCost: 2,
+  smithyToolOutput: 1,
+  clinicCycleSec: 4,
+  clinicHerbsCost: 2,
+  clinicMedicineOutput: 1,
+  mealHungerRecoveryMultiplier: 2.0,
+  toolHarvestSpeedBonus: 0.15,
+  toolMaxEffective: 3,
+  medicineHealPerSecond: 8,
+  // Phase 1: Weather modifiers for new tiles
+  quarryWeatherModifiers: { clear: 1.0, rain: 0.85, storm: 0.7, drought: 1.0, winter: 0.9 },
+  herbGardenWeatherModifiers: { clear: 1.0, rain: 1.15, storm: 0.9, drought: 0.4, winter: 0.3 },
 });

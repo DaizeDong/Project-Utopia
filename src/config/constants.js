@@ -7,6 +7,11 @@
   WALL: 5,
   RUINS: 6,
   WATER: 7,
+  QUARRY: 8,
+  HERB_GARDEN: 9,
+  KITCHEN: 10,
+  SMITHY: 11,
+  CLINIC: 12,
 });
 
 export const ENTITY_TYPE = Object.freeze({
@@ -29,6 +34,11 @@ export const ROLE = Object.freeze({
   FARM: "FARM",
   WOOD: "WOOD",
   HAUL: "HAUL",
+  STONE: "STONE",
+  HERBS: "HERBS",
+  COOK: "COOK",
+  SMITH: "SMITH",
+  HERBALIST: "HERBALIST",
 });
 
 export const WEATHER = Object.freeze({
@@ -60,6 +70,11 @@ export const TILE_INFO = Object.freeze({
   [TILE.WALL]: { passable: false, baseCost: 1000, height: 0.58, color: 0x9ba9b7 },
   [TILE.RUINS]: { passable: true, baseCost: 1.6, height: 0.07, color: 0xb98b73 },
   [TILE.WATER]: { passable: false, baseCost: 1000, height: 0.018, color: 0x69b4ea },
+  [TILE.QUARRY]: { passable: true, baseCost: 1.2, height: 0.13, color: 0xa0896e },
+  [TILE.HERB_GARDEN]: { passable: true, baseCost: 1.0, height: 0.08, color: 0x7bb86a },
+  [TILE.KITCHEN]: { passable: true, baseCost: 1.0, height: 0.22, color: 0xd4a65a },
+  [TILE.SMITHY]: { passable: true, baseCost: 1.0, height: 0.25, color: 0x8c7a6b },
+  [TILE.CLINIC]: { passable: true, baseCost: 1.0, height: 0.22, color: 0xc4d8c0 },
 });
 
 export const MOVE_DIRECTIONS_4 = Object.freeze([
@@ -83,4 +98,5 @@ export const SYSTEM_ORDER = Object.freeze([
   "MortalitySystem",
   "BoidsSystem",
   "ResourceSystem",
+  "ProcessingSystem",
 ]);
