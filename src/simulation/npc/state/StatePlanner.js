@@ -410,17 +410,30 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
     idleWithoutReasonSecByGroup: {},
     pathRecalcByEntity: {},
     lastGoalsByEntity: {},
+    prevPrevGoalsByEntity: {},
     deathByReasonAndReachability: {},
   });
 
   const key = String(entity.id ?? "");
   const prev = logic.lastGoalsByEntity[key];
+  const prevPrev = (logic.prevPrevGoalsByEntity ??= {})[key];
   const lastGoalSec = Number(entity.debug?.lastGoalSetSec ?? -Infinity);
-  if (prev && prev !== desiredState && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 3.0) {
+
+  // Only count A→B→A oscillation pattern within 3s window
+  if (
+    prev && prev !== desiredState
+    && prevPrev === desiredState
+    && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 3.0
+  ) {
     logic.goalFlipCount = Number(logic.goalFlipCount ?? 0) + 1;
     state.metrics.goalFlipCount = Number(state.metrics.goalFlipCount ?? 0) + 1;
   }
-  logic.lastGoalsByEntity[key] = desiredState;
+
+  // Update history only on actual state change
+  if (prev !== desiredState) {
+    logic.prevPrevGoalsByEntity[key] = prev;
+    logic.lastGoalsByEntity[key] = desiredState;
+  }
   entity.debug ??= {};
   entity.debug.lastGoalSetSec = nowSec;
 }
@@ -507,9 +520,6 @@ export function planEntityDesiredState(entity, state, context = {}) {
   entity.debug.desiredStateNode = resolved.desiredState;
   entity.debug.aiTargetApplied = resolved.source === "ai";
   entity.debug.aiTargetReason = resolved.source === "ai" ? aiMerged.reason : "";
-
-  // Count all policy evaluations as AI decisions (including fallback mode)
-  state.metrics.aiDecisions = (state.metrics.aiDecisions ?? 0) + 1;
 
   return {
     groupId,

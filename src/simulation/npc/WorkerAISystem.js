@@ -13,7 +13,6 @@ const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
-const WORKER_TASK_LOCK_SEC = 1.2;
 export const TASK_LOCK_STATES = new Set(["harvest", "deliver", "eat", "process", "seek_task"]);
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 
@@ -613,32 +612,31 @@ export class WorkerAISystem {
 
       const nowSec = Number(state.metrics.timeSec ?? 0);
       const fsm = worker.blackboard?.fsm ?? null;
-      worker.blackboard.taskLock ??= { state: "", untilSec: -Infinity };
-      const lock = worker.blackboard.taskLock;
-      const lockState = String(lock.state ?? "");
       const currentState = String(fsm?.state ?? "");
 
-      // Intent cooldown: don't re-evaluate every tick (RimWorld re-evaluates every ~2.5s)
-      const intentCooldownSec = Number(BALANCE.workerIntentCooldownSec ?? 1.5);
-      worker.blackboard.lastIntentEvalSec ??= -Infinity;
-      const timeSinceLastEval = nowSec - Number(worker.blackboard.lastIntentEvalSec);
+      // Task Commitment Protocol: once a worker enters a work cycle
+      // (seek_task/harvest/deliver/process/eat), it commits to finishing.
+      // Only survival interrupts (hunger < 0.12) break commitment.
+      const commitment = worker.blackboard.commitmentCycle;
       const survivalInterrupt = (worker.hunger ?? 1) < 0.12;
-      const taskLockJustExpired = nowSec >= Number(lock.untilSec ?? -Infinity) && lockState === currentState
-        && Number(worker.blackboard.lastIntentEvalSec) < Number(lock.untilSec ?? -Infinity);
 
-      let plan;
-      if (timeSinceLastEval >= intentCooldownSec || survivalInterrupt || currentState === "idle" || currentState === "wander" || taskLockJustExpired) {
-        plan = planEntityDesiredState(worker, state);
-        worker.blackboard.lastIntentEvalSec = nowSec;
-      } else {
-        plan = { desiredState: currentState, reason: "cooldown:hold" };
+      // Clear commitment if worker left the work cycle
+      if (commitment && !TASK_LOCK_STATES.has(currentState)) {
+        worker.blackboard.commitmentCycle = null;
       }
-      const inTaskLock = nowSec < Number(lock.untilSec ?? -Infinity) && lockState === currentState;
-      const interruptForSurvival = (plan.desiredState === "seek_food" || plan.desiredState === "eat")
-        && Number(worker.hunger ?? 1) < 0.16;
-      const desiredState = inTaskLock && plan.desiredState !== currentState && !interruptForSurvival
-        ? currentState
-        : plan.desiredState;
+
+      const inCommitment = worker.blackboard.commitmentCycle?.entered === true && !survivalInterrupt;
+      let plan;
+      if (inCommitment) {
+        plan = { desiredState: currentState, reason: "commitment:hold" };
+      } else {
+        plan = planEntityDesiredState(worker, state);
+        if (TASK_LOCK_STATES.has(plan.desiredState) && !worker.blackboard.commitmentCycle) {
+          worker.blackboard.commitmentCycle = { startSec: nowSec, entered: true };
+        }
+      }
+
+      const desiredState = plan.desiredState;
       const stateNode = transitionEntityState(
         worker,
         "workers",
@@ -646,19 +644,6 @@ export class WorkerAISystem {
         nowSec,
         plan.reason,
       );
-
-      const enteredTaskState = stateNode !== currentState && TASK_LOCK_STATES.has(stateNode);
-      if (enteredTaskState) {
-        worker.blackboard.taskLock = {
-          state: stateNode,
-          untilSec: nowSec + WORKER_TASK_LOCK_SEC,
-        };
-      } else if (lockState && stateNode !== lockState) {
-        worker.blackboard.taskLock = {
-          state: "",
-          untilSec: -Infinity,
-        };
-      }
 
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
