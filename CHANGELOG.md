@@ -1,5 +1,105 @@
 # Changelog
 
+## [0.5.0] - 2026-04-07 — Resource Chains & Processing Buildings (Game Richness Phase 1)
+
+Transforms the flat 2-resource economy into a layered processing chain with 5 new buildings, 5 new resources, and 5 new worker roles. Inspired by RimWorld's resource depth.
+
+### New Tile Types
+
+| Tile | ID | Build Cost | Function |
+|---|---|---|---|
+| QUARRY | 8 | wood: 6 | Workers gather stone (primary resource) |
+| HERB_GARDEN | 9 | wood: 4 | Workers gather herbs (primary resource) |
+| KITCHEN | 10 | wood: 8, stone: 3 | Converts 2 food → 1 meal (3s cycle, requires COOK) |
+| SMITHY | 11 | wood: 6, stone: 8 | Converts 3 stone + 2 wood → 1 tool (8s cycle, requires SMITH) |
+| CLINIC | 12 | wood: 6, herbs: 4 | Converts 2 herbs → 1 medicine (4s cycle, requires HERBALIST) |
+
+### New Resources
+
+- **Stone** — Primary resource gathered at quarries, used for smithy/kitchen/tower construction
+- **Herbs** — Primary resource gathered at herb gardens, used for clinic construction and medicine
+- **Meals** — Processed good (kitchen output), 2x hunger recovery vs raw food
+- **Tools** — Processed good (smithy output), +15% harvest speed per tool (cap 3, max +45%)
+- **Medicine** — Processed good (clinic output), heals most injured worker at 8 HP/s
+
+### New Worker Roles
+
+| Role | Intent | Target | Behavior |
+|---|---|---|---|
+| STONE | quarry | QUARRY | Gathers stone like FARM gathers food |
+| HERBS | gather_herbs | HERB_GARDEN | Gathers herbs like FARM gathers food |
+| COOK | cook | KITCHEN | Stands at kitchen to process food → meals |
+| SMITH | smith | SMITHY | Stands at smithy to process stone+wood → tools |
+| HERBALIST | heal | CLINIC | Stands at clinic to process herbs → medicine |
+
+### Systems
+
+- **ProcessingSystem** (NEW) — Per-building cooldown timers, worker adjacency check (Manhattan distance ≤ 1), input/output resource management. Inserted into SYSTEM_ORDER after ResourceSystem.
+- **RoleAssignmentSystem** — Extended from 2-role to 7-role allocation. Specialists capped at 1 per building type. Building-availability gating (no quarry → no STONE workers).
+- **ResourceSystem** — Calculates tool production multiplier, clamps all 7 resources, NaN reset.
+- **MortalitySystem** — Medicine healing: finds most injured worker, heals at 8 HP/s, consumes 0.1 medicine/s.
+- **WorkerAISystem** — 5 new intents, stone/herbs harvesting and delivery, meal consumption preference, tool multiplier applied to all harvest rates.
+
+### Rendering
+
+- 5 procedural tile textures (quarry: stone rubble, herb_garden: herb dots, kitchen: hearth grid, smithy: cross-hatch, clinic: medical cross)
+- Instanced mesh rendering with tint/roughness/emissive profiles
+
+### Build System
+
+- Multi-resource costs (stone, herbs) for kitchen/smithy/clinic
+- Salvage refund for all new tiles (50% of each resource cost)
+- Quarry/herb garden blobs in procedural map generation
+
+### AI
+
+- Extended worker intent contract with 5 new intents
+- Fallback policy boosts: quarry when stone < 15, gather_herbs when herbs < 10, cook when food > 30
+- World summary includes all 7 resource types
+
+### Benchmarks
+
+- 4 new presets: `resource_chains_basic`, `full_processing`, `scarce_advanced`, `tooled_colony`
+- Updated `developed_colony` preset with processing buildings
+- Fixed `cloneWorker` carry format to include stone/herbs
+- Generalized `applyPreset` resource handling
+
+### Tests
+
+- 35 new tests in `test/phase1-resource-chains.test.js` covering all 7 categories
+- 277 total tests passing, 0 regressions
+
+### New Files
+
+- `src/simulation/economy/ProcessingSystem.js`
+- `test/phase1-resource-chains.test.js`
+
+### Modified Files
+
+- `src/config/constants.js` — 5 tiles, 5 roles, TILE_INFO, SYSTEM_ORDER
+- `src/config/balance.js` — BUILD_COST, 16 BALANCE constants, weather modifiers
+- `src/config/aiConfig.js` — Intent contract, target priorities
+- `src/entities/EntityFactory.js` — Resources, carry format
+- `src/world/grid/Grid.js` — Blob generation, building stats
+- `src/world/grid/TileTypes.js` — Tool-to-tile mappings
+- `src/simulation/construction/BuildAdvisor.js` — 5 new tools, multi-resource costs
+- `src/simulation/population/RoleAssignmentSystem.js` — 7-role allocation
+- `src/simulation/npc/WorkerAISystem.js` — Intents, harvesting, delivery, meals, tools
+- `src/simulation/npc/state/StateGraph.js` — Process state
+- `src/simulation/npc/state/StatePlanner.js` — Intent-to-state mappings
+- `src/simulation/economy/ResourceSystem.js` — Tool multiplier, 7-resource clamping
+- `src/simulation/lifecycle/MortalitySystem.js` — Medicine healing
+- `src/simulation/ai/memory/WorldSummary.js` — 7 resources
+- `src/simulation/ai/llm/PromptBuilder.js` — Fallback boosts
+- `src/render/ProceduralTileTextures.js` — 5 texture profiles
+- `src/render/SceneRenderer.js` — Bindings and icons
+- `src/benchmark/BenchmarkPresets.js` — 4 new presets, carry fix
+- `src/app/GameApp.js` — ProcessingSystem instantiation
+- `test/benchmark-presets.test.js` — Updated count and new tests
+- `test/ai-contract.test.js` — Updated intent assertions
+
+---
+
 ## [0.4.0] - 2026-04-07 — AI Architecture Reform (Phase 1-3)
 
 Research-driven reform of the LLM agent system, implementing hierarchical architecture with memory and benchmarking infrastructure.
