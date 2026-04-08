@@ -115,6 +115,16 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
       score -= ecologyPressure * Math.max(0.18, resolveTargetPriority(policy, "safety", 1) * 0.12);
     } else if (tileType === TILE.LUMBER) {
       score += 0.54 * resolveTargetPriority(policy, "lumber", 1);
+    } else if (tileType === TILE.QUARRY) {
+      score += 0.54 * resolveTargetPriority(policy, "quarry", 1);
+    } else if (tileType === TILE.HERB_GARDEN) {
+      score += 0.54 * resolveTargetPriority(policy, "herb_garden", 1);
+    } else if (tileType === TILE.KITCHEN) {
+      score += 0.58 * resolveTargetPriority(policy, "kitchen", 1);
+    } else if (tileType === TILE.SMITHY) {
+      score += 0.58 * resolveTargetPriority(policy, "smithy", 1);
+    } else if (tileType === TILE.CLINIC) {
+      score += 0.58 * resolveTargetPriority(policy, "clinic", 1);
     }
 
     if (!best || score > best.score) {
@@ -166,11 +176,16 @@ function getWorkerRecoveryPerFoodUnit(worker) {
 
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
-  const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) > 0;
-  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0) > 0;
+  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   const carryAgeSec = Number(worker.blackboard?.carryAgeSec ?? 0);
   const noWorkSite = (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) <= 0)
-    || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0);
+    || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0)
+    || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
+    || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
+    || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
+    || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
+    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
   const alreadyDelivering = String(worker.stateLabel ?? "").toLowerCase().includes("deliver");
   const nearestWarehouseDistance = estimateNearestWarehouseDistance(worker, state);
   const deliverThreshold = Number(BALANCE.workerDeliverThreshold ?? 2.4);
@@ -193,6 +208,11 @@ export function chooseWorkerIntent(worker, state) {
   }
   if (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) > 0) return "farm";
   if (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) > 0) return "lumber";
+  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) return "quarry";
+  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) return "gather_herbs";
+  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) return "cook";
+  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) return "smith";
+  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) return "heal";
   return "wander";
 }
 
@@ -336,7 +356,7 @@ function handleEat(worker, state, services, dt) {
 }
 
 function handleDeliver(worker, state, services, dt) {
-  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   if (carryTotal <= 0 || Number(state.buildings?.warehouses ?? 0) <= 0) {
     clearPath(worker);
     setIdleDesired(worker);
@@ -370,22 +390,46 @@ function handleDeliver(worker, state, services, dt) {
     const unloadWood = Math.min(Number(worker.carry.wood ?? 0), remaining);
     worker.carry.wood = Math.max(0, Number(worker.carry.wood ?? 0) - unloadWood);
     state.resources.wood += unloadWood;
+    remaining -= unloadWood;
+    const unloadStone = Math.min(Number(worker.carry.stone ?? 0), remaining);
+    worker.carry.stone = Math.max(0, Number(worker.carry.stone ?? 0) - unloadStone);
+    state.resources.stone = (state.resources.stone ?? 0) + unloadStone;
+    remaining -= unloadStone;
+    const unloadHerbs = Math.min(Number(worker.carry.herbs ?? 0), remaining);
+    worker.carry.herbs = Math.max(0, Number(worker.carry.herbs ?? 0) - unloadHerbs);
+    state.resources.herbs = (state.resources.herbs ?? 0) + unloadHerbs;
     worker.debug ??= {};
     worker.debug.targetWarehouseLoad = inboundLoad;
     worker.debug.lastUnloadRate = unloadBudget;
-    if (Number(worker.carry.food ?? 0) + Number(worker.carry.wood ?? 0) <= 1e-4) {
+    if (Number(worker.carry.food ?? 0) + Number(worker.carry.wood ?? 0) + Number(worker.carry.stone ?? 0) + Number(worker.carry.herbs ?? 0) <= 1e-4) {
       worker.carry.food = 0;
       worker.carry.wood = 0;
+      worker.carry.stone = 0;
+      worker.carry.herbs = 0;
       worker.blackboard ??= {};
       worker.blackboard.carryAgeSec = 0;
     }
   }
 }
 
+const ROLE_HARVEST_CONFIG = {
+  [ROLE.FARM]: { intentKey: "farm", tileTypes: [TILE.FARM] },
+  [ROLE.WOOD]: { intentKey: "lumber", tileTypes: [TILE.LUMBER] },
+  [ROLE.STONE]: { intentKey: "quarry", tileTypes: [TILE.QUARRY] },
+  [ROLE.HERBS]: { intentKey: "gather_herbs", tileTypes: [TILE.HERB_GARDEN] },
+};
+
+const ROLE_PROCESS_CONFIG = {
+  [ROLE.COOK]: { intentKey: "cook", tileTypes: [TILE.KITCHEN] },
+  [ROLE.SMITH]: { intentKey: "smith", tileTypes: [TILE.SMITHY] },
+  [ROLE.HERBALIST]: { intentKey: "heal", tileTypes: [TILE.CLINIC] },
+};
+
 function handleHarvest(worker, state, services, dt) {
-  const intentKey = worker.role === ROLE.FARM ? "farm" : "lumber";
-  const targetType = worker.role === ROLE.FARM ? TILE.FARM : TILE.LUMBER;
-  if (!maybeRetarget(worker, state, services, intentKey, [targetType])) return;
+  const config = ROLE_HARVEST_CONFIG[worker.role];
+  const intentKey = config?.intentKey ?? (worker.role === ROLE.FARM ? "farm" : "lumber");
+  const targetTypes = config?.tileTypes ?? (worker.role === ROLE.FARM ? [TILE.FARM] : [TILE.LUMBER]);
+  if (!maybeRetarget(worker, state, services, intentKey, targetTypes)) return;
 
   if (hasActivePath(worker, state)) {
     const step = followPath(worker, state, dt);
@@ -409,6 +453,16 @@ function handleHarvest(worker, state, services, dt) {
       "food",
       services.rng,
     );
+  } else if (worker.role === ROLE.STONE) {
+    worker.debug ??= {};
+    worker.debug.lastFarmPressure = 0;
+    worker.debug.lastFarmYieldMultiplier = 1;
+    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1)), "stone", services.rng);
+  } else if (worker.role === ROLE.HERBS) {
+    worker.debug ??= {};
+    worker.debug.lastFarmPressure = 0;
+    worker.debug.lastFarmYieldMultiplier = 1;
+    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1)), "herbs", services.rng);
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
     worker.debug ??= {};
@@ -416,6 +470,25 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug.lastFarmYieldMultiplier = 1;
     resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine), "wood", services.rng);
   }
+}
+
+function handleProcess(worker, state, services, dt) {
+  const config = ROLE_PROCESS_CONFIG[worker.role];
+  if (!config) {
+    setIdleDesired(worker);
+    return;
+  }
+  if (!maybeRetarget(worker, state, services, config.intentKey, config.tileTypes)) return;
+
+  if (hasActivePath(worker, state)) {
+    const step = followPath(worker, state, dt);
+    worker.desiredVel = step.desired;
+    if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
+  } else {
+    setIdleDesired(worker);
+  }
+
+  // Worker stays at the building; actual processing is handled by ProcessingSystem
 }
 
 function handleWander(worker, state, services, dt) {
@@ -478,7 +551,7 @@ export class WorkerAISystem {
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
       worker.blackboard ??= {};
-      const carryNow = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+      const carryNow = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
       worker.blackboard.carryAgeSec = carryNow > 0
         ? Number(worker.blackboard.carryAgeSec ?? 0) + dt
         : 0;
@@ -510,7 +583,7 @@ export class WorkerAISystem {
       );
 
       const enteredTaskState = stateNode !== currentState
-        && (stateNode === "harvest" || stateNode === "deliver" || stateNode === "eat");
+        && (stateNode === "harvest" || stateNode === "deliver" || stateNode === "eat" || stateNode === "process");
       if (enteredTaskState) {
         worker.blackboard.taskLock = {
           state: stateNode,
@@ -533,8 +606,14 @@ export class WorkerAISystem {
         handleEat(worker, state, services, dt);
       } else if (stateNode === "deliver") {
         handleDeliver(worker, state, services, dt);
+      } else if (stateNode === "process") {
+        handleProcess(worker, state, services, dt);
       } else if (stateNode === "seek_task" || stateNode === "harvest") {
-        handleHarvest(worker, state, services, dt);
+        if (ROLE_PROCESS_CONFIG[worker.role]) {
+          handleProcess(worker, state, services, dt);
+        } else {
+          handleHarvest(worker, state, services, dt);
+        }
       } else if (stateNode === "wander") {
         handleWander(worker, state, services, dt);
       } else {
