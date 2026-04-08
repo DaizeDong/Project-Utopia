@@ -577,13 +577,28 @@ export class WorkerAISystem {
         ? estimateNearestWarehouseDistance(worker, state)
         : -1;
 
-      const plan = planEntityDesiredState(worker, state);
       const nowSec = Number(state.metrics.timeSec ?? 0);
       const fsm = worker.blackboard?.fsm ?? null;
       worker.blackboard.taskLock ??= { state: "", untilSec: -Infinity };
       const lock = worker.blackboard.taskLock;
       const lockState = String(lock.state ?? "");
       const currentState = String(fsm?.state ?? "");
+
+      // Intent cooldown: don't re-evaluate every tick (RimWorld re-evaluates every ~2.5s)
+      const intentCooldownSec = Number(BALANCE.workerIntentCooldownSec ?? 1.5);
+      worker.blackboard.lastIntentEvalSec ??= -Infinity;
+      const timeSinceLastEval = nowSec - Number(worker.blackboard.lastIntentEvalSec);
+      const survivalInterrupt = (worker.hunger ?? 1) < 0.12;
+      const taskLockJustExpired = nowSec >= Number(lock.untilSec ?? -Infinity) && lockState === currentState
+        && Number(worker.blackboard.lastIntentEvalSec) < Number(lock.untilSec ?? -Infinity);
+
+      let plan;
+      if (timeSinceLastEval >= intentCooldownSec || survivalInterrupt || currentState === "idle" || currentState === "wander" || taskLockJustExpired) {
+        plan = planEntityDesiredState(worker, state);
+        worker.blackboard.lastIntentEvalSec = nowSec;
+      } else {
+        plan = { desiredState: currentState, reason: "cooldown:hold" };
+      }
       const inTaskLock = nowSec < Number(lock.untilSec ?? -Infinity) && lockState === currentState;
       const interruptForSurvival = (plan.desiredState === "seek_food" || plan.desiredState === "eat")
         && Number(worker.hunger ?? 1) < 0.16;
