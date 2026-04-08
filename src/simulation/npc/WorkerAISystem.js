@@ -13,6 +13,7 @@ const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 const WORKER_TASK_LOCK_SEC = 1.2;
+export const TASK_LOCK_STATES = new Set(["harvest", "deliver", "eat", "process", "seek_task"]);
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 
 function tileKey(tile) {
@@ -597,8 +598,7 @@ export class WorkerAISystem {
         plan.reason,
       );
 
-      const enteredTaskState = stateNode !== currentState
-        && (stateNode === "harvest" || stateNode === "deliver" || stateNode === "eat" || stateNode === "process");
+      const enteredTaskState = stateNode !== currentState && TASK_LOCK_STATES.has(stateNode);
       if (enteredTaskState) {
         worker.blackboard.taskLock = {
           state: stateNode,
