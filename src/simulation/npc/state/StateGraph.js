@@ -1,4 +1,4 @@
-const DEFAULT_STATE_HOLD_SEC = 0.35;
+const DEFAULT_STATE_HOLD_SEC = 0.8;
 
 export const GROUP_STATE_GRAPH = Object.freeze({
   workers: Object.freeze({
