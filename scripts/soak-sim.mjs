@@ -20,6 +20,7 @@ import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js"
 import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
+import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
 import { makeSerializableSnapshot, restoreSnapshotState } from "../src/app/snapshotService.js";
 import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { LONG_RUN_PROFILE } from "../src/config/longRunProfile.js";
@@ -99,6 +100,7 @@ function buildSystems(memoryStore) {
     new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
+    new ProcessingSystem(),
   ];
 }
 
