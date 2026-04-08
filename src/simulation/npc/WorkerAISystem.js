@@ -186,7 +186,8 @@ export function chooseWorkerIntent(worker, state) {
     || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
     || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
     || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
-    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
+    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
+    || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
   const alreadyDelivering = String(worker.stateLabel ?? "").toLowerCase().includes("deliver");
   const nearestWarehouseDistance = estimateNearestWarehouseDistance(worker, state);
   const deliverThreshold = Number(BALANCE.workerDeliverThreshold ?? 2.4);
@@ -214,6 +215,7 @@ export function chooseWorkerIntent(worker, state) {
   if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) return "cook";
   if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) return "smith";
   if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) return "heal";
+  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) return "haul";
   return "wander";
 }
 
@@ -432,6 +434,7 @@ const ROLE_HARVEST_CONFIG = {
   [ROLE.WOOD]: { intentKey: "lumber", tileTypes: [TILE.LUMBER] },
   [ROLE.STONE]: { intentKey: "quarry", tileTypes: [TILE.QUARRY] },
   [ROLE.HERBS]: { intentKey: "gather_herbs", tileTypes: [TILE.HERB_GARDEN] },
+  [ROLE.HAUL]: { intentKey: "haul", tileTypes: [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN] },
 };
 
 const ROLE_PROCESS_CONFIG = {
@@ -456,7 +459,16 @@ function handleHarvest(worker, state, services, dt) {
 
   if (!isAtTargetTile(worker, state)) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
-  if (worker.role === ROLE.FARM) {
+  // HAUL workers: determine resource type from tile they're standing on
+  let effectiveRole = worker.role;
+  if (worker.role === ROLE.HAUL && worker.targetTile) {
+    const tileAtTarget = getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+    if (tileAtTarget === TILE.FARM) effectiveRole = ROLE.FARM;
+    else if (tileAtTarget === TILE.LUMBER) effectiveRole = ROLE.WOOD;
+    else if (tileAtTarget === TILE.QUARRY) effectiveRole = ROLE.STONE;
+    else if (tileAtTarget === TILE.HERB_GARDEN) effectiveRole = ROLE.HERBS;
+  }
+  if (effectiveRole === ROLE.FARM) {
     const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
     const ecology = getFarmEcologyYieldMultiplier(worker, state);
     worker.debug ??= {};
@@ -469,12 +481,12 @@ function handleHarvest(worker, state, services, dt) {
       "food",
       services.rng,
     );
-  } else if (worker.role === ROLE.STONE) {
+  } else if (effectiveRole === ROLE.STONE) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "stone", services.rng);
-  } else if (worker.role === ROLE.HERBS) {
+  } else if (effectiveRole === ROLE.HERBS) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
@@ -671,6 +683,7 @@ export class WorkerAISystem {
         [ROLE.COOK]: "cook",
         [ROLE.SMITH]: "smith",
         [ROLE.HERBALIST]: "heal",
+        [ROLE.HAUL]: "haul",
       };
       worker.debug.lastIntent = (stateNode === "harvest" || stateNode === "seek_task" || stateNode === "process")
         ? (ROLE_TO_INTENT[worker.role] ?? stateNode)

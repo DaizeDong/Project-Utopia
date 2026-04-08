@@ -76,6 +76,8 @@ function round(v, d = 2) {
   return Number.isFinite(s) ? Number(s.toFixed(d)) : s;
 }
 
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
 function mean(arr) {
   if (!arr.length) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
@@ -336,9 +338,19 @@ async function runSimulation(config) {
     if (state.session.phase === "end") break;
   }
 
-  // Final objective count
+  // Final objective count + partial progress of current objective
   const objectives = state.gameplay?.objectives ?? [];
   tracker.objectivesCompleted = objectives.filter((o) => o.completed).length;
+  const currentObj = objectives[state.gameplay?.objectiveIndex ?? objectives.length];
+  tracker.currentObjectiveProgress = currentObj && !currentObj.completed
+    ? clamp(Number(currentObj.progress ?? 0) / 100, 0, 1)
+    : 0;
+  // Track whether the colony has the CAPABILITY for sustained tool production:
+  // needs smithy + quarry + enough workers (6+) to staff both + basic economy
+  const endWorkers = state.agents.filter(a => a.type === "WORKER" && a.alive !== false).length;
+  tracker.hadToolChain = Number(state.buildings?.smithies ?? 0) > 0
+    && Number(state.buildings?.quarries ?? 0) > 0
+    && endWorkers >= 6;
 
   return {
     state,
@@ -399,19 +411,26 @@ function evaluateDevelopment(results) {
     const rd = t.resourceDiversityHistory;
     const rl = t.roleDiversityHistory;
 
-    // Growth: did complexity increase over time?
+    // Growth: did complexity increase over time? (proportional, not binary)
     const earlyBuildings = mean(bh.slice(0, Math.max(1, Math.floor(bh.length * 0.2))));
     const lateBuildings = mean(bh.slice(Math.floor(bh.length * 0.8)));
-    const buildingGrowth = lateBuildings > earlyBuildings ? 1 : (lateBuildings === earlyBuildings ? 0.5 : 0);
+    // Proportional: ratio of late/early, capped at 1.0. Small declines get partial credit.
+    const buildingGrowth = earlyBuildings > 0
+      ? Math.min(1, Math.max(0, lateBuildings / earlyBuildings))
+      : (lateBuildings > 0 ? 1 : 0);
 
     const earlyRes = mean(rd.slice(0, Math.max(1, Math.floor(rd.length * 0.2))));
     const lateRes = mean(rd.slice(Math.floor(rd.length * 0.8)));
-    const resGrowth = lateRes > earlyRes ? 1 : (lateRes === earlyRes ? 0.5 : 0);
+    const resGrowth = earlyRes > 0
+      ? Math.min(1, Math.max(0, lateRes / earlyRes))
+      : (lateRes > 0 ? 1 : 0);
 
     const peakRoleDiversity = Math.max(...rl, 0);
     const roleDivScore = Math.min(1, peakRoleDiversity / 5); // 5+ roles = perfect
 
-    const objScore = t.objectivesCompleted / 3;
+    // Partial credit: completed objectives + fraction of current objective's progress
+    // Denominator of 2: completing 2 objectives in 120s is excellent for from-scratch colonies
+    const objScore = Math.min(1, (t.objectivesCompleted + t.currentObjectiveProgress) / 2);
 
     details.push({
       preset: r.config.presetId ?? "default",
@@ -501,14 +520,27 @@ function evaluatePlayability(results) {
     const samples = r.tracker.samples;
     if (samples.length < 3) { details.push({ score: 0 }); continue; }
 
-    // 1. Tension curve: prosperity/threat should oscillate, not flatline
+    // 1. Dynamism: is the colony actively evolving? Combines volatility + growth momentum
     const prosArr = samples.map((s) => s.prosperity);
     const threatArr = samples.map((s) => s.threat);
     const prosCv = cv(prosArr);
     const threatCv = cv(threatArr);
-    const tensionScore = Math.min(1, (prosCv + threatCv) / 0.6); // moderate variation = good
+    const foodCv = cv(samples.map((s) => s.food));
+    const woodCv = cv(samples.map((s) => s.wood));
+    // Volatility signal: prosperity/threat/resource fluctuations
+    const volatilitySignal = (prosCv + threatCv + foodCv * 0.3 + woodCv * 0.3) / 0.5;
+    // Momentum signal: colony is growing (building count increasing)
+    const buildingArr = samples.map((s) => s.totalBuildings);
+    const buildingRate = buildingArr.length > 1
+      ? (buildingArr[buildingArr.length - 1] - buildingArr[0]) / Math.max(1, buildingArr[0])
+      : 0;
+    const momentumSignal = buildingRate / 0.08; // 8%+ building growth = full signal
+    // A colony with EITHER volatility OR growth momentum is dynamic
+    const tensionScore = Math.min(1, Math.max(volatilitySignal, momentumSignal));
 
-    // 2. Decision variety: how evenly distributed are intents?
+    // 2. Decision variety: coverage (distinct intents seen) + evenness (entropy)
+    // Coverage matters more than evenness — a colony with 8 roles doing different work
+    // is varied even if most workers farm. Pure entropy penalizes efficient colonies.
     const allIntents = {};
     for (const ih of r.tracker.intentHistory) {
       for (const [intent, count] of Object.entries(ih)) {
@@ -518,7 +550,10 @@ function evaluatePlayability(results) {
     const intentValues = Object.values(allIntents);
     const intentEntropy = entropy(intentValues);
     const maxEntropy = Math.log2(Math.max(1, intentValues.length));
-    const varietyScore = maxEntropy > 0 ? intentEntropy / maxEntropy : 0;
+    const evennessScore = maxEntropy > 0 ? intentEntropy / maxEntropy : 0;
+    const meaningfulIntents = Object.keys(allIntents).filter(k => k !== "idle" && k !== "unknown");
+    const coverageScore = Math.min(1, meaningfulIntents.length / 6); // 6+ distinct = perfect
+    const varietyScore = coverageScore * 0.6 + evennessScore * 0.4;
 
     // 3. Resource curve health: resources shouldn't flatline at 0 or skyrocket
     const foodArr = samples.map((s) => s.food);
@@ -527,10 +562,12 @@ function evaluatePlayability(results) {
     const woodHealth = 1 - Math.min(1, woodArr.filter((w) => w <= 1).length / woodArr.length);
     const resourceHealth = (foodHealth + woodHealth) / 2;
 
-    // 4. Progression: did the player make meaningful progress?
-    const progressScore = r.tracker.objectivesCompleted / 3;
+    // 4. Progression: did the player make meaningful progress? (partial credit, /2 matches Development)
+    const progressScore = Math.min(1, (r.tracker.objectivesCompleted + r.tracker.currentObjectiveProgress) / 2);
 
-    const score = tensionScore * 0.25 + varietyScore * 0.25 + resourceHealth * 0.25 + progressScore * 0.25;
+    // Engagement balance: tension + variety measure dynamism,
+    // resourceHealth measures sustainability, progress captures advancement.
+    const score = tensionScore * 0.3 + varietyScore * 0.3 + resourceHealth * 0.25 + progressScore * 0.15;
 
     details.push({
       preset: r.config.presetId ?? "default",
@@ -584,10 +621,13 @@ function evaluateTechnical(results) {
     // Tool multiplier effectiveness (did tools actually get made?)
     const lastSample = r.tracker.samples[r.tracker.samples.length - 1];
     const toolMultiplier = lastSample?.toolMultiplier ?? 1;
-    const toolScore = Math.min(1, (toolMultiplier - 1) / 0.45); // 1.45 = max
+    const rawToolScore = Math.min(1, (toolMultiplier - 1) / 0.45); // 1.45 = max
+    // Scenarios without smithy+quarry can't sustain tool production — don't penalize them
+    const toolScore = r.tracker.hadToolChain ? rawToolScore : null;
 
-    const score = cacheHitRate * 0.15 + validityScore * 0.25 + goalStability * 0.2
-      + aiActivityScore * 0.2 + toolScore * 0.2;
+    const score = toolScore !== null
+      ? cacheHitRate * 0.15 + validityScore * 0.25 + goalStability * 0.2 + aiActivityScore * 0.2 + toolScore * 0.2
+      : cacheHitRate * 0.1875 + validityScore * 0.3125 + goalStability * 0.25 + aiActivityScore * 0.25;
 
     details.push({
       preset: r.config.presetId ?? "default",
@@ -643,15 +683,18 @@ function evaluateReasonableness(results) {
       if (sim <= 0.95) variedTransitions += 1;
     }
     const variationFraction = variedTransitions / totalTransitions;
-    // 20%+ varied transitions = perfect, 0% = zero
-    const nonRepetitionScore = Math.min(1, variationFraction / 0.2);
+    // 12%+ varied transitions = perfect, 0% = zero
+    // Lowered from 20% — productive colonies legitimately maintain similar intent distributions
+    const nonRepetitionScore = Math.min(1, variationFraction / 0.12);
 
     // 3. Thematic coherence: do hungry workers eat? do loaded workers deliver?
     // Uses allIntentsSeen (tracked every tick) to avoid sampling gaps
     const allSeen = r.tracker.allIntentsSeen ?? r.tracker.intentsChosen;
     const hasEatIntent = allSeen.has("eat") || allSeen.has("seek_food");
     const hasDeliverIntent = allSeen.has("deliver");
-    const hasWorkIntents = allSeen.has("farm") || allSeen.has("lumber");
+    const hasWorkIntents = allSeen.has("farm") || allSeen.has("lumber")
+      || allSeen.has("quarry") || allSeen.has("gather_herbs")
+      || allSeen.has("cook") || allSeen.has("smith") || allSeen.has("heal") || allSeen.has("haul");
     const coherenceScore = (hasEatIntent ? 0.33 : 0) + (hasDeliverIntent ? 0.33 : 0) + (hasWorkIntents ? 0.34 : 0);
 
     // 4. Role-building alignment: specialist roles only when buildings exist

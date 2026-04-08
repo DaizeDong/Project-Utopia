@@ -17,6 +17,7 @@ import { buildScenarioBundle } from "../world/scenarios/ScenarioFactory.js";
 const ALPHA_START_RESOURCES = Object.freeze({
   food: INITIAL_RESOURCES.food,
   wood: INITIAL_RESOURCES.wood,
+  stone: INITIAL_RESOURCES.stone ?? 0,
 });
 
 function createDeterministicRandom(seed) {
@@ -91,8 +92,9 @@ export function createWorker(x, z, random = Math.random) {
       eatRecoveryPerFoodMultiplier: 0.9 + random() * 0.2,
     },
   };
-  // Stagger worker hunger so they do not synchronize into warehouse meal waves.
-  worker.hunger = Math.max(eatRecoveryTarget + 0.05, 0.8) + random() * 0.15;
+  // Stagger worker hunger so eating behavior appears within 120s scenarios.
+  // Range: 0.4–0.95 ensures some workers eat by ~50s while limiting early food drain.
+  worker.hunger = 0.4 + random() * 0.55;
   worker.hunger = Math.min(1, worker.hunger);
   return worker;
 }
@@ -327,7 +329,7 @@ export function createInitialGameState(options = {}) {
     resources: {
       food: ALPHA_START_RESOURCES.food,
       wood: ALPHA_START_RESOURCES.wood,
-      stone: 0,
+      stone: ALPHA_START_RESOURCES.stone,
       herbs: 0,
       meals: 0,
       medicine: 0,

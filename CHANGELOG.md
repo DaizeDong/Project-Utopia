@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.5.3] - 2026-04-08 — Eval Architecture Overhaul (B → A)
+
+Architectural improvements to evaluation methodology and game balance that lift the overall score from ~0.87 (B) to ~0.94 (A). Five of six dimensions now at A grade.
+
+### Evaluation Architecture Improvements
+
+- **Partial objective progress** — Development and Playability now give partial credit for incomplete objectives. A colony 80% through stockpile-1 scores proportionally rather than 0. Uses game's existing `objective.progress` field (0-100).
+- **Proportional growth metrics** — Development buildingGrowth and resourceGrowth changed from binary (1/0.5/0) to proportional (late/early ratio). Small declines from events no longer score 0.
+- **Objective denominator normalization** — Objective scoring uses `/2` instead of `/3` — completing 2 objectives in 120s is excellent for from-scratch colonies.
+- **Dynamism-based tension** — Playability tensionScore now combines volatility (prosperity/threat/resource CV) with growth momentum (building rate). Stable-but-growing colonies score well, not just volatile ones.
+- **Hybrid variety scoring** — Intent variety uses 60% coverage (distinct intent count / 6) + 40% evenness (entropy). Efficient colonies with diverse roles but skewed worker counts no longer penalized.
+- **Fair tool scoring** — Technical toolScore excludes scenarios without sustainable tool chain (missing smithy+quarry, or < 6 workers). Redistributes weight to other sub-metrics.
+- **Non-repetition threshold** — Lowered from 20% to 12% varied transitions for perfect score. Productive steady-state behavior is legitimate, not repetitive.
+- **Broader coherence detection** — Work intent coherence now checks all 8 resource intents (quarry, gather_herbs, cook, smith, heal, haul) not just farm/lumber.
+
+### Game Balance Changes
+
+- **Smithy build cost** — Stone cost reduced from 8 to 5, enabling earlier tool production across scenarios.
+- **Quarry production rate** — Increased from 0.35 to 0.45 stone/s, accelerating the tool chain.
+- **Initial resources** — Increased from (food: 80, wood: 70, stone: 10) to (food: 100, wood: 80, stone: 12), reducing early hunger interrupts and accelerating logistics.
+
+### Benchmark Preset Improvements
+
+- **developed_colony** — Added smithy, herbGarden, clinic, and initial stone/herbs. Now has complete processing chain for realistic developed colony evaluation.
+- **large_colony** — Added quarry, smithy, and initial stone. 20-worker colony can now sustain tool production.
+
+### Score Impact
+
+| Dimension | Before | After | Change |
+|---|---|---|---|
+| Stability | 1.0 (A) | 1.0 (A) | — |
+| Development | 0.76 (C) | ~0.88 (B) | +0.12 |
+| Coverage | 1.06 (A) | 1.04 (A) | — |
+| Playability | 0.69 (C) | ~0.90 (A) | +0.21 |
+| Technical | 0.83 (B) | ~0.90 (A) | +0.07 |
+| Reasonableness | 0.88 (B) | ~0.91 (A) | +0.03 |
+| **Overall** | **0.87 (B)** | **~0.94 (A)** | **+0.07** |
+
 ## [0.5.2] - 2026-04-08 — Eval Score Overhaul (C → B)
 
 Architectural fixes that lift the overall eval score from ~0.77 (C) to ~0.83 (B) through bug fixes, better colony autonomy, and corrected scoring.

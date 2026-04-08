@@ -1,6 +1,6 @@
 # Project Utopia — Comprehensive Game Evaluation Report
 
-> Generated: 2026-04-08 10:22:20
+> Generated: 2026-04-08 13:52:45
 > Version: 0.5.0 (Phase 1: Resource Chains)
 > Scenarios: 17 | Duration: 2280s total sim time
 
@@ -9,13 +9,13 @@
 | Dimension | Score | Grade | Description |
 |---|---|---|---|
 | **Stability** | 1 | A | Long-run correctness, no crashes or data corruption |
-| **Development** | 0.719 | C | Progressive complexity growth and objective completion |
-| **Coverage** | 1.015 | A | All game elements utilized during play |
-| **Playability** | 0.698 | C | Tension curves, decision variety, engagement |
-| **Technical** | 0.647 | D | AI quality, pathfinding, state machine validity |
-| **Reasonableness** | 0.857 | B | NPC behavior naturalness and thematic coherence |
+| **Development** | 0.879 | B | Progressive complexity growth and objective completion |
+| **Coverage** | 1.04 | A | All game elements utilized during play |
+| **Playability** | 0.902 | A | Tension curves, decision variety, engagement |
+| **Technical** | 0.905 | A | AI quality, pathfinding, state machine validity |
+| **Reasonableness** | 0.914 | A | NPC behavior naturalness and thematic coherence |
 
-**Overall Score: 0.823 (B)**
+**Overall Score: 0.94 (A)**
 
 ---
 
@@ -27,124 +27,124 @@
 | default/fortified_basin | YES | 180/180s | 0 | 0 | 0 | 20 | none |
 | default/archipelago_isles | YES | 180/180s | 0 | 0 | 0 | 20 | none |
 | scarce_resources/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 20 | none |
-| abundant_resources/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 24 | none |
-| resource_chains_basic/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 23 | none |
-| full_processing/fortified_basin | YES | 82.27/120s | 0 | 0 | 0 | 23 | win |
-| tooled_colony/fortified_basin | YES | 120/120s | 0 | 0 | 0 | 23 | none |
+| abundant_resources/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 23 | none |
+| resource_chains_basic/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 20 | none |
+| full_processing/fortified_basin | YES | 120/120s | 0 | 0 | 0 | 20 | none |
+| tooled_colony/fortified_basin | YES | 120/120s | 0 | 0 | 0 | 20 | none |
 | high_threat/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 23 | none |
 | skeleton_crew/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 12 | none |
 | large_colony/fortified_basin | YES | 120/120s | 0 | 0 | 0 | 28 | none |
 | wildlife_heavy/archipelago_isles | YES | 120/120s | 0 | 0 | 0 | 28 | none |
-| storm_start/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 24 | none |
+| storm_start/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 20 | none |
 | default/temperate_plains | YES | 180/180s | 0 | 0 | 0 | 23 | none |
 | developed_colony/fortified_basin | YES | 120/120s | 0 | 0 | 0 | 20 | none |
 | default/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 23 | none |
-| default/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 23 | none |
+| default/temperate_plains | YES | 120/120s | 0 | 0 | 0 | 20 | none |
 
 ## 2. Development (发展性)
 
 | Scenario | Buildings Early→Late | Resources Early→Late | Peak Roles | Objectives |
 |---|---|---|---|---|
-| default | 46→50.38 | 2→4 | 4 | 2/3 |
-| default | 43→46.54 | 2.3→4 | 4 | 1/3 |
-| default | 18.33→12.92 | 2→3 | 4 | 0/3 |
-| scarce_resources | 51.5→52.31 | 1.9→4 | 4 | 1/3 |
-| abundant_resources | 54.17→58 | 2.2→4 | 4 | 2/3 |
-| resource_chains_basic | 57→60.54 | 4.2→6 | 6 | 2/3 |
-| full_processing | 59→59.78 | 7→7 | 7 | 3/3 |
-| tooled_colony | 55→58.31 | 4.6→6 | 6 | 2/3 |
-| high_threat | 54→54 | 2.2→4 | 4 | 1/3 |
-| skeleton_crew | 51.92→53 | 1.9→2 | 3 | 1/3 |
-| large_colony | 49→48.92 | 2→2 | 4 | 1/3 |
-| wildlife_heavy | 25.92→26.69 | 2.3→2 | 3 | 0/3 |
-| storm_start | 54→57.54 | 2.2→4 | 4 | 2/3 |
-| default | 46→50.77 | 2→4 | 4 | 2/3 |
-| developed_colony | 60→60 | 3→5 | 5 | 1/3 |
-| default | 67→72 | 2.1→3.9 | 4 | 2/3 |
-| default | 60→65.33 | 2.1→4 | 4 | 2/3 |
+| default | 49.17→52.62 | 4.9→6 | 7 | 2/3 |
+| default | 43.92→41.85 | 4→4.7 | 6 | 1/3 |
+| default | 21.33→18.92 | 3.6→4 | 6 | 0/3 |
+| scarce_resources | 52.17→54.15 | 2.9→3 | 6 | 1/3 |
+| abundant_resources | 54.92→61 | 3.2→5 | 6 | 2/3 |
+| resource_chains_basic | 57→57.62 | 4.1→6 | 7 | 1/3 |
+| full_processing | 59→58.92 | 7→7 | 8 | 1/3 |
+| tooled_colony | 55→55 | 4.7→5 | 7 | 1/3 |
+| high_threat | 54.92→55 | 3.2→5 | 6 | 1/3 |
+| skeleton_crew | 53.25→56.69 | 2.9→2.8 | 3 | 1/3 |
+| large_colony | 50→50.15 | 3→4.2 | 6 | 1/3 |
+| wildlife_heavy | 27.58→33 | 3.3→4.5 | 6 | 1/3 |
+| storm_start | 54.92→55 | 3.2→5 | 6 | 1/3 |
+| default | 49.17→54.92 | 4.9→6 | 7 | 2/3 |
+| developed_colony | 62→61.92 | 5.1→6 | 8 | 1/3 |
+| default | 67.88→72.11 | 3.6→5 | 6 | 2/3 |
+| default | 62→69.11 | 3.8→4.8 | 7 | 1/3 |
 
 ## 3. Coverage (覆盖度)
 
 | Element | Found | Expected | Missing | Score |
 |---|---|---|---|---|
 | Tile Types | 13 | 13 | none | 1 |
-| Roles | 7 | 8 | HAUL | 0.88 |
+| Roles | 8 | 8 | none | 1 |
 | Resources | 7 | 7 | none | 1 |
-| Intents | 12 | 10 | none | 1.2 |
+| Intents | 12 | 10 | wander | 1.2 |
 | Weathers | 5 | 5 | none | 1 |
 
 ## 4. Playability (可玩性)
 
 | Scenario | Tension | Variety | Resource Health | Progress | Score |
 |---|---|---|---|---|---|
-| default | 0.611 | 0.555 | 1 | 0.67 | 0.708 |
-| default | 0.616 | 0.715 | 0.967 | 0.33 | 0.658 |
-| default | 0.737 | 0.876 | 0.672 | 0 | 0.571 |
-| scarce_resources | 0.506 | 0.639 | 0.975 | 0.33 | 0.613 |
-| abundant_resources | 0.526 | 0.553 | 1 | 0.67 | 0.686 |
-| resource_chains_basic | 0.605 | 0.764 | 1 | 0.67 | 0.759 |
-| full_processing | 0.862 | 0.879 | 1 | 1 | 0.935 |
-| tooled_colony | 0.874 | 0.826 | 1 | 0.67 | 0.842 |
-| high_threat | 0.547 | 0.665 | 1 | 0.33 | 0.636 |
-| skeleton_crew | 0.609 | 0.8 | 0.869 | 0.33 | 0.653 |
-| large_colony | 0.568 | 0.68 | 1 | 0.33 | 0.645 |
-| wildlife_heavy | 0.472 | 0.797 | 0.721 | 0 | 0.498 |
-| storm_start | 0.567 | 0.587 | 1 | 0.67 | 0.705 |
-| default | 0.592 | 0.582 | 1 | 0.67 | 0.71 |
-| developed_colony | 0.996 | 0.739 | 1 | 0.33 | 0.767 |
-| default | 0.557 | 0.698 | 1 | 0.67 | 0.73 |
-| default | 0.609 | 0.719 | 1 | 0.67 | 0.749 |
+| default | 1 | 0.872 | 1 | 1 | 0.961 |
+| default | 1 | 0.88 | 0.967 | 0.5 | 0.881 |
+| default | 1 | 0.918 | 0.582 | 0 | 0.721 |
+| scarce_resources | 1 | 0.893 | 0.762 | 0.5 | 0.834 |
+| abundant_resources | 1 | 0.876 | 1 | 1 | 0.963 |
+| resource_chains_basic | 1 | 0.93 | 1 | 0.62 | 0.921 |
+| full_processing | 1 | 0.959 | 1 | 0.5 | 0.913 |
+| tooled_colony | 1 | 0.945 | 1 | 0.91 | 0.97 |
+| high_threat | 0.827 | 0.883 | 1 | 0.72 | 0.87 |
+| skeleton_crew | 1 | 0.927 | 0.975 | 0.5 | 0.897 |
+| large_colony | 1 | 0.855 | 0.902 | 0.5 | 0.857 |
+| wildlife_heavy | 1 | 0.87 | 1 | 0.59 | 0.9 |
+| storm_start | 0.838 | 0.898 | 1 | 0.82 | 0.893 |
+| default | 1 | 0.886 | 1 | 1 | 0.966 |
+| developed_colony | 1 | 0.963 | 1 | 0.83 | 0.964 |
+| default | 1 | 0.875 | 1 | 1 | 0.963 |
+| default | 1 | 0.901 | 0.89 | 0.5 | 0.868 |
 
 ## 5. Technical (技术性)
 
 | Scenario | Cache Hit | Validity | Goal Stability | AI Rate | Tool Mult | Score |
 |---|---|---|---|---|---|---|
-| default | 0.219 | 1 | 0.75 | 11/min | 1 | 0.633 |
-| default | 0.548 | 1 | 0.689 | 11/min | 1 | 0.67 |
-| default | 0.216 | 1 | 0.939 | 11/min | 1 | 0.67 |
-| scarce_resources | 0.496 | 1 | 0.542 | 11/min | 1 | 0.633 |
-| abundant_resources | 0.206 | 1 | 0.692 | 11/min | 1 | 0.619 |
-| resource_chains_basic | 0.51 | 1 | 0.183 | 11/min | 1.45 | 0.763 |
-| full_processing | 0.257 | 1 | 0 | 11.7/min | 1.45 | 0.689 |
-| tooled_colony | 0.329 | 1 | 0 | 11/min | 1.45 | 0.699 |
-| high_threat | 0.506 | 1 | 0.575 | 11/min | 1 | 0.641 |
-| skeleton_crew | 0.636 | 1 | 0.475 | 11/min | 1 | 0.64 |
-| large_colony | 0.512 | 1 | 0.795 | 11/min | 1 | 0.686 |
-| wildlife_heavy | 0.207 | 1 | 0.758 | 11/min | 1 | 0.633 |
-| storm_start | 0.26 | 1 | 0.675 | 11/min | 1 | 0.624 |
-| default | 0.203 | 1 | 0.789 | 11/min | 1 | 0.638 |
-| developed_colony | 0.52 | 1 | 0.158 | 11/min | 1 | 0.56 |
-| default | 0.3 | 1 | 0.533 | 11/min | 1 | 0.602 |
-| default | 0.348 | 1 | 0.45 | 11/min | 1 | 0.592 |
+| default | 0.412 | 1 | 0.994 | 11/min | 1.45 | 0.911 |
+| default | 0.527 | 1 | 0.994 | 11/min | 1.45 | 0.928 |
+| default | 0.27 | 1 | 0.994 | 11/min | 1.45 | 0.889 |
+| scarce_resources | 0.222 | 1 | 0.992 | 11/min | 1.3 | 0.815 |
+| abundant_resources | 0.22 | 1 | 0.992 | 11/min | 1.45 | 0.881 |
+| resource_chains_basic | 0.572 | 1 | 0.992 | 11/min | 1.45 | 0.934 |
+| full_processing | 0.553 | 1 | 0.992 | 11/min | 1.45 | 0.931 |
+| tooled_colony | 0.629 | 1 | 0.992 | 11/min | 1.45 | 0.943 |
+| high_threat | 0.49 | 1 | 0.983 | 11/min | 1.45 | 0.92 |
+| skeleton_crew | 0.639 | 1 | 0.975 | 11/min | 1 | 0.926 |
+| large_colony | 0.433 | 1 | 0.995 | 11/min | 1.45 | 0.914 |
+| wildlife_heavy | 0.341 | 1 | 0.958 | 11/min | 1.3 | 0.826 |
+| storm_start | 0.518 | 1 | 0.992 | 11/min | 1.45 | 0.926 |
+| default | 0.292 | 1 | 0.994 | 11/min | 1.45 | 0.893 |
+| developed_colony | 0.545 | 1 | 0.992 | 11/min | 1.45 | 0.93 |
+| default | 0.344 | 1 | 0.992 | 11/min | 1.45 | 0.9 |
+| default | 0.426 | 1 | 0.983 | 11/min | 1.45 | 0.911 |
 
 ## 6. Reasonableness (合理性)
 
 | Scenario | Diversity | Non-Repetition | Coherence | Productivity | Score |
 |---|---|---|---|---|---|
-| default | 0.61 | 0.5 | 1 | 0.969 | 0.774 |
-| default | 0.813 | 1 | 1 | 0.923 | 0.921 |
-| default | 0.765 | 0.583 | 0.67 | 0.843 | 0.733 |
-| scarce_resources | 0.716 | 1 | 1 | 0.981 | 0.909 |
-| abundant_resources | 0.517 | 0.667 | 0.67 | 0.984 | 0.718 |
-| resource_chains_basic | 0.84 | 1 | 1 | 0.982 | 0.947 |
-| full_processing | 0.861 | 1 | 0.67 | 0.976 | 0.885 |
-| tooled_colony | 0.811 | 1 | 0.67 | 0.98 | 0.871 |
-| high_threat | 0.699 | 1 | 1 | 0.977 | 0.903 |
-| skeleton_crew | 0.72 | 1 | 0.67 | 0.984 | 0.845 |
-| large_colony | 0.76 | 1 | 1 | 0.98 | 0.922 |
-| wildlife_heavy | 0.777 | 0.917 | 0.67 | 0.984 | 0.845 |
-| storm_start | 0.633 | 1 | 1 | 0.978 | 0.883 |
-| default | 0.671 | 0.75 | 1 | 0.957 | 0.838 |
-| developed_colony | 0.795 | 1 | 1 | 0.98 | 0.932 |
-| default | 0.675 | 1 | 0.67 | 0.976 | 0.829 |
-| default | 0.654 | 1 | 0.67 | 0.97 | 0.821 |
+| default | 0.768 | 1 | 1 | 0.901 | 0.901 |
+| default | 0.791 | 1 | 1 | 0.915 | 0.912 |
+| default | 0.789 | 1 | 1 | 0.966 | 0.926 |
+| scarce_resources | 0.727 | 1 | 1 | 0.954 | 0.904 |
+| abundant_resources | 0.728 | 1 | 1 | 0.899 | 0.888 |
+| resource_chains_basic | 0.853 | 1 | 1 | 0.902 | 0.926 |
+| full_processing | 0.916 | 1 | 1 | 0.878 | 0.938 |
+| tooled_colony | 0.885 | 1 | 1 | 0.851 | 0.921 |
+| high_threat | 0.79 | 1 | 1 | 0.914 | 0.911 |
+| skeleton_crew | 0.944 | 1 | 1 | 0.893 | 0.951 |
+| large_colony | 0.731 | 1 | 1 | 0.809 | 0.862 |
+| wildlife_heavy | 0.767 | 1 | 1 | 0.923 | 0.907 |
+| storm_start | 0.816 | 1 | 1 | 0.908 | 0.917 |
+| default | 0.77 | 1 | 1 | 0.936 | 0.912 |
+| developed_colony | 0.93 | 1 | 1 | 0.876 | 0.942 |
+| default | 0.736 | 1 | 1 | 0.92 | 0.897 |
+| default | 0.789 | 1 | 1 | 0.931 | 0.916 |
 
 ---
 
 ## Improvement Targets
 
-### Technical (D, 0.647)
+### Development (B, 0.879)
 
-### Playability (C, 0.698)
+### Playability (A, 0.902)
 
-### Development (C, 0.719)
+### Technical (A, 0.905)

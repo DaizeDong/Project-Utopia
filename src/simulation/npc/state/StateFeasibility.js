@@ -55,6 +55,7 @@ export function buildFeasibilityContext(entity, groupId, state, context = {}) {
     : workerRole === ROLE.COOK ? kitchens > 0
     : workerRole === ROLE.SMITH ? smithies > 0
     : workerRole === ROLE.HERBALIST ? clinics > 0
+    : workerRole === ROLE.HAUL ? warehouses > 0
     : farms + lumbers > 0;
 
   return {
