@@ -508,6 +508,9 @@ export function planEntityDesiredState(entity, state, context = {}) {
   entity.debug.aiTargetApplied = resolved.source === "ai";
   entity.debug.aiTargetReason = resolved.source === "ai" ? aiMerged.reason : "";
 
+  // Count all policy evaluations as AI decisions (including fallback mode)
+  state.metrics.aiDecisions = (state.metrics.aiDecisions ?? 0) + 1;
+
   return {
     groupId,
     desiredState: resolved.desiredState,
