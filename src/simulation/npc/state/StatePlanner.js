@@ -92,7 +92,22 @@ function isTargetTileType(entity, state, targetTileTypes) {
 }
 
 function deriveWorkerDesiredState(worker, state) {
-  if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
+  const currentFsmState = worker.blackboard?.fsm?.state;
+  const hunger = worker.hunger ?? 1;
+
+  // Eat hysteresis: if already eating/seeking food, stay until hunger recovers past recover threshold
+  if ((currentFsmState === "eat" || currentFsmState === "seek_food")
+    && hunger < Number(BALANCE.workerHungerRecoverThreshold ?? 0.35)
+    && state.resources.food > 0 && state.buildings.warehouses > 0) {
+    return {
+      desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
+        ? "eat"
+        : "seek_food",
+      reason: "rule:hunger-hysteresis",
+    };
+  }
+
+  if (hunger < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"
@@ -111,7 +126,11 @@ function deriveWorkerDesiredState(worker, state) {
     || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
     || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
     || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
-  if (hasWarehouse && carryTotal > 0 && (carryTotal >= 2.4 || noWorkSite || worker.blackboard?.fsm?.state === "deliver")) {
+  // Deliver hysteresis: use lower threshold when already in deliver state
+  const deliverEntryThreshold = currentFsmState === "deliver"
+    ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
+    : Number(BALANCE.workerDeliverThreshold ?? 2.4);
+  if (hasWarehouse && carryTotal > 0 && (carryTotal >= deliverEntryThreshold || noWorkSite)) {
     return { desiredState: "deliver", reason: "rule:deliver" };
   }
 
@@ -379,6 +398,8 @@ function applyGroupTargetOverride(groupId, localDesired, localReason, entity, st
     aiApplied: true,
   };
 }
+
+export { deriveWorkerDesiredState as deriveWorkerDesiredStateExported };
 
 export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   const logic = state.debug.logic ?? (state.debug.logic = {
