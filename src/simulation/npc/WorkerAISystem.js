@@ -340,10 +340,24 @@ function handleEat(worker, state, services, dt) {
       const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
       const gainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
       const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
-      const eat = Math.min(desiredFood, state.resources.food);
-      if (eat <= 0) return;
-      state.resources.food -= eat;
-      worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+
+      // Prefer meals over raw food
+      if (Number(state.resources.meals ?? 0) > 0) {
+        const recoveryPerMeal = recoveryPerFood * Number(BALANCE.mealHungerRecoveryMultiplier ?? 2.0);
+        const mealGainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
+        const desiredMeals = Math.min(BALANCE.hungerEatRatePerSecond * dt, mealGainCap / recoveryPerMeal);
+        const eatMeals = Math.min(desiredMeals, state.resources.meals);
+        if (eatMeals > 0) {
+          state.resources.meals -= eatMeals;
+          worker.hunger = clamp(worker.hunger + eatMeals * recoveryPerMeal, 0, 1);
+        }
+      } else {
+        const eat = Math.min(desiredFood, state.resources.food);
+        if (eat <= 0) return;
+        state.resources.food -= eat;
+        worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+      }
+
       if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
         clearPath(worker);
       }
@@ -440,6 +454,7 @@ function handleHarvest(worker, state, services, dt) {
   }
 
   if (!isAtTargetTile(worker, state)) return;
+  const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
   if (worker.role === ROLE.FARM) {
     const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
     const ecology = getFarmEcologyYieldMultiplier(worker, state);
@@ -449,7 +464,7 @@ function handleHarvest(worker, state, services, dt) {
     resolveWorkCooldown(
       worker,
       dt,
-      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier),
+      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier),
       "food",
       services.rng,
     );
@@ -457,18 +472,18 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1)), "stone", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "stone", services.rng);
   } else if (worker.role === ROLE.HERBS) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1)), "herbs", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "herbs", services.rng);
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine), "wood", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier), "wood", services.rng);
   }
 }
 

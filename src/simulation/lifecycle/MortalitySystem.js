@@ -1,4 +1,5 @@
 import { ANIMAL_KIND, ENTITY_TYPE, TILE } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
 import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
@@ -272,6 +273,24 @@ export class MortalitySystem {
     }
 
     state.metrics.starvationRiskCount = starvationRiskCount;
+
+    // Medicine healing: heal the most injured worker each tick
+    if (Number(state.resources?.medicine ?? 0) > 0) {
+      let mostInjured = null;
+      for (const agent of state.agents) {
+        if (agent.type !== "WORKER" || agent.alive === false) continue;
+        if ((agent.hp ?? agent.maxHp) >= agent.maxHp) continue;
+        if (!mostInjured || (agent.hp ?? agent.maxHp) < (mostInjured.hp ?? mostInjured.maxHp)) {
+          mostInjured = agent;
+        }
+      }
+      if (mostInjured) {
+        const healRate = Number(BALANCE.medicineHealPerSecond ?? 8);
+        mostInjured.hp = Math.min(mostInjured.maxHp, (mostInjured.hp ?? mostInjured.maxHp) + healRate * dt);
+        state.resources.medicine -= 0.1 * dt;
+        state.resources.medicine = Math.max(0, state.resources.medicine);
+      }
+    }
 
     if (deadIds.size === 0) return;
 

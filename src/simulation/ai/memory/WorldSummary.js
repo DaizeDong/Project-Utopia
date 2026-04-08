@@ -125,6 +125,11 @@ export function buildWorldSummary(state) {
     resources: {
       food: Number(state.resources.food.toFixed(2)),
       wood: Number(state.resources.wood.toFixed(2)),
+      stone: Number(Number(state.resources?.stone ?? 0).toFixed(2)),
+      herbs: Number(Number(state.resources?.herbs ?? 0).toFixed(2)),
+      meals: Number(Number(state.resources?.meals ?? 0).toFixed(2)),
+      medicine: Number(Number(state.resources?.medicine ?? 0).toFixed(2)),
+      tools: Number(Number(state.resources?.tools ?? 0).toFixed(2)),
     },
     population: { workers, visitors, herbivores, predators },
     buildings: { ...state.buildings },
