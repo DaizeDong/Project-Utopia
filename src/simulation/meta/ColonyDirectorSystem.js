@@ -102,9 +102,7 @@ export function assessColonyNeeds(state) {
       needs.push({ type: "road", priority: 60, reason: "logistics: need more roads" });
     }
   } else if (phase === "processing") {
-    if ((buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries && stone >= 3) {
-      needs.push({ type: "quarry", priority: 55, reason: "processing: need quarry" });
-    } else if ((buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries) {
+    if ((buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries) {
       needs.push({ type: "quarry", priority: 55, reason: "processing: need quarry" });
     }
     if ((buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens) {
