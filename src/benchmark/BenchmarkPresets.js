@@ -20,7 +20,7 @@ function cloneWorker(template, id, x, z) {
     vx: 0,
     vz: 0,
     hunger: 0.8 + Math.random() * 0.2,
-    carry: { food: 0, wood: 0 },
+    carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     path: null,
     pathIndex: 0,
     targetTile: null,
@@ -84,7 +84,40 @@ export const BENCHMARK_PRESETS = [
     templateId: "fortified_basin",
     category: "economy",
     resources: { food: 80, wood: 70 },
-    buildings: { warehouses: 3, farms: 8, lumbers: 4, walls: 20 },
+    buildings: { warehouses: 3, farms: 8, lumbers: 4, walls: 20, quarries: 1, kitchens: 1 },
+  },
+
+  {
+    id: "resource_chains_basic",
+    label: "Basic Resource Chains",
+    templateId: "temperate_plains",
+    category: "economy",
+    resources: { food: 60, wood: 50, stone: 15, herbs: 10 },
+    buildings: { warehouses: 2, farms: 4, lumbers: 3, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 0, clinics: 0 },
+  },
+  {
+    id: "full_processing",
+    label: "Full Processing Chain",
+    templateId: "fortified_basin",
+    category: "economy",
+    resources: { food: 80, wood: 60, stone: 25, herbs: 15, meals: 5, medicine: 2, tools: 1 },
+    buildings: { warehouses: 3, farms: 6, lumbers: 3, quarries: 2, herbGardens: 1, kitchens: 1, smithies: 1, clinics: 1 },
+  },
+  {
+    id: "scarce_advanced",
+    label: "Scarce Advanced Resources",
+    templateId: "temperate_plains",
+    category: "economy",
+    resources: { food: 30, wood: 25, stone: 0, herbs: 0 },
+    buildings: { warehouses: 1, farms: 2, lumbers: 2, quarries: 1, herbGardens: 1, kitchens: 0, smithies: 0, clinics: 0 },
+  },
+  {
+    id: "tooled_colony",
+    label: "Tooled Colony",
+    templateId: "fortified_basin",
+    category: "economy",
+    resources: { food: 80, wood: 70, stone: 10, tools: 3 },
+    buildings: { warehouses: 2, farms: 5, lumbers: 3, quarries: 1, smithies: 1 },
   },
 
   // --- Pressure variants ---
@@ -140,8 +173,9 @@ export function applyPreset(state, preset) {
 
   // Resources
   if (preset.resources) {
-    if (preset.resources.food !== undefined) state.resources.food = preset.resources.food;
-    if (preset.resources.wood !== undefined) state.resources.wood = preset.resources.wood;
+    for (const [key, val] of Object.entries(preset.resources)) {
+      state.resources[key] = val;
+    }
   }
 
   // Buildings — overrides stat counters only, does NOT modify the grid.

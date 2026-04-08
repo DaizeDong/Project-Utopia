@@ -5,8 +5,8 @@ import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPreset
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 
 describe("BenchmarkPresets", () => {
-  it("exports exactly 11 presets", () => {
-    assert.equal(BENCHMARK_PRESETS.length, 11);
+  it("exports exactly 15 presets", () => {
+    assert.equal(BENCHMARK_PRESETS.length, 15);
   });
 
   it("each preset has required fields", () => {
@@ -65,5 +65,38 @@ describe("BenchmarkPresets", () => {
     applyPreset(state, preset);
     assert.equal(state.weather.current, "storm");
     assert.equal(state.weather.timeLeftSec, 30);
+  });
+
+  it("resource chain presets set new resources correctly", () => {
+    const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
+    const preset = BENCHMARK_PRESETS.find((p) => p.id === "full_processing");
+    applyPreset(state, preset);
+    assert.equal(state.resources.stone, 25);
+    assert.equal(state.resources.herbs, 15);
+    assert.equal(state.resources.meals, 5);
+    assert.equal(state.resources.medicine, 2);
+    assert.equal(state.resources.tools, 1);
+  });
+
+  it("resource chain presets set processing buildings correctly", () => {
+    const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
+    const preset = BENCHMARK_PRESETS.find((p) => p.id === "resource_chains_basic");
+    applyPreset(state, preset);
+    assert.equal(state.buildings.quarries, 1);
+    assert.equal(state.buildings.herbGardens, 1);
+    assert.equal(state.buildings.kitchens, 1);
+  });
+
+  it("cloned workers have correct carry format with stone and herbs", () => {
+    const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
+    const preset = BENCHMARK_PRESETS.find((p) => p.id === "large_colony");
+    const initialCount = state.agents.filter((a) => a.type === "WORKER").length;
+    applyPreset(state, preset);
+    const workers = state.agents.filter((a) => a.type === "WORKER");
+    assert.ok(workers.length > initialCount);
+    // Check a cloned worker (one beyond initial count)
+    const clonedWorker = workers[workers.length - 1];
+    assert.equal(clonedWorker.carry.stone, 0);
+    assert.equal(clonedWorker.carry.herbs, 0);
   });
 });
