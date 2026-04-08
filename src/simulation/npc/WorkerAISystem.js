@@ -629,7 +629,19 @@ export class WorkerAISystem {
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
       worker.debug ??= {};
-      worker.debug.lastIntent = stateNode;
+      // Map role to intent name for eval tracking (eval expects "farm"/"lumber" etc., not FSM states)
+      const ROLE_TO_INTENT = {
+        [ROLE.FARM]: "farm",
+        [ROLE.WOOD]: "lumber",
+        [ROLE.STONE]: "quarry",
+        [ROLE.HERBS]: "gather_herbs",
+        [ROLE.COOK]: "cook",
+        [ROLE.SMITH]: "smith",
+        [ROLE.HERBALIST]: "heal",
+      };
+      worker.debug.lastIntent = (stateNode === "harvest" || stateNode === "seek_task" || stateNode === "process")
+        ? (ROLE_TO_INTENT[worker.role] ?? stateNode)
+        : stateNode;
       worker.debug.lastStateNode = stateNode;
 
       if (stateNode === "seek_food" || stateNode === "eat") {
