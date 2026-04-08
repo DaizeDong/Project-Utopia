@@ -32,6 +32,7 @@ import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js"
 import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
+import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
 import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { computeTaskScore, computeCostMetrics } from "../src/benchmark/BenchmarkMetrics.js";
@@ -97,6 +98,7 @@ function buildSystems(memoryStore) {
     new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
+    new ProcessingSystem(),
   ];
 }
 
