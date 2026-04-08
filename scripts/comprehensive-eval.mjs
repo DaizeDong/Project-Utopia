@@ -615,13 +615,13 @@ function evaluateReasonableness(results) {
     }
     const avgDiversity = mean(diversityScores);
 
-    // 2. Repetition detection: count consecutive samples with identical intent distribution
+    // 2. Repetition detection: count consecutive samples with near-identical intent distribution.
+    // Uses cosine similarity (>0.98 = repetitive) instead of exact JSON match.
     let repetitiveStreak = 0;
     let maxRepetitiveStreak = 0;
     for (let i = 1; i < r.tracker.intentHistory.length; i += 1) {
-      const prev = JSON.stringify(r.tracker.intentHistory[i - 1]);
-      const curr = JSON.stringify(r.tracker.intentHistory[i]);
-      if (prev === curr) {
+      const sim = cosineSimilarity(r.tracker.intentHistory[i - 1], r.tracker.intentHistory[i]);
+      if (sim > 0.98) {
         repetitiveStreak += 1;
         if (repetitiveStreak > maxRepetitiveStreak) maxRepetitiveStreak = repetitiveStreak;
       } else {
@@ -689,6 +689,20 @@ function entropy(values) {
     h -= p * Math.log2(p);
   }
   return h;
+}
+
+function cosineSimilarity(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let dot = 0, magA = 0, magB = 0;
+  for (const k of keys) {
+    const va = a[k] ?? 0;
+    const vb = b[k] ?? 0;
+    dot += va * vb;
+    magA += va * va;
+    magB += vb * vb;
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom > 0 ? dot / denom : 0;
 }
 
 function gradeScore(score) {
