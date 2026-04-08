@@ -22,6 +22,7 @@ import { createInitialGameState, createWorker } from "../src/entities/EntityFact
 import { createServices } from "../src/app/createServices.js";
 import { SimulationClock } from "../src/app/SimulationClock.js";
 import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
+import { ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
 import { MemoryStore } from "../src/simulation/ai/memory/MemoryStore.js";
 import { MemoryObserver } from "../src/simulation/ai/memory/MemoryObserver.js";
@@ -38,7 +39,6 @@ import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopu
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
-import { BuildSystem } from "../src/simulation/construction/BuildSystem.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 import { TILE, ROLE, TILE_INFO } from "../src/config/constants.js";
@@ -88,6 +88,7 @@ function buildSystems(memoryStore) {
   return [
     new SimulationClock(),
     new ProgressionSystem(),
+    new ColonyDirectorSystem(),
     new RoleAssignmentSystem(),
     new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
@@ -127,7 +128,6 @@ async function runSimulation(config) {
     durationSec = 120,
     sampleIntervalSec = 2,
     presetId = null,
-    buildActions = null, // [{atSec, tool, findTile}]
   } = config;
 
   const state = createInitialGameState({ templateId, seed });
@@ -150,7 +150,6 @@ async function runSimulation(config) {
   });
   services.memoryStore = memoryStore;
   const systems = buildSystems(memoryStore);
-  const buildSystem = new BuildSystem();
 
   const totalTicks = Math.round(durationSec / DT_SEC);
   const sampleEveryTicks = Math.max(1, Math.round(sampleIntervalSec / DT_SEC));
@@ -193,28 +192,8 @@ async function runSimulation(config) {
   };
 
   const initialWorkers = state.agents.filter((a) => a.type === "WORKER").length;
-  let buildActionIdx = 0;
 
   for (let tick = 0; tick < totalTicks; tick += 1) {
-    // Execute build actions at scheduled times
-    const simSec = tick * DT_SEC;
-    if (buildActions && buildActionIdx < buildActions.length) {
-      while (buildActionIdx < buildActions.length && buildActions[buildActionIdx].atSec <= simSec) {
-        const action = buildActions[buildActionIdx];
-        try {
-          const tile = action.findTile(state, buildSystem);
-          if (tile) {
-            const result = buildSystem.placeToolAt(state, action.tool, tile.ix, tile.iz);
-            if (result.ok) {
-              tracker.tilesPlaced.add(action.tool);
-              state.buildings = rebuildBuildingStats(state.grid);
-            }
-          }
-        } catch (_e) { /* skip failed builds */ }
-        buildActionIdx += 1;
-      }
-    }
-
     // Run systems
     for (const system of systems) {
       try {
@@ -720,43 +699,6 @@ function gradeScore(score) {
   return "F";
 }
 
-// ── Build action generators ────────────────────────────────────────────
-
-function developmentBuildActions() {
-  // Progressive building schedule for development evaluation
-  const actions = [];
-  const tools = ["road", "farm", "lumber", "quarry", "herb_garden", "kitchen", "smithy", "clinic", "wall", "warehouse"];
-
-  function findValidTile(state, buildSystem, toolName) {
-    const { grid } = state;
-    for (let iz = 0; iz < grid.height; iz += 1) {
-      for (let ix = 0; ix < grid.width; ix += 1) {
-        if (buildSystem.previewToolAt(state, toolName, ix, iz).ok) return { ix, iz };
-      }
-    }
-    return null;
-  }
-
-  // Build infrastructure progressively
-  let t = 5;
-  for (const tool of ["road", "road", "farm", "road", "lumber", "road", "farm"]) {
-    actions.push({ atSec: t, tool, findTile: (s, bs) => findValidTile(s, bs, tool) });
-    t += 8;
-  }
-  // Phase 1 buildings
-  for (const tool of ["quarry", "herb_garden", "road", "kitchen"]) {
-    actions.push({ atSec: t, tool, findTile: (s, bs) => findValidTile(s, bs, tool) });
-    t += 10;
-  }
-  // More advanced
-  for (const tool of ["road", "farm", "farm", "wall", "wall"]) {
-    actions.push({ atSec: t, tool, findTile: (s, bs) => findValidTile(s, bs, tool) });
-    t += 8;
-  }
-
-  return actions;
-}
-
 // ── Scenario configurations ────────────────────────────────────────────
 
 function buildEvalScenarios(durationSec, quick) {
@@ -783,8 +725,8 @@ function buildEvalScenarios(durationSec, quick) {
     { id: "pressure-wildlife", templateId: "archipelago_isles", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "wildlife_heavy", category: "pressure" },
     { id: "pressure-storm", templateId: "temperate_plains", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "storm_start", category: "pressure" },
 
-    // Development: progressive building
-    { id: "development-progressive", templateId: "temperate_plains", seed: 1337, durationSec: longDuration, sampleIntervalSec: 3, buildActions: developmentBuildActions(), category: "development" },
+    // Development: progressive building (ColonyDirectorSystem handles autonomous building)
+    { id: "development-progressive", templateId: "temperate_plains", seed: 1337, durationSec: longDuration, sampleIntervalSec: 3, category: "development" },
 
     // Extreme: developed colony
     { id: "extreme-developed", templateId: "fortified_basin", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "developed_colony", category: "extreme" },

@@ -87,6 +87,7 @@ export const MOVE_DIRECTIONS_4 = Object.freeze([
 export const SYSTEM_ORDER = Object.freeze([
   "SimulationClock",
   "ProgressionSystem",
+  "ColonyDirectorSystem",
   "RoleAssignmentSystem",
   "EnvironmentDirectorSystem",
   "WeatherSystem",
