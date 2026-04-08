@@ -5,9 +5,10 @@ export const GROUP_STATE_GRAPH = Object.freeze({
     idle: ["seek_food", "seek_task", "wander"],
     seek_food: ["eat", "seek_task"],
     eat: ["seek_task", "wander", "idle"],
-    seek_task: ["harvest", "deliver", "wander"],
+    seek_task: ["harvest", "deliver", "wander", "process"],
     harvest: ["deliver", "seek_food", "seek_task"],
     deliver: ["seek_task", "seek_food", "idle"],
+    process: ["seek_task", "seek_food", "idle"],
     wander: ["seek_task", "seek_food", "idle"],
   }),
   traders: Object.freeze({
@@ -60,6 +61,7 @@ const LABELS = Object.freeze({
     seek_task: "Seek Task",
     harvest: "Harvest",
     deliver: "Deliver",
+    process: "Process",
     wander: "Wander",
   },
   traders: {

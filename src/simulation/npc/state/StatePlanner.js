@@ -15,6 +15,11 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
     deliver: "deliver",
     farm: "seek_task",
     wood: "seek_task",
+    quarry: "seek_task",
+    gather_herbs: "seek_task",
+    cook: "seek_task",
+    smith: "seek_task",
+    heal: "seek_task",
     wander: "wander",
   }),
   traders: Object.freeze({
@@ -97,9 +102,15 @@ function deriveWorkerDesiredState(worker, state) {
   }
 
   const hasWarehouse = state.buildings.warehouses > 0;
-  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0)
+    + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   const noWorkSite = (worker.role === ROLE.FARM && state.buildings.farms <= 0)
-    || (worker.role === ROLE.WOOD && state.buildings.lumbers <= 0);
+    || (worker.role === ROLE.WOOD && state.buildings.lumbers <= 0)
+    || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
+    || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
+    || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
+    || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
+    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
   if (hasWarehouse && carryTotal > 0 && (carryTotal >= 2.4 || noWorkSite || worker.blackboard?.fsm?.state === "deliver")) {
     return { desiredState: "deliver", reason: "rule:deliver" };
   }
@@ -112,6 +123,31 @@ function deriveWorkerDesiredState(worker, state) {
   if (worker.role === ROLE.WOOD && state.buildings.lumbers > 0) {
     const atLumber = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.LUMBER]);
     return { desiredState: atLumber ? "harvest" : "seek_task", reason: "rule:lumber" };
+  }
+
+  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) {
+    const atQuarry = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.QUARRY]);
+    return { desiredState: atQuarry ? "harvest" : "seek_task", reason: "rule:quarry" };
+  }
+
+  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) {
+    const atHerbGarden = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.HERB_GARDEN]);
+    return { desiredState: atHerbGarden ? "harvest" : "seek_task", reason: "rule:herbs" };
+  }
+
+  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) {
+    const atKitchen = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.KITCHEN]);
+    return { desiredState: atKitchen ? "process" : "seek_task", reason: "rule:cook" };
+  }
+
+  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) {
+    const atSmithy = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.SMITHY]);
+    return { desiredState: atSmithy ? "process" : "seek_task", reason: "rule:smith" };
+  }
+
+  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) {
+    const atClinic = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.CLINIC]);
+    return { desiredState: atClinic ? "process" : "seek_task", reason: "rule:herbalist" };
   }
 
   if (noWorkSite) return { desiredState: "wander", reason: "rule:no-worksite" };
