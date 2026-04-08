@@ -153,6 +153,11 @@ const TILE_ICON_TYPES = Object.freeze({
   [TILE.WALL]: "WALL",
   [TILE.RUINS]: "RUINS",
   [TILE.WATER]: "WATER",
+  [TILE.QUARRY]: "QUARRY",
+  [TILE.HERB_GARDEN]: "HERB_GARDEN",
+  [TILE.KITCHEN]: "KITCHEN",
+  [TILE.SMITHY]: "SMITHY",
+  [TILE.CLINIC]: "CLINIC",
 });
 
 const UNIT_SPRITE_BINDINGS = Object.freeze({
@@ -171,6 +176,11 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.WALL]: { key: "wall", tint: 0xb6c1cd, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x30363f, emissiveIntensity: 0.05 },
   [TILE.RUINS]: { key: "props", tint: 0xc19b81, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x432f24, emissiveIntensity: 0.06 },
   [TILE.WATER]: { key: "grass", tint: 0x86c8f8, repeatX: 12, repeatY: 12, roughness: 0.66, emissive: 0x1f527f, emissiveIntensity: 0.12 },
+  [TILE.QUARRY]: { key: "props", tint: 0xb8a88e, repeatX: 9, repeatY: 9, roughness: 0.93, emissive: 0x3d3028, emissiveIntensity: 0.06 },
+  [TILE.HERB_GARDEN]: { key: "plants", tint: 0x8fd47a, repeatX: 10, repeatY: 10, roughness: 0.95, emissive: 0x1f3d1a, emissiveIntensity: 0.07 },
+  [TILE.KITCHEN]: { key: "structure", tint: 0xe0be74, repeatX: 8, repeatY: 8, roughness: 0.9, emissive: 0x4c3a18, emissiveIntensity: 0.06 },
+  [TILE.SMITHY]: { key: "structure", tint: 0xa08e7a, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x2a2018, emissiveIntensity: 0.06 },
+  [TILE.CLINIC]: { key: "structure", tint: 0xc8e0c0, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x2a3d28, emissiveIntensity: 0.06 },
 });
 
 const RENDER_ORDER = Object.freeze({
