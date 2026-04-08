@@ -228,6 +228,19 @@ test("ProcessingSystem: smithy requires BOTH stone and wood", () => {
   system.update(1, state);
 
   assert.equal(state.resources.tools, 0, "Smithy should not produce tools without wood");
+
+  // Symmetric case: enough wood but no stone
+  state.resources.stone = 0;
+  state.resources.wood = 20;
+  state.resources.tools = 0;
+
+  state.metrics.timeSec = cycleSec * 4 + 4;
+  system.update(1, state);
+
+  state.metrics.timeSec = cycleSec * 5 + 5;
+  system.update(1, state);
+
+  assert.equal(state.resources.tools, 0, "Smithy should not produce tools without stone");
 });
 
 test("ProcessingSystem: clinic converts herbs to medicine when HERBALIST is adjacent", () => {
@@ -332,7 +345,9 @@ test("ResourceSystem: resets NaN resources to 0", () => {
   const system = new ResourceSystem();
 
   state.resources.food = NaN;
+  state.resources.wood = NaN;
   state.resources.stone = NaN;
+  state.resources.herbs = NaN;
   state.resources.meals = NaN;
   state.resources.medicine = NaN;
   state.resources.tools = NaN;
@@ -340,7 +355,9 @@ test("ResourceSystem: resets NaN resources to 0", () => {
   system.update(0.1, state);
 
   assert.equal(state.resources.food, 0, "NaN food should reset to 0");
+  assert.equal(state.resources.wood, 0, "NaN wood should reset to 0");
   assert.equal(state.resources.stone, 0, "NaN stone should reset to 0");
+  assert.equal(state.resources.herbs, 0, "NaN herbs should reset to 0");
   assert.equal(state.resources.meals, 0, "NaN meals should reset to 0");
   assert.equal(state.resources.medicine, 0, "NaN medicine should reset to 0");
   assert.equal(state.resources.tools, 0, "NaN tools should reset to 0");
@@ -674,6 +691,37 @@ test("BuildSystem: erase of new tiles returns correct salvage refund", () => {
 
   // Tile should be back to GRASS
   assert.equal(state.grid.tiles[validSmithy.ix + validSmithy.iz * state.grid.width], TILE.GRASS);
+});
+
+test("BuildSystem: erase of clinic returns herbs salvage refund", () => {
+  const state = createInitialGameState();
+  const buildSystem = new BuildSystem();
+
+  state.resources.wood = 999;
+  state.resources.stone = 999;
+  state.resources.herbs = 999;
+
+  const validClinic = findTileMatching(state, (ix, iz, tile) => {
+    if (tile !== TILE.GRASS && tile !== TILE.ROAD && tile !== TILE.RUINS) return false;
+    return buildSystem.previewToolAt(state, "clinic", ix, iz).ok;
+  });
+
+  if (!validClinic) return;
+
+  buildSystem.placeToolAt(state, "clinic", validClinic.ix, validClinic.iz);
+
+  const woodBeforeErase = state.resources.wood;
+  const herbsBeforeErase = state.resources.herbs;
+
+  const eraseResult = buildSystem.placeToolAt(state, "erase", validClinic.ix, validClinic.iz);
+  assert.equal(eraseResult.ok, true, "Should be able to erase clinic");
+
+  const expectedWoodRefund = Math.floor((BUILD_COST.clinic.wood ?? 0) * 0.5);
+  const expectedHerbsRefund = Math.floor((BUILD_COST.clinic.herbs ?? 0) * 0.5);
+
+  assert.equal(state.resources.wood, woodBeforeErase + expectedWoodRefund, "Clinic wood refund mismatch");
+  assert.equal(state.resources.herbs, herbsBeforeErase + expectedHerbsRefund, "Clinic herbs refund mismatch");
+  assert.equal(state.grid.tiles[validClinic.ix + validClinic.iz * state.grid.width], TILE.GRASS);
 });
 
 // ---------------------------------------------------------------------------
