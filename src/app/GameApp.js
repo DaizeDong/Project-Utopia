@@ -29,6 +29,7 @@ import { MortalitySystem } from "../simulation/lifecycle/MortalitySystem.js";
 import { WildlifePopulationSystem } from "../simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../simulation/economy/ResourceSystem.js";
+import { ProcessingSystem } from "../simulation/economy/ProcessingSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
@@ -201,6 +202,7 @@ export class GameApp {
       new WildlifePopulationSystem(),
       new BoidsSystem(),
       new ResourceSystem(),
+      new ProcessingSystem(),
     ];
   }
 
