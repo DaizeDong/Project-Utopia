@@ -193,15 +193,20 @@ function buildCoverageStatus(state) {
   const overloaded = Number(logistics.overloadedWarehouses ?? 0);
   const stranded = Number(logistics.strandedCarryWorkers ?? 0);
   const depotDistance = Number(logistics.avgDepotDistance ?? 0);
-  const progress = Math.min(
-    clamp(1 - isolated * 0.55, 0, 1),
-    clamp(1 - stretched * 0.18, 0, 1),
-    clamp(1 - overloaded * 0.26, 0, 1),
-    clamp(1 - stranded * 0.55, 0, 1),
-    depotDistance > BALANCE.workerFarDepotDistance
-      ? clamp(1 - (depotDistance - BALANCE.workerFarDepotDistance) * 0.03, 0, 1)
-      : 1,
-  );
+  // Weighted average instead of Math.min — single logistics issue no longer zeros all progress
+  const penalties = [
+    { value: clamp(1 - isolated * 0.35, 0, 1), weight: 0.30 },
+    { value: clamp(1 - stretched * 0.12, 0, 1), weight: 0.15 },
+    { value: clamp(1 - overloaded * 0.20, 0, 1), weight: 0.20 },
+    { value: clamp(1 - stranded * 0.35, 0, 1), weight: 0.20 },
+    {
+      value: depotDistance > BALANCE.workerFarDepotDistance
+        ? clamp(1 - (depotDistance - BALANCE.workerFarDepotDistance) * 0.02, 0, 1)
+        : 1,
+      weight: 0.15,
+    },
+  ];
+  const progress = penalties.reduce((sum, p) => sum + p.value * p.weight, 0);
 
   let hint = "";
   if (isolated > 0) {
