@@ -65,6 +65,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 15,
     farmBlobs: 11,
     lumberBlobs: 7,
+    quarryBlobs: 2,
+    herbGardenBlobs: 2,
     ruinsBlobs: 3,
     wallMode: "none",
     edgeWaterBoost: 0.02,
@@ -88,6 +90,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 8,
     farmBlobs: 5,
     lumberBlobs: 11,
+    quarryBlobs: 2,
+    herbGardenBlobs: 1,
     ruinsBlobs: 8,
     wallMode: "none",
     edgeWaterBoost: 0.01,
@@ -111,6 +115,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 6,
     farmBlobs: 6,
     lumberBlobs: 6,
+    quarryBlobs: 1,
+    herbGardenBlobs: 1,
     ruinsBlobs: 7,
     wallMode: "none",
     edgeWaterBoost: 0.06,
@@ -134,6 +140,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 7,
     farmBlobs: 7,
     lumberBlobs: 6,
+    quarryBlobs: 1,
+    herbGardenBlobs: 1,
     ruinsBlobs: 5,
     wallMode: "none",
     edgeWaterBoost: 0.08,
@@ -157,6 +165,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 16,
     farmBlobs: 12,
     lumberBlobs: 7,
+    quarryBlobs: 1,
+    herbGardenBlobs: 2,
     ruinsBlobs: 3,
     wallMode: "none",
     edgeWaterBoost: 0.025,
@@ -180,6 +190,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     sideRoads: 10,
     farmBlobs: 8,
     lumberBlobs: 8,
+    quarryBlobs: 2,
+    herbGardenBlobs: 1,
     ruinsBlobs: 4,
     wallMode: "fortress",
     edgeWaterBoost: 0.02,
@@ -438,6 +450,8 @@ function deriveProfile(baseProfile, tuning) {
   effective.sideRoads = clampInt(tuning.roadDensity * 16, 0, 24);
   effective.farmBlobs = clampInt((baseProfile.farmBlobs ?? 8) * lerp(0.5, 1.7, tuning.settlementDensity), 2, 26);
   effective.lumberBlobs = clampInt((baseProfile.lumberBlobs ?? 8) * lerp(0.55, 1.65, tuning.settlementDensity), 2, 28);
+  effective.quarryBlobs = clampInt((baseProfile.quarryBlobs ?? 1) * lerp(0.6, 1.5, tuning.settlementDensity), 1, 6);
+  effective.herbGardenBlobs = clampInt((baseProfile.herbGardenBlobs ?? 1) * lerp(0.6, 1.5, tuning.settlementDensity), 1, 6);
   effective.ruinsBlobs = clampInt((baseProfile.ruinsBlobs ?? 4) * lerp(1.35, 0.45, tuning.settlementDensity), 1, 24);
   return effective;
 }
@@ -1065,6 +1079,46 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     tiles,
     width,
     height,
+    profile.quarryBlobs,
+    TILE.QUARRY,
+    seed + 1951,
+    (i) => pickDistrictCenter(tiles, width, height, seed + 1951 + i * 29, (ix, iz, idx) => {
+      const ridge = fields.ridge[idx] * 1.6;
+      const distEdge = Math.min(ix, iz, width - 1 - ix, height - 1 - iz);
+      const edgeBias = 1 - clamp(distEdge / Math.max(4, Math.min(width, height) * 0.28), 0, 1);
+      const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
+      return ridge + edgeBias * 0.5 + terrainPenalty;
+    }),
+    1.8,
+    3.8,
+  );
+
+  placeDistrictBlobs(
+    tiles,
+    width,
+    height,
+    profile.herbGardenBlobs,
+    TILE.HERB_GARDEN,
+    seed + 1976,
+    (i) => pickDistrictCenter(tiles, width, height, seed + 1976 + i * 31, (ix, iz, idx) => {
+      const moistureScore = fields.moisture[idx] * 1.6;
+      const nearFarm = NEIGHBORS_4.some((n) => {
+        const nx = ix + n.x;
+        const nz = iz + n.z;
+        if (nx < 0 || nz < 0 || nx >= width || nz >= height) return false;
+        return tiles[toIndex(nx, nz, width)] === TILE.FARM;
+      });
+      const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
+      return moistureScore + (nearFarm ? 0.8 : 0) + terrainPenalty;
+    }),
+    2.0,
+    4.2,
+  );
+
+  placeDistrictBlobs(
+    tiles,
+    width,
+    height,
     profile.ruinsBlobs,
     TILE.RUINS,
     seed + 2001,
@@ -1226,6 +1280,11 @@ export function rebuildBuildingStats(grid) {
     farms: countTilesByType(grid, [TILE.FARM]),
     lumbers: countTilesByType(grid, [TILE.LUMBER]),
     walls: countTilesByType(grid, [TILE.WALL]),
+    quarries: countTilesByType(grid, [TILE.QUARRY]),
+    herbGardens: countTilesByType(grid, [TILE.HERB_GARDEN]),
+    kitchens: countTilesByType(grid, [TILE.KITCHEN]),
+    smithies: countTilesByType(grid, [TILE.SMITHY]),
+    clinics: countTilesByType(grid, [TILE.CLINIC]),
   };
 }
 
@@ -1260,7 +1319,7 @@ export function validateGeneratedGrid(grid) {
   const walls = countTilesByType(grid, [TILE.WALL]);
   const ruins = countTilesByType(grid, [TILE.RUINS]);
   const water = countTilesByType(grid, [TILE.WATER]);
-  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS]);
+  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
   const roadMin = Math.max(40, Math.round(area * toNumberOr(validation.roadMinRatio, 0.02)));
   const waterMin = Math.max(8, Math.round(area * toNumberOr(validation.waterMinRatio, 0.03)));
   const waterMax = Math.round(area * toNumberOr(validation.waterMaxRatio, 0.6));

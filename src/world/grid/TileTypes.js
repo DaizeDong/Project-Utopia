@@ -7,6 +7,11 @@ export const TOOL_TO_TILE = Object.freeze({
   warehouse: TILE.WAREHOUSE,
   wall: TILE.WALL,
   erase: TILE.GRASS,
+  quarry: TILE.QUARRY,
+  herb_garden: TILE.HERB_GARDEN,
+  kitchen: TILE.KITCHEN,
+  smithy: TILE.SMITHY,
+  clinic: TILE.CLINIC,
 });
 
 export function toolToTile(tool) {
