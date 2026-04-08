@@ -126,7 +126,8 @@ function deriveWorkerDesiredState(worker, state) {
     || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
     || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
     || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
-  // Deliver hysteresis: use lower threshold when already in deliver state
+  // Deliver hysteresis: use lower threshold when already in deliver state.
+  // carryTotal > 0 gate is intentional: workers with empty carry should exit deliver even with hysteresis.
   const deliverEntryThreshold = currentFsmState === "deliver"
     ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
     : Number(BALANCE.workerDeliverThreshold ?? 2.4);
