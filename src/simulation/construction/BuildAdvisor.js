@@ -34,11 +34,41 @@ const TOOL_INFO = Object.freeze({
     rules: "Place on grass, roads, or ruins. Walls must extend from a defense anchor or scenario chokepoint.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },
+  quarry: {
+    label: "Quarry",
+    summary: "Extracts stone from rocky deposits for advanced construction.",
+    rules: "Place on grass, roads, or ruins. Quarries need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  herb_garden: {
+    label: "Herb Garden",
+    summary: "Cultivates medicinal herbs for clinic treatments and colony health.",
+    rules: "Place on grass, roads, or ruins. Herb gardens need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  kitchen: {
+    label: "Kitchen",
+    summary: "Processes raw food into meals, boosting food efficiency for the colony.",
+    rules: "Place on grass, roads, or ruins. Kitchens need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  smithy: {
+    label: "Smithy",
+    summary: "Forges stone into tools and equipment, improving worker productivity.",
+    rules: "Place on grass, roads, or ruins. Smithies need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
+  clinic: {
+    label: "Clinic",
+    summary: "Uses herbs to treat injuries and illness, reducing population loss.",
+    rules: "Place on grass, roads, or ruins. Clinics need nearby logistics access.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
   erase: {
     label: "Erase",
     summary: "Clears the tile back to grass and salvages part of the old structure cost.",
     rules: "Erase any non-water tile. Built structures return partial salvage.",
-    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS],
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC],
   },
 });
 
@@ -55,6 +85,11 @@ const TILE_TO_TOOL = Object.freeze({
   [TILE.LUMBER]: "lumber",
   [TILE.WAREHOUSE]: "warehouse",
   [TILE.WALL]: "wall",
+  [TILE.QUARRY]: "quarry",
+  [TILE.HERB_GARDEN]: "herb_garden",
+  [TILE.KITCHEN]: "kitchen",
+  [TILE.SMITHY]: "smithy",
+  [TILE.CLINIC]: "clinic",
 });
 
 function tileKey(ix, iz) {
@@ -65,6 +100,8 @@ function addTileCost(a = {}, b = {}) {
   return {
     food: (a.food ?? 0) + (b.food ?? 0),
     wood: (a.wood ?? 0) + (b.wood ?? 0),
+    stone: (a.stone ?? 0) + (b.stone ?? 0),
+    herbs: (a.herbs ?? 0) + (b.herbs ?? 0),
   };
 }
 
@@ -72,6 +109,8 @@ function subtractTileCost(a = {}, b = {}) {
   return {
     food: Math.max(0, (a.food ?? 0) - (b.food ?? 0)),
     wood: Math.max(0, (a.wood ?? 0) - (b.wood ?? 0)),
+    stone: Math.max(0, (a.stone ?? 0) - (b.stone ?? 0)),
+    herbs: Math.max(0, (a.herbs ?? 0) - (b.herbs ?? 0)),
   };
 }
 
@@ -79,6 +118,8 @@ function formatCost(cost = {}) {
   const parts = [];
   if ((cost.food ?? 0) > 0) parts.push(`${cost.food}f`);
   if ((cost.wood ?? 0) > 0) parts.push(`${cost.wood}w`);
+  if ((cost.stone ?? 0) > 0) parts.push(`${cost.stone}s`);
+  if ((cost.herbs ?? 0) > 0) parts.push(`${cost.herbs}h`);
   return parts.length > 0 ? parts.join(" ") : "free";
 }
 
@@ -136,11 +177,13 @@ function getScenarioTileTags(state, tile) {
 
 function getTileRefund(oldType) {
   const oldTool = TILE_TO_TOOL[oldType];
-  if (!oldTool) return { food: 0, wood: 0 };
+  if (!oldTool) return { food: 0, wood: 0, stone: 0, herbs: 0 };
   const baseCost = BUILD_COST[oldTool] ?? { food: 0, wood: 0 };
   return {
     food: Math.floor((baseCost.food ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
     wood: Math.floor((baseCost.wood ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
+    stone: Math.floor((baseCost.stone ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
+    herbs: Math.floor((baseCost.herbs ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
   };
 }
 
@@ -172,17 +215,24 @@ export function describeBuildCost(tool) {
 }
 
 export function canAfford(resources, cost) {
-  return resources.food >= (cost.food ?? 0) && resources.wood >= (cost.wood ?? 0);
+  return resources.food >= (cost.food ?? 0)
+    && resources.wood >= (cost.wood ?? 0)
+    && (resources.stone ?? 0) >= (cost.stone ?? 0)
+    && (resources.herbs ?? 0) >= (cost.herbs ?? 0);
 }
 
 export function spend(resources, cost) {
   resources.food = Math.max(0, resources.food - (cost.food ?? 0));
   resources.wood = Math.max(0, resources.wood - (cost.wood ?? 0));
+  resources.stone = Math.max(0, (resources.stone ?? 0) - (cost.stone ?? 0));
+  resources.herbs = Math.max(0, (resources.herbs ?? 0) - (cost.herbs ?? 0));
 }
 
 export function refund(resources, amount) {
   resources.food += amount.food ?? 0;
   resources.wood += amount.wood ?? 0;
+  resources.stone += amount.stone ?? 0;
+  resources.herbs += amount.herbs ?? 0;
 }
 
 export function explainBuildReason(reason, context = {}) {
@@ -205,7 +255,7 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   const tile = { ix, iz };
   const cost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
   const salvage = getTileRefund(oldType);
-  const activeRefund = tool === "erase" ? salvage : { food: 0, wood: 0 };
+  const activeRefund = tool === "erase" ? salvage : { food: 0, wood: 0, stone: 0, herbs: 0 };
   const effects = [];
   const warnings = [];
 
@@ -235,7 +285,7 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
     }
   }
 
-  if ((tool === "farm" || tool === "lumber") && !hasRoadAccess) {
+  if ((tool === "farm" || tool === "lumber" || tool === "quarry" || tool === "herb_garden" || tool === "kitchen" || tool === "smithy" || tool === "clinic") && !hasRoadAccess) {
     return buildFailure("needsLogisticsAccess", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
 
@@ -261,13 +311,13 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   if (tags.chokePoints.length > 0 && tool === "wall") {
     effects.push(`Fortifies ${tags.chokePoints[0].label}.`);
   }
-  if ((tool === "farm" || tool === "lumber") && hasRoadAccess) {
+  if ((tool === "farm" || tool === "lumber" || tool === "quarry" || tool === "herb_garden" || tool === "kitchen" || tool === "smithy" || tool === "clinic") && hasRoadAccess) {
     effects.push("Within haul range of the current logistics network.");
   }
   if (tool === "warehouse" && hasRoadTouch) {
     effects.push("Creates a shorter delivery anchor for nearby workers.");
   }
-  if (tool === "erase" && (activeRefund.food > 0 || activeRefund.wood > 0)) {
+  if (tool === "erase" && (activeRefund.food > 0 || activeRefund.wood > 0 || activeRefund.stone > 0 || activeRefund.herbs > 0)) {
     effects.push(`Returns ${formatCost(activeRefund)} in salvage.`);
   }
 
@@ -283,7 +333,7 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   }
 
   const summary = tool === "erase"
-    ? activeRefund.food > 0 || activeRefund.wood > 0
+    ? activeRefund.food > 0 || activeRefund.wood > 0 || activeRefund.stone > 0 || activeRefund.herbs > 0
       ? `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} for ${formatCost(activeRefund)} salvage.`
       : `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} back to grass.`
     : `Build ${info.label.toLowerCase()}. ${effects[0] ?? info.summary}`;
