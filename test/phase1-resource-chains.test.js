@@ -383,8 +383,8 @@ test("RoleAssignment: with no processing buildings, workers only get FARM or WOO
   const workers = state.agents.filter((a) => a.type === "WORKER");
   for (const worker of workers) {
     assert.ok(
-      worker.role === ROLE.FARM || worker.role === ROLE.WOOD,
-      `Expected FARM or WOOD but got ${worker.role}`,
+      worker.role === ROLE.FARM || worker.role === ROLE.WOOD || worker.role === ROLE.HAUL,
+      `Expected FARM, WOOD, or HAUL but got ${worker.role}`,
     );
   }
 });

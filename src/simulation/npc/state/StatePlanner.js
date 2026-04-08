@@ -20,6 +20,7 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
     cook: "seek_task",
     smith: "seek_task",
     heal: "seek_task",
+    haul: "seek_task",
     wander: "wander",
   }),
   traders: Object.freeze({
@@ -125,11 +126,15 @@ function deriveWorkerDesiredState(worker, state) {
     || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
     || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
     || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
-    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0);
+    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
+    || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
   // Deliver hysteresis: use lower threshold when already in deliver state.
+  // HAUL workers deliver sooner (lower threshold) to maximize logistics throughput.
   // carryTotal > 0 gate is intentional: workers with empty carry should exit deliver even with hysteresis.
+  const isHauler = worker.role === ROLE.HAUL;
   const deliverEntryThreshold = currentFsmState === "deliver"
     ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
+    : isHauler ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
     : Number(BALANCE.workerDeliverThreshold ?? 2.4);
   if (hasWarehouse && carryTotal > 0 && (carryTotal >= deliverEntryThreshold || noWorkSite)) {
     return { desiredState: "deliver", reason: "rule:deliver" };
@@ -168,6 +173,17 @@ function deriveWorkerDesiredState(worker, state) {
   if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) {
     const atClinic = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.CLINIC]);
     return { desiredState: atClinic ? "process" : "seek_task", reason: "rule:herbalist" };
+  }
+
+  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) {
+    // Haulers harvest from any available worksite, with lower deliver threshold
+    const anyWorksite = state.buildings.farms > 0 || state.buildings.lumbers > 0
+      || Number(state.buildings?.quarries ?? 0) > 0 || Number(state.buildings?.herbGardens ?? 0) > 0;
+    if (anyWorksite) {
+      const haulTargetTypes = [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN];
+      const atWorksite = isAtTargetTile(worker, state) && isTargetTileType(worker, state, haulTargetTypes);
+      return { desiredState: atWorksite ? "harvest" : "seek_task", reason: "rule:haul" };
+    }
   }
 
   if (noWorkSite) return { desiredState: "wander", reason: "rule:no-worksite" };
@@ -420,30 +436,15 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   const lastGoalSec = Number(entity.debug?.lastGoalSetSec ?? -Infinity);
 
   // Only count A→B→A oscillation within 1.5s window.
-  // Exclude normal behavioral cycles: work, survival, and job-search transitions.
+  // Exclude normal behavioral cycles: any transition within the standard work loop
+  // (harvest, deliver, seek_task, process, idle, wander) or survival interrupts (eat, seek_food).
+  const WORK_CYCLE_STATES = new Set(["harvest", "deliver", "seek_task", "process", "idle", "wander"]);
+  const SURVIVAL_STATES = new Set(["seek_food", "eat"]);
   const isNormalCycle =
-    // Work cycles: harvest↔deliver, seek_task↔harvest, process↔deliver
-    (prevPrev === "harvest" && prev === "deliver")
-    || (prevPrev === "deliver" && prev === "harvest")
-    || (prevPrev === "seek_task" && prev === "harvest")
-    || (prevPrev === "harvest" && prev === "seek_task")
-    || (prevPrev === "deliver" && prev === "idle")
-    || (prevPrev === "idle" && prev === "seek_task")
-    || (prevPrev === "process" && prev === "deliver")
-    || (prevPrev === "deliver" && prev === "process")
-    || (prevPrev === "seek_task" && prev === "process")
-    || (prevPrev === "process" && prev === "seek_task")
-    || (prevPrev === "process" && prev === "idle")
-    || (prevPrev === "idle" && prev === "process")
-    // Survival cycles: eating interruptions
-    || prev === "seek_food" || prevPrev === "seek_food"
-    || prev === "eat" || prevPrev === "eat"
-    // Job-search cycles: idle↔seek_task, wander↔seek_task
-    || (prevPrev === "idle" && prev === "wander")
-    || (prevPrev === "wander" && prev === "idle")
-    || (prevPrev === "wander" && prev === "seek_task")
-    || (prevPrev === "seek_task" && prev === "wander")
-    || (prevPrev === "seek_task" && prev === "idle");
+    // Any transition between work-cycle states is a normal work loop
+    (WORK_CYCLE_STATES.has(prevPrev) && WORK_CYCLE_STATES.has(prev))
+    // Any transition involving survival states is a normal interruption
+    || SURVIVAL_STATES.has(prev) || SURVIVAL_STATES.has(prevPrev);
   if (
     prev && prev !== desiredState
     && prevPrev === desiredState

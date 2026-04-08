@@ -86,8 +86,8 @@ export const BENCHMARK_PRESETS = [
     label: "Developed Colony",
     templateId: "fortified_basin",
     category: "economy",
-    resources: { food: 80, wood: 70 },
-    buildings: { warehouses: 3, farms: 8, lumbers: 4, walls: 20, quarries: 1, kitchens: 1 },
+    resources: { food: 80, wood: 70, stone: 15, herbs: 10 },
+    buildings: { warehouses: 3, farms: 8, lumbers: 4, walls: 20, quarries: 1, kitchens: 1, smithies: 1, herbGardens: 1, clinics: 1 },
   },
 
   {
@@ -138,7 +138,8 @@ export const BENCHMARK_PRESETS = [
     templateId: "fortified_basin",
     category: "pressure",
     extraWorkers: 8,
-    resources: { food: 80, wood: 60 },
+    resources: { food: 80, wood: 60, stone: 15 },
+    buildings: { quarries: 1, smithies: 1 },
   },
   {
     id: "skeleton_crew",

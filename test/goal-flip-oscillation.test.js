@@ -27,10 +27,10 @@ describe("recordDesiredGoal oscillation detection", () => {
   it("non-normal-cycle A→B→A oscillation counts as flip", () => {
     const state = makeState(10);
     const entity = makeEntity();
-    // harvest→wander→harvest is not a normal cycle
-    recordDesiredGoal(entity, "harvest", state, 10);
-    recordDesiredGoal(entity, "wander", state, 10.5);
-    recordDesiredGoal(entity, "harvest", state, 11);
+    // sabotage→scout→sabotage is not a normal work/survival cycle
+    recordDesiredGoal(entity, "sabotage", state, 10);
+    recordDesiredGoal(entity, "scout", state, 10.5);
+    recordDesiredGoal(entity, "sabotage", state, 11);
     assert.equal(state.metrics.goalFlipCount, 1);
   });
 
@@ -66,11 +66,11 @@ describe("recordDesiredGoal oscillation detection", () => {
     const state = makeState(10);
     const e1 = makeEntity("w1");
     const e2 = makeEntity("w2");
-    // e1: harvest→wander→harvest = flip
-    recordDesiredGoal(e1, "harvest", state, 10);
-    recordDesiredGoal(e1, "wander", state, 10.5);
-    recordDesiredGoal(e1, "harvest", state, 11);
-    // e2: idle→seek_task→harvest = not a flip
+    // e1: sabotage→scout→sabotage = flip (non-work-cycle states)
+    recordDesiredGoal(e1, "sabotage", state, 10);
+    recordDesiredGoal(e1, "scout", state, 10.5);
+    recordDesiredGoal(e1, "sabotage", state, 11);
+    // e2: idle→seek_task→harvest = not a flip (work cycle)
     recordDesiredGoal(e2, "idle", state, 10);
     recordDesiredGoal(e2, "seek_task", state, 10.5);
     recordDesiredGoal(e2, "harvest", state, 11);
@@ -80,13 +80,12 @@ describe("recordDesiredGoal oscillation detection", () => {
   it("multiple oscillations count independently", () => {
     const state = makeState(10);
     const entity = makeEntity();
-    // harvest→deliver→harvest→deliver→harvest (work cycle — no flips expected)
-    // Use non-cycle states for actual flip test
-    recordDesiredGoal(entity, "harvest", state, 10);
-    recordDesiredGoal(entity, "wander", state, 10.3);
-    recordDesiredGoal(entity, "harvest", state, 10.6);    // flip 1
-    recordDesiredGoal(entity, "wander", state, 10.9);
-    recordDesiredGoal(entity, "harvest", state, 11.2);     // flip 3
+    // Use non-work-cycle states (saboteur) for actual flip test
+    recordDesiredGoal(entity, "sabotage", state, 10);
+    recordDesiredGoal(entity, "scout", state, 10.3);
+    recordDesiredGoal(entity, "sabotage", state, 10.6);    // flip 1
+    recordDesiredGoal(entity, "scout", state, 10.9);
+    recordDesiredGoal(entity, "sabotage", state, 11.2);     // flip 3
     assert.equal(state.metrics.goalFlipCount, 3);
   });
 

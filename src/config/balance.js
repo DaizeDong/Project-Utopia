@@ -10,7 +10,7 @@ export const BUILD_COST = Object.freeze({
   quarry: { wood: 6 },
   herb_garden: { wood: 4 },
   kitchen: { wood: 8, stone: 3 },
-  smithy: { wood: 6, stone: 8 },
+  smithy: { wood: 6, stone: 5 },
   clinic: { wood: 6, herbs: 4 },
 });
 
@@ -23,8 +23,9 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
 });
 
 export const INITIAL_RESOURCES = Object.freeze({
-  food: 80,
-  wood: 70,
+  food: 100,
+  wood: 80,
+  stone: 12,
 });
 
 export const INITIAL_POPULATION = Object.freeze({
@@ -193,7 +194,7 @@ export const BALANCE = Object.freeze({
   animalMigrationWildlifeZoneBonus: 0.18,
   lossGracePeriodSec: 90,
   // Phase 1: Resource chain production rates
-  quarryProductionPerSecond: 0.35,
+  quarryProductionPerSecond: 0.45,
   herbGardenProductionPerSecond: 0.28,
   kitchenCycleSec: 3,
   kitchenFoodCost: 2,

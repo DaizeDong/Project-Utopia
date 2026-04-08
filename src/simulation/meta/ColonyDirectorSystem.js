@@ -58,6 +58,8 @@ function determinePhase(buildings) {
 /**
  * Assess colony needs and return a sorted list of build priorities.
  * Builds from ALL incomplete phases, not just the current one.
+ * During logistics-1 objective, logistics buildings are boosted above processing
+ * so the objective completes before optional infrastructure is built.
  * @param {object} state — game state
  * @returns {Array<{type: string, priority: number, reason: string}>}
  */
@@ -103,7 +105,6 @@ export function assessColonyNeeds(state) {
   }
 
   // Processing buildings — build early so stone/herbs accumulate for smithy/clinic
-  // Use hasAccessibleWorksite to detect when map-placed worksites are unreachable
   const needQuarry = (buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries
     || !hasAccessibleWorksite(state, [TILE.QUARRY]);
   const needHerbGarden = (buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens
@@ -119,9 +120,9 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "kitchen", priority: 55, reason: "processing: need kitchen" });
   }
 
-  // Fortification phase targets — smithy/clinic high priority to unlock tile coverage
+  // Smithy: highest priority after quarry — tools accelerate ALL resource production
   if ((buildings.smithies ?? 0) < PHASE_TARGETS.fortification.smithies) {
-    needs.push({ type: "smithy", priority: 52, reason: "fortification: need smithy" });
+    needs.push({ type: "smithy", priority: 74, reason: "processing: need smithy for tools" });
   }
   if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics) {
     needs.push({ type: "clinic", priority: 50, reason: "fortification: need clinic" });
@@ -242,8 +243,14 @@ function getObjectiveResourceBuffer(state) {
   };
 }
 
+// Only quarry and smithy bypass the stockpile buffer (they unlock tools
+// which accelerate ALL production). Other processing buildings respect the buffer.
+const STRATEGIC_BUILD_TYPES = new Set(["quarry", "smithy"]);
+
 /**
  * Select multiple affordable build actions, respecting resource buffer.
+ * Strategic buildings (quarry, smithy, etc.) use the base buffer even during
+ * stockpile phases, because they accelerate resource production.
  * @param {object} state
  * @param {number} maxCount
  * @param {object} buffer — override resource buffer
@@ -258,10 +265,13 @@ export function selectNextBuilds(state, maxCount = MAX_BUILDS_PER_TICK, buffer =
     if (selected.length >= maxCount) break;
     const cost = BUILD_COST[need.type] ?? {};
     const isEmergency = need.priority >= 90;
+    const isStrategic = STRATEGIC_BUILD_TYPES.has(need.type);
 
+    // Strategic builds use the base buffer (not the stockpile-inflated buffer)
+    const effectiveBuffer = isStrategic ? RESOURCE_BUFFER : buffer;
     const checkResources = isEmergency ? budgetResources : {
-      food: (budgetResources.food ?? 0) - buffer.food,
-      wood: (budgetResources.wood ?? 0) - buffer.wood,
+      food: (budgetResources.food ?? 0) - effectiveBuffer.food,
+      wood: (budgetResources.wood ?? 0) - effectiveBuffer.wood,
       stone: budgetResources.stone ?? 0,
       herbs: budgetResources.herbs ?? 0,
     };

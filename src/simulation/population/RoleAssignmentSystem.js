@@ -3,6 +3,7 @@ import { ROLE } from "../../config/constants.js";
 import { getDoctrineAdjustedTargets } from "../meta/ProgressionSystem.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -113,6 +114,11 @@ export class RoleAssignmentSystem {
     const herbsSlots = Math.min(herbGardenCount > 0 ? 1 : 0, specialistBudget);
     specialistBudget -= herbsSlots;
 
+    // HAUL role: assign 1 hauler when there are multiple warehouses and enough workers
+    const warehouseCount = Number(state.buildings?.warehouses ?? 0);
+    const haulSlots = (warehouseCount >= 1 && n >= 10 && specialistBudget > 0) ? 1 : 0;
+    specialistBudget -= haulSlots;
+
     // Distribute remaining between FARM and WOOD using targetFarmRatio
     const remaining = farmMin + woodMin + specialistBudget;
     const emergency = state.resources.food < BALANCE.foodEmergencyThreshold;
@@ -133,6 +139,7 @@ export class RoleAssignmentSystem {
     for (let i = 0; i < cookSlots && idx < n; i += 1) workers[idx++].role = ROLE.COOK;
     for (let i = 0; i < smithSlots && idx < n; i += 1) workers[idx++].role = ROLE.SMITH;
     for (let i = 0; i < herbalistSlots && idx < n; i += 1) workers[idx++].role = ROLE.HERBALIST;
+    for (let i = 0; i < haulSlots && idx < n; i += 1) workers[idx++].role = ROLE.HAUL;
     // Any leftover workers get FARM
     while (idx < n) workers[idx++].role = ROLE.FARM;
   }
