@@ -626,12 +626,26 @@ export class WorkerAISystem {
       }
 
       const inCommitment = worker.blackboard.commitmentCycle?.entered === true && !survivalInterrupt;
+
+      // Re-planning cooldown: prevent oscillation from planning every tick.
+      // Workers only re-plan if (a) survival interrupt, or (b) 0.5s since last plan.
+      const lastPlanSec = Number(worker.blackboard.lastPlanSec ?? -Infinity);
+      const planCooldownReady = nowSec - lastPlanSec >= 0.5;
+
       let plan;
-      if (inCommitment) {
-        plan = { desiredState: currentState, reason: "commitment:hold" };
+      if (!planCooldownReady && !survivalInterrupt && currentState) {
+        plan = { desiredState: currentState, reason: "cooldown:hold" };
       } else {
         plan = planEntityDesiredState(worker, state);
-        if (TASK_LOCK_STATES.has(plan.desiredState) && !worker.blackboard.commitmentCycle) {
+        worker.blackboard.lastPlanSec = nowSec;
+
+        if (inCommitment) {
+          // Commitment allows forward progression within work cycle (harvest→deliver→seek_task)
+          // but blocks exits to non-work states (idle, wander)
+          if (!TASK_LOCK_STATES.has(plan.desiredState)) {
+            plan = { desiredState: currentState, reason: "commitment:hold" };
+          }
+        } else if (TASK_LOCK_STATES.has(plan.desiredState) && !worker.blackboard.commitmentCycle) {
           worker.blackboard.commitmentCycle = { startSec: nowSec, entered: true };
         }
       }

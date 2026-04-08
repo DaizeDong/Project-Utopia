@@ -1,5 +1,8 @@
 // src/benchmark/BenchmarkPresets.js
 
+import { TILE } from "../config/constants.js";
+import { inBounds, getTile, setTile, listTilesByType, rebuildBuildingStats } from "../world/grid/Grid.js";
+
 /**
  * Benchmark scenario presets for testing AI adaptability across diverse conditions.
  *
@@ -163,6 +166,67 @@ export const BENCHMARK_PRESETS = [
   },
 ];
 
+// Map building stat keys to tile types
+const BUILDING_KEY_TO_TILE = {
+  farms: TILE.FARM,
+  lumbers: TILE.LUMBER,
+  roads: TILE.ROAD,
+  warehouses: TILE.WAREHOUSE,
+  walls: TILE.WALL,
+  quarries: TILE.QUARRY,
+  herbGardens: TILE.HERB_GARDEN,
+  kitchens: TILE.KITCHEN,
+  smithies: TILE.SMITHY,
+  clinics: TILE.CLINIC,
+};
+
+/**
+ * Place building tiles on the grid to match preset building counts.
+ * Searches outward from existing infrastructure (roads, warehouses, etc.)
+ * to find GRASS tiles for placement.
+ */
+function placeBuildingsOnGrid(state, buildings) {
+  const { grid } = state;
+
+  for (const [key, count] of Object.entries(buildings)) {
+    const tileType = BUILDING_KEY_TO_TILE[key];
+    if (tileType === undefined || count <= 0) continue;
+
+    // Count how many already exist on the grid
+    const existing = listTilesByType(grid, [tileType]).length;
+    const toPlace = Math.max(0, count - existing);
+    if (toPlace <= 0) continue;
+
+    // Find anchor points (existing infrastructure) to search from
+    const anchors = listTilesByType(grid, [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER]);
+    const placed = new Set();
+    let remaining = toPlace;
+
+    // Search outward from anchors
+    for (let radius = 1; radius <= 10 && remaining > 0; radius += 1) {
+      for (const anchor of anchors) {
+        if (remaining <= 0) break;
+        for (let dz = -radius; dz <= radius && remaining > 0; dz += 1) {
+          for (let dx = -radius; dx <= radius && remaining > 0; dx += 1) {
+            if (Math.abs(dx) + Math.abs(dz) !== radius) continue;
+            const ix = anchor.ix + dx;
+            const iz = anchor.iz + dz;
+            const key2 = `${ix},${iz}`;
+            if (placed.has(key2)) continue;
+            placed.add(key2);
+            if (!inBounds(ix, iz, grid)) continue;
+            if (getTile(grid, ix, iz) !== TILE.GRASS) continue;
+            setTile(grid, ix, iz, tileType);
+            remaining -= 1;
+          }
+        }
+      }
+    }
+  }
+
+  state.buildings = rebuildBuildingStats(grid);
+}
+
 /**
  * Apply a preset's modifications to a freshly created game state.
  * @param {object} state - GameState from createInitialGameState
@@ -178,12 +242,9 @@ export function applyPreset(state, preset) {
     }
   }
 
-  // Buildings — overrides stat counters only, does NOT modify the grid.
-  // Use this to simulate a "developed" state for metric calculations.
+  // Buildings — place actual tiles on the grid, then rebuild stats.
   if (preset.buildings) {
-    for (const [key, val] of Object.entries(preset.buildings)) {
-      state.buildings[key] = val;
-    }
+    placeBuildingsOnGrid(state, preset.buildings);
   }
 
   // Threat

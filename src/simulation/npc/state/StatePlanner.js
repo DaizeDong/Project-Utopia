@@ -419,11 +419,36 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   const prevPrev = (logic.prevPrevGoalsByEntity ??= {})[key];
   const lastGoalSec = Number(entity.debug?.lastGoalSetSec ?? -Infinity);
 
-  // Only count A→B→A oscillation pattern within 3s window
+  // Only count A→B→A oscillation within 1.5s window.
+  // Exclude normal behavioral cycles: work, survival, and job-search transitions.
+  const isNormalCycle =
+    // Work cycles: harvest↔deliver, seek_task↔harvest, process↔deliver
+    (prevPrev === "harvest" && prev === "deliver")
+    || (prevPrev === "deliver" && prev === "harvest")
+    || (prevPrev === "seek_task" && prev === "harvest")
+    || (prevPrev === "harvest" && prev === "seek_task")
+    || (prevPrev === "deliver" && prev === "idle")
+    || (prevPrev === "idle" && prev === "seek_task")
+    || (prevPrev === "process" && prev === "deliver")
+    || (prevPrev === "deliver" && prev === "process")
+    || (prevPrev === "seek_task" && prev === "process")
+    || (prevPrev === "process" && prev === "seek_task")
+    || (prevPrev === "process" && prev === "idle")
+    || (prevPrev === "idle" && prev === "process")
+    // Survival cycles: eating interruptions
+    || prev === "seek_food" || prevPrev === "seek_food"
+    || prev === "eat" || prevPrev === "eat"
+    // Job-search cycles: idle↔seek_task, wander↔seek_task
+    || (prevPrev === "idle" && prev === "wander")
+    || (prevPrev === "wander" && prev === "idle")
+    || (prevPrev === "wander" && prev === "seek_task")
+    || (prevPrev === "seek_task" && prev === "wander")
+    || (prevPrev === "seek_task" && prev === "idle");
   if (
     prev && prev !== desiredState
     && prevPrev === desiredState
-    && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 3.0
+    && !isNormalCycle
+    && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 1.5
   ) {
     logic.goalFlipCount = Number(logic.goalFlipCount ?? 0) + 1;
     state.metrics.goalFlipCount = Number(state.metrics.goalFlipCount ?? 0) + 1;

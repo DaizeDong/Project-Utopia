@@ -24,13 +24,24 @@ describe("recordDesiredGoal oscillation detection", () => {
     assert.equal(state.metrics.goalFlipCount, 0);
   });
 
-  it("A→B→A oscillation counts as flip", () => {
+  it("non-normal-cycle A→B→A oscillation counts as flip", () => {
+    const state = makeState(10);
+    const entity = makeEntity();
+    // harvest→wander→harvest is not a normal cycle
+    recordDesiredGoal(entity, "harvest", state, 10);
+    recordDesiredGoal(entity, "wander", state, 10.5);
+    recordDesiredGoal(entity, "harvest", state, 11);
+    assert.equal(state.metrics.goalFlipCount, 1);
+  });
+
+  it("work cycle harvest→deliver→harvest is NOT a flip", () => {
     const state = makeState(10);
     const entity = makeEntity();
     recordDesiredGoal(entity, "harvest", state, 10);
-    recordDesiredGoal(entity, "deliver", state, 11);
-    recordDesiredGoal(entity, "harvest", state, 12);
-    assert.equal(state.metrics.goalFlipCount, 1);
+    recordDesiredGoal(entity, "deliver", state, 10.5);
+    recordDesiredGoal(entity, "harvest", state, 11);
+    // This is a normal work cycle, not oscillation
+    assert.equal(state.metrics.goalFlipCount, 0);
   });
 
   it("same state repeated is NOT a flip", () => {
@@ -41,12 +52,13 @@ describe("recordDesiredGoal oscillation detection", () => {
     assert.equal(state.metrics.goalFlipCount, 0);
   });
 
-  it("oscillation outside 3s window is NOT a flip", () => {
+  it("oscillation outside 1.5s window is NOT a flip", () => {
     const state = makeState(10);
     const entity = makeEntity();
+    // harvest→wander→harvest but with >1.5s gap
     recordDesiredGoal(entity, "harvest", state, 10);
-    recordDesiredGoal(entity, "deliver", state, 11);
-    recordDesiredGoal(entity, "harvest", state, 15);
+    recordDesiredGoal(entity, "wander", state, 11);
+    recordDesiredGoal(entity, "harvest", state, 13);
     assert.equal(state.metrics.goalFlipCount, 0);
   });
 
@@ -54,31 +66,34 @@ describe("recordDesiredGoal oscillation detection", () => {
     const state = makeState(10);
     const e1 = makeEntity("w1");
     const e2 = makeEntity("w2");
+    // e1: harvest→wander→harvest = flip
     recordDesiredGoal(e1, "harvest", state, 10);
-    recordDesiredGoal(e1, "deliver", state, 11);
-    recordDesiredGoal(e1, "harvest", state, 12); // flip for e1
+    recordDesiredGoal(e1, "wander", state, 10.5);
+    recordDesiredGoal(e1, "harvest", state, 11);
+    // e2: idle→seek_task→harvest = not a flip
     recordDesiredGoal(e2, "idle", state, 10);
-    recordDesiredGoal(e2, "seek_task", state, 11);
-    recordDesiredGoal(e2, "harvest", state, 12); // not a flip
+    recordDesiredGoal(e2, "seek_task", state, 10.5);
+    recordDesiredGoal(e2, "harvest", state, 11);
     assert.equal(state.metrics.goalFlipCount, 1);
   });
 
   it("multiple oscillations count independently", () => {
     const state = makeState(10);
     const entity = makeEntity();
+    // harvest→deliver→harvest→deliver→harvest (work cycle — no flips expected)
+    // Use non-cycle states for actual flip test
     recordDesiredGoal(entity, "harvest", state, 10);
-    recordDesiredGoal(entity, "deliver", state, 10.5);
-    recordDesiredGoal(entity, "harvest", state, 11);   // flip 1
-    recordDesiredGoal(entity, "deliver", state, 11.5);
-    recordDesiredGoal(entity, "harvest", state, 12);   // flip 3
+    recordDesiredGoal(entity, "wander", state, 10.3);
+    recordDesiredGoal(entity, "harvest", state, 10.6);    // flip 1
+    recordDesiredGoal(entity, "wander", state, 10.9);
+    recordDesiredGoal(entity, "harvest", state, 11.2);     // flip 3
     assert.equal(state.metrics.goalFlipCount, 3);
   });
 
   it("full work cycle with gaps produces zero flips", () => {
     const state = makeState(10);
     const entity = makeEntity();
-    // Two full work cycles with sufficient spacing
-    // idle(10) → seek_task(11.5) → harvest(13) → deliver(14.5) → idle(16) → seek_task(17.5) → harvest(19) → deliver(20.5)
+    // Two full work cycles
     const cycle = ["idle", "seek_task", "harvest", "deliver"];
     let t = 10;
     for (let i = 0; i < 2; i++) {
@@ -87,7 +102,6 @@ describe("recordDesiredGoal oscillation detection", () => {
         t += 1.5;
       }
     }
-    // seek_task at 11.5 and 17.5 = 6s gap > 3s, so no flip
     assert.equal(state.metrics.goalFlipCount, 0);
   });
 });

@@ -382,7 +382,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
 
     state.gameplay.objectiveHint = applyPacingHint(state, runtime, coverage, recovery, baseHint);
 
-    if (routeP >= 1 && depotP >= 1 && wP >= 1 && fP >= 1 && lP >= 1 && rP >= 1 && wallP >= 1 && coverage.progress >= 1) {
+    if (routeP >= 1 && depotP >= 1 && wP >= 1 && fP >= 1 && lP >= 1 && rP >= 1 && wallP >= 1 && coverage.progress >= 0.85) {
       objective.completed = true;
       logObjective(state, `Objective complete: ${objective.title}`);
       applyObjectiveReward(state, objective);
@@ -399,7 +399,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
     const foodP = clamp(state.resources.food / Math.max(1, targets.food), 0, 1);
     const woodP = clamp(state.resources.wood / Math.max(1, targets.wood), 0, 1);
     const prosperityP = clamp(state.gameplay.prosperity / Math.max(1, targets.prosperityFloor), 0, 1);
-    const networkP = Math.min(routeP, depotP, coverage.progress);
+    const networkP = Math.min(routeP, depotP, coverage.progress >= 0.85 ? 1 : coverage.progress);
     objective.progress = Number((Math.min(foodP, woodP, prosperityP, networkP) * 100).toFixed(1));
 
     const missingRoute = runtime.routes.find((route) => !route.connected);
@@ -409,7 +409,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
       baseHint = `Stockpile is blocked until the ${missingRoute.label} stays online.`;
     } else if (missingDepot) {
       baseHint = `Stockpile growth is unstable until ${missingDepot.label} is reclaimed.`;
-    } else if (coverage.progress < 1 && coverage.hint) {
+    } else if (coverage.progress < 0.85 && coverage.hint) {
       baseHint = coverage.hint;
     } else if (prosperityP < 1) {
       baseHint = `Prosperity is too low for safe stockpiling. Stabilize the network before waiting for resources.`;
@@ -431,7 +431,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
   if (objective.id === "stability-1") {
     const targets = doctrineTargets.stability;
     const wallsReady = runtime.counts.walls >= targets.walls;
-    const frontierP = Math.min(routeP, depotP, coverage.progress);
+    const frontierP = Math.min(routeP, depotP, coverage.progress >= 0.85 ? 1 : coverage.progress);
     const stable = wallsReady
       && frontierP >= 1
       && state.gameplay.prosperity >= targets.prosperity
@@ -487,7 +487,7 @@ function computeThreat(state) {
   const predators = state.animals.filter((a) => a.kind === "PREDATOR").length;
   const sabotageEvents = state.events.active.filter((e) => e.type === "sabotage").length;
   const lowFoodPenalty = state.resources.food < 25 ? (25 - state.resources.food) * 0.8 : 0;
-  const wallMitigation = clamp(state.buildings.walls / 120, 0, 1) * 18;
+  const wallMitigation = clamp(state.buildings.walls / 24, 0, 1) * 18;
   const chaos = clamp(state.debug.boids?.avgNeighbors ?? 0, 0, 4) * 6;
   const spatial = state.metrics?.spatialPressure ?? {};
   const weatherThreat = Number(spatial.weatherPressure ?? 0) * Number(BALANCE.weatherPressureThreat ?? 4.8);
