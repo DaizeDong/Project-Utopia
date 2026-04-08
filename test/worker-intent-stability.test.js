@@ -156,7 +156,7 @@ test("Worker in 'eat' state with hunger=0.36 (above recover threshold 0.35) leav
     `Expected NOT seek_food but got seek_food (reason: ${result.reason})`);
 });
 
-test("Worker NOT in eat/seek_food state with hunger=0.15 triggers normal eat seek", () => {
+test("Worker NOT in eat/seek_food state with hunger=0.15 does NOT trigger eat (no hysteresis)", () => {
   // hunger=0.15 is just above 0.14 threshold; without hysteresis a fresh worker would NOT eat
   // Since 0.15 > 0.14 (threshold), the normal rule does NOT trigger
   const worker = makeWorker({
@@ -172,6 +172,20 @@ test("Worker NOT in eat/seek_food state with hunger=0.15 triggers normal eat see
     `Expected NOT eat for worker not in eat state with hunger 0.15`);
   assert.notEqual(result.desiredState, "seek_food",
     `Expected NOT seek_food for worker not in eat state with hunger 0.15`);
+});
+
+test("Worker in deliver state with carry=0 should NOT stay in deliver", () => {
+  // Even with hysteresis, a worker in deliver with nothing to carry should leave
+  const worker = makeWorker({
+    hunger: 0.8,
+    carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
+    blackboard: { fsm: { state: "deliver" } },
+  });
+  const state = makeState();
+
+  const result = deriveWorkerDesiredStateExported(worker, state);
+  assert.notEqual(result.desiredState, "deliver",
+    `Worker with empty carry should not stay in deliver, got: ${result.desiredState}`);
 });
 
 test("Worker in eat state with no food available does not stay in eat via hysteresis", () => {
