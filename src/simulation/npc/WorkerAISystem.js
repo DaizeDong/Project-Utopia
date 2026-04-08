@@ -2,6 +2,7 @@
 import { ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { BuildSystem } from "../construction/BuildSystem.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
@@ -507,7 +508,40 @@ function handleProcess(worker, state, services, dt) {
   // Worker stays at the building; actual processing is handled by ProcessingSystem
 }
 
+function getActiveWorkerPolicy(state) {
+  if (!state.ai?.groupPolicies) return null;
+  return state.ai.groupPolicies.get("workers") ?? null;
+}
+
+function attemptAutoBuild(worker, state, services) {
+  const policy = getActiveWorkerPolicy(state);
+  if (!policy?.buildQueue?.length) return false;
+
+  const buildItem = policy.buildQueue[0];
+  const tool = String(buildItem.type ?? "");
+  if (!tool) return false;
+
+  // Find a grass tile near the worker for placement
+  const workerTile = worldToTile(worker.x, worker.z, state.grid);
+  const target = findNearestTileOfTypes(state.grid, workerTile, [0]); // TILE.GRASS = 0
+  if (!target) return false;
+
+  // Use BuildSystem to place (handles cost, validation, stats)
+  const buildSystem = new BuildSystem();
+  const result = buildSystem.placeToolAt(state, tool, target.ix, target.iz, { recordHistory: false });
+  if (result.ok) {
+    policy.buildQueue.shift();
+    state.metrics.aiDecisions = (state.metrics.aiDecisions ?? 0) + 1;
+    return true;
+  }
+  return false;
+}
+
 function handleWander(worker, state, services, dt) {
+  if (attemptAutoBuild(worker, state, services)) {
+    return; // Built something, skip normal wander
+  }
+
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
   blackboard.intentTargetIntent = "wander";
 
