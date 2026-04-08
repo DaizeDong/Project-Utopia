@@ -203,6 +203,26 @@ function adjustWorkerPolicy(policy, context, summary) {
     addNote(notes, "Threat is elevated, so prefer safer paths and work clusters.");
   }
 
+  // New resource awareness (stone, herbs, processed goods)
+  const stoneCount = Number(world?.resources?.stone ?? 0);
+  const herbsCount = Number(world?.resources?.herbs ?? 0);
+  const quarryCount = Number(world?.buildings?.quarries ?? 0);
+  const herbGardenCount = Number(world?.buildings?.herbGardens ?? 0);
+  const kitchenCount = Number(world?.buildings?.kitchens ?? 0);
+
+  if (quarryCount > 0 && stoneCount < 15) {
+    boost(policy.intentWeights, "quarry", 0.2);
+    addNote(notes, "Stone is low: boost quarry work to build reserves.");
+  }
+  if (herbGardenCount > 0 && herbsCount < 10) {
+    boost(policy.intentWeights, "gather_herbs", 0.2);
+    addNote(notes, "Herbs are low: boost herb gathering for medicine production.");
+  }
+  if (kitchenCount > 0 && food > 30) {
+    boost(policy.intentWeights, "cook", 0.15);
+    addNote(notes, "Food surplus available: allow cooking to produce meals.");
+  }
+
   // Predator awareness
   const predators = Number(world?.population?.predators ?? 0);
   if (predators >= 3) {
@@ -489,7 +509,7 @@ function isFallbackTargetFeasible(groupId, targetState, summary, context) {
       return Number(buildings.warehouses ?? 0) > 0 && carrying >= minCarry;
     }
     if (targetState === "seek_food" || targetState === "eat") {
-      return Number(resources.food ?? 0) > 0 && Number(buildings.warehouses ?? 0) > 0;
+      return (Number(resources.food ?? 0) > 0 || Number(resources.meals ?? 0) > 0) && Number(buildings.warehouses ?? 0) > 0;
     }
   }
   if (groupId === "traders" && (targetState === "seek_trade" || targetState === "trade")) {

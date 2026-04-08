@@ -107,6 +107,17 @@ export class ResourceSystem {
   update(_dt, state) {
     state.resources.food = Number.isFinite(state.resources.food) ? Math.max(0, state.resources.food) : 0;
     state.resources.wood = Number.isFinite(state.resources.wood) ? Math.max(0, state.resources.wood) : 0;
+    state.resources.stone = Number.isFinite(state.resources.stone) ? Math.max(0, state.resources.stone) : 0;
+    state.resources.herbs = Number.isFinite(state.resources.herbs) ? Math.max(0, state.resources.herbs) : 0;
+    state.resources.meals = Number.isFinite(state.resources.meals) ? Math.max(0, state.resources.meals) : 0;
+    state.resources.medicine = Number.isFinite(state.resources.medicine) ? Math.max(0, state.resources.medicine) : 0;
+    state.resources.tools = Number.isFinite(state.resources.tools) ? Math.max(0, state.resources.tools) : 0;
+
+    // Tool production multiplier (colony-wide harvest speed buff)
+    const toolCount = Math.min(Number(state.resources.tools ?? 0), Number(BALANCE.toolMaxEffective ?? 3));
+    const toolBonus = toolCount * Number(BALANCE.toolHarvestSpeedBonus ?? 0.15);
+    state.gameplay = state.gameplay ?? {};
+    state.gameplay.toolProductionMultiplier = 1 + toolBonus;
     const gridChanged = this.lastGridVersion !== state.grid.version;
 
     if (gridChanged) {
@@ -144,10 +155,18 @@ export class ResourceSystem {
       this.nextLogisticsSampleSec = nowSec + 0.4;
     }
 
-    if (!Number.isFinite(state.resources.food) || !Number.isFinite(state.resources.wood)) {
+    if (!Number.isFinite(state.resources.food) || !Number.isFinite(state.resources.wood)
+      || !Number.isFinite(state.resources.stone) || !Number.isFinite(state.resources.herbs)
+      || !Number.isFinite(state.resources.meals) || !Number.isFinite(state.resources.medicine)
+      || !Number.isFinite(state.resources.tools)) {
       pushWarning(state, "Resource value became invalid and was reset", "error", this.name);
       state.resources.food = Math.max(0, state.resources.food || 0);
       state.resources.wood = Math.max(0, state.resources.wood || 0);
+      state.resources.stone = Math.max(0, state.resources.stone || 0);
+      state.resources.herbs = Math.max(0, state.resources.herbs || 0);
+      state.resources.meals = Math.max(0, state.resources.meals || 0);
+      state.resources.medicine = Math.max(0, state.resources.medicine || 0);
+      state.resources.tools = Math.max(0, state.resources.tools || 0);
     }
   }
 }
