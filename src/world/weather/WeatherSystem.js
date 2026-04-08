@@ -174,15 +174,43 @@ export function setWeather(state, weatherName, durationSec = 30, source = "event
   applyWeatherHazards(state, weatherName);
 }
 
+// Natural weather cycle: clear-dominant with occasional other weather
+const WEATHER_CYCLE = Object.freeze([
+  { weather: WEATHER.CLEAR, minSec: 25, maxSec: 40 },
+  { weather: WEATHER.RAIN, minSec: 15, maxSec: 25 },
+  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 35 },
+  { weather: WEATHER.DROUGHT, minSec: 12, maxSec: 20 },
+  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 30 },
+  { weather: WEATHER.WINTER, minSec: 15, maxSec: 25 },
+  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 35 },
+  { weather: WEATHER.STORM, minSec: 10, maxSec: 18 },
+]);
+
 export class WeatherSystem {
   constructor() {
     this.name = "WeatherSystem";
+    this._cycleIndex = 0;
+    this._nextCycleAtSec = -1;
   }
 
   update(dt, state) {
     state.weather.timeLeftSec -= dt;
-    if (state.weather.timeLeftSec > 0) return;
+    const now = state.metrics?.timeSec ?? 0;
 
-    setWeather(state, WEATHER.CLEAR, 999, "default");
+    // Initialise internal cycle timer on first tick
+    if (this._nextCycleAtSec < 0) {
+      const first = WEATHER_CYCLE[0];
+      this._nextCycleAtSec = now + (first.minSec + Math.random() * (first.maxSec - first.minSec));
+    }
+
+    // Natural weather cycle runs on its own timer, independent of
+    // state.weather.timeLeftSec (which EnvironmentDirectorSystem may reset).
+    if (now < this._nextCycleAtSec) return;
+
+    this._cycleIndex = (this._cycleIndex + 1) % WEATHER_CYCLE.length;
+    const entry = WEATHER_CYCLE[this._cycleIndex];
+    const duration = entry.minSec + Math.random() * (entry.maxSec - entry.minSec);
+    setWeather(state, entry.weather, duration, "cycle");
+    this._nextCycleAtSec = now + duration;
   }
 }

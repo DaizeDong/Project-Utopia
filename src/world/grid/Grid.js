@@ -1279,6 +1279,7 @@ export function rebuildBuildingStats(grid) {
     warehouses: countTilesByType(grid, [TILE.WAREHOUSE]),
     farms: countTilesByType(grid, [TILE.FARM]),
     lumbers: countTilesByType(grid, [TILE.LUMBER]),
+    roads: countTilesByType(grid, [TILE.ROAD]),
     walls: countTilesByType(grid, [TILE.WALL]),
     quarries: countTilesByType(grid, [TILE.QUARRY]),
     herbGardens: countTilesByType(grid, [TILE.HERB_GARDEN]),

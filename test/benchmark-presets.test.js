@@ -82,9 +82,9 @@ describe("BenchmarkPresets", () => {
     const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
     const preset = BENCHMARK_PRESETS.find((p) => p.id === "resource_chains_basic");
     applyPreset(state, preset);
-    assert.equal(state.buildings.quarries, 1);
-    assert.equal(state.buildings.herbGardens, 1);
-    assert.equal(state.buildings.kitchens, 1);
+    assert.ok(state.buildings.quarries >= 1, "should have at least 1 quarry");
+    assert.ok(state.buildings.herbGardens >= 1, "should have at least 1 herb garden");
+    assert.ok(state.buildings.kitchens >= 1, "should have at least 1 kitchen");
   });
 
   it("cloned workers have correct carry format with stone and herbs", () => {

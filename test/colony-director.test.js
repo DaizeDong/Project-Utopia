@@ -102,13 +102,15 @@ test("assessColonyNeeds returns fortification needs when processing is complete"
   assert.ok(types.includes("clinic"), "should need clinic in fortification phase");
 });
 
-test("assessColonyNeeds returns empty array when all phases complete", () => {
+test("assessColonyNeeds returns only expansion or accessibility items when all phases complete", () => {
   const state = makeMinimalState({
     buildings: { farms: 4, lumbers: 3, roads: 20, warehouses: 2, walls: 12, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 1, clinics: 1 },
     resources: { food: 80, wood: 70, stone: 10, herbs: 5 },
   });
   const needs = assessColonyNeeds(state);
-  assert.equal(needs.length, 0, "no needs when all phases complete");
+  // All needs should be either expansion or accessibility-driven (processing: need accessible ...)
+  assert.ok(needs.every((n) => n.reason.startsWith("expansion:") || n.reason.includes("accessible")),
+    "only expansion or accessibility needs when all phase counts are met");
 });
 
 // ── selectNextBuild tests ─────────────────────────────────────────────
@@ -150,8 +152,9 @@ test("selectNextBuild returns highest affordable priority need", () => {
   });
   const result = selectNextBuild(state);
   assert.ok(result !== null, "should return a build");
-  // With plenty of resources, should return something in bootstrap phase
-  assert.ok(["farm", "lumber", "road"].includes(result.type), `expected bootstrap type, got ${result.type}`);
+  // With initial map satisfying bootstrap, returns logistics or later phase needs
+  assert.ok(["farm", "lumber", "road", "warehouse", "wall", "quarry", "herb_garden"].includes(result.type),
+    `expected colony need type, got ${result.type}`);
 });
 
 // ── ColonyDirectorSystem tests ────────────────────────────────────────

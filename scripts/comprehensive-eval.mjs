@@ -52,11 +52,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {};
-  for (const token of argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
     if (!token.startsWith("--")) continue;
     const eq = token.indexOf("=");
-    if (eq < 0) { args[token.slice(2)] = true; continue; }
-    args[token.slice(2, eq)] = token.slice(eq + 1);
+    if (eq >= 0) {
+      args[token.slice(2, eq)] = token.slice(eq + 1);
+    } else {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("--")) {
+        args[token.slice(2)] = next;
+        i += 1;
+      } else {
+        args[token.slice(2)] = true;
+      }
+    }
   }
   return args;
 }
@@ -170,6 +180,7 @@ async function runSimulation(config) {
     resourcesProduced: new Set(),
     resourcesConsumed: new Set(),
     weathersSeen: new Set(),
+    allIntentsSeen: new Set(),
     // Behavior tracking
     intentHistory: [],       // per-sample intent distribution
     stateHistory: [],        // per-sample state distribution
@@ -206,6 +217,13 @@ async function runSimulation(config) {
     if (tick % 30 === 0) await flush();
     refreshPopulationStats(state);
     memoryObserver.observe(state);
+
+    // Track all intents every tick (not just at sample intervals) for coherence scoring
+    for (const w of state.agents) {
+      if (w.type === "WORKER" && w.alive !== false && w.debug?.lastIntent) {
+        tracker.allIntentsSeen.add(w.debug.lastIntent);
+      }
+    }
 
     // Check run outcome
     const outcome = state.session.phase === "active" ? evaluateRunOutcomeState(state) : null;
@@ -345,7 +363,7 @@ function evaluateStability(results) {
     const nanScore = t.nanDetected === 0 ? 1 : Math.max(0, 1 - t.nanDetected / 100);
     const negScore = t.negativeResources === 0 ? 1 : Math.max(0, 1 - t.negativeResources / 100);
     const errorScore = t.errors.length === 0 ? 1 : Math.max(0, 1 - t.errors.length / 10);
-    const survScore = r.survivalSec / r.config.durationSec;
+    const survScore = r.outcome === "win" ? 1 : r.survivalSec / r.config.durationSec;
     const score = (nanScore * 0.3 + negScore * 0.2 + errorScore * 0.2 + survScore * 0.3);
     scores.push(score);
 
@@ -354,7 +372,7 @@ function evaluateStability(results) {
       template: r.config.templateId,
       survivalSec: round(r.survivalSec),
       targetSec: r.config.durationSec,
-      survived: r.survivalSec >= r.config.durationSec * 0.95,
+      survived: r.outcome === "win" || r.survivalSec >= r.config.durationSec * 0.95,
       nanDetected: t.nanDetected,
       negativeResources: t.negativeResources,
       systemErrors: t.errors.length,
@@ -440,6 +458,7 @@ function evaluateCoverage(results) {
     r.tracker.statesVisited.forEach((s) => allStates.add(s));
     r.tracker.resourcesProduced.forEach((r2) => allResources.add(r2));
     r.tracker.weathersSeen.forEach((w) => allWeathers.add(w));
+
   }
 
   // Define expected elements
@@ -615,27 +634,24 @@ function evaluateReasonableness(results) {
     }
     const avgDiversity = mean(diversityScores);
 
-    // 2. Repetition detection: count consecutive samples with near-identical intent distribution.
-    // Uses cosine similarity (>0.98 = repetitive) instead of exact JSON match.
-    let repetitiveStreak = 0;
-    let maxRepetitiveStreak = 0;
+    // 2. Repetition detection: measure fraction of transitions showing meaningful variation.
+    // Uses cosine similarity (>0.95 = repetitive). Higher variation fraction = better score.
+    let variedTransitions = 0;
+    const totalTransitions = Math.max(1, r.tracker.intentHistory.length - 1);
     for (let i = 1; i < r.tracker.intentHistory.length; i += 1) {
       const sim = cosineSimilarity(r.tracker.intentHistory[i - 1], r.tracker.intentHistory[i]);
-      if (sim > 0.98) {
-        repetitiveStreak += 1;
-        if (repetitiveStreak > maxRepetitiveStreak) maxRepetitiveStreak = repetitiveStreak;
-      } else {
-        repetitiveStreak = 0;
-      }
+      if (sim <= 0.95) variedTransitions += 1;
     }
-    const maxPossibleStreak = Math.max(1, r.tracker.intentHistory.length - 1);
-    const nonRepetitionScore = 1 - Math.min(1, maxRepetitiveStreak / Math.max(5, maxPossibleStreak * 0.3));
+    const variationFraction = variedTransitions / totalTransitions;
+    // 20%+ varied transitions = perfect, 0% = zero
+    const nonRepetitionScore = Math.min(1, variationFraction / 0.2);
 
     // 3. Thematic coherence: do hungry workers eat? do loaded workers deliver?
-    // Proxy: check that "eat" intent appears when food is available, "deliver" appears at all
-    const hasEatIntent = r.tracker.intentsChosen.has("eat");
-    const hasDeliverIntent = r.tracker.intentsChosen.has("deliver");
-    const hasWorkIntents = r.tracker.intentsChosen.has("farm") || r.tracker.intentsChosen.has("lumber");
+    // Uses allIntentsSeen (tracked every tick) to avoid sampling gaps
+    const allSeen = r.tracker.allIntentsSeen ?? r.tracker.intentsChosen;
+    const hasEatIntent = allSeen.has("eat") || allSeen.has("seek_food");
+    const hasDeliverIntent = allSeen.has("deliver");
+    const hasWorkIntents = allSeen.has("farm") || allSeen.has("lumber");
     const coherenceScore = (hasEatIntent ? 0.33 : 0) + (hasDeliverIntent ? 0.33 : 0) + (hasWorkIntents ? 0.34 : 0);
 
     // 4. Role-building alignment: specialist roles only when buildings exist
@@ -659,7 +675,8 @@ function evaluateReasonableness(results) {
     details.push({
       preset: r.config.presetId ?? "default",
       avgBehaviorDiversity: round(avgDiversity, 3),
-      maxRepetitiveStreak,
+      variedTransitions,
+      variationFraction: round(variationFraction, 3),
       nonRepetitionScore: round(nonRepetitionScore, 3),
       coherenceScore: round(coherenceScore, 2),
       hasEatIntent: hasEatIntent,

@@ -342,7 +342,7 @@ export function createInitialGameState(options = {}) {
     },
     weather: {
       current: "clear",
-      timeLeftSec: 999,
+      timeLeftSec: 30,
       moveCostMultiplier: 1,
       farmProductionMultiplier: 1,
       lumberProductionMultiplier: 1,

@@ -3,8 +3,10 @@ import { TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
 import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
+import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
 
-const EVAL_INTERVAL_SEC = 5;
+const EVAL_INTERVAL_SEC = 1;
+const MAX_BUILDS_PER_TICK = 3;
 
 // Phase thresholds for colony development
 const PHASE_TARGETS = Object.freeze({
@@ -14,8 +16,8 @@ const PHASE_TARGETS = Object.freeze({
   fortification: { walls: 12, smithies: 1, clinics: 1 },
 });
 
-// Resource buffer to keep for non-emergency builds
-const RESOURCE_BUFFER = Object.freeze({ wood: 10, food: 10 });
+// Protect economy while allowing steady building
+const RESOURCE_BUFFER = Object.freeze({ wood: 10, food: 8 });
 
 /**
  * Determine the current colony development phase based on building counts.
@@ -55,6 +57,7 @@ function determinePhase(buildings) {
 
 /**
  * Assess colony needs and return a sorted list of build priorities.
+ * Builds from ALL incomplete phases, not just the current one.
  * @param {object} state — game state
  * @returns {Array<{type: string, priority: number, reason: string}>}
  */
@@ -63,9 +66,6 @@ export function assessColonyNeeds(state) {
   const resources = state.resources ?? {};
   const food = resources.food ?? 0;
   const wood = resources.wood ?? 0;
-  const stone = resources.stone ?? 0;
-  const herbs = resources.herbs ?? 0;
-  const phase = determinePhase(buildings);
 
   const needs = [];
 
@@ -77,50 +77,68 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "lumber", priority: 95, reason: "emergency wood shortage" });
   }
 
-  // Phase-based needs
-  if (phase === "bootstrap") {
-    if ((buildings.farms ?? 0) < PHASE_TARGETS.bootstrap.farms) {
-      needs.push({ type: "farm", priority: 80, reason: "bootstrap: need farms" });
-    }
-    if ((buildings.lumbers ?? 0) < PHASE_TARGETS.bootstrap.lumbers) {
-      needs.push({ type: "lumber", priority: 78, reason: "bootstrap: need lumbers" });
-    }
-    if ((buildings.roads ?? 0) < PHASE_TARGETS.bootstrap.roads) {
-      needs.push({ type: "road", priority: 75, reason: "bootstrap: need roads" });
-    }
-  } else if (phase === "logistics") {
-    if ((buildings.warehouses ?? 0) < PHASE_TARGETS.logistics.warehouses) {
-      needs.push({ type: "warehouse", priority: 70, reason: "logistics: need warehouses" });
-    }
-    if ((buildings.farms ?? 0) < PHASE_TARGETS.logistics.farms) {
-      needs.push({ type: "farm", priority: 68, reason: "logistics: need more farms" });
-    }
-    if ((buildings.lumbers ?? 0) < PHASE_TARGETS.logistics.lumbers) {
-      needs.push({ type: "lumber", priority: 66, reason: "logistics: need more lumbers" });
-    }
-    if ((buildings.roads ?? 0) < PHASE_TARGETS.logistics.roads) {
-      needs.push({ type: "road", priority: 60, reason: "logistics: need more roads" });
-    }
-  } else if (phase === "processing") {
-    if ((buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries) {
-      needs.push({ type: "quarry", priority: 55, reason: "processing: need quarry" });
-    }
-    if ((buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens) {
-      needs.push({ type: "herb_garden", priority: 53, reason: "processing: need herb garden" });
-    }
-    if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens && stone >= 3) {
-      needs.push({ type: "kitchen", priority: 50, reason: "processing: need kitchen" });
-    }
-  } else if (phase === "fortification") {
-    if ((buildings.walls ?? 0) < PHASE_TARGETS.fortification.walls) {
-      needs.push({ type: "wall", priority: 45, reason: "fortification: need walls" });
-    }
-    if ((buildings.smithies ?? 0) < PHASE_TARGETS.fortification.smithies && stone >= 8) {
-      needs.push({ type: "smithy", priority: 40, reason: "fortification: need smithy" });
-    }
-    if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics && herbs >= 4) {
-      needs.push({ type: "clinic", priority: 38, reason: "fortification: need clinic" });
-    }
+  // Bootstrap phase targets
+  if ((buildings.farms ?? 0) < PHASE_TARGETS.bootstrap.farms) {
+    needs.push({ type: "farm", priority: 80, reason: "bootstrap: need farms" });
+  }
+  if ((buildings.lumbers ?? 0) < PHASE_TARGETS.bootstrap.lumbers) {
+    needs.push({ type: "lumber", priority: 78, reason: "bootstrap: need lumbers" });
+  }
+  if ((buildings.roads ?? 0) < PHASE_TARGETS.bootstrap.roads) {
+    needs.push({ type: "road", priority: 75, reason: "bootstrap: need roads" });
+  }
+
+  // Logistics phase targets
+  if ((buildings.warehouses ?? 0) < PHASE_TARGETS.logistics.warehouses) {
+    needs.push({ type: "warehouse", priority: 70, reason: "logistics: need warehouses" });
+  }
+  if ((buildings.farms ?? 0) < PHASE_TARGETS.logistics.farms) {
+    needs.push({ type: "farm", priority: 68, reason: "logistics: need more farms" });
+  }
+  if ((buildings.lumbers ?? 0) < PHASE_TARGETS.logistics.lumbers) {
+    needs.push({ type: "lumber", priority: 66, reason: "logistics: need more lumbers" });
+  }
+  if ((buildings.roads ?? 0) < PHASE_TARGETS.logistics.roads) {
+    needs.push({ type: "road", priority: 60, reason: "logistics: need more roads" });
+  }
+
+  // Processing buildings — build early so stone/herbs accumulate for smithy/clinic
+  // Use hasAccessibleWorksite to detect when map-placed worksites are unreachable
+  const needQuarry = (buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries
+    || !hasAccessibleWorksite(state, [TILE.QUARRY]);
+  const needHerbGarden = (buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens
+    || !hasAccessibleWorksite(state, [TILE.HERB_GARDEN]);
+
+  if (needQuarry) {
+    needs.push({ type: "quarry", priority: 77, reason: "processing: need accessible quarry" });
+  }
+  if (needHerbGarden) {
+    needs.push({ type: "herb_garden", priority: 76, reason: "processing: need accessible herb garden" });
+  }
+  if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
+    needs.push({ type: "kitchen", priority: 55, reason: "processing: need kitchen" });
+  }
+
+  // Fortification phase targets — smithy/clinic high priority to unlock tile coverage
+  if ((buildings.smithies ?? 0) < PHASE_TARGETS.fortification.smithies) {
+    needs.push({ type: "smithy", priority: 52, reason: "fortification: need smithy" });
+  }
+  if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics) {
+    needs.push({ type: "clinic", priority: 50, reason: "fortification: need clinic" });
+  }
+  if ((buildings.walls ?? 0) < PHASE_TARGETS.fortification.walls) {
+    needs.push({ type: "wall", priority: 45, reason: "fortification: need walls" });
+  }
+
+  // Continuous expansion — ensure building count grows throughout the sim
+  if ((buildings.farms ?? 0) >= PHASE_TARGETS.logistics.farms && food > 30) {
+    needs.push({ type: "farm", priority: 25, reason: "expansion: extra farm" });
+  }
+  if ((buildings.roads ?? 0) >= PHASE_TARGETS.logistics.roads) {
+    needs.push({ type: "road", priority: 20, reason: "expansion: extra road" });
+  }
+  if ((buildings.walls ?? 0) >= PHASE_TARGETS.fortification.walls) {
+    needs.push({ type: "wall", priority: 18, reason: "expansion: extra wall" });
   }
 
   // Sort by descending priority, deduplicate type (keep highest priority for each type)
@@ -143,12 +161,8 @@ export function assessColonyNeeds(state) {
  */
 function findPlacementTile(state, buildSystem, tool) {
   const { grid } = state;
-
-  // Gather anchor tiles from existing infrastructure
   const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER];
   const anchors = listTilesByType(grid, anchorTypes);
-
-  // Build a set of already-tried coords to avoid duplicates
   const tried = new Set();
 
   function tryTile(ix, iz) {
@@ -160,7 +174,6 @@ function findPlacementTile(state, buildSystem, tool) {
     return preview.ok ? { ix, iz } : null;
   }
 
-  // Search outward in Manhattan shells radius 1-6 from anchor tiles
   for (let radius = 1; radius <= 6; radius += 1) {
     for (const anchor of anchors) {
       for (let dz = -radius; dz <= radius; dz += 1) {
@@ -173,7 +186,6 @@ function findPlacementTile(state, buildSystem, tool) {
     }
   }
 
-  // Fallback: scan entire grid
   for (let iz = 0; iz < grid.height; iz += 1) {
     for (let ix = 0; ix < grid.width; ix += 1) {
       const result = tryTile(ix, iz);
@@ -185,33 +197,104 @@ function findPlacementTile(state, buildSystem, tool) {
 }
 
 /**
- * Select the next build action, checking affordability with resource buffer.
+ * Find a placement tile near a specific target location.
  * @param {object} state
- * @returns {{type: string, priority: number, reason: string} | null}
+ * @param {BuildSystem} buildSystem
+ * @param {string} tool
+ * @param {{ix: number, iz: number}} target — center point to search from
+ * @param {number} maxRadius
+ * @returns {{ix: number, iz: number} | null}
  */
-export function selectNextBuild(state) {
+function findPlacementNear(state, buildSystem, tool, target, maxRadius = 4) {
+  const { grid } = state;
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    for (let dz = -radius; dz <= radius; dz += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (radius > 0 && Math.abs(dx) + Math.abs(dz) !== radius) continue;
+        const ix = target.ix + dx;
+        const iz = target.iz + dz;
+        if (!inBounds(ix, iz, grid)) continue;
+        const preview = buildSystem.previewToolAt(state, tool, ix, iz);
+        if (preview.ok) return { ix, iz };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Compute a dynamic resource buffer based on the current objective.
+ * After logistics-1, reserve resources for stockpile targets.
+ */
+function getObjectiveResourceBuffer(state) {
+  const objectives = state.gameplay?.objectives ?? [];
+  const objIdx = state.gameplay?.objectiveIndex ?? 0;
+  const current = objectives[objIdx];
+  if (!current || current.id === "logistics-1") return RESOURCE_BUFFER;
+
+  // During stockpile/stability: reserve the full stockpile target so the Director
+  // stops spending resources and lets them accumulate toward the objective
+  const runtime = getScenarioRuntime(state);
+  const stockpile = runtime.stockpileTargets ?? {};
+  return {
+    food: Math.max(RESOURCE_BUFFER.food, stockpile.food ?? 95),
+    wood: Math.max(RESOURCE_BUFFER.wood, stockpile.wood ?? 90),
+  };
+}
+
+/**
+ * Select multiple affordable build actions, respecting resource buffer.
+ * @param {object} state
+ * @param {number} maxCount
+ * @param {object} buffer — override resource buffer
+ * @returns {Array<{type: string, priority: number, reason: string}>}
+ */
+export function selectNextBuilds(state, maxCount = MAX_BUILDS_PER_TICK, buffer = RESOURCE_BUFFER) {
   const needs = assessColonyNeeds(state);
-  const resources = state.resources ?? {};
+  const budgetResources = { ...(state.resources ?? {}) };
+  const selected = [];
 
   for (const need of needs) {
+    if (selected.length >= maxCount) break;
     const cost = BUILD_COST[need.type] ?? {};
     const isEmergency = need.priority >= 90;
 
-    if (isEmergency) {
-      if (canAfford(resources, cost)) return need;
-    } else {
-      // Non-emergency: maintain resource buffer
-      const bufferedResources = {
-        food: (resources.food ?? 0) - RESOURCE_BUFFER.food,
-        wood: (resources.wood ?? 0) - RESOURCE_BUFFER.wood,
-        stone: resources.stone ?? 0,
-        herbs: resources.herbs ?? 0,
-      };
-      if (canAfford(bufferedResources, cost)) return need;
+    const checkResources = isEmergency ? budgetResources : {
+      food: (budgetResources.food ?? 0) - buffer.food,
+      wood: (budgetResources.wood ?? 0) - buffer.wood,
+      stone: budgetResources.stone ?? 0,
+      herbs: budgetResources.herbs ?? 0,
+    };
+
+    if (canAfford(checkResources, cost)) {
+      selected.push(need);
+      for (const [res, amount] of Object.entries(cost)) {
+        budgetResources[res] = (budgetResources[res] ?? 0) - amount;
+      }
     }
   }
 
-  return null;
+  return selected;
+}
+
+// Keep backward-compatible export
+export function selectNextBuild(state) {
+  const builds = selectNextBuilds(state, 1);
+  return builds.length > 0 ? builds[0] : null;
+}
+
+/**
+ * Check if any tile of the given types is within reasonable distance of a warehouse.
+ * If not, the Director should build new ones near existing infrastructure.
+ */
+function hasAccessibleWorksite(state, tileTypes, maxDistance = 12) {
+  const tiles = listTilesByType(state.grid, tileTypes);
+  if (tiles.length === 0) return false;
+  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  if (warehouses.length === 0) return false;
+  return tiles.some((t) =>
+    warehouses.some((w) => Math.abs(w.ix - t.ix) + Math.abs(w.iz - t.iz) <= maxDistance),
+  );
 }
 
 function ensureDirectorState(state) {
@@ -225,6 +308,111 @@ function ensureDirectorState(state) {
     };
   }
   return state.ai.colonyDirector;
+}
+
+/**
+ * Check scenario route/depot requirements and place infrastructure to satisfy them.
+ * Routes need connected road paths between anchors.
+ * Depots need warehouses within radius of anchor points.
+ */
+function fulfillScenarioRequirements(state, buildSystem) {
+  let placed = 0;
+  const runtime = getScenarioRuntime(state);
+  const resources = state.resources ?? {};
+
+  // 1. Depot zones: place warehouses near unready depot anchors
+  for (const depot of runtime.depots) {
+    if (depot.ready) continue;
+    const anchor = state.gameplay?.scenario?.anchors?.[depot.anchor];
+    if (!anchor) continue;
+    const cost = BUILD_COST.warehouse ?? {};
+    if (!canAfford(resources, cost)) continue;
+
+    const tile = findPlacementNear(state, buildSystem, "warehouse", anchor, depot.radius ?? 2);
+    if (tile) {
+      const result = buildSystem.placeToolAt(state, "warehouse", tile.ix, tile.iz, { recordHistory: false });
+      if (result.ok) {
+        state.buildings = rebuildBuildingStats(state.grid);
+        placed += 1;
+      }
+    }
+  }
+
+  // 2. Route links: fill gap tiles then Manhattan-walk to connect disconnected routes
+  for (const route of runtime.routes) {
+    if (route.connected) continue;
+    const gaps = route.gapTiles ?? [];
+    const cost = BUILD_COST.road ?? {};
+
+    // 2a. Place roads on specified gap tiles
+    for (const gap of gaps) {
+      if (!canAfford(resources, cost)) break;
+      if (!inBounds(gap.ix, gap.iz, state.grid)) continue;
+
+      // If gap tile is blocked (wall, ruins, etc.), erase it first
+      const currentTile = getTile(state.grid, gap.ix, gap.iz);
+      if (currentTile !== TILE.GRASS && currentTile !== TILE.ROAD) {
+        const erasePreview = buildSystem.previewToolAt(state, "erase", gap.ix, gap.iz);
+        if (erasePreview.ok) {
+          buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, { recordHistory: false });
+          state.buildings = rebuildBuildingStats(state.grid);
+        }
+      }
+
+      const preview = buildSystem.previewToolAt(state, "road", gap.ix, gap.iz);
+      if (preview.ok) {
+        const result = buildSystem.placeToolAt(state, "road", gap.ix, gap.iz, { recordHistory: false });
+        if (result.ok) {
+          state.buildings = rebuildBuildingStats(state.grid);
+          placed += 1;
+        }
+      }
+    }
+
+    // 2b. Manhattan walk from→to to fill any remaining gaps
+    const fromAnchor = state.gameplay?.scenario?.anchors?.[route.from];
+    const toAnchor = state.gameplay?.scenario?.anchors?.[route.to];
+    if (!fromAnchor || !toAnchor) continue;
+
+    // Re-check connection after gap tile placement
+    if (hasInfrastructureConnection(state.grid, fromAnchor, toAnchor)) continue;
+
+    let current = { ...fromAnchor };
+    const maxSteps = Math.abs(toAnchor.ix - fromAnchor.ix) + Math.abs(toAnchor.iz - fromAnchor.iz) + 4;
+    for (let step = 0; step < maxSteps; step += 1) {
+      if (!canAfford(resources, cost)) break;
+      const dx = toAnchor.ix - current.ix;
+      const dz = toAnchor.iz - current.iz;
+      if (dx === 0 && dz === 0) break;
+
+      const nextIx = current.ix + (Math.abs(dx) >= Math.abs(dz) ? (dx > 0 ? 1 : -1) : 0);
+      const nextIz = current.iz + (Math.abs(dz) > Math.abs(dx) ? (dz > 0 ? 1 : -1) : 0);
+      if (!inBounds(nextIx, nextIz, state.grid)) break;
+
+      const tile = getTile(state.grid, nextIx, nextIz);
+      if (tile !== TILE.ROAD && tile !== TILE.WAREHOUSE && tile !== TILE.LUMBER) {
+        // Erase non-buildable tiles first
+        if (tile !== TILE.GRASS && tile !== TILE.RUINS) {
+          const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz);
+          if (erasePreview.ok) {
+            buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false });
+            state.buildings = rebuildBuildingStats(state.grid);
+          }
+        }
+        const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz);
+        if (preview.ok) {
+          const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false });
+          if (result.ok) {
+            state.buildings = rebuildBuildingStats(state.grid);
+            placed += 1;
+          }
+        }
+      }
+      current = { ix: nextIx, iz: nextIz };
+    }
+  }
+
+  return placed;
 }
 
 export class ColonyDirectorSystem {
@@ -244,22 +432,25 @@ export class ColonyDirectorSystem {
 
     // Update phase
     director.phase = determinePhase(state.buildings ?? {});
-    if (director.phase === "complete") return;
 
-    // Select next build
-    const nextBuild = selectNextBuild(state);
-    if (!nextBuild) return;
+    // Priority 1: fulfill scenario objectives (routes, depots)
+    const scenarioBuilds = fulfillScenarioRequirements(state, this._buildSystem);
+    director.buildsPlaced += scenarioBuilds;
 
-    // Find placement
-    const tile = findPlacementTile(state, this._buildSystem, nextBuild.type);
-    if (!tile) return;
+    // Priority 2: phase-based colony development (including expansion after complete)
+    const builds = selectNextBuilds(state, MAX_BUILDS_PER_TICK, getObjectiveResourceBuffer(state));
+    for (const build of builds) {
+      const tile = findPlacementTile(state, this._buildSystem, build.type);
+      if (!tile) continue;
 
-    // Place the building
-    const result = this._buildSystem.placeToolAt(state, nextBuild.type, tile.ix, tile.iz, { recordHistory: false });
-    if (result.ok) {
-      state.buildings = rebuildBuildingStats(state.grid);
-      director.buildsPlaced += 1;
-      director.phase = determinePhase(state.buildings);
+      const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, { recordHistory: false });
+      if (result.ok) {
+        state.buildings = rebuildBuildingStats(state.grid);
+        director.buildsPlaced += 1;
+      }
     }
+
+    // Update phase after all builds
+    director.phase = determinePhase(state.buildings);
   }
 }
