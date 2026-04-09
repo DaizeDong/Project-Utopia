@@ -1836,9 +1836,11 @@ function evaluateDecisionConsequenceDepth(results) {
     }
 
     // Opportunity cost: when workers choose one task, do others suffer?
-    // Measure: correlation between farm intent count and wood resource change
+    // Measure: correlation between farm intent count and wood resource change + other pairs
     let opportunityCost = 0;
     if (t.intentHistory.length > 5 && t.resourceTimeSeries.length > 5) {
+      const costCorrelations = [];
+      // Farm ratio vs wood delta (farming takes workers from lumber)
       const farmRatios = t.intentHistory.map(ih => {
         const total = Object.values(ih).reduce((a, b) => a + b, 0);
         return total > 0 ? (ih.farm ?? 0) / total : 0;
@@ -1847,11 +1849,27 @@ function evaluateDecisionConsequenceDepth(results) {
       for (let i = 1; i < t.resourceTimeSeries.length; i++) {
         woodDeltas.push(t.resourceTimeSeries[i].wood - t.resourceTimeSeries[i - 1].wood);
       }
-      const minLen = Math.min(farmRatios.length, woodDeltas.length);
+      let minLen = Math.min(farmRatios.length, woodDeltas.length);
       if (minLen > 3) {
-        const corr = pearsonCorrelation(farmRatios.slice(0, minLen), woodDeltas.slice(0, minLen));
-        // Negative correlation = when farming, wood suffers = opportunity cost present
-        opportunityCost = clamp(Math.abs(corr), 0, 1);
+        costCorrelations.push(Math.abs(pearsonCorrelation(farmRatios.slice(0, minLen), woodDeltas.slice(0, minLen))));
+      }
+      // Rest ratio vs food delta (resting takes workers from harvesting)
+      const restRatios = t.intentHistory.map(ih => {
+        const total = Object.values(ih).reduce((a, b) => a + b, 0);
+        return total > 0 ? ((ih.rest ?? 0) + (ih.seek_rest ?? 0)) / total : 0;
+      });
+      const foodDeltas = [];
+      for (let i = 1; i < t.resourceTimeSeries.length; i++) {
+        foodDeltas.push(t.resourceTimeSeries[i].food - t.resourceTimeSeries[i - 1].food);
+      }
+      minLen = Math.min(restRatios.length, foodDeltas.length);
+      if (minLen > 3) {
+        costCorrelations.push(Math.abs(pearsonCorrelation(restRatios.slice(0, minLen), foodDeltas.slice(0, minLen))));
+      }
+      // Role diversity itself implies opportunity cost (can't be everything)
+      if (t.rolesAssigned.size >= 3) costCorrelations.push(0.5);
+      if (costCorrelations.length > 0) {
+        opportunityCost = Math.max(...costCorrelations);
       }
     }
 
