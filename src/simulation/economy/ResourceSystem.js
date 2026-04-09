@@ -2,6 +2,7 @@ import { rebuildBuildingStats, countTilesByType, listTilesByType, worldToTile } 
 import { TILE } from "../../config/constants.js";
 import { pushWarning } from "../../app/warnings.js";
 import { BALANCE } from "../../config/balance.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 function manhattan(a, b) {
   return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
@@ -112,6 +113,17 @@ export class ResourceSystem {
     state.resources.meals = Number.isFinite(state.resources.meals) ? Math.max(0, state.resources.meals) : 0;
     state.resources.medicine = Number.isFinite(state.resources.medicine) ? Math.max(0, state.resources.medicine) : 0;
     state.resources.tools = Number.isFinite(state.resources.tools) ? Math.max(0, state.resources.tools) : 0;
+
+    // Food shortage event
+    const foodThreshold = Number(BALANCE.foodEmergencyThreshold ?? 14);
+    const prevFoodShortage = Boolean(state._foodShortage);
+    state._foodShortage = state.resources.food < foodThreshold;
+    if (state._foodShortage && !prevFoodShortage) {
+      emitEvent(state, EVENT_TYPES.FOOD_SHORTAGE, { food: state.resources.food, threshold: foodThreshold });
+    }
+    if (!state._foodShortage && prevFoodShortage && state.resources.food > foodThreshold * 3) {
+      emitEvent(state, EVENT_TYPES.RESOURCE_SURPLUS, { resource: "food", amount: state.resources.food });
+    }
 
     // Tool production multiplier (colony-wide harvest speed buff)
     const toolCount = Math.min(Number(state.resources.tools ?? 0), Number(BALANCE.toolMaxEffective ?? 3));

@@ -3,6 +3,7 @@ import { BALANCE } from "../../config/balance.js";
 import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
 
@@ -194,6 +195,15 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
   }
   deathEvents.push(`${entity.displayName ?? entity.id} died (${entity.deathReason || "event"}).`);
   entity.deathRecorded = true;
+  const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
+  emitEvent(state, eventType, {
+    entityId: entity.id,
+    entityName: entity.displayName ?? entity.id,
+    reason: entity.deathReason || "event",
+    groupId: entity.groupId ?? entity.kind ?? "unknown",
+  });
+  state.metrics.deathTimestamps ??= [];
+  state.metrics.deathTimestamps.push(Number(state.metrics.timeSec ?? 0));
   if (!entity.deathContext) {
     entity.deathContext = buildDeathContext(entity, state, entity.deathReason || "event", reachableFood, nutritionSourceType);
   }

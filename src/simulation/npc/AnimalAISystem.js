@@ -3,6 +3,7 @@ import { ANIMAL_KIND, TILE } from "../../config/constants.js";
 import { getLongRunWildlifeTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
@@ -536,6 +537,12 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
   const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
   if (threatNear) {
+    if (!bb.fleeLatch) {
+      emitEvent(state, EVENT_TYPES.HERBIVORE_FLED, {
+        entityId: animal.id, entityName: animal.displayName ?? animal.id,
+        predatorId: threat.predator?.id, distance: threat.distance,
+      });
+    }
     bb.fleeLatch = true;
   } else if (threatFar) {
     bb.fleeLatch = false;
@@ -696,6 +703,10 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
         prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
         animal.attackCooldownSec = Number(BALANCE.predatorAttackCooldownSec ?? 1.4);
         recoverPredatorHungerOnHit(animal);
+        emitEvent(state, EVENT_TYPES.PREDATOR_ATTACK, {
+          entityId: animal.id, entityName: animal.displayName ?? animal.id,
+          targetId: prey.id, targetName: prey.displayName ?? prey.id, damage: dmg,
+        });
         if (prey.hp <= 0 && prey.alive !== false) {
           prey.alive = false;
           prey.deathReason = "predation";

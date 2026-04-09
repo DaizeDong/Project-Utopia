@@ -12,6 +12,7 @@ export const BUILD_COST = Object.freeze({
   kitchen: { wood: 8, stone: 3 },
   smithy: { wood: 6, stone: 5 },
   clinic: { wood: 6, herbs: 4 },
+  bridge: { wood: 3, stone: 1 },
 });
 
 export const CONSTRUCTION_BALANCE = Object.freeze({
@@ -213,4 +214,17 @@ export const BALANCE = Object.freeze({
   // Phase 1: Weather modifiers for new tiles
   quarryWeatherModifiers: { clear: 1.0, rain: 0.85, storm: 0.7, drought: 1.0, winter: 0.9 },
   herbGardenWeatherModifiers: { clear: 1.0, rain: 1.15, storm: 0.9, drought: 0.4, winter: 0.3 },
+  // Rest & morale system
+  workerRestDecayPerSecond: 0.003,
+  workerRestNightDecayMultiplier: 2.0,
+  workerRestRecoveryPerSecond: 0.08,
+  workerRestSeekThreshold: 0.2,
+  workerRestRecoverThreshold: 0.6,
+  workerNightRestThreshold: 0.5,
+  workerMoraleDecayPerSecond: 0.001,
+  workerMoraleRecoveryPerSecond: 0.02,
+  workerNightProductivityMultiplier: 0.6,
+  // Action duration constants
+  workerHarvestDurationSec: 2.5,
+  workerProcessDurationSec: 3.0,
 });

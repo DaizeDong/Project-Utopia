@@ -77,10 +77,36 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
   };
 }
 
+// Available trait pool — each worker gets 1-2 random traits
+const TRAIT_POOL = ["hardy", "swift", "careful", "efficient", "social", "resilient"];
+
+function pickTraits(random) {
+  const count = random() < 0.4 ? 1 : 2;
+  const pool = [...TRAIT_POOL];
+  const picked = [];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const idx = Math.floor(random() * pool.length);
+    picked.push(pool.splice(idx, 1)[0]);
+  }
+  return picked;
+}
+
+function generateSkills(random) {
+  return {
+    farming: 0.3 + random() * 0.7,
+    woodcutting: 0.3 + random() * 0.7,
+    mining: 0.3 + random() * 0.7,
+    cooking: 0.3 + random() * 0.7,
+    crafting: 0.3 + random() * 0.7,
+  };
+}
+
 export function createWorker(x, z, random = Math.random) {
   const id = nextId("worker");
   const hungerSeekThreshold = 0.12 + random() * 0.08;
   const eatRecoveryTarget = 0.62 + random() * 0.12;
+  const traits = pickTraits(random);
+  const skills = generateSkills(random);
   const worker = {
     ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, withLabel(id, "Worker"), random),
     role: ROLE.FARM,
@@ -91,9 +117,23 @@ export function createWorker(x, z, random = Math.random) {
       hungerDecayMultiplier: 0.88 + random() * 0.24,
       eatRecoveryPerFoodMultiplier: 0.9 + random() * 0.2,
     },
+    // Needs system
+    rest: 0.7 + random() * 0.3,      // 0 = exhausted, 1 = fully rested
+    morale: 0.6 + random() * 0.4,    // 0 = miserable, 1 = happy
+    mood: 0.7,                        // composite mood indicator (updated each tick)
+    // Individual identity
+    traits,
+    skills,
+    preferences: {
+      speedMultiplier: traits.includes("swift") ? 1.15 : (traits.includes("careful") ? 0.9 : 1.0),
+      workDurationMultiplier: traits.includes("efficient") ? 0.8 : (traits.includes("careful") ? 1.2 : 1.0),
+    },
+    relationships: {},                // { otherWorkerId: opinion (-1 to 1) }
+    // Work progress tracking
+    progress: 0,                      // 0-1 progress toward current action completion
+    workRemaining: 0,                 // seconds remaining on current work action
   };
   // Stagger worker hunger so eating behavior appears within 120s scenarios.
-  // Range: 0.4–0.95 ensures some workers eat by ~50s while limiting early food drain.
   worker.hunger = 0.4 + random() * 0.55;
   worker.hunger = Math.min(1, worker.hunger);
   return worker;

@@ -2,14 +2,16 @@ const DEFAULT_STATE_HOLD_SEC = 0.8;
 
 export const GROUP_STATE_GRAPH = Object.freeze({
   workers: Object.freeze({
-    idle: ["seek_food", "seek_task", "wander"],
+    idle: ["seek_food", "seek_task", "seek_rest", "wander"],
     seek_food: ["eat", "seek_task"],
     eat: ["seek_task", "wander", "idle"],
     seek_task: ["harvest", "deliver", "wander", "process"],
     harvest: ["deliver", "seek_food", "seek_task"],
     deliver: ["seek_task", "seek_food", "idle"],
     process: ["seek_task", "seek_food", "idle"],
-    wander: ["seek_task", "seek_food", "idle"],
+    wander: ["seek_task", "seek_food", "seek_rest", "idle"],
+    seek_rest: ["rest", "seek_food", "idle"],
+    rest: ["seek_task", "seek_food", "idle", "wander"],
   }),
   traders: Object.freeze({
     idle: ["seek_trade", "seek_food", "wander"],
@@ -63,6 +65,8 @@ const LABELS = Object.freeze({
     deliver: "Deliver",
     process: "Process",
     wander: "Wander",
+    seek_rest: "Seek Rest",
+    rest: "Rest",
   },
   traders: {
     idle: "Idle",
