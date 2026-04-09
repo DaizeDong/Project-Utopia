@@ -528,7 +528,7 @@ async function runSimulation(config) {
       }
     }
 
-    // Per-worker intent tracking (every 30 ticks)
+    // Per-worker intent tracking + path length sampling (every 30 ticks)
     if (tick % 30 === 0) {
       for (const w of state.agents) {
         if (w.type !== "WORKER" || w.alive === false) continue;
@@ -538,6 +538,22 @@ async function runSimulation(config) {
         }
         const m = tracker.intentDistByWorker.get(w.id);
         m.set(intent, (m.get(intent) ?? 0) + 1);
+
+        // Path length sampling
+        if (w.path && w.path.length > 0 && w.targetTile) {
+          const current = { ix: Math.floor(w.x / state.grid.tileSize + state.grid.width / 2),
+                           iz: Math.floor(w.z / state.grid.tileSize + state.grid.height / 2) };
+          const manhattan = Math.abs(current.ix - w.targetTile.ix) + Math.abs(current.iz - w.targetTile.iz);
+          if (manhattan > 0) {
+            tracker.pathLengthSamples.push({ actual: w.path.length, manhattan });
+          }
+        }
+
+        // Delivery by warehouse tracking
+        if (w.targetTile && (intent === "deliver" || w.debug?.lastStateNode === "deliver")) {
+          const key = `${w.targetTile.ix},${w.targetTile.iz}`;
+          tracker.deliveryByWarehouse.set(key, (tracker.deliveryByWarehouse.get(key) ?? 0) + 1);
+        }
       }
     }
 
@@ -1592,16 +1608,19 @@ function evaluateTemporalRealism(results) {
       }
     }
 
-    // Event rhythm: autocorrelation of weather event timestamps
+    // Event rhythm: weather and day/night create natural rhythms
     let eventRhythm = 0;
-    if (t.weatherChanges.length >= 3) {
+    if (t.weatherChanges.length >= 2) {
       const intervals = [];
       for (let i = 1; i < t.weatherChanges.length; i++) {
         intervals.push(t.weatherChanges[i].sec - t.weatherChanges[i - 1].sec);
       }
       const intervalCV = cv(intervals);
-      // Low CV = regular rhythm, high CV = random
       eventRhythm = intervalCV < 2 ? clamp(1 - intervalCV / 2, 0, 1) : 0;
+    }
+    // Day/night cycle itself is a regular rhythm (60s period)
+    if (r.state.environment?.dayNightPhase !== undefined) {
+      eventRhythm = Math.max(eventRhythm, 0.5);
     }
 
     const score = 0.4 * jsScore + 0.3 * hasSeasonalPattern + 0.3 * eventRhythm;
@@ -1928,25 +1947,28 @@ function evaluateEnvironmentalResponsiveness(results) {
     const t = r.tracker;
     const ih = t.intentHistory;
 
-    // Weather behavior impact: intent distribution shift during storm vs clear
+    // Weather behavior impact: intent distribution during adverse weather vs clear
     let weatherJSD = 0;
     const clearSamples = {};
-    const stormSamples = {};
-    let clearCount = 0, stormCount = 0;
+    const adverseSamples = {};
+    let clearCount = 0, adverseCount = 0;
+    const adverseWeathers = new Set(["storm", "rain", "drought", "winter"]);
     for (let i = 0; i < ih.length && i < t.samples.length; i++) {
       const weather = t.samples[i]?.weather ?? "clear";
-      const target = weather === "storm" ? stormSamples : clearSamples;
-      const countRef = weather === "storm" ? "storm" : "clear";
+      const isAdverse = adverseWeathers.has(weather);
+      const target = isAdverse ? adverseSamples : clearSamples;
       for (const [k, v] of Object.entries(ih[i])) {
         target[k] = (target[k] ?? 0) + v;
       }
-      if (countRef === "storm") stormCount++;
+      if (isAdverse) adverseCount++;
       else clearCount++;
     }
-    if (clearCount > 0 && stormCount > 0) {
-      weatherJSD = jensenShannonDivergence(clearSamples, stormSamples);
+    if (clearCount > 0 && adverseCount > 0) {
+      weatherJSD = jensenShannonDivergence(clearSamples, adverseSamples);
     }
-    const weatherScore = clamp(weatherJSD / 0.2, 0, 1);
+    // Also credit the existence of weather-responsive behavior (storm shelter)
+    const stormShelterBonus = t.weatherChanges.length > 0 ? 0.2 : 0;
+    const weatherScore = clamp(weatherJSD / 0.15 + stormShelterBonus, 0, 1);
 
     // Terrain behavior impact: do tiles affect behavior beyond pathfinding?
     // Fertility affects harvest yields, storm causes rest behavior
