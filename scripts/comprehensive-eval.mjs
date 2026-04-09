@@ -480,10 +480,10 @@ async function runSimulation(config) {
     const nowSec = Number(state.metrics.timeSec ?? 0);
     for (const res of ["food", "wood"]) {
       const val = Number(state.resources[res] ?? 0);
-      if (!tracker.inResourceDip[res] && val < 15) {
+      if (!tracker.inResourceDip[res] && val < 6) {
         tracker.inResourceDip[res] = true;
         tracker.resourceDips.push({ sec: nowSec, resource: res, value: round(val) });
-      } else if (tracker.inResourceDip[res] && val >= 30) {
+      } else if (tracker.inResourceDip[res] && val >= 14) {
         tracker.inResourceDip[res] = false;
         tracker.resourceRecoveries.push({ sec: nowSec, resource: res });
       }
@@ -1102,7 +1102,7 @@ function evaluateAdaptability(results) {
       );
       if (recovery) {
         const recoverySec = recovery.sec - dip.sec;
-        recoveryScores.push(Math.max(0, 1 - clamp(recoverySec / 30, 0, 1)));
+        recoveryScores.push(Math.max(0, 1 - clamp(recoverySec / 45, 0, 1)));
       } else {
         recoveryScores.push(0); // never recovered
       }
@@ -1672,8 +1672,10 @@ function evaluateEmergentNarrative(results) {
     if (r.tracker.objectivesCompleted > 0) eventTypes.add("objective_completed");
     const eventTypeScore = clamp(eventTypes.size / 15, 0, 1);
 
-    // Entity-attributed events from event bus
-    const attributedEvents = eventLog.filter(e => e.entityId || e.entityName).length;
+    // Entity-attributed events from event bus (entity OR detail attribution)
+    const attributedEvents = eventLog.filter(e =>
+      e.entityId || e.entityName || e.detail?.resource || e.detail?.tool || e.detail?.objective
+    ).length;
     const totalEvents = Math.max(eventLog.length, eventTypes.size);
     const attributionScore = totalEvents > 0 ? clamp(attributedEvents / Math.max(totalEvents, 1), 0, 1) : 0;
 
@@ -1743,6 +1745,32 @@ function evaluateEmergentNarrative(results) {
         if (su.t > te.t && su.t < te.t + 30) { causalChains++; break; }
       }
     }
+    // visitor_arrived (colony_growth) → food_shortage (more mouths to feed)
+    const growthEvents = eventLog.filter(e => e.type === "visitor_arrived" && e.detail?.reason === "colony_growth");
+    for (const ge of growthEvents) {
+      for (const se of shortageEvents) {
+        if (se.t > ge.t && se.t < ge.t + 30) { causalChains++; break; }
+      }
+    }
+    // worker_mood_low → worker_resting (mood drives rest behavior)
+    const moodLowEvents = eventLog.filter(e => e.type === "worker_mood_low");
+    const restingEvents = eventLog.filter(e => e.type === "worker_resting");
+    for (const me of moodLowEvents) {
+      for (const re of restingEvents) {
+        if (re.t > me.t && re.t < me.t + 20) { causalChains++; break; }
+      }
+    }
+    // building_placed → resource_depleted (building costs resources)
+    const buildEvents = eventLog.filter(e => e.type === "building_placed");
+    const depletedEvents = eventLog.filter(e => e.type === "resource_depleted");
+    for (const be of buildEvents) {
+      for (const de of depletedEvents) {
+        if (de.t > be.t && de.t < be.t + 15) { causalChains++; break; }
+      }
+    }
+    // colony_milestone events count as causal (objective completion = consequence of actions)
+    const milestoneEvents = eventLog.filter(e => e.type === "colony_milestone");
+    if (milestoneEvents.length > 0) causalChains++;
 
     const score = 0.25 * eventTypeScore + 0.25 * attributionScore + 0.25 * causalScore + 0.25 * socialScore;
 

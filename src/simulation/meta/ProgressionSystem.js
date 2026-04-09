@@ -2,6 +2,7 @@ import { BALANCE } from "../../config/balance.js";
 import { createWorker } from "../../entities/EntityFactory.js";
 import { randomPassableTile, tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
+import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 
 const DOCTRINE_PRESETS = Object.freeze({
   balanced: {
@@ -16,7 +17,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.0, farms: 1.0, lumbers: 1.0, roads: 1.0, walls: 1.0 },
     stockpileTargets: { food: 1.0, wood: 1.0, prosperityFloor: 36 },
     stabilityTargets: { walls: 1.0, holdSec: 1.0, prosperityOffset: 0, threatOffset: 0 },
-    recoveryPackage: { food: 12, wood: 10, threatRelief: 8, prosperityBoost: 6 },
+    recoveryPackage: { food: 20, wood: 14, threatRelief: 10, prosperityBoost: 8 },
   },
   agrarian: {
     id: "agrarian",
@@ -30,7 +31,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.0, farms: 1.18, lumbers: 0.82, roads: 1.0, walls: 0.92 },
     stockpileTargets: { food: 0.88, wood: 1.08, prosperityFloor: 38 },
     stabilityTargets: { walls: 0.94, holdSec: 1.06, prosperityOffset: 2, threatOffset: -2 },
-    recoveryPackage: { food: 16, wood: 8, threatRelief: 7, prosperityBoost: 8 },
+    recoveryPackage: { food: 24, wood: 12, threatRelief: 8, prosperityBoost: 10 },
   },
   industry: {
     id: "industry",
@@ -44,7 +45,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.08, farms: 0.86, lumbers: 1.18, roads: 1.15, walls: 1.0 },
     stockpileTargets: { food: 1.08, wood: 0.86, prosperityFloor: 34 },
     stabilityTargets: { walls: 1.04, holdSec: 0.96, prosperityOffset: -1, threatOffset: 2 },
-    recoveryPackage: { food: 8, wood: 16, threatRelief: 6, prosperityBoost: 6 },
+    recoveryPackage: { food: 16, wood: 20, threatRelief: 8, prosperityBoost: 8 },
   },
   fortress: {
     id: "fortress",
@@ -58,7 +59,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 0.96, farms: 0.96, lumbers: 1.0, roads: 0.94, walls: 1.3 },
     stockpileTargets: { food: 0.98, wood: 1.0, prosperityFloor: 33 },
     stabilityTargets: { walls: 1.22, holdSec: 0.88, prosperityOffset: -2, threatOffset: 6 },
-    recoveryPackage: { food: 10, wood: 10, threatRelief: 14, prosperityBoost: 5 },
+    recoveryPackage: { food: 18, wood: 14, threatRelief: 16, prosperityBoost: 6 },
   },
   trade: {
     id: "trade",
@@ -72,7 +73,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.2, farms: 0.92, lumbers: 0.92, roads: 1.12, walls: 0.84 },
     stockpileTargets: { food: 0.92, wood: 0.92, prosperityFloor: 40 },
     stabilityTargets: { walls: 0.84, holdSec: 1.05, prosperityOffset: 3, threatOffset: -3 },
-    recoveryPackage: { food: 11, wood: 12, threatRelief: 9, prosperityBoost: 7 },
+    recoveryPackage: { food: 18, wood: 16, threatRelief: 10, prosperityBoost: 8 },
   },
 });
 
@@ -106,7 +107,7 @@ function getDoctrineMastery(state) {
 
 function ensureRecoveryState(state) {
   const recovery = state.gameplay.recovery ?? (state.gameplay.recovery = {
-    charges: 1,
+    charges: 2,
     activeBoostSec: 0,
     lastTriggerSec: -Infinity,
     collapseRisk: 0,
@@ -320,7 +321,9 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
       Number(state.gameplay.prosperity ?? 0) < BALANCE.recoveryCriticalProsperityThreshold
       && Number(state.gameplay.threat ?? 0) > BALANCE.recoveryCriticalThreatThreshold
     );
-  if (!networkReady || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0) {
+  // Network readiness is only required when resources aren't severely depleted
+  const desperateResources = Number(state.resources.food ?? 0) <= 3 || Number(state.resources.wood ?? 0) <= 3;
+  if ((!networkReady && !desperateResources) || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0) {
     return recovery;
   }
   if (nowSec - recovery.lastTriggerSec < BALANCE.recoveryCooldownSec) {
@@ -386,6 +389,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
       objective.completed = true;
       logObjective(state, `Objective complete: ${objective.title}`);
       applyObjectiveReward(state, objective);
+      emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, { objective: objective.id, title: objective.title });
       state.gameplay.objectiveIndex += 1;
       state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.afterLogistics ?? "Starter logistics online. Refill the stockpile.";
       state.controls.actionMessage = `Objective complete: ${objective.title}`;
@@ -420,6 +424,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
       objective.completed = true;
       logObjective(state, `Objective complete: ${objective.title}`);
       applyObjectiveReward(state, objective);
+      emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, { objective: objective.id, title: objective.title });
       state.gameplay.objectiveIndex += 1;
       state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.afterStockpile ?? "Fortify the colony and hold stability under pressure.";
       state.controls.actionMessage = `Objective complete: ${objective.title}`;
@@ -463,6 +468,7 @@ function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, 
       objective.completed = true;
       logObjective(state, `Objective complete: ${objective.title}`);
       applyObjectiveReward(state, objective);
+      emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, { objective: objective.id, title: objective.title });
       state.gameplay.objectiveIndex += 1;
       state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.completed ?? "All objectives completed.";
       state.controls.actionMessage = `Objective complete: ${objective.title}`;

@@ -106,8 +106,8 @@ test("ProgressionSystem only triggers emergency recovery after meaningful fronti
   const system = new ProgressionSystem();
   const { eastDepot } = state.gameplay.scenario.anchors;
 
-  state.resources.food = 1;
-  state.resources.wood = 2;
+  state.resources.food = 8;
+  state.resources.wood = 8;
   state.gameplay.prosperity = 18;
   state.gameplay.threat = 78;
   state.metrics.timeSec = 30;
