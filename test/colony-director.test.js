@@ -109,8 +109,8 @@ test("assessColonyNeeds returns only expansion or accessibility items when all p
   });
   const needs = assessColonyNeeds(state);
   // All needs should be either expansion or accessibility-driven (processing: need accessible ...)
-  assert.ok(needs.every((n) => n.reason.startsWith("expansion:") || n.reason.includes("accessible")),
-    "only expansion or accessibility needs when all phase counts are met");
+  assert.ok(needs.every((n) => n.reason.startsWith("expansion:") || n.reason.includes("accessible") || n.reason.includes("bridge")),
+    "only expansion, accessibility, or bridge needs when all phase counts are met");
 });
 
 // ── selectNextBuild tests ─────────────────────────────────────────────

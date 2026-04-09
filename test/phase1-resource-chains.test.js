@@ -567,6 +567,81 @@ test("Config: BUILD_COST for kitchen includes stone, smithy includes stone, clin
   assert.ok((BUILD_COST.clinic.herbs ?? 0) > 0, "clinic BUILD_COST should require herbs");
 });
 
+// ---------------------------------------------------------------------------
+// 6. Bridge Tests
+// ---------------------------------------------------------------------------
+
+test("Config: BRIDGE tile type exists with correct properties", () => {
+  assert.equal(TILE.BRIDGE, 13, "BRIDGE tile ID should be 13");
+  const info = TILE_INFO[TILE.BRIDGE];
+  assert.ok(info, "TILE_INFO should have BRIDGE entry");
+  assert.equal(info.passable, true, "BRIDGE should be passable");
+  assert.equal(info.baseCost, 0.65, "BRIDGE should have road-like movement cost");
+  assert.ok(BUILD_COST.bridge, "BUILD_COST should have bridge entry");
+  assert.ok(BUILD_COST.bridge.wood > 0, "bridge should cost wood");
+  assert.ok(BUILD_COST.bridge.stone > 0, "bridge should cost stone");
+});
+
+test("BuildSystem: bridge can only be placed on water", () => {
+  const state = createInitialGameState({ seed: 8000, template: "default" });
+  state.resources = { food: 200, wood: 200, stone: 50, herbs: 50 };
+  const bs = new BuildSystem();
+
+  // Find a grass tile — bridge should fail
+  const grassTile = findTileOfType(state, TILE.GRASS);
+  assert.ok(grassTile, "should have a grass tile");
+  const grassPreview = bs.previewToolAt(state, "bridge", grassTile.ix, grassTile.iz);
+  assert.equal(grassPreview.ok, false, "bridge should NOT be placeable on grass");
+
+  // Find a water tile — bridge should succeed (if adjacent to network)
+  const waterTile = findTileMatching(state, (ix, iz, t) => {
+    if (t !== TILE.WATER) return false;
+    // Must be adjacent to a passable tile for network anchor
+    const { grid } = state;
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    return dirs.some(([dx, dz]) => {
+      const nx = ix + dx;
+      const nz = iz + dz;
+      if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) return false;
+      const nt = grid.tiles[nx + nz * grid.width];
+      return nt === TILE.ROAD || nt === TILE.WAREHOUSE || nt === TILE.BRIDGE;
+    });
+  });
+  if (waterTile) {
+    const waterPreview = bs.previewToolAt(state, "bridge", waterTile.ix, waterTile.iz);
+    assert.equal(waterPreview.ok, true, "bridge should be placeable on water adjacent to network");
+  }
+});
+
+test("BuildSystem: erasing bridge restores water", () => {
+  const state = createInitialGameState({ seed: 8001, template: "default" });
+  state.resources = { food: 200, wood: 200, stone: 50, herbs: 50 };
+  const bs = new BuildSystem();
+
+  // Find a water tile adjacent to infrastructure
+  const waterTile = findTileMatching(state, (ix, iz, t) => {
+    if (t !== TILE.WATER) return false;
+    const { grid } = state;
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    return dirs.some(([dx, dz]) => {
+      const nx = ix + dx;
+      const nz = iz + dz;
+      if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) return false;
+      const nt = grid.tiles[nx + nz * grid.width];
+      return nt === TILE.ROAD || nt === TILE.WAREHOUSE || nt === TILE.BRIDGE;
+    });
+  });
+  if (!waterTile) return; // skip if no suitable water tile on this map
+
+  const result = bs.placeToolAt(state, "bridge", waterTile.ix, waterTile.iz);
+  assert.equal(result.ok, true, "should place bridge on water");
+  assert.equal(state.grid.tiles[waterTile.ix + waterTile.iz * state.grid.width], TILE.BRIDGE, "tile should be BRIDGE");
+
+  const eraseResult = bs.placeToolAt(state, "erase", waterTile.ix, waterTile.iz);
+  assert.equal(eraseResult.ok, true, "should erase bridge");
+  assert.equal(state.grid.tiles[waterTile.ix + waterTile.iz * state.grid.width], TILE.WATER, "erased bridge should become WATER, not GRASS");
+});
+
 test("Config: all BALANCE constants for Phase 1 processing exist and are positive numbers", () => {
   const keys = [
     "quarryProductionPerSecond",

@@ -158,6 +158,7 @@ const TILE_ICON_TYPES = Object.freeze({
   [TILE.KITCHEN]: "KITCHEN",
   [TILE.SMITHY]: "SMITHY",
   [TILE.CLINIC]: "CLINIC",
+  [TILE.BRIDGE]: "BRIDGE",
 });
 
 const UNIT_SPRITE_BINDINGS = Object.freeze({
@@ -181,6 +182,7 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.KITCHEN]: { key: "structure", tint: 0xe0be74, repeatX: 8, repeatY: 8, roughness: 0.9, emissive: 0x4c3a18, emissiveIntensity: 0.06 },
   [TILE.SMITHY]: { key: "structure", tint: 0xa08e7a, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x2a2018, emissiveIntensity: 0.06 },
   [TILE.CLINIC]: { key: "structure", tint: 0xc8e0c0, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x2a3d28, emissiveIntensity: 0.06 },
+  [TILE.BRIDGE]: { key: "road", tint: 0xb09878, repeatX: 10, repeatY: 10, roughness: 0.92, emissive: 0x3a2a1a, emissiveIntensity: 0.06 },
 });
 
 const RENDER_ORDER = Object.freeze({

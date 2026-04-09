@@ -12,6 +12,7 @@ export const TOOL_TO_TILE = Object.freeze({
   kitchen: TILE.KITCHEN,
   smithy: TILE.SMITHY,
   clinic: TILE.CLINIC,
+  bridge: TILE.BRIDGE,
 });
 
 export function toolToTile(tool) {
