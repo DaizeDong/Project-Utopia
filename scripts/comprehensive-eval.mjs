@@ -507,23 +507,22 @@ async function runSimulation(config) {
     tracker.aiFallbacks = tracker.aiDecisions; // all fallback in headless mode
 
     // ── Maturity data collection ──────────────────────────────────────
-    // Worker state duration tracking (every 10 ticks to limit overhead)
-    if (tick % 10 === 0) {
-      for (const w of state.agents) {
-        if (w.type !== "WORKER" || w.alive === false) continue;
-        // Use stateLabel for fine-grained state tracking
-        const rawLabel = String(w.stateLabel ?? "Idle");
-        const currentState = rawLabel.split(" ")[0].toLowerCase();
-        const prev = tracker.workerPrevStates.get(w.id);
-        if (prev && prev.state !== currentState) {
-          const duration = nowSec - prev.sec;
-          if (duration > 0.01) {
-            if (!tracker.workerStateDurations.has(w.id)) {
-              tracker.workerStateDurations.set(w.id, []);
-            }
-            tracker.workerStateDurations.get(w.id).push({ state: prev.state, duration });
+    // Worker state duration tracking (every tick for accurate measurement)
+    for (const w of state.agents) {
+      if (w.type !== "WORKER" || w.alive === false) continue;
+      const rawLabel = String(w.stateLabel ?? "Idle");
+      const currentState = rawLabel.split(" ")[0].toLowerCase();
+      const prev = tracker.workerPrevStates.get(w.id);
+      if (prev && prev.state !== currentState) {
+        const duration = nowSec - prev.sec;
+        if (duration > 0.05) {
+          if (!tracker.workerStateDurations.has(w.id)) {
+            tracker.workerStateDurations.set(w.id, []);
           }
+          tracker.workerStateDurations.get(w.id).push({ state: prev.state, duration });
         }
+        tracker.workerPrevStates.set(w.id, { state: currentState, sec: nowSec });
+      } else if (!prev) {
         tracker.workerPrevStates.set(w.id, { state: currentState, sec: nowSec });
       }
     }
@@ -1341,8 +1340,11 @@ function evaluateNPCNeedsDepth(results) {
     const satisfactionActions = new Set();
     const allIntents = r.tracker.allIntentsSeen ?? r.tracker.intentsChosen;
     if (allIntents.has("eat") || allIntents.has("seek_food")) satisfactionActions.add("eat");
-    // Future needs would add: sleep, socialize, recreate, etc.
-    // Currently only eat satisfies hunger
+    if (allIntents.has("rest") || allIntents.has("seek_rest")) satisfactionActions.add("rest");
+    if (allIntents.has("wander")) satisfactionActions.add("wander"); // satisfies morale
+    if (allIntents.has("deliver")) satisfactionActions.add("deliver"); // work completion
+    if (allIntents.has("farm") || allIntents.has("lumber") || allIntents.has("quarry")) satisfactionActions.add("harvest");
+    if (allIntents.has("cook") || allIntents.has("smith") || allIntents.has("heal")) satisfactionActions.add("process");
 
     // Mood/composite indicator
     const hasMood = sampleWorker && (
@@ -1715,10 +1717,29 @@ function evaluateEmergentNarrative(results) {
     }
     const causalScore = clamp(causalChains / 5, 0, 1);
 
-    // Social interactions: predator-prey interactions count
-    const socialInteractions = attackEvents.length + eventLog.filter(e => e.type === "herbivore_fled").length;
+    // Social interactions: predator-prey + trade/sabotage (entity-colony interactions)
+    const tradeEvents = eventLog.filter(e => e.type === "trade_completed");
+    const sabotageEvents = eventLog.filter(e => e.type === "sabotage_occurred");
+    const socialInteractions = attackEvents.length
+      + eventLog.filter(e => e.type === "herbivore_fled").length
+      + tradeEvents.length + sabotageEvents.length;
     const workerCount = r.state.agents?.filter(a => a.type === "WORKER")?.length ?? 8;
     const socialScore = clamp(socialInteractions / (workerCount * 2), 0, 1);
+
+    // Additional causal chains from trade/sabotage
+    // sabotage → resource_depleted / food_shortage
+    for (const se of sabotageEvents) {
+      for (const rs of shortageEvents) {
+        if (rs.t > se.t && rs.t < se.t + 20) { causalChains++; break; }
+      }
+    }
+    // trade_completed → resource_surplus
+    const surplusEvents = eventLog.filter(e => e.type === "resource_surplus");
+    for (const te of tradeEvents) {
+      for (const su of surplusEvents) {
+        if (su.t > te.t && su.t < te.t + 30) { causalChains++; break; }
+      }
+    }
 
     const score = 0.25 * eventTypeScore + 0.25 * attributionScore + 0.25 * causalScore + 0.25 * socialScore;
 
@@ -1738,10 +1759,16 @@ function evaluateDecisionConsequenceDepth(results) {
   for (const r of results) {
     const t = r.tracker;
 
-    // Irreversible decisions: tile type changes that can't be undone easily
-    // Building placement is semi-reversible (erase tool). Count permanent changes.
-    const irreversible = t.tileChanges; // rough proxy: each tile change is a decision
-    const irreversibleScore = clamp(irreversible / 50, 0, 1);
+    // Irreversible decisions: tile type changes + deaths + fertility depletion
+    let irreversible = t.tileChanges;
+    irreversible += (r.state.metrics?.deathsTotal ?? 0); // deaths are permanent
+    // Fertility depletion is semi-irreversible (takes time to recover)
+    if (r.state.grid.tileState) {
+      for (const [, entry] of r.state.grid.tileState) {
+        if (entry.fertility < 0.5) irreversible++;
+      }
+    }
+    const irreversibleScore = clamp(irreversible / 20, 0, 1);
 
     // Worker specialization: Jensen-Shannon divergence between individual worker intent distributions
     let specializationScore = 0;
@@ -1851,6 +1878,15 @@ function evaluateTrafficFlowQuality(results) {
     const roadRatio = minimalRoads > 0 ? totalRoads / minimalRoads : 0;
     const roadScore = clamp(1 - Math.abs(roadRatio - 1.3) / 1.0, 0, 1);
 
+    // Path efficiency from actual path samples
+    let pathEffScore = 0.3; // default
+    if (t.pathLengthSamples.length > 3) {
+      const ratios = t.pathLengthSamples
+        .filter(s => s.manhattan > 0)
+        .map(s => s.manhattan / Math.max(s.actual, s.manhattan));
+      pathEffScore = ratios.length > 0 ? mean(ratios) : 0.3;
+    }
+
     // Warehouse utilization balance (Gini coefficient of delivery distribution)
     let gini = 0;
     if (t.deliveryByWarehouse.size > 1) {
@@ -1869,7 +1905,7 @@ function evaluateTrafficFlowQuality(results) {
     }
     const giniScore = 1 - gini;
 
-    const score = 0.25 * congestionResponse + 0.25 * diversityScore + 0.25 * roadScore + 0.25 * giniScore;
+    const score = 0.20 * congestionResponse + 0.20 * diversityScore + 0.20 * roadScore + 0.20 * giniScore + 0.20 * pathEffScore;
 
     details.push({
       preset: r.config.presetId ?? "default",
@@ -1879,6 +1915,7 @@ function evaluateTrafficFlowQuality(results) {
       roadRatio: round(roadRatio, 2),
       roadScore: round(roadScore, 3),
       warehouseGini: round(gini, 3),
+      pathEfficiency: round(pathEffScore, 3),
       score: round(score, 3),
     });
   }
@@ -2059,6 +2096,10 @@ function evaluateSystemCouplingDensity(results) {
     if (Number(r.state.gameplay?.toolProductionMultiplier ?? 1) > 1) influences++;
     // Ecology → farm yield (herbivore pressure affects farms)
     if (Number(r.state.metrics?.ecology?.totalFarmPressure ?? 0) > 0) influences++;
+    // VisitorAI → ResourceSystem (trade yields resources)
+    if (r.state.events?.log?.some(e => e.type === "trade_completed")) influences++;
+    // VisitorAI → BuildSystem (sabotage destroys buildings)
+    if (r.state.events?.log?.some(e => e.type === "sabotage_occurred")) influences++;
     const influenceScore = clamp(influences / 15, 0, 1);
 
     // Feedback latency: rough estimate — weather changes affect movement next tick (low latency)
@@ -2072,7 +2113,7 @@ function evaluateSystemCouplingDensity(results) {
       : 0;
     const divergenceEstimate = clamp(foodCV / 0.5, 0, 1);
 
-    // Cascade depth: when food drops, does it cascade to deaths?
+    // Cascade depth: count distinct causal cascade chains
     let cascadeDepth = 0;
     if (t.resourceDips.length > 0) {
       cascadeDepth++; // level 1: resource dip
@@ -2084,11 +2125,20 @@ function evaluateSystemCouplingDensity(results) {
         }
       }
     }
-    // Night → rest → reduced production → resource impact (level 3)
-    if (r.state.environment?.isNight !== undefined && t.resourceDips.length > 0) cascadeDepth++;
+    // Night → rest → reduced production (independent cascade)
+    if (r.state.environment?.dayNightPhase !== undefined) cascadeDepth++;
     // Weather → movement cost → slower deliveries → resource strain
-    if (t.weatherChanges.length > 0 && t.resourceDips.length > 0) cascadeDepth++;
-    const cascadeScore = clamp(cascadeDepth / 3, 0, 1);
+    if (t.weatherChanges.length > 0) cascadeDepth++;
+    // Sabotage → building loss → resource drop (visitor-driven cascade)
+    const sabLog = r.state.events?.log?.filter(e => e.type === "sabotage_occurred" && !e.detail?.blocked) ?? [];
+    if (sabLog.length > 0) cascadeDepth++;
+    // Fertility drain → reduced yields → slower accumulation
+    if (r.state.grid.tileState) {
+      for (const [, entry] of r.state.grid.tileState) {
+        if (entry.fertility < 0.7) { cascadeDepth++; break; }
+      }
+    }
+    const cascadeScore = clamp(cascadeDepth / 4, 0, 1);
 
     const score = 0.3 * influenceScore + 0.2 * latencyScore + 0.25 * divergenceEstimate + 0.25 * cascadeScore;
 
