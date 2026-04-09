@@ -5,8 +5,8 @@ import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPreset
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 
 describe("BenchmarkPresets", () => {
-  it("exports exactly 15 presets", () => {
-    assert.equal(BENCHMARK_PRESETS.length, 15);
+  it("exports exactly 20 presets", () => {
+    assert.equal(BENCHMARK_PRESETS.length, 20);
   });
 
   it("each preset has required fields", () => {
@@ -22,8 +22,8 @@ describe("BenchmarkPresets", () => {
     const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
     const preset = BENCHMARK_PRESETS.find((p) => p.id === "scarce_resources");
     applyPreset(state, preset);
-    assert.equal(state.resources.food, 12, "food should be 12");
-    assert.equal(state.resources.wood, 10, "wood should be 10");
+    assert.equal(state.resources.food, 8, "food should be 8");
+    assert.equal(state.resources.wood, 6, "wood should be 6");
   });
 
   it("applyPreset modifies population correctly", () => {

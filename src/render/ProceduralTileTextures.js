@@ -132,6 +132,16 @@ export const PROCEDURAL_TILE_TEXTURE_PROFILES = Object.freeze({
     detail: "#88a880",
     line: "#6a8a62",
   }),
+  [TILE.BRIDGE]: Object.freeze({
+    size: 72,
+    repeatX: 1.2,
+    repeatY: 1.2,
+    pattern: "bridge",
+    base: "#3a6e9a",
+    accent: "#9a7e5a",
+    detail: "#c4a878",
+    line: "#6e5434",
+  }),
 });
 
 export function resolveTileTextureMode(manifest = null) {
@@ -510,6 +520,49 @@ function drawClinic(ctx, profile) {
   drawNoiseDots(ctx, size, profile.detail, 40, 1, 2.2, 0.2);
 }
 
+function drawBridge(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  // Dark water base
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  // Wooden planks across the tile
+  ctx.save();
+  ctx.fillStyle = profile.accent;
+  ctx.globalAlpha = 0.82;
+  const plankH = 8;
+  const gap = 3;
+  for (let y = 2; y < size; y += plankH + gap) {
+    ctx.fillRect(4, y, size - 8, plankH);
+  }
+  ctx.restore();
+  // Plank grain lines
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.28;
+  for (let y = 2; y < size; y += plankH + gap) {
+    const mid = y + plankH / 2;
+    ctx.beginPath();
+    ctx.moveTo(4, mid);
+    ctx.lineTo(size - 4, mid);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Highlight edges
+  ctx.save();
+  ctx.strokeStyle = profile.detail;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.3;
+  for (let y = 2; y < size; y += plankH + gap) {
+    ctx.beginPath();
+    ctx.moveTo(4, y);
+    ctx.lineTo(size - 4, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.detail, 20, 0.6, 1.4, 0.14);
+}
+
 function drawPattern(ctx, profile) {
   switch (profile.pattern) {
     case "road":
@@ -547,6 +600,9 @@ function drawPattern(ctx, profile) {
       return;
     case "clinic":
       drawClinic(ctx, profile);
+      return;
+    case "bridge":
+      drawBridge(ctx, profile);
       return;
     case "grass":
     default:

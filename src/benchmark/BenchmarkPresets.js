@@ -72,7 +72,7 @@ export const BENCHMARK_PRESETS = [
     label: "Scarce Resources",
     templateId: "temperate_plains",
     category: "economy",
-    resources: { food: 12, wood: 10 },
+    resources: { food: 8, wood: 6 },
   },
   {
     id: "abundant_resources",
@@ -143,10 +143,10 @@ export const BENCHMARK_PRESETS = [
   },
   {
     id: "skeleton_crew",
-    label: "Skeleton Crew (4 workers)",
+    label: "Skeleton Crew (3 workers)",
     templateId: "temperate_plains",
     category: "pressure",
-    removeWorkers: 8,
+    removeWorkers: 9,
     resources: { food: 25, wood: 20 },
   },
   {
@@ -155,7 +155,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "archipelago_isles",
     category: "pressure",
     extraHerbivores: 6,
-    extraPredators: 2,
+    extraPredators: 3,
   },
   {
     id: "storm_start",
@@ -164,6 +164,55 @@ export const BENCHMARK_PRESETS = [
     category: "pressure",
     weather: "storm",
     weatherDuration: 30,
+  },
+
+  // --- Stress variants ---
+  {
+    id: "crisis_compound",
+    label: "Compound Crisis",
+    templateId: "temperate_plains",
+    category: "stress",
+    removeWorkers: 8,
+    resources: { food: 8, wood: 6 },
+    weather: "storm",
+    weatherDuration: 25,
+    extraPredators: 2,
+  },
+  {
+    id: "island_isolation",
+    label: "Island Isolation",
+    templateId: "archipelago_isles",
+    category: "stress",
+    removeWorkers: 6,
+    resources: { food: 20, wood: 15 },
+  },
+  {
+    id: "population_boom",
+    label: "Population Boom",
+    templateId: "temperate_plains",
+    category: "stress",
+    extraWorkers: 8,
+    resources: { food: 30, wood: 20 },
+  },
+  {
+    id: "late_game_siege",
+    label: "Late Game Siege",
+    templateId: "fortified_basin",
+    category: "stress",
+    resources: { food: 80, wood: 70, stone: 15, herbs: 10 },
+    buildings: { warehouses: 3, farms: 8, lumbers: 4, walls: 20, quarries: 1, kitchens: 1, smithies: 1, herbGardens: 1, clinics: 1 },
+    threat: 80,
+    extraPredators: 4,
+    weather: "storm",
+    weatherDuration: 20,
+  },
+  {
+    id: "no_director",
+    label: "No Director (Manual)",
+    templateId: "temperate_plains",
+    category: "stress",
+    resources: { food: 50, wood: 40 },
+    disableDirector: true,
   },
 ];
 

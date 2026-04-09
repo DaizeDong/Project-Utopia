@@ -659,7 +659,7 @@ export function buildScenarioBundle(grid) {
 }
 
 export function isInfrastructureNetworkTile(tileType) {
-  return tileType === TILE.ROAD || tileType === TILE.WAREHOUSE || tileType === TILE.LUMBER;
+  return tileType === TILE.ROAD || tileType === TILE.WAREHOUSE || tileType === TILE.LUMBER || tileType === TILE.BRIDGE;
 }
 
 export function hasInfrastructureConnection(grid, start, goal) {

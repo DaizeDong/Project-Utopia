@@ -131,6 +131,12 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "wall", priority: 45, reason: "fortification: need walls" });
   }
 
+  // Bridge: connect islands when water blocks logistics routes
+  const waterTiles = listTilesByType(state.grid, [TILE.WATER]);
+  if (waterTiles.length > 0) {
+    needs.push({ type: "bridge", priority: 60, reason: "logistics: bridge water crossings" });
+  }
+
   // Continuous expansion — ensure building count grows throughout the sim
   if ((buildings.farms ?? 0) >= PHASE_TARGETS.logistics.farms && food > 30) {
     needs.push({ type: "farm", priority: 25, reason: "expansion: extra farm" });
@@ -162,7 +168,7 @@ export function assessColonyNeeds(state) {
  */
 function findPlacementTile(state, buildSystem, tool) {
   const { grid } = state;
-  const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER];
+  const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE];
   const anchors = listTilesByType(grid, anchorTypes);
   const tried = new Set();
 
@@ -400,21 +406,36 @@ function fulfillScenarioRequirements(state, buildSystem) {
       if (!inBounds(nextIx, nextIz, state.grid)) break;
 
       const tile = getTile(state.grid, nextIx, nextIz);
-      if (tile !== TILE.ROAD && tile !== TILE.WAREHOUSE && tile !== TILE.LUMBER) {
-        // Erase non-buildable tiles first
-        if (tile !== TILE.GRASS && tile !== TILE.RUINS) {
-          const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz);
-          if (erasePreview.ok) {
-            buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false });
-            state.buildings = rebuildBuildingStats(state.grid);
+      if (tile !== TILE.ROAD && tile !== TILE.WAREHOUSE && tile !== TILE.LUMBER && tile !== TILE.BRIDGE) {
+        // Water tiles get bridges instead of roads
+        if (tile === TILE.WATER) {
+          const bridgeCost = BUILD_COST.bridge ?? {};
+          if (canAfford(resources, bridgeCost)) {
+            const preview = buildSystem.previewToolAt(state, "bridge", nextIx, nextIz);
+            if (preview.ok) {
+              const result = buildSystem.placeToolAt(state, "bridge", nextIx, nextIz, { recordHistory: false });
+              if (result.ok) {
+                state.buildings = rebuildBuildingStats(state.grid);
+                placed += 1;
+              }
+            }
           }
-        }
-        const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz);
-        if (preview.ok) {
-          const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false });
-          if (result.ok) {
-            state.buildings = rebuildBuildingStats(state.grid);
-            placed += 1;
+        } else {
+          // Erase non-buildable tiles first
+          if (tile !== TILE.GRASS && tile !== TILE.RUINS) {
+            const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz);
+            if (erasePreview.ok) {
+              buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false });
+              state.buildings = rebuildBuildingStats(state.grid);
+            }
+          }
+          const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz);
+          if (preview.ok) {
+            const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false });
+            if (result.ok) {
+              state.buildings = rebuildBuildingStats(state.grid);
+              placed += 1;
+            }
           }
         }
       }

@@ -48,6 +48,7 @@ export class ProcessingSystem {
     inputConsume(state.resources);
     outputProduce(state.resources);
     timer.nextProcessSec = nowSec + cycleSec;
+    state.metrics.processingCycles = (state.metrics.processingCycles ?? 0) + 1;
     return true;
   }
 

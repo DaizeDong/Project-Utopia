@@ -64,11 +64,17 @@ const TOOL_INFO = Object.freeze({
     rules: "Place on grass, roads, or ruins. Clinics need nearby logistics access.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },
+  bridge: {
+    label: "Bridge",
+    summary: "Creates a crossing over water, enabling logistics routes across rivers and channels.",
+    rules: "Place on water tiles. Bridges must extend from roads, warehouses, or other bridges.",
+    allowedOldTypes: [TILE.WATER],
+  },
   erase: {
     label: "Erase",
-    summary: "Clears the tile back to grass and salvages part of the old structure cost.",
+    summary: "Clears the tile back to grass (or water for bridges) and salvages part of the old structure cost.",
     rules: "Erase any non-water tile. Built structures return partial salvage.",
-    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC],
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE],
   },
 });
 
@@ -90,6 +96,7 @@ const TILE_TO_TOOL = Object.freeze({
   [TILE.KITCHEN]: "kitchen",
   [TILE.SMITHY]: "smithy",
   [TILE.CLINIC]: "clinic",
+  [TILE.BRIDGE]: "bridge",
 });
 
 function tileKey(ix, iz) {
@@ -250,8 +257,9 @@ export function explainBuildReason(reason, context = {}) {
 
 export function evaluateBuildPreview(state, tool, ix, iz) {
   const info = getBuildToolInfo(tool);
-  const newType = toolToTile(tool);
   const oldType = getTile(state.grid, ix, iz);
+  // Erasing a bridge restores water, not grass
+  const newType = (tool === "erase" && oldType === TILE.BRIDGE) ? TILE.WATER : toolToTile(tool);
   const tile = { ix, iz };
   const cost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
   const salvage = getTileRefund(oldType);
@@ -262,7 +270,7 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   if (newType === oldType || (tool === "erase" && oldType === TILE.GRASS)) {
     return buildFailure("unchanged", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
-  if (oldType === TILE.WATER) {
+  if (oldType === TILE.WATER && tool !== "bridge") {
     return buildFailure("waterBlocked", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
   if (!info.allowedOldTypes.includes(oldType)) {
@@ -279,8 +287,15 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   const warehouseDistance = findNearestDistance(state.grid, tile, [TILE.WAREHOUSE]);
 
   if (tool === "road") {
-    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER], 1);
+    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE], 1);
     if (!hasNetworkAnchor && tags.routeLinks.length === 0) {
+      return buildFailure("needsNetworkAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
+  }
+
+  if (tool === "bridge") {
+    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.BRIDGE], 1);
+    if (!hasNetworkAnchor) {
       return buildFailure("needsNetworkAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
     }
   }

@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.4] - 2026-04-08 — Bridge Tile Type
+
+New BRIDGE tile (ID 13) that enables pathways across water, connecting fragmented islands on archipelago maps.
+
+### New Features
+
+- **BRIDGE tile** — Passable tile placed only on WATER, with road-equivalent movement cost (0.65). Build cost: wood 3, stone 1. Erasing a bridge restores the water tile beneath.
+- **Bridge network anchor validation** — Bridges must connect to existing ROAD, WAREHOUSE, or other BRIDGE within 1 tile (Manhattan distance).
+- **ColonyDirector auto-bridging** — Director places bridges at priority 60 when water tiles exist, and automatically bridges water gaps during route fulfillment (Manhattan walk).
+- **Infrastructure network integration** — `isInfrastructureNetworkTile()` now treats BRIDGE as infrastructure, so scenario route connectivity checks work across bridges.
+- **Map generation bridges** — `carveBridgesOnMainAxis()` now produces BRIDGE tiles instead of ROAD tiles over water crossings.
+- **Bridge rendering** — Procedural texture (wooden planks over dark water base) and scene renderer bindings.
+- **Bridge UI button** — Added to build toolbar between Wall and Erase.
+
+### Files Changed
+
+- `constants.js` — BRIDGE: 13, TILE_INFO entry
+- `balance.js` — BUILD_COST bridge entry
+- `TileTypes.js` — TOOL_TO_TILE mapping
+- `BuildAdvisor.js` — TOOL_INFO, water placement logic, erase→water
+- `Grid.js` — carveBridges, rebuildBuildingStats, validateGeneratedGrid
+- `ColonyDirectorSystem.js` — bridge needs, route bridging, anchor types
+- `ScenarioFactory.js` — infrastructure network includes BRIDGE
+- `ProceduralTileTextures.js` — BRIDGE texture profile and draw function
+- `SceneRenderer.js` — icon type and texture bindings
+- `index.html` — toolbar button
+- `comprehensive-eval.mjs` — expected tile count 13→14
+
+### Tests
+
+- 3 new bridge tests (config, placement-on-water-only, erase→water)
+- 335 total tests passing
+
 ## [0.5.3] - 2026-04-08 — Eval Architecture Overhaul (B → A)
 
 Architectural improvements to evaluation methodology and game balance that lift the overall score from ~0.87 (B) to ~0.94 (A). Five of six dimensions now at A grade.
