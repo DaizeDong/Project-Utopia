@@ -7,6 +7,7 @@ import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setT
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
+import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -481,32 +482,45 @@ function handleHarvest(worker, state, services, dt) {
   if (effectiveRole === ROLE.FARM) {
     const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
     const ecology = getFarmEcologyYieldMultiplier(worker, state);
+    const fertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = ecology.pressure;
     worker.debug.lastFarmYieldMultiplier = ecology.multiplier;
     resolveWorkCooldown(
       worker,
       dt,
-      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier),
+      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility),
       "food",
       services.rng,
     );
+    // Drain tile fertility on harvest
+    if (worker.cooldown <= 0 && worker.targetTile) {
+      drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+    }
   } else if (effectiveRole === ROLE.STONE) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "stone", services.rng);
   } else if (effectiveRole === ROLE.HERBS) {
+    const herbFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "herbs", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier * herbFertility), "herbs", services.rng);
+    if (worker.cooldown <= 0 && worker.targetTile) {
+      drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+    }
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
+    const lumberFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier), "wood", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility), "wood", services.rng);
+    if (worker.cooldown <= 0 && worker.targetTile) {
+      drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+    }
   }
 }
 
