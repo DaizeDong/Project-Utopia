@@ -222,7 +222,7 @@ function findPlacementTile(state, buildSystem, tool) {
   // Phase 1: Try preferred anchors first (worksites near warehouses, etc.)
   const preferred = getPreferredAnchors(state, tool);
   if (preferred && preferred.length > 0) {
-    for (let radius = 1; radius <= 6; radius += 1) {
+    for (let radius = 1; radius <= 4; radius += 1) {
       for (const anchor of preferred) {
         for (let dz = -radius; dz <= radius; dz += 1) {
           for (let dx = -radius; dx <= radius; dx += 1) {
@@ -239,7 +239,7 @@ function findPlacementTile(state, buildSystem, tool) {
   const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE];
   const anchors = listTilesByType(grid, anchorTypes);
 
-  for (let radius = 1; radius <= 6; radius += 1) {
+  for (let radius = 1; radius <= 4; radius += 1) {
     for (const anchor of anchors) {
       for (let dz = -radius; dz <= radius; dz += 1) {
         for (let dx = -radius; dx <= radius; dx += 1) {
@@ -533,8 +533,8 @@ function findCoverageWarehousePlacement(state, buildSystem) {
 function connectWorksitesToWarehouses(state, buildSystem) {
   const resources = state.resources ?? {};
   const cost = BUILD_COST.road ?? {};
-  // Only build connector roads when wood is abundant (>30) to avoid resource drain
-  if ((resources.wood ?? 0) < 30) return;
+  // Only build connector roads when wood is sufficient (>20) to avoid resource drain
+  if ((resources.wood ?? 0) < 20) return;
 
   const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
   const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
