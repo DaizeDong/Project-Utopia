@@ -4,8 +4,8 @@ import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const CHECK_INTERVAL_SEC = 12;
-const FOOD_COST_PER_COLONIST = 8;
-const MIN_FOOD_FOR_GROWTH = 25;
+const FOOD_COST_PER_COLONIST = 6;
+const MIN_FOOD_FOR_GROWTH = 15;
 
 export class PopulationGrowthSystem {
   constructor() {
@@ -24,14 +24,17 @@ export class PopulationGrowthSystem {
 
     // Dynamic population cap based on infrastructure
     const farms = state.buildings?.farms ?? 0;
-    const cap = Math.min(24, 8 + warehouses.length * 2 + Math.floor(farms * 0.5));
+    const quarries = state.buildings?.quarries ?? 0;
+    const kitchens = state.buildings?.kitchens ?? 0;
+    const cap = Math.min(40, 8 + warehouses.length * 3 + Math.floor(farms * 0.5)
+      + quarries + kitchens);
     if (workers.length >= cap) return;
 
     // Need sufficient food
     if ((state.resources?.food ?? 0) < MIN_FOOD_FOR_GROWTH) return;
 
-    // Need at least 2 warehouses or 30+ seconds elapsed for growth
-    if (warehouses.length < 2 && (state.metrics?.timeSec ?? 0) < 30) return;
+    // Need at least 1 warehouse or 20+ seconds elapsed for growth
+    if (warehouses.length < 1 && (state.metrics?.timeSec ?? 0) < 20) return;
 
     // Spawn at random warehouse
     const wh = warehouses[Math.floor(Math.random() * warehouses.length)];

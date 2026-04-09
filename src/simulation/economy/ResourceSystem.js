@@ -132,10 +132,33 @@ export class ResourceSystem {
     const prevFoodShortage = Boolean(state._foodShortage);
     state._foodShortage = state.resources.food < foodThreshold;
     if (state._foodShortage && !prevFoodShortage) {
-      emitEvent(state, EVENT_TYPES.FOOD_SHORTAGE, { food: state.resources.food, threshold: foodThreshold });
+      emitEvent(state, EVENT_TYPES.FOOD_SHORTAGE, { resource: "food", food: state.resources.food, threshold: foodThreshold });
     }
     if (!state._foodShortage && prevFoodShortage && state.resources.food > foodThreshold * 3) {
       emitEvent(state, EVENT_TYPES.RESOURCE_SURPLUS, { resource: "food", amount: state.resources.food });
+    }
+
+    // Wood shortage/surplus events
+    const woodThreshold = Number(BALANCE.woodEmergencyThreshold ?? 10);
+    const prevWoodShortage = Boolean(state._woodShortage);
+    state._woodShortage = state.resources.wood < woodThreshold;
+    if (state._woodShortage && !prevWoodShortage) {
+      emitEvent(state, EVENT_TYPES.FOOD_SHORTAGE, { resource: "wood", wood: state.resources.wood, threshold: woodThreshold });
+    }
+    if (!state._woodShortage && prevWoodShortage && state.resources.wood > woodThreshold * 3) {
+      emitEvent(state, EVENT_TYPES.RESOURCE_SURPLUS, { resource: "wood", amount: state.resources.wood });
+    }
+
+    // Resource depletion events (any resource hits 0)
+    for (const res of ["food", "wood", "stone", "herbs"]) {
+      const key = `_${res}Depleted`;
+      const val = state.resources[res] ?? 0;
+      if (val <= 0 && !state[key]) {
+        state[key] = true;
+        emitEvent(state, EVENT_TYPES.RESOURCE_DEPLETED, { resource: res });
+      } else if (val > 5) {
+        state[key] = false;
+      }
     }
 
     // Tool production multiplier (colony-wide harvest speed buff)

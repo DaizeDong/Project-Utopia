@@ -681,9 +681,18 @@ export class WorkerAISystem {
       worker.social = clamp(Number(worker.social ?? 0.5) + socialDelta * dt, 0, 1);
 
       // Mood composite: weighted average of hunger, rest, morale, social
+      const prevMood = worker.mood ?? 0.5;
       worker.mood = clamp(
         0.35 * Number(worker.hunger ?? 0.5) + 0.30 * Number(worker.rest ?? 0.5)
         + 0.20 * Number(worker.morale ?? 0.5) + 0.15 * Number(worker.social ?? 0.5), 0, 1);
+
+      // Emit mood_low event when mood drops below threshold (once per episode)
+      if (worker.mood < 0.3 && prevMood >= 0.3) {
+        emitEvent(state, EVENT_TYPES.WORKER_MOOD_LOW, {
+          entityId: worker.id, entityName: worker.displayName ?? worker.id,
+          mood: worker.mood,
+        });
+      }
 
       // Relationship updates: proximity-based opinion drift (every ~5s)
       if (worker.relationships && (state.metrics.tick % 300 === (worker.id?.charCodeAt?.(7) ?? 0) % 300)) {
@@ -761,6 +770,7 @@ export class WorkerAISystem {
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
       worker.debug ??= {};
+      const prevStateNode = worker.debug.lastStateNode;
       // Map role to intent name for eval tracking (eval expects "farm"/"lumber" etc., not FSM states)
       const ROLE_TO_INTENT = {
         [ROLE.FARM]: "farm",
@@ -790,6 +800,13 @@ export class WorkerAISystem {
           handleHarvest(worker, state, services, dt);
         }
       } else if (stateNode === "seek_rest" || stateNode === "rest") {
+        // Emit resting event on state transition
+        if (stateNode === "rest" && prevStateNode !== "rest") {
+          emitEvent(state, EVENT_TYPES.WORKER_RESTING, {
+            entityId: worker.id, entityName: worker.displayName ?? worker.id,
+            rest: worker.rest,
+          });
+        }
         handleRest(worker, state, services, dt);
       } else if (stateNode === "wander") {
         handleWander(worker, state, services, dt);
