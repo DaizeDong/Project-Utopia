@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-09T08:16:02.704Z",
+  "generatedAt": "2026-04-09T08:23:08.283Z",
   "version": "0.5.4",
   "totalScenarios": 22,
   "totalDurationSec": 1410,
@@ -81,7 +81,7 @@
         "nanDetected": 0,
         "negativeResources": 0,
         "systemErrors": 0,
-        "maxEntities": 23,
+        "maxEntities": 24,
         "outcome": "none",
         "reason": ""
       },
@@ -224,7 +224,7 @@
         "nanDetected": 0,
         "negativeResources": 0,
         "systemErrors": 0,
-        "maxEntities": 23,
+        "maxEntities": 24,
         "outcome": "none",
         "reason": ""
       },
@@ -297,13 +297,13 @@
     "issues": []
   },
   "technical": {
-    "score": 0.816,
+    "score": 0.829,
     "grade": "B",
     "details": [
       {
         "preset": "default",
-        "pathCacheHitRate": 0.483,
-        "pathRecalcs": 1130,
+        "pathCacheHitRate": 0.409,
+        "pathRecalcs": 1169,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.989,
@@ -315,12 +315,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.45,
         "toolScore": 1,
-        "score": 0.92
+        "score": 0.909
       },
       {
         "preset": "default",
-        "pathCacheHitRate": 0.404,
-        "pathRecalcs": 928,
+        "pathCacheHitRate": 0.398,
+        "pathRecalcs": 970,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.989,
@@ -330,14 +330,14 @@
         "aiDecisionRate": 11.3,
         "aiActivityScore": 1,
         "boidsMaxLoad": 3,
-        "toolMultiplier": 1.15,
-        "toolScore": 0.33,
-        "score": 0.775
+        "toolMultiplier": 1,
+        "toolScore": 0,
+        "score": 0.707
       },
       {
         "preset": "default",
-        "pathCacheHitRate": 0.199,
-        "pathRecalcs": 498,
+        "pathCacheHitRate": 0.207,
+        "pathRecalcs": 468,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -349,12 +349,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.846
+        "score": 0.847
       },
       {
         "preset": "scarce_resources",
-        "pathCacheHitRate": 0.106,
-        "pathRecalcs": 557,
+        "pathCacheHitRate": 0.118,
+        "pathRecalcs": 542,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -363,15 +363,15 @@
         "aiDecisions": 11,
         "aiDecisionRate": 11,
         "aiActivityScore": 1,
-        "boidsMaxLoad": 2.9,
+        "boidsMaxLoad": 3,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.828
+        "score": 0.83
       },
       {
         "preset": "abundant_resources",
-        "pathCacheHitRate": 0.148,
-        "pathRecalcs": 520,
+        "pathCacheHitRate": 0.145,
+        "pathRecalcs": 559,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -383,12 +383,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.15,
         "toolScore": 0.33,
-        "score": 0.736
+        "score": 0.735
       },
       {
         "preset": "resource_chains_basic",
-        "pathCacheHitRate": 0.136,
-        "pathRecalcs": 441,
+        "pathCacheHitRate": 0.169,
+        "pathRecalcs": 390,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -398,31 +398,14 @@
         "aiDecisionRate": 11,
         "aiActivityScore": 1,
         "boidsMaxLoad": 2.7,
-        "toolMultiplier": 1.3,
-        "toolScore": 0.67,
-        "score": 0.8
-      },
-      {
-        "preset": "full_processing",
-        "pathCacheHitRate": 0.169,
-        "pathRecalcs": 449,
-        "invalidTransitions": 0,
-        "goalFlips": 1,
-        "goalStabilityScore": 0.983,
-        "flipsPerWorkerPerMin": 0.08,
-        "validityScore": 1,
-        "aiDecisions": 11,
-        "aiDecisionRate": 11,
-        "aiActivityScore": 1,
-        "boidsMaxLoad": 3,
         "toolMultiplier": 1.45,
         "toolScore": 1,
         "score": 0.872
       },
       {
-        "preset": "tooled_colony",
-        "pathCacheHitRate": 0.269,
-        "pathRecalcs": 327,
+        "preset": "full_processing",
+        "pathCacheHitRate": 0.174,
+        "pathRecalcs": 426,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -434,12 +417,29 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.45,
         "toolScore": 1,
-        "score": 0.887
+        "score": 0.873
+      },
+      {
+        "preset": "tooled_colony",
+        "pathCacheHitRate": 0.397,
+        "pathRecalcs": 310,
+        "invalidTransitions": 0,
+        "goalFlips": 1,
+        "goalStabilityScore": 0.983,
+        "flipsPerWorkerPerMin": 0.08,
+        "validityScore": 1,
+        "aiDecisions": 11,
+        "aiDecisionRate": 11,
+        "aiActivityScore": 1,
+        "boidsMaxLoad": 0,
+        "toolMultiplier": 1.45,
+        "toolScore": 1,
+        "score": 0.906
       },
       {
         "preset": "high_threat",
-        "pathCacheHitRate": 0.563,
-        "pathRecalcs": 647,
+        "pathCacheHitRate": 0.214,
+        "pathRecalcs": 421,
         "invalidTransitions": 0,
         "goalFlips": 4,
         "goalStabilityScore": 0.933,
@@ -451,12 +451,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.721
+        "score": 0.669
       },
       {
         "preset": "skeleton_crew",
-        "pathCacheHitRate": 0.215,
-        "pathRecalcs": 246,
+        "pathCacheHitRate": 0.216,
+        "pathRecalcs": 204,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.933,
@@ -472,8 +472,8 @@
       },
       {
         "preset": "large_colony",
-        "pathCacheHitRate": 0.273,
-        "pathRecalcs": 556,
+        "pathCacheHitRate": 0.329,
+        "pathRecalcs": 493,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.99,
@@ -482,19 +482,19 @@
         "aiDecisions": 11,
         "aiDecisionRate": 11,
         "aiActivityScore": 1,
-        "boidsMaxLoad": 3,
-        "toolMultiplier": 1,
-        "toolScore": 0,
-        "score": 0.689
+        "boidsMaxLoad": 4,
+        "toolMultiplier": 1.45,
+        "toolScore": 1,
+        "score": 0.897
       },
       {
         "preset": "wildlife_heavy",
-        "pathCacheHitRate": 0.113,
-        "pathRecalcs": 574,
+        "pathCacheHitRate": 0.15,
+        "pathRecalcs": 548,
         "invalidTransitions": 0,
-        "goalFlips": 3,
-        "goalStabilityScore": 0.95,
-        "flipsPerWorkerPerMin": 0.25,
+        "goalFlips": 2,
+        "goalStabilityScore": 0.967,
+        "flipsPerWorkerPerMin": 0.17,
         "validityScore": 1,
         "aiDecisions": 11,
         "aiDecisionRate": 11,
@@ -502,12 +502,12 @@
         "boidsMaxLoad": 4,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.821
+        "score": 0.832
       },
       {
         "preset": "storm_start",
-        "pathCacheHitRate": 0.156,
-        "pathRecalcs": 437,
+        "pathCacheHitRate": 0.145,
+        "pathRecalcs": 470,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -519,12 +519,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.15,
         "toolScore": 0.33,
-        "score": 0.737
+        "score": 0.735
       },
       {
         "preset": "default",
-        "pathCacheHitRate": 0.408,
-        "pathRecalcs": 906,
+        "pathCacheHitRate": 0.499,
+        "pathRecalcs": 1059,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.989,
@@ -534,14 +534,14 @@
         "aiDecisionRate": 11.3,
         "aiActivityScore": 1,
         "boidsMaxLoad": 3,
-        "toolMultiplier": 1.3,
-        "toolScore": 0.67,
-        "score": 0.842
+        "toolMultiplier": 1.45,
+        "toolScore": 1,
+        "score": 0.923
       },
       {
         "preset": "developed_colony",
-        "pathCacheHitRate": 0.191,
-        "pathRecalcs": 397,
+        "pathCacheHitRate": 0.198,
+        "pathRecalcs": 405,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -553,12 +553,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.45,
         "toolScore": 1,
-        "score": 0.875
+        "score": 0.876
       },
       {
         "preset": "default",
-        "pathCacheHitRate": 0.223,
-        "pathRecalcs": 373,
+        "pathCacheHitRate": 0.196,
+        "pathRecalcs": 419,
         "invalidTransitions": 0,
         "goalFlips": 0,
         "goalStabilityScore": 1,
@@ -570,12 +570,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.683
+        "score": 0.679
       },
       {
         "preset": "default",
-        "pathCacheHitRate": 0.252,
-        "pathRecalcs": 372,
+        "pathCacheHitRate": 0.213,
+        "pathRecalcs": 445,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -587,11 +587,11 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.3,
         "toolScore": 0.67,
-        "score": 0.818
+        "score": 0.812
       },
       {
         "preset": "crisis_compound",
-        "pathCacheHitRate": 0.141,
+        "pathCacheHitRate": 0.106,
         "pathRecalcs": 361,
         "invalidTransitions": 0,
         "goalFlips": 3,
@@ -604,12 +604,12 @@
         "boidsMaxLoad": 0,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.801
+        "score": 0.795
       },
       {
         "preset": "island_isolation",
-        "pathCacheHitRate": 0.331,
-        "pathRecalcs": 239,
+        "pathCacheHitRate": 0.716,
+        "pathRecalcs": 444,
         "invalidTransitions": 0,
         "goalFlips": 2,
         "goalStabilityScore": 0.933,
@@ -621,12 +621,12 @@
         "boidsMaxLoad": 0,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.858
+        "score": 0.93
       },
       {
         "preset": "population_boom",
-        "pathCacheHitRate": 0.275,
-        "pathRecalcs": 448,
+        "pathCacheHitRate": 0.256,
+        "pathRecalcs": 523,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.99,
@@ -638,16 +638,16 @@
         "boidsMaxLoad": 4,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.861
+        "score": 0.858
       },
       {
         "preset": "late_game_siege",
-        "pathCacheHitRate": 0.201,
-        "pathRecalcs": 443,
+        "pathCacheHitRate": 0.166,
+        "pathRecalcs": 464,
         "invalidTransitions": 0,
-        "goalFlips": 4,
-        "goalStabilityScore": 0.933,
-        "flipsPerWorkerPerMin": 0.33,
+        "goalFlips": 5,
+        "goalStabilityScore": 0.917,
+        "flipsPerWorkerPerMin": 0.42,
         "validityScore": 1,
         "aiDecisions": 11,
         "aiDecisionRate": 11,
@@ -655,12 +655,12 @@
         "boidsMaxLoad": 3,
         "toolMultiplier": 1.45,
         "toolScore": 1,
-        "score": 0.867
+        "score": 0.858
       },
       {
         "preset": "no_director",
-        "pathCacheHitRate": 0.33,
-        "pathRecalcs": 261,
+        "pathCacheHitRate": 0.323,
+        "pathRecalcs": 300,
         "invalidTransitions": 0,
         "goalFlips": 1,
         "goalStabilityScore": 0.983,
@@ -669,15 +669,15 @@
         "aiDecisions": 11,
         "aiDecisionRate": 11,
         "aiActivityScore": 1,
-        "boidsMaxLoad": 2.9,
+        "boidsMaxLoad": 0,
         "toolMultiplier": 1,
         "toolScore": 0,
-        "score": 0.87
+        "score": 0.869
       }
     ]
   },
   "coverage": {
-    "score": 1.03,
+    "score": 1.07,
     "grade": "A",
     "details": {
       "tilesOnMap": {
@@ -699,12 +699,10 @@
         "score": 1
       },
       "intents": {
-        "found": 13,
+        "found": 15,
         "expected": 10,
-        "missing": [
-          "wander"
-        ],
-        "score": 1.3
+        "missing": [],
+        "score": 1.5
       },
       "weathers": {
         "found": 4,
@@ -715,13 +713,13 @@
     }
   },
   "development": {
-    "score": 0.819,
+    "score": 0.814,
     "grade": "B",
     "details": [
       {
         "preset": "default",
         "earlyBuildings": 38.5,
-        "lateBuildings": 39.86,
+        "lateBuildings": 41.43,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3.7,
         "lateResourceDiversity": 6,
@@ -729,59 +727,59 @@
         "peakRoleDiversity": 8,
         "roleDiversityScore": 1,
         "peakWorkers": 16,
-        "peakBuildings": 40,
+        "peakBuildings": 42,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.65
+        "objectiveScore": 0.52
       },
       {
         "preset": "default",
         "earlyBuildings": 44.67,
-        "lateBuildings": 45.14,
+        "lateBuildings": 45,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3.7,
-        "lateResourceDiversity": 6,
+        "lateResourceDiversity": 5.1,
         "resourceGrowth": 1,
-        "peakRoleDiversity": 7,
+        "peakRoleDiversity": 8,
         "roleDiversityScore": 1,
         "peakWorkers": 13,
-        "peakBuildings": 46,
+        "peakBuildings": 47,
         "objectivesCompleted": 1,
         "objectiveScore": 0.5
       },
       {
         "preset": "default",
         "earlyBuildings": 17.5,
-        "lateBuildings": 18,
+        "lateBuildings": 19.2,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3,
-        "lateResourceDiversity": 4,
+        "lateResourceDiversity": 3.8,
         "resourceGrowth": 1,
         "peakRoleDiversity": 5,
         "roleDiversityScore": 1,
         "peakWorkers": 13,
-        "peakBuildings": 18,
+        "peakBuildings": 20,
         "objectivesCompleted": 0,
-        "objectiveScore": 0.25
+        "objectiveScore": 0
       },
       {
         "preset": "scarce_resources",
         "earlyBuildings": 49,
-        "lateBuildings": 52.14,
+        "lateBuildings": 51.43,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.8,
-        "lateResourceDiversity": 3,
+        "lateResourceDiversity": 3.1,
         "resourceGrowth": 1,
         "peakRoleDiversity": 5,
         "roleDiversityScore": 1,
         "peakWorkers": 14,
-        "peakBuildings": 54,
+        "peakBuildings": 53,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.5
+        "objectiveScore": 0.51
       },
       {
         "preset": "abundant_resources",
         "earlyBuildings": 56,
-        "lateBuildings": 57,
+        "lateBuildings": 56.86,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.3,
         "lateResourceDiversity": 6,
@@ -791,22 +789,22 @@
         "peakWorkers": 17,
         "peakBuildings": 57,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.67
+        "objectiveScore": 0.56
       },
       {
         "preset": "resource_chains_basic",
         "earlyBuildings": 55.83,
-        "lateBuildings": 57.29,
+        "lateBuildings": 56.71,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 4,
-        "lateResourceDiversity": 7,
+        "lateResourceDiversity": 6.9,
         "resourceGrowth": 1,
         "peakRoleDiversity": 8,
         "roleDiversityScore": 1,
         "peakWorkers": 16,
-        "peakBuildings": 58,
+        "peakBuildings": 57,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.5
+        "objectiveScore": 0.56
       },
       {
         "preset": "full_processing",
@@ -826,32 +824,32 @@
       {
         "preset": "tooled_colony",
         "earlyBuildings": 55.83,
-        "lateBuildings": 56.57,
+        "lateBuildings": 56,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 4,
-        "lateResourceDiversity": 6,
+        "lateResourceDiversity": 5,
         "resourceGrowth": 1,
         "peakRoleDiversity": 7,
         "roleDiversityScore": 1,
         "peakWorkers": 17,
-        "peakBuildings": 57,
+        "peakBuildings": 56,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.55
+        "objectiveScore": 0.73
       },
       {
         "preset": "high_threat",
         "earlyBuildings": 54.67,
-        "lateBuildings": 55.71,
+        "lateBuildings": 55.86,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.3,
         "lateResourceDiversity": 5,
         "resourceGrowth": 1,
-        "peakRoleDiversity": 8,
+        "peakRoleDiversity": 7,
         "roleDiversityScore": 1,
         "peakWorkers": 16,
-        "peakBuildings": 56,
+        "peakBuildings": 57,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.65
+        "objectiveScore": 0.52
       },
       {
         "preset": "skeleton_crew",
@@ -859,74 +857,74 @@
         "lateBuildings": 51,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.8,
-        "lateResourceDiversity": 3.9,
+        "lateResourceDiversity": 3,
         "resourceGrowth": 1,
         "peakRoleDiversity": 4,
         "roleDiversityScore": 0.8,
         "peakWorkers": 8,
         "peakBuildings": 52,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.56
+        "objectiveScore": 0.58
       },
       {
         "preset": "large_colony",
         "earlyBuildings": 50.83,
-        "lateBuildings": 51.57,
-        "buildingGrowth": 1,
-        "earlyResourceDiversity": 3,
-        "lateResourceDiversity": 5,
-        "resourceGrowth": 1,
-        "peakRoleDiversity": 8,
-        "roleDiversityScore": 1,
-        "peakWorkers": 20,
-        "peakBuildings": 52,
-        "objectivesCompleted": 1,
-        "objectiveScore": 0.5
-      },
-      {
-        "preset": "wildlife_heavy",
-        "earlyBuildings": 10.67,
-        "lateBuildings": 14,
-        "buildingGrowth": 1,
-        "earlyResourceDiversity": 3,
-        "lateResourceDiversity": 4,
-        "resourceGrowth": 1,
-        "peakRoleDiversity": 5,
-        "roleDiversityScore": 1,
-        "peakWorkers": 13,
-        "peakBuildings": 14,
-        "objectivesCompleted": 0,
-        "objectiveScore": 0.33
-      },
-      {
-        "preset": "storm_start",
-        "earlyBuildings": 54.67,
-        "lateBuildings": 55,
-        "buildingGrowth": 1,
-        "earlyResourceDiversity": 2.3,
-        "lateResourceDiversity": 6,
-        "resourceGrowth": 1,
-        "peakRoleDiversity": 7,
-        "roleDiversityScore": 1,
-        "peakWorkers": 16,
-        "peakBuildings": 55,
-        "objectivesCompleted": 1,
-        "objectiveScore": 0.5
-      },
-      {
-        "preset": "default",
-        "earlyBuildings": 38.5,
-        "lateBuildings": 39.71,
+        "lateBuildings": 52,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3.5,
         "lateResourceDiversity": 6,
         "resourceGrowth": 1,
         "peakRoleDiversity": 8,
         "roleDiversityScore": 1,
+        "peakWorkers": 20,
+        "peakBuildings": 52,
+        "objectivesCompleted": 1,
+        "objectiveScore": 0.64
+      },
+      {
+        "preset": "wildlife_heavy",
+        "earlyBuildings": 10.67,
+        "lateBuildings": 12.29,
+        "buildingGrowth": 1,
+        "earlyResourceDiversity": 3,
+        "lateResourceDiversity": 3,
+        "resourceGrowth": 1,
+        "peakRoleDiversity": 5,
+        "roleDiversityScore": 1,
+        "peakWorkers": 13,
+        "peakBuildings": 13,
+        "objectivesCompleted": 0,
+        "objectiveScore": 0.33
+      },
+      {
+        "preset": "storm_start",
+        "earlyBuildings": 54.67,
+        "lateBuildings": 56.14,
+        "buildingGrowth": 1,
+        "earlyResourceDiversity": 2.3,
+        "lateResourceDiversity": 6,
+        "resourceGrowth": 1,
+        "peakRoleDiversity": 8,
+        "roleDiversityScore": 1,
+        "peakWorkers": 16,
+        "peakBuildings": 57,
+        "objectivesCompleted": 1,
+        "objectiveScore": 0.56
+      },
+      {
+        "preset": "default",
+        "earlyBuildings": 38.5,
+        "lateBuildings": 39.86,
+        "buildingGrowth": 1,
+        "earlyResourceDiversity": 3.7,
+        "lateResourceDiversity": 5.9,
+        "resourceGrowth": 1,
+        "peakRoleDiversity": 8,
+        "roleDiversityScore": 1,
         "peakWorkers": 16,
         "peakBuildings": 40,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.75
+        "objectiveScore": 0.76
       },
       {
         "preset": "developed_colony",
@@ -946,17 +944,17 @@
       {
         "preset": "default",
         "earlyBuildings": 83.5,
-        "lateBuildings": 84,
+        "lateBuildings": 84.6,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.3,
         "lateResourceDiversity": 5,
         "resourceGrowth": 1,
-        "peakRoleDiversity": 7,
+        "peakRoleDiversity": 8,
         "roleDiversityScore": 1,
         "peakWorkers": 16,
-        "peakBuildings": 84,
+        "peakBuildings": 85,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.73
+        "objectiveScore": 0.56
       },
       {
         "preset": "default",
@@ -964,14 +962,14 @@
         "lateBuildings": 40,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3.3,
-        "lateResourceDiversity": 5,
+        "lateResourceDiversity": 6,
         "resourceGrowth": 1,
         "peakRoleDiversity": 7,
         "roleDiversityScore": 1,
         "peakWorkers": 16,
         "peakBuildings": 40,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.7
+        "objectiveScore": 0.63
       },
       {
         "preset": "crisis_compound",
@@ -979,20 +977,20 @@
         "lateBuildings": 51,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.8,
-        "lateResourceDiversity": 3.9,
+        "lateResourceDiversity": 3,
         "resourceGrowth": 1,
         "peakRoleDiversity": 4,
         "roleDiversityScore": 0.8,
         "peakWorkers": 8,
         "peakBuildings": 52,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.58
+        "objectiveScore": 0.52
       },
       {
         "preset": "island_isolation",
         "earlyBuildings": 7,
-        "lateBuildings": 6,
-        "buildingGrowth": 0.9,
+        "lateBuildings": 7,
+        "buildingGrowth": 1,
         "earlyResourceDiversity": 2,
         "lateResourceDiversity": 2.7,
         "resourceGrowth": 1,
@@ -1001,27 +999,27 @@
         "peakWorkers": 7,
         "peakBuildings": 7,
         "objectivesCompleted": 0,
-        "objectiveScore": 0
+        "objectiveScore": 0.17
       },
       {
         "preset": "population_boom",
         "earlyBuildings": 51,
-        "lateBuildings": 51,
+        "lateBuildings": 50.43,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 2.8,
-        "lateResourceDiversity": 3,
-        "resourceGrowth": 1,
+        "lateResourceDiversity": 2.6,
+        "resourceGrowth": 0.9,
         "peakRoleDiversity": 5,
         "roleDiversityScore": 1,
         "peakWorkers": 20,
         "peakBuildings": 52,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.56
+        "objectiveScore": 0.5
       },
       {
         "preset": "late_game_siege",
         "earlyBuildings": 62.83,
-        "lateBuildings": 62.86,
+        "lateBuildings": 63,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 4,
         "lateResourceDiversity": 7,
@@ -1031,15 +1029,15 @@
         "peakWorkers": 17,
         "peakBuildings": 63,
         "objectivesCompleted": 1,
-        "objectiveScore": 0.59
+        "objectiveScore": 0.65
       },
       {
         "preset": "no_director",
         "earlyBuildings": 49,
-        "lateBuildings": 47.57,
+        "lateBuildings": 46.86,
         "buildingGrowth": 1,
         "earlyResourceDiversity": 3,
-        "lateResourceDiversity": 4,
+        "lateResourceDiversity": 3,
         "resourceGrowth": 1,
         "peakRoleDiversity": 5,
         "roleDiversityScore": 1,
@@ -1051,484 +1049,357 @@
     ]
   },
   "playability": {
-    "score": 0.854,
+    "score": 0.862,
     "grade": "B",
     "details": [
       {
         "preset": "default",
         "tensionScore": 1,
-        "prosperityCV": 0.1,
-        "threatCV": 0.109,
-        "varietyScore": 0.912,
+        "prosperityCV": 0.119,
+        "threatCV": 0.129,
+        "varietyScore": 0.925,
         "intentDistribution": {
           "idle": 13,
-          "farm": 46,
-          "lumber": 153,
-          "quarry": 23,
-          "gather_herbs": 27,
-          "cook": 29,
-          "smith": 25,
-          "haul": 18,
-          "deliver": 115,
-          "seek_food": 4,
-          "eat": 2,
-          "heal": 6
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.65,
-        "score": 0.922
-      },
-      {
-        "preset": "default",
-        "tensionScore": 1,
-        "prosperityCV": 0.174,
-        "threatCV": 0.227,
-        "varietyScore": 0.946,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 27,
-          "lumber": 112,
-          "quarry": 21,
-          "gather_herbs": 14,
-          "cook": 30,
-          "smith": 23,
-          "haul": 25,
-          "deliver": 107,
-          "seek_food": 29
-        },
-        "resourceHealth": 0.952,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0.097,
-        "progressScore": 0.5,
-        "score": 0.897
-      },
-      {
-        "preset": "default",
-        "tensionScore": 0.58,
-        "prosperityCV": 0.049,
-        "threatCV": 0.12,
-        "varietyScore": 0.917,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 72,
-          "lumber": 88,
-          "gather_herbs": 12,
-          "haul": 17,
-          "deliver": 68,
-          "seek_food": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.25,
-        "score": 0.736
-      },
-      {
-        "preset": "scarce_resources",
-        "tensionScore": 1,
-        "prosperityCV": 0.215,
-        "threatCV": 0.172,
-        "varietyScore": 0.915,
-        "intentDistribution": {
-          "idle": 12,
-          "farm": 81,
-          "lumber": 156,
-          "quarry": 25,
-          "gather_herbs": 23,
-          "haul": 24,
-          "deliver": 86,
-          "seek_food": 1
-        },
-        "resourceHealth": 0.952,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0.097,
-        "progressScore": 0.5,
-        "score": 0.888
-      },
-      {
-        "preset": "abundant_resources",
-        "tensionScore": 0.943,
-        "prosperityCV": 0.116,
-        "threatCV": 0.192,
-        "varietyScore": 0.916,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 66,
-          "lumber": 180,
-          "quarry": 26,
-          "gather_herbs": 29,
-          "cook": 30,
-          "smith": 30,
-          "haul": 30,
-          "deliver": 41,
-          "seek_food": 2,
-          "eat": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.67,
-        "score": 0.908
-      },
-      {
-        "preset": "resource_chains_basic",
-        "tensionScore": 1,
-        "prosperityCV": 0.117,
-        "threatCV": 0.169,
-        "varietyScore": 0.951,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 56,
-          "lumber": 100,
-          "quarry": 22,
-          "gather_herbs": 21,
-          "cook": 30,
-          "smith": 28,
-          "heal": 28,
-          "haul": 28,
-          "deliver": 113,
-          "seek_food": 6
-        },
-        "resourceHealth": 0.984,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0.032,
-        "progressScore": 0.5,
-        "score": 0.906
-      },
-      {
-        "preset": "full_processing",
-        "tensionScore": 0.942,
-        "prosperityCV": 0.129,
-        "threatCV": 0.291,
-        "varietyScore": 0.931,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 59,
-          "lumber": 172,
-          "quarry": 22,
-          "gather_herbs": 28,
-          "cook": 26,
-          "smith": 29,
-          "heal": 29,
-          "haul": 30,
-          "deliver": 39,
-          "seek_food": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.65,
-        "score": 0.91
-      },
-      {
-        "preset": "tooled_colony",
-        "tensionScore": 0.923,
-        "prosperityCV": 0.095,
-        "threatCV": 0.251,
-        "varietyScore": 0.905,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 67,
-          "lumber": 195,
-          "quarry": 27,
-          "gather_herbs": 30,
-          "cook": 29,
-          "smith": 29,
-          "haul": 29,
-          "deliver": 27,
-          "seek_food": 1,
-          "eat": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.55,
-        "score": 0.881
-      },
-      {
-        "preset": "high_threat",
-        "tensionScore": 0.708,
-        "prosperityCV": 0.07,
-        "threatCV": 0.079,
-        "varietyScore": 0.924,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 30,
-          "lumber": 121,
-          "quarry": 23,
+          "farm": 48,
+          "lumber": 148,
+          "quarry": 28,
           "gather_herbs": 24,
-          "cook": 29,
-          "smith": 25,
-          "haul": 30,
-          "deliver": 139,
-          "eat": 6,
-          "heal": 5
+          "cook": 27,
+          "smith": 28,
+          "haul": 24,
+          "deliver": 103,
+          "seek_food": 6,
+          "eat": 4,
+          "heal": 8
         },
         "resourceHealth": 1,
         "foodZeroRatio": 0,
         "woodZeroRatio": 0,
-        "progressScore": 0.65,
-        "score": 0.837
-      },
-      {
-        "preset": "skeleton_crew",
-        "tensionScore": 0.81,
-        "prosperityCV": 0.049,
-        "threatCV": 0.205,
-        "varietyScore": 0.856,
-        "intentDistribution": {
-          "idle": 4,
-          "farm": 56,
-          "lumber": 44,
-          "quarry": 23,
-          "deliver": 22,
-          "gather_herbs": 20
-        },
-        "resourceHealth": 0.984,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0.032,
-        "progressScore": 0.56,
-        "score": 0.83
-      },
-      {
-        "preset": "large_colony",
-        "tensionScore": 0.886,
-        "prosperityCV": 0.113,
-        "threatCV": 0.184,
-        "varietyScore": 0.898,
-        "intentDistribution": {
-          "idle": 20,
-          "haul": 180,
-          "farm": 67,
-          "lumber": 208,
-          "deliver": 141,
-          "seek_food": 3,
-          "eat": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.5,
-        "score": 0.86
-      },
-      {
-        "preset": "wildlife_heavy",
-        "tensionScore": 1,
-        "prosperityCV": 0.041,
-        "threatCV": 0.091,
-        "varietyScore": 0.902,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 70,
-          "lumber": 86,
-          "quarry": 17,
-          "gather_herbs": 27,
-          "haul": 16,
-          "deliver": 170,
-          "seek_food": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.33,
-        "score": 0.871
-      },
-      {
-        "preset": "storm_start",
-        "tensionScore": 0.647,
-        "prosperityCV": 0.092,
-        "threatCV": 0.118,
-        "varietyScore": 0.932,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 49,
-          "lumber": 160,
-          "quarry": 26,
-          "gather_herbs": 27,
-          "cook": 30,
-          "smith": 29,
-          "haul": 30,
-          "deliver": 80,
-          "seek_food": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.5,
-        "score": 0.799
-      },
-      {
-        "preset": "default",
-        "tensionScore": 1,
-        "prosperityCV": 0.071,
-        "threatCV": 0.071,
-        "varietyScore": 0.919,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 68,
-          "lumber": 155,
-          "quarry": 25,
-          "gather_herbs": 29,
-          "cook": 30,
-          "smith": 29,
-          "haul": 25,
-          "deliver": 79,
-          "seek_food": 2,
-          "eat": 1,
-          "heal": 5
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.75,
-        "score": 0.938
-      },
-      {
-        "preset": "developed_colony",
-        "tensionScore": 1,
-        "prosperityCV": 0.124,
-        "threatCV": 0.338,
-        "varietyScore": 0.914,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 68,
-          "lumber": 185,
-          "quarry": 29,
-          "gather_herbs": 29,
-          "cook": 30,
-          "smith": 30,
-          "heal": 30,
-          "haul": 29,
-          "deliver": 4,
-          "seek_food": 1
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.65,
-        "score": 0.922
-      },
-      {
-        "preset": "default",
-        "tensionScore": 0.872,
-        "prosperityCV": 0.117,
-        "threatCV": 0.235,
-        "varietyScore": 0.947,
-        "intentDistribution": {
-          "idle": 13,
-          "farm": 37,
-          "lumber": 108,
-          "quarry": 17,
-          "gather_herbs": 18,
-          "cook": 20,
-          "smith": 19,
-          "haul": 16,
-          "deliver": 53
-        },
-        "resourceHealth": 1,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.73,
+        "progressScore": 0.52,
         "score": 0.905
       },
       {
         "preset": "default",
         "tensionScore": 1,
-        "prosperityCV": 0.077,
-        "threatCV": 0.112,
-        "varietyScore": 0.942,
+        "prosperityCV": 0.186,
+        "threatCV": 0.289,
+        "varietyScore": 0.939,
         "intentDistribution": {
           "idle": 13,
-          "farm": 31,
-          "lumber": 103,
-          "quarry": 16,
-          "gather_herbs": 17,
-          "cook": 16,
-          "smith": 19,
-          "haul": 16,
-          "deliver": 70
+          "farm": 41,
+          "lumber": 110,
+          "quarry": 24,
+          "gather_herbs": 22,
+          "cook": 30,
+          "smith": 30,
+          "haul": 23,
+          "deliver": 87,
+          "heal": 13,
+          "seek_food": 7,
+          "eat": 1
         },
-        "resourceHealth": 1,
+        "resourceHealth": 0.855,
         "foodZeroRatio": 0,
-        "woodZeroRatio": 0,
-        "progressScore": 0.7,
-        "score": 0.938
+        "woodZeroRatio": 0.29,
+        "progressScore": 0.5,
+        "score": 0.87
       },
       {
-        "preset": "crisis_compound",
-        "tensionScore": 1,
-        "prosperityCV": 0.202,
-        "threatCV": 0.246,
-        "varietyScore": 0.923,
+        "preset": "default",
+        "tensionScore": 0.929,
+        "prosperityCV": 0.088,
+        "threatCV": 0.159,
+        "varietyScore": 0.919,
         "intentDistribution": {
-          "idle": 4,
-          "farm": 53,
-          "lumber": 36,
-          "quarry": 23,
-          "deliver": 33,
+          "idle": 13,
+          "farm": 70,
+          "lumber": 82,
+          "gather_herbs": 11,
+          "haul": 19,
+          "deliver": 75,
+          "seek_food": 1
+        },
+        "resourceHealth": 0.929,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0.143,
+        "progressScore": 0,
+        "score": 0.786
+      },
+      {
+        "preset": "scarce_resources",
+        "tensionScore": 1,
+        "prosperityCV": 0.213,
+        "threatCV": 0.149,
+        "varietyScore": 0.902,
+        "intentDistribution": {
+          "idle": 12,
+          "farm": 81,
+          "lumber": 153,
+          "quarry": 25,
           "gather_herbs": 21,
+          "haul": 28,
+          "deliver": 86,
           "seek_food": 1,
           "eat": 1
         },
         "resourceHealth": 0.968,
         "foodZeroRatio": 0,
         "woodZeroRatio": 0.065,
-        "progressScore": 0.58,
-        "score": 0.906
+        "progressScore": 0.51,
+        "score": 0.889
       },
       {
-        "preset": "island_isolation",
-        "tensionScore": 1,
-        "prosperityCV": 0.135,
-        "threatCV": 0.278,
-        "varietyScore": 0.7,
+        "preset": "abundant_resources",
+        "tensionScore": 0.943,
+        "prosperityCV": 0.129,
+        "threatCV": 0.207,
+        "varietyScore": 0.925,
         "intentDistribution": {
-          "idle": 7,
-          "farm": 40,
-          "lumber": 111,
-          "deliver": 50,
-          "seek_food": 6
+          "idle": 13,
+          "farm": 67,
+          "lumber": 184,
+          "quarry": 25,
+          "gather_herbs": 27,
+          "cook": 30,
+          "smith": 30,
+          "haul": 30,
+          "deliver": 39,
+          "seek_food": 3
         },
-        "resourceHealth": 0.548,
+        "resourceHealth": 1,
         "foodZeroRatio": 0,
-        "woodZeroRatio": 0.903,
-        "progressScore": 0,
-        "score": 0.647
-      },
-      {
-        "preset": "population_boom",
-        "tensionScore": 0.465,
-        "prosperityCV": 0.037,
-        "threatCV": 0.09,
-        "varietyScore": 0.82,
-        "intentDistribution": {
-          "idle": 20,
-          "haul": 198,
-          "farm": 58,
-          "lumber": 212,
-          "deliver": 126,
-          "seek_food": 6
-        },
-        "resourceHealth": 0.984,
-        "foodZeroRatio": 0,
-        "woodZeroRatio": 0.032,
+        "woodZeroRatio": 0,
         "progressScore": 0.56,
-        "score": 0.715
+        "score": 0.894
       },
       {
-        "preset": "late_game_siege",
-        "tensionScore": 0.906,
-        "prosperityCV": 0.128,
-        "threatCV": 0.256,
-        "varietyScore": 0.916,
+        "preset": "resource_chains_basic",
+        "tensionScore": 1,
+        "prosperityCV": 0.114,
+        "threatCV": 0.203,
+        "varietyScore": 0.951,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 69,
+          "lumber": 116,
+          "quarry": 21,
+          "gather_herbs": 25,
+          "cook": 30,
+          "smith": 29,
+          "heal": 28,
+          "haul": 29,
+          "deliver": 82,
+          "seek_food": 3
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.56,
+        "score": 0.92
+      },
+      {
+        "preset": "full_processing",
+        "tensionScore": 0.981,
+        "prosperityCV": 0.125,
+        "threatCV": 0.314,
+        "varietyScore": 0.906,
         "intentDistribution": {
           "idle": 13,
           "farm": 68,
           "lumber": 184,
+          "quarry": 29,
+          "gather_herbs": 27,
+          "cook": 30,
+          "smith": 30,
+          "heal": 30,
+          "haul": 30,
+          "deliver": 5,
+          "seek_food": 1,
+          "eat": 1
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.65,
+        "score": 0.913
+      },
+      {
+        "preset": "tooled_colony",
+        "tensionScore": 0.887,
+        "prosperityCV": 0.11,
+        "threatCV": 0.263,
+        "varietyScore": 0.898,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 61,
+          "lumber": 195,
+          "quarry": 29,
+          "gather_herbs": 26,
+          "cook": 27,
+          "smith": 28,
+          "haul": 27,
+          "deliver": 38,
+          "seek_food": 2,
+          "wander": 1,
+          "rest": 1
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.73,
+        "score": 0.895
+      },
+      {
+        "preset": "high_threat",
+        "tensionScore": 0.943,
+        "prosperityCV": 0.113,
+        "threatCV": 0.118,
+        "varietyScore": 0.93,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 60,
+          "lumber": 169,
+          "quarry": 26,
+          "gather_herbs": 30,
+          "cook": 30,
+          "smith": 29,
+          "haul": 27,
+          "deliver": 60,
+          "seek_food": 1
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.52,
+        "score": 0.89
+      },
+      {
+        "preset": "skeleton_crew",
+        "tensionScore": 0.777,
+        "prosperityCV": 0.052,
+        "threatCV": 0.184,
+        "varietyScore": 0.852,
+        "intentDistribution": {
+          "idle": 4,
+          "farm": 55,
+          "lumber": 47,
           "quarry": 27,
+          "deliver": 15,
+          "gather_herbs": 21
+        },
+        "resourceHealth": 0.984,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0.032,
+        "progressScore": 0.58,
+        "score": 0.821
+      },
+      {
+        "preset": "large_colony",
+        "tensionScore": 0.5,
+        "prosperityCV": 0.052,
+        "threatCV": 0.035,
+        "varietyScore": 0.899,
+        "intentDistribution": {
+          "idle": 20,
+          "haul": 180,
+          "farm": 73,
+          "lumber": 183,
+          "deliver": 162,
+          "seek_food": 1,
+          "eat": 1
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.64,
+        "score": 0.766
+      },
+      {
+        "preset": "wildlife_heavy",
+        "tensionScore": 1,
+        "prosperityCV": 0.047,
+        "threatCV": 0.096,
+        "varietyScore": 0.903,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 60,
+          "lumber": 103,
+          "quarry": 17,
+          "gather_herbs": 30,
+          "haul": 20,
+          "deliver": 151,
+          "seek_food": 4,
+          "eat": 2
+        },
+        "resourceHealth": 0.984,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0.032,
+        "progressScore": 0.33,
+        "score": 0.867
+      },
+      {
+        "preset": "storm_start",
+        "tensionScore": 0.943,
+        "prosperityCV": 0.073,
+        "threatCV": 0.081,
+        "varietyScore": 0.933,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 48,
+          "lumber": 153,
+          "quarry": 25,
           "gather_herbs": 29,
+          "cook": 30,
+          "smith": 28,
+          "haul": 29,
+          "deliver": 79,
+          "heal": 7,
+          "seek_food": 4
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.56,
+        "score": 0.897
+      },
+      {
+        "preset": "default",
+        "tensionScore": 1,
+        "prosperityCV": 0.081,
+        "threatCV": 0.111,
+        "varietyScore": 0.923,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 57,
+          "lumber": 149,
+          "quarry": 23,
+          "gather_herbs": 27,
+          "cook": 27,
+          "smith": 27,
+          "haul": 24,
+          "deliver": 98,
+          "seek_food": 9,
+          "eat": 2,
+          "heal": 5
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.76,
+        "score": 0.941
+      },
+      {
+        "preset": "developed_colony",
+        "tensionScore": 0.998,
+        "prosperityCV": 0.126,
+        "threatCV": 0.319,
+        "varietyScore": 0.916,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 68,
+          "lumber": 185,
+          "quarry": 27,
+          "gather_herbs": 28,
           "cook": 30,
           "smith": 30,
           "heal": 30,
@@ -1539,78 +1410,214 @@
         "resourceHealth": 1,
         "foodZeroRatio": 0,
         "woodZeroRatio": 0,
-        "progressScore": 0.59,
-        "score": 0.885
+        "progressScore": 0.65,
+        "score": 0.922
+      },
+      {
+        "preset": "default",
+        "tensionScore": 0.663,
+        "prosperityCV": 0.094,
+        "threatCV": 0.131,
+        "varietyScore": 0.944,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 30,
+          "lumber": 103,
+          "quarry": 20,
+          "gather_herbs": 20,
+          "cook": 20,
+          "smith": 20,
+          "haul": 20,
+          "deliver": 52,
+          "heal": 3
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.56,
+        "score": 0.817
+      },
+      {
+        "preset": "default",
+        "tensionScore": 1,
+        "prosperityCV": 0.1,
+        "threatCV": 0.136,
+        "varietyScore": 0.931,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 26,
+          "lumber": 103,
+          "quarry": 17,
+          "gather_herbs": 18,
+          "cook": 20,
+          "smith": 19,
+          "haul": 15,
+          "deliver": 69,
+          "seek_food": 1
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.63,
+        "score": 0.924
+      },
+      {
+        "preset": "crisis_compound",
+        "tensionScore": 1,
+        "prosperityCV": 0.201,
+        "threatCV": 0.263,
+        "varietyScore": 0.921,
+        "intentDistribution": {
+          "idle": 4,
+          "farm": 55,
+          "lumber": 40,
+          "quarry": 27,
+          "deliver": 23,
+          "gather_herbs": 21,
+          "seek_food": 1,
+          "eat": 1
+        },
+        "resourceHealth": 0.968,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0.065,
+        "progressScore": 0.52,
+        "score": 0.896
+      },
+      {
+        "preset": "island_isolation",
+        "tensionScore": 1,
+        "prosperityCV": 0.033,
+        "threatCV": 0.115,
+        "varietyScore": 0.766,
+        "intentDistribution": {
+          "idle": 7,
+          "farm": 40,
+          "lumber": 117,
+          "deliver": 44,
+          "seek_food": 1,
+          "eat": 5
+        },
+        "resourceHealth": 0.5,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 1,
+        "progressScore": 0.17,
+        "score": 0.68
+      },
+      {
+        "preset": "population_boom",
+        "tensionScore": 0.902,
+        "prosperityCV": 0.11,
+        "threatCV": 0.162,
+        "varietyScore": 0.891,
+        "intentDistribution": {
+          "idle": 20,
+          "haul": 207,
+          "farm": 60,
+          "lumber": 201,
+          "deliver": 130,
+          "seek_food": 1,
+          "eat": 1
+        },
+        "resourceHealth": 0.935,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0.129,
+        "progressScore": 0.5,
+        "score": 0.847
+      },
+      {
+        "preset": "late_game_siege",
+        "tensionScore": 0.862,
+        "prosperityCV": 0.125,
+        "threatCV": 0.261,
+        "varietyScore": 0.934,
+        "intentDistribution": {
+          "idle": 13,
+          "farm": 53,
+          "lumber": 167,
+          "quarry": 26,
+          "gather_herbs": 23,
+          "cook": 27,
+          "smith": 25,
+          "heal": 28,
+          "haul": 29,
+          "deliver": 55,
+          "seek_food": 2
+        },
+        "resourceHealth": 1,
+        "foodZeroRatio": 0,
+        "woodZeroRatio": 0,
+        "progressScore": 0.65,
+        "score": 0.886
       },
       {
         "preset": "no_director",
-        "tensionScore": 0.578,
-        "prosperityCV": 0.092,
-        "threatCV": 0.164,
-        "varietyScore": 0.912,
+        "tensionScore": 0.734,
+        "prosperityCV": 0.116,
+        "threatCV": 0.201,
+        "varietyScore": 0.907,
         "intentDistribution": {
           "idle": 12,
-          "farm": 69,
-          "lumber": 132,
-          "quarry": 22,
-          "gather_herbs": 24,
+          "farm": 101,
+          "lumber": 146,
+          "quarry": 26,
+          "gather_herbs": 25,
           "haul": 13,
-          "deliver": 99,
+          "deliver": 48,
           "seek_rest": 1
         },
         "resourceHealth": 1,
         "foodZeroRatio": 0,
         "woodZeroRatio": 0,
         "progressScore": 0,
-        "score": 0.697
+        "score": 0.742
       }
     ]
   },
   "efficiency": {
-    "score": 0.752,
+    "score": 0.74,
     "grade": "C",
     "details": [
       {
         "preset": "default",
-        "deliveries": 55,
-        "deliveriesPerWorkerMin": 2.47,
+        "deliveries": 51,
+        "deliveriesPerWorkerMin": 2.29,
         "carryScore": 1,
         "idleRatio": 0.028,
         "idleScore": 1,
-        "processingCycles": 26,
-        "procUtilization": 0.535,
+        "processingCycles": 28,
+        "procUtilization": 0.559,
         "procScore": 1,
-        "avgDepotDistance": 1.8,
-        "depotScore": 0.847,
+        "avgDepotDistance": 1.9,
+        "depotScore": 0.843,
         "score": 0.969
       },
       {
         "preset": "default",
-        "deliveries": 24,
-        "deliveriesPerWorkerMin": 1.24,
-        "carryScore": 0.618,
+        "deliveries": 35,
+        "deliveriesPerWorkerMin": 1.8,
+        "carryScore": 0.902,
         "idleRatio": 0.032,
         "idleScore": 1,
-        "processingCycles": 18,
-        "procUtilization": 0.413,
-        "procScore": 0.827,
-        "avgDepotDistance": 3.9,
-        "depotScore": 0.679,
-        "score": 0.778
+        "processingCycles": 25,
+        "procUtilization": 0.447,
+        "procScore": 0.895,
+        "avgDepotDistance": 3.4,
+        "depotScore": 0.721,
+        "score": 0.888
       },
       {
         "preset": "default",
-        "deliveries": 27,
-        "deliveriesPerWorkerMin": 2.09,
-        "carryScore": 1,
+        "deliveries": 24,
+        "deliveriesPerWorkerMin": 1.86,
+        "carryScore": 0.93,
         "idleRatio": 0.048,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 3,
-        "depotScore": 0.752,
-        "score": 0.926
+        "avgDepotDistance": 5,
+        "depotScore": 0.582,
+        "score": 0.847
       },
       {
         "preset": "scarce_resources",
@@ -1622,9 +1629,9 @@
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 2.3,
-        "depotScore": 0.804,
-        "score": 0.708
+        "avgDepotDistance": 2.4,
+        "depotScore": 0.801,
+        "score": 0.707
       },
       {
         "preset": "abundant_resources",
@@ -1633,208 +1640,208 @@
         "carryScore": 0.277,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 4,
-        "procUtilization": 0.133,
-        "procScore": 0.267,
+        "processingCycles": 5,
+        "procUtilization": 0.167,
+        "procScore": 0.333,
         "avgDepotDistance": 2.1,
-        "depotScore": 0.828,
-        "score": 0.565
+        "depotScore": 0.825,
+        "score": 0.581
       },
       {
         "preset": "resource_chains_basic",
-        "deliveries": 27,
-        "deliveriesPerWorkerMin": 1.88,
-        "carryScore": 0.94,
+        "deliveries": 14,
+        "deliveriesPerWorkerMin": 0.98,
+        "carryScore": 0.488,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 19,
-        "procUtilization": 0.427,
-        "procScore": 0.854,
-        "avgDepotDistance": 2.6,
-        "depotScore": 0.786,
-        "score": 0.903
+        "processingCycles": 22,
+        "procUtilization": 0.494,
+        "procScore": 0.988,
+        "avgDepotDistance": 2.2,
+        "depotScore": 0.819,
+        "score": 0.807
       },
       {
         "preset": "full_processing",
-        "deliveries": 15,
-        "deliveriesPerWorkerMin": 1.04,
-        "carryScore": 0.519,
+        "deliveries": 1,
+        "deliveriesPerWorkerMin": 0.07,
+        "carryScore": 0.035,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 20,
-        "procUtilization": 0.444,
-        "procScore": 0.889,
-        "avgDepotDistance": 1.5,
-        "depotScore": 0.876,
-        "score": 0.803
+        "processingCycles": 14,
+        "procUtilization": 0.311,
+        "procScore": 0.622,
+        "avgDepotDistance": 1.7,
+        "depotScore": 0.859,
+        "score": 0.588
       },
       {
         "preset": "tooled_colony",
-        "deliveries": 12,
-        "deliveriesPerWorkerMin": 0.83,
-        "carryScore": 0.415,
-        "idleRatio": 0.029,
+        "deliveries": 11,
+        "deliveriesPerWorkerMin": 0.76,
+        "carryScore": 0.381,
+        "idleRatio": 0.031,
         "idleScore": 1,
         "processingCycles": 7,
         "procUtilization": 0.233,
         "procScore": 0.467,
-        "avgDepotDistance": 1.6,
-        "depotScore": 0.869,
-        "score": 0.665
+        "avgDepotDistance": 1.7,
+        "depotScore": 0.855,
+        "score": 0.652
       },
       {
         "preset": "high_threat",
-        "deliveries": 18,
-        "deliveriesPerWorkerMin": 1.25,
-        "carryScore": 0.627,
+        "deliveries": 7,
+        "deliveriesPerWorkerMin": 0.49,
+        "carryScore": 0.244,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 6,
-        "procUtilization": 0.185,
-        "procScore": 0.37,
-        "avgDepotDistance": 2.5,
-        "depotScore": 0.788,
-        "score": 0.688
+        "processingCycles": 3,
+        "procUtilization": 0.1,
+        "procScore": 0.2,
+        "avgDepotDistance": 2,
+        "depotScore": 0.831,
+        "score": 0.539
       },
       {
         "preset": "skeleton_crew",
-        "deliveries": 7,
-        "deliveriesPerWorkerMin": 1.28,
-        "carryScore": 0.642,
+        "deliveries": 5,
+        "deliveriesPerWorkerMin": 0.92,
+        "carryScore": 0.459,
         "idleRatio": 0.024,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 2.2,
-        "depotScore": 0.819,
-        "score": 0.802
+        "avgDepotDistance": 2.1,
+        "depotScore": 0.826,
+        "score": 0.731
       },
       {
         "preset": "large_colony",
-        "deliveries": 22,
-        "deliveriesPerWorkerMin": 1.1,
-        "carryScore": 0.55,
+        "deliveries": 24,
+        "deliveriesPerWorkerMin": 1.2,
+        "carryScore": 0.6,
         "idleRatio": 0.032,
         "idleScore": 1,
-        "processingCycles": 5,
-        "procUtilization": 0.148,
-        "procScore": 0.295,
-        "avgDepotDistance": 2.2,
-        "depotScore": 0.816,
-        "score": 0.652
+        "processingCycles": 16,
+        "procUtilization": 0.472,
+        "procScore": 0.945,
+        "avgDepotDistance": 1.7,
+        "depotScore": 0.86,
+        "score": 0.838
       },
       {
         "preset": "wildlife_heavy",
-        "deliveries": 31,
-        "deliveriesPerWorkerMin": 2.4,
-        "carryScore": 1,
+        "deliveries": 25,
+        "deliveriesPerWorkerMin": 1.94,
+        "carryScore": 0.969,
         "idleRatio": 0.033,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 2.4,
-        "depotScore": 0.799,
-        "score": 0.94
+        "avgDepotDistance": 3.8,
+        "depotScore": 0.684,
+        "score": 0.893
       },
       {
         "preset": "storm_start",
-        "deliveries": 15,
-        "deliveriesPerWorkerMin": 1.04,
-        "carryScore": 0.522,
+        "deliveries": 18,
+        "deliveriesPerWorkerMin": 1.25,
+        "carryScore": 0.627,
         "idleRatio": 0.029,
         "idleScore": 1,
         "processingCycles": 9,
-        "procUtilization": 0.3,
-        "procScore": 0.6,
-        "avgDepotDistance": 1.9,
-        "depotScore": 0.845,
-        "score": 0.726
+        "procUtilization": 0.27,
+        "procScore": 0.539,
+        "avgDepotDistance": 2.2,
+        "depotScore": 0.819,
+        "score": 0.737
       },
       {
         "preset": "default",
-        "deliveries": 41,
-        "deliveriesPerWorkerMin": 1.84,
-        "carryScore": 0.919,
+        "deliveries": 39,
+        "deliveriesPerWorkerMin": 1.75,
+        "carryScore": 0.874,
         "idleRatio": 0.028,
         "idleScore": 1,
-        "processingCycles": 24,
-        "procUtilization": 0.501,
-        "procScore": 1,
-        "avgDepotDistance": 1.9,
-        "depotScore": 0.841,
-        "score": 0.944
+        "processingCycles": 23,
+        "procUtilization": 0.473,
+        "procScore": 0.946,
+        "avgDepotDistance": 1.8,
+        "depotScore": 0.849,
+        "score": 0.918
       },
       {
         "preset": "developed_colony",
-        "deliveries": 2,
-        "deliveriesPerWorkerMin": 0.14,
-        "carryScore": 0.069,
+        "deliveries": 4,
+        "deliveriesPerWorkerMin": 0.28,
+        "carryScore": 0.138,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 28,
-        "procUtilization": 0.622,
+        "processingCycles": 31,
+        "procUtilization": 0.689,
         "procScore": 1,
-        "avgDepotDistance": 1,
-        "depotScore": 0.919,
-        "score": 0.705
+        "avgDepotDistance": 1.2,
+        "depotScore": 0.897,
+        "score": 0.721
       },
       {
         "preset": "default",
-        "deliveries": 16,
-        "deliveriesPerWorkerMin": 1.12,
-        "carryScore": 0.558,
+        "deliveries": 14,
+        "deliveriesPerWorkerMin": 0.98,
+        "carryScore": 0.488,
         "idleRatio": 0.043,
         "idleScore": 1,
-        "processingCycles": 4,
-        "procUtilization": 0.133,
-        "procScore": 0.267,
+        "processingCycles": 5,
+        "procUtilization": 0.156,
+        "procScore": 0.311,
         "avgDepotDistance": 2.5,
-        "depotScore": 0.795,
-        "score": 0.643
+        "depotScore": 0.791,
+        "score": 0.633
       },
       {
         "preset": "default",
-        "deliveries": 27,
-        "deliveriesPerWorkerMin": 1.88,
-        "carryScore": 0.942,
+        "deliveries": 32,
+        "deliveriesPerWorkerMin": 2.23,
+        "carryScore": 1,
         "idleRatio": 0.043,
         "idleScore": 1,
-        "processingCycles": 16,
-        "procUtilization": 0.546,
+        "processingCycles": 19,
+        "procUtilization": 0.649,
         "procScore": 1,
-        "avgDepotDistance": 1.9,
-        "depotScore": 0.838,
-        "score": 0.95
+        "avgDepotDistance": 2,
+        "depotScore": 0.833,
+        "score": 0.967
       },
       {
         "preset": "crisis_compound",
-        "deliveries": 6,
-        "deliveriesPerWorkerMin": 1.08,
-        "carryScore": 0.541,
+        "deliveries": 5,
+        "deliveriesPerWorkerMin": 0.9,
+        "carryScore": 0.451,
         "idleRatio": 0.023,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 2.5,
-        "depotScore": 0.796,
-        "score": 0.755
+        "avgDepotDistance": 2.6,
+        "depotScore": 0.78,
+        "score": 0.714
       },
       {
         "preset": "island_isolation",
-        "deliveries": 1,
-        "deliveriesPerWorkerMin": 0.14,
-        "carryScore": 0.072,
+        "deliveries": 5,
+        "deliveriesPerWorkerMin": 0.72,
+        "carryScore": 0.362,
         "idleRatio": 0.033,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 12.2,
-        "depotScore": 0,
-        "score": 0.329
+        "avgDepotDistance": 10.6,
+        "depotScore": 0.119,
+        "score": 0.481
       },
       {
         "preset": "population_boom",
@@ -1846,37 +1853,37 @@
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 2,
-        "depotScore": 0.83,
-        "score": 0.659
+        "avgDepotDistance": 2.1,
+        "depotScore": 0.827,
+        "score": 0.658
       },
       {
         "preset": "late_game_siege",
-        "deliveries": 3,
-        "deliveriesPerWorkerMin": 0.21,
-        "carryScore": 0.104,
+        "deliveries": 10,
+        "deliveriesPerWorkerMin": 0.69,
+        "carryScore": 0.346,
         "idleRatio": 0.029,
         "idleScore": 1,
-        "processingCycles": 29,
-        "procUtilization": 0.644,
+        "processingCycles": 25,
+        "procUtilization": 0.556,
         "procScore": 1,
-        "avgDepotDistance": 1.5,
-        "depotScore": 0.873,
-        "score": 0.706
+        "avgDepotDistance": 1.4,
+        "depotScore": 0.882,
+        "score": 0.78
       },
       {
         "preset": "no_director",
-        "deliveries": 13,
-        "deliveriesPerWorkerMin": 1.08,
-        "carryScore": 0.542,
+        "deliveries": 8,
+        "deliveriesPerWorkerMin": 0.67,
+        "carryScore": 0.333,
         "idleRatio": 0.032,
         "idleScore": 1,
         "processingCycles": 0,
         "procUtilization": 0,
         "procScore": 0,
-        "avgDepotDistance": 3.6,
-        "depotScore": 0.701,
-        "score": 0.727
+        "avgDepotDistance": 3.9,
+        "depotScore": 0.676,
+        "score": 0.636
       }
     ]
   },
@@ -1886,250 +1893,250 @@
     "details": [
       {
         "preset": "default",
-        "roadCoverage": 0.329,
-        "warehouseDistScore": 0.618,
-        "avgDepotStdDev": 5.73,
+        "roadCoverage": 0.333,
+        "warehouseDistScore": 0.616,
+        "avgDepotStdDev": 5.76,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.468,
-        "score": 0.52
+        "resourceBalance": 0.278,
+        "score": 0.473
       },
       {
         "preset": "default",
-        "roadCoverage": 0.35,
-        "warehouseDistScore": 0.359,
-        "avgDepotStdDev": 9.62,
-        "chainCompleteness": 0.556,
-        "resourceBalance": 0.271,
-        "score": 0.384
+        "roadCoverage": 0.337,
+        "warehouseDistScore": 0.658,
+        "avgDepotStdDev": 5.13,
+        "chainCompleteness": 0.722,
+        "resourceBalance": 0.212,
+        "score": 0.482
       },
       {
         "preset": "default",
-        "roadCoverage": 0.924,
-        "warehouseDistScore": 0.691,
-        "avgDepotStdDev": 4.64,
+        "roadCoverage": 0.886,
+        "warehouseDistScore": 0.66,
+        "avgDepotStdDev": 5.09,
         "chainCompleteness": 0,
-        "resourceBalance": 0.153,
-        "score": 0.442
+        "resourceBalance": 0.147,
+        "score": 0.423
       },
       {
         "preset": "scarce_resources",
-        "roadCoverage": 0.19,
-        "warehouseDistScore": 0.518,
-        "avgDepotStdDev": 7.22,
+        "roadCoverage": 0.187,
+        "warehouseDistScore": 0.542,
+        "avgDepotStdDev": 6.87,
         "chainCompleteness": 0,
-        "resourceBalance": 0.171,
-        "score": 0.22
+        "resourceBalance": 0.189,
+        "score": 0.23
       },
       {
         "preset": "abundant_resources",
         "roadCoverage": 0.342,
-        "warehouseDistScore": 0.693,
-        "avgDepotStdDev": 4.6,
+        "warehouseDistScore": 0.649,
+        "avgDepotStdDev": 5.27,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.267,
-        "score": 0.492
+        "resourceBalance": 0.252,
+        "score": 0.477
       },
       {
         "preset": "resource_chains_basic",
-        "roadCoverage": 0.238,
-        "warehouseDistScore": 0.581,
-        "avgDepotStdDev": 6.29,
+        "roadCoverage": 0.233,
+        "warehouseDistScore": 0.585,
+        "avgDepotStdDev": 6.22,
         "chainCompleteness": 0.944,
-        "resourceBalance": 0.441,
-        "score": 0.551
+        "resourceBalance": 0.516,
+        "score": 0.57
       },
       {
         "preset": "full_processing",
         "roadCoverage": 0.367,
-        "warehouseDistScore": 0.456,
-        "avgDepotStdDev": 8.16,
+        "warehouseDistScore": 0.455,
+        "avgDepotStdDev": 8.17,
         "chainCompleteness": 1,
-        "resourceBalance": 0.339,
-        "score": 0.54
+        "resourceBalance": 0.324,
+        "score": 0.537
       },
       {
         "preset": "tooled_colony",
         "roadCoverage": 0.374,
-        "warehouseDistScore": 0.403,
-        "avgDepotStdDev": 8.95,
+        "warehouseDistScore": 0.493,
+        "avgDepotStdDev": 7.6,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.366,
-        "score": 0.452
+        "resourceBalance": 0.39,
+        "score": 0.481
       },
       {
         "preset": "high_threat",
         "roadCoverage": 0.226,
-        "warehouseDistScore": 0.635,
-        "avgDepotStdDev": 5.47,
+        "warehouseDistScore": 0.658,
+        "avgDepotStdDev": 5.14,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.309,
+        "resourceBalance": 0.287,
         "score": 0.459
       },
       {
         "preset": "skeleton_crew",
         "roadCoverage": 0.187,
-        "warehouseDistScore": 0.477,
-        "avgDepotStdDev": 7.84,
+        "warehouseDistScore": 0.364,
+        "avgDepotStdDev": 9.55,
         "chainCompleteness": 0,
-        "resourceBalance": 0.313,
-        "score": 0.244
+        "resourceBalance": 0.311,
+        "score": 0.215
       },
       {
         "preset": "large_colony",
         "roadCoverage": 0.269,
-        "warehouseDistScore": 0.629,
-        "avgDepotStdDev": 5.56,
+        "warehouseDistScore": 0.596,
+        "avgDepotStdDev": 6.06,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.277,
-        "score": 0.461
+        "resourceBalance": 0.315,
+        "score": 0.462
       },
       {
         "preset": "wildlife_heavy",
         "roadCoverage": 0.828,
-        "warehouseDistScore": 0.728,
-        "avgDepotStdDev": 4.08,
+        "warehouseDistScore": 0.661,
+        "avgDepotStdDev": 5.09,
         "chainCompleteness": 0,
-        "resourceBalance": 0.141,
-        "score": 0.424
+        "resourceBalance": 0.125,
+        "score": 0.404
       },
       {
         "preset": "storm_start",
         "roadCoverage": 0.226,
-        "warehouseDistScore": 0.666,
-        "avgDepotStdDev": 5.01,
-        "chainCompleteness": 0.667,
-        "resourceBalance": 0.296,
-        "score": 0.464
+        "warehouseDistScore": 0.633,
+        "avgDepotStdDev": 5.51,
+        "chainCompleteness": 0.722,
+        "resourceBalance": 0.286,
+        "score": 0.467
       },
       {
         "preset": "default",
         "roadCoverage": 0.329,
-        "warehouseDistScore": 0.64,
-        "avgDepotStdDev": 5.4,
-        "chainCompleteness": 0.611,
-        "resourceBalance": 0.5,
-        "score": 0.52
+        "warehouseDistScore": 0.585,
+        "avgDepotStdDev": 6.22,
+        "chainCompleteness": 0.667,
+        "resourceBalance": 0.463,
+        "score": 0.511
       },
       {
         "preset": "developed_colony",
         "roadCoverage": 0.449,
-        "warehouseDistScore": 0.447,
-        "avgDepotStdDev": 8.3,
+        "warehouseDistScore": 0.476,
+        "avgDepotStdDev": 7.86,
         "chainCompleteness": 1,
-        "resourceBalance": 0.372,
-        "score": 0.567
+        "resourceBalance": 0.374,
+        "score": 0.575
       },
       {
         "preset": "default",
         "roadCoverage": 0.456,
-        "warehouseDistScore": 0.774,
-        "avgDepotStdDev": 3.39,
+        "warehouseDistScore": 0.752,
+        "avgDepotStdDev": 3.72,
         "chainCompleteness": 0.667,
-        "resourceBalance": 0.335,
-        "score": 0.558
+        "resourceBalance": 0.323,
+        "score": 0.549
       },
       {
         "preset": "default",
         "roadCoverage": 0.315,
-        "warehouseDistScore": 0.659,
-        "avgDepotStdDev": 5.12,
+        "warehouseDistScore": 0.693,
+        "avgDepotStdDev": 4.6,
         "chainCompleteness": 0.583,
-        "resourceBalance": 0.367,
-        "score": 0.481
+        "resourceBalance": 0.368,
+        "score": 0.49
       },
       {
         "preset": "crisis_compound",
-        "roadCoverage": 0.184,
-        "warehouseDistScore": 0.343,
-        "avgDepotStdDev": 9.86,
+        "roadCoverage": 0.187,
+        "warehouseDistScore": 0.247,
+        "avgDepotStdDev": 11.29,
         "chainCompleteness": 0,
-        "resourceBalance": 0.207,
-        "score": 0.183
+        "resourceBalance": 0.199,
+        "score": 0.158
       },
       {
         "preset": "island_isolation",
-        "roadCoverage": 0.556,
-        "warehouseDistScore": 0.48,
-        "avgDepotStdDev": 7.8,
+        "roadCoverage": 0.667,
+        "warehouseDistScore": 0.474,
+        "avgDepotStdDev": 7.9,
         "chainCompleteness": 0,
-        "resourceBalance": 0,
-        "score": 0.259
+        "resourceBalance": 0.001,
+        "score": 0.285
       },
       {
         "preset": "population_boom",
         "roadCoverage": 0.187,
-        "warehouseDistScore": 0.545,
-        "avgDepotStdDev": 6.83,
+        "warehouseDistScore": 0.552,
+        "avgDepotStdDev": 6.73,
         "chainCompleteness": 0,
-        "resourceBalance": 0.171,
-        "score": 0.226
+        "resourceBalance": 0.176,
+        "score": 0.229
       },
       {
         "preset": "late_game_siege",
         "roadCoverage": 0.449,
-        "warehouseDistScore": 0.469,
-        "avgDepotStdDev": 7.96,
+        "warehouseDistScore": 0.439,
+        "avgDepotStdDev": 8.42,
         "chainCompleteness": 1,
-        "resourceBalance": 0.374,
-        "score": 0.573
+        "resourceBalance": 0.373,
+        "score": 0.565
       },
       {
         "preset": "no_director",
         "roadCoverage": 0.171,
-        "warehouseDistScore": 0.592,
-        "avgDepotStdDev": 6.12,
+        "warehouseDistScore": 0.562,
+        "avgDepotStdDev": 6.58,
         "chainCompleteness": 0,
-        "resourceBalance": 0.79,
-        "score": 0.388
+        "resourceBalance": 0.798,
+        "score": 0.382
       }
     ]
   },
   "reasonableness": {
-    "score": 0.871,
+    "score": 0.881,
     "grade": "B",
     "details": [
       {
         "preset": "default",
-        "avgBehaviorDiversity": 0.787,
-        "variedTransitions": 13,
-        "variationFraction": 0.433,
+        "avgBehaviorDiversity": 0.804,
+        "variedTransitions": 15,
+        "variationFraction": 0.5,
         "nonRepetitionScore": 1,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.913,
-        "score": 0.91
+        "productivityRate": 0.893,
+        "score": 0.909
       },
       {
         "preset": "default",
-        "avgBehaviorDiversity": 0.822,
-        "variedTransitions": 9,
-        "variationFraction": 0.3,
+        "avgBehaviorDiversity": 0.833,
+        "variedTransitions": 12,
+        "variationFraction": 0.4,
         "nonRepetitionScore": 1,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.831,
-        "score": 0.896
+        "productivityRate": 0.888,
+        "score": 0.916
       },
       {
         "preset": "default",
-        "avgBehaviorDiversity": 0.773,
-        "variedTransitions": 6,
-        "variationFraction": 0.3,
+        "avgBehaviorDiversity": 0.766,
+        "variedTransitions": 5,
+        "variationFraction": 0.25,
         "nonRepetitionScore": 1,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.882,
-        "score": 0.897
+        "productivityRate": 0.875,
+        "score": 0.892
       },
       {
         "preset": "scarce_resources",
-        "avgBehaviorDiversity": 0.762,
+        "avgBehaviorDiversity": 0.74,
         "variedTransitions": 7,
         "variationFraction": 0.233,
         "nonRepetitionScore": 1,
@@ -2137,90 +2144,38 @@
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.906,
-        "score": 0.9
+        "productivityRate": 0.894,
+        "score": 0.89
       },
       {
         "preset": "abundant_resources",
-        "avgBehaviorDiversity": 0.809,
-        "variedTransitions": 6,
-        "variationFraction": 0.2,
+        "avgBehaviorDiversity": 0.795,
+        "variedTransitions": 4,
+        "variationFraction": 0.133,
         "nonRepetitionScore": 1,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
         "productivityRate": 0.892,
-        "score": 0.91
+        "score": 0.906
       },
       {
         "preset": "resource_chains_basic",
-        "avgBehaviorDiversity": 0.821,
-        "variedTransitions": 9,
-        "variationFraction": 0.3,
+        "avgBehaviorDiversity": 0.837,
+        "variedTransitions": 10,
+        "variationFraction": 0.333,
         "nonRepetitionScore": 1,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.89,
-        "score": 0.913
+        "productivityRate": 0.894,
+        "score": 0.919
       },
       {
         "preset": "full_processing",
-        "avgBehaviorDiversity": 0.822,
-        "variedTransitions": 4,
-        "variationFraction": 0.133,
-        "nonRepetitionScore": 1,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.896,
-        "score": 0.915
-      },
-      {
-        "preset": "tooled_colony",
-        "avgBehaviorDiversity": 0.798,
-        "variedTransitions": 4,
-        "variationFraction": 0.133,
-        "nonRepetitionScore": 1,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.896,
-        "score": 0.908
-      },
-      {
-        "preset": "high_threat",
-        "avgBehaviorDiversity": 0.752,
-        "variedTransitions": 2,
-        "variationFraction": 0.067,
-        "nonRepetitionScore": 0.556,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.886,
-        "score": 0.802
-      },
-      {
-        "preset": "skeleton_crew",
-        "avgBehaviorDiversity": 0.889,
-        "variedTransitions": 14,
-        "variationFraction": 0.467,
-        "nonRepetitionScore": 1,
-        "coherenceScore": 0.67,
-        "hasEatIntent": false,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.96,
-        "score": 0.889
-      },
-      {
-        "preset": "large_colony",
-        "avgBehaviorDiversity": 0.814,
+        "avgBehaviorDiversity": 0.823,
         "variedTransitions": 3,
         "variationFraction": 0.1,
         "nonRepetitionScore": 0.833,
@@ -2228,77 +2183,116 @@
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.671,
-        "score": 0.812
+        "productivityRate": 0.894,
+        "score": 0.882
       },
       {
-        "preset": "wildlife_heavy",
-        "avgBehaviorDiversity": 0.723,
-        "variedTransitions": 4,
-        "variationFraction": 0.133,
-        "nonRepetitionScore": 1,
+        "preset": "tooled_colony",
+        "avgBehaviorDiversity": 0.788,
+        "variedTransitions": 3,
+        "variationFraction": 0.1,
+        "nonRepetitionScore": 0.833,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.923,
-        "score": 0.894
+        "productivityRate": 0.897,
+        "score": 0.872
       },
       {
-        "preset": "storm_start",
+        "preset": "high_threat",
         "avgBehaviorDiversity": 0.772,
-        "variedTransitions": 4,
-        "variationFraction": 0.133,
-        "nonRepetitionScore": 1,
+        "variedTransitions": 2,
+        "variationFraction": 0.067,
+        "nonRepetitionScore": 0.556,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.896,
-        "score": 0.9
+        "productivityRate": 0.902,
+        "score": 0.813
       },
       {
-        "preset": "default",
-        "avgBehaviorDiversity": 0.807,
-        "variedTransitions": 7,
-        "variationFraction": 0.233,
-        "nonRepetitionScore": 1,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.905,
-        "score": 0.913
-      },
-      {
-        "preset": "developed_colony",
-        "avgBehaviorDiversity": 0.822,
-        "variedTransitions": 1,
-        "variationFraction": 0.033,
-        "nonRepetitionScore": 0.278,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.898,
-        "score": 0.772
-      },
-      {
-        "preset": "default",
-        "avgBehaviorDiversity": 0.786,
-        "variedTransitions": 5,
-        "variationFraction": 0.25,
+        "preset": "skeleton_crew",
+        "avgBehaviorDiversity": 0.91,
+        "variedTransitions": 15,
+        "variationFraction": 0.5,
         "nonRepetitionScore": 1,
         "coherenceScore": 0.67,
         "hasEatIntent": false,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.896,
-        "score": 0.839
+        "productivityRate": 0.96,
+        "score": 0.895
+      },
+      {
+        "preset": "large_colony",
+        "avgBehaviorDiversity": 0.766,
+        "variedTransitions": 3,
+        "variationFraction": 0.1,
+        "nonRepetitionScore": 0.833,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.674,
+        "score": 0.799
+      },
+      {
+        "preset": "wildlife_heavy",
+        "avgBehaviorDiversity": 0.747,
+        "variedTransitions": 5,
+        "variationFraction": 0.167,
+        "nonRepetitionScore": 1,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.9,
+        "score": 0.894
+      },
+      {
+        "preset": "storm_start",
+        "avgBehaviorDiversity": 0.787,
+        "variedTransitions": 4,
+        "variationFraction": 0.133,
+        "nonRepetitionScore": 1,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.892,
+        "score": 0.904
       },
       {
         "preset": "default",
-        "avgBehaviorDiversity": 0.773,
+        "avgBehaviorDiversity": 0.798,
+        "variedTransitions": 11,
+        "variationFraction": 0.367,
+        "nonRepetitionScore": 1,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.891,
+        "score": 0.907
+      },
+      {
+        "preset": "developed_colony",
+        "avgBehaviorDiversity": 0.823,
+        "variedTransitions": 3,
+        "variationFraction": 0.1,
+        "nonRepetitionScore": 0.833,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.896,
+        "score": 0.882
+      },
+      {
+        "preset": "default",
+        "avgBehaviorDiversity": 0.787,
         "variedTransitions": 8,
         "variationFraction": 0.4,
         "nonRepetitionScore": 1,
@@ -2306,12 +2300,25 @@
         "hasEatIntent": false,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
+        "productivityRate": 0.882,
+        "score": 0.835
+      },
+      {
+        "preset": "default",
+        "avgBehaviorDiversity": 0.771,
+        "variedTransitions": 8,
+        "variationFraction": 0.4,
+        "nonRepetitionScore": 1,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
         "productivityRate": 0.895,
-        "score": 0.834
+        "score": 0.9
       },
       {
         "preset": "crisis_compound",
-        "avgBehaviorDiversity": 0.909,
+        "avgBehaviorDiversity": 0.913,
         "variedTransitions": 14,
         "variationFraction": 0.467,
         "nonRepetitionScore": 1,
@@ -2320,24 +2327,11 @@
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
         "productivityRate": 0.959,
-        "score": 0.96
+        "score": 0.961
       },
       {
         "preset": "island_isolation",
-        "avgBehaviorDiversity": 0.812,
-        "variedTransitions": 2,
-        "variationFraction": 0.067,
-        "nonRepetitionScore": 0.556,
-        "coherenceScore": 1,
-        "hasEatIntent": true,
-        "hasDeliverIntent": true,
-        "hasWorkIntents": true,
-        "productivityRate": 0.935,
-        "score": 0.835
-      },
-      {
-        "preset": "population_boom",
-        "avgBehaviorDiversity": 0.816,
+        "avgBehaviorDiversity": 0.755,
         "variedTransitions": 4,
         "variationFraction": 0.133,
         "nonRepetitionScore": 1,
@@ -2345,249 +2339,262 @@
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
-        "productivityRate": 0.639,
-        "score": 0.836
+        "productivityRate": 0.935,
+        "score": 0.907
+      },
+      {
+        "preset": "population_boom",
+        "avgBehaviorDiversity": 0.826,
+        "variedTransitions": 5,
+        "variationFraction": 0.167,
+        "nonRepetitionScore": 1,
+        "coherenceScore": 1,
+        "hasEatIntent": true,
+        "hasDeliverIntent": true,
+        "hasWorkIntents": true,
+        "productivityRate": 0.631,
+        "score": 0.837
       },
       {
         "preset": "late_game_siege",
-        "avgBehaviorDiversity": 0.824,
-        "variedTransitions": 1,
-        "variationFraction": 0.033,
-        "nonRepetitionScore": 0.278,
+        "avgBehaviorDiversity": 0.805,
+        "variedTransitions": 2,
+        "variationFraction": 0.067,
+        "nonRepetitionScore": 0.556,
         "coherenceScore": 1,
         "hasEatIntent": true,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
         "productivityRate": 0.896,
-        "score": 0.771
+        "score": 0.821
       },
       {
         "preset": "no_director",
-        "avgBehaviorDiversity": 0.786,
-        "variedTransitions": 7,
-        "variationFraction": 0.233,
+        "avgBehaviorDiversity": 0.765,
+        "variedTransitions": 6,
+        "variationFraction": 0.2,
         "nonRepetitionScore": 1,
         "coherenceScore": 0.67,
         "hasEatIntent": false,
         "hasDeliverIntent": true,
         "hasWorkIntents": true,
         "productivityRate": 0.93,
-        "score": 0.849
+        "score": 0.843
       }
     ]
   },
   "adaptability": {
-    "score": 0.782,
+    "score": 0.779,
     "grade": "C",
     "details": [
       {
         "preset": "default",
         "weatherChanges": 4,
-        "weatherResponse": 0.896,
-        "resourceDips": 1,
-        "crisisRecovery": 0.321,
+        "weatherResponse": 0.925,
+        "resourceDips": 2,
+        "crisisRecovery": 0.12,
         "deaths": 1,
-        "deathImpact": 0.935,
+        "deathImpact": 0.916,
         "rebalanceScore": 1,
-        "score": 0.752
+        "score": 0.697
       },
       {
         "preset": "default",
         "weatherChanges": 4,
-        "weatherResponse": 0.898,
+        "weatherResponse": 0.915,
         "resourceDips": 1,
         "crisisRecovery": 0,
         "deaths": 1,
-        "deathImpact": 0.901,
+        "deathImpact": 0.898,
         "rebalanceScore": 1,
-        "score": 0.65
+        "score": 0.654
       },
       {
         "preset": "default",
         "weatherChanges": 2,
-        "weatherResponse": 1,
+        "weatherResponse": 0.994,
         "resourceDips": 1,
         "crisisRecovery": 0,
         "deaths": 1,
-        "deathImpact": 0.991,
+        "deathImpact": 1,
         "rebalanceScore": 1,
         "score": 0.698
       },
       {
         "preset": "scarce_resources",
         "weatherChanges": 2,
-        "weatherResponse": 0.894,
+        "weatherResponse": 0.917,
         "resourceDips": 2,
         "crisisRecovery": 0.254,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.745
-      },
-      {
-        "preset": "abundant_resources",
-        "weatherChanges": 2,
-        "weatherResponse": 0.992,
-        "resourceDips": 0,
-        "crisisRecovery": 1,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.998
-      },
-      {
-        "preset": "resource_chains_basic",
-        "weatherChanges": 2,
-        "weatherResponse": 0.616,
-        "resourceDips": 2,
-        "crisisRecovery": 0.499,
-        "deaths": 1,
-        "deathImpact": 0.871,
-        "rebalanceScore": 1,
-        "score": 0.709
-      },
-      {
-        "preset": "full_processing",
-        "weatherChanges": 2,
-        "weatherResponse": 0.96,
-        "resourceDips": 0,
-        "crisisRecovery": 1,
-        "deaths": 1,
-        "deathImpact": 0.924,
-        "rebalanceScore": 1,
-        "score": 0.973
-      },
-      {
-        "preset": "tooled_colony",
-        "weatherChanges": 2,
-        "weatherResponse": 0.954,
-        "resourceDips": 2,
-        "crisisRecovery": 0.231,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.755
-      },
-      {
-        "preset": "high_threat",
-        "weatherChanges": 2,
-        "weatherResponse": 0.906,
-        "resourceDips": 1,
-        "crisisRecovery": 0,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.672
-      },
-      {
-        "preset": "skeleton_crew",
-        "weatherChanges": 2,
-        "weatherResponse": 0.838,
-        "resourceDips": 2,
-        "crisisRecovery": 0,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.652
-      },
-      {
-        "preset": "large_colony",
-        "weatherChanges": 2,
-        "weatherResponse": 0.95,
-        "resourceDips": 1,
-        "crisisRecovery": 0,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.685
-      },
-      {
-        "preset": "wildlife_heavy",
-        "weatherChanges": 2,
-        "weatherResponse": 1,
-        "resourceDips": 1,
-        "crisisRecovery": 0,
-        "deaths": 7,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.7
-      },
-      {
-        "preset": "storm_start",
-        "weatherChanges": 3,
-        "weatherResponse": 0.951,
-        "resourceDips": 2,
-        "crisisRecovery": 0.232,
-        "deaths": 1,
-        "deathImpact": 0.956,
-        "rebalanceScore": 1,
-        "score": 0.746
-      },
-      {
-        "preset": "default",
-        "weatherChanges": 3,
-        "weatherResponse": 0.94,
-        "resourceDips": 1,
-        "crisisRecovery": 0.297,
-        "deaths": 1,
-        "deathImpact": 0.924,
-        "rebalanceScore": 1,
-        "score": 0.756
-      },
-      {
-        "preset": "developed_colony",
-        "weatherChanges": 2,
-        "weatherResponse": 0.946,
-        "resourceDips": 0,
-        "crisisRecovery": 1,
-        "deaths": 1,
-        "deathImpact": 0.946,
-        "rebalanceScore": 1,
-        "score": 0.973
-      },
-      {
-        "preset": "default",
-        "weatherChanges": 2,
-        "weatherResponse": 1,
-        "resourceDips": 1,
-        "crisisRecovery": 0.523,
-        "deaths": 1,
-        "deathImpact": 1,
-        "rebalanceScore": 1,
-        "score": 0.857
-      },
-      {
-        "preset": "default",
-        "weatherChanges": 2,
-        "weatherResponse": 0.973,
-        "resourceDips": 1,
-        "crisisRecovery": 0.427,
-        "deaths": 1,
-        "deathImpact": 0.912,
-        "rebalanceScore": 1,
-        "score": 0.802
-      },
-      {
-        "preset": "crisis_compound",
-        "weatherChanges": 3,
-        "weatherResponse": 0.91,
-        "resourceDips": 2,
-        "crisisRecovery": 0.259,
         "deaths": 1,
         "deathImpact": 1,
         "rebalanceScore": 1,
         "score": 0.751
       },
       {
+        "preset": "abundant_resources",
+        "weatherChanges": 2,
+        "weatherResponse": 0.9,
+        "resourceDips": 1,
+        "crisisRecovery": 0,
+        "deaths": 1,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.67
+      },
+      {
+        "preset": "resource_chains_basic",
+        "weatherChanges": 2,
+        "weatherResponse": 0.815,
+        "resourceDips": 2,
+        "crisisRecovery": 0.499,
+        "deaths": 0,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.794
+      },
+      {
+        "preset": "full_processing",
+        "weatherChanges": 2,
+        "weatherResponse": 0.965,
+        "resourceDips": 0,
+        "crisisRecovery": 1,
+        "deaths": 1,
+        "deathImpact": 0.962,
+        "rebalanceScore": 1,
+        "score": 0.982
+      },
+      {
+        "preset": "tooled_colony",
+        "weatherChanges": 2,
+        "weatherResponse": 0.996,
+        "resourceDips": 1,
+        "crisisRecovery": 0.461,
+        "deaths": 1,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.837
+      },
+      {
+        "preset": "high_threat",
+        "weatherChanges": 2,
+        "weatherResponse": 0.883,
+        "resourceDips": 2,
+        "crisisRecovery": 0.072,
+        "deaths": 1,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.687
+      },
+      {
+        "preset": "skeleton_crew",
+        "weatherChanges": 2,
+        "weatherResponse": 0.853,
+        "resourceDips": 1,
+        "crisisRecovery": 0,
+        "deaths": 1,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.656
+      },
+      {
+        "preset": "large_colony",
+        "weatherChanges": 2,
+        "weatherResponse": 1,
+        "resourceDips": 0,
+        "crisisRecovery": 1,
+        "deaths": 1,
+        "deathImpact": 0.994,
+        "rebalanceScore": 1,
+        "score": 0.999
+      },
+      {
+        "preset": "wildlife_heavy",
+        "weatherChanges": 2,
+        "weatherResponse": 0.997,
+        "resourceDips": 1,
+        "crisisRecovery": 0,
+        "deaths": 7,
+        "deathImpact": 0.993,
+        "rebalanceScore": 1,
+        "score": 0.698
+      },
+      {
+        "preset": "storm_start",
+        "weatherChanges": 3,
+        "weatherResponse": 0.941,
+        "resourceDips": 2,
+        "crisisRecovery": 0.232,
+        "deaths": 1,
+        "deathImpact": 0.958,
+        "rebalanceScore": 1,
+        "score": 0.744
+      },
+      {
+        "preset": "default",
+        "weatherChanges": 4,
+        "weatherResponse": 0.928,
+        "resourceDips": 1,
+        "crisisRecovery": 0.273,
+        "deaths": 1,
+        "deathImpact": 0.896,
+        "rebalanceScore": 1,
+        "score": 0.74
+      },
+      {
+        "preset": "developed_colony",
+        "weatherChanges": 2,
+        "weatherResponse": 0.944,
+        "resourceDips": 0,
+        "crisisRecovery": 1,
+        "deaths": 1,
+        "deathImpact": 0.919,
+        "rebalanceScore": 1,
+        "score": 0.967
+      },
+      {
+        "preset": "default",
+        "weatherChanges": 2,
+        "weatherResponse": 0.957,
+        "resourceDips": 2,
+        "crisisRecovery": 0.263,
+        "deaths": 1,
+        "deathImpact": 0.988,
+        "rebalanceScore": 1,
+        "score": 0.764
+      },
+      {
+        "preset": "default",
+        "weatherChanges": 2,
+        "weatherResponse": 0.907,
+        "resourceDips": 1,
+        "crisisRecovery": 0.417,
+        "deaths": 1,
+        "deathImpact": 0.823,
+        "rebalanceScore": 1,
+        "score": 0.762
+      },
+      {
+        "preset": "crisis_compound",
+        "weatherChanges": 3,
+        "weatherResponse": 0.921,
+        "resourceDips": 2,
+        "crisisRecovery": 0.259,
+        "deaths": 1,
+        "deathImpact": 1,
+        "rebalanceScore": 1,
+        "score": 0.754
+      },
+      {
         "preset": "island_isolation",
         "weatherChanges": 2,
-        "weatherResponse": 0.958,
+        "weatherResponse": 1,
         "resourceDips": 1,
         "crisisRecovery": 0,
         "deaths": 1,
         "deathImpact": 0.9,
         "rebalanceScore": 1,
-        "score": 0.667
+        "score": 0.68
       },
       {
         "preset": "population_boom",
@@ -2603,206 +2610,206 @@
       {
         "preset": "late_game_siege",
         "weatherChanges": 3,
-        "weatherResponse": 0.961,
+        "weatherResponse": 0.956,
         "resourceDips": 0,
         "crisisRecovery": 1,
         "deaths": 1,
-        "deathImpact": 1,
+        "deathImpact": 0.963,
         "rebalanceScore": 1,
-        "score": 0.988
+        "score": 0.979
       },
       {
         "preset": "no_director",
         "weatherChanges": 2,
-        "weatherResponse": 0.942,
+        "weatherResponse": 0.848,
         "resourceDips": 0,
         "crisisRecovery": 1,
         "deaths": 1,
-        "deathImpact": 1,
+        "deathImpact": 0.907,
         "rebalanceScore": 1,
-        "score": 0.983
+        "score": 0.936
       }
     ]
   },
   "actionDurationRealism": {
-    "score": 0.814,
-    "grade": "B",
+    "score": 0.775,
+    "grade": "C",
     "details": [
       {
         "preset": "default",
-        "actionDurationCount": 132,
-        "actionCV": 1.139,
-        "actionRatio": 0.333,
+        "actionDurationCount": 124,
+        "actionCV": 1.037,
+        "actionRatio": 0.288,
         "hasProgress": true,
-        "score": 0.933
+        "score": 0.888
       },
       {
         "preset": "default",
-        "actionDurationCount": 73,
-        "actionCV": 1.919,
-        "actionRatio": 0.318,
+        "actionDurationCount": 90,
+        "actionCV": 1.605,
+        "actionRatio": 0.256,
         "hasProgress": true,
-        "score": 0.918
+        "score": 0.856
       },
       {
         "preset": "default",
-        "actionDurationCount": 54,
-        "actionCV": 1.235,
-        "actionRatio": 0.287,
+        "actionDurationCount": 46,
+        "actionCV": 1.407,
+        "actionRatio": 0.266,
         "hasProgress": true,
-        "score": 0.887
+        "score": 0.866
       },
       {
         "preset": "scarce_resources",
-        "actionDurationCount": 26,
-        "actionCV": 0.979,
-        "actionRatio": 0.127,
+        "actionDurationCount": 20,
+        "actionCV": 0.895,
+        "actionRatio": 0.12,
         "hasProgress": true,
-        "score": 0.727
+        "score": 0.72
       },
       {
         "preset": "abundant_resources",
-        "actionDurationCount": 22,
-        "actionCV": 1.107,
-        "actionRatio": 0.215,
+        "actionDurationCount": 20,
+        "actionCV": 1.067,
+        "actionRatio": 0.181,
         "hasProgress": true,
-        "score": 0.815
+        "score": 0.781
       },
       {
         "preset": "resource_chains_basic",
-        "actionDurationCount": 52,
-        "actionCV": 0.967,
-        "actionRatio": 0.209,
+        "actionDurationCount": 41,
+        "actionCV": 1.154,
+        "actionRatio": 0.327,
         "hasProgress": true,
-        "score": 0.809
+        "score": 0.927
       },
       {
         "preset": "full_processing",
-        "actionDurationCount": 35,
-        "actionCV": 0.951,
-        "actionRatio": 0.144,
+        "actionDurationCount": 7,
+        "actionCV": 0.418,
+        "actionRatio": 0.044,
         "hasProgress": true,
-        "score": 0.744
+        "score": 0.5
       },
       {
         "preset": "tooled_colony",
-        "actionDurationCount": 22,
-        "actionCV": 0.928,
-        "actionRatio": 0.121,
+        "actionDurationCount": 15,
+        "actionCV": 0.738,
+        "actionRatio": 0.041,
         "hasProgress": true,
-        "score": 0.721
+        "score": 0.618
       },
       {
         "preset": "high_threat",
-        "actionDurationCount": 33,
-        "actionCV": 1.223,
-        "actionRatio": 0.225,
+        "actionDurationCount": 12,
+        "actionCV": 0.986,
+        "actionRatio": 0.037,
         "hasProgress": true,
-        "score": 0.825
+        "score": 0.637
       },
       {
         "preset": "skeleton_crew",
-        "actionDurationCount": 19,
-        "actionCV": 1.012,
-        "actionRatio": 0.194,
+        "actionDurationCount": 15,
+        "actionCV": 1.016,
+        "actionRatio": 0.139,
         "hasProgress": true,
-        "score": 0.794
+        "score": 0.739
       },
       {
         "preset": "large_colony",
-        "actionDurationCount": 40,
-        "actionCV": 1.054,
-        "actionRatio": 0.313,
+        "actionDurationCount": 44,
+        "actionCV": 1.052,
+        "actionRatio": 0.329,
         "hasProgress": true,
-        "score": 0.913
+        "score": 0.929
       },
       {
         "preset": "wildlife_heavy",
-        "actionDurationCount": 56,
-        "actionCV": 1.262,
-        "actionRatio": 0.37,
+        "actionDurationCount": 38,
+        "actionCV": 1.209,
+        "actionRatio": 0.312,
         "hasProgress": true,
-        "score": 0.97
+        "score": 0.912
       },
       {
         "preset": "storm_start",
-        "actionDurationCount": 35,
-        "actionCV": 1.082,
-        "actionRatio": 0.293,
+        "actionDurationCount": 40,
+        "actionCV": 1.079,
+        "actionRatio": 0.272,
         "hasProgress": true,
-        "score": 0.893
+        "score": 0.872
       },
       {
         "preset": "default",
-        "actionDurationCount": 125,
-        "actionCV": 1.341,
-        "actionRatio": 0.335,
+        "actionDurationCount": 82,
+        "actionCV": 1.174,
+        "actionRatio": 0.256,
         "hasProgress": true,
-        "score": 0.935
+        "score": 0.856
       },
       {
         "preset": "developed_colony",
-        "actionDurationCount": 6,
-        "actionCV": 0.62,
-        "actionRatio": 0.066,
+        "actionDurationCount": 8,
+        "actionCV": 0.353,
+        "actionRatio": 0.051,
         "hasProgress": true,
-        "score": 0.598
+        "score": 0.484
       },
       {
         "preset": "default",
-        "actionDurationCount": 37,
-        "actionCV": 0.966,
-        "actionRatio": 0.185,
+        "actionDurationCount": 43,
+        "actionCV": 1.344,
+        "actionRatio": 0.311,
         "hasProgress": true,
-        "score": 0.785
+        "score": 0.911
       },
       {
         "preset": "default",
-        "actionDurationCount": 77,
-        "actionCV": 1.294,
-        "actionRatio": 0.357,
+        "actionDurationCount": 64,
+        "actionCV": 0.939,
+        "actionRatio": 0.228,
         "hasProgress": true,
-        "score": 0.957
+        "score": 0.828
       },
       {
         "preset": "crisis_compound",
-        "actionDurationCount": 15,
-        "actionCV": 1.359,
-        "actionRatio": 0.218,
+        "actionDurationCount": 16,
+        "actionCV": 1.425,
+        "actionRatio": 0.236,
         "hasProgress": true,
-        "score": 0.818
+        "score": 0.836
       },
       {
         "preset": "island_isolation",
-        "actionDurationCount": 4,
-        "actionCV": 1.464,
-        "actionRatio": 0.054,
+        "actionDurationCount": 6,
+        "actionCV": 0.546,
+        "actionRatio": 0.137,
         "hasProgress": true,
-        "score": 0.654
+        "score": 0.642
       },
       {
         "preset": "population_boom",
-        "actionDurationCount": 35,
-        "actionCV": 1.064,
-        "actionRatio": 0.117,
+        "actionDurationCount": 56,
+        "actionCV": 0.972,
+        "actionRatio": 0.141,
         "hasProgress": true,
-        "score": 0.717
+        "score": 0.741
       },
       {
         "preset": "late_game_siege",
-        "actionDurationCount": 7,
-        "actionCV": 0.537,
-        "actionRatio": 0.059,
+        "actionDurationCount": 17,
+        "actionCV": 0.9,
+        "actionRatio": 0.047,
         "hasProgress": true,
-        "score": 0.56
+        "score": 0.647
       },
       {
         "preset": "no_director",
-        "actionDurationCount": 45,
-        "actionCV": 1.301,
-        "actionRatio": 0.324,
+        "actionDurationCount": 46,
+        "actionCV": 1.109,
+        "actionRatio": 0.253,
         "hasProgress": true,
-        "score": 0.924
+        "score": 0.853
       }
     ]
   },
@@ -2813,65 +2820,65 @@
       {
         "preset": "default",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 22481,
+        "tileTypeChanges": 22506,
         "uniqueTileStates": 17,
         "score": 0.658
       },
       {
         "preset": "default",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 18809,
-        "uniqueTileStates": 15,
-        "score": 0.653
+        "tileTypeChanges": 18847,
+        "uniqueTileStates": 18,
+        "score": 0.663
       },
       {
         "preset": "default",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 59919,
+        "tileTypeChanges": 59875,
         "uniqueTileStates": 12,
         "score": 0.657
       },
       {
         "preset": "scarce_resources",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19545,
+        "tileTypeChanges": 19541,
         "uniqueTileStates": 13,
         "score": 0.655
       },
       {
         "preset": "abundant_resources",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 20264,
+        "tileTypeChanges": 20232,
         "uniqueTileStates": 16,
         "score": 0.659
       },
       {
         "preset": "resource_chains_basic",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19834,
-        "uniqueTileStates": 18,
-        "score": 0.663
+        "tileTypeChanges": 19797,
+        "uniqueTileStates": 16,
+        "score": 0.652
       },
       {
         "preset": "full_processing",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 13994,
+        "tileTypeChanges": 13984,
         "uniqueTileStates": 16,
         "score": 0.652
       },
       {
         "preset": "tooled_colony",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 13447,
+        "tileTypeChanges": 13435,
         "uniqueTileStates": 15,
         "score": 0.653
       },
       {
         "preset": "high_threat",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19702,
-        "uniqueTileStates": 17,
-        "score": 0.658
+        "tileTypeChanges": 19750,
+        "uniqueTileStates": 15,
+        "score": 0.653
       },
       {
         "preset": "skeleton_crew",
@@ -2883,91 +2890,91 @@
       {
         "preset": "large_colony",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 13432,
-        "uniqueTileStates": 16,
-        "score": 0.652
+        "tileTypeChanges": 13396,
+        "uniqueTileStates": 15,
+        "score": 0.647
       },
       {
         "preset": "wildlife_heavy",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 76493,
+        "tileTypeChanges": 76477,
         "uniqueTileStates": 13,
-        "score": 0.655
+        "score": 0.664
       },
       {
         "preset": "storm_start",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19848,
-        "uniqueTileStates": 15,
-        "score": 0.653
+        "tileTypeChanges": 19887,
+        "uniqueTileStates": 17,
+        "score": 0.658
       },
       {
         "preset": "default",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 22490,
-        "uniqueTileStates": 17,
-        "score": 0.658
+        "tileTypeChanges": 22482,
+        "uniqueTileStates": 16,
+        "score": 0.652
       },
       {
         "preset": "developed_colony",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 13834,
+        "tileTypeChanges": 13813,
+        "uniqueTileStates": 16,
+        "score": 0.652
+      },
+      {
+        "preset": "default",
+        "avgFieldsPerTile": 2,
+        "tileTypeChanges": 3993,
         "uniqueTileStates": 17,
         "score": 0.658
       },
       {
         "preset": "default",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 3995,
-        "uniqueTileStates": 17,
-        "score": 0.665
-      },
-      {
-        "preset": "default",
-        "avgFieldsPerTile": 2,
-        "tileTypeChanges": 14777,
+        "tileTypeChanges": 14779,
         "uniqueTileStates": 15,
         "score": 0.653
       },
       {
         "preset": "crisis_compound",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19540,
-        "uniqueTileStates": 14,
-        "score": 0.662
+        "tileTypeChanges": 19545,
+        "uniqueTileStates": 13,
+        "score": 0.655
       },
       {
         "preset": "island_isolation",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 76012,
+        "tileTypeChanges": 75998,
         "uniqueTileStates": 9,
         "score": 0.642
       },
       {
         "preset": "population_boom",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19586,
-        "uniqueTileStates": 14,
-        "score": 0.662
+        "tileTypeChanges": 19594,
+        "uniqueTileStates": 15,
+        "score": 0.679
       },
       {
         "preset": "late_game_siege",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 13821,
+        "tileTypeChanges": 13832,
         "uniqueTileStates": 16,
         "score": 0.652
       },
       {
         "preset": "no_director",
         "avgFieldsPerTile": 2,
-        "tileTypeChanges": 19165,
+        "tileTypeChanges": 19162,
         "uniqueTileStates": 13,
         "score": 0.664
       }
     ]
   },
   "npcNeedsDepth": {
-    "score": 0.788,
+    "score": 0.795,
     "grade": "C",
     "details": [
       {
@@ -3057,7 +3064,7 @@
           "process"
         ],
         "hasMood": true,
-        "score": 0.825
+        "score": 0.775
       },
       {
         "preset": "resource_chains_basic",
@@ -3075,7 +3082,7 @@
           "process"
         ],
         "hasMood": true,
-        "score": 0.775
+        "score": 0.825
       },
       {
         "preset": "full_processing",
@@ -3106,12 +3113,14 @@
         "conflictPairs": 6,
         "satisfactionActions": [
           "eat",
+          "rest",
+          "wander",
           "deliver",
           "harvest",
           "process"
         ],
         "hasMood": true,
-        "score": 0.825
+        "score": 0.887
       },
       {
         "preset": "high_threat",
@@ -3129,7 +3138,7 @@
           "process"
         ],
         "hasMood": true,
-        "score": 0.825
+        "score": 0.775
       },
       {
         "preset": "skeleton_crew",
@@ -3179,7 +3188,7 @@
           "harvest"
         ],
         "hasMood": true,
-        "score": 0.744
+        "score": 0.794
       },
       {
         "preset": "storm_start",
@@ -3233,7 +3242,7 @@
           "process"
         ],
         "hasMood": true,
-        "score": 0.825
+        "score": 0.775
       },
       {
         "preset": "default",
@@ -3262,12 +3271,13 @@
         ],
         "conflictPairs": 6,
         "satisfactionActions": [
+          "eat",
           "deliver",
           "harvest",
           "process"
         ],
         "hasMood": true,
-        "score": 0.744
+        "score": 0.775
       },
       {
         "preset": "crisis_compound",
@@ -3301,7 +3311,7 @@
           "harvest"
         ],
         "hasMood": true,
-        "score": 0.744
+        "score": 0.794
       },
       {
         "preset": "population_boom",
@@ -3318,7 +3328,7 @@
           "harvest"
         ],
         "hasMood": true,
-        "score": 0.744
+        "score": 0.794
       },
       {
         "preset": "late_game_siege",
@@ -3359,462 +3369,462 @@
     ]
   },
   "economicFeedbackLoops": {
-    "score": 0.767,
+    "score": 0.775,
     "grade": "C",
     "details": [
       {
         "preset": "default",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 3.871,
-        "score": 0.643
+        "demandVariance": 4.109,
+        "score": 0.662
       },
       {
         "preset": "default",
-        "feedbackLoops": 5,
+        "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 3.559,
-        "score": 0.812
+        "demandVariance": 4.213,
+        "score": 0.86
       },
       {
         "preset": "default",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 1.637,
-        "score": 0.724
+        "demandVariance": 2.724,
+        "score": 0.712
       },
       {
         "preset": "scarce_resources",
         "feedbackLoops": 2,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.645,
-        "score": 0.57
+        "demandVariance": 4.629,
+        "score": 0.575
       },
       {
         "preset": "abundant_resources",
-        "feedbackLoops": 5,
+        "feedbackLoops": 6,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.965,
+        "demandVariance": 5.315,
         "score": 0.797
       },
       {
         "preset": "resource_chains_basic",
         "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 5.392,
-        "score": 0.809
+        "demandVariance": 5.694,
+        "score": 0.825
       },
       {
         "preset": "full_processing",
         "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.803,
+        "demandVariance": 4.552,
         "score": 0.93
       },
       {
         "preset": "tooled_colony",
         "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.943,
-        "score": 0.93
+        "demandVariance": 4.815,
+        "score": 0.961
       },
       {
         "preset": "high_threat",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.814,
-        "score": 0.71
+        "demandVariance": 5.328,
+        "score": 0.696
       },
       {
         "preset": "skeleton_crew",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 6.584,
+        "demandVariance": 6.634,
         "score": 0.71
       },
       {
         "preset": "large_colony",
-        "feedbackLoops": 3,
+        "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.035,
-        "score": 0.912
+        "demandVariance": 3.645,
+        "score": 1
       },
       {
         "preset": "wildlife_heavy",
-        "feedbackLoops": 3,
+        "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 1.699,
-        "score": 0.912
+        "demandVariance": 1.728,
+        "score": 0.95
       },
       {
         "preset": "storm_start",
-        "feedbackLoops": 5,
+        "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.79,
+        "demandVariance": 5.084,
         "score": 0.79
       },
       {
         "preset": "default",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 3.787,
+        "demandVariance": 4.16,
         "score": 0.643
       },
       {
         "preset": "developed_colony",
         "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.419,
+        "demandVariance": 4.489,
         "score": 0.865
       },
       {
         "preset": "default",
-        "feedbackLoops": 2,
+        "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.838,
-        "score": 0.503
+        "demandVariance": 5.521,
+        "score": 0.577
       },
       {
         "preset": "default",
-        "feedbackLoops": 4,
+        "feedbackLoops": 5,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.652,
-        "score": 0.905
+        "demandVariance": 4.567,
+        "score": 0.841
       },
       {
         "preset": "crisis_compound",
         "feedbackLoops": 3,
         "hasDiminishingReturns": true,
-        "demandVariance": 5.811,
-        "score": 0.71
+        "demandVariance": 5.929,
+        "score": 0.702
       },
       {
         "preset": "island_isolation",
         "feedbackLoops": 2,
         "hasDiminishingReturns": true,
-        "demandVariance": 3.045,
+        "demandVariance": 2.922,
         "score": 0.825
       },
       {
         "preset": "population_boom",
         "feedbackLoops": 2,
         "hasDiminishingReturns": true,
-        "demandVariance": 5.613,
-        "score": 0.622
+        "demandVariance": 6.152,
+        "score": 0.615
       },
       {
         "preset": "late_game_siege",
-        "feedbackLoops": 5,
+        "feedbackLoops": 4,
         "hasDiminishingReturns": true,
-        "demandVariance": 4.536,
-        "score": 0.919
+        "demandVariance": 4.637,
+        "score": 0.865
       },
       {
         "preset": "no_director",
         "feedbackLoops": 2,
         "hasDiminishingReturns": true,
-        "demandVariance": 1.692,
-        "score": 0.64
+        "demandVariance": 1.826,
+        "score": 0.65
       }
     ]
   },
   "spatialLayoutIntelligence": {
-    "score": 0.564,
+    "score": 0.558,
     "grade": "D",
     "details": [
       {
         "preset": "default",
         "avgClusterDist": 35.8,
         "clusterScore": 0.148,
-        "zoningScore": 0.525,
-        "pathEfficiency": 0.553,
-        "expansionCorrelation": 0.826,
-        "totalBuildings": 40,
-        "score": 0.513
+        "zoningScore": 0.5,
+        "pathEfficiency": 0.552,
+        "expansionCorrelation": 0.795,
+        "totalBuildings": 42,
+        "score": 0.499
       },
       {
         "preset": "default",
         "avgClusterDist": 14.7,
-        "clusterScore": 0.649,
-        "zoningScore": 0.761,
-        "pathEfficiency": 0.661,
-        "expansionCorrelation": 0.416,
-        "totalBuildings": 46,
-        "score": 0.622
+        "clusterScore": 0.65,
+        "zoningScore": 0.727,
+        "pathEfficiency": 0.615,
+        "expansionCorrelation": 0.45,
+        "totalBuildings": 44,
+        "score": 0.61
       },
       {
         "preset": "default",
-        "avgClusterDist": 8.7,
-        "clusterScore": 0.792,
-        "zoningScore": 0.5,
-        "pathEfficiency": 0.566,
-        "expansionCorrelation": 0.357,
-        "totalBuildings": 18,
-        "score": 0.554
+        "avgClusterDist": 10.9,
+        "clusterScore": 0.74,
+        "zoningScore": 0.632,
+        "pathEfficiency": 0.605,
+        "expansionCorrelation": 0.303,
+        "totalBuildings": 19,
+        "score": 0.57
       },
       {
         "preset": "scarce_resources",
         "avgClusterDist": 28.9,
         "clusterScore": 0.311,
-        "zoningScore": 0.704,
-        "pathEfficiency": 0.624,
-        "expansionCorrelation": 0.594,
-        "totalBuildings": 54,
-        "score": 0.558
+        "zoningScore": 0.717,
+        "pathEfficiency": 0.614,
+        "expansionCorrelation": 0.601,
+        "totalBuildings": 53,
+        "score": 0.561
       },
       {
         "preset": "abundant_resources",
         "avgClusterDist": 26.9,
         "clusterScore": 0.36,
         "zoningScore": 0.667,
-        "pathEfficiency": 0.641,
+        "pathEfficiency": 0.607,
         "expansionCorrelation": 0.57,
         "totalBuildings": 57,
-        "score": 0.559
+        "score": 0.551
       },
       {
         "preset": "resource_chains_basic",
-        "avgClusterDist": 28.8,
-        "clusterScore": 0.314,
-        "zoningScore": 0.69,
-        "pathEfficiency": 0.601,
-        "expansionCorrelation": 0.557,
-        "totalBuildings": 58,
-        "score": 0.541
+        "avgClusterDist": 27.9,
+        "clusterScore": 0.335,
+        "zoningScore": 0.667,
+        "pathEfficiency": 0.562,
+        "expansionCorrelation": 0.572,
+        "totalBuildings": 57,
+        "score": 0.534
       },
       {
         "preset": "full_processing",
         "avgClusterDist": 16.5,
         "clusterScore": 0.608,
         "zoningScore": 0.695,
-        "pathEfficiency": 0.592,
+        "pathEfficiency": 0.672,
         "expansionCorrelation": 0.445,
         "totalBuildings": 59,
-        "score": 0.585
+        "score": 0.605
       },
       {
         "preset": "tooled_colony",
         "avgClusterDist": 15.7,
         "clusterScore": 0.626,
-        "zoningScore": 0.719,
-        "pathEfficiency": 0.608,
+        "zoningScore": 0.732,
+        "pathEfficiency": 0.601,
         "expansionCorrelation": 0.518,
-        "totalBuildings": 57,
-        "score": 0.618
+        "totalBuildings": 56,
+        "score": 0.619
       },
       {
         "preset": "high_threat",
         "avgClusterDist": 26.9,
         "clusterScore": 0.36,
-        "zoningScore": 0.679,
-        "pathEfficiency": 0.597,
-        "expansionCorrelation": 0.557,
-        "totalBuildings": 56,
-        "score": 0.548
+        "zoningScore": 0.667,
+        "pathEfficiency": 0.62,
+        "expansionCorrelation": 0.552,
+        "totalBuildings": 57,
+        "score": 0.55
       },
       {
         "preset": "skeleton_crew",
         "avgClusterDist": 28.9,
         "clusterScore": 0.311,
         "zoningScore": 0.745,
-        "pathEfficiency": 0.584,
+        "pathEfficiency": 0.602,
         "expansionCorrelation": 0.618,
         "totalBuildings": 51,
-        "score": 0.565
+        "score": 0.569
       },
       {
         "preset": "large_colony",
-        "avgClusterDist": 21,
-        "clusterScore": 0.5,
-        "zoningScore": 0.804,
-        "pathEfficiency": 0.618,
-        "expansionCorrelation": 0.657,
-        "totalBuildings": 51,
-        "score": 0.645
+        "avgClusterDist": 19.6,
+        "clusterScore": 0.533,
+        "zoningScore": 0.788,
+        "pathEfficiency": 0.585,
+        "expansionCorrelation": 0.634,
+        "totalBuildings": 52,
+        "score": 0.635
       },
       {
         "preset": "wildlife_heavy",
-        "avgClusterDist": 4,
-        "clusterScore": 0.905,
-        "zoningScore": 0.214,
-        "pathEfficiency": 0.599,
-        "expansionCorrelation": 0.353,
-        "totalBuildings": 14,
-        "score": 0.518
+        "avgClusterDist": 5,
+        "clusterScore": 0.881,
+        "zoningScore": 0,
+        "pathEfficiency": 0.641,
+        "expansionCorrelation": 0.036,
+        "totalBuildings": 13,
+        "score": 0.39
       },
       {
         "preset": "storm_start",
-        "avgClusterDist": 27.8,
-        "clusterScore": 0.339,
-        "zoningScore": 0.727,
-        "pathEfficiency": 0.588,
-        "expansionCorrelation": 0.556,
-        "totalBuildings": 55,
-        "score": 0.552
+        "avgClusterDist": 26.9,
+        "clusterScore": 0.36,
+        "zoningScore": 0.667,
+        "pathEfficiency": 0.596,
+        "expansionCorrelation": 0.552,
+        "totalBuildings": 57,
+        "score": 0.544
       },
       {
         "preset": "default",
         "avgClusterDist": 35.8,
         "clusterScore": 0.148,
         "zoningScore": 0.525,
-        "pathEfficiency": 0.552,
+        "pathEfficiency": 0.603,
         "expansionCorrelation": 0.826,
         "totalBuildings": 40,
-        "score": 0.513
+        "score": 0.526
       },
       {
         "preset": "developed_colony",
         "avgClusterDist": 14.9,
         "clusterScore": 0.646,
         "zoningScore": 0.651,
-        "pathEfficiency": 0.628,
+        "pathEfficiency": 0.605,
         "expansionCorrelation": 0.408,
         "totalBuildings": 63,
-        "score": 0.583
+        "score": 0.577
       },
       {
         "preset": "default",
         "avgClusterDist": 21.6,
         "clusterScore": 0.485,
-        "zoningScore": 0.774,
-        "pathEfficiency": 0.625,
-        "expansionCorrelation": 0.424,
-        "totalBuildings": 84,
-        "score": 0.577
+        "zoningScore": 0.765,
+        "pathEfficiency": 0.611,
+        "expansionCorrelation": 0.419,
+        "totalBuildings": 85,
+        "score": 0.57
       },
       {
         "preset": "default",
         "avgClusterDist": 47.5,
         "clusterScore": 0,
         "zoningScore": 0.55,
-        "pathEfficiency": 0.551,
+        "pathEfficiency": 0.548,
         "expansionCorrelation": 0.756,
         "totalBuildings": 40,
-        "score": 0.464
+        "score": 0.463
       },
       {
         "preset": "crisis_compound",
         "avgClusterDist": 28.9,
         "clusterScore": 0.311,
-        "zoningScore": 0.745,
-        "pathEfficiency": 0.586,
-        "expansionCorrelation": 0.618,
-        "totalBuildings": 51,
-        "score": 0.565
+        "zoningScore": 0.731,
+        "pathEfficiency": 0.601,
+        "expansionCorrelation": 0.61,
+        "totalBuildings": 52,
+        "score": 0.563
       },
       {
         "preset": "island_isolation",
-        "avgClusterDist": 24.5,
-        "clusterScore": 0.417,
-        "zoningScore": 0.667,
-        "pathEfficiency": 0.659,
-        "expansionCorrelation": 0.421,
-        "totalBuildings": 6,
-        "score": 0.541
+        "avgClusterDist": 12.5,
+        "clusterScore": 0.702,
+        "zoningScore": 0.286,
+        "pathEfficiency": 0.597,
+        "expansionCorrelation": 0.332,
+        "totalBuildings": 7,
+        "score": 0.479
       },
       {
         "preset": "population_boom",
-        "avgClusterDist": 28.9,
-        "clusterScore": 0.311,
-        "zoningScore": 0.745,
-        "pathEfficiency": 0.607,
-        "expansionCorrelation": 0.618,
-        "totalBuildings": 51,
-        "score": 0.57
+        "avgClusterDist": 20,
+        "clusterScore": 0.524,
+        "zoningScore": 0.8,
+        "pathEfficiency": 0.621,
+        "expansionCorrelation": 0.619,
+        "totalBuildings": 50,
+        "score": 0.641
       },
       {
         "preset": "late_game_siege",
         "avgClusterDist": 14.9,
         "clusterScore": 0.646,
         "zoningScore": 0.651,
-        "pathEfficiency": 0.609,
+        "pathEfficiency": 0.617,
         "expansionCorrelation": 0.408,
         "totalBuildings": 63,
-        "score": 0.578
+        "score": 0.581
       },
       {
         "preset": "no_director",
         "avgClusterDist": 20,
         "clusterScore": 0.524,
-        "zoningScore": 0.851,
-        "pathEfficiency": 0.513,
-        "expansionCorrelation": 0.637,
-        "totalBuildings": 47,
-        "score": 0.631
+        "zoningScore": 0.891,
+        "pathEfficiency": 0.531,
+        "expansionCorrelation": 0.643,
+        "totalBuildings": 46,
+        "score": 0.647
       }
     ]
   },
   "temporalRealism": {
-    "score": 0.662,
+    "score": 0.66,
     "grade": "C",
     "details": [
       {
         "preset": "default",
-        "jsDivergence": 0.0524,
+        "jsDivergence": 0.0582,
         "hasSeasonalPattern": 0.4,
         "eventRhythm": 0.5,
         "weatherChangeCount": 4,
-        "score": 0.445
+        "score": 0.464
       },
       {
         "preset": "default",
-        "jsDivergence": 0.2174,
+        "jsDivergence": 0.05,
         "hasSeasonalPattern": 0.3,
-        "eventRhythm": 0.661,
+        "eventRhythm": 0.5,
         "weatherChangeCount": 4,
-        "score": 0.688
+        "score": 0.407
       },
       {
         "preset": "default",
-        "jsDivergence": 0.1128,
-        "hasSeasonalPattern": 0.3,
-        "eventRhythm": 1,
-        "weatherChangeCount": 2,
-        "score": 0.766
-      },
-      {
-        "preset": "scarce_resources",
-        "jsDivergence": 0.0739,
-        "hasSeasonalPattern": 0.4,
-        "eventRhythm": 1,
-        "weatherChangeCount": 2,
-        "score": 0.666
-      },
-      {
-        "preset": "abundant_resources",
-        "jsDivergence": 0.0734,
-        "hasSeasonalPattern": 0.3,
-        "eventRhythm": 1,
-        "weatherChangeCount": 2,
-        "score": 0.635
-      },
-      {
-        "preset": "resource_chains_basic",
-        "jsDivergence": 0.0942,
-        "hasSeasonalPattern": 0.4,
-        "eventRhythm": 1,
-        "weatherChangeCount": 2,
-        "score": 0.734
-      },
-      {
-        "preset": "full_processing",
-        "jsDivergence": 0.1223,
+        "jsDivergence": 0.318,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
         "score": 0.79
       },
       {
-        "preset": "tooled_colony",
-        "jsDivergence": 0.0781,
+        "preset": "scarce_resources",
+        "jsDivergence": 0.0732,
+        "hasSeasonalPattern": 0.4,
+        "eventRhythm": 1,
+        "weatherChangeCount": 2,
+        "score": 0.664
+      },
+      {
+        "preset": "abundant_resources",
+        "jsDivergence": 0.1212,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.65
+        "score": 0.79
+      },
+      {
+        "preset": "resource_chains_basic",
+        "jsDivergence": 0.044,
+        "hasSeasonalPattern": 0.4,
+        "eventRhythm": 1,
+        "weatherChangeCount": 2,
+        "score": 0.567
+      },
+      {
+        "preset": "full_processing",
+        "jsDivergence": 0.0522,
+        "hasSeasonalPattern": 0.3,
+        "eventRhythm": 1,
+        "weatherChangeCount": 2,
+        "score": 0.564
+      },
+      {
+        "preset": "tooled_colony",
+        "jsDivergence": 0.095,
+        "hasSeasonalPattern": 0.3,
+        "eventRhythm": 1,
+        "weatherChangeCount": 2,
+        "score": 0.787
       },
       {
         "preset": "high_threat",
-        "jsDivergence": 0.431,
+        "jsDivergence": 0.1332,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
@@ -3822,15 +3832,15 @@
       },
       {
         "preset": "skeleton_crew",
-        "jsDivergence": 0.0939,
+        "jsDivergence": 0.0783,
         "hasSeasonalPattern": 0.4,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.733
+        "score": 0.681
       },
       {
         "preset": "large_colony",
-        "jsDivergence": 0.3091,
+        "jsDivergence": 0.3464,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
@@ -3838,7 +3848,7 @@
       },
       {
         "preset": "wildlife_heavy",
-        "jsDivergence": 0.1553,
+        "jsDivergence": 0.1761,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
@@ -3846,55 +3856,55 @@
       },
       {
         "preset": "storm_start",
-        "jsDivergence": 0.1946,
+        "jsDivergence": 0.2385,
         "hasSeasonalPattern": 0.3,
-        "eventRhythm": 0.666,
+        "eventRhythm": 0.5,
         "weatherChangeCount": 3,
-        "score": 0.69
+        "score": 0.64
       },
       {
         "preset": "default",
-        "jsDivergence": 0.0457,
+        "jsDivergence": 0.0911,
         "hasSeasonalPattern": 0.4,
-        "eventRhythm": 0.602,
-        "weatherChangeCount": 3,
-        "score": 0.453
+        "eventRhythm": 0.5,
+        "weatherChangeCount": 4,
+        "score": 0.574
       },
       {
         "preset": "developed_colony",
-        "jsDivergence": 0.0394,
+        "jsDivergence": 0.0528,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.521
+        "score": 0.566
       },
       {
         "preset": "default",
-        "jsDivergence": 0.0586,
+        "jsDivergence": 0.0623,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.585
+        "score": 0.598
       },
       {
         "preset": "default",
-        "jsDivergence": 0.1043,
+        "jsDivergence": 0.083,
         "hasSeasonalPattern": 0.4,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.768
+        "score": 0.697
       },
       {
         "preset": "crisis_compound",
-        "jsDivergence": 0.1052,
+        "jsDivergence": 0.0877,
         "hasSeasonalPattern": 0.4,
-        "eventRhythm": 0.516,
+        "eventRhythm": 0.5,
         "weatherChangeCount": 3,
-        "score": 0.626
+        "score": 0.562
       },
       {
         "preset": "island_isolation",
-        "jsDivergence": 0.3359,
+        "jsDivergence": 0.2995,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
@@ -3902,187 +3912,187 @@
       },
       {
         "preset": "population_boom",
-        "jsDivergence": 0.0517,
+        "jsDivergence": 0.0543,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.562
+        "score": 0.571
       },
       {
         "preset": "late_game_siege",
-        "jsDivergence": 0.0429,
+        "jsDivergence": 0.1418,
         "hasSeasonalPattern": 0.3,
-        "eventRhythm": 0.563,
+        "eventRhythm": 0.5,
         "weatherChangeCount": 3,
-        "score": 0.402
+        "score": 0.64
       },
       {
         "preset": "no_director",
-        "jsDivergence": 0.064,
+        "jsDivergence": 0.1397,
         "hasSeasonalPattern": 0.3,
         "eventRhythm": 1,
         "weatherChangeCount": 2,
-        "score": 0.683
+        "score": 0.79
       }
     ]
   },
   "emergentNarrative": {
-    "score": 0.885,
+    "score": 0.874,
     "grade": "B",
     "details": [
       {
         "preset": "default",
         "uniqueEventTypes": 18,
-        "causalChains": 5,
-        "socialInteractions": 138,
-        "score": 0.945
+        "causalChains": 6,
+        "socialInteractions": 139,
+        "score": 0.93
       },
       {
         "preset": "default",
         "uniqueEventTypes": 17,
-        "causalChains": 4,
-        "socialInteractions": 114,
-        "score": 0.872
+        "causalChains": 5,
+        "socialInteractions": 115,
+        "score": 0.915
       },
       {
         "preset": "default",
-        "uniqueEventTypes": 13,
+        "uniqueEventTypes": 15,
         "causalChains": 5,
-        "socialInteractions": 77,
-        "score": 0.852
+        "socialInteractions": 78,
+        "score": 0.875
       },
       {
         "preset": "scarce_resources",
         "uniqueEventTypes": 18,
         "causalChains": 8,
-        "socialInteractions": 73,
-        "score": 0.921
+        "socialInteractions": 72,
+        "score": 0.912
       },
       {
         "preset": "abundant_resources",
-        "uniqueEventTypes": 14,
-        "causalChains": 3,
-        "socialInteractions": 86,
-        "score": 0.779
+        "uniqueEventTypes": 16,
+        "causalChains": 5,
+        "socialInteractions": 91,
+        "score": 0.896
       },
       {
         "preset": "resource_chains_basic",
-        "uniqueEventTypes": 17,
-        "causalChains": 5,
-        "socialInteractions": 92,
-        "score": 0.934
+        "uniqueEventTypes": 15,
+        "causalChains": 3,
+        "socialInteractions": 90,
+        "score": 0.831
       },
       {
         "preset": "full_processing",
-        "uniqueEventTypes": 14,
+        "uniqueEventTypes": 13,
         "causalChains": 5,
-        "socialInteractions": 88,
-        "score": 0.902
+        "socialInteractions": 86,
+        "score": 0.883
       },
       {
         "preset": "tooled_colony",
         "uniqueEventTypes": 17,
-        "causalChains": 7,
-        "socialInteractions": 81,
-        "score": 0.936
+        "causalChains": 5,
+        "socialInteractions": 82,
+        "score": 0.927
       },
       {
         "preset": "high_threat",
         "uniqueEventTypes": 17,
-        "causalChains": 4,
-        "socialInteractions": 86,
-        "score": 0.881
+        "causalChains": 6,
+        "socialInteractions": 91,
+        "score": 0.918
       },
       {
         "preset": "skeleton_crew",
-        "uniqueEventTypes": 17,
-        "causalChains": 8,
-        "socialInteractions": 30,
-        "score": 0.882
+        "uniqueEventTypes": 15,
+        "causalChains": 5,
+        "socialInteractions": 27,
+        "score": 0.871
       },
       {
         "preset": "large_colony",
-        "uniqueEventTypes": 14,
-        "causalChains": 5,
-        "socialInteractions": 126,
-        "score": 0.932
+        "uniqueEventTypes": 13,
+        "causalChains": 3,
+        "socialInteractions": 118,
+        "score": 0.811
       },
       {
         "preset": "wildlife_heavy",
-        "uniqueEventTypes": 14,
-        "causalChains": 21,
-        "socialInteractions": 100,
-        "score": 0.897
+        "uniqueEventTypes": 15,
+        "causalChains": 16,
+        "socialInteractions": 101,
+        "score": 0.9
       },
       {
         "preset": "storm_start",
         "uniqueEventTypes": 17,
         "causalChains": 7,
         "socialInteractions": 86,
-        "score": 0.919
+        "score": 0.905
       },
       {
         "preset": "default",
-        "uniqueEventTypes": 17,
-        "causalChains": 5,
-        "socialInteractions": 137,
-        "score": 0.946
+        "uniqueEventTypes": 18,
+        "causalChains": 4,
+        "socialInteractions": 139,
+        "score": 0.886
       },
       {
         "preset": "developed_colony",
-        "uniqueEventTypes": 14,
-        "causalChains": 4,
-        "socialInteractions": 89,
-        "score": 0.859
-      },
-      {
-        "preset": "default",
-        "uniqueEventTypes": 17,
-        "causalChains": 5,
-        "socialInteractions": 87,
-        "score": 0.928
-      },
-      {
-        "preset": "default",
-        "uniqueEventTypes": 17,
+        "uniqueEventTypes": 15,
         "causalChains": 2,
+        "socialInteractions": 90,
+        "score": 0.774
+      },
+      {
+        "preset": "default",
+        "uniqueEventTypes": 17,
+        "causalChains": 7,
         "socialInteractions": 89,
-        "score": 0.777
+        "score": 0.917
+      },
+      {
+        "preset": "default",
+        "uniqueEventTypes": 17,
+        "causalChains": 4,
+        "socialInteractions": 92,
+        "score": 0.865
       },
       {
         "preset": "crisis_compound",
-        "uniqueEventTypes": 17,
-        "causalChains": 10,
-        "socialInteractions": 29,
-        "score": 0.875
+        "uniqueEventTypes": 18,
+        "causalChains": 8,
+        "socialInteractions": 32,
+        "score": 0.866
       },
       {
         "preset": "island_isolation",
         "uniqueEventTypes": 14,
         "causalChains": 6,
         "socialInteractions": 47,
-        "score": 0.888
+        "score": 0.899
       },
       {
         "preset": "population_boom",
-        "uniqueEventTypes": 14,
+        "uniqueEventTypes": 13,
         "causalChains": 5,
-        "socialInteractions": 113,
-        "score": 0.934
+        "socialInteractions": 116,
+        "score": 0.91
       },
       {
         "preset": "late_game_siege",
         "uniqueEventTypes": 14,
         "causalChains": 3,
-        "socialInteractions": 87,
-        "score": 0.812
+        "socialInteractions": 85,
+        "score": 0.797
       },
       {
         "preset": "no_director",
         "uniqueEventTypes": 9,
-        "causalChains": 3,
-        "socialInteractions": 67,
-        "score": 0.793
+        "causalChains": 2,
+        "socialInteractions": 68,
+        "score": 0.743
       }
     ]
   },
@@ -4092,284 +4102,284 @@
     "details": [
       {
         "preset": "default",
-        "tileChanges": 10,
+        "tileChanges": 12,
         "workerSpecialization": 1,
-        "opportunityCost": 0.197,
-        "consequenceCorrelation": 0.425,
-        "score": 0.644
+        "opportunityCost": 0.191,
+        "consequenceCorrelation": 0.532,
+        "score": 0.664
       },
       {
         "preset": "default",
-        "tileChanges": 33,
+        "tileChanges": 37,
         "workerSpecialization": 1,
-        "opportunityCost": 0.243,
-        "consequenceCorrelation": 0.366,
-        "score": 0.646
+        "opportunityCost": 0.061,
+        "consequenceCorrelation": 0.38,
+        "score": 0.594
       },
       {
         "preset": "default",
-        "tileChanges": 20,
+        "tileChanges": 19,
         "workerSpecialization": 1,
-        "opportunityCost": 0.392,
-        "consequenceCorrelation": 0.382,
-        "score": 0.694
+        "opportunityCost": 0.352,
+        "consequenceCorrelation": 0.32,
+        "score": 0.67
       },
       {
         "preset": "scarce_resources",
-        "tileChanges": 17,
-        "workerSpecialization": 0.998,
-        "opportunityCost": 0.093,
-        "consequenceCorrelation": 0.422,
-        "score": 0.612
+        "tileChanges": 18,
+        "workerSpecialization": 1,
+        "opportunityCost": 0.117,
+        "consequenceCorrelation": 0.076,
+        "score": 0.55
       },
       {
         "preset": "abundant_resources",
-        "tileChanges": 40,
+        "tileChanges": 35,
         "workerSpecialization": 1,
-        "opportunityCost": 0.591,
-        "consequenceCorrelation": 0.234,
-        "score": 0.724
+        "opportunityCost": 0.538,
+        "consequenceCorrelation": 0.491,
+        "score": 0.76
       },
       {
         "preset": "resource_chains_basic",
-        "tileChanges": 10,
+        "tileChanges": 6,
         "workerSpecialization": 1,
-        "opportunityCost": 0.031,
-        "consequenceCorrelation": 0.662,
-        "score": 0.642
+        "opportunityCost": 0.08,
+        "consequenceCorrelation": 0.5,
+        "score": 0.624
       },
       {
         "preset": "full_processing",
-        "tileChanges": 30,
+        "tileChanges": 28,
         "workerSpecialization": 1,
-        "opportunityCost": 0.562,
+        "opportunityCost": 0.665,
         "consequenceCorrelation": 0,
-        "score": 0.669
+        "score": 0.7
       },
       {
         "preset": "tooled_colony",
-        "tileChanges": 7,
+        "tileChanges": 6,
         "workerSpecialization": 1,
-        "opportunityCost": 0.482,
-        "consequenceCorrelation": 0.638,
-        "score": 0.772
+        "opportunityCost": 0.533,
+        "consequenceCorrelation": 0.241,
+        "score": 0.708
       },
       {
         "preset": "high_threat",
-        "tileChanges": 9,
-        "workerSpecialization": 0.997,
-        "opportunityCost": 0.305,
-        "consequenceCorrelation": 0.774,
-        "score": 0.745
+        "tileChanges": 12,
+        "workerSpecialization": 1,
+        "opportunityCost": 0.324,
+        "consequenceCorrelation": 0.617,
+        "score": 0.721
       },
       {
         "preset": "skeleton_crew",
         "tileChanges": 8,
         "workerSpecialization": 1,
-        "opportunityCost": 0.488,
-        "consequenceCorrelation": 0.229,
-        "score": 0.692
+        "opportunityCost": 0.494,
+        "consequenceCorrelation": 0.294,
+        "score": 0.707
       },
       {
         "preset": "large_colony",
-        "tileChanges": 19,
+        "tileChanges": 14,
         "workerSpecialization": 1,
-        "opportunityCost": 0.173,
-        "consequenceCorrelation": 0.344,
-        "score": 0.621
+        "opportunityCost": 0.499,
+        "consequenceCorrelation": 0.53,
+        "score": 0.756
       },
       {
         "preset": "wildlife_heavy",
-        "tileChanges": 13,
-        "workerSpecialization": 0.962,
-        "opportunityCost": 0.182,
-        "consequenceCorrelation": 0.407,
-        "score": 0.625
+        "tileChanges": 12,
+        "workerSpecialization": 1,
+        "opportunityCost": 0.175,
+        "consequenceCorrelation": 0.328,
+        "score": 0.618
       },
       {
         "preset": "storm_start",
-        "tileChanges": 16,
+        "tileChanges": 22,
         "workerSpecialization": 1,
-        "opportunityCost": 0.153,
-        "consequenceCorrelation": 0.438,
-        "score": 0.634
+        "opportunityCost": 0.225,
+        "consequenceCorrelation": 0.593,
+        "score": 0.686
       },
       {
         "preset": "default",
         "tileChanges": 8,
         "workerSpecialization": 1,
-        "opportunityCost": 0.193,
-        "consequenceCorrelation": 0.405,
-        "score": 0.639
+        "opportunityCost": 0.175,
+        "consequenceCorrelation": 0.511,
+        "score": 0.655
       },
       {
         "preset": "developed_colony",
-        "tileChanges": 20,
+        "tileChanges": 18,
         "workerSpecialization": 1,
-        "opportunityCost": 0.22,
-        "consequenceCorrelation": 0.631,
-        "score": 0.692
+        "opportunityCost": 0.161,
+        "consequenceCorrelation": 0.611,
+        "score": 0.67
       },
       {
         "preset": "default",
-        "tileChanges": 11,
+        "tileChanges": 13,
         "workerSpecialization": 1,
-        "opportunityCost": 0.48,
-        "consequenceCorrelation": 0.111,
-        "score": 0.666
-      },
-      {
-        "preset": "default",
-        "tileChanges": 10,
-        "workerSpecialization": 1,
-        "opportunityCost": 0.314,
-        "consequenceCorrelation": 0.723,
+        "opportunityCost": 0.4,
+        "consequenceCorrelation": 0.593,
         "score": 0.739
       },
       {
-        "preset": "crisis_compound",
-        "tileChanges": 11,
+        "preset": "default",
+        "tileChanges": 12,
         "workerSpecialization": 1,
-        "opportunityCost": 0.291,
-        "consequenceCorrelation": 0.565,
-        "score": 0.7
+        "opportunityCost": 0.24,
+        "consequenceCorrelation": 0.785,
+        "score": 0.729
+      },
+      {
+        "preset": "crisis_compound",
+        "tileChanges": 16,
+        "workerSpecialization": 1,
+        "opportunityCost": 0.241,
+        "consequenceCorrelation": 0.818,
+        "score": 0.736
       },
       {
         "preset": "island_isolation",
-        "tileChanges": 17,
+        "tileChanges": 13,
         "workerSpecialization": 1,
-        "opportunityCost": 0.181,
+        "opportunityCost": 0,
         "consequenceCorrelation": 0,
-        "score": 0.554
+        "score": 0.5
       },
       {
         "preset": "population_boom",
-        "tileChanges": 6,
+        "tileChanges": 9,
         "workerSpecialization": 1,
-        "opportunityCost": 0.323,
-        "consequenceCorrelation": 0,
-        "score": 0.597
+        "opportunityCost": 0.344,
+        "consequenceCorrelation": 0.003,
+        "score": 0.604
       },
       {
         "preset": "late_game_siege",
-        "tileChanges": 19,
+        "tileChanges": 22,
         "workerSpecialization": 1,
-        "opportunityCost": 0.283,
-        "consequenceCorrelation": 0.532,
-        "score": 0.691
+        "opportunityCost": 0.109,
+        "consequenceCorrelation": 0.49,
+        "score": 0.631
       },
       {
         "preset": "no_director",
         "tileChanges": 2,
         "workerSpecialization": 1,
-        "opportunityCost": 0.163,
+        "opportunityCost": 0.068,
         "consequenceCorrelation": 0,
-        "score": 0.549
+        "score": 0.521
       }
     ]
   },
   "trafficFlowQuality": {
-    "score": 0.661,
+    "score": 0.679,
     "grade": "C",
     "details": [
       {
         "preset": "default",
-        "congestionEvents": 140,
+        "congestionEvents": 148,
         "pathDiversity": 3,
-        "totalRoads": 28,
-        "roadRatio": 0.65,
-        "roadScore": 0.353,
-        "warehouseGini": 0.356,
-        "pathEfficiency": 0.553,
-        "score": 0.67
+        "totalRoads": 26,
+        "roadRatio": 0.57,
+        "roadScore": 0.271,
+        "warehouseGini": 0.258,
+        "pathEfficiency": 0.552,
+        "score": 0.673
       },
       {
         "preset": "default",
-        "congestionEvents": 225,
+        "congestionEvents": 141,
         "pathDiversity": 3,
         "totalRoads": 50,
-        "roadRatio": 1.54,
-        "roadScore": 0.762,
-        "warehouseGini": 0.209,
-        "pathEfficiency": 0.661,
-        "score": 0.803
+        "roadRatio": 1.67,
+        "roadScore": 0.628,
+        "warehouseGini": 0.388,
+        "pathEfficiency": 0.615,
+        "score": 0.731
       },
       {
         "preset": "default",
-        "congestionEvents": 83,
+        "congestionEvents": 91,
         "pathDiversity": 3,
-        "totalRoads": 43,
-        "roadRatio": 2.21,
-        "roadScore": 0.095,
-        "warehouseGini": 0.186,
-        "pathEfficiency": 0.566,
-        "score": 0.555
+        "totalRoads": 35,
+        "roadRatio": 1.79,
+        "roadScore": 0.505,
+        "warehouseGini": 0.081,
+        "pathEfficiency": 0.605,
+        "score": 0.766
       },
       {
         "preset": "scarce_resources",
-        "congestionEvents": 82,
+        "congestionEvents": 99,
         "pathDiversity": 3,
-        "totalRoads": 24,
-        "roadRatio": 0.39,
-        "roadScore": 0.093,
-        "warehouseGini": 0.337,
-        "pathEfficiency": 0.624,
-        "score": 0.636
+        "totalRoads": 25,
+        "roadRatio": 0.42,
+        "roadScore": 0.118,
+        "warehouseGini": 0.363,
+        "pathEfficiency": 0.614,
+        "score": 0.634
       },
       {
         "preset": "abundant_resources",
-        "congestionEvents": 118,
+        "congestionEvents": 106,
         "pathDiversity": 3,
-        "totalRoads": 61,
-        "roadRatio": 0.96,
-        "roadScore": 0.658,
-        "warehouseGini": 0.447,
-        "pathEfficiency": 0.641,
-        "score": 0.73
+        "totalRoads": 53,
+        "roadRatio": 0.83,
+        "roadScore": 0.532,
+        "warehouseGini": 0.511,
+        "pathEfficiency": 0.607,
+        "score": 0.686
       },
       {
         "preset": "resource_chains_basic",
         "congestionEvents": 101,
         "pathDiversity": 3,
-        "totalRoads": 29,
-        "roadRatio": 0.44,
-        "roadScore": 0.137,
-        "warehouseGini": 0.288,
-        "pathEfficiency": 0.601,
-        "score": 0.55
+        "totalRoads": 31,
+        "roadRatio": 0.48,
+        "roadScore": 0.177,
+        "warehouseGini": 0.182,
+        "pathEfficiency": 0.562,
+        "score": 0.671
       },
       {
         "preset": "full_processing",
-        "congestionEvents": 100,
+        "congestionEvents": 112,
         "pathDiversity": 3,
-        "totalRoads": 56,
-        "roadRatio": 1.13,
-        "roadScore": 0.834,
-        "warehouseGini": 0.521,
-        "pathEfficiency": 0.592,
-        "score": 0.741
+        "totalRoads": 54,
+        "roadRatio": 1.09,
+        "roadScore": 0.793,
+        "warehouseGini": 0.333,
+        "pathEfficiency": 0.672,
+        "score": 0.786
       },
       {
         "preset": "tooled_colony",
-        "congestionEvents": 114,
+        "congestionEvents": 119,
         "pathDiversity": 3,
         "totalRoads": 29,
-        "roadRatio": 0.62,
-        "roadScore": 0.32,
-        "warehouseGini": 0.25,
-        "pathEfficiency": 0.608,
-        "score": 0.696
+        "roadRatio": 0.64,
+        "roadScore": 0.337,
+        "warehouseGini": 0.431,
+        "pathEfficiency": 0.601,
+        "score": 0.662
       },
       {
         "preset": "high_threat",
-        "congestionEvents": 85,
+        "congestionEvents": 98,
         "pathDiversity": 3,
-        "totalRoads": 31,
-        "roadRatio": 0.49,
-        "roadScore": 0.187,
-        "warehouseGini": 0.282,
-        "pathEfficiency": 0.597,
-        "score": 0.66
+        "totalRoads": 30,
+        "roadRatio": 0.46,
+        "roadScore": 0.162,
+        "warehouseGini": 0.202,
+        "pathEfficiency": 0.62,
+        "score": 0.676
       },
       {
         "preset": "skeleton_crew",
@@ -4379,145 +4389,145 @@
         "roadRatio": 0.47,
         "roadScore": 0.172,
         "warehouseGini": 0,
-        "pathEfficiency": 0.584,
-        "score": 0.611
+        "pathEfficiency": 0.602,
+        "score": 0.615
       },
       {
         "preset": "large_colony",
-        "congestionEvents": 173,
+        "congestionEvents": 150,
         "pathDiversity": 3,
-        "totalRoads": 35,
-        "roadRatio": 0.9,
-        "roadScore": 0.597,
-        "warehouseGini": 0.198,
-        "pathEfficiency": 0.618,
-        "score": 0.764
+        "totalRoads": 34,
+        "roadRatio": 0.84,
+        "roadScore": 0.544,
+        "warehouseGini": 0.211,
+        "pathEfficiency": 0.585,
+        "score": 0.744
       },
       {
         "preset": "wildlife_heavy",
-        "congestionEvents": 76,
+        "congestionEvents": 108,
         "pathDiversity": 3,
-        "totalRoads": 32,
-        "roadRatio": 3.08,
+        "totalRoads": 30,
+        "roadRatio": 2.56,
         "roadScore": 0,
-        "warehouseGini": 0.127,
-        "pathEfficiency": 0.599,
-        "score": 0.555
+        "warehouseGini": 0.123,
+        "pathEfficiency": 0.641,
+        "score": 0.664
       },
       {
         "preset": "storm_start",
-        "congestionEvents": 92,
+        "congestionEvents": 94,
         "pathDiversity": 3,
-        "totalRoads": 39,
+        "totalRoads": 40,
         "roadRatio": 0.62,
-        "roadScore": 0.325,
-        "warehouseGini": 0.326,
-        "pathEfficiency": 0.588,
-        "score": 0.577
+        "roadScore": 0.315,
+        "warehouseGini": 0.247,
+        "pathEfficiency": 0.596,
+        "score": 0.693
       },
       {
         "preset": "default",
-        "congestionEvents": 170,
+        "congestionEvents": 165,
         "pathDiversity": 3,
         "totalRoads": 28,
         "roadRatio": 0.65,
         "roadScore": 0.353,
-        "warehouseGini": 0.427,
-        "pathEfficiency": 0.552,
-        "score": 0.656
+        "warehouseGini": 0.283,
+        "pathEfficiency": 0.603,
+        "score": 0.695
       },
       {
         "preset": "developed_colony",
-        "congestionEvents": 96,
+        "congestionEvents": 94,
         "pathDiversity": 3,
-        "totalRoads": 46,
-        "roadRatio": 0.84,
-        "roadScore": 0.542,
-        "warehouseGini": 0.286,
-        "pathEfficiency": 0.628,
-        "score": 0.737
+        "totalRoads": 42,
+        "roadRatio": 0.77,
+        "roadScore": 0.469,
+        "warehouseGini": 0.242,
+        "pathEfficiency": 0.605,
+        "score": 0.726
       },
       {
         "preset": "default",
-        "congestionEvents": 127,
+        "congestionEvents": 117,
         "pathDiversity": 3,
         "totalRoads": 33,
         "roadRatio": 0.33,
-        "roadScore": 0.03,
-        "warehouseGini": 0.538,
-        "pathEfficiency": 0.625,
-        "score": 0.583
+        "roadScore": 0.025,
+        "warehouseGini": 0.419,
+        "pathEfficiency": 0.611,
+        "score": 0.603
       },
       {
         "preset": "default",
-        "congestionEvents": 94,
+        "congestionEvents": 115,
         "pathDiversity": 3,
         "totalRoads": 31,
         "roadRatio": 0.72,
         "roadScore": 0.423,
-        "warehouseGini": 0.122,
-        "pathEfficiency": 0.551,
-        "score": 0.73
+        "warehouseGini": 0.419,
+        "pathEfficiency": 0.548,
+        "score": 0.67
       },
       {
         "preset": "crisis_compound",
-        "congestionEvents": 13,
+        "congestionEvents": 11,
         "pathDiversity": 3,
-        "totalRoads": 27,
-        "roadRatio": 0.47,
-        "roadScore": 0.172,
+        "totalRoads": 26,
+        "roadRatio": 0.44,
+        "roadScore": 0.144,
         "warehouseGini": 0,
-        "pathEfficiency": 0.586,
-        "score": 0.712
+        "pathEfficiency": 0.601,
+        "score": 0.609
       },
       {
         "preset": "island_isolation",
-        "congestionEvents": 74,
+        "congestionEvents": 40,
         "pathDiversity": 2,
-        "totalRoads": 28,
-        "roadRatio": 5.38,
+        "totalRoads": 23,
+        "roadRatio": 3.54,
         "roadScore": 0,
-        "warehouseGini": 0.222,
-        "pathEfficiency": 0.659,
-        "score": 0.581
+        "warehouseGini": 0,
+        "pathEfficiency": 0.597,
+        "score": 0.613
       },
       {
         "preset": "population_boom",
         "congestionEvents": 168,
         "pathDiversity": 3,
-        "totalRoads": 27,
+        "totalRoads": 26,
         "roadRatio": 0.47,
-        "roadScore": 0.172,
-        "warehouseGini": 0.067,
-        "pathEfficiency": 0.607,
-        "score": 0.702
+        "roadScore": 0.165,
+        "warehouseGini": 0.446,
+        "pathEfficiency": 0.621,
+        "score": 0.628
       },
       {
         "preset": "late_game_siege",
-        "congestionEvents": 92,
+        "congestionEvents": 85,
         "pathDiversity": 3,
-        "totalRoads": 42,
-        "roadRatio": 0.77,
-        "roadScore": 0.469,
-        "warehouseGini": 0.278,
-        "pathEfficiency": 0.609,
-        "score": 0.72
+        "totalRoads": 48,
+        "roadRatio": 0.88,
+        "roadScore": 0.579,
+        "warehouseGini": 0.393,
+        "pathEfficiency": 0.617,
+        "score": 0.721
       },
       {
         "preset": "no_director",
-        "congestionEvents": 51,
+        "congestionEvents": 50,
         "pathDiversity": 3,
         "totalRoads": 15,
-        "roadRatio": 0.29,
+        "roadRatio": 0.3,
         "roadScore": 0,
         "warehouseGini": 0,
-        "pathEfficiency": 0.513,
-        "score": 0.563
+        "pathEfficiency": 0.531,
+        "score": 0.666
       }
     ]
   },
   "populationDynamics": {
-    "score": 0.903,
+    "score": 0.902,
     "grade": "A",
     "details": [
       {
@@ -4525,20 +4535,20 @@
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.156,
+        "propertyVariance": 0.179,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.945
+        "score": 0.974
       },
       {
         "preset": "default",
         "growthEvents": 1,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.236,
+        "propertyVariance": 0.191,
         "hasRelationships": true,
         "workerCount": 13,
-        "score": 1
+        "score": 0.989
       },
       {
         "preset": "default",
@@ -4555,180 +4565,180 @@
         "growthEvents": 2,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.113,
+        "propertyVariance": 0.11,
         "hasRelationships": true,
         "workerCount": 14,
-        "score": 0.891
+        "score": 0.888
       },
       {
         "preset": "abundant_resources",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.166,
+        "propertyVariance": 0.175,
         "hasRelationships": true,
         "workerCount": 17,
-        "score": 0.957
+        "score": 0.969
       },
       {
         "preset": "resource_chains_basic",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.162,
+        "propertyVariance": 0.146,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.953
+        "score": 0.933
       },
       {
         "preset": "full_processing",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.161,
+        "propertyVariance": 0.162,
         "hasRelationships": true,
         "workerCount": 17,
-        "score": 0.951
+        "score": 0.952
       },
       {
         "preset": "tooled_colony",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.12,
+        "propertyVariance": 0.124,
         "hasRelationships": true,
         "workerCount": 17,
-        "score": 0.9
+        "score": 0.905
       },
       {
         "preset": "high_threat",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.142,
+        "propertyVariance": 0.164,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.927
+        "score": 0.955
       },
       {
         "preset": "skeleton_crew",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.151,
+        "propertyVariance": 0.237,
         "hasRelationships": true,
         "workerCount": 8,
-        "score": 0.939
+        "score": 1
       },
       {
         "preset": "large_colony",
         "growthEvents": 0,
         "hasGrowthMechanism": 0,
         "traitCount": 7.5,
-        "propertyVariance": 0.108,
+        "propertyVariance": 0.112,
         "hasRelationships": true,
         "workerCount": 20,
-        "score": 0.635
+        "score": 0.64
       },
       {
         "preset": "wildlife_heavy",
         "growthEvents": 1,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.111,
+        "propertyVariance": 0.124,
         "hasRelationships": true,
         "workerCount": 13,
-        "score": 0.888
+        "score": 0.905
       },
       {
         "preset": "storm_start",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.112,
+        "propertyVariance": 0.128,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.89
+        "score": 0.91
       },
       {
         "preset": "default",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.177,
+        "propertyVariance": 0.195,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.971
+        "score": 0.994
       },
       {
         "preset": "developed_colony",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.118,
+        "propertyVariance": 0.145,
         "hasRelationships": true,
         "workerCount": 17,
-        "score": 0.897
+        "score": 0.931
       },
       {
         "preset": "default",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.18,
+        "propertyVariance": 0.146,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.975
+        "score": 0.933
       },
       {
         "preset": "default",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 8.5,
-        "propertyVariance": 0.189,
+        "propertyVariance": 0.159,
         "hasRelationships": true,
         "workerCount": 16,
-        "score": 0.986
+        "score": 0.949
       },
       {
         "preset": "crisis_compound",
         "growthEvents": 4,
         "hasGrowthMechanism": 1,
         "traitCount": 8.5,
-        "propertyVariance": 0.193,
+        "propertyVariance": 0.178,
         "hasRelationships": true,
         "workerCount": 8,
-        "score": 0.991
+        "score": 0.972
       },
       {
         "preset": "island_isolation",
         "growthEvents": 1,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.173,
+        "propertyVariance": 0.117,
         "hasRelationships": true,
         "workerCount": 7,
-        "score": 0.966
+        "score": 0.897
       },
       {
         "preset": "population_boom",
         "growthEvents": 0,
         "hasGrowthMechanism": 0,
         "traitCount": 7.5,
-        "propertyVariance": 0.136,
+        "propertyVariance": 0.1,
         "hasRelationships": true,
         "workerCount": 20,
-        "score": 0.67
+        "score": 0.625
       },
       {
         "preset": "late_game_siege",
         "growthEvents": 5,
         "hasGrowthMechanism": 1,
         "traitCount": 7.5,
-        "propertyVariance": 0.125,
+        "propertyVariance": 0.126,
         "hasRelationships": true,
         "workerCount": 17,
-        "score": 0.906
+        "score": 0.907
       },
       {
         "preset": "no_director",
@@ -4743,352 +4753,352 @@
     ]
   },
   "environmentalResponsiveness": {
-    "score": 0.607,
-    "grade": "D",
+    "score": 0.666,
+    "grade": "C",
     "details": [
       {
         "preset": "default",
-        "weatherJSD": 0.0408,
+        "weatherJSD": 0.061,
         "hazardTypes": 3,
         "adaptSpeed": 0.75,
-        "score": 0.679
+        "score": 0.72
       },
       {
         "preset": "default",
-        "weatherJSD": 0.0491,
+        "weatherJSD": 0.3924,
         "hazardTypes": 3,
-        "adaptSpeed": 0.5,
-        "score": 0.633
+        "adaptSpeed": 0.75,
+        "score": 0.838
       },
       {
         "preset": "default",
-        "weatherJSD": 0.1777,
+        "weatherJSD": 0.1048,
         "hazardTypes": 2,
-        "adaptSpeed": 0.5,
-        "score": 0.725
+        "adaptSpeed": 0,
+        "score": 0.57
       },
       {
         "preset": "scarce_resources",
-        "weatherJSD": 0.142,
+        "weatherJSD": 0.107,
         "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.6
+        "adaptSpeed": 0.5,
+        "score": 0.699
       },
       {
         "preset": "abundant_resources",
-        "weatherJSD": 0.1283,
+        "weatherJSD": 0.0429,
         "hazardTypes": 2,
-        "adaptSpeed": 0.5,
-        "score": 0.725
+        "adaptSpeed": 0,
+        "score": 0.446
       },
       {
         "preset": "resource_chains_basic",
-        "weatherJSD": 0.1845,
+        "weatherJSD": 0.0245,
         "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.6
+        "adaptSpeed": 0.5,
+        "score": 0.534
       },
       {
         "preset": "full_processing",
-        "weatherJSD": 0.0336,
+        "weatherJSD": 0.0284,
         "hazardTypes": 2,
         "adaptSpeed": 0,
-        "score": 0.427
+        "score": 0.417
       },
       {
         "preset": "tooled_colony",
-        "weatherJSD": 0.0561,
+        "weatherJSD": 0.0637,
         "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.472
+        "adaptSpeed": 0.5,
+        "score": 0.612
       },
       {
         "preset": "high_threat",
-        "weatherJSD": 0.1526,
+        "weatherJSD": 0.0948,
         "hazardTypes": 2,
         "adaptSpeed": 0,
-        "score": 0.6
+        "score": 0.55
       },
       {
         "preset": "skeleton_crew",
-        "weatherJSD": 0.0954,
+        "weatherJSD": 0.1009,
         "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.551
+        "adaptSpeed": 1,
+        "score": 0.812
       },
       {
         "preset": "large_colony",
-        "weatherJSD": 0.1648,
+        "weatherJSD": 0.464,
         "hazardTypes": 2,
         "adaptSpeed": 0.5,
         "score": 0.725
       },
       {
         "preset": "wildlife_heavy",
-        "weatherJSD": 0.0922,
+        "weatherJSD": 0,
         "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.544
+        "adaptSpeed": 1,
+        "score": 0.61
       },
       {
         "preset": "storm_start",
-        "weatherJSD": 0.1468,
+        "weatherJSD": 0.3139,
+        "hazardTypes": 3,
+        "adaptSpeed": 0.667,
+        "score": 0.817
+      },
+      {
+        "preset": "default",
+        "weatherJSD": 0.0949,
+        "hazardTypes": 3,
+        "adaptSpeed": 0.5,
+        "score": 0.725
+      },
+      {
+        "preset": "developed_colony",
+        "weatherJSD": 0.0263,
+        "hazardTypes": 2,
+        "adaptSpeed": 0.5,
+        "score": 0.538
+      },
+      {
+        "preset": "default",
+        "weatherJSD": 0.127,
+        "hazardTypes": 2,
+        "adaptSpeed": 1,
+        "score": 0.85
+      },
+      {
+        "preset": "default",
+        "weatherJSD": 0.0555,
+        "hazardTypes": 2,
+        "adaptSpeed": 1,
+        "score": 0.721
+      },
+      {
+        "preset": "crisis_compound",
+        "weatherJSD": 0.1508,
+        "hazardTypes": 3,
+        "adaptSpeed": 0.667,
+        "score": 0.817
+      },
+      {
+        "preset": "island_isolation",
+        "weatherJSD": 0.1672,
+        "hazardTypes": 2,
+        "adaptSpeed": 0,
+        "score": 0.6
+      },
+      {
+        "preset": "population_boom",
+        "weatherJSD": 0.1464,
+        "hazardTypes": 2,
+        "adaptSpeed": 0,
+        "score": 0.6
+      },
+      {
+        "preset": "late_game_siege",
+        "weatherJSD": 0.9883,
         "hazardTypes": 3,
         "adaptSpeed": 0.333,
         "score": 0.733
       },
       {
-        "preset": "default",
-        "weatherJSD": 0.0294,
-        "hazardTypes": 3,
-        "adaptSpeed": 0.333,
-        "score": 0.552
-      },
-      {
-        "preset": "developed_colony",
-        "weatherJSD": 0.0304,
-        "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.421
-      },
-      {
-        "preset": "default",
-        "weatherJSD": 0,
-        "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.36
-      },
-      {
-        "preset": "default",
-        "weatherJSD": 0,
-        "hazardTypes": 2,
-        "adaptSpeed": 1,
-        "score": 0.61
-      },
-      {
-        "preset": "crisis_compound",
-        "weatherJSD": 0.1105,
-        "hazardTypes": 3,
-        "adaptSpeed": 0.667,
-        "score": 0.798
-      },
-      {
-        "preset": "island_isolation",
-        "weatherJSD": 0.2136,
-        "hazardTypes": 2,
-        "adaptSpeed": 0,
-        "score": 0.6
-      },
-      {
-        "preset": "population_boom",
-        "weatherJSD": 0.1753,
+        "preset": "no_director",
+        "weatherJSD": 0.1288,
         "hazardTypes": 2,
         "adaptSpeed": 0.5,
         "score": 0.725
-      },
-      {
-        "preset": "late_game_siege",
-        "weatherJSD": 0.0893,
-        "hazardTypes": 3,
-        "adaptSpeed": 0.333,
-        "score": 0.672
-      },
-      {
-        "preset": "no_director",
-        "weatherJSD": 0,
-        "hazardTypes": 2,
-        "adaptSpeed": 1,
-        "score": 0.61
       }
     ]
   },
   "systemCouplingDensity": {
-    "score": 0.657,
+    "score": 0.7,
     "grade": "C",
     "details": [
       {
         "preset": "default",
-        "systemInfluences": 13,
+        "systemInfluences": 15,
         "avgLatency": 1,
-        "foodCV": 0.23,
+        "foodCV": 0.251,
         "cascadeDepth": 6,
-        "score": 0.725
-      },
-      {
-        "preset": "default",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.116,
-        "cascadeDepth": 5,
-        "score": 0.668
-      },
-      {
-        "preset": "default",
-        "systemInfluences": 9,
-        "avgLatency": 1,
-        "foodCV": 0.037,
-        "cascadeDepth": 5,
-        "score": 0.548
-      },
-      {
-        "preset": "scarce_resources",
-        "systemInfluences": 11,
-        "avgLatency": 1,
-        "foodCV": 0.449,
-        "cascadeDepth": 6,
-        "score": 0.794
-      },
-      {
-        "preset": "abundant_resources",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.033,
-        "cascadeDepth": 3,
-        "score": 0.544
-      },
-      {
-        "preset": "resource_chains_basic",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.389,
-        "cascadeDepth": 6,
-        "score": 0.804
-      },
-      {
-        "preset": "full_processing",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.082,
-        "cascadeDepth": 4,
-        "score": 0.651
-      },
-      {
-        "preset": "tooled_colony",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.075,
-        "cascadeDepth": 6,
-        "score": 0.647
-      },
-      {
-        "preset": "high_threat",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.125,
-        "cascadeDepth": 6,
-        "score": 0.652
-      },
-      {
-        "preset": "skeleton_crew",
-        "systemInfluences": 11,
-        "avgLatency": 1,
-        "foodCV": 0.266,
-        "cascadeDepth": 6,
-        "score": 0.703
-      },
-      {
-        "preset": "large_colony",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.062,
-        "cascadeDepth": 5,
-        "score": 0.621
-      },
-      {
-        "preset": "wildlife_heavy",
-        "systemInfluences": 9,
-        "avgLatency": 1,
-        "foodCV": 0.034,
-        "cascadeDepth": 5,
-        "score": 0.547
-      },
-      {
-        "preset": "storm_start",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.121,
-        "cascadeDepth": 6,
-        "score": 0.67
-      },
-      {
-        "preset": "default",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.246,
-        "cascadeDepth": 5,
-        "score": 0.713
-      },
-      {
-        "preset": "developed_colony",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.122,
-        "cascadeDepth": 3,
-        "score": 0.588
-      },
-      {
-        "preset": "default",
-        "systemInfluences": 12,
-        "avgLatency": 1,
-        "foodCV": 0.044,
-        "cascadeDepth": 6,
-        "score": 0.612
-      },
-      {
-        "preset": "default",
-        "systemInfluences": 13,
-        "avgLatency": 1,
-        "foodCV": 0.164,
-        "cascadeDepth": 6,
-        "score": 0.692
-      },
-      {
-        "preset": "crisis_compound",
-        "systemInfluences": 10,
-        "avgLatency": 1,
-        "foodCV": 0.45,
-        "cascadeDepth": 5,
         "score": 0.775
       },
       {
-        "preset": "island_isolation",
-        "systemInfluences": 10,
+        "preset": "default",
+        "systemInfluences": 14,
         "avgLatency": 1,
-        "foodCV": 0.122,
-        "cascadeDepth": 6,
-        "score": 0.611
+        "foodCV": 0.148,
+        "cascadeDepth": 5,
+        "score": 0.704
       },
       {
-        "preset": "population_boom",
-        "systemInfluences": 11,
+        "preset": "default",
+        "systemInfluences": 12,
         "avgLatency": 1,
-        "foodCV": 0.111,
+        "foodCV": 0.053,
         "cascadeDepth": 6,
-        "score": 0.625
+        "score": 0.617
       },
       {
-        "preset": "late_game_siege",
+        "preset": "scarce_resources",
         "systemInfluences": 13,
         "avgLatency": 1,
-        "foodCV": 0.137,
+        "foodCV": 0.45,
+        "cascadeDepth": 6,
+        "score": 0.835
+      },
+      {
+        "preset": "abundant_resources",
+        "systemInfluences": 15,
+        "avgLatency": 1,
+        "foodCV": 0.068,
+        "cascadeDepth": 5,
+        "score": 0.684
+      },
+      {
+        "preset": "resource_chains_basic",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.387,
+        "cascadeDepth": 5,
+        "score": 0.824
+      },
+      {
+        "preset": "full_processing",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.078,
+        "cascadeDepth": 3,
+        "score": 0.607
+      },
+      {
+        "preset": "tooled_colony",
+        "systemInfluences": 15,
+        "avgLatency": 1,
+        "foodCV": 0.046,
+        "cascadeDepth": 6,
+        "score": 0.673
+      },
+      {
+        "preset": "high_threat",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.128,
+        "cascadeDepth": 6,
+        "score": 0.694
+      },
+      {
+        "preset": "skeleton_crew",
+        "systemInfluences": 12,
+        "avgLatency": 1,
+        "foodCV": 0.268,
+        "cascadeDepth": 5,
+        "score": 0.724
+      },
+      {
+        "preset": "large_colony",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.063,
         "cascadeDepth": 4,
+        "score": 0.662
+      },
+      {
+        "preset": "wildlife_heavy",
+        "systemInfluences": 12,
+        "avgLatency": 1,
+        "foodCV": 0.039,
+        "cascadeDepth": 6,
+        "score": 0.609
+      },
+      {
+        "preset": "storm_start",
+        "systemInfluences": 15,
+        "avgLatency": 1,
+        "foodCV": 0.101,
+        "cascadeDepth": 6,
+        "score": 0.7
+      },
+      {
+        "preset": "default",
+        "systemInfluences": 15,
+        "avgLatency": 1,
+        "foodCV": 0.228,
+        "cascadeDepth": 6,
+        "score": 0.764
+      },
+      {
+        "preset": "developed_colony",
+        "systemInfluences": 15,
+        "avgLatency": 1,
+        "foodCV": 0.134,
+        "cascadeDepth": 4,
+        "score": 0.717
+      },
+      {
+        "preset": "default",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.096,
+        "cascadeDepth": 6,
         "score": 0.678
       },
       {
-        "preset": "no_director",
-        "systemInfluences": 10,
+        "preset": "default",
+        "systemInfluences": 15,
         "avgLatency": 1,
-        "foodCV": 0.062,
+        "foodCV": 0.192,
+        "cascadeDepth": 5,
+        "score": 0.746
+      },
+      {
+        "preset": "crisis_compound",
+        "systemInfluences": 13,
+        "avgLatency": 1,
+        "foodCV": 0.456,
+        "cascadeDepth": 6,
+        "score": 0.838
+      },
+      {
+        "preset": "island_isolation",
+        "systemInfluences": 12,
+        "avgLatency": 1,
+        "foodCV": 0.13,
+        "cascadeDepth": 6,
+        "score": 0.655
+      },
+      {
+        "preset": "population_boom",
+        "systemInfluences": 12,
+        "avgLatency": 1,
+        "foodCV": 0.115,
+        "cascadeDepth": 6,
+        "score": 0.648
+      },
+      {
+        "preset": "late_game_siege",
+        "systemInfluences": 14,
+        "avgLatency": 1,
+        "foodCV": 0.112,
+        "cascadeDepth": 3,
+        "score": 0.624
+      },
+      {
+        "preset": "no_director",
+        "systemInfluences": 11,
+        "avgLatency": 1,
+        "foodCV": 0.093,
         "cascadeDepth": 4,
-        "score": 0.581
+        "score": 0.616
       }
     ]
   },
   "tierScores": {
-    "foundation": 0.949,
-    "gameplay": 0.759,
-    "maturity": 0.722,
-    "overall": 0.778,
+    "foundation": 0.966,
+    "gameplay": 0.758,
+    "maturity": 0.727,
+    "overall": 0.784,
     "overallGrade": "C"
   }
 }

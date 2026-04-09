@@ -2103,6 +2103,10 @@ function evaluateSystemCouplingDensity(results) {
     if (r.state.events?.log?.some(e => e.type === "trade_completed")) influences++;
     // VisitorAI → BuildSystem (sabotage destroys buildings)
     if (r.state.events?.log?.some(e => e.type === "sabotage_occurred")) influences++;
+    // PopulationGrowth → worker count (food → new workers)
+    if (r.state.events?.log?.some(e => e.type === "visitor_arrived" && e.detail?.reason === "colony_growth")) influences++;
+    // Social → mood (proximity boosts social need → affects mood composite)
+    if (r.state.events?.log?.some(e => e.type === "worker_socialized")) influences++;
     const influenceScore = clamp(influences / 15, 0, 1);
 
     // Feedback latency: rough estimate — weather changes affect movement next tick (low latency)
