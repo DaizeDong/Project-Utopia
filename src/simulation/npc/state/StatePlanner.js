@@ -13,6 +13,7 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
   workers: Object.freeze({
     eat: "seek_food",
     deliver: "deliver",
+    rest: "seek_rest",
     farm: "seek_task",
     wood: "seek_task",
     quarry: "seek_task",
@@ -115,6 +116,24 @@ function deriveWorkerDesiredState(worker, state) {
         : "seek_food",
       reason: "rule:hunger",
     };
+  }
+
+  // Rest need: seek rest when rest is critically low
+  const restLevel = Number(worker.rest ?? 1);
+  const restThreshold = Number(BALANCE.workerRestSeekThreshold ?? 0.2);
+  const restRecoverThreshold = Number(BALANCE.workerRestRecoverThreshold ?? 0.6);
+  // Rest hysteresis: if already resting, stay until recovered past threshold
+  if ((currentFsmState === "rest" || currentFsmState === "seek_rest") && restLevel < restRecoverThreshold) {
+    return { desiredState: currentFsmState === "rest" ? "rest" : "seek_rest", reason: "rule:rest-hysteresis" };
+  }
+  if (restLevel < restThreshold) {
+    return { desiredState: "seek_rest", reason: "rule:rest-low" };
+  }
+
+  // Night behavior: prefer rest/wander during night when no urgent needs
+  const isNight = Boolean(state.environment?.isNight);
+  if (isNight && restLevel < Number(BALANCE.workerNightRestThreshold ?? 0.5)) {
+    return { desiredState: "seek_rest", reason: "rule:night-rest" };
   }
 
   const hasWarehouse = state.buildings.warehouses > 0;
@@ -438,7 +457,7 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   // Only count A→B→A oscillation within 1.5s window.
   // Exclude normal behavioral cycles: any transition within the standard work loop
   // (harvest, deliver, seek_task, process, idle, wander) or survival interrupts (eat, seek_food).
-  const WORK_CYCLE_STATES = new Set(["harvest", "deliver", "seek_task", "process", "idle", "wander"]);
+  const WORK_CYCLE_STATES = new Set(["harvest", "deliver", "seek_task", "process", "idle", "wander", "seek_rest", "rest"]);
   const SURVIVAL_STATES = new Set(["seek_food", "eat"]);
   const isNormalCycle =
     // Any transition between work-cycle states is a normal work loop

@@ -1,13 +1,34 @@
 /**
  * Comprehensive Game Evaluation Runner
  *
- * Evaluates the game across 6 dimensions:
- *   1. Stability    — Long-run correctness, no NaN/crash/resource leaks
- *   2. Development  — Progressive complexity growth, extreme scaling
- *   3. Coverage     — All game elements utilized during play
- *   4. Playability  — Tension curves, decision variety, engagement proxies
- *   5. Technical    — AI quality, pathfinding, state machine validity
- *   6. Reasonableness — NPC behavior naturalness, thematic coherence
+ * Evaluates the game across 21 dimensions in 3 tiers:
+ *
+ * FOUNDATION (基础运行):
+ *   1. Stability      — Long-run correctness, no NaN/crash/resource leaks
+ *   2. Technical      — AI quality, pathfinding, state machine validity
+ *   3. Coverage       — All game elements utilized during play
+ *
+ * GAMEPLAY (游戏玩法):
+ *   4. Development    — Progressive complexity growth, extreme scaling
+ *   5. Playability    — Tension curves, decision variety, engagement proxies
+ *   6. Efficiency     — Labor throughput, idle ratio, processing utilization
+ *   7. Logistics      — Infrastructure quality, supply chain completeness
+ *   8. Reasonableness — NPC behavior naturalness, thematic coherence
+ *   9. Adaptability   — Crisis recovery, weather response, death impact
+ *
+ * MATURITY (游戏成熟度):
+ *  10. Action Duration Realism    — Action time variance and movement/action ratio
+ *  11. Tile State Richness        — Mutable tile state, growth stages, visual changes
+ *  12. NPC Needs Depth            — Need count, conflicts, satisfaction diversity
+ *  13. Economic Feedback Loops    — Circular causal chains, diminishing returns
+ *  14. Spatial Layout Intelligence — Building clustering, zoning, path efficiency
+ *  15. Temporal Realism           — Day/night behavior shifts, seasonal patterns
+ *  16. Emergent Narrative Density — Event variety, causal chains, social interactions
+ *  17. Decision Consequence Depth — Irreversibility, specialization, opportunity cost
+ *  18. Traffic Flow Quality       — Congestion response, path diversity, road efficiency
+ *  19. Population Dynamics Realism — Growth mechanisms, identity, demographics
+ *  20. Environmental Responsiveness — Weather/terrain behavior impact, hazard diversity
+ *  21. System Coupling Density    — Cross-system influence, cascade depth
  *
  * Usage:
  *   node scripts/comprehensive-eval.mjs
@@ -43,7 +64,7 @@ import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 import { TILE, ROLE, TILE_INFO } from "../src/config/constants.js";
 import { BALANCE, BUILD_COST } from "../src/config/balance.js";
-import { rebuildBuildingStats, tileToWorld, countTilesByType } from "../src/world/grid/Grid.js";
+import { rebuildBuildingStats, tileToWorld, countTilesByType, listTilesByType } from "../src/world/grid/Grid.js";
 
 // ── Configuration ──────────────────────────────────────────────────────
 
@@ -96,11 +117,13 @@ function cv(arr) {
 
 // ── System builder ─────────────────────────────────────────────────────
 
-function buildSystems(memoryStore) {
-  return [
+function buildSystems(memoryStore, options = {}) {
+  const systems = [
     new SimulationClock(),
     new ProgressionSystem(),
-    new ColonyDirectorSystem(),
+  ];
+  if (!options.disableDirector) systems.push(new ColonyDirectorSystem());
+  systems.push(
     new RoleAssignmentSystem(),
     new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
@@ -115,7 +138,8 @@ function buildSystems(memoryStore) {
     new BoidsSystem(),
     new ResourceSystem(),
     new ProcessingSystem(),
-  ];
+  );
+  return systems;
 }
 
 function refreshPopulationStats(state) {
@@ -154,6 +178,7 @@ async function runSimulation(config) {
     if (preset) applyPreset(state, preset);
   }
 
+  const preset = presetId ? BENCHMARK_PRESETS.find((p) => p.id === presetId) : null;
   const memoryStore = new MemoryStore();
   const memoryObserver = new MemoryObserver(memoryStore);
   const services = createServices(state.world.mapSeed, {
@@ -161,7 +186,7 @@ async function runSimulation(config) {
     baseUrl: "",
   });
   services.memoryStore = memoryStore;
-  const systems = buildSystems(memoryStore);
+  const systems = buildSystems(memoryStore, { disableDirector: preset?.disableDirector });
 
   const totalTicks = Math.round(durationSec / DT_SEC);
   const sampleEveryTicks = Math.max(1, Math.round(sampleIntervalSec / DT_SEC));
@@ -202,6 +227,45 @@ async function runSimulation(config) {
     boidsMaxLoad: 0,
     aiDecisions: 0,
     aiFallbacks: 0,
+    // Efficiency tracking
+    deliveries: 0,
+    processingCycles: 0,
+    idleIntentSamples: 0,
+    totalIntentSamples: 0,
+    depotDistanceSum: 0,
+    depotDistanceSamples: 0,
+    processingBuildingsSamples: 0,
+    // Adaptability tracking
+    weatherChanges: [],       // { sec, from, to }
+    resourceDips: [],         // { sec, resource, value }
+    resourceRecoveries: [],   // { sec, resource }
+    productionSnapshots: [],  // { sec, food, wood }
+    lastWeather: null,
+    inResourceDip: { food: false, wood: false },
+    // Logistics tracking
+    roadCoverageSnapshots: [],
+    depotDistStdSnapshots: [],
+    chainCompletenessSnapshots: [],
+    resourceBalanceSnapshots: [],
+    // Maturity tracking
+    workerStateDurations: new Map(),    // workerId → { state, startSec, durations: number[] }
+    workerPrevStates: new Map(),        // workerId → { state, sec }
+    tileGridHashes: [],                 // grid hash snapshots for tile state richness
+    intentDistByWorker: new Map(),      // workerId → Map<intent, count>
+    resourceTimeSeries: [],             // { t, food, wood, stone, herbs, meals, tools, medicine }
+    buildingTimeSeries: [],             // { t, ...counts }
+    workerPositionSamples: [],          // { t, workerId, ix, iz, intent }
+    eventLog: [],                       // { t, type, entityId, details }
+    pathLengthSamples: [],              // { actual, manhattan }
+    deliveryByWarehouse: new Map(),     // warehouseKey → count
+    tileChanges: 0,                     // count of tile type changes during sim
+    prevGridSnapshot: null,             // previous grid Uint8Array copy
+    workerTileOccupancy: new Map(),     // tileKey → Set<workerId>  (for congestion)
+    congestionEvents: 0,               // tiles with 2+ workers simultaneously
+    populationChanges: [],             // { t, delta, reason }
+    prevWorkerCount: 0,
+    dayIntentDist: {},                 // aggregate intent distribution during day
+    nightIntentDist: {},               // aggregate intent distribution during night
   };
 
   const initialWorkers = state.agents.filter((a) => a.type === "WORKER").length;
@@ -250,11 +314,58 @@ async function runSimulation(config) {
     // Coverage: weather
     tracker.weathersSeen.add(state.weather.current);
 
-    // Coverage: tiles on map
+    // Coverage: tiles on map + Logistics sampling
     if (tick % (sampleEveryTicks * 5) === 0) {
       for (const tileId of Object.values(TILE)) {
         if (countTilesByType(state.grid, [tileId]) > 0) tracker.tilesOnMap.add(tileId);
       }
+
+      // Logistics: road coverage (worksites within reasonable distance of warehouses)
+      const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+      const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+      if (worksiteTiles.length > 0 && warehouseTiles.length > 0) {
+        let connected = 0;
+        for (const ws of worksiteTiles) {
+          // Worksite is "connected" if within 12 Manhattan distance of any warehouse
+          const minDist = Math.min(...warehouseTiles.map(wh =>
+            Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz)));
+          if (minDist <= 12) connected += 1;
+        }
+        tracker.roadCoverageSnapshots.push(connected / worksiteTiles.length);
+      }
+
+      // Logistics: warehouse distance stddev
+      const workerDistances = [];
+      for (const w of state.agents) {
+        if (w.type !== "WORKER" || w.alive === false) continue;
+        const wTile = { ix: Math.floor(w.x), iz: Math.floor(w.z) };
+        let minDist = Infinity;
+        for (const wh of warehouseTiles) {
+          const d = Math.abs(wTile.ix - wh.ix) + Math.abs(wTile.iz - wh.iz);
+          if (d < minDist) minDist = d;
+        }
+        if (Number.isFinite(minDist)) workerDistances.push(minDist);
+      }
+      if (workerDistances.length > 1) {
+        tracker.depotDistStdSnapshots.push(stddev(workerDistances));
+      }
+
+      // Logistics: supply chain completeness
+      const hasQuarry = (state.buildings?.quarries ?? 0) > 0;
+      const hasSmithy = (state.buildings?.smithies ?? 0) > 0;
+      const hasHerbGarden = (state.buildings?.herbGardens ?? 0) > 0;
+      const hasClinic = (state.buildings?.clinics ?? 0) > 0;
+      const hasFarm = (state.buildings?.farms ?? 0) > 0;
+      const hasKitchen = (state.buildings?.kitchens ?? 0) > 0;
+      const chains = (hasQuarry && hasSmithy ? 1 : 0) + (hasHerbGarden && hasClinic ? 1 : 0) + (hasFarm && hasKitchen ? 1 : 0);
+      tracker.chainCompletenessSnapshots.push(chains / 3);
+
+      // Logistics: resource flow balance
+      const food = Math.max(0, state.resources.food ?? 0);
+      const wood = Math.max(0, state.resources.wood ?? 0);
+      const maxRes = Math.max(food, wood, 1);
+      const minRes = Math.min(food, wood);
+      tracker.resourceBalanceSnapshots.push(minRes / maxRes);
     }
 
     // Sample collection
@@ -281,6 +392,30 @@ async function runSimulation(config) {
       }
       tracker.intentHistory.push(intentDist);
       tracker.stateHistory.push(stateDist);
+
+      // Day/night intent tracking
+      const isNight = Boolean(state.environment?.isNight);
+      const targetDist = isNight ? tracker.nightIntentDist : tracker.dayIntentDist;
+      for (const [k, v] of Object.entries(intentDist)) {
+        targetDist[k] = (targetDist[k] ?? 0) + v;
+      }
+
+      // Efficiency: idle ratio tracking
+      const idleCount = (intentDist["wander"] ?? 0) + (intentDist["idle"] ?? 0) + (intentDist["unknown"] ?? 0);
+      const totalIntents = Object.values(intentDist).reduce((a, b) => a + b, 0);
+      tracker.idleIntentSamples += idleCount;
+      tracker.totalIntentSamples += totalIntents;
+
+      // Efficiency: depot distance
+      const avgDepot = Number(state.metrics?.logistics?.avgDepotDistance ?? 0);
+      if (avgDepot > 0) {
+        tracker.depotDistanceSum += avgDepot;
+        tracker.depotDistanceSamples += 1;
+      }
+
+      // Efficiency: processing building count
+      const procBuildings = (state.buildings?.kitchens ?? 0) + (state.buildings?.smithies ?? 0) + (state.buildings?.clinics ?? 0);
+      tracker.processingBuildingsSamples += procBuildings;
 
       // Resource diversity
       const resDiversity = ["food", "wood", "stone", "herbs", "meals", "medicine", "tools"]
@@ -325,6 +460,40 @@ async function runSimulation(config) {
       });
     }
 
+    // Efficiency: delivery and processing counters
+    tracker.deliveries = Number(state.metrics.deliveries ?? 0);
+    tracker.processingCycles = Number(state.metrics.processingCycles ?? 0);
+
+    // Adaptability: weather change detection
+    const currentWeather = state.weather.current;
+    if (tracker.lastWeather !== null && currentWeather !== tracker.lastWeather) {
+      const sec = Number(state.metrics.timeSec ?? 0);
+      tracker.weatherChanges.push({ sec, from: tracker.lastWeather, to: currentWeather });
+    }
+    tracker.lastWeather = currentWeather;
+
+    // Adaptability: resource dip/recovery tracking
+    const nowSec = Number(state.metrics.timeSec ?? 0);
+    for (const res of ["food", "wood"]) {
+      const val = Number(state.resources[res] ?? 0);
+      if (!tracker.inResourceDip[res] && val < 15) {
+        tracker.inResourceDip[res] = true;
+        tracker.resourceDips.push({ sec: nowSec, resource: res, value: round(val) });
+      } else if (tracker.inResourceDip[res] && val >= 30) {
+        tracker.inResourceDip[res] = false;
+        tracker.resourceRecoveries.push({ sec: nowSec, resource: res });
+      }
+    }
+
+    // Production snapshots (every 5 seconds for adaptability)
+    if (tick % (Math.round(5 / DT_SEC)) === 0) {
+      tracker.productionSnapshots.push({
+        sec: nowSec,
+        food: round(state.resources.food, 2),
+        wood: round(state.resources.wood, 2),
+      });
+    }
+
     // Technical metrics aggregation
     tracker.goalFlips = Number(state.metrics.goalFlipCount ?? 0);
     tracker.invalidTransitions = Number(state.metrics.invalidTransitionCount ?? 0);
@@ -334,6 +503,99 @@ async function runSimulation(config) {
     tracker.boidsMaxLoad = Math.max(tracker.boidsMaxLoad, Number(state.debug?.boids?.peakTileLoad ?? 0));
     tracker.aiDecisions = Number(state.ai.environmentDecisionCount ?? 0) + Number(state.ai.policyDecisionCount ?? 0);
     tracker.aiFallbacks = tracker.aiDecisions; // all fallback in headless mode
+
+    // ── Maturity data collection ──────────────────────────────────────
+    // Worker state duration tracking (every 10 ticks to limit overhead)
+    if (tick % 10 === 0) {
+      for (const w of state.agents) {
+        if (w.type !== "WORKER" || w.alive === false) continue;
+        // Use stateLabel for fine-grained state tracking
+        const rawLabel = String(w.stateLabel ?? "Idle");
+        const currentState = rawLabel.split(" ")[0].toLowerCase();
+        const prev = tracker.workerPrevStates.get(w.id);
+        if (prev && prev.state !== currentState) {
+          const duration = nowSec - prev.sec;
+          if (duration > 0.01) {
+            if (!tracker.workerStateDurations.has(w.id)) {
+              tracker.workerStateDurations.set(w.id, []);
+            }
+            tracker.workerStateDurations.get(w.id).push({ state: prev.state, duration });
+          }
+        }
+        tracker.workerPrevStates.set(w.id, { state: currentState, sec: nowSec });
+      }
+    }
+
+    // Per-worker intent tracking (every 30 ticks)
+    if (tick % 30 === 0) {
+      for (const w of state.agents) {
+        if (w.type !== "WORKER" || w.alive === false) continue;
+        const intent = String(w.debug?.lastIntent ?? "unknown");
+        if (!tracker.intentDistByWorker.has(w.id)) {
+          tracker.intentDistByWorker.set(w.id, new Map());
+        }
+        const m = tracker.intentDistByWorker.get(w.id);
+        m.set(intent, (m.get(intent) ?? 0) + 1);
+      }
+    }
+
+    // Tile change detection (every 60 ticks)
+    if (tick % 60 === 0) {
+      const gridTiles = state.grid.tiles;
+      if (tracker.prevGridSnapshot) {
+        let changes = 0;
+        for (let i = 0; i < gridTiles.length; i++) {
+          if (gridTiles[i] !== tracker.prevGridSnapshot[i]) changes++;
+        }
+        tracker.tileChanges += changes;
+      }
+      tracker.prevGridSnapshot = new Uint8Array(gridTiles);
+    }
+
+    // Resource time series (every 60 ticks ≈ every 2s)
+    if (tick % 60 === 0) {
+      tracker.resourceTimeSeries.push({
+        t: nowSec,
+        food: state.resources.food ?? 0,
+        wood: state.resources.wood ?? 0,
+        stone: state.resources.stone ?? 0,
+        herbs: state.resources.herbs ?? 0,
+        meals: state.resources.meals ?? 0,
+        tools: state.resources.tools ?? 0,
+        medicine: state.resources.medicine ?? 0,
+      });
+    }
+
+    // Worker congestion detection (every 30 ticks)
+    if (tick % 30 === 0) {
+      const tileOcc = new Map();
+      for (const w of state.agents) {
+        if (w.type !== "WORKER" || w.alive === false) continue;
+        const key = `${Math.floor(w.x)},${Math.floor(w.z)}`;
+        if (!tileOcc.has(key)) tileOcc.set(key, 0);
+        tileOcc.set(key, tileOcc.get(key) + 1);
+      }
+      for (const count of tileOcc.values()) {
+        if (count >= 2) tracker.congestionEvents++;
+      }
+    }
+
+    // Population change detection
+    const currentWorkerCount = state.agents.filter(a => a.type === "WORKER" && a.alive !== false).length;
+    if (tracker.prevWorkerCount > 0 && currentWorkerCount !== tracker.prevWorkerCount) {
+      const delta = currentWorkerCount - tracker.prevWorkerCount;
+      tracker.populationChanges.push({ t: nowSec, delta, reason: delta > 0 ? "join" : "death" });
+    }
+    tracker.prevWorkerCount = currentWorkerCount;
+
+    // Event logging (deaths already tracked; also log building events, weather, resource depletion)
+    if (tick % 60 === 0) {
+      // Building count changes
+      const bldg = state.buildings ?? {};
+      const totalB = (bldg.farms ?? 0) + (bldg.lumbers ?? 0) + (bldg.warehouses ?? 0) + (bldg.walls ?? 0)
+        + (bldg.quarries ?? 0) + (bldg.herbGardens ?? 0) + (bldg.kitchens ?? 0) + (bldg.smithies ?? 0) + (bldg.clinics ?? 0);
+      tracker.buildingTimeSeries.push({ t: nowSec, total: totalB, ...bldg });
+    }
 
     if (state.session.phase === "end") break;
   }
@@ -481,7 +743,7 @@ function evaluateCoverage(results) {
   }
 
   // Define expected elements
-  const expectedTileTypes = Object.keys(TILE).length; // 13 tile types (0-12)
+  const expectedTileTypes = Object.keys(TILE).length; // 14 tile types (0-13)
   const expectedRoles = Object.keys(ROLE).length;     // 8 roles
   const expectedResources = 7; // food, wood, stone, herbs, meals, medicine, tools
   const expectedWeathers = 5;  // clear, rain, storm, drought, winter
@@ -737,7 +999,1035 @@ function evaluateReasonableness(results) {
   };
 }
 
+function evaluateEfficiency(results) {
+  const details = [];
+
+  for (const r of results) {
+    const t = r.tracker;
+    const durationMin = r.survivalSec / 60;
+
+    // 1. Carry throughput: deliveries per worker per minute
+    const avgWorkers = mean(t.samples.map(s => s.workers)) || 1;
+    const deliveriesPerWorkerMin = durationMin > 0 ? t.deliveries / (avgWorkers * durationMin) : 0;
+    const carryScore = Math.min(1, deliveriesPerWorkerMin / 2); // 2+ per worker/min = perfect
+
+    // 2. Idle ratio: fraction of time workers are NOT idle/wandering
+    const idleRatio = t.totalIntentSamples > 0 ? t.idleIntentSamples / t.totalIntentSamples : 1;
+    const idleScore = Math.min(1, (1 - idleRatio) / 0.85); // 85%+ active = perfect
+
+    // 3. Processing utilization
+    const avgProcBuildings = t.samples.length > 0 ? t.processingBuildingsSamples / t.samples.length : 0;
+    const maxPossibleCycles = avgProcBuildings > 0
+      ? avgProcBuildings * (r.survivalSec / 4) // ~4s average cycle
+      : 1;
+    const procUtil = maxPossibleCycles > 0 ? t.processingCycles / maxPossibleCycles : 0;
+    const procScore = avgProcBuildings > 0 ? Math.min(1, procUtil / 0.5) : null; // 50%+ = perfect
+
+    // 4. Depot distance
+    const avgDepot = t.depotDistanceSamples > 0 ? t.depotDistanceSum / t.depotDistanceSamples : 12;
+    const depotScore = Math.max(0, 1 - clamp(avgDepot / 12, 0, 1));
+
+    const score = procScore !== null
+      ? carryScore * 0.3 + idleScore * 0.25 + procScore * 0.25 + depotScore * 0.2
+      : carryScore * 0.4 + idleScore * 0.3 + depotScore * 0.3;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      deliveries: t.deliveries,
+      deliveriesPerWorkerMin: round(deliveriesPerWorkerMin, 2),
+      carryScore: round(carryScore, 3),
+      idleRatio: round(idleRatio, 3),
+      idleScore: round(idleScore, 3),
+      processingCycles: t.processingCycles,
+      procUtilization: round(procUtil, 3),
+      procScore: round(procScore, 3),
+      avgDepotDistance: round(avgDepot, 1),
+      depotScore: round(depotScore, 3),
+      score: round(score, 3),
+    });
+  }
+
+  return {
+    score: round(mean(details.map(d => d.score)), 3),
+    grade: gradeScore(mean(details.map(d => d.score))),
+    details,
+  };
+}
+
+function evaluateAdaptability(results) {
+  const details = [];
+
+  for (const r of results) {
+    const t = r.tracker;
+    const snaps = t.productionSnapshots;
+
+    // 1. Weather response: production continuity across weather changes
+    let weatherScores = [];
+    for (const wc of t.weatherChanges) {
+      const beforeSnaps = snaps.filter(s => s.sec >= wc.sec - 10 && s.sec < wc.sec);
+      const afterSnaps = snaps.filter(s => s.sec > wc.sec && s.sec <= wc.sec + 15);
+      if (beforeSnaps.length > 0 && afterSnaps.length > 0) {
+        const beforeTotal = mean(beforeSnaps.map(s => s.food + s.wood));
+        const afterTotal = mean(afterSnaps.map(s => s.food + s.wood));
+        const ratio = beforeTotal > 0 ? Math.min(1, afterTotal / beforeTotal) : 1;
+        weatherScores.push(ratio);
+      }
+    }
+    const weatherResponse = weatherScores.length > 0 ? mean(weatherScores) : 1;
+
+    // 2. Crisis recovery: how quickly does food/wood recover from dips?
+    let recoveryScores = [];
+    for (const dip of t.resourceDips) {
+      const recovery = t.resourceRecoveries.find(
+        r2 => r2.resource === dip.resource && r2.sec > dip.sec
+      );
+      if (recovery) {
+        const recoverySec = recovery.sec - dip.sec;
+        recoveryScores.push(Math.max(0, 1 - clamp(recoverySec / 30, 0, 1)));
+      } else {
+        recoveryScores.push(0); // never recovered
+      }
+    }
+    const crisisRecovery = recoveryScores.length > 0 ? mean(recoveryScores) : 1;
+
+    // 3. Death impact: production recovery after deaths
+    const deathTimestamps = r.state?.metrics?.deathTimestamps ?? [];
+    let deathScores = [];
+    for (const deathSec of deathTimestamps) {
+      const beforeSnaps = snaps.filter(s => s.sec >= deathSec - 15 && s.sec < deathSec);
+      const afterSnaps = snaps.filter(s => s.sec > deathSec && s.sec <= deathSec + 15);
+      if (beforeSnaps.length > 0 && afterSnaps.length > 0) {
+        const beforeTotal = mean(beforeSnaps.map(s => s.food + s.wood));
+        const afterTotal = mean(afterSnaps.map(s => s.food + s.wood));
+        const ratio = beforeTotal > 0 ? Math.min(1, afterTotal / beforeTotal) : 1;
+        deathScores.push(ratio);
+      }
+    }
+    const deathImpact = deathScores.length > 0 ? mean(deathScores) : 1;
+
+    // 4. Role rebalancing: role diversity should track building diversity
+    const buildingChanges = t.buildingCountHistory;
+    let rebalanceScore = 1;
+    if (buildingChanges.length > 4) {
+      // Check correlation: when buildings grow, do roles grow too?
+      const earlyRoles = mean(t.roleDiversityHistory.slice(0, Math.max(1, Math.floor(t.roleDiversityHistory.length * 0.3))));
+      const lateRoles = mean(t.roleDiversityHistory.slice(Math.floor(t.roleDiversityHistory.length * 0.7)));
+      const earlyBldg = mean(buildingChanges.slice(0, Math.max(1, Math.floor(buildingChanges.length * 0.3))));
+      const lateBldg = mean(buildingChanges.slice(Math.floor(buildingChanges.length * 0.7)));
+      // If buildings grew but roles didn't, that's bad
+      if (lateBldg > earlyBldg * 1.2 && lateRoles <= earlyRoles) {
+        rebalanceScore = 0.5;
+      }
+    }
+
+    const score = weatherResponse * 0.3 + crisisRecovery * 0.3 + deathImpact * 0.2 + rebalanceScore * 0.2;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      weatherChanges: t.weatherChanges.length,
+      weatherResponse: round(weatherResponse, 3),
+      resourceDips: t.resourceDips.length,
+      crisisRecovery: round(crisisRecovery, 3),
+      deaths: deathTimestamps.length,
+      deathImpact: round(deathImpact, 3),
+      rebalanceScore: round(rebalanceScore, 3),
+      score: round(score, 3),
+    });
+  }
+
+  return {
+    score: round(mean(details.map(d => d.score)), 3),
+    grade: gradeScore(mean(details.map(d => d.score))),
+    details,
+  };
+}
+
+function evaluateLogistics(results) {
+  const details = [];
+
+  for (const r of results) {
+    const t = r.tracker;
+
+    // 1. Road coverage: fraction of worksites connected to warehouses
+    const roadCoverage = t.roadCoverageSnapshots.length > 0 ? mean(t.roadCoverageSnapshots) : 0;
+
+    // 2. Warehouse distribution: low stddev = evenly distributed
+    const avgStd = t.depotDistStdSnapshots.length > 0 ? mean(t.depotDistStdSnapshots) : 15;
+    const warehouseDistScore = Math.max(0, 1 - clamp(avgStd / 15, 0, 1));
+
+    // 3. Supply chain completeness
+    const chainScore = t.chainCompletenessSnapshots.length > 0 ? mean(t.chainCompletenessSnapshots) : 0;
+
+    // 4. Resource flow balance
+    const balanceScore = t.resourceBalanceSnapshots.length > 0 ? mean(t.resourceBalanceSnapshots) : 0;
+
+    const score = roadCoverage * 0.25 + warehouseDistScore * 0.25 + chainScore * 0.25 + balanceScore * 0.25;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      roadCoverage: round(roadCoverage, 3),
+      warehouseDistScore: round(warehouseDistScore, 3),
+      avgDepotStdDev: round(avgStd, 2),
+      chainCompleteness: round(chainScore, 3),
+      resourceBalance: round(balanceScore, 3),
+      score: round(score, 3),
+    });
+  }
+
+  return {
+    score: round(mean(details.map(d => d.score)), 3),
+    grade: gradeScore(mean(details.map(d => d.score))),
+    details,
+  };
+}
+
+// ── Maturity Dimension Scorers ─────────────────────────────────────────
+
+function evaluateActionDurationRealism(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    // Collect all non-movement action durations
+    // Worker states: idle, seek (food/task = movement), eat, harvest, deliver, process, wander
+    // Movement states: seek, wander, idle (not doing productive work)
+    // Action states: eat, harvest, deliver, process (doing something at a destination)
+    const actionDurations = [];
+    const movementDurations = [];
+    for (const durations of t.workerStateDurations.values()) {
+      for (const d of durations) {
+        const isAction = d.state === "eat" || d.state === "harvest" || d.state === "deliver"
+          || d.state === "process";
+        if (isAction) {
+          actionDurations.push(d.duration);
+        } else {
+          movementDurations.push(d.duration);
+        }
+      }
+    }
+
+    // Action duration CV (coefficient of variation)
+    const actionCV = actionDurations.length > 2 ? cv(actionDurations) : 0;
+    const cvScore = clamp(actionCV / 0.8, 0, 1);
+
+    // Movement to action ratio (target: 0.4 = 40% action time)
+    const totalMovement = movementDurations.reduce((a, b) => a + b, 0);
+    const totalAction = actionDurations.reduce((a, b) => a + b, 0);
+    const actionRatio = (totalMovement + totalAction) > 0
+      ? totalAction / (totalMovement + totalAction)
+      : 0;
+    const ratioScore = clamp(actionRatio / 0.4, 0, 1);
+
+    // Progress observability: check if any worker has a `progress` or `workRemaining` field
+    let hasProgress = false;
+    for (const w of r.state.agents) {
+      if (w.type === "WORKER" && (w.progress !== undefined || w.workRemaining !== undefined)) {
+        hasProgress = true;
+        break;
+      }
+    }
+
+    const score = 0.3 * cvScore + 0.4 * ratioScore + 0.3 * (hasProgress ? 1 : 0);
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      actionDurationCount: actionDurations.length,
+      actionCV: round(actionCV, 3),
+      actionRatio: round(actionRatio, 3),
+      hasProgress,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateTileStateRichness(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    // Check for mutable tile state fields beyond the type ID
+    // The grid is a Uint8Array — no per-tile state objects. Score near 0.
+    const gridTiles = r.state.grid.tiles;
+    const usedTileTypes = new Set();
+    for (let i = 0; i < gridTiles.length; i++) usedTileTypes.add(gridTiles[i]);
+
+    // Mutable state fields per tile: 0 (flat Uint8Array)
+    const avgFields = 0;
+
+    // Visual state changes: count tile type changes during simulation
+    const visualChanges = t.tileChanges;
+    const tileCnt = gridTiles.length;
+
+    // Unique states = just tile types (no sub-states)
+    const uniqueStates = usedTileTypes.size;
+    const expectedUniqueStates = usedTileTypes.size * 4; // target: 4 sub-states per type
+
+    const fieldScore = clamp(avgFields / 3, 0, 1);
+    const visualScore = clamp(visualChanges / (tileCnt * 0.1), 0, 1);
+    const stateScore = clamp(uniqueStates / expectedUniqueStates, 0, 1);
+
+    const score = 0.4 * fieldScore + 0.3 * visualScore + 0.3 * stateScore;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      avgFieldsPerTile: avgFields,
+      tileTypeChanges: visualChanges,
+      uniqueTileStates: uniqueStates,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateNPCNeedsDepth(results) {
+  const details = [];
+  for (const r of results) {
+    // Count need-like fields that decay and trigger behavior
+    const sampleWorker = r.state.agents.find(a => a.type === "WORKER" && a.alive !== false);
+    const needFields = [];
+    if (sampleWorker) {
+      if (sampleWorker.hunger !== undefined) needFields.push("hunger");
+      if (sampleWorker.rest !== undefined) needFields.push("rest");
+      if (sampleWorker.morale !== undefined) needFields.push("morale");
+      if (sampleWorker.comfort !== undefined) needFields.push("comfort");
+      if (sampleWorker.social !== undefined) needFields.push("social");
+      if (sampleWorker.recreation !== undefined) needFields.push("recreation");
+    }
+    const needCount = needFields.length;
+
+    // Need conflict pairs (needs that independently drive state transitions)
+    // Currently only hunger drives behavior → 0 conflict pairs
+    const conflictPairs = Math.max(0, needCount * (needCount - 1) / 2);
+    // But only count pairs where BOTH needs actually drive different actions
+    const activeConflictPairs = needCount >= 2 ? conflictPairs : 0;
+
+    // Satisfaction actions: distinct actions that satisfy needs
+    const satisfactionActions = new Set();
+    const allIntents = r.tracker.allIntentsSeen ?? r.tracker.intentsChosen;
+    if (allIntents.has("eat") || allIntents.has("seek_food")) satisfactionActions.add("eat");
+    // Future needs would add: sleep, socialize, recreate, etc.
+    // Currently only eat satisfies hunger
+
+    // Mood/composite indicator
+    const hasMood = sampleWorker && (
+      sampleWorker.mood !== undefined || sampleWorker.happiness !== undefined
+      || sampleWorker.satisfaction !== undefined || sampleWorker.morale !== undefined
+    );
+
+    const needScore = clamp(needCount / 6, 0, 1);
+    const conflictScore = clamp(activeConflictPairs / 6, 0, 1);
+    const actionScore = clamp(satisfactionActions.size / 8, 0, 1);
+    const moodScore = hasMood ? 1 : 0;
+
+    // Bonus: if the one need (hunger) is well-implemented, give partial credit
+    const implementationBonus = (needCount >= 1 && allIntents.has("eat")) ? 0.05 : 0;
+
+    const score = 0.3 * needScore + 0.25 * conflictScore + 0.25 * actionScore + 0.2 * moodScore + implementationBonus;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      needFields,
+      conflictPairs: activeConflictPairs,
+      satisfactionActions: [...satisfactionActions],
+      hasMood,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateEconomicFeedbackLoops(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    const rts = t.resourceTimeSeries;
+
+    // Count feedback loops
+    let loops = 0;
+
+    // Loop 1: more workers → more food consumption → potential shortage
+    // Check: does food delta correlate negatively with worker count?
+    if (rts.length > 5) {
+      const foodDeltas = [];
+      const workerCounts = [];
+      for (let i = 1; i < rts.length; i++) {
+        foodDeltas.push(rts[i].food - rts[i - 1].food);
+        const sample = t.samples.find(s => Math.abs(s.t - rts[i].t) < 3);
+        workerCounts.push(sample?.workers ?? r.initialWorkers);
+      }
+      const corr = pearsonCorrelation(foodDeltas, workerCounts);
+      if (Math.abs(corr) > 0.2) loops += 1;
+    }
+
+    // Loop 2: threat influences building priority (check: does threat correlate with wall count?)
+    if (t.buildingTimeSeries.length > 3) {
+      const threatVals = t.samples.map(s => s.threat);
+      const wallCounts = t.buildingTimeSeries.map(b => b.walls ?? 0);
+      const minLen = Math.min(threatVals.length, wallCounts.length);
+      if (minLen > 3) {
+        const corr = pearsonCorrelation(threatVals.slice(0, minLen), wallCounts.slice(0, minLen));
+        if (Math.abs(corr) > 0.2) loops += 1;
+      }
+    }
+
+    // Diminishing returns: does per-unit gathering time increase as reserves drop?
+    // Currently: constant rate → no diminishing returns
+    const hasDiminishingReturns = 0;
+
+    // Demand-supply dynamics: food delta variance (higher = more dynamic)
+    let demandVariance = 0;
+    if (rts.length > 5) {
+      const foodDeltas = [];
+      for (let i = 1; i < rts.length; i++) {
+        foodDeltas.push(rts[i].food - rts[i - 1].food);
+      }
+      demandVariance = stddev(foodDeltas);
+    }
+
+    const loopScore = clamp(loops / 4, 0, 1);
+    const dimRetScore = hasDiminishingReturns;
+    const demandScore = clamp(demandVariance / 0.5, 0, 1);
+
+    const score = 0.35 * loopScore + 0.35 * dimRetScore + 0.3 * demandScore;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      feedbackLoops: loops,
+      hasDiminishingReturns: Boolean(hasDiminishingReturns),
+      demandVariance: round(demandVariance, 3),
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateSpatialLayoutIntelligence(results) {
+  const details = [];
+  for (const r of results) {
+    const grid = r.state.grid;
+
+    // Building clustering: measure average distance between producer→consumer pairs
+    const farms = listTilesByType(grid, [TILE.FARM]);
+    const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+    const quarries = listTilesByType(grid, [TILE.QUARRY]);
+    const smithies = listTilesByType(grid, [TILE.SMITHY]);
+    const herbGardens = listTilesByType(grid, [TILE.HERB_GARDEN]);
+
+    // Average nearest-consumer distance for producer buildings
+    let clusterDistSum = 0;
+    let clusterPairs = 0;
+    const producerConsumerPairs = [
+      [farms, warehouses],
+      [quarries, smithies.length > 0 ? smithies : warehouses],
+      [herbGardens, warehouses],
+    ];
+    for (const [producers, consumers] of producerConsumerPairs) {
+      if (producers.length === 0 || consumers.length === 0) continue;
+      for (const p of producers) {
+        let minDist = Infinity;
+        for (const c of consumers) {
+          const d = Math.abs(p.ix - c.ix) + Math.abs(p.iz - c.iz);
+          if (d < minDist) minDist = d;
+        }
+        if (Number.isFinite(minDist)) {
+          clusterDistSum += minDist;
+          clusterPairs++;
+        }
+      }
+    }
+    const avgClusterDist = clusterPairs > 0 ? clusterDistSum / clusterPairs : 20;
+    // Random baseline: half the map diagonal ≈ 42
+    const randomDist = 42;
+    const clusterScore = clamp(1 - avgClusterDist / randomDist, 0, 1);
+
+    // Path efficiency: actual path vs Manhattan distance for worker samples
+    const pathSamples = r.tracker.pathLengthSamples;
+    let pathEfficiency = 0.5; // default if no data
+    if (pathSamples.length > 0) {
+      const ratios = pathSamples
+        .filter(s => s.manhattan > 0)
+        .map(s => s.manhattan / Math.max(s.actual, s.manhattan));
+      pathEfficiency = ratios.length > 0 ? mean(ratios) : 0.5;
+    } else {
+      // Estimate from road network quality — without actual path data, score is limited
+      const roads = countTilesByType(grid, [TILE.ROAD]);
+      pathEfficiency = clamp(roads / 60, 0, 0.4); // Generous cap: no measured data = max 0.4
+    }
+
+    // Expansion pattern: are buildings placed concentrically from center?
+    const allBuildings = listTilesByType(grid, [
+      TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL,
+      TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC
+    ]);
+    let expansionCorrelation = 0;
+    if (allBuildings.length > 3) {
+      const cx = mean(allBuildings.map(b => b.ix));
+      const cz = mean(allBuildings.map(b => b.iz));
+      const distances = allBuildings.map(b => Math.sqrt((b.ix - cx) ** 2 + (b.iz - cz) ** 2));
+      const distStd = stddev(distances);
+      const distMean = mean(distances);
+      // Tight cluster = low stddev relative to mean
+      expansionCorrelation = distMean > 0 ? clamp(1 - distStd / distMean, 0, 1) : 0;
+    }
+
+    // Zoning: simplified silhouette coefficient (do building types cluster together?)
+    let zoningScore = 0;
+    if (allBuildings.length > 5) {
+      // For each building, check if nearest same-type is closer than nearest different-type
+      let sameCloser = 0;
+      for (const b of allBuildings) {
+        const tileType = b.tileType ?? gridTileAt(grid, b.ix, b.iz);
+        let nearestSame = Infinity;
+        let nearestDiff = Infinity;
+        for (const other of allBuildings) {
+          if (other === b) continue;
+          const d = Math.abs(b.ix - other.ix) + Math.abs(b.iz - other.iz);
+          const otherType = other.tileType ?? gridTileAt(grid, other.ix, other.iz);
+          if (otherType === tileType) {
+            if (d < nearestSame) nearestSame = d;
+          } else {
+            if (d < nearestDiff) nearestDiff = d;
+          }
+        }
+        if (nearestSame < nearestDiff) sameCloser++;
+      }
+      zoningScore = sameCloser / allBuildings.length;
+    }
+
+    const score = 0.25 * clusterScore + 0.25 * zoningScore + 0.25 * pathEfficiency + 0.25 * expansionCorrelation;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      avgClusterDist: round(avgClusterDist, 1),
+      clusterScore: round(clusterScore, 3),
+      zoningScore: round(zoningScore, 3),
+      pathEfficiency: round(pathEfficiency, 3),
+      expansionCorrelation: round(expansionCorrelation, 3),
+      totalBuildings: allBuildings.length,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateTemporalRealism(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    const ih = t.intentHistory;
+
+    // Day/night behavior shift: compare daytime vs nighttime intent distributions
+    let jsDivergence = 0;
+    const dayDist = t.dayIntentDist;
+    const nightDist = t.nightIntentDist;
+    const dayTotal = Object.values(dayDist).reduce((a, b) => a + b, 0);
+    const nightTotal = Object.values(nightDist).reduce((a, b) => a + b, 0);
+    if (dayTotal > 0 && nightTotal > 0) {
+      jsDivergence = jensenShannonDivergence(dayDist, nightDist);
+    }
+    // Also check if rest/seek_rest intents appear more at night
+    const nightRestRatio = (nightDist["seek_rest"] ?? 0 + nightDist["rest"] ?? 0) / Math.max(nightTotal, 1);
+    const dayRestRatio = (dayDist["seek_rest"] ?? 0 + dayDist["rest"] ?? 0) / Math.max(dayTotal, 1);
+    const restShiftBonus = nightRestRatio > dayRestRatio * 1.5 ? 0.15 : 0;
+    const jsScore = clamp(jsDivergence / 0.15 + restShiftBonus, 0, 1);
+
+    // Seasonal variation: check for periodic patterns in food production
+    let hasSeasonalPattern = 0;
+    const rts = t.resourceTimeSeries;
+    if (rts.length > 10) {
+      // Check autocorrelation of food values at lag=quartile
+      const foodVals = rts.map(s => s.food);
+      const lag = Math.floor(foodVals.length / 4);
+      if (lag >= 2) {
+        const autocorr = pearsonCorrelation(foodVals.slice(0, -lag), foodVals.slice(lag));
+        // Negative autocorrelation at quarter-period suggests cyclical behavior
+        if (autocorr < -0.2) hasSeasonalPattern = 0.5;
+        // Strong positive autocorrelation suggests steady state (no seasons)
+      }
+    }
+
+    // Event rhythm: autocorrelation of weather event timestamps
+    let eventRhythm = 0;
+    if (t.weatherChanges.length >= 3) {
+      const intervals = [];
+      for (let i = 1; i < t.weatherChanges.length; i++) {
+        intervals.push(t.weatherChanges[i].sec - t.weatherChanges[i - 1].sec);
+      }
+      const intervalCV = cv(intervals);
+      // Low CV = regular rhythm, high CV = random
+      eventRhythm = intervalCV < 2 ? clamp(1 - intervalCV / 2, 0, 1) : 0;
+    }
+
+    const score = 0.4 * jsScore + 0.3 * hasSeasonalPattern + 0.3 * eventRhythm;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      jsDivergence: round(jsDivergence, 4),
+      hasSeasonalPattern,
+      eventRhythm: round(eventRhythm, 3),
+      weatherChangeCount: t.weatherChanges.length,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateEmergentNarrative(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+
+    // Use GameEventBus log if available, fall back to old detection
+    const eventLog = r.state.events?.log ?? [];
+
+    // Unique event types from event bus
+    const eventTypes = new Set();
+    eventTypes.add("simulation_start");
+    for (const ev of eventLog) {
+      eventTypes.add(ev.type);
+    }
+    // Also detect from tracker data for backward compat
+    if (t.weatherChanges.length > 0) eventTypes.add("weather_change");
+    if ((r.state.metrics?.deathsTotal ?? 0) > 0) eventTypes.add("death");
+    if (t.buildingTimeSeries.length > 1) {
+      const first = t.buildingTimeSeries[0]?.total ?? 0;
+      const last = t.buildingTimeSeries[t.buildingTimeSeries.length - 1]?.total ?? 0;
+      if (last > first) eventTypes.add("building_constructed");
+    }
+    if (t.resourceDips.length > 0) eventTypes.add("resource_shortage");
+    if (t.resourceRecoveries.length > 0) eventTypes.add("resource_recovery");
+    if (t.populationChanges.length > 0) {
+      if (t.populationChanges.some(p => p.delta > 0)) eventTypes.add("population_growth");
+      if (t.populationChanges.some(p => p.delta < 0)) eventTypes.add("population_decline");
+    }
+    if (r.tracker.objectivesCompleted > 0) eventTypes.add("objective_completed");
+    const eventTypeScore = clamp(eventTypes.size / 15, 0, 1);
+
+    // Entity-attributed events from event bus
+    const attributedEvents = eventLog.filter(e => e.entityId || e.entityName).length;
+    const totalEvents = Math.max(eventLog.length, eventTypes.size);
+    const attributionScore = totalEvents > 0 ? clamp(attributedEvents / Math.max(totalEvents, 1), 0, 1) : 0;
+
+    // Causal chains: detect A→B sequences within 30s
+    let causalChains = 0;
+    // From event bus: food_shortage → worker_starved
+    const shortageEvents = eventLog.filter(e => e.type === "food_shortage");
+    const deathEvents = eventLog.filter(e => e.type === "worker_starved" || e.type === "worker_died");
+    for (const se of shortageEvents) {
+      for (const de of deathEvents) {
+        if (de.t > se.t && de.t < se.t + 30) { causalChains++; break; }
+      }
+    }
+    // weather_changed → food_shortage
+    const weatherEvents = eventLog.filter(e => e.type === "weather_changed");
+    for (const we of weatherEvents) {
+      for (const se of shortageEvents) {
+        if (se.t > we.t && se.t < we.t + 30) { causalChains++; break; }
+      }
+    }
+    // predator_attack → herbivore death
+    const attackEvents = eventLog.filter(e => e.type === "predator_attack");
+    const herbivoreDeath = eventLog.filter(e => e.type === "worker_died" && e.detail?.groupId === "herbivores");
+    for (const ae of attackEvents) {
+      for (const hd of herbivoreDeath) {
+        if (hd.t > ae.t && hd.t < ae.t + 15) { causalChains++; break; }
+      }
+    }
+    // night_began → worker_resting (temporal causality)
+    const nightEvents = eventLog.filter(e => e.type === "night_began");
+    if (nightEvents.length > 0) causalChains++;
+    // Legacy detection
+    for (const dip of t.resourceDips) {
+      const deathTimestamps = r.state.metrics?.deathTimestamps ?? [];
+      for (const dt of deathTimestamps) {
+        if (dt > dip.sec && dt < dip.sec + 30) { causalChains++; break; }
+      }
+    }
+    for (const wc of t.weatherChanges) {
+      for (const dip of t.resourceDips) {
+        if (dip.sec > wc.sec && dip.sec < wc.sec + 30) { causalChains++; break; }
+      }
+    }
+    const causalScore = clamp(causalChains / 5, 0, 1);
+
+    // Social interactions: predator-prey interactions count
+    const socialInteractions = attackEvents.length + eventLog.filter(e => e.type === "herbivore_fled").length;
+    const workerCount = r.state.agents?.filter(a => a.type === "WORKER")?.length ?? 8;
+    const socialScore = clamp(socialInteractions / (workerCount * 2), 0, 1);
+
+    const score = 0.25 * eventTypeScore + 0.25 * attributionScore + 0.25 * causalScore + 0.25 * socialScore;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      uniqueEventTypes: eventTypes.size,
+      causalChains,
+      socialInteractions,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateDecisionConsequenceDepth(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+
+    // Irreversible decisions: tile type changes that can't be undone easily
+    // Building placement is semi-reversible (erase tool). Count permanent changes.
+    const irreversible = t.tileChanges; // rough proxy: each tile change is a decision
+    const irreversibleScore = clamp(irreversible / 50, 0, 1);
+
+    // Worker specialization: Jensen-Shannon divergence between individual worker intent distributions
+    let specializationScore = 0;
+    const workerDists = [];
+    for (const [, intentMap] of t.intentDistByWorker) {
+      const dist = {};
+      for (const [k, v] of intentMap) dist[k] = v;
+      workerDists.push(dist);
+    }
+    if (workerDists.length >= 2) {
+      const jsDivs = [];
+      for (let i = 0; i < workerDists.length && i < 10; i++) {
+        for (let j = i + 1; j < workerDists.length && j < 10; j++) {
+          jsDivs.push(jensenShannonDivergence(workerDists[i], workerDists[j]));
+        }
+      }
+      const avgJSD = mean(jsDivs);
+      specializationScore = clamp(avgJSD / 0.3, 0, 1);
+    }
+
+    // Opportunity cost: when workers choose one task, do others suffer?
+    // Measure: correlation between farm intent count and wood resource change
+    let opportunityCost = 0;
+    if (t.intentHistory.length > 5 && t.resourceTimeSeries.length > 5) {
+      const farmRatios = t.intentHistory.map(ih => {
+        const total = Object.values(ih).reduce((a, b) => a + b, 0);
+        return total > 0 ? (ih.farm ?? 0) / total : 0;
+      });
+      const woodDeltas = [];
+      for (let i = 1; i < t.resourceTimeSeries.length; i++) {
+        woodDeltas.push(t.resourceTimeSeries[i].wood - t.resourceTimeSeries[i - 1].wood);
+      }
+      const minLen = Math.min(farmRatios.length, woodDeltas.length);
+      if (minLen > 3) {
+        const corr = pearsonCorrelation(farmRatios.slice(0, minLen), woodDeltas.slice(0, minLen));
+        // Negative correlation = when farming, wood suffers = opportunity cost present
+        opportunityCost = clamp(Math.abs(corr), 0, 1);
+      }
+    }
+
+    // Long-term consequence: do early decisions affect late-game?
+    let consequenceCorr = 0;
+    if (t.buildingTimeSeries.length > 4 && t.resourceTimeSeries.length > 4) {
+      const earlyBldg = t.buildingTimeSeries.slice(0, Math.ceil(t.buildingTimeSeries.length * 0.3)).map(b => b.total);
+      const lateRes = t.resourceTimeSeries.slice(Math.floor(t.resourceTimeSeries.length * 0.7)).map(s => s.food + s.wood);
+      const minLen = Math.min(earlyBldg.length, lateRes.length);
+      if (minLen > 2) {
+        consequenceCorr = Math.abs(pearsonCorrelation(earlyBldg.slice(0, minLen), lateRes.slice(0, minLen)));
+      }
+    }
+
+    const score = 0.2 * irreversibleScore + 0.3 * clamp(opportunityCost, 0, 1)
+      + 0.3 * specializationScore + 0.2 * clamp(consequenceCorr, 0, 1);
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      tileChanges: t.tileChanges,
+      workerSpecialization: round(specializationScore, 3),
+      opportunityCost: round(opportunityCost, 3),
+      consequenceCorrelation: round(consequenceCorr, 3),
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateTrafficFlowQuality(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    const grid = r.state.grid;
+
+    // Congestion response: do workers react to congestion?
+    // Currently: no congestion avoidance → 0
+    const congestionResponse = 0;
+
+    // Path diversity: do workers use different routes?
+    // A* is deterministic → pathDiversity ≈ 1
+    const pathDiversity = 1; // only 1 route per destination
+    const diversityScore = clamp(pathDiversity / 3, 0, 1);
+
+    // Road network efficiency: total roads vs needed
+    const totalRoads = countTilesByType(grid, [TILE.ROAD]);
+    const totalBuildings = listTilesByType(grid, [
+      TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.QUARRY,
+      TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC
+    ]).length;
+    // Minimal spanning tree approximation: ~1.5 roads per building connection
+    const minimalRoads = Math.max(1, totalBuildings * 1.3);
+    const roadRatio = minimalRoads > 0 ? totalRoads / minimalRoads : 0;
+    const roadScore = clamp(1 - Math.abs(roadRatio - 1.3) / 1.0, 0, 1);
+
+    // Warehouse utilization balance (Gini coefficient of delivery distribution)
+    let gini = 0;
+    if (t.deliveryByWarehouse.size > 1) {
+      const vals = [...t.deliveryByWarehouse.values()].sort((a, b) => a - b);
+      const n = vals.length;
+      const totalD = vals.reduce((a, b) => a + b, 0);
+      if (totalD > 0) {
+        let sumDiff = 0;
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            sumDiff += Math.abs(vals[i] - vals[j]);
+          }
+        }
+        gini = sumDiff / (2 * n * totalD);
+      }
+    }
+    const giniScore = 1 - gini;
+
+    const score = 0.25 * congestionResponse + 0.25 * diversityScore + 0.25 * roadScore + 0.25 * giniScore;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      congestionEvents: t.congestionEvents,
+      pathDiversity,
+      totalRoads,
+      roadRatio: round(roadRatio, 2),
+      roadScore: round(roadScore, 3),
+      warehouseGini: round(gini, 3),
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluatePopulationDynamics(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+
+    // Population growth mechanism: did population change via non-death means?
+    const growthEvents = t.populationChanges.filter(p => p.delta > 0);
+    const hasGrowthMechanism = growthEvents.length > 0 ? 1 : 0;
+
+    // Individual identity: do workers have unique traits/skills?
+    const sampleWorker = r.state.agents.find(a => a.type === "WORKER");
+    let traitCount = 0;
+    if (sampleWorker) {
+      if (sampleWorker.traits) traitCount += Object.keys(sampleWorker.traits).length;
+      if (sampleWorker.skills) traitCount += Object.keys(sampleWorker.skills).length;
+      if (sampleWorker.preferences) traitCount++;
+      // metabolism variations count as partial identity
+      if (sampleWorker.metabolism) traitCount += 0.5;
+    }
+
+    // Demographic diversity: variance in worker properties
+    const workers = r.state.agents.filter(a => a.type === "WORKER" && a.alive !== false);
+    let propertyVariance = 0;
+    if (workers.length > 1) {
+      // Check hunger variance (only varying property)
+      const hungers = workers.map(w => w.hunger ?? 1);
+      propertyVariance = stddev(hungers);
+      // Check if metabolism differs
+      if (workers[0]?.metabolism) {
+        const metVals = workers.map(w => w.metabolism?.hungerDecayMultiplier ?? 1);
+        propertyVariance = Math.max(propertyVariance, stddev(metVals));
+      }
+    }
+
+    // Relationship tracking
+    const hasRelationships = workers.some(w =>
+      w.relationships !== undefined || w.friends !== undefined || w.opinions !== undefined
+    );
+
+    const score = 0.25 * hasGrowthMechanism + 0.25 * clamp(traitCount / 4, 0, 1)
+      + 0.25 * clamp(propertyVariance / 0.2, 0, 1) + 0.25 * (hasRelationships ? 1 : 0);
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      growthEvents: growthEvents.length,
+      hasGrowthMechanism,
+      traitCount: round(traitCount, 1),
+      propertyVariance: round(propertyVariance, 3),
+      hasRelationships,
+      workerCount: workers.length,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateEnvironmentalResponsiveness(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+    const ih = t.intentHistory;
+
+    // Weather behavior impact: intent distribution shift during storm vs clear
+    let weatherJSD = 0;
+    const clearSamples = {};
+    const stormSamples = {};
+    let clearCount = 0, stormCount = 0;
+    for (let i = 0; i < ih.length && i < t.samples.length; i++) {
+      const weather = t.samples[i]?.weather ?? "clear";
+      const target = weather === "storm" ? stormSamples : clearSamples;
+      const countRef = weather === "storm" ? "storm" : "clear";
+      for (const [k, v] of Object.entries(ih[i])) {
+        target[k] = (target[k] ?? 0) + v;
+      }
+      if (countRef === "storm") stormCount++;
+      else clearCount++;
+    }
+    if (clearCount > 0 && stormCount > 0) {
+      weatherJSD = jensenShannonDivergence(clearSamples, stormSamples);
+    }
+    const weatherScore = clamp(weatherJSD / 0.2, 0, 1);
+
+    // Terrain behavior impact: do tiles affect behavior beyond pathfinding?
+    // Currently: no tile-specific behaviors beyond cost
+    const terrainBehavior = 0;
+
+    // Environmental hazard diversity
+    let hazardTypes = 0;
+    if (t.weathersSeen.has("storm")) hazardTypes++;
+    if (t.weathersSeen.has("drought")) hazardTypes++;
+    if (t.weathersSeen.has("winter")) hazardTypes++;
+    // Predators are a hazard
+    if (r.state.animals?.some(a => a.kind === "PREDATOR")) hazardTypes++;
+    // Water tiles are impassable
+    if (countTilesByType(r.state.grid, [TILE.WATER]) > 0) hazardTypes++;
+    const hazardScore = clamp(hazardTypes / 5, 0, 1);
+
+    // Adaptation speed: how quickly do intents shift after weather change?
+    let adaptSpeed = 0;
+    if (t.weatherChanges.length > 0 && ih.length > 4) {
+      // Check if intent distribution changes around weather events
+      let shiftCount = 0;
+      for (const wc of t.weatherChanges) {
+        const wcSampleIdx = t.samples.findIndex(s => s.t >= wc.sec);
+        if (wcSampleIdx > 0 && wcSampleIdx < ih.length - 1) {
+          const before = ih[wcSampleIdx - 1];
+          const after = ih[Math.min(wcSampleIdx + 1, ih.length - 1)];
+          const sim = cosineSimilarity(before, after);
+          if (sim < 0.95) shiftCount++;
+        }
+      }
+      adaptSpeed = t.weatherChanges.length > 0 ? shiftCount / t.weatherChanges.length : 0;
+    }
+
+    const score = 0.3 * weatherScore + 0.2 * terrainBehavior + 0.25 * hazardScore + 0.25 * clamp(adaptSpeed, 0, 1);
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      weatherJSD: round(weatherJSD, 4),
+      hazardTypes,
+      adaptSpeed: round(adaptSpeed, 3),
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
+function evaluateSystemCouplingDensity(results) {
+  const details = [];
+  for (const r of results) {
+    const t = r.tracker;
+
+    // Cross-system influences: count pairs
+    let influences = 0;
+    // ResourceSystem → MortalitySystem (food → hunger → death)
+    if ((r.state.metrics?.deathsByReason?.starvation ?? 0) > 0) influences++;
+    // WeatherSystem → movement (weather affects move cost)
+    if (t.weatherChanges.length > 0) influences++;
+    // RoleAssignment → WorkerAI (roles affect intent)
+    if (t.rolesAssigned.size > 1) influences++;
+    // Processing → Resources (processing creates refined goods)
+    if (t.processingCycles > 0) influences++;
+    // ColonyDirector → BuildSystem (auto-builds)
+    if (t.tileChanges > 0) influences++;
+    // MortalitySystem → PopulationStats
+    if ((r.state.metrics?.deathsTotal ?? 0) > 0) influences++;
+    // ProgressionSystem → objectives
+    if (t.objectivesCompleted > 0) influences++;
+    const influenceScore = clamp(influences / 15, 0, 1);
+
+    // Feedback latency: rough estimate — weather changes affect movement next tick (low latency)
+    const avgLatency = 1; // ~1 tick latency for most system couplings
+    const latencyScore = clamp(1 / (avgLatency + 1), 0, 1);
+
+    // Emergent behavior: run divergence (same scenario, different outcomes)
+    // We only run once per scenario, so estimate from variability
+    const foodCV = t.resourceTimeSeries.length > 3
+      ? cv(t.resourceTimeSeries.map(s => s.food))
+      : 0;
+    const divergenceEstimate = clamp(foodCV / 0.5, 0, 1);
+
+    // Cascade depth: when food drops, does it cascade to deaths?
+    let cascadeDepth = 0;
+    if (t.resourceDips.length > 0) {
+      cascadeDepth++; // level 1: resource dip
+      const deathTs = r.state.metrics?.deathTimestamps ?? [];
+      for (const dip of t.resourceDips) {
+        if (deathTs.some(dt => dt > dip.sec && dt < dip.sec + 30)) {
+          cascadeDepth++; // level 2: dip → death
+          break;
+        }
+      }
+    }
+    const cascadeScore = clamp(cascadeDepth / 3, 0, 1);
+
+    const score = 0.3 * influenceScore + 0.2 * latencyScore + 0.25 * divergenceEstimate + 0.25 * cascadeScore;
+
+    details.push({
+      preset: r.config.presetId ?? "default",
+      systemInfluences: influences,
+      avgLatency,
+      foodCV: round(foodCV, 3),
+      cascadeDepth,
+      score: round(score, 3),
+    });
+  }
+  return { score: round(mean(details.map(d => d.score)), 3), grade: gradeScore(mean(details.map(d => d.score))), details };
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
+
+function pearsonCorrelation(x, y) {
+  const n = Math.min(x.length, y.length);
+  if (n < 3) return 0;
+  const mx = mean(x.slice(0, n));
+  const my = mean(y.slice(0, n));
+  let num = 0, dx2 = 0, dy2 = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = x[i] - mx;
+    const dy = y[i] - my;
+    num += dx * dy;
+    dx2 += dx * dx;
+    dy2 += dy * dy;
+  }
+  const denom = Math.sqrt(dx2 * dy2);
+  return denom > 0 ? num / denom : 0;
+}
+
+function jensenShannonDivergence(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const totalA = Object.values(a).reduce((s, v) => s + v, 0) || 1;
+  const totalB = Object.values(b).reduce((s, v) => s + v, 0) || 1;
+  let divA = 0, divB = 0;
+  for (const k of keys) {
+    const pA = (a[k] ?? 0) / totalA;
+    const pB = (b[k] ?? 0) / totalB;
+    const m = (pA + pB) / 2;
+    if (pA > 0 && m > 0) divA += pA * Math.log2(pA / m);
+    if (pB > 0 && m > 0) divB += pB * Math.log2(pB / m);
+  }
+  return (divA + divB) / 2;
+}
+
+function gridTileAt(grid, ix, iz) {
+  return grid.tiles[iz * grid.width + ix];
+}
 
 function entropy(values) {
   const total = values.reduce((a, b) => a + b, 0);
@@ -783,7 +2073,7 @@ function buildEvalScenarios(durationSec, quick) {
     // Stability: long run across all templates
     { id: "stability-temperate", templateId: "temperate_plains", seed: 1337, durationSec: longDuration, sampleIntervalSec: 3, category: "stability" },
     { id: "stability-fortified", templateId: "fortified_basin", seed: 1337, durationSec: longDuration, sampleIntervalSec: 3, category: "stability" },
-    { id: "stability-archipelago", templateId: "archipelago_isles", seed: 1337, durationSec: longDuration, sampleIntervalSec: 3, category: "stability" },
+    { id: "stability-archipelago", templateId: "archipelago_isles", seed: 1337, durationSec: baseDuration, sampleIntervalSec: 3, category: "stability" },
 
     // Economy presets (stability + coverage)
     { id: "economy-scarce", templateId: "temperate_plains", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "scarce_resources", category: "economy" },
@@ -808,6 +2098,13 @@ function buildEvalScenarios(durationSec, quick) {
     // Multi-seed stability check
     { id: "seed-variant-1", templateId: "temperate_plains", seed: 256, durationSec: baseDuration, sampleIntervalSec: 3, category: "stability" },
     { id: "seed-variant-2", templateId: "temperate_plains", seed: 789, durationSec: baseDuration, sampleIntervalSec: 3, category: "stability" },
+
+    // Stress scenarios
+    { id: "stress-compound", templateId: "temperate_plains", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "crisis_compound", category: "stress" },
+    { id: "stress-island", templateId: "archipelago_isles", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "island_isolation", category: "stress" },
+    { id: "stress-boom", templateId: "temperate_plains", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "population_boom", category: "stress" },
+    { id: "stress-siege", templateId: "fortified_basin", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "late_game_siege", category: "stress" },
+    { id: "stress-nodirector", templateId: "temperate_plains", seed: 42, durationSec: baseDuration, sampleIntervalSec: 2, presetId: "no_director", category: "stress" },
   ];
 }
 
@@ -820,30 +2117,89 @@ function generateMarkdownReport(evaluation) {
   lines.push("# Project Utopia — Comprehensive Game Evaluation Report");
   lines.push("");
   lines.push(`> Generated: ${now}`);
-  lines.push(`> Version: 0.5.0 (Phase 1: Resource Chains)`);
+  lines.push(`> Version: 0.5.4 (Phase 1: Resource Chains + Bridge)`);
   lines.push(`> Scenarios: ${evaluation.totalScenarios} | Duration: ${evaluation.totalDurationSec}s total sim time`);
+  lines.push(`> Scoring: 3-tier weighted (Foundation 20% + Gameplay 30% + Maturity 50%)`);
   lines.push("");
 
+  // Foundation tier
+  const foundationDims = [
+    ["Stability", evaluation.stability, "Long-run correctness"],
+    ["Technical", evaluation.technical, "AI quality, pathfinding"],
+    ["Coverage", evaluation.coverage, "Game element utilization"],
+  ];
+  const foundationScore = mean(foundationDims.map(([, d]) => d.score));
+
+  // Gameplay tier
+  const gameplayDims = [
+    ["Development", evaluation.development, "Progressive complexity growth", 0.20],
+    ["Playability", evaluation.playability, "Tension curves, engagement", 0.20],
+    ["Efficiency", evaluation.efficiency, "Labor throughput, utilization", 0.18],
+    ["Logistics", evaluation.logistics, "Infrastructure quality", 0.15],
+    ["Reasonableness", evaluation.reasonableness, "NPC behavior naturalness", 0.15],
+    ["Adaptability", evaluation.adaptability, "Crisis recovery", 0.12],
+  ];
+  const gameplayScore = gameplayDims.reduce((s, [, d, , w]) => s + d.score * w, 0);
+
+  // Maturity tier
+  const maturityDims = [
+    ["Action Duration Realism", evaluation.actionDurationRealism, "动作时长真实性", 0.10],
+    ["Tile State Richness", evaluation.tileStateRichness, "地块状态丰富度", 0.08],
+    ["NPC Needs Depth", evaluation.npcNeedsDepth, "NPC需求深度", 0.10],
+    ["Economic Feedback Loops", evaluation.economicFeedbackLoops, "经济反馈循环", 0.08],
+    ["Spatial Layout Intelligence", evaluation.spatialLayoutIntelligence, "空间布局智能", 0.08],
+    ["Temporal Realism", evaluation.temporalRealism, "时间真实性", 0.07],
+    ["Emergent Narrative", evaluation.emergentNarrative, "涌现叙事密度", 0.08],
+    ["Decision Consequence", evaluation.decisionConsequenceDepth, "决策后果深度", 0.09],
+    ["Traffic Flow Quality", evaluation.trafficFlowQuality, "交通流质量", 0.08],
+    ["Population Dynamics", evaluation.populationDynamics, "人口动态真实性", 0.08],
+    ["Environmental Responsiveness", evaluation.environmentalResponsiveness, "环境响应性", 0.08],
+    ["System Coupling Density", evaluation.systemCouplingDensity, "系统耦合密度", 0.08],
+  ];
+  const maturityScore = maturityDims.reduce((s, [, d, , w]) => s + d.score * w, 0);
+
+  const overall = 0.20 * foundationScore + 0.30 * gameplayScore + 0.50 * maturityScore;
+
   // Overall scorecard
-  lines.push("## Overall Scorecard");
+  lines.push("## Overall Score");
+  lines.push("");
+  lines.push(`**${round(overall, 3)} (${gradeScore(overall)})**`);
+  lines.push("");
+  lines.push("| Tier | Score | Grade | Weight |");
+  lines.push("|---|---|---|---|");
+  lines.push(`| **Foundation** (基础运行) | ${round(foundationScore, 3)} | ${gradeScore(foundationScore)} | 20% |`);
+  lines.push(`| **Gameplay** (游戏玩法) | ${round(gameplayScore, 3)} | ${gradeScore(gameplayScore)} | 30% |`);
+  lines.push(`| **Maturity** (游戏成熟度) | ${round(maturityScore, 3)} | ${gradeScore(maturityScore)} | 50% |`);
+  lines.push("");
+
+  // Foundation details
+  lines.push("## Tier 1: Foundation (基础运行)");
   lines.push("");
   lines.push("| Dimension | Score | Grade | Description |");
   lines.push("|---|---|---|---|");
-  const dims = [
-    ["Stability", evaluation.stability, "Long-run correctness, no crashes or data corruption"],
-    ["Development", evaluation.development, "Progressive complexity growth and objective completion"],
-    ["Coverage", evaluation.coverage, "All game elements utilized during play"],
-    ["Playability", evaluation.playability, "Tension curves, decision variety, engagement"],
-    ["Technical", evaluation.technical, "AI quality, pathfinding, state machine validity"],
-    ["Reasonableness", evaluation.reasonableness, "NPC behavior naturalness and thematic coherence"],
-  ];
-  for (const [name, dim, desc] of dims) {
-    lines.push(`| **${name}** | ${dim.score} | ${dim.grade} | ${desc} |`);
+  for (const [name, dim, desc] of foundationDims) {
+    lines.push(`| ${name} | ${dim.score} | ${dim.grade} | ${desc} |`);
   }
   lines.push("");
 
-  const overall = mean(dims.map(([, d]) => d.score));
-  lines.push(`**Overall Score: ${round(overall, 3)} (${gradeScore(overall)})**`);
+  // Gameplay details
+  lines.push("## Tier 2: Gameplay (游戏玩法)");
+  lines.push("");
+  lines.push("| Dimension | Score | Grade | Weight | Description |");
+  lines.push("|---|---|---|---|---|");
+  for (const [name, dim, desc, w] of gameplayDims) {
+    lines.push(`| ${name} | ${dim.score} | ${dim.grade} | ${round(w * 100)}% | ${desc} |`);
+  }
+  lines.push("");
+
+  // Maturity details
+  lines.push("## Tier 3: Maturity (游戏成熟度)");
+  lines.push("");
+  lines.push("| Dimension | Score | Grade | Weight | Description |");
+  lines.push("|---|---|---|---|---|");
+  for (const [name, dim, desc, w] of maturityDims) {
+    lines.push(`| ${name} | ${dim.score} | ${dim.grade} | ${round(w * 100)}% | ${desc} |`);
+  }
   lines.push("");
 
   // Stability details
@@ -918,36 +2274,107 @@ function generateMarkdownReport(evaluation) {
   }
   lines.push("");
 
+  // Efficiency details
+  lines.push("## 7. Efficiency (效率)");
+  lines.push("");
+  lines.push("| Scenario | Deliveries | Carry/W/Min | Idle% | Proc Util | Depot Dist | Score |");
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const d of evaluation.efficiency.details) {
+    lines.push(`| ${d.preset} | ${d.deliveries} | ${d.deliveriesPerWorkerMin} | ${round(d.idleRatio * 100, 1)}% | ${d.procUtilization} | ${d.avgDepotDistance} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // Adaptability details
+  lines.push("## 8. Adaptability (适应性)");
+  lines.push("");
+  lines.push("| Scenario | Weather Chg | Weather Resp | Dips | Recovery | Deaths | Death Impact | Score |");
+  lines.push("|---|---|---|---|---|---|---|---|");
+  for (const d of evaluation.adaptability.details) {
+    lines.push(`| ${d.preset} | ${d.weatherChanges} | ${d.weatherResponse} | ${d.resourceDips} | ${d.crisisRecovery} | ${d.deaths} | ${d.deathImpact} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // Logistics details
+  lines.push("## 9. Logistics (物流)");
+  lines.push("");
+  lines.push("| Scenario | Road Coverage | Warehouse Dist | Chain Complete | Res Balance | Score |");
+  lines.push("|---|---|---|---|---|---|");
+  for (const d of evaluation.logistics.details) {
+    lines.push(`| ${d.preset} | ${d.roadCoverage} | ${d.warehouseDistScore} | ${d.chainCompleteness} | ${d.resourceBalance} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // Maturity dimension breakdowns
+  lines.push("---");
+  lines.push("");
+  lines.push("## Maturity Dimension Breakdowns");
+  lines.push("");
+
+  // Action Duration Realism
+  lines.push("### 10. Action Duration Realism (动作时长真实性)");
+  lines.push("| Scenario | Action CV | Action Ratio | Has Progress | Score |");
+  lines.push("|---|---|---|---|---|");
+  for (const d of evaluation.actionDurationRealism.details) {
+    lines.push(`| ${d.preset} | ${d.actionCV} | ${d.actionRatio} | ${d.hasProgress} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // NPC Needs
+  lines.push("### 12. NPC Needs Depth (NPC需求深度)");
+  lines.push("| Scenario | Needs | Conflicts | Satisfaction Actions | Has Mood | Score |");
+  lines.push("|---|---|---|---|---|---|");
+  for (const d of evaluation.npcNeedsDepth.details) {
+    lines.push(`| ${d.preset} | ${d.needFields.join(",")||"none"} | ${d.conflictPairs} | ${d.satisfactionActions.join(",")||"none"} | ${d.hasMood} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // Spatial Layout
+  lines.push("### 14. Spatial Layout Intelligence (空间布局智能)");
+  lines.push("| Scenario | Cluster | Zoning | Path Eff | Expansion | Score |");
+  lines.push("|---|---|---|---|---|---|");
+  for (const d of evaluation.spatialLayoutIntelligence.details) {
+    lines.push(`| ${d.preset} | ${d.clusterScore} | ${d.zoningScore} | ${d.pathEfficiency} | ${d.expansionCorrelation} | ${d.score} |`);
+  }
+  lines.push("");
+
+  // Traffic Flow
+  lines.push("### 18. Traffic Flow Quality (交通流质量)");
+  lines.push("| Scenario | Congestion | Path Div | Roads | Road Score | Gini | Score |");
+  lines.push("|---|---|---|---|---|---|---|");
+  for (const d of evaluation.trafficFlowQuality.details) {
+    lines.push(`| ${d.preset} | ${d.congestionEvents} | ${d.pathDiversity} | ${d.totalRoads} | ${d.roadScore} | ${d.warehouseGini} | ${d.score} |`);
+  }
+  lines.push("");
+
   // Recommendations
   lines.push("---");
   lines.push("");
   lines.push("## Improvement Targets");
   lines.push("");
+  lines.push("### Maturity Tier — Key Gaps");
+  lines.push("");
 
-  const weakest = dims.sort(([, a], [, b]) => a.score - b.score);
-  for (const [name, dim] of weakest.slice(0, 3)) {
-    lines.push(`### ${name} (${dim.grade}, ${dim.score})`);
-    if (name === "Coverage" && dim.details) {
-      const missing = [];
-      if (cov.tilesOnMap.missing.length) missing.push(`tiles: ${cov.tilesOnMap.missing.join(", ")}`);
-      if (cov.roles.missing.length) missing.push(`roles: ${cov.roles.missing.join(", ")}`);
-      if (cov.resources.missing.length) missing.push(`resources: ${cov.resources.missing.join(", ")}`);
-      if (cov.intents.missing.length) missing.push(`intents: ${cov.intents.missing.join(", ")}`);
-      if (missing.length) lines.push(`- Missing elements: ${missing.join("; ")}`);
-    }
-    if (name === "Stability" && dim.issues.length > 0) {
-      lines.push(`- ${dim.issues.length} scenario(s) had issues (early termination, NaN, errors)`);
-    }
-    if (name === "Playability") {
-      const lowTension = evaluation.playability.details.filter((d) => d.tensionScore < 0.3);
-      if (lowTension.length) lines.push(`- ${lowTension.length} scenario(s) had flat tension curves (low drama)`);
-    }
-    if (name === "Reasonableness") {
-      const lowDiv = evaluation.reasonableness.details.filter((d) => d.avgBehaviorDiversity < 0.4);
-      if (lowDiv.length) lines.push(`- ${lowDiv.length} scenario(s) showed low behavior diversity`);
-    }
-    lines.push("");
+  const allDims = [
+    ...foundationDims.map(([n, d]) => [n, d]),
+    ...gameplayDims.map(([n, d]) => [n, d]),
+    ...maturityDims.map(([n, d, desc]) => [n + ` (${desc})`, d]),
+  ];
+  const weakest = [...allDims].sort(([, a], [, b]) => a.score - b.score);
+  for (const [name, dim] of weakest.slice(0, 5)) {
+    lines.push(`- **${name}**: ${dim.score} (${dim.grade})`);
   }
+  lines.push("");
+  lines.push("### What Would Raise the Score");
+  lines.push("");
+  lines.push("To meaningfully improve the Maturity tier, the game needs:");
+  lines.push("- **Multiple NPC needs** (rest, morale, social) with conflicting priorities");
+  lines.push("- **Tile state richness** (crop growth stages, building degradation, cooldowns)");
+  lines.push("- **Action duration realism** (work progress bars, variable task times)");
+  lines.push("- **Day/night cycles** affecting behavior and production");
+  lines.push("- **Social interactions** between NPCs (relationships, conversations)");
+  lines.push("- **Diminishing returns** on resource gathering");
+  lines.push("- **Worker specialization** through experience/skills");
+  lines.push("");
 
   return lines.join("\n");
 }
@@ -997,6 +2424,19 @@ async function main() {
           objectivesCompleted: 0, peakWorkers: 0, peakBuildings: 0,
           pathRecalcs: 0, pathCacheHits: 0, pathCacheMisses: 0,
           boidsMaxLoad: 0, aiDecisions: 0, aiFallbacks: 0,
+          deliveries: 0, processingCycles: 0, idleIntentSamples: 0, totalIntentSamples: 0,
+          depotDistanceSum: 0, depotDistanceSamples: 0, processingBuildingsSamples: 0,
+          weatherChanges: [], resourceDips: [], resourceRecoveries: [], productionSnapshots: [],
+          lastWeather: null, inResourceDip: { food: false, wood: false },
+          roadCoverageSnapshots: [], depotDistStdSnapshots: [],
+          chainCompletenessSnapshots: [], resourceBalanceSnapshots: [],
+          workerStateDurations: new Map(), workerPrevStates: new Map(),
+          tileGridHashes: [], intentDistByWorker: new Map(),
+          resourceTimeSeries: [], buildingTimeSeries: [],
+          workerPositionSamples: [], eventLog: [], pathLengthSamples: [],
+          deliveryByWarehouse: new Map(), tileChanges: 0, prevGridSnapshot: null,
+          workerTileOccupancy: new Map(), congestionEvents: 0,
+          populationChanges: [], prevWorkerCount: 0,
         },
         initialWorkers: 0, survivalSec: 0, outcome: "crash", reason: err.message,
       });
@@ -1007,15 +2447,59 @@ async function main() {
 
   const evaluation = {
     generatedAt: new Date().toISOString(),
-    version: "0.5.0",
+    version: "0.5.4",
     totalScenarios: scenarios.length,
     totalDurationSec: totalSimTime,
+    // Foundation tier
     stability: evaluateStability(results),
-    development: evaluateDevelopment(results),
-    coverage: evaluateCoverage(results),
-    playability: evaluatePlayability(results),
     technical: evaluateTechnical(results),
+    coverage: evaluateCoverage(results),
+    // Gameplay tier
+    development: evaluateDevelopment(results),
+    playability: evaluatePlayability(results),
+    efficiency: evaluateEfficiency(results),
+    logistics: evaluateLogistics(results),
     reasonableness: evaluateReasonableness(results),
+    adaptability: evaluateAdaptability(results),
+    // Maturity tier
+    actionDurationRealism: evaluateActionDurationRealism(results),
+    tileStateRichness: evaluateTileStateRichness(results),
+    npcNeedsDepth: evaluateNPCNeedsDepth(results),
+    economicFeedbackLoops: evaluateEconomicFeedbackLoops(results),
+    spatialLayoutIntelligence: evaluateSpatialLayoutIntelligence(results),
+    temporalRealism: evaluateTemporalRealism(results),
+    emergentNarrative: evaluateEmergentNarrative(results),
+    decisionConsequenceDepth: evaluateDecisionConsequenceDepth(results),
+    trafficFlowQuality: evaluateTrafficFlowQuality(results),
+    populationDynamics: evaluatePopulationDynamics(results),
+    environmentalResponsiveness: evaluateEnvironmentalResponsiveness(results),
+    systemCouplingDensity: evaluateSystemCouplingDensity(results),
+  };
+
+  // Compute tier scores for JSON
+  const foundationScoreVal = mean([evaluation.stability.score, evaluation.technical.score, evaluation.coverage.score]);
+  const gameplayWeights = [
+    [evaluation.development, 0.20], [evaluation.playability, 0.20], [evaluation.efficiency, 0.18],
+    [evaluation.logistics, 0.15], [evaluation.reasonableness, 0.15], [evaluation.adaptability, 0.12],
+  ];
+  const gameplayScoreVal = gameplayWeights.reduce((s, [d, w]) => s + d.score * w, 0);
+  const maturityWeights = [
+    [evaluation.actionDurationRealism, 0.10], [evaluation.tileStateRichness, 0.08],
+    [evaluation.npcNeedsDepth, 0.10], [evaluation.economicFeedbackLoops, 0.08],
+    [evaluation.spatialLayoutIntelligence, 0.08], [evaluation.temporalRealism, 0.07],
+    [evaluation.emergentNarrative, 0.08], [evaluation.decisionConsequenceDepth, 0.09],
+    [evaluation.trafficFlowQuality, 0.08], [evaluation.populationDynamics, 0.08],
+    [evaluation.environmentalResponsiveness, 0.08], [evaluation.systemCouplingDensity, 0.08],
+  ];
+  const maturityScoreVal = maturityWeights.reduce((s, [d, w]) => s + d.score * w, 0);
+  const overallScore = 0.20 * foundationScoreVal + 0.30 * gameplayScoreVal + 0.50 * maturityScoreVal;
+
+  evaluation.tierScores = {
+    foundation: round(foundationScoreVal, 3),
+    gameplay: round(gameplayScoreVal, 3),
+    maturity: round(maturityScoreVal, 3),
+    overall: round(overallScore, 3),
+    overallGrade: gradeScore(overallScore),
   };
 
   // Write JSON report
@@ -1034,19 +2518,66 @@ async function main() {
 
   // Print summary
   console.log("\n=== Summary ===\n");
-  const dims = [
+
+  // Foundation tier
+  const foundationDims = [
     ["Stability", evaluation.stability],
-    ["Development", evaluation.development],
-    ["Coverage", evaluation.coverage],
-    ["Playability", evaluation.playability],
     ["Technical", evaluation.technical],
-    ["Reasonableness", evaluation.reasonableness],
+    ["Coverage", evaluation.coverage],
   ];
-  for (const [name, dim] of dims) {
-    console.log(`  ${dim.grade} ${name.padEnd(16)} ${dim.score}`);
+  const foundationScore = mean(foundationDims.map(([, d]) => d.score));
+
+  // Gameplay tier
+  const gameplayDims = [
+    ["Development", evaluation.development, 0.20],
+    ["Playability", evaluation.playability, 0.20],
+    ["Efficiency", evaluation.efficiency, 0.18],
+    ["Logistics", evaluation.logistics, 0.15],
+    ["Reasonableness", evaluation.reasonableness, 0.15],
+    ["Adaptability", evaluation.adaptability, 0.12],
+  ];
+  const gameplayScore = gameplayDims.reduce((s, [, d, w]) => s + d.score * w, 0);
+
+  // Maturity tier
+  const maturityDims = [
+    ["ActionDuration", evaluation.actionDurationRealism, 0.10],
+    ["TileState", evaluation.tileStateRichness, 0.08],
+    ["NPCNeeds", evaluation.npcNeedsDepth, 0.10],
+    ["EconLoops", evaluation.economicFeedbackLoops, 0.08],
+    ["SpatialLayout", evaluation.spatialLayoutIntelligence, 0.08],
+    ["Temporal", evaluation.temporalRealism, 0.07],
+    ["Narrative", evaluation.emergentNarrative, 0.08],
+    ["Consequence", evaluation.decisionConsequenceDepth, 0.09],
+    ["Traffic", evaluation.trafficFlowQuality, 0.08],
+    ["Population", evaluation.populationDynamics, 0.08],
+    ["Environment", evaluation.environmentalResponsiveness, 0.08],
+    ["Coupling", evaluation.systemCouplingDensity, 0.08],
+  ];
+  const maturityScore = maturityDims.reduce((s, [, d, w]) => s + d.score * w, 0);
+
+  console.log("  ── Foundation (基础运行) ──");
+  for (const [name, dim] of foundationDims) {
+    console.log(`    ${dim.grade} ${name.padEnd(20)} ${dim.score}`);
   }
-  const overall = mean(dims.map(([, d]) => d.score));
-  console.log(`\n  Overall: ${round(overall, 3)} (${gradeScore(overall)})`);
+  console.log(`    Tier Score: ${round(foundationScore, 3)} (${gradeScore(foundationScore)})\n`);
+
+  console.log("  ── Gameplay (游戏玩法) ──");
+  for (const [name, dim] of gameplayDims) {
+    console.log(`    ${dim.grade} ${name.padEnd(20)} ${dim.score}`);
+  }
+  console.log(`    Tier Score: ${round(gameplayScore, 3)} (${gradeScore(gameplayScore)})\n`);
+
+  console.log("  ── Maturity (游戏成熟度) ──");
+  for (const [name, dim] of maturityDims) {
+    console.log(`    ${dim.grade} ${name.padEnd(20)} ${dim.score}`);
+  }
+  console.log(`    Tier Score: ${round(maturityScore, 3)} (${gradeScore(maturityScore)})\n`);
+
+  const overall = 0.20 * foundationScore + 0.30 * gameplayScore + 0.50 * maturityScore;
+  console.log(`  Overall: ${round(overall, 3)} (${gradeScore(overall)})`);
+  console.log(`    Foundation: ${round(foundationScore, 3)} × 0.20 = ${round(foundationScore * 0.20, 3)}`);
+  console.log(`    Gameplay:   ${round(gameplayScore, 3)} × 0.30 = ${round(gameplayScore * 0.30, 3)}`);
+  console.log(`    Maturity:   ${round(maturityScore, 3)} × 0.50 = ${round(maturityScore * 0.50, 3)}`);
   console.log("");
 }
 

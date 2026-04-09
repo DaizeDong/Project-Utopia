@@ -1,6 +1,7 @@
 import { WEATHER, TILE } from "../../config/constants.js";
 import { WEATHER_MODIFIERS } from "../../config/balance.js";
 import { getScenarioFocusZones, resolveScenarioFocusTiles } from "../scenarios/ScenarioFactory.js";
+import { emitEvent, EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
@@ -210,7 +211,11 @@ export class WeatherSystem {
     this._cycleIndex = (this._cycleIndex + 1) % WEATHER_CYCLE.length;
     const entry = WEATHER_CYCLE[this._cycleIndex];
     const duration = entry.minSec + Math.random() * (entry.maxSec - entry.minSec);
+    const prevWeather = state.weather.current;
     setWeather(state, entry.weather, duration, "cycle");
     this._nextCycleAtSec = now + duration;
+    if (prevWeather !== entry.weather) {
+      emitEvent(state, EVENT_TYPES.WEATHER_CHANGED, { from: prevWeather, to: entry.weather, duration });
+    }
   }
 }

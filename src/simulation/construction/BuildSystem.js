@@ -7,6 +7,7 @@ import {
   summarizeBuildPreview,
 } from "./BuildAdvisor.js";
 import { setTile, rebuildBuildingStats } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 export class BuildSystem {
   constructor(options = {}) {
@@ -83,6 +84,8 @@ export class BuildSystem {
       });
     }
     this.onAction?.({ kind: "build", tool, ix, iz, oldType: preview.oldType, newType: preview.newType });
+    const eventType = tool === "erase" ? EVENT_TYPES.BUILDING_DESTROYED : EVENT_TYPES.BUILDING_PLACED;
+    emitEvent(state, eventType, { tool, ix, iz, oldType: preview.oldType, newType: preview.newType });
     return {
       ...preview,
       ok: true,

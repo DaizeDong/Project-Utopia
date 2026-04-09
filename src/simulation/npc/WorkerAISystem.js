@@ -230,13 +230,22 @@ function estimateNearestWarehouseDistance(worker, state) {
 
 function resolveWorkCooldown(worker, dt, amount, resourceType, rng) {
   if (worker.cooldown <= 0) {
-    worker.cooldown = BALANCE.productionCooldownSec * (0.8 + rng.next() * 0.5);
+    const baseDuration = Number(BALANCE.workerHarvestDurationSec ?? 2.5);
+    const skillMultiplier = Number(worker.preferences?.workDurationMultiplier ?? 1);
+    worker.cooldown = baseDuration * skillMultiplier * (0.8 + rng.next() * 0.5);
+    worker.workRemaining = worker.cooldown;
+    worker.progress = 0;
     return;
   }
 
   worker.cooldown -= dt;
+  // Track progress for action duration realism
+  const total = Number(worker.workRemaining ?? worker.cooldown + dt);
+  worker.progress = total > 0 ? clamp(1 - worker.cooldown / total, 0, 1) : 1;
   if (worker.cooldown <= 0) {
     worker.carry[resourceType] += amount;
+    worker.progress = 0;
+    worker.workRemaining = 0;
   }
 }
 
@@ -425,6 +434,7 @@ function handleDeliver(worker, state, services, dt) {
       worker.carry.herbs = 0;
       worker.blackboard ??= {};
       worker.blackboard.carryAgeSec = 0;
+      state.metrics.deliveries = (state.metrics.deliveries ?? 0) + 1;
     }
   }
 }
@@ -548,6 +558,18 @@ function attemptAutoBuild(worker, state, services) {
   return false;
 }
 
+function handleRest(worker, state, services, dt) {
+  // Workers rest in place — recover rest and morale
+  setIdleDesired(worker);
+  const restRecovery = Number(BALANCE.workerRestRecoveryPerSecond ?? 0.08);
+  const moraleRecovery = Number(BALANCE.workerMoraleRecoveryPerSecond ?? 0.02);
+  worker.rest = clamp(Number(worker.rest ?? 1) + restRecovery * dt, 0, 1);
+  worker.morale = clamp(Number(worker.morale ?? 1) + moraleRecovery * dt, 0, 1);
+  // Update progress for duration tracking
+  worker.progress = clamp(Number(worker.rest ?? 0), 0, 1);
+  worker.workRemaining = Math.max(0, Number(BALANCE.workerRestRecoverThreshold ?? 0.6) - Number(worker.rest ?? 0));
+}
+
 function handleWander(worker, state, services, dt) {
   if (attemptAutoBuild(worker, state, services)) {
     return; // Built something, skip normal wander
@@ -611,6 +633,16 @@ export class WorkerAISystem {
       if (worker.alive === false) continue;
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
+
+      // Rest & morale decay
+      const isNight = Boolean(state.environment?.isNight);
+      const restDecay = Number(BALANCE.workerRestDecayPerSecond ?? 0.003)
+        * (isNight ? Number(BALANCE.workerRestNightDecayMultiplier ?? 2.0) : 1);
+      worker.rest = clamp(Number(worker.rest ?? 1) - restDecay * dt, 0, 1);
+      worker.morale = clamp(Number(worker.morale ?? 1) - Number(BALANCE.workerMoraleDecayPerSecond ?? 0.001) * dt, 0, 1);
+      // Mood composite: weighted average of hunger, rest, morale
+      worker.mood = clamp(0.4 * Number(worker.hunger ?? 0.5) + 0.35 * Number(worker.rest ?? 0.5) + 0.25 * Number(worker.morale ?? 0.5), 0, 1);
+
       worker.blackboard ??= {};
       const carryNow = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
       worker.blackboard.carryAgeSec = carryNow > 0
@@ -702,6 +734,8 @@ export class WorkerAISystem {
         } else {
           handleHarvest(worker, state, services, dt);
         }
+      } else if (stateNode === "seek_rest" || stateNode === "rest") {
+        handleRest(worker, state, services, dt);
       } else if (stateNode === "wander") {
         handleWander(worker, state, services, dt);
       } else {
