@@ -11,7 +11,7 @@ const MAX_BUILDS_PER_TICK = 3;
 // Phase thresholds for colony development
 const PHASE_TARGETS = Object.freeze({
   bootstrap: { farms: 3, lumbers: 2, roads: 6 },
-  logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20 },
+  logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 15 },
   processing: { quarries: 1, herbGardens: 1, kitchens: 1 },
   fortification: { walls: 12, smithies: 1, clinics: 1 },
 });
@@ -117,7 +117,7 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "herb_garden", priority: 76, reason: "processing: need accessible herb garden" });
   }
   if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
-    needs.push({ type: "kitchen", priority: 55, reason: "processing: need kitchen" });
+    needs.push({ type: "kitchen", priority: 72, reason: "processing: need kitchen" });
   }
 
   // Smithy: highest priority after quarry — tools accelerate ALL resource production
@@ -125,7 +125,7 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "smithy", priority: 74, reason: "processing: need smithy for tools" });
   }
   if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics) {
-    needs.push({ type: "clinic", priority: 50, reason: "fortification: need clinic" });
+    needs.push({ type: "clinic", priority: 68, reason: "processing: need clinic" });
   }
   if ((buildings.walls ?? 0) < PHASE_TARGETS.fortification.walls) {
     needs.push({ type: "wall", priority: 45, reason: "fortification: need walls" });
@@ -135,6 +135,21 @@ export function assessColonyNeeds(state) {
   const waterTiles = listTilesByType(state.grid, [TILE.WATER]);
   if (waterTiles.length > 0) {
     needs.push({ type: "bridge", priority: 60, reason: "logistics: bridge water crossings" });
+  }
+
+  // Coverage-aware warehouse expansion: add warehouse if worksites are uncovered
+  const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  if (worksiteTiles.length > 0 && warehouseTiles.length > 0) {
+    let uncovered = 0;
+    for (const ws of worksiteTiles) {
+      const minDist = Math.min(...warehouseTiles.map(wh =>
+        Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz)));
+      if (minDist > 12) uncovered++;
+    }
+    if (uncovered > 0 && uncovered / worksiteTiles.length > 0.10) {
+      needs.push({ type: "warehouse", priority: 65, reason: "logistics: improve worksite coverage" });
+    }
   }
 
   // Continuous expansion — ensure building count grows throughout the sim
@@ -446,6 +461,88 @@ function fulfillScenarioRequirements(state, buildSystem) {
   return placed;
 }
 
+/**
+ * Find the best placement for a coverage warehouse — near the centroid of uncovered worksites.
+ */
+function findCoverageWarehousePlacement(state, buildSystem) {
+  const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  if (worksiteTiles.length === 0 || warehouseTiles.length === 0) return null;
+
+  // Find uncovered worksites (> 12 Manhattan from any warehouse)
+  const uncovered = worksiteTiles.filter(ws =>
+    Math.min(...warehouseTiles.map(wh => Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz))) > 12
+  );
+  if (uncovered.length === 0) return null;
+
+  // Place warehouse near the centroid of uncovered worksites
+  const cx = Math.round(uncovered.reduce((s, t) => s + t.ix, 0) / uncovered.length);
+  const cz = Math.round(uncovered.reduce((s, t) => s + t.iz, 0) / uncovered.length);
+  return findPlacementNear(state, buildSystem, "warehouse", { ix: cx, iz: cz }, 6);
+}
+
+/**
+ * Build roads to connect isolated worksites to nearest warehouse.
+ * Runs at most 2 road segments per tick to avoid resource drain.
+ */
+function connectWorksitesToWarehouses(state, buildSystem) {
+  const resources = state.resources ?? {};
+  const cost = BUILD_COST.road ?? {};
+  // Only build connector roads when wood is abundant (>30) to avoid resource drain
+  if ((resources.wood ?? 0) < 30) return;
+
+  const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  if (worksiteTiles.length === 0 || warehouseTiles.length === 0) return;
+
+  let placed = 0;
+  for (const ws of worksiteTiles) {
+    if (placed >= 2) break;
+
+    // Find nearest warehouse
+    let nearestWh = null;
+    let nearestDist = Infinity;
+    for (const wh of warehouseTiles) {
+      const d = Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz);
+      if (d < nearestDist) { nearestDist = d; nearestWh = wh; }
+    }
+    if (!nearestWh || nearestDist <= 3) continue; // already connected or adjacent
+
+    // Check if there's a road gap — walk from worksite toward warehouse, look for first missing road tile
+    const dx = nearestWh.ix - ws.ix;
+    const dz = nearestWh.iz - ws.iz;
+    const stepX = dx !== 0 ? (dx > 0 ? 1 : -1) : 0;
+    const stepZ = dz !== 0 ? (dz > 0 ? 1 : -1) : 0;
+
+    let cx = ws.ix;
+    let cz = ws.iz;
+    for (let step = 0; step < nearestDist && placed < 2; step++) {
+      // Move toward warehouse (prefer longer axis)
+      if (Math.abs(nearestWh.ix - cx) >= Math.abs(nearestWh.iz - cz)) {
+        cx += stepX;
+      } else {
+        cz += stepZ;
+      }
+      if (!inBounds(cx, cz, state.grid)) break;
+
+      const tile = getTile(state.grid, cx, cz);
+      if (tile === TILE.GRASS) {
+        if (!canAfford(resources, cost)) break;
+        const preview = buildSystem.previewToolAt(state, "road", cx, cz);
+        if (preview.ok) {
+          const result = buildSystem.placeToolAt(state, "road", cx, cz, { recordHistory: false });
+          if (result.ok) {
+            state.buildings = rebuildBuildingStats(state.grid);
+            placed++;
+          }
+        }
+      }
+      // Stop at first non-grass/non-road obstacle
+      if (tile !== TILE.GRASS && tile !== TILE.ROAD && tile !== TILE.BRIDGE) break;
+    }
+  }
+}
+
 export class ColonyDirectorSystem {
   constructor() {
     this.name = "ColonyDirectorSystem";
@@ -471,7 +568,14 @@ export class ColonyDirectorSystem {
     // Priority 2: phase-based colony development (including expansion after complete)
     const builds = selectNextBuilds(state, MAX_BUILDS_PER_TICK, getObjectiveResourceBuffer(state));
     for (const build of builds) {
-      const tile = findPlacementTile(state, this._buildSystem, build.type);
+      let tile = null;
+
+      // Smart placement: warehouses for coverage go near uncovered worksites
+      if (build.type === "warehouse" && build.reason.includes("coverage")) {
+        tile = findCoverageWarehousePlacement(state, this._buildSystem);
+      }
+
+      if (!tile) tile = findPlacementTile(state, this._buildSystem, build.type);
       if (!tile) continue;
 
       const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, { recordHistory: false });
@@ -480,6 +584,9 @@ export class ColonyDirectorSystem {
         director.buildsPlaced += 1;
       }
     }
+
+    // Priority 3: connect isolated worksites to warehouses with roads
+    connectWorksitesToWarehouses(state, this._buildSystem);
 
     // Update phase after all builds
     director.phase = determinePhase(state.buildings);

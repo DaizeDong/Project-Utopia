@@ -61,6 +61,7 @@ import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
 import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
+import { PopulationGrowthSystem } from "../src/simulation/population/PopulationGrowthSystem.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 import { TILE, ROLE, TILE_INFO } from "../src/config/constants.js";
@@ -126,6 +127,7 @@ function buildSystems(memoryStore, options = {}) {
   if (!options.disableDirector) systems.push(new ColonyDirectorSystem());
   systems.push(
     new RoleAssignmentSystem(),
+    new PopulationGrowthSystem(),
     new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
@@ -1722,7 +1724,8 @@ function evaluateEmergentNarrative(results) {
     const sabotageEvents = eventLog.filter(e => e.type === "sabotage_occurred");
     const socialInteractions = attackEvents.length
       + eventLog.filter(e => e.type === "herbivore_fled").length
-      + tradeEvents.length + sabotageEvents.length;
+      + tradeEvents.length + sabotageEvents.length
+      + eventLog.filter(e => e.type === "worker_socialized").length;
     const workerCount = r.state.agents?.filter(a => a.type === "WORKER")?.length ?? 8;
     const socialScore = clamp(socialInteractions / (workerCount * 2), 0, 1);
 

@@ -136,10 +136,16 @@ function deriveWorkerDesiredState(worker, state) {
     return { desiredState: "seek_rest", reason: "rule:night-rest" };
   }
 
-  // Storm shelter: prefer wander/rest during storms (reduced productivity)
-  const isStorm = state.weather?.current === "storm";
-  if (isStorm && restLevel < 0.7) {
+  // Weather-responsive behavior: storms force shelter, adverse weather reduces productivity
+  const weatherType = state.weather?.current ?? "clear";
+  if (weatherType === "storm" && restLevel < 0.8) {
     return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
+  }
+  if (weatherType === "drought" && restLevel < 0.45) {
+    return { desiredState: "seek_rest", reason: "rule:drought-rest" };
+  }
+  if (weatherType === "rain" && restLevel < 0.35) {
+    return { desiredState: "seek_rest", reason: "rule:rain-rest" };
   }
 
   const hasWarehouse = state.buildings.warehouses > 0;

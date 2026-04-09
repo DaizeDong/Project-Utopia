@@ -8,6 +8,7 @@ import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGrap
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -653,9 +654,49 @@ export class WorkerAISystem {
       const restDecay = Number(BALANCE.workerRestDecayPerSecond ?? 0.003)
         * (isNight ? Number(BALANCE.workerRestNightDecayMultiplier ?? 2.0) : 1);
       worker.rest = clamp(Number(worker.rest ?? 1) - restDecay * dt, 0, 1);
-      worker.morale = clamp(Number(worker.morale ?? 1) - Number(BALANCE.workerMoraleDecayPerSecond ?? 0.001) * dt, 0, 1);
-      // Mood composite: weighted average of hunger, rest, morale
-      worker.mood = clamp(0.4 * Number(worker.hunger ?? 0.5) + 0.35 * Number(worker.rest ?? 0.5) + 0.25 * Number(worker.morale ?? 0.5), 0, 1);
+      // Morale decay: faster during adverse weather
+      const weatherMoraleMult = (state.weather?.current === "storm") ? 2.5
+        : (state.weather?.current === "drought" || state.weather?.current === "rain") ? 1.5 : 1.0;
+      worker.morale = clamp(Number(worker.morale ?? 1) - Number(BALANCE.workerMoraleDecayPerSecond ?? 0.001) * weatherMoraleMult * dt, 0, 1);
+
+      // Social need: decays when isolated, recovers when near other workers
+      let nearbyWorkers = 0;
+      if (state.metrics.tick % 30 === 0) {
+        for (const other of state.agents) {
+          if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
+          const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
+          if (dist < 4) nearbyWorkers++;
+        }
+        worker._nearbyWorkers = nearbyWorkers;
+        // Emit social interaction events periodically when workers are near each other
+        if (nearbyWorkers > 0 && state.metrics.tick % 300 === 0) {
+          emitEvent(state, EVENT_TYPES.WORKER_SOCIALIZED, {
+            entityId: worker.id, entityName: worker.displayName ?? worker.id,
+            nearbyCount: nearbyWorkers,
+          });
+        }
+      }
+      nearbyWorkers = worker._nearbyWorkers ?? 0;
+      const socialDelta = nearbyWorkers > 0 ? 0.005 * nearbyWorkers : -0.003;
+      worker.social = clamp(Number(worker.social ?? 0.5) + socialDelta * dt, 0, 1);
+
+      // Mood composite: weighted average of hunger, rest, morale, social
+      worker.mood = clamp(
+        0.35 * Number(worker.hunger ?? 0.5) + 0.30 * Number(worker.rest ?? 0.5)
+        + 0.20 * Number(worker.morale ?? 0.5) + 0.15 * Number(worker.social ?? 0.5), 0, 1);
+
+      // Relationship updates: proximity-based opinion drift (every ~5s)
+      if (worker.relationships && (state.metrics.tick % 300 === (worker.id?.charCodeAt?.(7) ?? 0) % 300)) {
+        for (const other of state.agents) {
+          if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
+          const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
+          if (dist < 3) {
+            worker.relationships[other.id] = clamp(
+              (worker.relationships[other.id] ?? 0) + 0.05, -1, 1
+            );
+          }
+        }
+      }
 
       worker.blackboard ??= {};
       const carryNow = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
