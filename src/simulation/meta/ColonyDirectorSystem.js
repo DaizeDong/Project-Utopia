@@ -181,10 +181,32 @@ export function assessColonyNeeds(state) {
  * @param {string} tool
  * @returns {{ix: number, iz: number} | null}
  */
+/**
+ * Get preferred anchor types for a given building tool.
+ * Worksites should be near warehouses; processing buildings near inputs.
+ */
+function getPreferredAnchors(state, tool) {
+  const grid = state.grid;
+  switch (tool) {
+    case "farm":
+    case "lumber":
+    case "quarry":
+    case "herb_garden":
+      // Worksites near warehouses for short delivery paths
+      return listTilesByType(grid, [TILE.WAREHOUSE]);
+    case "kitchen":
+      return listTilesByType(grid, [TILE.WAREHOUSE, TILE.FARM]);
+    case "smithy":
+      return listTilesByType(grid, [TILE.WAREHOUSE, TILE.QUARRY]);
+    case "clinic":
+      return listTilesByType(grid, [TILE.WAREHOUSE, TILE.HERB_GARDEN]);
+    default:
+      return null;
+  }
+}
+
 function findPlacementTile(state, buildSystem, tool) {
   const { grid } = state;
-  const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE];
-  const anchors = listTilesByType(grid, anchorTypes);
   const tried = new Set();
 
   function tryTile(ix, iz) {
@@ -195,6 +217,26 @@ function findPlacementTile(state, buildSystem, tool) {
     const preview = buildSystem.previewToolAt(state, tool, ix, iz);
     return preview.ok ? { ix, iz } : null;
   }
+
+  // Phase 1: Try preferred anchors first (worksites near warehouses, etc.)
+  const preferred = getPreferredAnchors(state, tool);
+  if (preferred && preferred.length > 0) {
+    for (let radius = 1; radius <= 6; radius += 1) {
+      for (const anchor of preferred) {
+        for (let dz = -radius; dz <= radius; dz += 1) {
+          for (let dx = -radius; dx <= radius; dx += 1) {
+            if (Math.abs(dx) + Math.abs(dz) !== radius) continue;
+            const result = tryTile(anchor.ix + dx, anchor.iz + dz);
+            if (result) return result;
+          }
+        }
+      }
+    }
+  }
+
+  // Phase 2: Fall back to general infrastructure anchors
+  const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE];
+  const anchors = listTilesByType(grid, anchorTypes);
 
   for (let radius = 1; radius <= 6; radius += 1) {
     for (const anchor of anchors) {
@@ -208,6 +250,7 @@ function findPlacementTile(state, buildSystem, tool) {
     }
   }
 
+  // Phase 3: Full grid scan
   for (let iz = 0; iz < grid.height; iz += 1) {
     for (let ix = 0; ix < grid.width; ix += 1) {
       const result = tryTile(ix, iz);
@@ -266,7 +309,8 @@ function getObjectiveResourceBuffer(state) {
 
 // Only quarry and smithy bypass the stockpile buffer (they unlock tools
 // which accelerate ALL production). Other processing buildings respect the buffer.
-const STRATEGIC_BUILD_TYPES = new Set(["quarry", "smithy"]);
+// Processing chain buildings bypass stockpile buffer — they unlock refined goods
+const STRATEGIC_BUILD_TYPES = new Set(["quarry", "smithy", "kitchen", "herb_garden", "clinic"]);
 
 /**
  * Select multiple affordable build actions, respecting resource buffer.
