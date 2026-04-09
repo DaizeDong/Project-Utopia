@@ -54,7 +54,7 @@ export class TileStateSystem {
         } else if (WEAR_TILES.has(type)) {
           let entry = grid.tileState.get(idx);
           if (!entry) {
-            entry = { fertility: 0, wear: 0 };
+            entry = { fertility: 0, wear: 0, growthStage: 0 };
             grid.tileState.set(idx, entry);
           }
           // Wear increases over time, faster during storms
