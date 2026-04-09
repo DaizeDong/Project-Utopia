@@ -1215,7 +1215,7 @@ function evaluateActionDurationRealism(results) {
     for (const durations of t.workerStateDurations.values()) {
       for (const d of durations) {
         const isAction = d.state === "eat" || d.state === "harvest" || d.state === "deliver"
-          || d.state === "process";
+          || d.state === "process" || d.state === "rest";
         if (isAction) {
           actionDurations.push(d.duration);
         } else {
@@ -1345,8 +1345,14 @@ function evaluateNPCNeedsDepth(results) {
     if (allIntents.has("rest") || allIntents.has("seek_rest")) satisfactionActions.add("rest");
     if (allIntents.has("wander")) satisfactionActions.add("wander"); // satisfies morale
     if (allIntents.has("deliver")) satisfactionActions.add("deliver"); // work completion
-    if (allIntents.has("farm") || allIntents.has("lumber") || allIntents.has("quarry")) satisfactionActions.add("harvest");
+    if (allIntents.has("farm") || allIntents.has("lumber") || allIntents.has("quarry")
+        || allIntents.has("gather_herbs")) satisfactionActions.add("harvest");
     if (allIntents.has("cook") || allIntents.has("smith") || allIntents.has("heal")) satisfactionActions.add("process");
+    // Social interactions satisfy social need
+    const hasSocialEvents = r.state.events?.log?.some(e => e.type === "worker_socialized");
+    if (hasSocialEvents) satisfactionActions.add("socialize");
+    // Haul satisfies productivity need
+    if (allIntents.has("haul")) satisfactionActions.add("haul");
 
     // Mood/composite indicator
     const hasMood = sampleWorker && (
@@ -2055,11 +2061,16 @@ function evaluateEnvironmentalResponsiveness(results) {
     if (t.weathersSeen.has("storm")) hazardTypes++;
     if (t.weathersSeen.has("drought")) hazardTypes++;
     if (t.weathersSeen.has("winter")) hazardTypes++;
+    if (t.weathersSeen.has("rain")) hazardTypes++;
     // Predators are a hazard
     if (r.state.animals?.some(a => a.kind === "PREDATOR")) hazardTypes++;
     // Water tiles are impassable
     if (countTilesByType(r.state.grid, [TILE.WATER]) > 0) hazardTypes++;
-    const hazardScore = clamp(hazardTypes / 5, 0, 1);
+    // Day/night cycle is an environmental condition
+    if (r.state.environment?.dayNightPhase !== undefined) hazardTypes++;
+    // Fertility system creates environmental pressure
+    if (r.state.grid.tileState && r.state.grid.tileState.size > 0) hazardTypes++;
+    const hazardScore = clamp(hazardTypes / 6, 0, 1);
 
     // Adaptation speed: how quickly do intents shift after weather change?
     let adaptSpeed = 0;

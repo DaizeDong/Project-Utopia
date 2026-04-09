@@ -130,9 +130,9 @@ function deriveWorkerDesiredState(worker, state) {
     return { desiredState: "seek_rest", reason: "rule:rest-low" };
   }
 
-  // Night behavior: prefer rest/wander during night when no urgent needs
+  // Night behavior: strongly prefer rest during night (day/night cycle drives temporal realism)
   const isNight = Boolean(state.environment?.isNight);
-  if (isNight && restLevel < Number(BALANCE.workerNightRestThreshold ?? 0.5)) {
+  if (isNight && restLevel < Number(BALANCE.workerNightRestThreshold ?? 0.65)) {
     return { desiredState: "seek_rest", reason: "rule:night-rest" };
   }
 
@@ -141,10 +141,13 @@ function deriveWorkerDesiredState(worker, state) {
   if (weatherType === "storm" && restLevel < 0.8) {
     return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
   }
-  if (weatherType === "drought" && restLevel < 0.45) {
+  if (weatherType === "winter" && restLevel < 0.55) {
+    return { desiredState: "seek_rest", reason: "rule:winter-rest" };
+  }
+  if (weatherType === "drought" && restLevel < 0.5) {
     return { desiredState: "seek_rest", reason: "rule:drought-rest" };
   }
-  if (weatherType === "rain" && restLevel < 0.35) {
+  if (weatherType === "rain" && restLevel < 0.4) {
     return { desiredState: "seek_rest", reason: "rule:rain-rest" };
   }
 
