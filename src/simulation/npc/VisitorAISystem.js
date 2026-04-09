@@ -7,6 +7,7 @@ import { getScenarioEventCandidates, getScenarioRuntime } from "../../world/scen
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
@@ -383,6 +384,7 @@ function traderTick(visitor, state, dt, services) {
     if (nextTarget && setTargetAndPath(visitor, nextTarget.tile, state, services)) {
       bb.nextTradeRetargetSec = nowSec + retargetWindowSec;
       bb.tradeRetargetMisses = 0;
+      bb._tradedThisStop = false;
       bb.tradeTargetLabel = nextTarget.context.label;
       bb.tradeTargetBonus = nextTarget.context.tradeBonus;
       bb.tradeTargetDefense = nextTarget.context.wallCoverage;
@@ -406,6 +408,13 @@ function traderTick(visitor, state, dt, services) {
     state.resources.food += 1.5 * dt * tradeYield * tradeBonus;
     state.resources.wood += 1.2 * dt * tradeYield * tradeBonus;
     bb.lastTradeYieldBonus = tradeBonus;
+    if (!bb._tradedThisStop) {
+      bb._tradedThisStop = true;
+      emitEvent(state, EVENT_TYPES.TRADE_COMPLETED, {
+        entityId: visitor.id, entityName: visitor.name ?? visitor.id,
+        tradeBonus, label: bb.tradeTargetLabel ?? "",
+      });
+    }
     restoreVisitorHunger(visitor, state, dt);
     return;
   }
@@ -466,6 +475,11 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
       bb.lastSabotageBlocked = Boolean(result?.blocked);
       bb.lastSabotageTargetLabel = result?.targetLabel ?? bb.sabotageTargetLabel ?? "";
       bb.lastSabotageDefense = Number(result?.defenseScore ?? bb.sabotageTargetDefense ?? 0);
+      emitEvent(state, EVENT_TYPES.SABOTAGE_OCCURRED, {
+        entityId: visitor.id, entityName: visitor.name ?? visitor.id,
+        blocked: result?.blocked ?? false, label: result?.targetLabel ?? "",
+        defenseScore: result?.defenseScore ?? 0,
+      });
       clearPath(visitor);
     }
     return;
