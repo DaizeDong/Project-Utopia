@@ -750,7 +750,7 @@ function carveBridgesOnMainAxis(tiles, width, height, profile, seed) {
         const idx = toIndex(x, z, width);
         if (tiles[idx] === TILE.WATER) {
           run += 1;
-          tiles[idx] = TILE.ROAD;
+          tiles[idx] = TILE.BRIDGE;
         } else if (run > 0) {
           if (run >= 2 && run <= 8) break;
           run = 0;
@@ -764,7 +764,7 @@ function carveBridgesOnMainAxis(tiles, width, height, profile, seed) {
         const idx = toIndex(x, z, width);
         if (tiles[idx] === TILE.WATER) {
           run += 1;
-          tiles[idx] = TILE.ROAD;
+          tiles[idx] = TILE.BRIDGE;
         } else if (run > 0) {
           if (run >= 2 && run <= 8) break;
           run = 0;
@@ -776,12 +776,12 @@ function carveBridgesOnMainAxis(tiles, width, height, profile, seed) {
   for (let iz = 1; iz < height - 1; iz += 1) {
     for (let ix = 1; ix < width - 1; ix += 1) {
       const idx = toIndex(ix, iz, width);
-      if (tiles[idx] !== TILE.ROAD) continue;
+      if (tiles[idx] !== TILE.BRIDGE) continue;
       if (hash2D(ix, iz, seed + 2003) < 0.1) {
-        if (tiles[toIndex(ix + 1, iz, width)] === TILE.WATER) tiles[toIndex(ix + 1, iz, width)] = TILE.ROAD;
-        if (tiles[toIndex(ix - 1, iz, width)] === TILE.WATER) tiles[toIndex(ix - 1, iz, width)] = TILE.ROAD;
-        if (tiles[toIndex(ix, iz + 1, width)] === TILE.WATER) tiles[toIndex(ix, iz + 1, width)] = TILE.ROAD;
-        if (tiles[toIndex(ix, iz - 1, width)] === TILE.WATER) tiles[toIndex(ix, iz - 1, width)] = TILE.ROAD;
+        if (tiles[toIndex(ix + 1, iz, width)] === TILE.WATER) tiles[toIndex(ix + 1, iz, width)] = TILE.BRIDGE;
+        if (tiles[toIndex(ix - 1, iz, width)] === TILE.WATER) tiles[toIndex(ix - 1, iz, width)] = TILE.BRIDGE;
+        if (tiles[toIndex(ix, iz + 1, width)] === TILE.WATER) tiles[toIndex(ix, iz + 1, width)] = TILE.BRIDGE;
+        if (tiles[toIndex(ix, iz - 1, width)] === TILE.WATER) tiles[toIndex(ix, iz - 1, width)] = TILE.BRIDGE;
       }
     }
   }
@@ -1155,11 +1155,24 @@ export function createInitialGrid(options = {}) {
 
   const generated = generateTerrainTiles(width, height, templateId, seed, tuning);
 
+  // Initialize tile state metadata for production/wear tiles
+  const tileState = new Map();
+  for (let i = 0; i < generated.tiles.length; i++) {
+    const type = generated.tiles[i];
+    if (type === TILE.FARM || type === TILE.HERB_GARDEN || type === TILE.LUMBER) {
+      tileState.set(i, { fertility: 0.8 + Math.random() * 0.2, wear: 0 });
+    } else if (type === TILE.ROAD || type === TILE.BRIDGE || type === TILE.WALL) {
+      tileState.set(i, { fertility: 0, wear: 0 });
+    }
+  }
+
   return {
     width,
     height,
     tileSize,
     tiles: generated.tiles,
+    tileState,
+    tileStateVersion: 1,
     version: 1,
     templateId,
     seed: seedInput,
@@ -1200,7 +1213,37 @@ export function setTile(grid, ix, iz, tileType) {
   if (grid.tiles[idx] === tileType) return false;
   grid.tiles[idx] = tileType;
   grid.version += 1;
+  // Initialize tile state for new building tiles
+  if (grid.tileState) {
+    if (tileType === TILE.FARM || tileType === TILE.HERB_GARDEN || tileType === TILE.LUMBER) {
+      grid.tileState.set(idx, { fertility: 0.9, wear: 0 });
+    } else if (tileType === TILE.ROAD || tileType === TILE.BRIDGE || tileType === TILE.WALL) {
+      grid.tileState.set(idx, { fertility: 0, wear: 0 });
+    } else if (tileType === TILE.QUARRY || tileType === TILE.KITCHEN || tileType === TILE.SMITHY || tileType === TILE.CLINIC) {
+      grid.tileState.set(idx, { fertility: 0, wear: 0 });
+    } else {
+      grid.tileState.delete(idx);
+    }
+    grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+  }
   return true;
+}
+
+export function getTileState(grid, ix, iz) {
+  if (!inBounds(ix, iz, grid) || !grid.tileState) return null;
+  return grid.tileState.get(toIndex(ix, iz, grid.width)) ?? null;
+}
+
+export function setTileField(grid, ix, iz, field, value) {
+  if (!inBounds(ix, iz, grid) || !grid.tileState) return;
+  const idx = toIndex(ix, iz, grid.width);
+  let entry = grid.tileState.get(idx);
+  if (!entry) {
+    entry = { fertility: 0, wear: 0 };
+    grid.tileState.set(idx, entry);
+  }
+  entry[field] = value;
+  grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
 }
 
 export function isPassable(grid, ix, iz) {
@@ -1286,6 +1329,7 @@ export function rebuildBuildingStats(grid) {
     kitchens: countTilesByType(grid, [TILE.KITCHEN]),
     smithies: countTilesByType(grid, [TILE.SMITHY]),
     clinics: countTilesByType(grid, [TILE.CLINIC]),
+    bridges: countTilesByType(grid, [TILE.BRIDGE]),
   };
 }
 
@@ -1320,7 +1364,7 @@ export function validateGeneratedGrid(grid) {
   const walls = countTilesByType(grid, [TILE.WALL]);
   const ruins = countTilesByType(grid, [TILE.RUINS]);
   const water = countTilesByType(grid, [TILE.WATER]);
-  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE]);
   const roadMin = Math.max(40, Math.round(area * toNumberOr(validation.roadMinRatio, 0.02)));
   const waterMin = Math.max(8, Math.round(area * toNumberOr(validation.waterMinRatio, 0.03)));
   const waterMax = Math.round(area * toNumberOr(validation.waterMaxRatio, 0.6));

@@ -30,6 +30,7 @@ import { WildlifePopulationSystem } from "../simulation/ecology/WildlifePopulati
 import { BoidsSystem } from "../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../simulation/economy/ProcessingSystem.js";
+import { TileStateSystem } from "../simulation/economy/TileStateSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
@@ -194,6 +195,7 @@ export class GameApp {
       new EnvironmentDirectorSystem(),
       new WeatherSystem(),
       new WorldEventSystem(),
+      new TileStateSystem(),
       new NPCBrainSystem(),
       new WorkerAISystem(),
       new VisitorAISystem(),

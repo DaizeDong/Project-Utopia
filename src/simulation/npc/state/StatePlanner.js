@@ -136,6 +136,12 @@ function deriveWorkerDesiredState(worker, state) {
     return { desiredState: "seek_rest", reason: "rule:night-rest" };
   }
 
+  // Storm shelter: prefer wander/rest during storms (reduced productivity)
+  const isStorm = state.weather?.current === "storm";
+  if (isStorm && restLevel < 0.7) {
+    return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
+  }
+
   const hasWarehouse = state.buildings.warehouses > 0;
   const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0)
     + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);

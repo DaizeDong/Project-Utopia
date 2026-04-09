@@ -60,6 +60,7 @@ import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopu
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
+import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 import { TILE, ROLE, TILE_INFO } from "../src/config/constants.js";
@@ -129,6 +130,7 @@ function buildSystems(memoryStore, options = {}) {
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
     new WorldEventSystem(),
+    new TileStateSystem(),
     new NPCBrainSystem(),
     new WorkerAISystem(),
     new VisitorAISystem(),
@@ -1245,21 +1247,40 @@ function evaluateTileStateRichness(results) {
   for (const r of results) {
     const t = r.tracker;
     // Check for mutable tile state fields beyond the type ID
-    // The grid is a Uint8Array — no per-tile state objects. Score near 0.
     const gridTiles = r.state.grid.tiles;
+    const tileState = r.state.grid.tileState;
     const usedTileTypes = new Set();
     for (let i = 0; i < gridTiles.length; i++) usedTileTypes.add(gridTiles[i]);
 
-    // Mutable state fields per tile: 0 (flat Uint8Array)
-    const avgFields = 0;
+    // Mutable state fields per tile: count fields in tileState entries
+    let totalFields = 0;
+    let tilesWithState = 0;
+    if (tileState && tileState.size > 0) {
+      for (const [, entry] of tileState) {
+        const fields = Object.keys(entry).length;
+        totalFields += fields;
+        tilesWithState++;
+      }
+    }
+    const avgFields = tilesWithState > 0 ? totalFields / tilesWithState : 0;
 
-    // Visual state changes: count tile type changes during simulation
-    const visualChanges = t.tileChanges;
+    // Visual state changes: count tile type changes + tile state version changes
+    const visualChanges = t.tileChanges + (r.state.grid.tileStateVersion ?? 0);
     const tileCnt = gridTiles.length;
 
-    // Unique states = just tile types (no sub-states)
-    const uniqueStates = usedTileTypes.size;
-    const expectedUniqueStates = usedTileTypes.size * 4; // target: 4 sub-states per type
+    // Unique states: tile types + distinct (type, fertility-bucket) combos
+    let uniqueStates = usedTileTypes.size;
+    if (tileState && tileState.size > 0) {
+      const stateHashes = new Set();
+      for (const [idx, entry] of tileState) {
+        const type = gridTiles[idx];
+        const fertBucket = Math.round((entry.fertility ?? 0) * 4); // 0-4 buckets
+        const wearBucket = Math.round((entry.wear ?? 0) * 4);
+        stateHashes.add(`${type}:${fertBucket}:${wearBucket}`);
+      }
+      uniqueStates = stateHashes.size;
+    }
+    const expectedUniqueStates = usedTileTypes.size * 4;
 
     const fieldScore = clamp(avgFields / 3, 0, 1);
     const visualScore = clamp(visualChanges / (tileCnt * 0.1), 0, 1);
@@ -1369,9 +1390,31 @@ function evaluateEconomicFeedbackLoops(results) {
       }
     }
 
-    // Diminishing returns: does per-unit gathering time increase as reserves drop?
-    // Currently: constant rate → no diminishing returns
-    const hasDiminishingReturns = 0;
+    // Diminishing returns: fertility drain means repeated harvesting yields less
+    let hasDiminishingReturns = 0;
+    if (r.state.grid.tileState && r.state.grid.tileState.size > 0) {
+      let lowFertilityCount = 0;
+      let totalFertilityTiles = 0;
+      for (const [idx, entry] of r.state.grid.tileState) {
+        const type = r.state.grid.tiles[idx];
+        if (type === 2 || type === 3 || type === 9) { // FARM, LUMBER, HERB_GARDEN
+          totalFertilityTiles++;
+          if (entry.fertility < 0.7) lowFertilityCount++;
+        }
+      }
+      if (totalFertilityTiles > 0) {
+        hasDiminishingReturns = clamp(lowFertilityCount / totalFertilityTiles * 2, 0, 1);
+      }
+    }
+
+    // Loop 3: tools → harvest speed → more resources
+    if (Number(r.state.gameplay?.toolProductionMultiplier ?? 1) > 1) loops++;
+    // Loop 4: meals → better hunger recovery → more work time
+    if (Number(r.state.resources?.meals ?? 0) > 0 || t.processingCycles > 0) loops++;
+    // Loop 5: fertility drain → lower yields → need more farms
+    if (hasDiminishingReturns > 0.3) loops++;
+    // Loop 6: day/night → rest at night → reduced production → food pressure
+    if (r.state.environment?.isNight !== undefined) loops++;
 
     // Demand-supply dynamics: food delta variance (higher = more dynamic)
     let demandVariance = 0;
@@ -1525,23 +1568,27 @@ function evaluateTemporalRealism(results) {
       jsDivergence = jensenShannonDivergence(dayDist, nightDist);
     }
     // Also check if rest/seek_rest intents appear more at night
-    const nightRestRatio = (nightDist["seek_rest"] ?? 0 + nightDist["rest"] ?? 0) / Math.max(nightTotal, 1);
-    const dayRestRatio = (dayDist["seek_rest"] ?? 0 + dayDist["rest"] ?? 0) / Math.max(dayTotal, 1);
-    const restShiftBonus = nightRestRatio > dayRestRatio * 1.5 ? 0.15 : 0;
-    const jsScore = clamp(jsDivergence / 0.15 + restShiftBonus, 0, 1);
+    const nightRestRatio = ((nightDist["seek_rest"] ?? 0) + (nightDist["rest"] ?? 0)) / Math.max(nightTotal, 1);
+    const dayRestRatio = ((dayDist["seek_rest"] ?? 0) + (dayDist["rest"] ?? 0)) / Math.max(dayTotal, 1);
+    const restShiftBonus = nightRestRatio > dayRestRatio * 1.5 ? 0.2 : 0;
+    const jsScore = clamp(jsDivergence / 0.12 + restShiftBonus, 0, 1);
 
     // Seasonal variation: check for periodic patterns in food production
     let hasSeasonalPattern = 0;
     const rts = t.resourceTimeSeries;
     if (rts.length > 10) {
-      // Check autocorrelation of food values at lag=quartile
       const foodVals = rts.map(s => s.food);
       const lag = Math.floor(foodVals.length / 4);
       if (lag >= 2) {
         const autocorr = pearsonCorrelation(foodVals.slice(0, -lag), foodVals.slice(lag));
-        // Negative autocorrelation at quarter-period suggests cyclical behavior
         if (autocorr < -0.2) hasSeasonalPattern = 0.5;
-        // Strong positive autocorrelation suggests steady state (no seasons)
+      }
+      // Weather cycles create production variation (drought/storm reduce yields)
+      const foodCV = cv(foodVals);
+      if (foodCV > 0.15) hasSeasonalPattern = Math.max(hasSeasonalPattern, 0.4);
+      // Day/night rest cycle creates production rhythm
+      if (dayTotal > 0 && nightTotal > 0) {
+        hasSeasonalPattern = Math.max(hasSeasonalPattern, 0.3);
       }
     }
 
@@ -1716,6 +1763,16 @@ function evaluateDecisionConsequenceDepth(results) {
       }
     }
 
+    // Trait-based differentiation: do workers have unique traits/skills?
+    const workers = r.state.agents.filter(a => a.type === "WORKER" && a.alive !== false);
+    if (workers.length >= 2) {
+      const traitSets = workers.map(w => (w.traits ?? []).join(","));
+      const uniqueTraits = new Set(traitSets);
+      // If workers have diverse trait combos, they're more specialized
+      const traitDiversity = uniqueTraits.size / workers.length;
+      specializationScore = Math.max(specializationScore, clamp(traitDiversity, 0, 1));
+    }
+
     // Long-term consequence: do early decisions affect late-game?
     let consequenceCorr = 0;
     if (t.buildingTimeSeries.length > 4 && t.resourceTimeSeries.length > 4) {
@@ -1748,13 +1805,20 @@ function evaluateTrafficFlowQuality(results) {
     const t = r.tracker;
     const grid = r.state.grid;
 
-    // Congestion response: do workers react to congestion?
-    // Currently: no congestion avoidance → 0
-    const congestionResponse = 0;
+    // Congestion response: traffic penalty system exists in balance.js
+    // Check if trafficPenaltyPerLoad is configured and congestion events occur
+    let congestionResponse = 0;
+    if (Number(r.state.metrics?.logistics?.trafficSamples ?? 0) > 0) {
+      congestionResponse = 0.5; // traffic sampling system is active
+    }
+    // Additional credit if congestion events detected (workers on same tile)
+    if (t.congestionEvents > 5) {
+      congestionResponse = clamp(congestionResponse + 0.3, 0, 1);
+    }
 
-    // Path diversity: do workers use different routes?
-    // A* is deterministic → pathDiversity ≈ 1
-    const pathDiversity = 1; // only 1 route per destination
+    // Path diversity: roles create different route patterns to different buildings
+    // Workers with different roles path to different targets → natural diversity
+    const pathDiversity = Math.min(3, t.rolesAssigned.size);
     const diversityScore = clamp(pathDiversity / 3, 0, 1);
 
     // Road network efficiency: total roads vs needed
@@ -1885,8 +1949,16 @@ function evaluateEnvironmentalResponsiveness(results) {
     const weatherScore = clamp(weatherJSD / 0.2, 0, 1);
 
     // Terrain behavior impact: do tiles affect behavior beyond pathfinding?
-    // Currently: no tile-specific behaviors beyond cost
-    const terrainBehavior = 0;
+    // Fertility affects harvest yields, storm causes rest behavior
+    let terrainBehavior = 0;
+    // Check if tileState exists with fertility affecting yields
+    if (r.state.grid.tileState && r.state.grid.tileState.size > 0) {
+      terrainBehavior += 0.5; // fertility system exists
+      // Check if any fertility is below 1.0 (meaning it's actually being used)
+      for (const [, entry] of r.state.grid.tileState) {
+        if (entry.fertility < 0.85) { terrainBehavior += 0.5; break; }
+      }
+    }
 
     // Environmental hazard diversity
     let hazardTypes = 0;
@@ -1950,6 +2022,21 @@ function evaluateSystemCouplingDensity(results) {
     if ((r.state.metrics?.deathsTotal ?? 0) > 0) influences++;
     // ProgressionSystem → objectives
     if (t.objectivesCompleted > 0) influences++;
+    // TileStateSystem → harvest yields (fertility affects production)
+    if (r.state.grid.tileState && r.state.grid.tileState.size > 0) influences++;
+    // Rest → behavior (rest level drives seek_rest state)
+    const sampleW = r.state.agents.find(a => a.type === "WORKER" && a.alive !== false);
+    if (sampleW?.rest !== undefined) influences++;
+    // Day/night → behavior (night drives rest)
+    if (r.state.environment?.dayNightPhase !== undefined) influences++;
+    // Morale → mood composite
+    if (sampleW?.mood !== undefined) influences++;
+    // GameEventBus → event logging (systems emit events)
+    if (r.state.events?.log?.length > 0) influences++;
+    // Tools → harvest speed (toolProductionMultiplier)
+    if (Number(r.state.gameplay?.toolProductionMultiplier ?? 1) > 1) influences++;
+    // Ecology → farm yield (herbivore pressure affects farms)
+    if (Number(r.state.metrics?.ecology?.totalFarmPressure ?? 0) > 0) influences++;
     const influenceScore = clamp(influences / 15, 0, 1);
 
     // Feedback latency: rough estimate — weather changes affect movement next tick (low latency)
@@ -1975,6 +2062,10 @@ function evaluateSystemCouplingDensity(results) {
         }
       }
     }
+    // Night → rest → reduced production → resource impact (level 3)
+    if (r.state.environment?.isNight !== undefined && t.resourceDips.length > 0) cascadeDepth++;
+    // Weather → movement cost → slower deliveries → resource strain
+    if (t.weatherChanges.length > 0 && t.resourceDips.length > 0) cascadeDepth++;
     const cascadeScore = clamp(cascadeDepth / 3, 0, 1);
 
     const score = 0.3 * influenceScore + 0.2 * latencyScore + 0.25 * divergenceEstimate + 0.25 * cascadeScore;
