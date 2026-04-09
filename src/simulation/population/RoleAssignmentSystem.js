@@ -122,7 +122,18 @@ export class RoleAssignmentSystem {
     // Distribute remaining between FARM and WOOD using targetFarmRatio
     const remaining = farmMin + woodMin + specialistBudget;
     const emergency = state.resources.food < BALANCE.foodEmergencyThreshold;
-    const effectiveRatio = emergency ? Math.max(targetFarmRatio, 0.82) : targetFarmRatio;
+    let effectiveRatio = emergency ? Math.max(targetFarmRatio, 0.82) : targetFarmRatio;
+
+    // Dynamic resource balance: shift ratio when food/wood are imbalanced
+    if (!emergency) {
+      const food = state.resources.food ?? 0;
+      const wood = state.resources.wood ?? 0;
+      if (food > wood * 1.8 && wood < 50) {
+        effectiveRatio = Math.max(0.25, effectiveRatio - 0.20); // shift to more wood workers
+      } else if (wood > food * 1.8 && food < 40) {
+        effectiveRatio = Math.min(0.85, effectiveRatio + 0.15); // shift to more farm workers
+      }
+    }
     let totalFarm = Math.round(remaining * effectiveRatio);
     totalFarm = Math.max(farmMin, Math.min(remaining, totalFarm));
     if (remaining - totalFarm < woodMin) {

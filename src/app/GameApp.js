@@ -15,6 +15,7 @@ import { EntityFocusPanel } from "../ui/panels/EntityFocusPanel.js";
 import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
+import { PopulationGrowthSystem } from "../simulation/population/PopulationGrowthSystem.js";
 import { MemoryStore } from "../simulation/ai/memory/MemoryStore.js";
 import { MemoryObserver } from "../simulation/ai/memory/MemoryObserver.js";
 import { StrategicDirector } from "../simulation/ai/strategic/StrategicDirector.js";
@@ -191,6 +192,7 @@ export class GameApp {
       new SimulationClock(),
       new ProgressionSystem(),
       new RoleAssignmentSystem(),
+      new PopulationGrowthSystem(),
       new StrategicDirector(this.memoryStore),
       new EnvironmentDirectorSystem(),
       new WeatherSystem(),

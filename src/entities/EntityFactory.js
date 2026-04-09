@@ -120,6 +120,7 @@ export function createWorker(x, z, random = Math.random) {
     // Needs system
     rest: 0.7 + random() * 0.3,      // 0 = exhausted, 1 = fully rested
     morale: 0.6 + random() * 0.4,    // 0 = miserable, 1 = happy
+    social: 0.5 + random() * 0.5,    // 0 = lonely, 1 = socially fulfilled
     mood: 0.7,                        // composite mood indicator (updated each tick)
     // Individual identity
     traits,

@@ -83,6 +83,18 @@ function rebuildLogisticsMetrics(state) {
     summary = `Logistics: ${warehouses.length} depots online, no active carry bottleneck.`;
   }
 
+  // Count traffic density: workers sharing tiles
+  let trafficSamples = 0;
+  const tileCounts = new Map();
+  for (const a of state.agents) {
+    if (a.type !== "WORKER" || a.alive === false) continue;
+    const key = `${Math.floor(a.x)},${Math.floor(a.z)}`;
+    tileCounts.set(key, (tileCounts.get(key) ?? 0) + 1);
+  }
+  for (const count of tileCounts.values()) {
+    if (count >= 2) trafficSamples += count;
+  }
+
   state.metrics.logistics = {
     carryingWorkers,
     totalCarryInTransit: Number(totalCarryInTransit.toFixed(2)),
@@ -93,6 +105,7 @@ function rebuildLogisticsMetrics(state) {
     stretchedWorksites,
     isolatedWorksites,
     warehouseLoadByKey,
+    trafficSamples,
     summary,
   };
   state.debug.logistics = state.metrics.logistics;

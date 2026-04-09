@@ -20,6 +20,7 @@ const EVENT_TYPES = Object.freeze({
   WORKER_MOOD_LOW: "worker_mood_low",
   COLONY_MILESTONE: "colony_milestone",
   ANIMAL_MIGRATION: "animal_migration",
+  WORKER_SOCIALIZED: "worker_socialized",
 });
 
 export { EVENT_TYPES };
