@@ -1,7 +1,7 @@
 import { TILE } from "../../config/constants.js";
 
 const FERTILITY_RECOVERY_PER_SEC = 0.002;
-const FERTILITY_HARVEST_DRAIN = 0.03;
+const FERTILITY_HARVEST_DRAIN = 0.05;
 const WEAR_INCREASE_PER_SEC = 0.0008;
 const WEAR_STORM_MULTIPLIER = 2.5;
 const WEAR_TRAFFIC_BONUS = 0.001;
@@ -39,11 +39,17 @@ export class TileStateSystem {
         if (PRODUCTION_TILES.has(type)) {
           let entry = grid.tileState.get(idx);
           if (!entry) {
-            entry = { fertility: 0.85, wear: 0 };
+            entry = { fertility: 0.85, wear: 0, growthStage: 0 };
             grid.tileState.set(idx, entry);
           }
           // Fertility slowly recovers toward 1.0
           entry.fertility = Math.min(1.0, entry.fertility + FERTILITY_RECOVERY_PER_SEC * elapsed);
+          // Growth stage cycles: 0→1→2→3→0 based on fertility
+          const prevStage = entry.growthStage ?? 0;
+          entry.growthStage = Math.min(3, Math.floor(entry.fertility * 4));
+          if (entry.growthStage !== prevStage) {
+            grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+          }
           grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
         } else if (WEAR_TILES.has(type)) {
           let entry = grid.tileState.get(idx);
