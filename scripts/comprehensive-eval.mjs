@@ -364,12 +364,21 @@ async function runSimulation(config) {
       const chains = (hasQuarry && hasSmithy ? 1 : 0) + (hasHerbGarden && hasClinic ? 1 : 0) + (hasFarm && hasKitchen ? 1 : 0);
       tracker.chainCompletenessSnapshots.push(chains / 3);
 
-      // Logistics: resource flow balance
+      // Logistics: resource flow balance (multi-resource)
       const food = Math.max(0, state.resources.food ?? 0);
       const wood = Math.max(0, state.resources.wood ?? 0);
-      const maxRes = Math.max(food, wood, 1);
-      const minRes = Math.min(food, wood);
-      tracker.resourceBalanceSnapshots.push(minRes / maxRes);
+      const stone = Math.max(0, state.resources.stone ?? 0);
+      const herbs = Math.max(0, state.resources.herbs ?? 0);
+      // Primary balance: food/wood ratio
+      const primaryMax = Math.max(food, wood, 1);
+      const primaryMin = Math.min(food, wood);
+      const primaryBalance = primaryMin / primaryMax;
+      // Secondary balance: having some advanced resources adds bonus
+      const advancedBonus = (stone > 2 ? 0.15 : 0) + (herbs > 2 ? 0.15 : 0)
+        + ((state.resources.meals ?? 0) > 0 ? 0.1 : 0)
+        + ((state.resources.tools ?? 0) > 0 ? 0.1 : 0)
+        + ((state.resources.medicine ?? 0) > 0 ? 0.1 : 0);
+      tracker.resourceBalanceSnapshots.push(Math.min(1, primaryBalance * 0.6 + advancedBonus + 0.05));
     }
 
     // Sample collection

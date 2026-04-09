@@ -111,7 +111,7 @@ export const BENCHMARK_PRESETS = [
     label: "Scarce Advanced Resources",
     templateId: "temperate_plains",
     category: "economy",
-    resources: { food: 30, wood: 25, stone: 0, herbs: 0 },
+    resources: { food: 30, wood: 25, stone: 5, herbs: 3 },
     buildings: { warehouses: 1, farms: 2, lumbers: 2, quarries: 1, herbGardens: 1, kitchens: 0, smithies: 0, clinics: 0 },
   },
   {
@@ -119,8 +119,8 @@ export const BENCHMARK_PRESETS = [
     label: "Tooled Colony",
     templateId: "fortified_basin",
     category: "economy",
-    resources: { food: 80, wood: 70, stone: 10, tools: 3 },
-    buildings: { warehouses: 2, farms: 5, lumbers: 3, quarries: 1, smithies: 1 },
+    resources: { food: 80, wood: 70, stone: 10, herbs: 6, tools: 3 },
+    buildings: { warehouses: 2, farms: 5, lumbers: 3, quarries: 1, smithies: 1, herbGardens: 1 },
   },
 
   // --- Pressure variants ---
@@ -138,7 +138,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "fortified_basin",
     category: "pressure",
     extraWorkers: 8,
-    resources: { food: 80, wood: 60, stone: 15 },
+    resources: { food: 80, wood: 60, stone: 15, herbs: 8 },
     buildings: { quarries: 1, smithies: 1 },
   },
   {
@@ -147,7 +147,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "temperate_plains",
     category: "pressure",
     removeWorkers: 9,
-    resources: { food: 25, wood: 20 },
+    resources: { food: 25, wood: 20, stone: 5, herbs: 3 },
   },
   {
     id: "wildlife_heavy",
@@ -173,7 +173,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "temperate_plains",
     category: "stress",
     removeWorkers: 8,
-    resources: { food: 8, wood: 6 },
+    resources: { food: 8, wood: 6, stone: 3, herbs: 2 },
     weather: "storm",
     weatherDuration: 25,
     extraPredators: 2,
@@ -184,7 +184,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "archipelago_isles",
     category: "stress",
     removeWorkers: 6,
-    resources: { food: 20, wood: 15 },
+    resources: { food: 20, wood: 15, stone: 5, herbs: 3 },
   },
   {
     id: "population_boom",
@@ -192,7 +192,7 @@ export const BENCHMARK_PRESETS = [
     templateId: "temperate_plains",
     category: "stress",
     extraWorkers: 8,
-    resources: { food: 30, wood: 20 },
+    resources: { food: 30, wood: 20, stone: 5, herbs: 3 },
   },
   {
     id: "late_game_siege",
@@ -211,7 +211,7 @@ export const BENCHMARK_PRESETS = [
     label: "No Director (Manual)",
     templateId: "temperate_plains",
     category: "stress",
-    resources: { food: 50, wood: 40 },
+    resources: { food: 50, wood: 40, stone: 10, herbs: 6 },
     disableDirector: true,
   },
 ];
