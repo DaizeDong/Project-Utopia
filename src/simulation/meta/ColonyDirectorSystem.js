@@ -1,4 +1,5 @@
 import { BUILD_COST } from "../../config/balance.js";
+import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 import { TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
 import { canAfford } from "../construction/BuildAdvisor.js";
@@ -626,6 +627,9 @@ export class ColonyDirectorSystem {
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         director.buildsPlaced += 1;
+        emitEvent(state, EVENT_TYPES.BUILDING_PLACED, {
+          buildingType: build.type, ix: tile.ix, iz: tile.iz, reason: build.reason,
+        });
       }
     }
 
