@@ -1160,9 +1160,9 @@ export function createInitialGrid(options = {}) {
   for (let i = 0; i < generated.tiles.length; i++) {
     const type = generated.tiles[i];
     if (type === TILE.FARM || type === TILE.HERB_GARDEN || type === TILE.LUMBER) {
-      tileState.set(i, { fertility: 0.8 + Math.random() * 0.2, wear: 0 });
+      tileState.set(i, { fertility: 0.8 + Math.random() * 0.2, wear: 0, growthStage: 0 });
     } else if (type === TILE.ROAD || type === TILE.BRIDGE || type === TILE.WALL) {
-      tileState.set(i, { fertility: 0, wear: 0 });
+      tileState.set(i, { fertility: 0, wear: 0, growthStage: 0 });
     }
   }
 
@@ -1216,11 +1216,11 @@ export function setTile(grid, ix, iz, tileType) {
   // Initialize tile state for new building tiles
   if (grid.tileState) {
     if (tileType === TILE.FARM || tileType === TILE.HERB_GARDEN || tileType === TILE.LUMBER) {
-      grid.tileState.set(idx, { fertility: 0.9, wear: 0 });
+      grid.tileState.set(idx, { fertility: 0.9, wear: 0, growthStage: 0 });
     } else if (tileType === TILE.ROAD || tileType === TILE.BRIDGE || tileType === TILE.WALL) {
-      grid.tileState.set(idx, { fertility: 0, wear: 0 });
+      grid.tileState.set(idx, { fertility: 0, wear: 0, growthStage: 0 });
     } else if (tileType === TILE.QUARRY || tileType === TILE.KITCHEN || tileType === TILE.SMITHY || tileType === TILE.CLINIC) {
-      grid.tileState.set(idx, { fertility: 0, wear: 0 });
+      grid.tileState.set(idx, { fertility: 0, wear: 0, growthStage: 0 });
     } else {
       grid.tileState.delete(idx);
     }

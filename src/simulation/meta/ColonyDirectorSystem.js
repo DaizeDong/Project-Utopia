@@ -514,9 +514,9 @@ function findCoverageWarehousePlacement(state, buildSystem) {
   const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
   if (worksiteTiles.length === 0 || warehouseTiles.length === 0) return null;
 
-  // Find uncovered worksites (> 12 Manhattan from any warehouse)
+  // Find uncovered worksites (> 10 Manhattan from any warehouse)
   const uncovered = worksiteTiles.filter(ws =>
-    Math.min(...warehouseTiles.map(wh => Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz))) > 12
+    Math.min(...warehouseTiles.map(wh => Math.abs(ws.ix - wh.ix) + Math.abs(ws.iz - wh.iz))) > 10
   );
   if (uncovered.length === 0) return null;
 
