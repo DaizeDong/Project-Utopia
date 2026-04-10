@@ -6,1463 +6,661 @@
   <link rel="icon" href="data:," />
   <title>Project Utopia</title>
   <style>
+    /* === VARIABLES === */
     :root {
-      --bg: #eaf5ff;
-      --panel: rgba(255, 255, 255, 0.82);
-      --panel-border: rgba(53, 94, 129, 0.23);
-      --text: #17384f;
-      --muted: rgba(23, 56, 79, 0.74);
-      --accent: #2a86d1;
-      --dock-bg: rgba(241, 248, 255, 0.97);
+      --panel-bg: rgba(12, 22, 35, 0.92);
+      --panel-border: rgba(80, 160, 220, 0.15);
+      --panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --text: #c8e0f8;
+      --text-muted: rgba(200, 224, 248, 0.5);
+      --accent: #3d9be9;
+      --accent-dim: rgba(61, 155, 233, 0.25);
+      --btn-bg: rgba(255, 255, 255, 0.06);
+      --btn-hover: rgba(255, 255, 255, 0.12);
+      --btn-active: rgba(61, 155, 233, 0.25);
+      --btn-border: rgba(80, 160, 220, 0.2);
+      --input-bg: rgba(0, 0, 0, 0.25);
+      --divider: rgba(255, 255, 255, 0.08);
+      --success: #4caf50;
+      --danger: #f44336;
     }
 
-    html,
-    body {
-      margin: 0;
-      height: 100%;
-      background:
-        radial-gradient(circle at 12% 18%, rgba(173, 219, 255, 0.55) 0%, rgba(173, 219, 255, 0) 46%),
-        radial-gradient(circle at 86% 10%, rgba(212, 239, 190, 0.45) 0%, rgba(212, 239, 190, 0) 42%),
-        linear-gradient(180deg, #eaf5ff 0%, #d9ecfa 100%);
+    /* === RESET === */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: #0a1420;
       color: var(--text);
-      font-family: "Trebuchet MS", "Gill Sans", "Segoe UI", sans-serif;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      font-size: 13px;
     }
 
-    #wrap {
-      position: fixed;
-      inset: 0;
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      grid-template-rows: 1fr 210px;
-      gap: 0;
-    }
+    /* === LAYOUT === */
+    #wrap { position: fixed; inset: 0; }
+    #wrap.game-active .pregame-only { display: none; }
 
-    #wrap.sidebar-collapsed {
-      grid-template-columns: 0 1fr;
-    }
-
-    #wrap.sidebar-collapsed #ui {
-      min-width: 0;
-      width: 0;
-      padding: 0;
-      border-right: none;
-      overflow: hidden;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #wrap.dock-collapsed {
-      grid-template-rows: 1fr 0;
-    }
-
-    #wrap.dock-collapsed #devDock {
-      min-height: 0;
-      border-top: none;
-      overflow: hidden;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    #wrap.dock-collapsed #viewport {
-      grid-row: 1 / span 2;
-    }
-
-    #wrap.game-active .pregame-only {
-      display: none;
-    }
-
-    #layoutControls {
-      position: fixed;
-      top: 8px;
-      right: 12px;
-      z-index: 20;
-      display: flex;
-      gap: 6px;
-    }
-
-    #layoutControls button {
-      padding: 6px 10px;
-      font-size: 11px;
-      font-weight: 700;
-      border-radius: 8px;
-      background: rgba(20,35,50,0.85);
-      border: 1px solid rgba(80,160,220,0.25);
-      color: #d0e8ff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-      cursor: pointer;
-      transition: background 0.15s ease;
-    }
-
-    #layoutControls button:hover {
-      background: rgba(30,50,70,0.9);
-      border-color: rgba(80,160,220,0.4);
-    }
-
+    #viewport { position: absolute; inset: 0; overflow: hidden; }
+    canvas { width: 100%; height: 100%; display: block; }
 
     #ui {
-      grid-column: 1;
-      grid-row: 1 / span 2;
-      min-width: 320px;
-      box-sizing: border-box;
-      border-right: 1px solid var(--panel-border);
-      padding: 14px;
-      overflow: auto;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(241, 248, 255, 0.92));
-      backdrop-filter: blur(4px);
+      position: absolute; inset: 0; z-index: 10;
+      pointer-events: none;
     }
 
-    #ui.compact {
-      width: 320px;
+    /* Legacy layout controls — hidden in new UI */
+    #layoutControls { display: none; }
+
+    /* === HUD STATUS BAR === */
+    #statusBar {
+      position: absolute; top: 0; left: 0; right: 0; z-index: 15;
+      display: flex; align-items: center; gap: 3px;
+      padding: 4px 8px 4px 8px;
+      background: linear-gradient(180deg, rgba(12, 22, 35, 0.95), rgba(8, 16, 28, 0.9));
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 11px; font-weight: 700; color: #d0e8ff;
+      pointer-events: none;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+    #statusBar::-webkit-scrollbar { display: none; }
+
+    .hud-resource {
+      display: flex; align-items: center; gap: 2px;
+      padding: 1px 4px; border-radius: 5px;
+      background: rgba(255,255,255,0.04);
+      flex-shrink: 0;
+    }
+    .hud-icon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 16px; }
+    .hud-meter { display: flex; flex-direction: column; gap: 1px; min-width: 28px; }
+    .hud-label { font-size: 11px; font-weight: 800; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+    .hud-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
+    .hud-bar-fill { height: 100%; width: 0; border-radius: 2px; transition: width 0.3s ease; }
+    .hud-bar-food { background: linear-gradient(90deg, #4caf50, #8bc34a); }
+    .hud-bar-wood { background: linear-gradient(90deg, #8d6e63, #bcaaa4); }
+    .hud-bar-stone { background: linear-gradient(90deg, #a0896e, #8b7d6b); }
+    .hud-bar-herbs { background: linear-gradient(90deg, #7bb86a, #5a9a4a); }
+    .hud-bar-prosperity { background: linear-gradient(90deg, #ffc107, #ffeb3b); }
+    .hud-bar-threat { background: linear-gradient(90deg, #f44336, #ff7043); }
+    .hud-resource[data-urgency="low"] { background: rgba(244,67,54,0.2); }
+    .hud-resource[data-urgency="low"] .hud-label { color: #ff8a80; }
+    .hud-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 1px; flex-shrink: 0; }
+    .hud-spacer { flex: 1; }
+    .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hud-action {
+      padding: 2px 6px; border-radius: 6px; font-size: 10px;
+      max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      transition: opacity 0.3s;
     }
 
-    #viewport {
-      grid-column: 2;
-      grid-row: 1;
-      position: relative;
-      min-height: 0;
-      overflow: hidden;
+    /* === PANEL TOGGLE BUTTONS (in status bar) === */
+    #panelToggles {
+      display: flex; gap: 3px; margin-left: 8px;
+      pointer-events: auto;
     }
-
-    #entityFocusOverlay {
-      position: absolute;
-      bottom: 56px;
-      right: 12px;
-      width: min(280px, calc(100% - 24px));
-      max-height: calc(100% - 100px);
-      z-index: 12;
-      border: 1px solid rgba(80,160,220,0.25);
-      border-radius: 10px;
-      background: rgba(20,35,50,0.9);
-      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
-      overflow: hidden;
-      backdrop-filter: blur(6px);
+    .panel-toggle {
+      padding: 4px 10px; border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: rgba(208,232,255,0.6);
+      font-size: 11px; font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .panel-toggle:hover {
+      background: rgba(255,255,255,0.1);
       color: #d0e8ff;
     }
-
-    #entityFocusOverlay > summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 8px 10px;
-      font-size: 12px;
-      font-weight: 700;
-      color: rgba(208,232,255,0.6);
-      border-bottom: 1px solid transparent;
+    .panel-toggle.active {
+      background: var(--accent-dim);
+      border-color: rgba(61,155,233,0.4);
+      color: #fff;
     }
 
-    #entityFocusOverlay > summary::-webkit-details-marker {
-      display: none;
-    }
-
-    #entityFocusOverlay[open] > summary {
-      border-bottom-color: rgba(80,160,220,0.2);
-    }
-
-    #entityFocusBody {
-      max-height: min(58vh, 520px);
+    /* === FLOATING PANELS === */
+    .floating-panel {
+      position: absolute;
+      top: 40px;
+      width: 280px;
+      max-height: calc(100vh - 94px);
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 9px 10px;
-      font-size: 12px;
+      pointer-events: auto;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      box-shadow: var(--panel-shadow);
+      backdrop-filter: blur(12px);
+      padding: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.1) transparent;
+    }
+    .floating-panel[hidden] { display: none; }
+    .floating-panel-left { left: 10px; width: 260px; }
+    .floating-panel-right { right: 10px; width: 300px; }
+
+    /* === CARD COMPONENTS (dark theme) === */
+    .card {
+      border: 1px solid var(--panel-border);
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 10px;
       line-height: 1.35;
-      color: rgba(208,232,255,0.85);
+      overflow: hidden;
     }
+    .card + .card { margin-top: 6px; }
 
-    .entity-exchange-pre {
-      margin: 6px 0 0 0;
-      padding: 8px;
-      max-height: 180px;
-      overflow: auto;
-      border: 1px solid rgba(80,160,220,0.2);
+    details.card { padding: 0; }
+    details.card > summary {
+      cursor: pointer; list-style: none;
+      padding: 8px 10px;
+      font-weight: 700; font-size: 12px;
+      color: var(--text);
+      border-bottom: 1px solid transparent;
+      user-select: none;
+    }
+    details.card > summary::-webkit-details-marker { display: none; }
+    details.card[open] > summary { border-bottom-color: var(--divider); }
+    details.card > summary:hover { background: rgba(255,255,255,0.03); }
+
+    .panel-body { padding: 8px 10px; }
+    .panel-body-scroll { max-height: 300px; overflow-y: auto; user-select: text; }
+
+    /* === SUBPANEL === */
+    .subpanel {
+      margin-top: 8px;
+      border: 1px solid var(--panel-border);
       border-radius: 8px;
-      background: rgba(0,0,0,0.2);
-      white-space: pre-wrap;
-      user-select: text;
-      font-family: "Cascadia Code", "Consolas", monospace;
-      font-size: 11px;
-      line-height: 1.32;
-      color: rgba(208,232,255,0.8);
+      background: rgba(255,255,255,0.02);
+      overflow: hidden;
+    }
+    .subpanel > summary {
+      padding: 7px 10px; cursor: pointer;
+      font-size: 11px; font-weight: 700;
+      list-style: none; color: var(--text-muted);
+      border-bottom: 1px solid transparent;
+      user-select: none;
+    }
+    .subpanel > summary::-webkit-details-marker { display: none; }
+    .subpanel[open] > summary { border-bottom-color: var(--divider); }
+    .subpanel-body { padding: 8px 10px; }
+
+    /* === TOOL GRID === */
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 5px;
+    }
+    .tool-icon { width: 16px; height: 16px; image-rendering: pixelated; vertical-align: middle; margin-right: 2px; }
+    .tool-grid button {
+      display: flex; align-items: center; justify-content: center; gap: 3px;
+      font-weight: 700; font-size: 11px;
+      padding: 6px 4px;
     }
 
+    /* === BUTTONS (dark theme) === */
+    button {
+      background: var(--btn-bg);
+      color: var(--text);
+      border: 1px solid var(--btn-border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    button:hover:not(:disabled) {
+      background: var(--btn-hover);
+      border-color: rgba(80,160,220,0.35);
+    }
+    button:active:not(:disabled) { transform: translateY(1px); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.active {
+      background: var(--btn-active);
+      border-color: rgba(61,155,233,0.5);
+      color: #fff;
+    }
+
+    /* === INPUTS (dark theme) === */
+    input[type="text"], input[type="number"], select {
+      width: 100%; box-sizing: border-box;
+      background: var(--input-bg);
+      color: var(--text);
+      border: 1px solid var(--btn-border);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    select { cursor: pointer; }
+    select option { background: #0f1a28; color: var(--text); }
+
+    input[type="range"] {
+      width: 100%; accent-color: var(--accent);
+      height: 4px; margin: 4px 0;
+    }
+    input[type="checkbox"] { accent-color: var(--accent); }
+
+    /* === DATA DISPLAY === */
+    .kv {
+      display: flex; justify-content: space-between; gap: 8px;
+      margin-top: 3px; font-size: 12px;
+    }
+    .bar {
+      height: 6px; margin-top: 3px; border-radius: 999px;
+      background: rgba(255,255,255,0.08); overflow: hidden;
+    }
+    .bar > div { width: 0; height: 100%; background: linear-gradient(90deg, #4b9ff0, #53d4a0); }
+
+    .small { font-size: 11px; }
+    .muted { color: var(--text-muted); }
+    .hint { margin-top: 6px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
+    .switch { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+    .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+    #actionVal[data-kind="success"], #warningVal[data-kind="success"] { color: #66bb6a; font-weight: 700; }
+    #actionVal[data-kind="error"], #warningVal[data-kind="error"] { color: #ef5350; font-weight: 700; }
+    #actionVal[data-kind="info"], #warningVal[data-kind="info"] { color: var(--text); }
+
+    /* === GRIDS === */
+    .management-grid, .benchmark-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
+    .management-grid button, .benchmark-grid button { width: 100%; font-size: 11px; }
+    .time-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+
+    /* === POPULATION CONTROLS === */
+    .population-control {
+      margin-top: 6px; border: 1px solid var(--panel-border);
+      border-radius: 8px; background: rgba(255,255,255,0.02); padding: 6px;
+    }
+    .population-control:first-of-type { margin-top: 4px; }
+    .population-slider-row { display: grid; grid-template-columns: 1fr 65px; gap: 6px; margin-top: 3px; align-items: center; }
+    .population-number {
+      width: 100%; box-sizing: border-box;
+      padding: 4px 5px; border-radius: 6px;
+      border: 1px solid var(--btn-border);
+      background: var(--input-bg);
+      color: var(--text); font-size: 11px; min-height: 26px;
+    }
+    .population-step-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px; }
+    .population-step-grid button { width: 100%; padding: 4px; font-size: 10px; }
+
+    /* === SPEED CONTROLS === */
+    #speedControls {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 10;
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 8px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 20px;
+      box-shadow: var(--panel-shadow);
+      backdrop-filter: blur(8px);
+      pointer-events: auto;
+    }
+    #speedControls button {
+      width: 30px; height: 26px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: #d0e8ff; font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    #speedControls button:hover { background: rgba(255,255,255,0.1); }
+    #speedControls button.active {
+      background: var(--accent-dim);
+      border-color: rgba(61,155,233,0.5);
+      color: #fff;
+    }
+    .game-timer {
+      color: rgba(208,232,255,0.7);
+      font-size: 12px; font-weight: 700;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      margin-left: 4px; min-width: 36px; text-align: center;
+    }
+
+    /* === GAME STATE OVERLAY === */
     #gameStateOverlay {
-      position: absolute;
-      inset: 0;
-      z-index: 14;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background:
-        radial-gradient(circle at 18% 18%, rgba(112, 173, 226, 0.16) 0%, rgba(112, 173, 226, 0) 36%),
-        radial-gradient(circle at 82% 16%, rgba(248, 215, 138, 0.14) 0%, rgba(248, 215, 138, 0) 34%),
-        linear-gradient(180deg, rgba(8, 18, 28, 0.72), rgba(8, 18, 28, 0.8));
-      backdrop-filter: blur(3px);
-      padding: 18px;
+      position: fixed; inset: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(6, 12, 20, 0.35);
+      padding: 18px; pointer-events: none;
+    }
+    #gameStateOverlay .overlay-panel {
       pointer-events: auto;
     }
 
     .overlay-panel {
-      width: min(560px, calc(100% - 24px));
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 20px;
-      background:
-        linear-gradient(180deg, rgba(241, 248, 255, 0.97), rgba(225, 239, 251, 0.94));
-      box-shadow:
-        0 22px 48px rgba(3, 13, 24, 0.34),
-        inset 0 1px 0 rgba(255, 255, 255, 0.55);
-      padding: 22px;
-      color: #153247;
-    }
-
-    .overlay-kicker {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(17, 52, 79, 0.08);
-      border: 1px solid rgba(23, 56, 79, 0.12);
-      color: rgba(17, 52, 79, 0.8);
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    .overlay-panel h2 {
-      margin: 14px 0 8px 0;
-      font-size: 28px;
-      line-height: 1.05;
-    }
-
-    .overlay-panel p {
-      margin: 0;
-      line-height: 1.45;
-    }
-
-    .overlay-meta {
-      margin-top: 10px;
-      color: rgba(21, 50, 71, 0.72);
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-
-    .overlay-tag-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    .overlay-tag {
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.72);
-      border: 1px solid rgba(23, 56, 79, 0.14);
-      font-size: 12px;
-      font-weight: 700;
-      color: #17384f;
-    }
-
-    .overlay-summary {
-      margin-top: 16px;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(23, 56, 79, 0.12);
-      background: rgba(255, 255, 255, 0.78);
-      white-space: pre-wrap;
-      line-height: 1.4;
-      max-height: 220px;
-      overflow: auto;
-      font-size: 12px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-    }
-
-    .overlay-actions {
-      display: flex;
-      gap: 8px;
-      margin-top: 14px;
-      flex-wrap: wrap;
-    }
-
-    .overlay-actions button {
-      padding: 8px 12px;
-      border-radius: 10px;
+      width: min(520px, calc(100% - 24px));
       border: 1px solid var(--panel-border);
-      font-size: 13px;
-      font-weight: 700;
-      background: #ffffff;
+      border-radius: 16px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      padding: 24px;
       color: var(--text);
-      cursor: pointer;
-    }
-
-    .overlay-actions button.primary {
-      background: linear-gradient(180deg, #2d8ad7, #1a6bb5);
-      border-color: rgba(15,59,93,0.48);
-      color: #f4fbff;
-      font-size: 15px;
-      padding: 10px 24px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(42,134,209,0.3);
-      transition: transform 0.1s ease, box-shadow 0.15s ease;
-    }
-
-    .overlay-actions button.primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 16px rgba(42,134,209,0.4);
     }
 
     .overlay-game-title {
       margin: 0 0 8px 0;
-      font-size: 36px;
-      font-weight: 900;
+      font-size: 32px; font-weight: 900;
       letter-spacing: -0.5px;
-      background: linear-gradient(135deg, #1a5276, #2e86c1);
+      background: linear-gradient(135deg, #5bb5f0, #3d9be9);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
 
     .overlay-lead {
-      margin: 0 0 16px 0;
-      font-size: 14px;
-      line-height: 1.5;
-      color: rgba(21,50,71,0.8);
+      margin: 0 0 14px 0;
+      font-size: 13px; line-height: 1.5;
+      color: var(--text-muted);
     }
 
     .overlay-scenario-badge {
       display: inline-block;
-      padding: 4px 12px;
-      border-radius: 999px;
-      background: rgba(42,134,209,0.12);
-      border: 1px solid rgba(42,134,209,0.2);
-      color: #1a5276;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      padding: 3px 10px; border-radius: 999px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(61,155,233,0.3);
+      color: #8ec8f6;
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
       margin-bottom: 12px;
     }
 
-    .overlay-objectives {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
-
+    .overlay-objectives { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
     .overlay-obj-card {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px;
-      border-radius: 10px;
-      background: rgba(255,255,255,0.7);
-      border: 1px solid rgba(23,56,79,0.1);
+      padding: 10px 12px; border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--panel-border);
     }
-
     .overlay-obj-card.current {
-      border-color: rgba(42,134,209,0.35);
-      background: rgba(42,134,209,0.06);
+      border-color: rgba(61,155,233,0.4);
+      background: var(--accent-dim);
     }
-
     .overlay-obj-num {
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      background: rgba(42,134,209,0.15);
-      color: #1a5276;
-      font-size: 13px; font-weight: 800;
+      width: 26px; height: 26px; border-radius: 50%;
+      background: rgba(61,155,233,0.15); color: #8ec8f6;
+      font-size: 12px; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
-      flex: 0 0 28px;
+      flex: 0 0 26px;
     }
-
-    .overlay-obj-card.current .overlay-obj-num {
-      background: #2a86d1;
-      color: #fff;
-    }
-
-    .overlay-obj-text {
-      font-size: 13px; font-weight: 600;
-      color: #153247;
-    }
-
-    .overlay-obj-pct {
-      margin-left: auto;
-      font-size: 12px; font-weight: 700;
-      color: rgba(21,50,71,0.5);
-    }
+    .overlay-obj-card.current .overlay-obj-num { background: var(--accent); color: #fff; }
+    .overlay-obj-text { font-size: 13px; font-weight: 600; }
+    .overlay-obj-pct { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--text-muted); }
 
     .overlay-controls-hint {
-      margin-bottom: 14px;
-      font-size: 11px;
-      color: rgba(21,50,71,0.5);
-      text-align: center;
+      margin-bottom: 12px; font-size: 11px;
+      color: var(--text-muted); text-align: center;
     }
-
     .overlay-controls-hint span {
-      display: inline-block;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(23,56,79,0.08);
+      display: inline-block; padding: 2px 6px; border-radius: 4px;
+      background: rgba(255,255,255,0.06);
       font-weight: 700;
       font-family: "Cascadia Code", "Consolas", monospace;
       font-size: 10px;
     }
 
+    .overlay-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .overlay-actions button {
+      padding: 8px 14px; border-radius: 10px;
+      font-size: 13px; font-weight: 700;
+    }
+    .overlay-actions button.primary {
+      background: linear-gradient(180deg, #3d9be9, #2a78c4);
+      border-color: rgba(30,80,140,0.6);
+      color: #f0f8ff;
+      font-size: 15px; padding: 10px 28px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(61,155,233,0.3);
+      transition: transform 0.1s ease, box-shadow 0.15s ease;
+    }
+    .overlay-actions button.primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(61,155,233,0.4);
+    }
+
     .overlay-end-stats {
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(23,56,79,0.12);
-      background: rgba(255,255,255,0.6);
-      font-size: 13px;
-      line-height: 1.6;
-      margin-bottom: 14px;
-      white-space: pre-wrap;
+      padding: 12px; border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.03);
+      font-size: 12px; line-height: 1.6;
+      margin-bottom: 12px; white-space: pre-wrap;
     }
 
-    #actionVal[data-kind="success"],
-    #warningVal[data-kind="success"] {
-      color: #1d6b31;
-      font-weight: 700;
+    .overlay-kicker {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--panel-border);
+      color: var(--text-muted);
+      font-size: 11px; font-weight: 800;
+      letter-spacing: 0.12em; text-transform: uppercase;
     }
-
-    #actionVal[data-kind="error"],
-    #warningVal[data-kind="error"] {
-      color: #a62d2d;
-      font-weight: 700;
+    .overlay-meta { margin-top: 10px; color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+    .overlay-tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .overlay-tag {
+      padding: 5px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--panel-border);
+      font-size: 11px; font-weight: 700;
     }
-
-    #actionVal[data-kind="info"],
-    #warningVal[data-kind="info"] {
-      color: var(--text);
-    }
-
-    #statusBar {
-      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-      display: flex; align-items: center; gap: 4px; padding: 6px 12px;
-      background: linear-gradient(180deg, rgba(20,35,50,0.92), rgba(15,28,42,0.88));
-      border-bottom: 1px solid rgba(80,160,220,0.25);
-      font-size: 12px; font-weight: 700; color: #d0e8ff;
-      pointer-events: none;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    }
-
-    .hud-resource {
-      display: flex; align-items: center; gap: 4px;
-      padding: 2px 6px;
-      border-radius: 6px;
-      background: rgba(255,255,255,0.06);
-    }
-
-    .hud-icon {
-      width: 20px; height: 20px;
-      image-rendering: pixelated;
-      flex: 0 0 20px;
-    }
-
-    .hud-meter {
-      display: flex; flex-direction: column; gap: 1px; min-width: 44px;
-    }
-
-    .hud-label {
-      font-size: 13px; font-weight: 800; line-height: 1;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-
-    .hud-bar {
-      width: 48px; height: 4px;
-      border-radius: 2px;
-      background: rgba(255,255,255,0.12);
-      overflow: hidden;
-    }
-
-    .hud-bar-fill {
-      height: 100%; width: 0;
-      border-radius: 2px;
-      transition: width 0.3s ease;
-    }
-
-    .hud-bar-food { background: linear-gradient(90deg, #4caf50, #8bc34a); }
-    .hud-bar-wood { background: linear-gradient(90deg, #8d6e63, #bcaaa4); }
-    .hud-bar-prosperity { background: linear-gradient(90deg, #ffc107, #ffeb3b); }
-    .hud-bar-threat { background: linear-gradient(90deg, #f44336, #ff7043); }
-
-    .hud-resource[data-urgency="low"] { background: rgba(244,67,54,0.2); }
-    .hud-resource[data-urgency="low"] .hud-label { color: #ff8a80; }
-
-    .hud-divider {
-      width: 1px; height: 22px;
-      background: rgba(255,255,255,0.15);
-      margin: 0 4px;
-    }
-
-    .hud-spacer { flex: 1; }
-
-    .hud-objective {
-      font-size: 11px; opacity: 0.7;
-      text-align: right;
-      max-width: 200px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .hud-action {
-      padding: 2px 8px; border-radius: 6px;
-      font-size: 11px;
-      transition: opacity 0.3s;
-    }
-
-    #speedControls {
-      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
-      z-index: 10;
-      display: flex; align-items: center; gap: 4px;
-      padding: 4px 8px;
-      background: rgba(20,35,50,0.88);
-      border: 1px solid rgba(80,160,220,0.25);
-      border-radius: 20px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      pointer-events: auto;
-    }
-
-    #speedControls button {
-      width: 32px; height: 28px;
-      border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
-      color: #d0e8ff;
-      font-size: 14px;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      padding: 0;
-      transition: background 0.15s ease;
-    }
-
-    #speedControls button:hover {
-      background: rgba(255,255,255,0.15);
-      border-color: rgba(80,160,220,0.4);
-    }
-
-    #speedControls button.active {
-      background: rgba(42,134,209,0.35);
-      border-color: rgba(42,134,209,0.6);
-      color: #ffffff;
-    }
-
-    .game-timer {
-      color: rgba(208,232,255,0.7);
+    .overlay-summary {
+      margin-top: 14px; padding: 12px; border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.03);
+      white-space: pre-wrap; line-height: 1.4;
+      max-height: 200px; overflow: auto;
       font-size: 12px;
-      font-weight: 700;
+    }
+
+    /* === ENTITY FOCUS === */
+    #entityFocusOverlay {
+      position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+      width: min(340px, calc(100% - 580px));
+      max-height: 240px;
+      z-index: 12;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: var(--panel-bg);
+      box-shadow: var(--panel-shadow);
+      backdrop-filter: blur(8px);
+      overflow: hidden; color: var(--text);
+    }
+    #entityFocusOverlay > summary {
+      list-style: none; cursor: pointer;
+      padding: 7px 10px; font-size: 11px; font-weight: 700;
+      color: var(--text-muted);
+      border-bottom: 1px solid transparent;
+    }
+    #entityFocusOverlay > summary::-webkit-details-marker { display: none; }
+    #entityFocusOverlay[open] > summary { border-bottom-color: var(--divider); }
+    #entityFocusBody {
+      max-height: min(50vh, 400px);
+      overflow-y: auto; overflow-x: hidden;
+      padding: 8px 10px; font-size: 11px;
+      line-height: 1.35; color: rgba(208,232,255,0.85);
+    }
+    .entity-exchange-pre {
+      margin: 5px 0 0 0; padding: 7px;
+      max-height: 160px; overflow: auto;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px; background: rgba(0,0,0,0.25);
+      white-space: pre-wrap; user-select: text;
       font-family: "Cascadia Code", "Consolas", monospace;
-      margin-left: 6px;
-      min-width: 40px;
-      text-align: center;
+      font-size: 10px; line-height: 1.3;
+      color: rgba(208,232,255,0.75);
     }
 
-    canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
+    /* === DEV DOCK === */
     #devDock {
-      grid-column: 2;
-      grid-row: 2;
+      position: absolute; bottom: 0; left: 0; right: 0; z-index: 11;
+      background: var(--panel-bg);
       border-top: 1px solid var(--panel-border);
-      background: var(--dock-bg);
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      max-height: 210px;
+      display: flex; flex-direction: column;
+      max-height: 200px;
+      backdrop-filter: blur(8px);
+      pointer-events: auto;
+      transition: opacity 0.2s ease;
+    }
+
+    #wrap.dock-collapsed #devDock {
+      max-height: 0; border-top: none;
+      overflow: hidden; opacity: 0;
+      pointer-events: none;
     }
 
     #devDockHeader {
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--panel-border);
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--divider);
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+      color: var(--text-muted);
     }
-
-    #devDockControls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    #devDockControls button {
-      padding: 4px 8px;
-      font-size: 11px;
-      border-radius: 8px;
-    }
+    #devDockControls { display: flex; gap: 4px; }
+    #devDockControls button { padding: 3px 6px; font-size: 10px; }
 
     #devDockGrid {
-      flex: 1;
-      min-height: 0;
+      flex: 1; min-height: 0;
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      grid-auto-rows: minmax(0, 1fr);
-      align-items: start;
-      align-content: start;
-      gap: 8px;
-      padding: 8px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 6px; padding: 6px;
       overflow: hidden;
     }
 
     .dock-card {
       border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.87);
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-      height: 100%;
-      overflow: hidden;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      display: flex; flex-direction: column;
+      min-height: 0; height: 100%; overflow: hidden;
     }
-
-    details.dock-card[open] {
-      height: 100%;
-    }
-
-    details.dock-card:not([open]) {
-      height: 34px;
-    }
-
-    details.dock-card > summary {
-      cursor: pointer;
-      list-style: none;
-    }
-
-    details.dock-card > summary::-webkit-details-marker {
-      display: none;
-    }
-
-    details.dock-card[open] > summary {
-      border-bottom: 1px solid var(--panel-border);
-    }
-
-    .dock-title {
-      padding: 7px 9px;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--muted);
-    }
-
+    details.dock-card[open] { height: 100%; }
+    details.dock-card:not([open]) { height: 28px; }
+    details.dock-card > summary { cursor: pointer; list-style: none; }
+    details.dock-card > summary::-webkit-details-marker { display: none; }
+    details.dock-card[open] > summary { border-bottom: 1px solid var(--divider); }
+    .dock-title { padding: 5px 8px; font-size: 11px; font-weight: 700; color: var(--text-muted); }
     .dock-body {
-      margin: 0;
-      padding: 8px 9px;
-      font-size: 11px;
-      line-height: 1.35;
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-      overflow-x: auto;
+      margin: 0; padding: 6px 8px; font-size: 10px; line-height: 1.3;
+      flex: 1; min-height: 0;
+      overflow-y: auto; overflow-x: auto;
       overscroll-behavior: contain;
-      white-space: pre-wrap;
-      color: #21465f;
+      white-space: pre-wrap; color: rgba(200,224,248,0.7);
       font-family: "Cascadia Code", "Consolas", monospace;
       user-select: text;
     }
 
-    h1 {
-      margin: 0 0 6px 0;
-      font-size: 16px;
-      letter-spacing: 0.2px;
-      color: #1a5276;
-    }
-
-    .small {
-      font-size: 12px;
-    }
-
-    .muted {
-      color: var(--muted);
-    }
-
-    .card {
-      margin-top: 10px;
-      border: 1px solid var(--panel-border);
-      background: var(--panel);
-      border-radius: 12px;
-      padding: 10px;
-      line-height: 1.35;
-      box-shadow: 0 8px 18px rgba(30, 79, 115, 0.08);
-    }
-
-    details.card {
-      padding: 0;
-      overflow: hidden;
-    }
-
-    details.card > summary {
-      cursor: pointer;
-      list-style: none;
-      padding: 10px;
-      font-weight: 700;
-      border-bottom: 1px solid transparent;
-    }
-
-    details.card[open] > summary {
-      border-bottom-color: var(--panel-border);
-    }
-
-    details.card > summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .panel-body {
-      padding: 10px;
-    }
-
-    .panel-body-scroll {
-      max-height: 360px;
-      overflow-y: auto;
-      overflow-x: hidden;
-      user-select: text;
-    }
-
-    .panel-controls {
-      margin-top: 10px;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-    }
-
-    .subpanel {
-      margin-top: 10px;
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.72);
-      overflow: hidden;
-    }
-
-    .subpanel > summary {
-      padding: 8px 10px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 700;
-      list-style: none;
-      color: var(--muted);
-      border-bottom: 1px solid transparent;
-    }
-
-    .subpanel > summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .subpanel[open] > summary {
-      border-bottom-color: var(--panel-border);
-    }
-
-    .subpanel-body {
-      padding: 10px;
-    }
-
-    .row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-
-    .tool-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .tool-icon {
-      width: 18px; height: 18px;
-      image-rendering: pixelated;
-      vertical-align: middle;
-      margin-right: 4px;
-    }
-
-    .tool-grid button {
-      display: flex; align-items: center; justify-content: center; gap: 4px;
-      font-weight: 700;
-    }
-
-    .tool-grid button,
-    .benchmark-grid button,
-    .management-grid button {
-      width: 100%;
-    }
-
-    .benchmark-grid,
-    .management-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .time-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .population-control {
-      margin-top: 8px;
-      border: 1px solid var(--panel-border);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.66);
-      padding: 8px;
-    }
-
-    .population-control:first-of-type {
-      margin-top: 6px;
-    }
-
-    .population-slider-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 78px;
-      gap: 8px;
-      margin-top: 4px;
-      align-items: center;
-    }
-
-    .population-number {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 5px 6px;
-      border-radius: 8px;
-      border: 1px solid var(--panel-border);
-      background: rgba(255, 255, 255, 0.92);
-      color: var(--text);
-      font-size: 12px;
-      min-height: 30px;
-    }
-
-    .population-step-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 6px;
-      margin-top: 6px;
-    }
-
-    .population-step-grid button {
-      width: 100%;
-      padding: 5px 6px;
-      font-size: 11px;
-    }
-
-    button,
-    input[type="range"],
-    input[type="checkbox"] {
-      accent-color: var(--accent);
-    }
-
-    button,
-    select,
-    input[type="text"] {
-      background: rgba(255, 255, 255, 0.92);
-      color: var(--text);
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      padding: 8px 10px;
-      box-sizing: border-box;
-    }
-
-    input[type="text"],
-    select {
-      width: 100%;
-    }
-
-    button {
-      cursor: pointer;
-      transition: background 0.15s ease, border-color 0.15s ease, transform 0.06s ease;
-    }
-
-    button:hover:not(:disabled) {
-      background: #f2f9ff;
-      border-color: rgba(42, 134, 209, 0.45);
-    }
-
-    button:active:not(:disabled) {
-      transform: translateY(1px);
-    }
-
-    button:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
-
-    button.active {
-      outline: 2px solid rgba(42, 134, 209, 0.45);
-      background: #d9ecff;
-    }
-
-    .kv {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      margin-top: 3px;
-    }
-
-    .bar {
-      height: 10px;
-      margin-top: 4px;
-      border-radius: 999px;
-      background: rgba(23, 56, 79, 0.15);
-      overflow: hidden;
-    }
-
-    .bar > div {
-      width: 0;
-      height: 100%;
-      background: linear-gradient(90deg, #4b9ff0, #53d4a0);
-    }
-
-    .switch {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .hint {
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.33;
-    }
-
+    /* === HIDDEN LEGACY ELEMENTS === */
+    .legacy-hidden { display: none !important; }
     #ui > .small.muted:first-of-type,
     #ui > .switch:has(#compactToggle),
-    #ui > .legend-bar {
-      display: none;
+    #ui > .legend-bar { display: none; }
+
+    /* Hide sidebar-collapsed styles (no sidebar in new UI) */
+    #wrap.sidebar-collapsed #ui { /* no-op in new UI */ }
+
+    /* === SCROLLBAR STYLING === */
+    .floating-panel::-webkit-scrollbar,
+    .panel-body-scroll::-webkit-scrollbar,
+    #entityFocusBody::-webkit-scrollbar,
+    .dock-body::-webkit-scrollbar { width: 4px; }
+    .floating-panel::-webkit-scrollbar-thumb,
+    .panel-body-scroll::-webkit-scrollbar-thumb,
+    #entityFocusBody::-webkit-scrollbar-thumb,
+    .dock-body::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1); border-radius: 2px;
     }
+    .floating-panel::-webkit-scrollbar-track,
+    .panel-body-scroll::-webkit-scrollbar-track,
+    #entityFocusBody::-webkit-scrollbar-track,
+    .dock-body::-webkit-scrollbar-track { background: transparent; }
 
-    .legend-bar {
-      margin-top: 10px;
-      border: 1px solid var(--panel-border);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 8px;
+    /* === RESPONSIVE === */
+    @media (max-width: 900px) {
+      .floating-panel-left { width: 220px; }
+      .floating-panel-right { width: 260px; }
+      #devDockGrid { grid-template-columns: repeat(3, 1fr); }
     }
-
-    .legend-grid {
-      margin-top: 6px;
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 0;
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .legend-item img {
-      width: 16px;
-      height: 16px;
-      image-rendering: pixelated;
-      flex: 0 0 16px;
-    }
-
-    #ui.compact .hint,
-    #ui.compact .optional-panel {
-      display: none;
-    }
-
-    @media (max-width: 1280px) {
-      #wrap {
-        grid-template-rows: 1fr 190px;
-      }
-
-      #devDock {
-        max-height: 190px;
-      }
-    }
-
-    @media (max-width: 980px) {
-      #wrap {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto 50vh 180px;
-      }
-
-      #ui {
-        grid-column: 1;
-        grid-row: 1;
-        border-right: none;
-        border-bottom: 1px solid var(--panel-border);
-      }
-
-      #viewport {
-        grid-column: 1;
-        grid-row: 2;
-      }
-
-      #devDock {
-        grid-column: 1;
-        grid-row: 3;
-      }
-
-      #devDockGrid {
-        grid-template-columns: repeat(2, minmax(220px, 1fr));
-      }
-
-      .legend-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      #wrap.sidebar-collapsed {
-        grid-template-columns: 1fr;
-        grid-template-rows: 50vh 270px;
-      }
-
-      #wrap.sidebar-collapsed #viewport {
-        grid-column: 1;
-        grid-row: 1;
-      }
-
-      #wrap.sidebar-collapsed #devDock {
-        grid-column: 1;
-        grid-row: 2;
-      }
-
-      #wrap.dock-collapsed {
-        grid-template-rows: auto 1fr 0;
-      }
-
-      #wrap.dock-collapsed #viewport {
-        grid-column: 1;
-        grid-row: 2;
-      }
-
-      #wrap.sidebar-collapsed.dock-collapsed {
-        grid-template-rows: 1fr 0;
-      }
-
-      #wrap.sidebar-collapsed.dock-collapsed #viewport {
-        grid-column: 1;
-        grid-row: 1;
-      }
+    @media (max-width: 600px) {
+      .floating-panel { width: calc(100vw - 20px) !important; left: 10px !important; right: 10px !important; }
+      .floating-panel-right { top: auto; bottom: 54px; max-height: 50vh; }
+      #devDockGrid { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
 </head>
 <body>
+  <!-- Legacy layout controls (hidden, JS still references) -->
   <div id="layoutControls" aria-label="Layout Controls">
-    <button id="toggleSidebarBtn" type="button">☰ Menu</button>
+    <button id="toggleSidebarBtn" type="button">Menu</button>
     <button id="toggleDockBtn" type="button">Debug</button>
   </div>
-  <div id="wrap">
-    <div id="ui">
-      <h1>Colony Manager</h1>
-      <div class="small muted">Bright world sandbox: build roads and districts, route workers, and observe AI-driven system shifts.</div>
-      <div class="switch">
-        <input id="compactToggle" type="checkbox" />
-        <label for="compactToggle">Compact Mode</label>
-      </div>
-      <div class="legend-bar">
-        <div class="small"><b>Visual Mode:</b> <span id="visualModeVal">Flat WorldSim</span></div>
-        <div class="legend-grid">
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Road" />Road</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/farm.png" alt="Farm" />Farm</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/lumber.png" alt="Lumber" />Lumber</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/warehouse.png" alt="Warehouse" />Warehouse</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/wall.png" alt="Wall" />Wall</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/ruins.png" alt="Ruins" />Ruins</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/water.png" alt="Water" />Water</div>
-          <div class="legend-item"><img src="/assets/worldsim/icons/flat/road.png" alt="Preset" />Bright preset</div>
-        </div>
-      </div>
-      <div class="panel-controls" style="display:none;">
-        <button id="sidebarCollapseAllBtn" type="button">Collapse All</button>
-        <button id="sidebarExpandCoreBtn" type="button">Expand Core</button>
-        <button id="sidebarExpandAllBtn" type="button">Expand All</button>
-      </div>
 
-      <details class="card" data-panel-key="build" open>
-        <summary>Build Tool</summary>
-        <div class="panel-body">
-          <div class="tool-grid">
-            <button data-tool="road" class="active"><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
-            <button data-tool="farm"><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
-            <button data-tool="lumber"><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
-            <button data-tool="warehouse"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
-            <button data-tool="wall"><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
-            <button data-tool="bridge"><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
-            <button data-tool="erase"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Erase</button>
-          </div>
-          <div class="hint">LMB build · RMB pan · 1-7 tools · Space pause · Ctrl+Z undo</div>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="management" open>
-        <summary>Management</summary>
-        <div class="panel-body">
-          <details class="subpanel" open>
-            <summary>Map & Doctrine</summary>
-            <div class="subpanel-body">
-              <div class="small muted" style="margin-top:3px;">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
-              <input id="farmRatio" type="range" min="0" max="100" value="50" />
-
-              <div class="pregame-only">
-              <div class="small muted" style="margin-top:10px;">Map Template</div>
-              <select id="mapTemplateSelect"></select>
-              <div class="management-grid" style="margin-top:6px;">
-                <input id="mapSeedInput" type="text" value="1337" placeholder="Map seed" />
-                <button id="regenerateMapBtn">Regenerate Map</button>
-              </div>
-
-              <div class="small muted" style="margin-top:10px;">Doctrine</div>
-              <select id="doctrineSelect"></select>
-
-              <div class="switch">
-                <input id="aiToggle" type="checkbox" />
-                <label for="aiToggle">Enable LLM Agent Mode</label>
-              </div>
-              </div>
-
-              <details class="subpanel" style="margin-top:10px;">
-                <summary>Advanced Runtime Controls</summary>
-                <div class="subpanel-body">
-                  <div class="switch">
-                    <input id="showTileIconsToggle" type="checkbox" />
-                    <label for="showTileIconsToggle">Tile Icons</label>
-                  </div>
-                  <div class="switch">
-                    <input id="showUnitSpritesToggle" type="checkbox" />
-                    <label for="showUnitSpritesToggle">Unit Sprites</label>
-                  </div>
-
-                  <div class="small muted" style="margin-top:8px;">Simulation Tick: <span id="fixedStepHzLabel">30.0 Hz</span></div>
-                  <input id="fixedStepHz" type="range" min="5" max="120" value="30" />
-
-                  <div class="small muted" style="margin-top:8px;">Camera Min Zoom: <span id="cameraMinZoomLabel">0.55</span></div>
-                  <input id="cameraMinZoom" type="range" min="30" max="500" value="55" />
-                  <div class="small muted" style="margin-top:4px;">Camera Max Zoom: <span id="cameraMaxZoomLabel">3.20</span></div>
-                  <input id="cameraMaxZoom" type="range" min="40" max="600" value="320" />
-
-                  <div class="small muted" style="margin-top:8px;">Detail Threshold: <span id="renderDetailThresholdLabel">260</span></div>
-                  <input id="renderDetailThreshold" type="range" min="80" max="2000" value="260" />
-                </div>
-              </details>
-            </div>
-          </details>
-
-          <details class="subpanel">
-            <summary>Terrain Tuning</summary>
-            <div class="subpanel-body">
-              <div class="small muted" style="margin-top:4px;">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
-              <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
-              <div class="small muted" style="margin-top:4px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
-              <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
-              <div class="small muted" style="margin-top:4px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
-              <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
-              <div class="small muted" style="margin-top:4px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
-              <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
-              <div class="small muted" style="margin-top:4px;">Mountain Strength: <span id="terrainMountainStrengthLabel">0.08</span></div>
-              <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
-              <div class="small muted" style="margin-top:4px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
-              <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
-              <div class="small muted" style="margin-top:4px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
-              <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
-              <div class="small muted" style="margin-top:4px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
-              <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
-              <div class="small muted" style="margin-top:4px;">Settlement Density: <span id="terrainSettlementDensityLabel">78%</span></div>
-              <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
-              <div class="small muted" style="margin-top:8px;">Wall Mode</div>
-              <select id="terrainWallModeSelect"></select>
-              <div class="small muted" style="margin-top:8px;">Ocean Side</div>
-              <select id="terrainOceanSideSelect"></select>
-              <div class="management-grid" style="margin-top:8px;">
-                <button id="resetTerrainTuningBtn">Reset Tuning</button>
-              </div>
-            </div>
-          </details>
-
-          <details class="subpanel">
-            <summary>Population</summary>
-            <div class="subpanel-body">
-              <div class="small muted" style="margin-top:3px;" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
-              <div class="small muted" style="margin-top:4px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
-
-              <div class="population-control">
-                <div class="small muted">Workers Target: <span id="workerTargetLabel">0</span></div>
-                <div class="population-slider-row">
-                  <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
-                  <input id="workerTargetNumber" class="population-number" type="number" min="0" max="500" value="0" />
-                </div>
-                <div class="population-step-grid">
-                  <button data-pop-adjust="workers:-10">-10</button>
-                  <button data-pop-adjust="workers:-1">-1</button>
-                  <button data-pop-adjust="workers:1">+1</button>
-                  <button data-pop-adjust="workers:10">+10</button>
-                </div>
-              </div>
-
-              <div class="population-control">
-                <div class="small muted">Traders Target: <span id="traderTargetLabel">0</span></div>
-                <div class="population-slider-row">
-                  <input id="traderTargetInput" type="range" min="0" max="300" value="0" />
-                  <input id="traderTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
-                </div>
-                <div class="population-step-grid">
-                  <button data-pop-adjust="traders:-10">-10</button>
-                  <button data-pop-adjust="traders:-1">-1</button>
-                  <button data-pop-adjust="traders:1">+1</button>
-                  <button data-pop-adjust="traders:10">+10</button>
-                </div>
-              </div>
-
-              <div class="population-control">
-                <div class="small muted">Saboteurs Target: <span id="saboteurTargetLabel">0</span></div>
-                <div class="population-slider-row">
-                  <input id="saboteurTargetInput" type="range" min="0" max="300" value="0" />
-                  <input id="saboteurTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
-                </div>
-                <div class="population-step-grid">
-                  <button data-pop-adjust="saboteurs:-10">-10</button>
-                  <button data-pop-adjust="saboteurs:-1">-1</button>
-                  <button data-pop-adjust="saboteurs:1">+1</button>
-                  <button data-pop-adjust="saboteurs:10">+10</button>
-                </div>
-              </div>
-
-              <div class="population-control">
-                <div class="small muted">Herbivores Target: <span id="herbivoreTargetLabel">0</span></div>
-                <div class="population-slider-row">
-                  <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
-                  <input id="herbivoreTargetNumber" class="population-number" type="number" min="0" max="400" value="0" />
-                </div>
-                <div class="population-step-grid">
-                  <button data-pop-adjust="herbivores:-10">-10</button>
-                  <button data-pop-adjust="herbivores:-1">-1</button>
-                  <button data-pop-adjust="herbivores:1">+1</button>
-                  <button data-pop-adjust="herbivores:10">+10</button>
-                </div>
-              </div>
-
-              <div class="population-control">
-                <div class="small muted">Predators Target: <span id="predatorTargetLabel">0</span></div>
-                <div class="population-slider-row">
-                  <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
-                  <input id="predatorTargetNumber" class="population-number" type="number" min="0" max="200" value="0" />
-                </div>
-                <div class="population-step-grid">
-                  <button data-pop-adjust="predators:-10">-10</button>
-                  <button data-pop-adjust="predators:-1">-1</button>
-                  <button data-pop-adjust="predators:1">+1</button>
-                  <button data-pop-adjust="predators:10">+10</button>
-                </div>
-              </div>
-
-              <div class="management-grid" style="margin-top:8px;">
-                <button id="syncPopulationTargetsBtn">Sync Current</button>
-                <button id="applyPopulationBtn">Apply Population</button>
-              </div>
-            </div>
-          </details>
-
-          <details class="subpanel">
-            <summary>Save / Replay</summary>
-            <div class="subpanel-body">
-              <div class="management-grid" style="margin-top:2px;">
-                <button id="undoBuildBtn">Undo Build</button>
-                <button id="redoBuildBtn">Redo Build</button>
-                <input id="saveSlotInput" type="text" value="default" placeholder="snapshot slot" />
-                <button id="saveSnapshotBtn">Save Snapshot</button>
-                <button id="loadSnapshotBtn">Load Snapshot</button>
-                <button id="comparePresetsBtn">Compare Presets</button>
-                <button id="exportReplayBtn">Export Replay</button>
-              </div>
-            </div>
-          </details>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="stress">
-        <summary>Stress Test</summary>
-        <div class="panel-body">
-          <details class="subpanel" open>
-            <summary>Load & Benchmark</summary>
-            <div class="subpanel-body">
-              <div class="small muted" style="margin-top:4px">Extra Workers: <span id="extraWorkersLabel">0</span></div>
-              <input id="extraWorkers" type="range" min="0" max="500" value="0" />
-              <div class="benchmark-grid">
-                <button id="applyStressBtn">Apply Load</button>
-                <button id="runBenchmarkBtn">Run Benchmark</button>
-                <button id="cancelBenchmarkBtn">Cancel</button>
-                <button id="downloadBenchmarkBtn">Download CSV</button>
-              </div>
-            </div>
-          </details>
-
-          <details class="subpanel" open>
-            <summary>Time Controls</summary>
-            <div class="subpanel-body">
-              <div class="small muted" style="margin-top:4px">Time Controls: <span id="timeScaleLabel">1.00x</span></div>
-              <input id="timeScale" type="range" min="25" max="200" value="100" />
-              <div class="time-grid">
-                <button id="pauseBtn">Pause</button>
-                <button id="step1Btn">Step x1</button>
-                <button id="step5Btn">Step x5</button>
-              </div>
-            </div>
-          </details>
-
-          <details class="subpanel">
-            <summary>Benchmark Config</summary>
-            <div class="subpanel-body">
-              <div class="small muted">Stage Duration: <span id="benchmarkStageDurationLabel">4.0s</span></div>
-              <input id="benchmarkStageDuration" type="range" min="10" max="300" value="40" />
-              <div class="small muted" style="margin-top:6px;">Sample Start: <span id="benchmarkSampleStartLabel">1.2s</span></div>
-              <input id="benchmarkSampleStart" type="range" min="0" max="300" value="12" />
-              <div class="small muted" style="margin-top:8px;">Load Preset</div>
-              <select id="benchmarkSchedulePreset">
-                <option value="default">Default</option>
-                <option value="light">Light</option>
-                <option value="heavy">Heavy</option>
-                <option value="custom">Custom</option>
-              </select>
-              <div class="small muted" style="margin-top:8px;">Load Schedule (comma-separated)</div>
-              <input id="benchmarkScheduleInput" type="text" value="0,100,200,300,400,500" />
-              <div class="management-grid" style="margin-top:8px;">
-                <button id="applyBenchmarkConfigBtn">Apply Benchmark Config</button>
-              </div>
-            </div>
-          </details>
-
-          <div class="small muted" id="benchmarkStatusVal" style="margin-top:8px">Benchmark: idle</div>
-          <div class="small muted" id="simControlVal" style="margin-top:4px">Sim: running | simDt=0.000 | steps=0</div>
-          <div class="small muted" id="workerBreakdownVal" style="margin-top:4px">Workers: base=0 stress=0 total=0</div>
-          <div class="hint">Use this during demo: increase load and show FPS/frame time trends.</div>
-        </div>
-      </details>
-
-      <details class="card optional-panel" data-panel-key="resources">
-        <summary>Resources</summary>
-        <div class="panel-body">
-          <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
-          <div class="bar"><div id="foodBar"></div></div>
-          <div class="kv" style="margin-top:8px"><div>Wood</div><div id="woodVal">0</div></div>
-          <div class="bar"><div id="woodBar"></div></div>
-        </div>
-      </details>
-
-      <details class="card optional-panel" data-panel-key="population">
-        <summary>Population</summary>
-        <div class="panel-body">
-          <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
-          <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
-          <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
-          <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
-          <div class="kv"><div>Assigned FARM</div><div id="farmersVal">0</div></div>
-          <div class="kv"><div>Assigned WOOD</div><div id="loggersVal">0</div></div>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="world">
-        <summary>World State</summary>
-        <div class="panel-body">
-          <div class="kv"><div>Map</div><div id="mapVal">-</div></div>
-          <div class="kv"><div>Doctrine</div><div id="doctrineVal">balanced</div></div>
-          <div class="kv"><div>Prosperity</div><div id="prosperityVal">0</div></div>
-          <div class="kv"><div>Threat</div><div id="threatVal">0</div></div>
-          <div class="kv"><div>Objective</div><div id="objectiveVal">none</div></div>
-          <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
-          <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
-          <div class="kv"><div>AI Env</div><div id="aiEnvVal">none</div></div>
-          <div class="kv"><div>AI Policy</div><div id="aiPolicyVal">none</div></div>
-          <div class="kv"><div>AI Decisions</div><div id="aiDecisionVal">0 / 0</div></div>
-          <div class="kv"><div>Deaths</div><div id="deathVal">0</div></div>
-          <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
-          <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
-          <div class="kv"><div>Sim State</div><div id="simVal">running | steps=0</div></div>
-          <div class="kv"><div>Tool</div><div id="toolVal">road</div></div>
-          <div class="kv"><div>Action</div><div id="actionVal">Ready</div></div>
-          <div class="kv"><div>FPS</div><div id="fpsVal">60.0</div></div>
-          <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
-          <div class="kv"><div>Total Entities</div><div id="agentVal">0</div></div>
-          <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
-          <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="ai-insights">
-        <summary>AI Decisions (Parsed)</summary>
-        <div id="aiDecisionPanelBody" class="panel-body panel-body-scroll">
-          <div class="small muted">Waiting for AI decisions...</div>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="ai-exchange">
-        <summary>AI I/O (Prompt + Raw)</summary>
-        <div id="aiExchangePanelBody" class="panel-body panel-body-scroll">
-          <div class="small muted">Waiting for AI exchange...</div>
-        </div>
-      </details>
-
-      <details class="card" data-panel-key="inspector">
-        <summary>Inspector (Tile + Entity)</summary>
-        <div class="panel-body" id="inspect">
-          <div><b>Selected Tile</b></div>
-          <div class="small muted">Left click tile to inspect/build.</div>
-        </div>
-      </details>
-
-      <details class="card optional-panel" data-panel-key="events">
-        <summary>Event Queue</summary>
-        <div class="panel-body">
-          <div id="eventsPanel" class="small muted" style="margin-top:6px">No active events.</div>
-        </div>
-      </details>
-
-      <details class="card optional-panel" data-panel-key="costs">
-        <summary>Construction</summary>
-        <div class="panel-body">
-          <div class="kv"><div>Selected Tool</div><div id="buildToolLabelVal">Road</div></div>
-          <div id="buildToolSummaryVal" class="small">Extends the logistics network and closes authored route gaps.</div>
-          <div id="buildToolCostVal" class="small" style="margin-top:6px;">Cost: 1w</div>
-          <div id="buildToolRulesVal" class="small">Rules: Roads must extend from existing infrastructure or repair a scenario gap.</div>
-          <div id="buildPreviewVal" class="small muted" style="margin-top:8px;">Hover a tile to preview cost, rules, and scenario impact.</div>
-        </div>
-      </details>
-    </div>
-
+  <div id="wrap" class="dock-collapsed">
     <div id="viewport">
+      <!-- === HUD STATUS BAR === -->
       <div id="statusBar">
-        <div class="hud-resource" id="hudFood">
+        <div class="hud-resource" id="hudFood" title="Food — raw food from farms, feeds workers">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Apple.png" alt="Food" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusFood">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-food" id="statusFoodBar"></div></div>
           </div>
         </div>
-        <div class="hud-resource" id="hudWood">
+        <div class="hud-resource" id="hudWood" title="Wood — harvested from lumber mills, used for building">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wood Log.png" alt="Wood" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusWood">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-wood" id="statusWoodBar"></div></div>
           </div>
         </div>
-        <div class="hud-resource" id="hudWorkers">
+        <div class="hud-resource" id="hudStone" title="Stone — mined from quarries, used for advanced buildings">
+          <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Rune Stone.png" alt="Stone" class="hud-icon" />
+          <div class="hud-meter">
+            <span class="hud-label" id="statusStone">0</span>
+            <div class="hud-bar"><div class="hud-bar-fill hud-bar-stone" id="statusStoneBar"></div></div>
+          </div>
+        </div>
+        <div class="hud-resource" id="hudHerbs" title="Herbs — gathered from herb gardens, refined into medicine">
+          <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="Herbs" class="hud-icon" />
+          <div class="hud-meter">
+            <span class="hud-label" id="statusHerbs">0</span>
+            <div class="hud-bar"><div class="hud-bar-fill hud-bar-herbs" id="statusHerbsBar"></div></div>
+          </div>
+        </div>
+        <div class="hud-resource" id="hudWorkers" title="Workers — colony population count">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Gear.png" alt="Workers" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusWorkers">0</span>
           </div>
         </div>
         <div class="hud-divider"></div>
-        <div class="hud-resource" id="hudProsperity">
+        <div class="hud-resource" id="hudMeals" title="Meals — cooked in kitchens from food, boosts prosperity">
+          <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="Meals" class="hud-icon" />
+          <div class="hud-meter"><span class="hud-label" id="statusMeals">0</span></div>
+        </div>
+        <div class="hud-resource" id="hudTools" title="Tools — forged in smithies from stone+wood, boosts production">
+          <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="Tools" class="hud-icon" />
+          <div class="hud-meter"><span class="hud-label" id="statusTools">0</span></div>
+        </div>
+        <div class="hud-resource" id="hudMedicine" title="Medicine — produced in clinics from herbs, heals injured workers">
+          <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="Medicine" class="hud-icon" />
+          <div class="hud-meter"><span class="hud-label" id="statusMedicine">0</span></div>
+        </div>
+        <div class="hud-divider"></div>
+        <div class="hud-resource" id="hudProsperity" title="Prosperity — colony well-being score, reach targets to win">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Golden Coin.png" alt="Prosperity" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusProsperity">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-prosperity" id="statusProsperityBar"></div></div>
           </div>
         </div>
-        <div class="hud-resource" id="hudThreat">
+        <div class="hud-resource" id="hudThreat" title="Threat — danger level, high threat causes colony losses">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Monster Part/Skull.png" alt="Threat" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusThreat">0</span>
@@ -1472,26 +670,49 @@
         <div class="hud-spacer"></div>
         <span id="statusObjective" class="hud-objective">-</span>
         <span id="statusAction" class="hud-action"></span>
+        <div id="panelToggles">
+          <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
+          <button class="panel-toggle" data-panel-target="colonyFloatingPanel" title="Colony Info">Colony</button>
+          <button class="panel-toggle" data-panel-target="settingsFloatingPanel" title="Settings">Settings</button>
+          <button class="panel-toggle" data-panel-target="debugFloatingPanel" title="Debug Info">Debug</button>
+        </div>
       </div>
+
+      <!-- === SPEED CONTROLS === -->
       <div id="speedControls">
-        <button id="speedPauseBtn" type="button" title="Pause (Space)">⏸</button>
-        <button id="speedPlayBtn" type="button" title="Normal speed" class="active">▶</button>
-        <button id="speedFastBtn" type="button" title="Fast (2x)">⏩</button>
+        <button id="speedPauseBtn" type="button" title="Pause (Space)" aria-label="Pause simulation">&#9208;</button>
+        <button id="speedPlayBtn" type="button" title="Normal speed (1x)" aria-label="Normal speed" class="active">&#9654;</button>
+        <button id="speedFastBtn" type="button" title="Fast forward (2x)" aria-label="Fast forward">&#9193;</button>
         <span id="gameTimer" class="game-timer">0:00</span>
       </div>
+
+      <!-- === CANVAS === -->
       <canvas id="c"></canvas>
+
+      <!-- === GAME STATE OVERLAY === -->
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
           <h2 id="overlayMenuTitle" class="overlay-game-title">Project Utopia</h2>
           <p id="overlayMenuLead" class="overlay-lead">Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
           <div id="overlayMenuMeta" class="overlay-scenario-badge">Quick Start Guide</div>
           <div id="overlayObjectiveCards" class="overlay-objectives"></div>
+          <div class="overlay-map-settings" style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+            <label class="small" style="font-weight:700; color:var(--text-muted);">Template:</label>
+            <select id="overlayMapTemplate" title="Choose terrain template" style="flex:1; min-width:140px; padding:4px 6px; font-size:12px;"></select>
+          </div>
+          <div class="overlay-map-size" style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+            <label class="small" style="font-weight:700; color:var(--text-muted);">Map Size:</label>
+            <input id="overlayMapWidth" type="number" min="24" max="256" value="96" step="8" title="Map width in tiles (24-256)" style="width:70px; padding:4px 6px; font-size:12px;" />
+            <span class="small muted">&times;</span>
+            <input id="overlayMapHeight" type="number" min="24" max="256" value="72" step="8" title="Map height in tiles (24-256)" style="width:70px; padding:4px 6px; font-size:12px;" />
+            <span class="small muted">tiles</span>
+          </div>
           <div class="overlay-controls-hint">
-            <span>LMB</span> build &nbsp; <span>RMB</span> pan &nbsp; <span>1-6</span> tools &nbsp; <span>Space</span> pause
+            <span>RMB</span> drag to preview &nbsp; <span>Scroll</span> zoom &nbsp; <span>1-12</span> tools &nbsp; <span>Space</span> pause
           </div>
           <div class="overlay-actions">
-            <button id="overlayStartBtn" class="primary" type="button">Start Colony</button>
-            <button id="overlayResetFromMenuBtn" type="button">New Map</button>
+            <button id="overlayStartBtn" class="primary" type="button" title="Begin the simulation with this map">Start Colony</button>
+            <button id="overlayResetFromMenuBtn" type="button" title="Generate a new random map with different terrain">New Map</button>
           </div>
         </section>
         <section id="overlayEndPanel" class="overlay-panel" hidden>
@@ -1500,29 +721,421 @@
           <p id="overlayEndReason" class="overlay-lead">-</p>
           <div id="overlayEndStats" class="overlay-end-stats">-</div>
           <div class="overlay-actions">
-            <button id="overlayRestartBtn" class="primary" type="button">Try Again</button>
-            <button id="overlayResetBtn" type="button">New Map</button>
+            <button id="overlayRestartBtn" class="primary" type="button" title="Restart with the same map and scenario">Try Again</button>
+            <button id="overlayResetBtn" type="button" title="Generate a new random map">New Map</button>
           </div>
         </section>
       </div>
-      <details id="entityFocusOverlay">
+
+      <!-- === ENTITY FOCUS === -->
+      <details id="entityFocusOverlay" title="Click a worker, visitor, or animal on the map to inspect it here">
         <summary>Entity Focus</summary>
         <div id="entityFocusBody" class="small">Click a worker, visitor, or animal to inspect.</div>
       </details>
     </div>
 
+    <!-- === UI OVERLAY (floating panels) === -->
+    <div id="ui">
+      <!-- Hidden legacy elements that JS references -->
+      <div class="small muted" style="display:none">legacy</div>
+      <div class="switch" style="display:none"><input id="compactToggle" type="checkbox" /><label for="compactToggle">Compact</label></div>
+      <div class="legend-bar" style="display:none"><div class="small"><b>Visual Mode:</b> <span id="visualModeVal">Flat WorldSim</span></div></div>
+      <div style="display:none">
+        <button id="sidebarCollapseAllBtn" type="button">Collapse All</button>
+        <button id="sidebarExpandCoreBtn" type="button">Expand Core</button>
+        <button id="sidebarExpandAllBtn" type="button">Expand All</button>
+      </div>
+
+      <!-- === BUILD PANEL (left) === -->
+      <div id="buildFloatingPanel" class="floating-panel floating-panel-left">
+        <details class="card" data-panel-key="build" open>
+          <summary>Build Tools</summary>
+          <div class="panel-body">
+            <div class="tool-grid">
+              <button data-tool="road" class="active" title="Road (1) — connect buildings, cost: 1 wood"><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
+              <button data-tool="farm" title="Farm (2) — produce food, cost: 5 wood"><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
+              <button data-tool="lumber" title="Lumber Mill (3) — harvest wood, cost: 3 wood"><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
+              <button data-tool="warehouse" title="Warehouse (4) — store &amp; distribute resources, cost: 8 wood"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
+              <button data-tool="wall" title="Wall (5) — block saboteurs, cost: 2 stone"><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
+              <button data-tool="bridge" title="Bridge (6) — cross water, cost: 3 wood + 1 stone"><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
+              <button data-tool="erase" title="Erase (7) — demolish buildings, partial resource refund"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Erase</button>
+              <button data-tool="quarry" title="Quarry (8) — mine stone, cost: 4 wood"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Pickaxe.png" alt="" class="tool-icon" />Quarry</button>
+              <button data-tool="herb_garden" title="Herb Garden (9) — gather herbs, cost: 3 wood"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="" class="tool-icon" />Herbs</button>
+              <button data-tool="kitchen" title="Kitchen (10) — cook food into meals, cost: 5 wood + 3 stone"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="" class="tool-icon" />Kitchen</button>
+              <button data-tool="smithy" title="Smithy (11) — forge stone+wood into tools, cost: 6 wood + 4 stone"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="" class="tool-icon" />Smithy</button>
+              <button data-tool="clinic" title="Clinic (12) — refine herbs into medicine, cost: 4 wood + 2 herbs"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
+            </div>
+            <div class="hint">LMB build &middot; RMB pan &middot; 1-12 tools &middot; Space pause &middot; Ctrl+Z undo</div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="costs" open>
+          <summary>Construction</summary>
+          <div class="panel-body">
+            <div class="kv"><div>Selected Tool</div><div id="buildToolLabelVal">Road</div></div>
+            <div id="buildToolSummaryVal" class="small muted" style="margin-top:4px">Extends the logistics network and closes authored route gaps.</div>
+            <div id="buildToolCostVal" class="small" style="margin-top:4px;">Cost: 1w</div>
+            <div id="buildToolRulesVal" class="small muted">Rules: Roads must extend from existing infrastructure or repair a scenario gap.</div>
+            <div id="buildPreviewVal" class="small muted" style="margin-top:4px;">Hover a tile to preview cost, rules, and scenario impact.</div>
+          </div>
+        </details>
+      </div>
+
+      <!-- === COLONY PANEL (right) === -->
+      <div id="colonyFloatingPanel" class="floating-panel floating-panel-right" hidden>
+        <details class="card" data-panel-key="resources" open>
+          <summary>Resources</summary>
+          <div class="panel-body">
+            <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
+            <div class="bar"><div id="foodBar"></div></div>
+            <div class="kv" style="margin-top:6px"><div>Wood</div><div id="woodVal">0</div></div>
+            <div class="bar"><div id="woodBar"></div></div>
+            <div class="kv" style="margin-top:6px"><div>Stone</div><div id="stoneVal">0</div></div>
+            <div class="bar"><div id="stoneBar" style="background:linear-gradient(90deg,#a0896e,#8b7d6b)"></div></div>
+            <div class="kv" style="margin-top:6px"><div>Herbs</div><div id="herbsVal">0</div></div>
+            <div class="bar"><div id="herbsBar" style="background:linear-gradient(90deg,#7bb86a,#5a9a4a)"></div></div>
+            <div style="margin-top:8px; border-top:1px solid var(--divider); padding-top:6px">
+              <div class="kv"><div>Meals</div><div id="mealsVal">0</div></div>
+              <div class="bar"><div id="mealsBar" style="background:linear-gradient(90deg,#d4a65a,#c89040)"></div></div>
+              <div class="kv" style="margin-top:6px"><div>Tools</div><div id="toolsVal">0</div></div>
+              <div class="bar"><div id="toolsBar" style="background:linear-gradient(90deg,#8c7a6b,#706050)"></div></div>
+              <div class="kv" style="margin-top:6px"><div>Medicine</div><div id="medicineVal">0</div></div>
+              <div class="bar"><div id="medicineBar" style="background:linear-gradient(90deg,#c4d8c0,#90b88a)"></div></div>
+            </div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="population" open>
+          <summary>Population</summary>
+          <div class="panel-body">
+            <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
+            <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
+            <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
+            <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
+            <div style="margin-top:6px; border-top:1px solid var(--divider); padding-top:6px">
+              <div class="kv"><div>FARM</div><div id="farmersVal">0</div></div>
+              <div class="kv"><div>WOOD</div><div id="loggersVal">0</div></div>
+              <div class="kv"><div>STONE</div><div id="stonersVal">0</div></div>
+              <div class="kv"><div>HERBS</div><div id="herbistsVal">0</div></div>
+              <div class="kv"><div>COOK</div><div id="cooksVal">0</div></div>
+              <div class="kv"><div>SMITH</div><div id="smithsVal">0</div></div>
+              <div class="kv"><div>HERBALIST</div><div id="herbalistsVal">0</div></div>
+              <div class="kv"><div>HAUL</div><div id="haulersVal">0</div></div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- === SETTINGS PANEL (right) === -->
+      <div id="settingsFloatingPanel" class="floating-panel floating-panel-right" hidden>
+        <details class="card" data-panel-key="management" open>
+          <summary>Map &amp; Doctrine</summary>
+          <div class="panel-body">
+            <div class="small muted">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
+            <input id="farmRatio" type="range" min="0" max="100" value="50" />
+
+            <div class="pregame-only">
+              <div class="small muted" style="margin-top:8px;">Map Template</div>
+              <select id="mapTemplateSelect"></select>
+              <div class="management-grid" style="margin-top:6px;">
+                <input id="mapSeedInput" type="text" value="1337" placeholder="Map seed" />
+                <button id="regenerateMapBtn" title="Generate a new map with the current seed and template">Regenerate Map</button>
+              </div>
+
+              <div class="small muted" style="margin-top:8px;">Doctrine</div>
+              <select id="doctrineSelect"></select>
+
+              <div class="switch">
+                <input id="aiToggle" type="checkbox" />
+                <label for="aiToggle">Enable LLM Agent</label>
+              </div>
+            </div>
+
+            <details class="subpanel" style="margin-top:8px;">
+              <summary>Advanced Runtime</summary>
+              <div class="subpanel-body">
+                <div class="switch">
+                  <input id="showTileIconsToggle" type="checkbox" />
+                  <label for="showTileIconsToggle">Tile Icons</label>
+                </div>
+                <div class="switch">
+                  <input id="showUnitSpritesToggle" type="checkbox" />
+                  <label for="showUnitSpritesToggle">Unit Sprites</label>
+                </div>
+                <div class="small muted" style="margin-top:6px;">Sim Tick: <span id="fixedStepHzLabel">30.0 Hz</span></div>
+                <input id="fixedStepHz" type="range" min="5" max="120" value="30" />
+                <div class="small muted" style="margin-top:4px;">Min Zoom: <span id="cameraMinZoomLabel">0.55</span></div>
+                <input id="cameraMinZoom" type="range" min="30" max="500" value="55" />
+                <div class="small muted" style="margin-top:4px;">Max Zoom: <span id="cameraMaxZoomLabel">3.20</span></div>
+                <input id="cameraMaxZoom" type="range" min="40" max="600" value="320" />
+                <div class="small muted" style="margin-top:4px;">Detail Threshold: <span id="renderDetailThresholdLabel">260</span></div>
+                <input id="renderDetailThreshold" type="range" min="80" max="2000" value="260" />
+              </div>
+            </details>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="terrain">
+          <summary>Terrain Tuning</summary>
+          <div class="panel-body">
+            <div class="small muted">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
+            <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
+            <div class="small muted" style="margin-top:3px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
+            <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
+            <div class="small muted" style="margin-top:3px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
+            <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
+            <div class="small muted" style="margin-top:3px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
+            <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
+            <div class="small muted" style="margin-top:3px;">Mountain: <span id="terrainMountainStrengthLabel">0.08</span></div>
+            <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
+            <div class="small muted" style="margin-top:3px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
+            <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
+            <div class="small muted" style="margin-top:3px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
+            <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
+            <div class="small muted" style="margin-top:3px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
+            <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
+            <div class="small muted" style="margin-top:3px;">Settlement: <span id="terrainSettlementDensityLabel">78%</span></div>
+            <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
+            <div class="small muted" style="margin-top:6px;">Wall Mode</div>
+            <select id="terrainWallModeSelect"></select>
+            <div class="small muted" style="margin-top:6px;">Ocean Side</div>
+            <select id="terrainOceanSideSelect"></select>
+            <div class="management-grid" style="margin-top:6px;">
+              <button id="resetTerrainTuningBtn" title="Reset all terrain sliders to default values">Reset Tuning</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="pop-control">
+          <summary>Population Control</summary>
+          <div class="panel-body">
+            <div class="small muted" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
+            <div class="small muted" style="margin-top:3px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
+
+            <div class="population-control">
+              <div class="small muted">Workers: <span id="workerTargetLabel">0</span></div>
+              <div class="population-slider-row">
+                <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
+                <input id="workerTargetNumber" class="population-number" type="number" min="0" max="500" value="0" />
+              </div>
+              <div class="population-step-grid">
+                <button data-pop-adjust="workers:-10" title="Remove 10 workers">-10</button>
+                <button data-pop-adjust="workers:-1" title="Remove 1 worker">-1</button>
+                <button data-pop-adjust="workers:1" title="Add 1 worker">+1</button>
+                <button data-pop-adjust="workers:10" title="Add 10 workers">+10</button>
+              </div>
+            </div>
+
+            <div class="population-control">
+              <div class="small muted">Traders: <span id="traderTargetLabel">0</span></div>
+              <div class="population-slider-row">
+                <input id="traderTargetInput" type="range" min="0" max="300" value="0" />
+                <input id="traderTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+              </div>
+              <div class="population-step-grid">
+                <button data-pop-adjust="traders:-10" title="Remove 10 traders">-10</button>
+                <button data-pop-adjust="traders:-1" title="Remove 1 trader">-1</button>
+                <button data-pop-adjust="traders:1" title="Add 1 trader">+1</button>
+                <button data-pop-adjust="traders:10" title="Add 10 traders">+10</button>
+              </div>
+            </div>
+
+            <div class="population-control">
+              <div class="small muted">Saboteurs: <span id="saboteurTargetLabel">0</span></div>
+              <div class="population-slider-row">
+                <input id="saboteurTargetInput" type="range" min="0" max="300" value="0" />
+                <input id="saboteurTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+              </div>
+              <div class="population-step-grid">
+                <button data-pop-adjust="saboteurs:-10" title="Remove 10 saboteurs">-10</button>
+                <button data-pop-adjust="saboteurs:-1" title="Remove 1 saboteur">-1</button>
+                <button data-pop-adjust="saboteurs:1" title="Add 1 saboteur">+1</button>
+                <button data-pop-adjust="saboteurs:10" title="Add 10 saboteurs">+10</button>
+              </div>
+            </div>
+
+            <div class="population-control">
+              <div class="small muted">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
+              <div class="population-slider-row">
+                <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
+                <input id="herbivoreTargetNumber" class="population-number" type="number" min="0" max="400" value="0" />
+              </div>
+              <div class="population-step-grid">
+                <button data-pop-adjust="herbivores:-10" title="Remove 10 herbivores">-10</button>
+                <button data-pop-adjust="herbivores:-1" title="Remove 1 herbivore">-1</button>
+                <button data-pop-adjust="herbivores:1" title="Add 1 herbivore">+1</button>
+                <button data-pop-adjust="herbivores:10" title="Add 10 herbivores">+10</button>
+              </div>
+            </div>
+
+            <div class="population-control">
+              <div class="small muted">Predators: <span id="predatorTargetLabel">0</span></div>
+              <div class="population-slider-row">
+                <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+                <input id="predatorTargetNumber" class="population-number" type="number" min="0" max="200" value="0" />
+              </div>
+              <div class="population-step-grid">
+                <button data-pop-adjust="predators:-10" title="Remove 10 predators">-10</button>
+                <button data-pop-adjust="predators:-1" title="Remove 1 predator">-1</button>
+                <button data-pop-adjust="predators:1" title="Add 1 predator">+1</button>
+                <button data-pop-adjust="predators:10" title="Add 10 predators">+10</button>
+              </div>
+            </div>
+
+            <div class="management-grid" style="margin-top:6px;">
+              <button id="syncPopulationTargetsBtn" title="Set sliders to match current population counts">Sync Current</button>
+              <button id="applyPopulationBtn" title="Spawn or despawn entities to match target counts">Apply Population</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="save-replay">
+          <summary>Save / Replay</summary>
+          <div class="panel-body">
+            <div class="management-grid">
+              <button id="undoBuildBtn" title="Undo last build action (Ctrl+Z)">Undo Build</button>
+              <button id="redoBuildBtn" title="Redo last undone build action (Ctrl+Y)">Redo Build</button>
+              <input id="saveSlotInput" type="text" value="default" placeholder="snapshot slot" title="Name for the save slot" />
+              <button id="saveSnapshotBtn" title="Save current game state to the named slot">Save Snapshot</button>
+              <button id="loadSnapshotBtn" title="Load game state from the named slot">Load Snapshot</button>
+              <button id="comparePresetsBtn" title="Compare benchmark results across presets">Compare Presets</button>
+              <button id="exportReplayBtn" title="Export simulation replay data as JSON">Export Replay</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- === DEBUG PANEL (right) === -->
+      <div id="debugFloatingPanel" class="floating-panel floating-panel-right" hidden>
+        <details class="card" data-panel-key="world" open>
+          <summary>World State</summary>
+          <div class="panel-body">
+            <div class="kv"><div>Map</div><div id="mapVal">-</div></div>
+            <div class="kv"><div>Doctrine</div><div id="doctrineVal">balanced</div></div>
+            <div class="kv"><div>Prosperity</div><div id="prosperityVal">0</div></div>
+            <div class="kv"><div>Threat</div><div id="threatVal">0</div></div>
+            <div class="kv"><div>Objective</div><div id="objectiveVal">none</div></div>
+            <div class="kv"><div>Weather</div><div id="weatherVal">clear</div></div>
+            <div class="kv"><div>AI Mode</div><div id="aiModeVal">off / fallback</div></div>
+            <div class="kv"><div>AI Env</div><div id="aiEnvVal">none</div></div>
+            <div class="kv"><div>AI Policy</div><div id="aiPolicyVal">none</div></div>
+            <div class="kv"><div>AI Decisions</div><div id="aiDecisionVal">0 / 0</div></div>
+            <div class="kv"><div>Deaths</div><div id="deathVal">0</div></div>
+            <div class="kv"><div>Events</div><div id="eventVal">none</div></div>
+            <div class="kv"><div>Sim Time</div><div id="timeVal">0.0s</div></div>
+            <div class="kv"><div>Sim State</div><div id="simVal">running | steps=0</div></div>
+            <div class="kv"><div>Tool</div><div id="toolVal">road</div></div>
+            <div class="kv"><div>Action</div><div id="actionVal">Ready</div></div>
+            <div class="kv"><div>FPS</div><div id="fpsVal">60.0</div></div>
+            <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
+            <div class="kv"><div>Entities</div><div id="agentVal">0</div></div>
+            <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
+            <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="inspector">
+          <summary>Inspector</summary>
+          <div class="panel-body" id="inspect">
+            <div class="small muted">Left click tile to inspect/build.</div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="events">
+          <summary>Event Queue</summary>
+          <div class="panel-body">
+            <div id="eventsPanel" class="small muted">No active events.</div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="ai-insights">
+          <summary>AI Decisions</summary>
+          <div id="aiDecisionPanelBody" class="panel-body panel-body-scroll">
+            <div class="small muted">Waiting for AI decisions...</div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="ai-exchange">
+          <summary>AI I/O</summary>
+          <div id="aiExchangePanelBody" class="panel-body panel-body-scroll">
+            <div class="small muted">Waiting for AI exchange...</div>
+          </div>
+        </details>
+
+        <details class="card" data-panel-key="stress">
+          <summary>Stress Test</summary>
+          <div class="panel-body">
+            <details class="subpanel" open>
+              <summary>Load &amp; Benchmark</summary>
+              <div class="subpanel-body">
+                <div class="small muted">Extra Workers: <span id="extraWorkersLabel">0</span></div>
+                <input id="extraWorkers" type="range" min="0" max="500" value="0" />
+                <div class="benchmark-grid">
+                  <button id="applyStressBtn" title="Spawn extra workers to stress-test performance">Apply Load</button>
+                  <button id="runBenchmarkBtn" title="Start automated benchmark measurement">Run Benchmark</button>
+                  <button id="cancelBenchmarkBtn" title="Stop the running benchmark">Cancel</button>
+                  <button id="downloadBenchmarkBtn" title="Download benchmark results as CSV file">Download CSV</button>
+                </div>
+              </div>
+            </details>
+            <details class="subpanel" open>
+              <summary>Time Controls</summary>
+              <div class="subpanel-body">
+                <div class="small muted">Time Scale: <span id="timeScaleLabel">1.00x</span></div>
+                <input id="timeScale" type="range" min="25" max="200" value="100" />
+                <div class="time-grid">
+                  <button id="pauseBtn" title="Pause or resume the simulation">Pause</button>
+                  <button id="step1Btn" title="Advance simulation by 1 tick while paused">Step x1</button>
+                  <button id="step5Btn" title="Advance simulation by 5 ticks while paused">Step x5</button>
+                </div>
+              </div>
+            </details>
+            <details class="subpanel">
+              <summary>Benchmark Config</summary>
+              <div class="subpanel-body">
+                <div class="small muted">Stage Duration: <span id="benchmarkStageDurationLabel">4.0s</span></div>
+                <input id="benchmarkStageDuration" type="range" min="10" max="300" value="40" />
+                <div class="small muted" style="margin-top:4px;">Sample Start: <span id="benchmarkSampleStartLabel">1.2s</span></div>
+                <input id="benchmarkSampleStart" type="range" min="0" max="300" value="12" />
+                <div class="small muted" style="margin-top:6px;">Load Preset</div>
+                <select id="benchmarkSchedulePreset">
+                  <option value="default">Default</option>
+                  <option value="light">Light</option>
+                  <option value="heavy">Heavy</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <div class="small muted" style="margin-top:6px;">Load Schedule</div>
+                <input id="benchmarkScheduleInput" type="text" value="0,100,200,300,400,500" />
+                <div class="management-grid" style="margin-top:6px;">
+                  <button id="applyBenchmarkConfigBtn" title="Apply custom benchmark configuration">Apply Config</button>
+                </div>
+              </div>
+            </details>
+            <div class="small muted" id="benchmarkStatusVal" style="margin-top:6px">Benchmark: idle</div>
+            <div class="small muted" id="simControlVal" style="margin-top:3px">Sim: running | simDt=0.000 | steps=0</div>
+            <div class="small muted" id="workerBreakdownVal" style="margin-top:3px">Workers: base=0 stress=0 total=0</div>
+          </div>
+        </details>
+
+        <div style="margin-top:6px;">
+          <button id="toggleDevDockBtn" type="button" style="width:100%; font-size:11px;" title="Show or hide the developer telemetry dock at the bottom">Show Dev Telemetry</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- === DEV DOCK === -->
     <section id="devDock" aria-label="Developer telemetry">
       <div id="devDockHeader">
         <span>Developer Telemetry</span>
         <div id="devDockControls">
-          <button id="dockCollapseAllBtn" type="button">Collapse All</button>
-          <button id="dockExpandAllBtn" type="button">Expand All</button>
-          <button id="dockResetLayoutBtn" type="button">Reset Layout</button>
+          <button id="dockCollapseAllBtn" type="button" title="Collapse all telemetry cards">Collapse All</button>
+          <button id="dockExpandAllBtn" type="button" title="Expand all telemetry cards">Expand All</button>
+          <button id="dockResetLayoutBtn" type="button" title="Reset telemetry layout to defaults">Reset Layout</button>
         </div>
       </div>
       <div id="devDockGrid">
         <details class="dock-card" data-dock-key="global" open>
-          <summary class="dock-title">Global & Gameplay</summary>
+          <summary class="dock-title">Global &amp; Gameplay</summary>
           <pre id="devGlobalVal" class="dock-body">loading...</pre>
         </details>
         <details class="dock-card" data-dock-key="algo">
@@ -1549,6 +1162,53 @@
     </section>
   </div>
 
+  <!-- Panel toggle logic -->
+  <script>
+    (function() {
+      const rightPanelIds = ['colonyFloatingPanel', 'settingsFloatingPanel', 'debugFloatingPanel'];
+      const allPanelIds = ['buildFloatingPanel', ...rightPanelIds];
+
+      document.getElementById('panelToggles')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.panel-toggle');
+        if (!btn) return;
+        const targetId = btn.dataset.panelTarget;
+        if (!targetId) return;
+
+        const panel = document.getElementById(targetId);
+        if (!panel) return;
+
+        const isRight = rightPanelIds.includes(targetId);
+        const wasHidden = panel.hasAttribute('hidden');
+
+        if (isRight) {
+          // Close other right panels
+          for (const otherId of rightPanelIds) {
+            if (otherId !== targetId) {
+              document.getElementById(otherId)?.setAttribute('hidden', '');
+              document.querySelector(`.panel-toggle[data-panel-target="${otherId}"]`)?.classList.remove('active');
+            }
+          }
+        }
+
+        if (wasHidden) {
+          panel.removeAttribute('hidden');
+          btn.classList.add('active');
+        } else {
+          panel.setAttribute('hidden', '');
+          btn.classList.remove('active');
+        }
+      });
+
+      // Dev Dock toggle
+      document.getElementById('toggleDevDockBtn')?.addEventListener('click', () => {
+        const wrap = document.getElementById('wrap');
+        const btn = document.getElementById('toggleDevDockBtn');
+        const collapsed = wrap?.classList.contains('dock-collapsed');
+        wrap?.classList.toggle('dock-collapsed', !collapsed);
+        if (btn) btn.textContent = collapsed ? 'Hide Dev Telemetry' : 'Show Dev Telemetry';
+      });
+    })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -37,11 +37,13 @@ Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players
 - Manhattan distance for tile adjacency checks
 - Worker carry includes 4 resource types: `{ food, wood, stone, herbs }`
 - Processed goods (meals, medicine, tools) are colony-wide, stored in `state.resources`, not carried
+- **Changelog** — Every commit must include a corresponding update to `CHANGELOG.md`. Add entries under the current unreleased version section describing what changed and why. Group entries by category (New Features, Bug Fixes, Files Changed, etc.).
 
-## Current State (as of v0.5.0)
+## Current State (as of v0.5.5)
 
-- **Phase 1 complete** — Resource chains with 5 new buildings, 5 new resources, 5 new roles
+- **Phase 1 complete** — Resource chains with 5 new buildings, 5 new resources, 5 new roles, full UI integration
 - **Phase 2-5 planned** — Defense, wildlife expansion, terrain variety, colonist depth (see `docs/superpowers/plans/2026-04-07-game-richness-expansion.md`)
-- **277 tests passing** across 60+ test files
+- **Tile types** — 14 types (GRASS through BRIDGE, IDs 0-13)
+- **335 tests passing** across 60+ test files
 - **15 benchmark presets** across terrain/economy/pressure categories
 - **AI system** — Hierarchical (StrategicDirector → Tactical) with memory stream, fallback policies

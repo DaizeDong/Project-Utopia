@@ -33,6 +33,9 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
     overlayResetFromMenuBtn: makeElement(),
     overlayRestartBtn: makeElement(),
     overlayResetBtn: makeElement(),
+    overlayMapWidth: { ...makeElement(), value: "96" },
+    overlayMapHeight: { ...makeElement(), value: "72" },
+    overlayMapTemplate: { ...makeElement(), value: "temperate_plains", innerHTML: "" },
   };
 
   const prevDocument = globalThis.document;
@@ -53,6 +56,8 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
         objectiveIndex: 0,
         objectives: [{ title: "Build Network", completed: false, progress: 25 }],
       },
+      grid: { width: 96, height: 72 },
+      world: { mapSeed: 1337 },
       metrics: { populationStats: { workers: 4, totalEntities: 9, deathsTotal: 0 }, timeSec: 12 },
       agents: [],
       animals: [],
@@ -62,13 +67,12 @@ test("GameStateOverlay disables hit testing while the run is active", () => {
 
     assert.equal(nodes.gameStateOverlay.hidden, true);
     assert.equal(nodes.gameStateOverlay.style.display, "none");
-    assert.equal(nodes.gameStateOverlay.style.pointerEvents, "none");
 
     overlay.render({ phase: "menu" });
 
     assert.equal(nodes.gameStateOverlay.hidden, false);
     assert.equal(nodes.gameStateOverlay.style.display, "flex");
-    assert.equal(nodes.gameStateOverlay.style.pointerEvents, "auto");
+    // Overlay background is pointer-events:none via CSS; only .overlay-panel blocks clicks
     assert.match(nodes.overlayMenuTitle.textContent, /Project Utopia/i);
     assert.match(nodes.overlayMenuMeta.textContent, /Broken Frontier/i);
   } finally {

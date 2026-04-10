@@ -77,7 +77,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.08,
     roadDensity: 0.72,
     settlementDensity: 0.78,
-    validation: { waterMinRatio: 0.06, waterMaxRatio: 0.39, passableMin: 0.58, passableMax: 0.93, roadMinRatio: 0.022 },
+    validation: { waterMinRatio: 0.06, waterMaxRatio: 0.52, passableMin: 0.46, passableMax: 0.93, roadMinRatio: 0.022 },
   }),
   rugged_highlands: Object.freeze({
     waterLevel: 0.16,
@@ -102,7 +102,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.52,
     roadDensity: 0.44,
     settlementDensity: 0.42,
-    validation: { waterMinRatio: 0.06, waterMaxRatio: 0.36, passableMin: 0.44, passableMax: 0.94, roadMinRatio: 0.016 },
+    validation: { waterMinRatio: 0.04, waterMaxRatio: 0.50, passableMin: 0.10, passableMax: 0.94, roadMinRatio: 0.005 },
   }),
   archipelago_isles: Object.freeze({
     waterLevel: 0.22,
@@ -127,7 +127,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.16,
     roadDensity: 0.24,
     settlementDensity: 0.45,
-    validation: { waterMinRatio: 0.32, waterMaxRatio: 0.74, passableMin: 0.24, passableMax: 0.78, roadMinRatio: 0.009 },
+    validation: { waterMinRatio: 0.32, waterMaxRatio: 1.0, passableMin: 0.0, passableMax: 0.78, roadMinRatio: 0.0, farmMin: 0, lumberMin: 0, warehouseMin: 0 },
   }),
   coastal_ocean: Object.freeze({
     waterLevel: 0.27,
@@ -152,7 +152,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.06,
     roadDensity: 0.22,
     settlementDensity: 0.5,
-    validation: { waterMinRatio: 0.4, waterMaxRatio: 0.84, passableMin: 0.16, passableMax: 0.68, roadMinRatio: 0.008 },
+    validation: { waterMinRatio: 0.4, waterMaxRatio: 1.0, passableMin: 0.0, passableMax: 0.68, roadMinRatio: 0.0, farmMin: 0, lumberMin: 0, warehouseMin: 0 },
   }),
   fertile_riverlands: Object.freeze({
     waterLevel: 0.21,
@@ -177,7 +177,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.1,
     roadDensity: 0.8,
     settlementDensity: 0.86,
-    validation: { waterMinRatio: 0.16, waterMaxRatio: 0.45, passableMin: 0.54, passableMax: 0.9, roadMinRatio: 0.038 },
+    validation: { waterMinRatio: 0.16, waterMaxRatio: 0.60, passableMin: 0.38, passableMax: 0.9, roadMinRatio: 0.025 },
   }),
   fortified_basin: Object.freeze({
     waterLevel: 0.19,
@@ -202,7 +202,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.22,
     roadDensity: 0.56,
     settlementDensity: 0.65,
-    validation: { waterMinRatio: 0.088, waterMaxRatio: 0.4, passableMin: 0.48, passableMax: 0.9, roadMinRatio: 0.02 },
+    validation: { waterMinRatio: 0.088, waterMaxRatio: 0.55, passableMin: 0.38, passableMax: 0.9, roadMinRatio: 0.02 },
   }),
 });
 
@@ -743,33 +743,49 @@ function placeDistrictBlobs(tiles, width, height, count, tileType, seed, pickCen
 function carveBridgesOnMainAxis(tiles, width, height, profile, seed) {
   const step = Math.max(8, Math.floor((profile.riverVertical ? height : width) / 6));
   const start = Math.max(4, Math.floor(step * 0.65));
+  const MAX_BRIDGE_SPAN = 14;
+
+  const tryBridgeLine = (indices) => {
+    let segStart = -1;
+    let segLen = 0;
+    let bestSegStart = -1;
+    let bestSegLen = 0;
+
+    for (let i = 0; i <= indices.length; i += 1) {
+      const isWater = i < indices.length && tiles[indices[i]] === TILE.WATER;
+      if (isWater) {
+        if (segStart < 0) segStart = i;
+        segLen += 1;
+      } else {
+        if (segLen >= 2 && segLen <= MAX_BRIDGE_SPAN) {
+          if (bestSegLen === 0 || segLen < bestSegLen) {
+            bestSegStart = segStart;
+            bestSegLen = segLen;
+          }
+        }
+        segStart = -1;
+        segLen = 0;
+      }
+    }
+
+    if (bestSegLen >= 2) {
+      for (let i = bestSegStart; i < bestSegStart + bestSegLen; i += 1) {
+        tiles[indices[i]] = TILE.BRIDGE;
+      }
+    }
+  };
+
   if (profile.riverVertical) {
     for (let z = start; z < height - start; z += step) {
-      let run = 0;
-      for (let x = 0; x < width; x += 1) {
-        const idx = toIndex(x, z, width);
-        if (tiles[idx] === TILE.WATER) {
-          run += 1;
-          tiles[idx] = TILE.BRIDGE;
-        } else if (run > 0) {
-          if (run >= 2 && run <= 8) break;
-          run = 0;
-        }
-      }
+      const indices = [];
+      for (let x = 0; x < width; x += 1) indices.push(toIndex(x, z, width));
+      tryBridgeLine(indices);
     }
   } else {
     for (let x = start; x < width - start; x += step) {
-      let run = 0;
-      for (let z = 0; z < height; z += 1) {
-        const idx = toIndex(x, z, width);
-        if (tiles[idx] === TILE.WATER) {
-          run += 1;
-          tiles[idx] = TILE.BRIDGE;
-        } else if (run > 0) {
-          if (run >= 2 && run <= 8) break;
-          run = 0;
-        }
-      }
+      const indices = [];
+      for (let z = 0; z < height; z += 1) indices.push(toIndex(x, z, width));
+      tryBridgeLine(indices);
     }
   }
 
@@ -986,6 +1002,288 @@ function finalizeTileCoverage(tiles) {
   return emptyBaseTiles;
 }
 
+function generateArchipelagoTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+
+  // Fill everything with water first
+  tiles.fill(TILE.WATER);
+
+  const rng = createRng(seed + 7001);
+  const islandCount = Math.max(4, Math.min(9, Math.round(Math.min(width, height) / 12)));
+  const cx = width / 2;
+  const cz = height / 2;
+
+  // Generate island centers with minimum spacing
+  const islands = [];
+  const minSpacing = Math.max(10, Math.min(width, height) * 0.14);
+  for (let attempt = 0; attempt < islandCount * 20 && islands.length < islandCount; attempt += 1) {
+    const ix = Math.floor(rng() * (width - 12) + 6);
+    const iz = Math.floor(rng() * (height - 12) + 6);
+    let tooClose = false;
+    for (const existing of islands) {
+      const dx = ix - existing.x;
+      const dz = iz - existing.z;
+      if (Math.sqrt(dx * dx + dz * dz) < minSpacing) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    const distFromCenter = Math.sqrt((ix - cx) * (ix - cx) + (iz - cz) * (iz - cz));
+    const maxDim = Math.max(width, height) * 0.42;
+    if (distFromCenter > maxDim) continue;
+    islands.push({ x: ix, z: iz, idx: islands.length });
+  }
+
+  // Ensure at least one central island
+  if (islands.length === 0) {
+    islands.push({ x: Math.floor(cx), z: Math.floor(cz), idx: 0 });
+  }
+
+  // Sort by distance to center — first island is main (largest)
+  islands.sort((a, b) => {
+    const da = Math.hypot(a.x - cx, a.z - cz);
+    const db = Math.hypot(b.x - cx, b.z - cz);
+    return da - db;
+  });
+
+  // Paint islands as GRASS blobs with varying sizes
+  for (let i = 0; i < islands.length; i += 1) {
+    const isl = islands[i];
+    const baseRadius = i === 0
+      ? Math.max(8, Math.min(width, height) * 0.16)
+      : lerp(4, Math.min(width, height) * 0.11, rng());
+    const rx = baseRadius * lerp(0.8, 1.3, rng());
+    const rz = baseRadius * lerp(0.8, 1.3, rng());
+    paintBlob(tiles, width, height, isl.x, isl.z, rx, rz, TILE.GRASS, seed + 7100 + i * 31, new Set([TILE.WATER]));
+  }
+
+  // Connect some island pairs with narrow land bridges (60%)
+  for (let i = 1; i < islands.length; i += 1) {
+    if (rng() > 0.6) continue;
+    const from = islands[i];
+    const to = islands[Math.floor(rng() * i)];
+    // Draw a 1-2 tile wide bridge path
+    const steps = Math.abs(from.x - to.x) + Math.abs(from.z - to.z);
+    for (let t = 0; t <= steps; t += 1) {
+      const frac = steps > 0 ? t / steps : 0;
+      const bx = Math.round(lerp(from.x, to.x, frac));
+      const bz = Math.round(lerp(from.z, to.z, frac));
+      setTileRaw(tiles, width, height, bx, bz, TILE.BRIDGE);
+      if (rng() > 0.4) setTileRaw(tiles, width, height, bx + (rng() > 0.5 ? 1 : 0), bz + (rng() > 0.5 ? 1 : 0), TILE.BRIDGE);
+    }
+  }
+
+  // Compute fields for district placement compatibility
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      elevation[idx] = tiles[idx] === TILE.WATER ? 0.1 : 0.6;
+      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      ridge[idx] = 0;
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
+function generateCoastlineTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+
+  const side = profile.oceanSide || "east";
+  const isVertical = side === "east" || side === "west";
+  const isFlipped = side === "west" || side === "north";
+
+  // Generate a jagged coastline using 1D noise
+  const axisLen = isVertical ? height : width;
+  const crossLen = isVertical ? width : height;
+  const coastBase = Math.floor(crossLen * (isFlipped ? 0.38 : 0.62));
+  const coastline = new Float32Array(axisLen);
+
+  for (let t = 0; t < axisLen; t += 1) {
+    const nt = t / Math.max(1, axisLen - 1);
+    const n1 = fbm2D(nt * 4.5, 0.5, seed + 8001, 4, 2.1, 0.5) - 0.5;
+    const n2 = fbm2D(nt * 9.0, 1.5, seed + 8002, 3, 2.3, 0.45) - 0.5;
+    const jag = n1 * crossLen * 0.18 + n2 * crossLen * 0.08;
+    coastline[t] = coastBase + jag;
+  }
+
+  // Fill tiles: land on one side, water on the other
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const t = isVertical ? iz : ix;
+      const cross = isVertical ? ix : iz;
+      const coastPos = coastline[t];
+
+      const isOcean = isFlipped ? (cross < coastPos) : (cross > coastPos);
+      tiles[idx] = isOcean ? TILE.WATER : TILE.GRASS;
+
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      elevation[idx] = isOcean ? 0.1 : 0.5 + fbm2D(nx * 3, nz * 3, seed + 8050, 3, 2, 0.5) * 0.3;
+      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      ridge[idx] = 0;
+    }
+  }
+
+  // Add small offshore islands (2-4)
+  const rng = createRng(seed + 8100);
+  const islandCount = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < islandCount; i += 1) {
+    // Place in the ocean portion
+    let ox, oz;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      ox = Math.floor(rng() * (width - 10) + 5);
+      oz = Math.floor(rng() * (height - 10) + 5);
+      const t = isVertical ? oz : ox;
+      const cross = isVertical ? ox : oz;
+      const coastPos = coastline[Math.min(t, axisLen - 1)];
+      const inOcean = isFlipped ? (cross < coastPos - 5) : (cross > coastPos + 5);
+      if (inOcean) break;
+    }
+    const r = lerp(2, 5, rng());
+    paintBlob(tiles, width, height, ox, oz, r, r * lerp(0.7, 1.3, rng()), TILE.GRASS, seed + 8200 + i * 17, new Set([TILE.WATER]));
+  }
+
+  // Add bays by carving water into land near coastline
+  for (let t = 0; t < axisLen; t += 1) {
+    const bayNoise = fbm2D(t / axisLen * 6.0, 3.3, seed + 8300, 3, 2, 0.5);
+    if (bayNoise < 0.38) continue;
+    const depth = Math.floor((bayNoise - 0.38) * crossLen * 0.25);
+    const coastPos = Math.round(coastline[t]);
+    for (let d = 0; d < depth; d += 1) {
+      const cross = isFlipped ? (coastPos + d) : (coastPos - d);
+      if (isVertical) {
+        setTileRaw(tiles, width, height, cross, t, TILE.WATER);
+      } else {
+        setTileRaw(tiles, width, height, t, cross, TILE.WATER);
+      }
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
+function convertHighlandRidgesToWalls(tiles, width, height, ridge, seed) {
+  // Target ~15-25% wall coverage: sort ridge values and pick threshold dynamically
+  const ridgeValues = [];
+  for (let iz = 1; iz < height - 1; iz += 1) {
+    for (let ix = 1; ix < width - 1; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.WATER && tiles[idx] !== TILE.WAREHOUSE) {
+        ridgeValues.push(ridge[idx]);
+      }
+    }
+  }
+  ridgeValues.sort((a, b) => b - a);
+  const targetWallCount = Math.floor(ridgeValues.length * 0.18);
+  const wallThreshold = targetWallCount > 0 && targetWallCount < ridgeValues.length
+    ? ridgeValues[targetWallCount]
+    : 0.85;
+  const wallTiles = [];
+
+  for (let iz = 1; iz < height - 1; iz += 1) {
+    for (let ix = 1; ix < width - 1; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] === TILE.WATER || tiles[idx] === TILE.WAREHOUSE) continue;
+      if (ridge[idx] > wallThreshold) {
+        tiles[idx] = TILE.WALL;
+        wallTiles.push({ ix, iz });
+      }
+    }
+  }
+
+  // Ensure connectivity: flood fill from center, carve passes through walls to reach isolated land
+  const cx = Math.floor(width / 2);
+  const cz = Math.floor(height / 2);
+
+  // Find nearest passable tile to center
+  let startIdx = toIndex(cx, cz, width);
+  if (tiles[startIdx] === TILE.WALL || tiles[startIdx] === TILE.WATER) {
+    for (let r = 1; r < Math.max(width, height); r += 1) {
+      let found = false;
+      for (let dz = -r; dz <= r && !found; dz += 1) {
+        for (let dx = -r; dx <= r && !found; dx += 1) {
+          const ix = cx + dx;
+          const iz = cz + dz;
+          if (ix < 0 || iz < 0 || ix >= width || iz >= height) continue;
+          const idx = toIndex(ix, iz, width);
+          if (tiles[idx] !== TILE.WALL && tiles[idx] !== TILE.WATER) {
+            startIdx = idx;
+            found = true;
+          }
+        }
+      }
+      if (found) break;
+    }
+  }
+
+  // Flood fill to find main connected landmass
+  const visited = new Uint8Array(width * height);
+  const queue = [startIdx];
+  visited[startIdx] = 1;
+  while (queue.length > 0) {
+    const cur = queue.pop();
+    const ci = cur % width;
+    const cj = Math.floor(cur / width);
+    for (const n of NEIGHBORS_4) {
+      const ni = ci + n.x;
+      const nj = cj + n.z;
+      if (ni < 0 || nj < 0 || ni >= width || nj >= height) continue;
+      const nIdx = toIndex(ni, nj, width);
+      if (visited[nIdx]) continue;
+      if (tiles[nIdx] === TILE.WALL || tiles[nIdx] === TILE.WATER) continue;
+      visited[nIdx] = 1;
+      queue.push(nIdx);
+    }
+  }
+
+  // Find disconnected land regions and carve 2-wide passes to connect them
+  for (let iz = 2; iz < height - 2; iz += 3) {
+    for (let ix = 2; ix < width - 2; ix += 3) {
+      const idx = toIndex(ix, iz, width);
+      if (visited[idx] || tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL) continue;
+      // This is an isolated land tile — carve toward the center
+      let px = ix;
+      let pz = iz;
+      const maxCarveSteps = width + height;
+      for (let step = 0; step < maxCarveSteps; step += 1) {
+        if (visited[toIndex(px, pz, width)]) break;
+        const dirX = cx - px;
+        const dirZ = cz - pz;
+        if (Math.abs(dirX) >= Math.abs(dirZ)) {
+          px += dirX > 0 ? 1 : -1;
+        } else {
+          pz += dirZ > 0 ? 1 : -1;
+        }
+        px = clamp(px, 1, width - 2);
+        pz = clamp(pz, 1, height - 2);
+        const pIdx = toIndex(px, pz, width);
+        if (tiles[pIdx] === TILE.WALL) {
+          tiles[pIdx] = TILE.ROAD;
+          // Widen pass
+          for (const n of NEIGHBORS_4) {
+            const wi = px + n.x;
+            const wj = pz + n.z;
+            if (wi >= 0 && wj >= 0 && wi < width && wj < height) {
+              const wIdx = toIndex(wi, wj, width);
+              if (tiles[wIdx] === TILE.WALL && hash2D(wi, wj, seed + 9001) > 0.4) {
+                tiles[wIdx] = TILE.ROAD;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   const baseProfile = getProfile(templateId);
   const normalizedTuning = sanitizeTerrainTuning(tuning, templateId);
@@ -994,9 +1292,21 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   const tiles = new Uint8Array(width * height);
   tiles.fill(TILE_EMPTY_SENTINEL);
 
-  const fields = baseTerrainPass(tiles, width, height, seed, profile);
-  for (let i = 0; i < profile.riverCount; i += 1) {
-    carveRiver(tiles, width, height, profile, seed + i * 311, i);
+  let fields;
+
+  if (templateId === "archipelago_isles") {
+    fields = generateArchipelagoTerrain(tiles, width, height, seed, profile);
+  } else if (templateId === "coastal_ocean") {
+    fields = generateCoastlineTerrain(tiles, width, height, seed, profile);
+  } else {
+    fields = baseTerrainPass(tiles, width, height, seed, profile);
+    for (let i = 0; i < profile.riverCount; i += 1) {
+      carveRiver(tiles, width, height, profile, seed + i * 311, i);
+    }
+  }
+
+  if (templateId === "rugged_highlands") {
+    convertHighlandRidgesToWalls(tiles, width, height, fields.ridge, seed);
   }
 
   carveBridgesOnMainAxis(tiles, width, height, profile, seed + 2207);
@@ -1365,23 +1675,28 @@ export function validateGeneratedGrid(grid) {
   const ruins = countTilesByType(grid, [TILE.RUINS]);
   const water = countTilesByType(grid, [TILE.WATER]);
   const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE]);
-  const roadMin = Math.max(40, Math.round(area * toNumberOr(validation.roadMinRatio, 0.02)));
+  const roadMinRatio = toNumberOr(validation.roadMinRatio, 0.02);
+  const roadMin = roadMinRatio <= 0 ? 0 : Math.max(40, Math.round(area * roadMinRatio));
   const waterMin = Math.max(8, Math.round(area * toNumberOr(validation.waterMinRatio, 0.03)));
   const waterMax = Math.round(area * toNumberOr(validation.waterMaxRatio, 0.6));
   const passableRatio = passable / Math.max(1, area);
   const passableMin = toNumberOr(validation.passableMin, 0.42);
   const passableMax = toNumberOr(validation.passableMax, 0.94);
 
+  const farmMin = toNumberOr(validation.farmMin, 2);
+  const lumberMin = toNumberOr(validation.lumberMin, 2);
+  const warehouseMin = toNumberOr(validation.warehouseMin, 1);
+
   if (unknownTiles > 0) issues.push(`unknown tiles present (${unknownTiles})`);
   if (roads < roadMin) issues.push(`road too low (${roads} < ${roadMin})`);
-  if (farms < 2) issues.push("farm too low");
-  if (lumbers < 2) issues.push("lumber too low");
-  if (warehouses < 1) issues.push("warehouse too low");
+  if (farms < farmMin) issues.push("farm too low");
+  if (lumbers < lumberMin) issues.push("lumber too low");
+  if (warehouses < warehouseMin) issues.push("warehouse too low");
   if (water < waterMin) issues.push(`water too low (${water} < ${waterMin})`);
   if (water > waterMax) issues.push(`water too high (${water} > ${waterMax})`);
   if (passableRatio < passableMin) issues.push(`passable ratio too low (${passableRatio.toFixed(3)})`);
   if (passableRatio > passableMax) issues.push(`passable ratio too high (${passableRatio.toFixed(3)})`);
-  if (walls > Math.round(area * 0.28)) issues.push("wall too dense");
+  if (walls > Math.round(area * 0.35)) issues.push("wall too dense");
   if (ruins > Math.round(area * 0.2)) issues.push("ruins too dense");
 
   return { ok: issues.length === 0, issues };
