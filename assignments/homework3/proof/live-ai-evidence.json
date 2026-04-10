@@ -1,0 +1,33 @@
+{
+  "generatedAt": "2026-03-03T07:26:57.892Z",
+  "hasApiKey": false,
+  "endpointBase": "http://localhost:8890",
+  "environment": {
+    "totalAttempts": 1,
+    "llmHits": 1,
+    "attempts": [
+      {
+        "index": 1,
+        "fallback": false,
+        "error": "",
+        "weather": "clear"
+      }
+    ]
+  },
+  "policy": {
+    "totalAttempts": 1,
+    "llmHits": 1,
+    "attempts": [
+      {
+        "index": 1,
+        "fallback": false,
+        "error": "",
+        "policyCount": 5
+      }
+    ]
+  },
+  "verdict": {
+    "environmentHasLlmHit": true,
+    "policyHasLlmHit": true
+  }
+}
