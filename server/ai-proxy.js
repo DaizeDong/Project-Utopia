@@ -44,7 +44,8 @@ const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
 const modelConfig = normalizeConfiguredModel(process.env.OPENAI_MODEL);
 const OPENAI_MODEL_RAW = modelConfig.configuredModel;
 const OPENAI_MODEL = modelConfig.model;
-const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 18000) || 18000);
+const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 120000) || 120000);
 const MODEL_SOURCE = modelConfig.source;
 const API_KEY_SOURCE = OPENAI_API_KEY
   ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
@@ -176,7 +177,7 @@ async function callOpenAI(systemPrompt, userPrompt, modelName) {
   const timeout = setTimeout(() => ctrl.abort("timeout"), OPENAI_REQUEST_TIMEOUT_MS);
   let resp;
   try {
-    resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    resp = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -425,6 +426,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: "ai-proxy",
       hasApiKey: Boolean(OPENAI_API_KEY),
+      baseUrl: OPENAI_BASE_URL,
       model: OPENAI_MODEL,
       configuredModel: OPENAI_MODEL_RAW || null,
       modelNormalized: Boolean(modelConfig.normalized),
@@ -471,7 +473,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`[ai-proxy] listening on http://localhost:${PORT}`);
+  console.log(`[ai-proxy] listening on http://localhost:${PORT}  (baseUrl: ${OPENAI_BASE_URL})`);
 });
 
 server.on("error", (err) => {
