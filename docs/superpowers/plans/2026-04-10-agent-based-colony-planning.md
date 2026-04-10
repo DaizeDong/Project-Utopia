@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 2 Complete (v1.2)
+> **Status**: Phase 3 Complete (v1.3)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1123,15 +1123,22 @@ const scenarios = [
 
 **Files**: `src/simulation/ai/colony/SkillLibrary.js`, `src/simulation/ai/colony/PlanExecutor.js`, `test/skill-library-executor.test.js`, `scripts/executor-benchmark.mjs`
 
-### Phase 3: Planner + LLM Integration (3-4 days)
+### Phase 3: Planner + LLM Integration ✅ COMPLETE
 
-- Design system prompt (`src/data/prompts/npc-colony-planner.md`)
-- Implement `ColonyPlanner` with LLM call
-- Implement plan validation and grounding
-- Implement fallback plan generation
-- Add `/api/ai/colony-plan` endpoint
+- ✅ Design system prompt (`src/data/prompts/npc-colony-planner.md`) with ReAct + Plan-and-Solve format
+- ✅ Implement `ColonyPlanner` class with OpenAI-compatible direct LLM call (fetch + AbortController)
+- ✅ Implement `buildPlannerPrompt()` with observation, memory reflections, skill availability, affordable buildings
+- ✅ Implement `validatePlanResponse()` — truncation, dedup IDs, dep fixup, type/skill validation, priority defaults
+- ✅ Implement `generateFallbackPlan()` — 7-priority algorithmic fallback (food crisis → coverage → wood → processing → defense → roads → expansion)
+- ✅ Implement `shouldReplan()` — 5 trigger conditions (no_active_plan, food_crisis, resource_opportunity bypass cooldown; heartbeat 30s; cooldown 20s)
+- ✅ Implement `callLLM()` — direct fetch to OpenAI-compatible endpoint with timeout, JSON + markdown fence parsing
+- ✅ Zero-resource handling in fallback (deferred step when wood=0)
+- ✅ Crisis/opportunity triggers bypass cooldown for responsive replanning
+- ✅ Stats tracking: llmCalls, llmSuccesses, llmFailures, fallbackPlans, totalLatencyMs, lastError, lastPlanSource
+- ✅ 36 unit tests (all passing)
+- ✅ Benchmark: 36/36 (100%), self-assessment 10/10 across 8 dimensions
 
-**Files**: `src/simulation/ai/colony/ColonyPlanner.js`, `src/data/prompts/npc-colony-planner.md`
+**Files**: `src/simulation/ai/colony/ColonyPlanner.js`, `src/data/prompts/npc-colony-planner.md`, `test/colony-planner.test.js`, `scripts/planner-benchmark.mjs`
 
 ### Phase 4: Evaluator + Memory (2-3 days)
 

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.6.4] - 2026-04-10 — Agent-Based Colony Planning: Phase 3 (Planner + LLM Integration)
+
+Third phase of the Agent-Based Colony Planning system — implements the LLM-powered construction planner with ReAct + Plan-and-Solve prompting, robust validation/sanitization pipeline, and priority-based algorithmic fallback.
+
+### New Features
+- **ColonyPlanner** — LLM-powered plan generation with algorithmic fallback:
+  - `buildPlannerPrompt()` — token-efficient prompt (~600 tokens) with observation, memory reflections, skill availability, affordable buildings
+  - `validatePlanResponse()` — full sanitization pipeline: goal/reasoning/thought truncation, step dedup, dependency fixup, type/skill validation, priority defaults
+  - `generateFallbackPlan()` — 7-priority algorithmic fallback: food crisis → coverage gap → wood shortage → processing chain → defense → roads → expansion skill
+  - `shouldReplan()` — 5 trigger conditions with crisis/opportunity cooldown bypass for responsive replanning
+  - `callLLM()` — direct fetch to OpenAI-compatible endpoint with AbortController timeout, JSON + markdown fence parsing
+  - Zero-resource handling: deferred step when wood=0 prevents empty plans
+  - Stats tracking: llmCalls, llmSuccesses, llmFailures, fallbackPlans, totalLatencyMs
+- **System Prompt** — `npc-colony-planner.md` with build actions, skills, location hints, hard rules, structured JSON output format
+- **Planner Benchmark** — 5-scenario evaluation (`scripts/planner-benchmark.mjs`) covering prompt construction, validation robustness, fallback plan quality, trigger logic, and live LLM integration
+
+### Architecture Iterations (from benchmark feedback)
+- Crisis and resource opportunity triggers bypass 20s cooldown for immediate replanning
+- Fallback plan generates deferred road step when wood=0 (prevents empty plan validation failure)
+- Benchmark crisis test uses fresh metrics object to avoid time regression in rate calculation
+
+### Benchmark Results
+- 36/36 tests passing (100%)
+- Self-assessment: 10/10 across 8 dimensions (prompt_quality, validation_robustness, fallback_intelligence, trigger_design, integration_quality, error_resilience, strategic_depth, architecture_quality)
+
+### Tests
+- 36 new unit tests in `test/colony-planner.test.js` (all passing)
+- Full suite: 454 tests, 0 failures
+
+### Files Changed
+- `src/simulation/ai/colony/ColonyPlanner.js` — New file: LLM planner + validation + fallback + trigger logic
+- `src/data/prompts/npc-colony-planner.md` — New file: system prompt template
+- `test/colony-planner.test.js` — New file: 36 unit tests
+- `scripts/planner-benchmark.mjs` — New file: 5-scenario benchmark with LLM judge
+- `docs/superpowers/plans/2026-04-10-agent-based-colony-planning.md` — Updated Phase 3 status to complete
+
 ## [0.6.3] - 2026-04-10 — Agent-Based Colony Planning: Phase 2 (Skill Library + Executor)
 
 Second phase of the Agent-Based Colony Planning system — implements compound build skills (Voyager-inspired) and a plan execution engine with SayCan-inspired affordance scoring.
