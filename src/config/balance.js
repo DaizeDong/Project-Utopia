@@ -229,3 +229,31 @@ export const BALANCE = Object.freeze({
   workerHarvestDurationSec: 2.5,
   workerProcessDurationSec: 3.0,
 });
+
+// --- Terrain depth constants ---
+
+export const RUIN_SALVAGE = Object.freeze({
+  rolls: Object.freeze([
+    { weight: 60, rewards: { wood: [2, 5], stone: [1, 3] } },
+    { weight: 25, rewards: { food: [3, 8], herbs: [1, 3] } },
+    { weight: 15, rewards: { tools: [1, 1], medicine: [0, 1] } },
+  ]),
+});
+
+export const TERRAIN_MECHANICS = Object.freeze({
+  elevationMovePenalty: 0.3,
+  elevationBuildCostPerLevel: 0.15,
+  lowMoistureStoneCostThreshold: 0.3,
+  lowMoistureStoneCostFlat: 1,
+  ruinsBuildDiscount: 0.3,
+  wallElevationDefenseBonus: 0.5,
+  moistureFertilityCap: Object.freeze({ scale: 1.4, base: 0.25 }),
+  soilExhaustionDrainScale: 0.12,
+  soilExhaustionMax: 8.0,
+  soilExhaustionDecayPerTick: 0.1,
+  adjacencyFertilityMax: 0.008,
+  fireIgniteChance: 0.005,
+  fireMoistureThreshold: 0.25,
+  fireWearPerTick: 0.5,
+  fireMaxSpread: 3,
+});

@@ -1,4 +1,4 @@
-import { BUILD_COST, CONSTRUCTION_BALANCE } from "../../config/balance.js";
+import { BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { getTile, inBounds, listTilesByType } from "../../world/grid/Grid.js";
 import { toolToTile } from "../../world/grid/TileTypes.js";
@@ -182,7 +182,26 @@ function getScenarioTileTags(state, tile) {
   return { routeLinks, depotZones, chokePoints, wildlifeZones, inCoreZone };
 }
 
+function rollRuinSalvage() {
+  const rolls = RUIN_SALVAGE.rolls;
+  let totalWeight = 0;
+  for (const r of rolls) totalWeight += r.weight;
+  let pick = Math.random() * totalWeight;
+  for (const r of rolls) {
+    pick -= r.weight;
+    if (pick <= 0) {
+      const result = { food: 0, wood: 0, stone: 0, herbs: 0, tools: 0, medicine: 0 };
+      for (const [key, [lo, hi]] of Object.entries(r.rewards)) {
+        result[key] = lo + Math.floor(Math.random() * (hi - lo + 1));
+      }
+      return result;
+    }
+  }
+  return { food: 0, wood: 0, stone: 0, herbs: 0 };
+}
+
 function getTileRefund(oldType) {
+  if (oldType === TILE.RUINS) return rollRuinSalvage();
   const oldTool = TILE_TO_TOOL[oldType];
   if (!oldTool) return { food: 0, wood: 0, stone: 0, herbs: 0 };
   const baseCost = BUILD_COST[oldTool] ?? { food: 0, wood: 0 };

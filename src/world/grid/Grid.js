@@ -1801,7 +1801,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   trimRoadOverflow(tiles, width, height, profile, seed + 3301);
 
   const emptyBaseTiles = finalizeTileCoverage(tiles);
-  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile };
+  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile, elevation: fields.elevation, moisture: fields.moisture };
 }
 export function describeMapTemplate(templateId) {
   return MAP_TEMPLATES.find((tpl) => tpl.id === templateId) ?? MAP_TEMPLATES[0];
@@ -1842,6 +1842,8 @@ export function createInitialGrid(options = {}) {
     seed: seedInput,
     terrainTuning: generated.tuning,
     emptyBaseTiles: generated.emptyBaseTiles,
+    elevation: generated.elevation,
+    moisture: generated.moisture,
   };
 }
 
