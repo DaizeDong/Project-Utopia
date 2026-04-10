@@ -2053,5 +2053,43 @@ export function validateGeneratedGrid(grid) {
   if (walls > Math.round(area * 0.35)) issues.push("wall too dense");
   if (ruins > Math.round(area * 0.2)) issues.push("ruins too dense");
 
+  // Connectivity check: largest connected passable region should cover ≥40% of passable tiles
+  if (passable > 0) {
+    const passableSet = new Set();
+    for (const info of Object.entries(TILE_INFO)) {
+      if (info[1].passable) passableSet.add(Number(info[0]));
+    }
+    const visited = new Uint8Array(area);
+    let largestRegion = 0;
+
+    for (let start = 0; start < area; start += 1) {
+      if (visited[start] || !passableSet.has(grid.tiles[start])) continue;
+      let regionSize = 0;
+      const stack = [start];
+      visited[start] = 1;
+      while (stack.length > 0) {
+        const cur = stack.pop();
+        regionSize += 1;
+        const ci = cur % grid.width;
+        const cj = Math.floor(cur / grid.width);
+        for (const n of NEIGHBORS_4) {
+          const ni = ci + n.x;
+          const nj = cj + n.z;
+          if (ni < 0 || nj < 0 || ni >= grid.width || nj >= grid.height) continue;
+          const nIdx = ni + nj * grid.width;
+          if (visited[nIdx] || !passableSet.has(grid.tiles[nIdx])) continue;
+          visited[nIdx] = 1;
+          stack.push(nIdx);
+        }
+      }
+      if (regionSize > largestRegion) largestRegion = regionSize;
+    }
+
+    const connectivityRatio = largestRegion / Math.max(1, passable);
+    if (connectivityRatio < 0.4) {
+      issues.push(`connectivity too low (${(connectivityRatio * 100).toFixed(1)}% of passable in largest region)`);
+    }
+  }
+
   return { ok: issues.length === 0, issues };
 }
