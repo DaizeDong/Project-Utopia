@@ -1,5 +1,115 @@
 # Changelog
 
+## [0.5.8] - 2026-04-10 — Map Preview & Size Controls
+
+New Map now shows the actual terrain behind a semi-transparent overlay, with camera pan/zoom support and configurable map dimensions.
+
+### New Features
+
+- **Map preview on start screen** — Overlay background is now semi-transparent (35% opacity), showing the rendered 3D terrain behind the start panel so players can see the map before starting
+- **Camera pan/zoom in menu** — Right-click drag to pan and scroll to zoom the map preview during start screen; overlay only blocks pointer events on the panel card itself
+- **Map size controls** — Width and Height number inputs (24–256 tiles) on the start screen; New Map generates terrain at the specified dimensions
+- **Grid dimensions in meta** — Start screen badge now shows grid dimensions (e.g., "96×72 · seed 42135")
+
+### Technical Changes
+
+- `GameStateOverlay` passes `{ width, height }` from overlay inputs to `onReset` handler
+- `GameApp.resetSessionWorld()` forwards `width`/`height` to `regenerateWorld()`
+- `regenerateWorld()` accepts and passes `width`/`height` to `createInitialGameState()`
+- `createInitialGameState()` passes dimensions to `createInitialGrid()`
+- `SceneRenderer.resetView()` now recalculates `orthoSize` from current grid dimensions for correct camera framing after map size changes
+
+### Files Changed
+
+- `index.html` — Semi-transparent overlay, map size inputs, updated controls hint
+- `src/ui/hud/GameStateOverlay.js` — Map size input reading, grid dimensions in meta display, pointer-events passthrough
+- `src/app/GameApp.js` — Width/height forwarding through reset/regenerate pipeline
+- `src/entities/EntityFactory.js` — Pass width/height to createInitialGrid
+- `src/render/SceneRenderer.js` — Recalculate orthoSize in resetView()
+
+## [0.5.7] - 2026-04-10 — UI Polish: Tooltips, New Map Fix, Accessibility
+
+Comprehensive UI polish pass: added tooltips to all interactive elements, fixed New Map generating duplicate seeds, added seed display on start screen, improved overlay opacity.
+
+### Tooltips & Accessibility
+
+- **HUD resource tooltips** — All 10 resource icons (Food, Wood, Stone, Herbs, Workers, Meals, Tools, Medicine, Prosperity, Threat) now show descriptive tooltip on hover explaining what each resource does
+- **Build tool tooltips** — All 12 build tools show hotkey number, description, and cost on hover (e.g., "Farm (2) — produce food, cost: 5 wood")
+- **Speed control labels** — Pause/Play/Fast buttons have `title` and `aria-label` for screen readers
+- **Settings/Debug button tooltips** — ~20 buttons across Settings and Debug panels now have descriptive tooltips (Undo, Redo, Save, Load, Apply Load, Run Benchmark, etc.)
+- **Population ± buttons** — All population adjustment buttons (±1, ±10 for Workers/Traders/Saboteurs/Herbivores/Predators) have tooltips
+- **Entity Focus tooltip** — Explains "Click a worker, visitor, or animal on the map to inspect it here"
+- **Overlay button tooltips** — Start Colony, New Map, Try Again buttons all have descriptive titles
+
+### Bug Fixes
+
+- **New Map generates same seed** — `resetSessionWorld()` was reusing `state.world.mapSeed`, so "New Map" produced identical maps. Now generates a random seed; "Try Again" preserves the original seed via `sameSeed` option
+- **Seed display on start screen** — Start overlay now shows the map seed (e.g., "Broken Frontier · frontier repair · seed 1337") so users can see when a new map was generated
+- **New Map visual feedback** — Button briefly shows "Generating..." text while the new map loads
+- **Overlay background too transparent** — Increased overlay opacity from 0.92-0.95 to 0.97-0.98 and blur from 4px to 8px to fully hide canvas content behind start/end screens
+
+### Files Changed
+
+- `index.html` — Added `title` attributes to ~50 buttons/elements, increased overlay opacity/blur
+- `src/ui/hud/GameStateOverlay.js` — New Map feedback, seed display in menu meta, button disabled during generation
+- `src/app/GameApp.js` — `resetSessionWorld()` now generates random seed by default; `restartSession()` passes `sameSeed: true`
+
+## [0.5.6] - 2026-04-10 — Full-Screen UI Overhaul
+
+Complete UI architecture rewrite: sidebar/dock grid layout replaced with full-screen viewport and floating panel system. Unified dark game theme with CSS variables.
+
+### UI Architecture
+
+- **Full-screen viewport** — Game canvas fills the entire window; all UI elements float on top as translucent panels
+- **Floating panel system** — Build (left), Colony/Settings/Debug (right, mutually exclusive) panels with toggle buttons in status bar
+- **Panel toggle buttons** — Build/Colony/Settings/Debug buttons in the top status bar; right-side panels are mutually exclusive
+- **Game state overlay** — Start/end screens use `position: fixed` with blur backdrop, hiding all game UI underneath
+- **Entity Focus** — Centered at bottom, above speed controls
+- **Speed controls** — Pill-shaped bar at bottom center with pause/play/fast-forward
+- **Dev Dock** — Collapsible telemetry section, hidden by default, toggled from Debug panel
+
+### Visual Design
+
+- **CSS variable system** — `--panel-bg`, `--panel-border`, `--accent`, `--btn-bg`, etc. for consistent dark theme
+- **Glassmorphism** — `backdrop-filter: blur(12px)` on all panels with semi-transparent backgrounds
+- **Responsive** — Panels shrink at 900px, stack vertically at 600px; status bar scrolls horizontally on narrow viewports
+
+### Files Changed
+
+- `index.html` — Complete CSS/HTML rewrite: layout, floating panels, status bar, overlay, responsive media queries
+- `src/ui/hud/GameStateOverlay.js` — Hide UI layer, Entity Focus, and Dev Dock when overlay is shown
+- `src/ui/tools/BuildToolbar.js` — Storage key versioned to v2, expanded core panel keys
+
+## [0.5.5] - 2026-04-10 — Phase 1 UI Integration & Bug Fixes
+
+Completes the Phase 1 resource chain UI, fixes bridge generation overflow, and resolves trader AI infinite loop.
+
+### Phase 1 UI Integration
+
+- **5 new build buttons** — Quarry, Herb Garden, Kitchen, Smithy, Clinic added to build toolbar with pixel-art icons (total: 12 tools, hotkeys 1-12)
+- **Resources panel extended** — Stone, Herbs, Meals, Tools, Medicine now displayed with gradient progress bars alongside Food and Wood
+- **HUD status bar extended** — Stone/Herbs shown before Workers; Meals/Tools/Medicine shown after divider
+- **Population panel extended** — Assigned counts for STONE, HERBS, COOK, SMITH, HERBALIST, HAUL roles
+- **`#recomputePopulationBreakdown()`** — Added 6 new role counters (stoneMiners, herbGatherers, cooks, smiths, herbalists, haulers) to `populationStats`
+
+### Bug Fixes
+
+- **Bridge generation overflow** — `carveBridgesOnMainAxis` was converting ALL water tiles along scan lines into bridges. On maps with large oceans (e.g., seed 1337 temperate plains: 2310 water → 433 bridges), this destroyed map topology. New algorithm picks the shortest valid water segment (2-14 tiles) per scan line, producing only essential crossings.
+- **Trader fallback infinite loop** — Trader default fallback state was `seek_trade`, which requires warehouses. With no warehouse, every attempt was rejected and retried endlessly, flooding logs with warnings. Changed fallback to `wander`.
+- **Map validation parameters** — Updated validation constraints for all 6 templates to accommodate the bridge fix (waterMaxRatio, passableMin, roadMinRatio adjusted per template). Added per-template `farmMin`, `lumberMin`, `warehouseMin` fields. Fixed `roadMin` calculation to respect `roadMinRatio=0`.
+
+### Files Changed
+
+- `index.html` — Build buttons, resource bars, HUD status, population panel, CSS gradients
+- `src/app/GameApp.js` — 6 new role counters in `#recomputePopulationBreakdown()`
+- `src/ui/hud/HUDController.js` — DOM refs and render logic for 7 resources + 8 roles
+- `src/world/grid/Grid.js` — Bridge algorithm rewrite, validation parameter updates
+- `src/simulation/npc/state/StatePlanner.js` — Trader fallback: `seek_trade` → `wander`
+
+### Tests
+
+- 335 total tests passing, 0 regressions
+
 ## [0.5.4] - 2026-04-08 — Bridge Tile Type
 
 New BRIDGE tile (ID 13) that enables pathways across water, connecting fragmented islands on archipelago maps.

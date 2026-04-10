@@ -1990,6 +1990,26 @@ export class SceneRenderer {
   }
 
   resetView() {
+    this.orthoSize = Math.max(this.state.grid.width, this.state.grid.height) * 0.65;
+    this.lastGridVersion = -1;
+    // Rebuild instanced meshes if grid dimensions changed (capacity may differ)
+    const newCount = this.state.grid.width * this.state.grid.height;
+    const existingSample = this.tileMeshesByType.values().next().value;
+    if (!existingSample || existingSample.instanceMatrix.count !== newCount) {
+      for (const mesh of this.tileMeshesByType.values()) {
+        this.scene.remove(mesh);
+        mesh.dispose();
+      }
+      this.#setupTileMesh();
+      // Rebuild tile border grid lines for new dimensions
+      if (this.tileBorderLines) {
+        this.scene.remove(this.tileBorderLines);
+        this.tileBorderLines.geometry.dispose();
+        this.tileBorderLines.material.dispose();
+      }
+      this.#setupTileBorders();
+    }
+    this.#updateOrthoProjection();
     this.applyViewState(DEFAULT_CAMERA_VIEW);
   }
 

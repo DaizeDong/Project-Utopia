@@ -8,8 +8,8 @@ import {
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
 
-const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v1";
-const CORE_PANEL_KEYS = Object.freeze(["build", "management"]);
+const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v2";
+const CORE_PANEL_KEYS = Object.freeze(["build", "costs", "resources", "population", "management", "world"]);
 const POPULATION_TARGET_LIMITS = Object.freeze({
   workers: { min: 0, max: 500 },
   traders: { min: 0, max: 300 },

@@ -1,4 +1,6 @@
 
+import { MAP_TEMPLATES } from "../../world/grid/Grid.js";
+
 function formatOverlayMeta(state) {
   const scenario = state?.gameplay?.scenario ?? {};
   const family = String(scenario.family ?? "").replaceAll("_", " ");
@@ -30,6 +32,17 @@ export class GameStateOverlay {
     this.endTitle = document.getElementById("overlayEndTitle");
     this.endReason = document.getElementById("overlayEndReason");
     this.endStats = document.getElementById("overlayEndStats");
+    this.mapWidthInput = document.getElementById("overlayMapWidth");
+    this.mapHeightInput = document.getElementById("overlayMapHeight");
+    this.mapTemplateSelect = document.getElementById("overlayMapTemplate");
+
+    // Populate map template dropdown
+    if (this.mapTemplateSelect) {
+      this.mapTemplateSelect.innerHTML = MAP_TEMPLATES.map((t) =>
+        `<option value="${t.id}">${t.name}</option>`
+      ).join("");
+      this.mapTemplateSelect.value = state.world?.mapTemplateId ?? MAP_TEMPLATES[0].id;
+    }
 
     const startBtn = document.getElementById("overlayStartBtn");
     const resetFromMenuBtn = document.getElementById("overlayResetFromMenuBtn");
@@ -37,9 +50,34 @@ export class GameStateOverlay {
     const resetBtn = document.getElementById("overlayResetBtn");
 
     startBtn?.addEventListener("click", () => this.handlers.onStart?.());
-    resetFromMenuBtn?.addEventListener("click", () => this.handlers.onReset?.());
+    resetFromMenuBtn?.addEventListener("click", () => {
+      if (resetFromMenuBtn) {
+        resetFromMenuBtn.textContent = "Generating...";
+        resetFromMenuBtn.disabled = true;
+      }
+      const width = this.#readMapWidth();
+      const height = this.#readMapHeight();
+      const templateId = this.mapTemplateSelect?.value || undefined;
+      this.handlers.onReset?.({ width, height, templateId });
+      if (resetFromMenuBtn) {
+        setTimeout(() => {
+          resetFromMenuBtn.textContent = "New Map";
+          resetFromMenuBtn.disabled = false;
+        }, 300);
+      }
+    });
     restartBtn?.addEventListener("click", () => this.handlers.onRestart?.());
     resetBtn?.addEventListener("click", () => this.handlers.onReset?.());
+  }
+
+  #readMapWidth() {
+    const val = Number(this.mapWidthInput?.value);
+    return Number.isFinite(val) && val >= 24 ? val : null;
+  }
+
+  #readMapHeight() {
+    const val = Number(this.mapHeightInput?.value);
+    return Number.isFinite(val) && val >= 24 ? val : null;
   }
 
   render(session) {
@@ -52,11 +90,18 @@ export class GameStateOverlay {
     this.root.setAttribute("data-phase", phase);
     this.root.setAttribute("aria-hidden", isInteractive ? "false" : "true");
     this.root.style.display = isInteractive ? "flex" : "none";
-    this.root.style.pointerEvents = isInteractive ? "auto" : "none";
+    // Overlay background is pointer-events:none; only .overlay-panel blocks clicks.
+    // This lets users pan/zoom the map behind the overlay during menu phase.
     const statusBar = document.getElementById("statusBar");
     if (statusBar) statusBar.style.display = isInteractive ? "none" : "flex";
     const speedControls = document.getElementById("speedControls");
     if (speedControls) speedControls.style.display = isInteractive ? "none" : "flex";
+    const uiLayer = document.getElementById("ui");
+    if (uiLayer) uiLayer.style.display = isInteractive ? "none" : "";
+    const entityFocus = document.getElementById("entityFocusOverlay");
+    if (entityFocus) entityFocus.style.display = isInteractive ? "none" : "";
+    const devDock = document.getElementById("devDock");
+    if (devDock) devDock.style.display = isInteractive ? "none" : "";
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
@@ -82,8 +127,13 @@ export class GameStateOverlay {
         ?? "Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them.";
     }
     if (this.menuMeta) {
-      this.menuMeta.textContent = formatOverlayMeta(this.state);
+      const seed = this.state.world?.mapSeed ?? "";
+      const w = this.state.grid?.width ?? 96;
+      const h = this.state.grid?.height ?? 72;
+      const base = formatOverlayMeta(this.state);
+      this.menuMeta.textContent = seed ? `${base} · ${w}×${h} · seed ${seed}` : base;
     }
+
 
     if (isEnd) {
       const outcome = session?.outcome ?? "loss";

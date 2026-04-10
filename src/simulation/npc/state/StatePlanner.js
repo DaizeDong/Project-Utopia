@@ -66,7 +66,7 @@ function normalizeIntentKey(raw) {
 
 function defaultFallbackState(groupId) {
   if (groupId === "workers") return "seek_task";
-  if (groupId === "traders") return "seek_trade";
+  if (groupId === "traders") return "wander";
   if (groupId === "saboteurs") return "scout";
   if (groupId === "herbivores") return "graze";
   if (groupId === "predators") return "stalk";

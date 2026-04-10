@@ -13,8 +13,18 @@ export class HUDController {
     this.state = state;
     this.foodVal = document.getElementById("foodVal");
     this.woodVal = document.getElementById("woodVal");
+    this.stoneVal = document.getElementById("stoneVal");
+    this.herbsVal = document.getElementById("herbsVal");
+    this.mealsVal = document.getElementById("mealsVal");
+    this.toolsVal = document.getElementById("toolsVal");
+    this.medicineVal = document.getElementById("medicineVal");
     this.foodBar = document.getElementById("foodBar");
     this.woodBar = document.getElementById("woodBar");
+    this.stoneBar = document.getElementById("stoneBar");
+    this.herbsBar = document.getElementById("herbsBar");
+    this.mealsBar = document.getElementById("mealsBar");
+    this.toolsBar = document.getElementById("toolsBar");
+    this.medicineBar = document.getElementById("medicineBar");
 
     this.workersVal = document.getElementById("workersVal");
     this.visitorsVal = document.getElementById("visitorsVal");
@@ -22,6 +32,12 @@ export class HUDController {
     this.predatorsVal = document.getElementById("predatorsVal");
     this.farmersVal = document.getElementById("farmersVal");
     this.loggersVal = document.getElementById("loggersVal");
+    this.stonersVal = document.getElementById("stonersVal");
+    this.herbistsVal = document.getElementById("herbistsVal");
+    this.cooksVal = document.getElementById("cooksVal");
+    this.smithsVal = document.getElementById("smithsVal");
+    this.herbalistsVal = document.getElementById("herbalistsVal");
+    this.haulersVal = document.getElementById("haulersVal");
 
     this.weatherVal = document.getElementById("weatherVal");
     this.mapVal = document.getElementById("mapVal");
@@ -47,9 +63,16 @@ export class HUDController {
 
     this.statusFood = document.getElementById("statusFood");
     this.statusWood = document.getElementById("statusWood");
+    this.statusStone = document.getElementById("statusStone");
+    this.statusHerbs = document.getElementById("statusHerbs");
     this.statusWorkers = document.getElementById("statusWorkers");
+    this.statusMeals = document.getElementById("statusMeals");
+    this.statusTools = document.getElementById("statusTools");
+    this.statusMedicine = document.getElementById("statusMedicine");
     this.statusProsperity = document.getElementById("statusProsperity");
     this.statusThreat = document.getElementById("statusThreat");
+    this.statusStoneBar = document.getElementById("statusStoneBar");
+    this.statusHerbsBar = document.getElementById("statusHerbsBar");
     this.statusObjective = document.getElementById("statusObjective");
     this.statusAction = document.getElementById("statusAction");
     this.statusFoodBar = document.getElementById("statusFoodBar");
@@ -98,9 +121,19 @@ export class HUDController {
 
     this.foodVal.textContent = Math.floor(state.resources.food);
     this.woodVal.textContent = Math.floor(state.resources.wood);
+    if (this.stoneVal) this.stoneVal.textContent = Math.floor(state.resources.stone);
+    if (this.herbsVal) this.herbsVal.textContent = Math.floor(state.resources.herbs);
+    if (this.mealsVal) this.mealsVal.textContent = Math.floor(state.resources.meals);
+    if (this.toolsVal) this.toolsVal.textContent = Math.floor(state.resources.tools);
+    if (this.medicineVal) this.medicineVal.textContent = Math.floor(state.resources.medicine);
 
     this.foodBar.style.width = `${Math.min(100, (state.resources.food / 180) * 100)}%`;
     this.woodBar.style.width = `${Math.min(100, (state.resources.wood / 180) * 100)}%`;
+    if (this.stoneBar) this.stoneBar.style.width = `${Math.min(100, (state.resources.stone / 80) * 100)}%`;
+    if (this.herbsBar) this.herbsBar.style.width = `${Math.min(100, (state.resources.herbs / 50) * 100)}%`;
+    if (this.mealsBar) this.mealsBar.style.width = `${Math.min(100, (state.resources.meals / 50) * 100)}%`;
+    if (this.toolsBar) this.toolsBar.style.width = `${Math.min(100, (state.resources.tools / 10) * 100)}%`;
+    if (this.medicineBar) this.medicineBar.style.width = `${Math.min(100, (state.resources.medicine / 30) * 100)}%`;
 
     const stats = state.metrics.populationStats ?? {
       workers: state.agents.filter((a) => a.type === "WORKER").length,
@@ -118,6 +151,12 @@ export class HUDController {
     this.predatorsVal.textContent = String(stats.predators);
     this.farmersVal.textContent = String(stats.farmers);
     this.loggersVal.textContent = String(stats.loggers);
+    if (this.stonersVal) this.stonersVal.textContent = String(stats.stoneMiners ?? 0);
+    if (this.herbistsVal) this.herbistsVal.textContent = String(stats.herbGatherers ?? 0);
+    if (this.cooksVal) this.cooksVal.textContent = String(stats.cooks ?? 0);
+    if (this.smithsVal) this.smithsVal.textContent = String(stats.smiths ?? 0);
+    if (this.herbalistsVal) this.herbalistsVal.textContent = String(stats.herbalists ?? 0);
+    if (this.haulersVal) this.haulersVal.textContent = String(stats.haulers ?? 0);
 
     this.weatherVal.textContent = weather.summary;
     if (this.mapVal) {
@@ -175,17 +214,26 @@ export class HUDController {
 
     if (this.statusFood) this.statusFood.textContent = Math.floor(state.resources.food);
     if (this.statusWood) this.statusWood.textContent = Math.floor(state.resources.wood);
+    if (this.statusStone) this.statusStone.textContent = Math.floor(state.resources.stone);
+    if (this.statusHerbs) this.statusHerbs.textContent = Math.floor(state.resources.herbs);
     if (this.statusWorkers) this.statusWorkers.textContent = state.metrics?.populationStats?.workers ?? 0;
+    if (this.statusMeals) this.statusMeals.textContent = Math.floor(state.resources.meals);
+    if (this.statusTools) this.statusTools.textContent = Math.floor(state.resources.tools);
+    if (this.statusMedicine) this.statusMedicine.textContent = Math.floor(state.resources.medicine);
     if (this.statusProsperity) this.statusProsperity.textContent = (state.gameplay?.prosperity ?? 0).toFixed(0);
     if (this.statusThreat) this.statusThreat.textContent = (state.gameplay?.threat ?? 0).toFixed(0);
 
     const foodPct = Math.min(100, (state.resources.food / 120) * 100);
     const woodPct = Math.min(100, (state.resources.wood / 120) * 100);
+    const stonePct = Math.min(100, (state.resources.stone / 80) * 100);
+    const herbsPct = Math.min(100, (state.resources.herbs / 50) * 100);
     const prosperityPct = Math.min(100, state.gameplay?.prosperity ?? 0);
     const threatPct = Math.min(100, state.gameplay?.threat ?? 0);
 
     if (this.statusFoodBar) this.statusFoodBar.style.width = `${foodPct}%`;
     if (this.statusWoodBar) this.statusWoodBar.style.width = `${woodPct}%`;
+    if (this.statusStoneBar) this.statusStoneBar.style.width = `${stonePct}%`;
+    if (this.statusHerbsBar) this.statusHerbsBar.style.width = `${herbsPct}%`;
     if (this.statusProsperityBar) this.statusProsperityBar.style.width = `${prosperityPct}%`;
     if (this.statusThreatBar) this.statusThreatBar.style.width = `${threatPct}%`;
 

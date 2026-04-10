@@ -125,7 +125,7 @@ export class GameApp {
     this.gameStateOverlay = new GameStateOverlay(this.state, {
       onStart: () => this.startSession(),
       onRestart: () => this.restartSession(),
-      onReset: () => this.resetSessionWorld(),
+      onReset: (opts) => this.resetSessionWorld(opts),
     });
     this.boundOnGlobalKeyDown = (event) => this.#onGlobalKeyDown(event);
     if (typeof window !== "undefined") {
@@ -865,8 +865,8 @@ export class GameApp {
     return result;
   }
 
-  regenerateWorld({ templateId, seed, terrainTuning }, options = {}) {
-    const next = createInitialGameState({ templateId, seed, terrainTuning });
+  regenerateWorld({ templateId, seed, terrainTuning, width, height }, options = {}) {
+    const next = createInitialGameState({ templateId, seed, terrainTuning, width, height });
 
     next.ai.enabled = this.state.ai.enabled;
     next.ai.coverageTarget = this.state.ai.coverageTarget;
@@ -1029,12 +1029,24 @@ export class GameApp {
     let saboteurs = 0;
     let farmers = 0;
     let loggers = 0;
+    let stoneMiners = 0;
+    let herbGatherers = 0;
+    let cooks = 0;
+    let smiths = 0;
+    let herbalists = 0;
+    let haulers = 0;
     for (const agent of this.state.agents) {
       if (agent.type === ENTITY_TYPE.WORKER) {
         if (agent.isStressWorker) stressWorkers += 1;
         else baseWorkers += 1;
         if (agent.role === "FARM") farmers += 1;
         if (agent.role === "WOOD") loggers += 1;
+        if (agent.role === "STONE") stoneMiners += 1;
+        if (agent.role === "HERBS") herbGatherers += 1;
+        if (agent.role === "COOK") cooks += 1;
+        if (agent.role === "SMITH") smiths += 1;
+        if (agent.role === "HERBALIST") herbalists += 1;
+        if (agent.role === "HAUL") haulers += 1;
       } else if (agent.type === ENTITY_TYPE.VISITOR) {
         visitors += 1;
         if (agent.kind === VISITOR_KIND.TRADER || agent.groupId === "traders") traders += 1;
@@ -1066,6 +1078,12 @@ export class GameApp {
       predators,
       farmers,
       loggers,
+      stoneMiners,
+      herbGatherers,
+      cooks,
+      smiths,
+      herbalists,
+      haulers,
       totalEntities,
     };
   }
@@ -1300,14 +1318,19 @@ export class GameApp {
   }
 
   restartSession() {
-    this.resetSessionWorld({ autoStart: true });
+    this.resetSessionWorld({ autoStart: true, sameSeed: true });
   }
 
   resetSessionWorld(options = {}) {
+    const newSeed = options.sameSeed
+      ? this.state.world.mapSeed
+      : Math.floor(Math.random() * 99999);
     this.regenerateWorld({
-      templateId: this.state.world.mapTemplateId,
-      seed: this.state.world.mapSeed,
+      templateId: options.templateId ?? this.state.world.mapTemplateId,
+      seed: newSeed,
       terrainTuning: this.state.controls.terrainTuning,
+      width: options.width ?? undefined,
+      height: options.height ?? undefined,
     }, {
       autoStart: Boolean(options.autoStart),
       phase: options.autoStart ? "active" : "menu",
