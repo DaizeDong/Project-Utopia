@@ -1,0 +1,165 @@
+{
+  "generatedAt": "2026-03-03T07:26:42.612Z",
+  "hasApiKey": true,
+  "endpointBase": "http://localhost:8890",
+  "environment": {
+    "totalAttempts": 12,
+    "llmHits": 0,
+    "attempts": [
+      {
+        "index": 1,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 2,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 3,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 4,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "rain"
+      },
+      {
+        "index": 5,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 6,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "storm"
+      },
+      {
+        "index": 7,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 8,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 9,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 10,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "rain"
+      },
+      {
+        "index": 11,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "clear"
+      },
+      {
+        "index": 12,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "weather": "storm"
+      }
+    ]
+  },
+  "policy": {
+    "totalAttempts": 12,
+    "llmHits": 0,
+    "attempts": [
+      {
+        "index": 1,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 2,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 3,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 4,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 5,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 6,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 7,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 8,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 9,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 10,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 11,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      },
+      {
+        "index": 12,
+        "fallback": true,
+        "error": "OpenAI HTTP 401: Incorrect API key provided: invalid. You can find your API key at https://platform.openai.com/account/api-keys.",
+        "policyCount": 5
+      }
+    ]
+  },
+  "verdict": {
+    "environmentHasLlmHit": false,
+    "policyHasLlmHit": false
+  }
+}
