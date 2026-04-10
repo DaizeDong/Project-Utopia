@@ -1,5 +1,78 @@
 # Changelog
 
+## [0.6.2] - 2026-04-10 — Agent-Based Colony Planning: Phase 1 (Perceiver)
+
+First phase of the Agent-Based Colony Planning system — implements the ColonyPerceiver, which transforms raw game state into structured observations for downstream planning.
+
+### New Features
+- **ColonyPerceiver** — Structured world model generator with:
+  - BFS-based infrastructure cluster detection from warehouses
+  - Sliding-window resource rate estimation (linear regression, trend detection, depletion projection)
+  - Expansion frontier analysis (4 directional quadrants with grass/moisture/density scoring)
+  - Worksite coverage analysis (disconnected count + coverage percentage)
+  - Logistics bottleneck detection (farm:warehouse ratio, production:warehouse ratio, worker:warehouse ratio)
+  - Delta tracking between observations (workers, buildings, prosperity, resources)
+  - Affordability computation for all building types
+  - `formatObservationForLLM()` compact text formatter for LLM consumption
+- **Perceiver Benchmark** — Multi-dimensional evaluation script (`scripts/perceiver-benchmark.mjs`) with:
+  - Self-assessment across 8 dimensions (completeness, spatial/temporal awareness, actionability, etc.)
+  - LLM judge integration (calls external API for unbiased evaluation)
+  - Ground truth comparison with simulation metrics
+
+### Benchmark Results (LLM Judge, 300s)
+- temperate_plains: 9/10
+- archipelago_isles: 10/10
+- fortified_basin: 8/10
+- Average: 9.0/10
+
+### Tests
+- 31 new unit tests in `test/colony-perceiver.test.js` (all passing)
+- Full suite: 368 tests, 0 failures
+
+### Files Changed
+- `src/simulation/ai/colony/ColonyPerceiver.js` — New file: ColonyPerceiver, ResourceRateTracker, cluster detection, frontier analysis
+- `test/colony-perceiver.test.js` — New file: 31 unit tests
+- `scripts/perceiver-benchmark.mjs` — New file: benchmark with LLM judge
+- `docs/superpowers/plans/2026-04-10-agent-based-colony-planning.md` — Updated Phase 1 status to complete
+
+## [0.6.1] - 2026-04-10 — Colony Growth & Benchmark Optimization
+
+Major tuning of the ColonyDirectorSystem auto-building AI and population growth to support sustained long-term colony development. Fixed multiple critical bugs preventing colony growth in headless benchmarks and in-game.
+
+### Bug Fixes
+- **ColonyDirectorSystem never registered** — Existed but was never added to GameApp or headless runners, meaning colonies had zero auto-building
+- **Missing systems in headless runners** — PopulationGrowthSystem and TileStateSystem were absent from soak-sim.mjs, benchmark-runner.mjs, and growth-diagnostic.mjs
+- **Warehouse erasure by route code** — fulfillScenarioRequirements destroyed warehouses/production buildings when building roads; added protected tile sets in both gap-tile and Manhattan walk sections
+- **Emergency farm spam** — Uncapped emergency farm building drained all wood and created 100+ unworked farms; capped farm count relative to worker count
+- **Resource depletion spiral** — Emergency builds consumed last resources; added emergency floor (wood:5, food:3) so colony retains minimum reserves
+
+### Balance Changes
+- **Aggressive warehouse scaling** — Warehouses scale with worker count (1 per 6) and production building count (1 per 5 + 2), priority 92
+- **Logistics-aware food emergency** — When farm:warehouse ratio > 3, emergency food shortage triggers warehouse builds instead of more farms
+- **Phase targets increased** — Bootstrap requires 3 warehouses; logistics requires 4 WH, 6 farms, 5 lumbers; processing includes smithy; expansion requires 6 WH, 12 farms
+- **Population cap raised** — Formula now includes all building types, capped at 80 (from 40)
+- **Dynamic build rate** — Builds per tick scales from 2 to 4 based on resource abundance
+- **Warehouse sabotage protection** — protectLastWarehousesCount raised from 1 to 3, preventing early-game warehouse loss cascade
+- **Removed full grid scan** — findPlacementTile no longer falls back to scanning entire map; search limited to radius 10 from existing infrastructure
+
+### Benchmark Results (temperate_plains, 900s)
+- Buildings: 71 → 182 (accelerating ✓)
+- Workers: 12 → 56 (growing ✓)
+- Prosperity: 36 → 82
+- No stagnation ✓
+- fortified_basin: WIN at 327s
+- archipelago_isles: Workers 12 → 60, Prosperity 94
+
+### Files Changed
+- `src/simulation/meta/ColonyDirectorSystem.js` — Major rewrite of assessColonyNeeds, findPlacementTile, fulfillScenarioRequirements, selectNextBuilds
+- `src/simulation/population/PopulationGrowthSystem.js` — New population cap formula
+- `src/config/longRunProfile.js` — Warehouse protection count
+- `src/app/GameApp.js` — Register ColonyDirectorSystem
+- `scripts/soak-sim.mjs` — Add missing systems
+- `scripts/benchmark-runner.mjs` — Add missing systems
+- `scripts/growth-diagnostic.mjs` — New diagnostic script, updated popCap formula
+- `test/colony-director.test.js` — Updated emergency need tests for logistics-aware behavior
+
 ## [0.6.0] - 2026-04-10 — Terrain Depth: Full Ecology Integration
 
 10-feature terrain depth overhaul across 5 phases. Terrain attributes now deeply affect gameplay: elevation, moisture, seasons, soil exhaustion, adjacency effects, and drought wildfire create meaningful spatial decisions.
@@ -34,6 +107,33 @@
 - `src/world/weather/WeatherSystem.js` — Seasonal weather cycle with weighted probabilities
 - `src/simulation/economy/TileStateSystem.js` — Soil exhaustion, adjacency fertility, moisture cap, wildfire
 - `test/build-system.test.js` — Updated cost assertions for terrain-variable costs
+
+## [0.5.10] - 2026-04-10 — Advanced Terrain Generation
+
+Comprehensive terrain generation overhaul using cutting-edge procedural algorithms. Removed auto-bridge generation. All 6 generators rewritten with recursive domain warping, Worley/cellular noise, and Poisson disk sampling for dramatically more organic and varied terrain.
+
+### New Noise Algorithms
+- **Recursive domain warping** — Multi-depth coordinate distortion for organic terrain shapes
+- **Worley/cellular noise** — Voronoi-based patterns for crevasses, tidal pools, fortress walls
+- **Poisson disk sampling** — Bridson's algorithm for natural feature distribution
+
+### Terrain Generator Rewrites
+- **Fortified Basin** — Worley-distorted irregular walls, noise-shaped moat, 3-5 asymmetric gates, Voronoi interior districts via Poisson sampling
+- **Archipelago Isles** — Domain-warped island shapes with noise-distorted coastlines, recursive-warped internal elevation
+- **Coastal Ocean** — Multi-scale domain-warped coastline (3 noise layers), cliff terraces, Worley tidal pools, noise-shaped offshore islands
+- **Temperate Plains** — Recursive-warped terrain, domain-warped river meanders, Worley/Poisson scattered lakes, moisture-gated farm clusters
+- **Fertile Riverlands** — Domain-warped deep-meander rivers, oxbow lakes, delta distributary channels, Worley marshland zones, BFS moisture gradient
+- **Rugged Highlands** — Worley crevasses (water fissures + wall edges), highland plateaus, mountain ridge walls, downhill streams, plateau ruins
+
+### Other Changes
+- **Removed auto-bridge generation** — Bridges no longer auto-generated; players build them manually
+- **Removed building-road adjacency restriction** — Buildings can now be placed anywhere on valid terrain
+
+### Files Changed
+- `src/world/grid/Grid.js` — 3 new utility functions, 6 generator rewrites, removed bridge auto-generation
+- `src/simulation/construction/BuildAdvisor.js` — Removed road adjacency placement restrictions
+- `index.html` — Custom tooltip system for all UI elements
+- `test/build-system.test.js` — Updated for removed placement restrictions
 
 ## [0.5.9] - 2026-04-10 — Terrain Diversity Overhaul
 

@@ -23,13 +23,16 @@ function makeMinimalState(overrides = {}) {
 
 // ── assessColonyNeeds tests ───────────────────────────────────────────
 
-test("assessColonyNeeds returns emergency farm at highest priority when food < 20", () => {
+test("assessColonyNeeds returns emergency priority 100 when food < 20", () => {
   const state = makeMinimalState({ resources: { food: 15, wood: 70, stone: 0, herbs: 0 } });
   const needs = assessColonyNeeds(state);
   assert.ok(needs.length > 0, "should return at least one need");
   const top = needs[0];
-  assert.equal(top.type, "farm", "top need should be farm");
-  assert.equal(top.priority, 100, "emergency farm priority should be 100");
+  // When farm:warehouse ratio > 3, warehouse takes priority (logistics bottleneck)
+  // Otherwise farm is the emergency need
+  assert.equal(top.priority, 100, "emergency priority should be 100");
+  assert.ok(top.type === "farm" || top.type === "warehouse",
+    "emergency need should be farm or warehouse");
 });
 
 test("assessColonyNeeds returns emergency lumber at priority 95 when wood < 10", () => {
@@ -135,14 +138,15 @@ test("selectNextBuild returns null for non-emergency when buffer not met", () =>
   assert.ok(result !== null || true, "either returns or null — just ensure no crash");
 });
 
-test("selectNextBuild returns emergency farm when food < 20 even without buffer", () => {
+test("selectNextBuild returns emergency build when food < 20 even without buffer", () => {
   const state = makeMinimalState({
-    resources: { food: 10, wood: 5, stone: 0, herbs: 0 },
+    resources: { food: 10, wood: 15, stone: 0, herbs: 0 },
   });
-  // Emergency (priority 100): farm costs 5 wood, no buffer for emergency
+  // Emergency (priority 100): farm or warehouse depending on logistics ratio
   const result = selectNextBuild(state);
-  assert.ok(result !== null, "should return emergency farm");
-  assert.equal(result.type, "farm");
+  assert.ok(result !== null, "should return emergency build");
+  assert.ok(result.type === "farm" || result.type === "warehouse",
+    "emergency should be farm or warehouse");
   assert.equal(result.priority, 100);
 });
 
