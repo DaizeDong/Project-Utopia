@@ -266,7 +266,7 @@ export function followPath(entity, state, dt) {
   }
 
   const speed = entity.type === "WORKER"
-    ? BALANCE.workerSpeed
+    ? BALANCE.workerSpeed * Number(entity.preferences?.speedMultiplier ?? 1)
     : entity.type === "VISITOR"
       ? BALANCE.visitorSpeed
       : entity.kind === "PREDATOR"

@@ -34,11 +34,17 @@ export class ProcessingSystem {
     return false;
   }
 
-  #tryProcess(state, nowSec, tileIx, tileIz, cycleSec, inputCheck, inputConsume, outputProduce) {
+  #tryProcess(state, nowSec, tileIx, tileIz, cycleSec, inputCheck, inputConsume, outputProduce, weatherMult = 1) {
     const key = this.#tileKey(tileIx, tileIz);
+    // Apply tool bonus, night penalty, and weather to cycle time
+    const toolMult = Number(state.gameplay?.toolProductionMultiplier ?? 1);
+    const isNight = Boolean(state.environment?.isNight);
+    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    const effectiveCycle = (cycleSec * nightPenalty * weatherMult) / toolMult;
+
     let timer = this.buildingTimers.get(key);
     if (!timer) {
-      timer = { nextProcessSec: nowSec + cycleSec };
+      timer = { nextProcessSec: nowSec + effectiveCycle };
       this.buildingTimers.set(key, timer);
       return false;
     }
@@ -47,7 +53,7 @@ export class ProcessingSystem {
 
     inputConsume(state.resources);
     outputProduce(state.resources);
-    timer.nextProcessSec = nowSec + cycleSec;
+    timer.nextProcessSec = nowSec + effectiveCycle;
     state.metrics.processingCycles = (state.metrics.processingCycles ?? 0) + 1;
     return true;
   }
@@ -57,6 +63,8 @@ export class ProcessingSystem {
     const cycleSec = Number(BALANCE.kitchenCycleSec ?? 3);
     const foodCost = Number(BALANCE.kitchenFoodCost ?? 2);
     const mealOutput = Number(BALANCE.kitchenMealOutput ?? 1);
+    // Kitchen is indoor — no weather penalty
+    const weatherMult = 1;
 
     for (const tile of kitchens) {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.COOK)) continue;
@@ -64,6 +72,7 @@ export class ProcessingSystem {
         (res) => res.food >= foodCost,
         (res) => { res.food -= foodCost; },
         (res) => { res.meals = (res.meals ?? 0) + mealOutput; },
+        weatherMult,
       );
     }
   }
@@ -74,6 +83,9 @@ export class ProcessingSystem {
     const stoneCost = Number(BALANCE.smithyStoneCost ?? 3);
     const woodCost = Number(BALANCE.smithyWoodCost ?? 2);
     const toolOutput = Number(BALANCE.smithyToolOutput ?? 1);
+    // Smithy is outdoor forge — storms slow it, rain slightly
+    const weather = state.weather?.current ?? "clear";
+    const weatherMult = weather === "storm" ? 1.3 : weather === "rain" ? 1.1 : 1;
 
     for (const tile of smithies) {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.SMITH)) continue;
@@ -81,6 +93,7 @@ export class ProcessingSystem {
         (res) => res.stone >= stoneCost && res.wood >= woodCost,
         (res) => { res.stone -= stoneCost; res.wood -= woodCost; },
         (res) => { res.tools = (res.tools ?? 0) + toolOutput; },
+        weatherMult,
       );
     }
   }
@@ -90,6 +103,9 @@ export class ProcessingSystem {
     const cycleSec = Number(BALANCE.clinicCycleSec ?? 4);
     const herbsCost = Number(BALANCE.clinicHerbsCost ?? 2);
     const medicineOutput = Number(BALANCE.clinicMedicineOutput ?? 1);
+    // Clinic benefits from rain (humid herbs), drought slows it
+    const weather = state.weather?.current ?? "clear";
+    const weatherMult = weather === "rain" ? 0.9 : weather === "drought" ? 1.2 : weather === "storm" ? 1.3 : 1;
 
     for (const tile of clinics) {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.HERBALIST)) continue;
@@ -97,6 +113,7 @@ export class ProcessingSystem {
         (res) => res.herbs >= herbsCost,
         (res) => { res.herbs -= herbsCost; },
         (res) => { res.medicine = (res.medicine ?? 0) + medicineOutput; },
+        weatherMult,
       );
     }
   }

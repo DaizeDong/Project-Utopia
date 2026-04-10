@@ -38,8 +38,8 @@ function makeWorker(overrides = {}) {
 
 // --- Deliver hysteresis tests ---
 
-test("BALANCE has workerDeliverLowThreshold of 1.2", () => {
-  assert.equal(BALANCE.workerDeliverLowThreshold, 1.2);
+test("BALANCE has workerDeliverLowThreshold of 1.0", () => {
+  assert.equal(BALANCE.workerDeliverLowThreshold, 1.0);
 });
 
 test("BALANCE has workerHungerRecoverThreshold of 0.35", () => {
@@ -65,11 +65,11 @@ test("Worker in 'deliver' state with carry=2.3 (below 2.4 entry threshold) stays
     `Expected deliver but got ${result.desiredState} (reason: ${result.reason})`);
 });
 
-test("Worker NOT in 'deliver' state with carry=2.3 seeks task (no hysteresis)", () => {
-  // Without being in deliver state, carry=2.3 is below the 2.4 threshold, so no deliver
+test("Worker NOT in 'deliver' state with carry=1.7 seeks task (no hysteresis)", () => {
+  // Without being in deliver state, carry=1.7 is below the 1.8 threshold, so no deliver
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 2.3, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 1.7, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "seek_task" } },
   });
   const state = makeState();
@@ -79,10 +79,10 @@ test("Worker NOT in 'deliver' state with carry=2.3 seeks task (no hysteresis)", 
     `Expected NOT deliver but got deliver (reason: ${result.reason})`);
 });
 
-test("Worker in 'deliver' state with carry=1.3 (above low threshold 1.2) stays in deliver", () => {
+test("Worker in 'deliver' state with carry=1.1 (above low threshold 1.0) stays in deliver", () => {
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 1.3, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 1.1, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "deliver" } },
   });
   const state = makeState();
@@ -92,11 +92,11 @@ test("Worker in 'deliver' state with carry=1.3 (above low threshold 1.2) stays i
     `Expected deliver but got ${result.desiredState} (reason: ${result.reason})`);
 });
 
-test("Worker in 'deliver' state with carry=1.1 (below low threshold 1.2) leaves deliver", () => {
-  // carry=1.1 is below even the hysteresis threshold, so worker should leave deliver
+test("Worker in 'deliver' state with carry=0.9 (below low threshold 1.0) leaves deliver", () => {
+  // carry=0.9 is below even the hysteresis threshold, so worker should leave deliver
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 1.1, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 0.9, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "deliver" } },
   });
   const state = makeState();
