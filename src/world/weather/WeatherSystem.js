@@ -175,47 +175,76 @@ export function setWeather(state, weatherName, durationSec = 30, source = "event
   applyWeatherHazards(state, weatherName);
 }
 
-// Natural weather cycle: clear-dominant with occasional other weather
-const WEATHER_CYCLE = Object.freeze([
-  { weather: WEATHER.CLEAR, minSec: 25, maxSec: 40 },
-  { weather: WEATHER.RAIN, minSec: 15, maxSec: 25 },
-  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 35 },
-  { weather: WEATHER.DROUGHT, minSec: 12, maxSec: 20 },
-  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 30 },
-  { weather: WEATHER.WINTER, minSec: 15, maxSec: 25 },
-  { weather: WEATHER.CLEAR, minSec: 20, maxSec: 35 },
-  { weather: WEATHER.STORM, minSec: 10, maxSec: 18 },
+// Seasonal weather system: each season biases toward different weather types
+const SEASONS = Object.freeze([
+  { name: "spring", durationSec: 60, weights: { clear: 50, rain: 40, storm: 10, drought: 0, winter: 0 } },
+  { name: "summer", durationSec: 60, weights: { clear: 40, rain: 0, storm: 20, drought: 40, winter: 0 } },
+  { name: "autumn", durationSec: 50, weights: { clear: 60, rain: 30, storm: 10, drought: 0, winter: 0 } },
+  { name: "winter", durationSec: 50, weights: { clear: 20, rain: 0, storm: 20, drought: 0, winter: 60 } },
 ]);
+
+const WEATHER_DURATION = Object.freeze({
+  clear: { minSec: 18, maxSec: 35 },
+  rain: { minSec: 12, maxSec: 22 },
+  storm: { minSec: 8, maxSec: 16 },
+  drought: { minSec: 12, maxSec: 20 },
+  winter: { minSec: 14, maxSec: 24 },
+});
+
+function pickWeatherFromSeason(season) {
+  const w = season.weights;
+  const total = w.clear + w.rain + w.storm + w.drought + w.winter;
+  let roll = Math.random() * total;
+  for (const [weather, weight] of Object.entries(w)) {
+    roll -= weight;
+    if (roll <= 0) return weather;
+  }
+  return WEATHER.CLEAR;
+}
 
 export class WeatherSystem {
   constructor() {
     this.name = "WeatherSystem";
-    this._cycleIndex = 0;
-    this._nextCycleAtSec = -1;
+    this._seasonIndex = 0;
+    this._seasonStartSec = -1;
+    this._nextWeatherAtSec = -1;
   }
 
   update(dt, state) {
     state.weather.timeLeftSec -= dt;
     const now = state.metrics?.timeSec ?? 0;
 
-    // Initialise internal cycle timer on first tick
-    if (this._nextCycleAtSec < 0) {
-      const first = WEATHER_CYCLE[0];
-      this._nextCycleAtSec = now + (first.minSec + Math.random() * (first.maxSec - first.minSec));
+    // Initialise season tracking on first tick
+    if (this._seasonStartSec < 0) {
+      this._seasonStartSec = now;
+      this._nextWeatherAtSec = now;
+      state.weather.season = SEASONS[0].name;
+      state.weather.seasonProgress = 0;
     }
 
-    // Natural weather cycle runs on its own timer, independent of
-    // state.weather.timeLeftSec (which EnvironmentDirectorSystem may reset).
-    if (now < this._nextCycleAtSec) return;
+    // Advance season
+    const season = SEASONS[this._seasonIndex];
+    const seasonElapsed = now - this._seasonStartSec;
+    state.weather.seasonProgress = Math.min(1, seasonElapsed / season.durationSec);
+    if (seasonElapsed >= season.durationSec) {
+      this._seasonIndex = (this._seasonIndex + 1) % SEASONS.length;
+      this._seasonStartSec = now;
+      state.weather.season = SEASONS[this._seasonIndex].name;
+      state.weather.seasonProgress = 0;
+    }
 
-    this._cycleIndex = (this._cycleIndex + 1) % WEATHER_CYCLE.length;
-    const entry = WEATHER_CYCLE[this._cycleIndex];
-    const duration = entry.minSec + Math.random() * (entry.maxSec - entry.minSec);
+    // Weather changes within season
+    if (now < this._nextWeatherAtSec) return;
+
+    const currentSeason = SEASONS[this._seasonIndex];
+    const weatherName = pickWeatherFromSeason(currentSeason);
+    const dur = WEATHER_DURATION[weatherName] ?? WEATHER_DURATION.clear;
+    const duration = dur.minSec + Math.random() * (dur.maxSec - dur.minSec);
     const prevWeather = state.weather.current;
-    setWeather(state, entry.weather, duration, "cycle");
-    this._nextCycleAtSec = now + duration;
-    if (prevWeather !== entry.weather) {
-      emitEvent(state, EVENT_TYPES.WEATHER_CHANGED, { from: prevWeather, to: entry.weather, duration });
+    setWeather(state, weatherName, duration, "cycle");
+    this._nextWeatherAtSec = now + duration;
+    if (prevWeather !== weatherName) {
+      emitEvent(state, EVENT_TYPES.WEATHER_CHANGED, { from: prevWeather, to: weatherName, duration, season: currentSeason.name });
     }
   }
 }

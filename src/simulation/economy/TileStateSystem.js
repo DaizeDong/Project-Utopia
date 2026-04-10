@@ -1,4 +1,5 @@
 import { TILE } from "../../config/constants.js";
+import { TERRAIN_MECHANICS } from "../../config/balance.js";
 
 const FERTILITY_RECOVERY_PER_SEC = 0.002;
 const FERTILITY_HARVEST_DRAIN = 0.08;
@@ -39,8 +40,12 @@ export class TileStateSystem {
         if (PRODUCTION_TILES.has(type)) {
           let entry = grid.tileState.get(idx);
           if (!entry) {
-            entry = { fertility: 0.85, wear: 0, growthStage: 0 };
+            entry = { fertility: 0.85, wear: 0, growthStage: 0, exhaustion: 0 };
             grid.tileState.set(idx, entry);
+          }
+          // Exhaustion decays when tile is not being harvested
+          if (entry.exhaustion > 0) {
+            entry.exhaustion = Math.max(0, entry.exhaustion - TERRAIN_MECHANICS.soilExhaustionDecayPerTick);
           }
           // Fertility slowly recovers toward 1.0
           entry.fertility = Math.min(1.0, entry.fertility + FERTILITY_RECOVERY_PER_SEC * elapsed);
@@ -71,7 +76,9 @@ export function drainFertility(grid, ix, iz) {
   const idx = ix + iz * grid.width;
   const entry = grid.tileState.get(idx);
   if (entry) {
-    entry.fertility = Math.max(0, entry.fertility - FERTILITY_HARVEST_DRAIN);
+    const drain = FERTILITY_HARVEST_DRAIN * (1 + (entry.exhaustion ?? 0) * TERRAIN_MECHANICS.soilExhaustionDrainScale);
+    entry.fertility = Math.max(0, entry.fertility - drain);
+    entry.exhaustion = Math.min(TERRAIN_MECHANICS.soilExhaustionMax, (entry.exhaustion ?? 0) + 1);
     grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
   }
 }
