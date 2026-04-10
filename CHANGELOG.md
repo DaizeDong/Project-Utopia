@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.6.3] - 2026-04-10 — Agent-Based Colony Planning: Phase 2 (Skill Library + Executor)
+
+Second phase of the Agent-Based Colony Planning system — implements compound build skills (Voyager-inspired) and a plan execution engine with SayCan-inspired affordance scoring.
+
+### New Features
+- **SkillLibrary** — 6 frozen compound build patterns:
+  - `logistics_hub`: Warehouse + road star + 2 farms (24 wood)
+  - `processing_cluster`: Quarry + road + smithy (13 wood + 5 stone)
+  - `defense_line`: 5-wall chain along elevation ridge (10 wood)
+  - `food_district`: 4 farms + kitchen around warehouse (25 wood + 3 stone)
+  - `expansion_outpost`: Warehouse + road + farm + lumber (22 wood)
+  - `bridge_link`: Road + 2 bridges + road for island connectivity (12 wood + 4 stone)
+- **PlanExecutor** — Grounds LLM-generated plans to real game state:
+  - 7 location hint types: near_cluster, near_step, expansion:<dir>, coverage_gap, defense_line, terrain:high_moisture, explicit coords
+  - SayCan-inspired affordance scoring (0-1 resource sufficiency gate)
+  - Terrain-aware tile ranking with type-specific weights (moisture for farms, elevation for walls)
+  - Topological dependency ordering for multi-step plans
+  - Per-tick build limit (2/tick) with skill sub-step atomic execution
+  - Plan status queries: isPlanComplete, isPlanBlocked, getPlanProgress
+- **Executor Benchmark** — 5-scenario evaluation (`scripts/executor-benchmark.mjs`) covering skill library, location hints, affordance scoring, plan execution, and skill feasibility
+
+### Benchmark Results (LLM Judge, 120s)
+- temperate_plains: 9/10
+- archipelago_isles: 9.5/10
+- fortified_basin: 10/10
+- Average: 9.5/10
+
+### Tests
+- 50 new unit tests in `test/skill-library-executor.test.js` (all passing)
+- Full suite: 418 tests, 0 failures
+
+### Files Changed
+- `src/simulation/ai/colony/SkillLibrary.js` — New file: 6 frozen skills + query utilities
+- `src/simulation/ai/colony/PlanExecutor.js` — New file: location hints, affordance, terrain ranking, plan grounding/execution
+- `test/skill-library-executor.test.js` — New file: 50 unit tests
+- `scripts/executor-benchmark.mjs` — New file: 5-scenario benchmark with LLM judge
+- `docs/superpowers/plans/2026-04-10-agent-based-colony-planning.md` — Updated Phase 2 status to complete
+
 ## [0.6.2] - 2026-04-10 — Agent-Based Colony Planning: Phase 1 (Perceiver)
 
 First phase of the Agent-Based Colony Planning system — implements the ColonyPerceiver, which transforms raw game state into structured observations for downstream planning.
