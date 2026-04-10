@@ -104,7 +104,7 @@ test("assessColonyNeeds returns fortification needs when processing is complete"
 
 test("assessColonyNeeds returns only expansion or accessibility items when all phases complete", () => {
   const state = makeMinimalState({
-    buildings: { farms: 4, lumbers: 3, roads: 20, warehouses: 2, walls: 12, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 1, clinics: 1 },
+    buildings: { farms: 4, lumbers: 3, roads: 30, warehouses: 2, walls: 12, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 1, clinics: 1 },
     resources: { food: 80, wood: 70, stone: 10, herbs: 5 },
   });
   const needs = assessColonyNeeds(state);

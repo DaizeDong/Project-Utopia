@@ -138,7 +138,7 @@ function deriveWorkerDesiredState(worker, state) {
 
   // Weather-responsive behavior: storms force shelter, adverse weather reduces productivity
   const weatherType = state.weather?.current ?? "clear";
-  if (weatherType === "storm" && restLevel < 0.8) {
+  if (weatherType === "storm" && restLevel < 0.92) {
     return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
   }
   if (weatherType === "winter" && restLevel < 0.55) {

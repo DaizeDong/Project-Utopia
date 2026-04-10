@@ -230,11 +230,12 @@ function estimateNearestWarehouseDistance(worker, state) {
   return Math.abs(current.ix - nearest.ix) + Math.abs(current.iz - nearest.iz);
 }
 
-function resolveWorkCooldown(worker, dt, amount, resourceType, rng) {
+function resolveWorkCooldown(worker, dt, amount, resourceType, rng, isNight) {
   if (worker.cooldown <= 0) {
     const baseDuration = Number(BALANCE.workerHarvestDurationSec ?? 2.5);
     const skillMultiplier = Number(worker.preferences?.workDurationMultiplier ?? 1);
-    worker.cooldown = baseDuration * skillMultiplier * (0.8 + rng.next() * 0.5);
+    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    worker.cooldown = baseDuration * skillMultiplier * nightPenalty * (0.8 + rng.next() * 0.5);
     worker.workRemaining = worker.cooldown;
     worker.progress = 0;
     return;
@@ -471,6 +472,7 @@ function handleHarvest(worker, state, services, dt) {
 
   if (!isAtTargetTile(worker, state)) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
+  const isNight = Boolean(state.environment?.isNight);
   // HAUL workers: determine resource type from tile they're standing on
   let effectiveRole = worker.role;
   if (worker.role === ROLE.HAUL && worker.targetTile) {
@@ -493,6 +495,7 @@ function handleHarvest(worker, state, services, dt) {
       Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility),
       "food",
       services.rng,
+      isNight,
     );
     // Drain tile fertility on harvest
     if (worker.cooldown <= 0 && worker.targetTile) {
@@ -502,13 +505,15 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier), "stone", services.rng);
+    const quarryWeather = Number(BALANCE.quarryWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, quarryWeather * toolMultiplier), "stone", services.rng, isNight);
   } else if (effectiveRole === ROLE.HERBS) {
     const herbFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, Number(state.weather?.farmProductionMultiplier ?? 1) * toolMultiplier * herbFertility), "herbs", services.rng);
+    const herbWeather = Number(BALANCE.herbGardenWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, herbWeather * toolMultiplier * herbFertility), "herbs", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
     }
@@ -518,7 +523,7 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility), "wood", services.rng);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility), "wood", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
     }

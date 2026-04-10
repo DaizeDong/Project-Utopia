@@ -11,9 +11,9 @@ const MAX_BUILDS_PER_TICK = 3;
 
 // Phase thresholds for colony development
 const PHASE_TARGETS = Object.freeze({
-  bootstrap: { farms: 3, lumbers: 2, roads: 6 },
-  logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 15 },
-  processing: { quarries: 1, herbGardens: 1, kitchens: 1 },
+  bootstrap: { farms: 3, lumbers: 2, roads: 10 },
+  logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20 },
+  processing: { quarries: 1, herbGardens: 1, kitchens: 1, roads: 30 },
   fortification: { walls: 12, smithies: 1, clinics: 1 },
 });
 
@@ -43,7 +43,8 @@ function determinePhase(buildings) {
 
   const processingDone = (b.quarries ?? 0) >= PHASE_TARGETS.processing.quarries
     && (b.herbGardens ?? 0) >= PHASE_TARGETS.processing.herbGardens
-    && (b.kitchens ?? 0) >= PHASE_TARGETS.processing.kitchens;
+    && (b.kitchens ?? 0) >= PHASE_TARGETS.processing.kitchens
+    && (b.roads ?? 0) >= PHASE_TARGETS.processing.roads;
 
   if (!processingDone) return "processing";
 
@@ -119,6 +120,9 @@ export function assessColonyNeeds(state) {
   }
   if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
     needs.push({ type: "kitchen", priority: 72, reason: "processing: need kitchen" });
+  }
+  if ((buildings.roads ?? 0) < PHASE_TARGETS.processing.roads) {
+    needs.push({ type: "road", priority: 55, reason: "processing: expand road network" });
   }
 
   // Smithy: highest priority after quarry — tools accelerate ALL resource production

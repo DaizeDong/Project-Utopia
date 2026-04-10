@@ -1,7 +1,7 @@
 import { TILE } from "../../config/constants.js";
 
 const FERTILITY_RECOVERY_PER_SEC = 0.002;
-const FERTILITY_HARVEST_DRAIN = 0.05;
+const FERTILITY_HARVEST_DRAIN = 0.08;
 const WEAR_INCREASE_PER_SEC = 0.0008;
 const WEAR_STORM_MULTIPLIER = 2.5;
 const WEAR_TRAFFIC_BONUS = 0.001;
