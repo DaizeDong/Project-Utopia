@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.5.9] - 2026-04-10 — Terrain Diversity Overhaul
+
+Major terrain generation rewrite: all 6 map templates now use dedicated terrain generators producing dramatically different maps instead of shared noise with minor parameter tweaks.
+
+### New Features
+
+- **Archipelago Isles** — 5-8 distinct islands with bridge connections, 77-82% water coverage
+- **Coastal Ocean** — Jagged coastline via 1D FBM noise, bays, offshore islands, ~48% water
+- **Rugged Highlands** — Dynamic ridge-to-wall conversion (top 18% ridges), connectivity passes, 10-14% walls
+- **Fertile Riverlands** — 2-3 convergent rivers meeting at central confluence, floodplain ponds, 57% farm-water adjacency
+- **Fortified Basin** — Elliptical fortress wall with moat, 4 gated entrances, grid-pattern interior roads, organized quadrants
+- **Temperate Plains** — Flat 2-octave noise, single meandering river, 96% lumber at edges, river-side farm strips
+- **Map template selector** — Dropdown on start screen to choose template before generating
+- **Connectivity validation** — Flood-fill check ensures ≥40% of passable tiles are reachable in largest connected region
+
+### Technical Changes
+
+- Each template dispatches to a dedicated generator function instead of shared `baseTerrainPass()`
+- `convertHighlandRidgesToWalls()` uses dynamic percentile-based threshold instead of fixed value
+- `validateGeneratedGrid()` now includes flood-fill connectivity check
+- Template profiles updated with template-appropriate validation bounds
+- 3 new test cases: quantitative diversity assertions, connectivity validation, stronger signature checks
+
+### Files Changed
+
+- `src/world/grid/Grid.js` — 6 dedicated terrain generators, connectivity validation, updated profiles
+- `src/ui/hud/GameStateOverlay.js` — Template dropdown population and selection
+- `index.html` — Template selector UI element
+- `test/map-generation.test.js` — Diversity and connectivity tests
+
 ## [0.5.8] - 2026-04-10 — Map Preview & Size Controls
 
 New Map now shows the actual terrain behind a semi-transparent overlay, with camera pan/zoom support and configurable map dimensions.
