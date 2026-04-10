@@ -6,19 +6,21 @@ import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
 import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
 
-const EVAL_INTERVAL_SEC = 1;
-const MAX_BUILDS_PER_TICK = 3;
+const EVAL_INTERVAL_SEC = 2;
+const BASE_BUILDS_PER_TICK = 2;
+const MAX_BUILDS_PER_TICK = 4;
 
 // Phase thresholds for colony development
 const PHASE_TARGETS = Object.freeze({
-  bootstrap: { farms: 3, lumbers: 2, roads: 10 },
-  logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20 },
-  processing: { quarries: 1, herbGardens: 1, kitchens: 1, roads: 30 },
+  bootstrap: { farms: 3, lumbers: 2, warehouses: 3, roads: 10 },
+  logistics: { warehouses: 4, farms: 6, lumbers: 5, roads: 20 },
+  processing: { quarries: 2, herbGardens: 2, kitchens: 1, smithies: 1, roads: 30 },
   fortification: { walls: 12, smithies: 1, clinics: 1 },
+  expansion: { warehouses: 6, farms: 12, lumbers: 8, quarries: 3, kitchens: 2, roads: 50, walls: 20 },
 });
 
 // Protect economy while allowing steady building
-const RESOURCE_BUFFER = Object.freeze({ wood: 10, food: 8 });
+const RESOURCE_BUFFER = Object.freeze({ wood: 8, food: 10 });
 
 /**
  * Determine the current colony development phase based on building counts.
@@ -30,6 +32,7 @@ function determinePhase(buildings) {
 
   const bootstrapDone = (b.farms ?? 0) >= PHASE_TARGETS.bootstrap.farms
     && (b.lumbers ?? 0) >= PHASE_TARGETS.bootstrap.lumbers
+    && (b.warehouses ?? 0) >= PHASE_TARGETS.bootstrap.warehouses
     && (b.roads ?? 0) >= PHASE_TARGETS.bootstrap.roads;
 
   if (!bootstrapDone) return "bootstrap";
@@ -44,6 +47,7 @@ function determinePhase(buildings) {
   const processingDone = (b.quarries ?? 0) >= PHASE_TARGETS.processing.quarries
     && (b.herbGardens ?? 0) >= PHASE_TARGETS.processing.herbGardens
     && (b.kitchens ?? 0) >= PHASE_TARGETS.processing.kitchens
+    && (b.smithies ?? 0) >= PHASE_TARGETS.processing.smithies
     && (b.roads ?? 0) >= PHASE_TARGETS.processing.roads;
 
   if (!processingDone) return "processing";
@@ -53,6 +57,16 @@ function determinePhase(buildings) {
     && (b.clinics ?? 0) >= PHASE_TARGETS.fortification.clinics;
 
   if (!fortificationDone) return "fortification";
+
+  const expansionDone = (b.warehouses ?? 0) >= PHASE_TARGETS.expansion.warehouses
+    && (b.farms ?? 0) >= PHASE_TARGETS.expansion.farms
+    && (b.lumbers ?? 0) >= PHASE_TARGETS.expansion.lumbers
+    && (b.quarries ?? 0) >= PHASE_TARGETS.expansion.quarries
+    && (b.kitchens ?? 0) >= PHASE_TARGETS.expansion.kitchens
+    && (b.roads ?? 0) >= PHASE_TARGETS.expansion.roads
+    && (b.walls ?? 0) >= PHASE_TARGETS.expansion.walls;
+
+  if (!expansionDone) return "expansion";
 
   return "complete";
 }
@@ -73,15 +87,37 @@ export function assessColonyNeeds(state) {
 
   const needs = [];
 
+  const workers = (state.agents ?? []).filter(a => a.type === "WORKER" && a.alive !== false).length;
+  const warehouseCount = buildings.warehouses ?? 0;
+
   // Emergency needs (bypass resource buffer checks)
-  if (food < 20) {
+  // Cap farms relative to workers — more farms than workers can operate is waste
+  const maxFarmsEmergency = Math.max(5, workers);
+  const currentFarms = buildings.farms ?? 0;
+  // When food is low, prioritize warehouses if farm:warehouse ratio is high
+  if (food < 30 && currentFarms >= 3 && warehouseCount > 0 && currentFarms / warehouseCount > 3) {
+    // Too many farms per warehouse — logistics is the bottleneck
+    needs.push({ type: "warehouse", priority: 100, reason: "emergency: food logistics bottleneck" });
+  } else if (food < 30 && currentFarms < maxFarmsEmergency) {
     needs.push({ type: "farm", priority: 100, reason: "emergency food shortage" });
+  } else if (food < 30 && warehouseCount < Math.floor(workers / 5) + 2) {
+    needs.push({ type: "warehouse", priority: 100, reason: "emergency: need more warehouses" });
   }
-  if (wood < 10) {
+  // Only request emergency lumber if there are actually few lumber tiles
+  if (wood < 15 && (buildings.lumbers ?? 0) < 6) {
     needs.push({ type: "lumber", priority: 95, reason: "emergency wood shortage" });
+  }
+  // Warehouse scaling: aggressive — warehouses are the #1 factor for food production
+  const prodCount = (buildings.farms ?? 0) + (buildings.lumbers ?? 0) + (buildings.quarries ?? 0) + (buildings.herbGardens ?? 0);
+  const warehousesNeeded = Math.max(3, Math.floor(workers / 6) + 1, Math.floor(prodCount / 5) + 2);
+  if (warehouseCount < warehousesNeeded) {
+    needs.push({ type: "warehouse", priority: 92, reason: "logistics: warehouse coverage" });
   }
 
   // Bootstrap phase targets
+  if ((buildings.warehouses ?? 0) < PHASE_TARGETS.bootstrap.warehouses) {
+    needs.push({ type: "warehouse", priority: 82, reason: "bootstrap: need warehouses" });
+  }
   if ((buildings.farms ?? 0) < PHASE_TARGETS.bootstrap.farms) {
     needs.push({ type: "farm", priority: 80, reason: "bootstrap: need farms" });
   }
@@ -121,13 +157,12 @@ export function assessColonyNeeds(state) {
   if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
     needs.push({ type: "kitchen", priority: 72, reason: "processing: need kitchen" });
   }
+  // Smithy: highest priority after quarry — tools accelerate ALL resource production
+  if ((buildings.smithies ?? 0) < PHASE_TARGETS.processing.smithies) {
+    needs.push({ type: "smithy", priority: 74, reason: "processing: need smithy for tools" });
+  }
   if ((buildings.roads ?? 0) < PHASE_TARGETS.processing.roads) {
     needs.push({ type: "road", priority: 55, reason: "processing: expand road network" });
-  }
-
-  // Smithy: highest priority after quarry — tools accelerate ALL resource production
-  if ((buildings.smithies ?? 0) < PHASE_TARGETS.fortification.smithies) {
-    needs.push({ type: "smithy", priority: 74, reason: "processing: need smithy for tools" });
   }
   if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics) {
     needs.push({ type: "clinic", priority: 68, reason: "processing: need clinic" });
@@ -157,15 +192,79 @@ export function assessColonyNeeds(state) {
     }
   }
 
-  // Continuous expansion — ensure building count grows throughout the sim
-  if ((buildings.farms ?? 0) >= PHASE_TARGETS.logistics.farms && food > 30) {
-    needs.push({ type: "farm", priority: 25, reason: "expansion: extra farm" });
+  // Expansion phase targets
+  if ((buildings.warehouses ?? 0) < PHASE_TARGETS.expansion.warehouses) {
+    needs.push({ type: "warehouse", priority: 55, reason: "expansion: need more warehouses" });
   }
-  if ((buildings.roads ?? 0) >= PHASE_TARGETS.logistics.roads) {
-    needs.push({ type: "road", priority: 20, reason: "expansion: extra road" });
+  if ((buildings.farms ?? 0) < PHASE_TARGETS.expansion.farms) {
+    needs.push({ type: "farm", priority: 52, reason: "expansion: need more farms" });
   }
-  if ((buildings.walls ?? 0) >= PHASE_TARGETS.fortification.walls) {
-    needs.push({ type: "wall", priority: 18, reason: "expansion: extra wall" });
+  if ((buildings.lumbers ?? 0) < PHASE_TARGETS.expansion.lumbers) {
+    needs.push({ type: "lumber", priority: 50, reason: "expansion: need more lumbers" });
+  }
+  if ((buildings.quarries ?? 0) < PHASE_TARGETS.expansion.quarries) {
+    needs.push({ type: "quarry", priority: 48, reason: "expansion: need more quarries" });
+  }
+  if ((buildings.kitchens ?? 0) < PHASE_TARGETS.expansion.kitchens) {
+    needs.push({ type: "kitchen", priority: 46, reason: "expansion: need more kitchens" });
+  }
+  if ((buildings.roads ?? 0) < PHASE_TARGETS.expansion.roads) {
+    needs.push({ type: "road", priority: 40, reason: "expansion: expand road network" });
+  }
+  if ((buildings.walls ?? 0) < PHASE_TARGETS.expansion.walls) {
+    needs.push({ type: "wall", priority: 38, reason: "expansion: extend walls" });
+  }
+
+  // Continuous expansion — maintain balanced growth across all building types
+  const farmCount = buildings.farms ?? 0;
+  const lumberCount = buildings.lumbers ?? 0;
+  const quarryCount = buildings.quarries ?? 0;
+  const herbGardenCount = buildings.herbGardens ?? 0;
+  const prodBuildings = farmCount + lumberCount + quarryCount + herbGardenCount;
+
+  // Cap production buildings relative to workers to avoid overbuilding
+  const maxFarmsForWorkers = Math.max(5, workers);
+  const maxLumberForWorkers = Math.max(3, Math.floor(workers * 0.5));
+
+  if (wood > 20 && food > 20) {
+    // Balanced growth: farms and lumber should maintain ~2:1 ratio
+    if (farmCount <= lumberCount * 2 && farmCount < maxFarmsForWorkers) {
+      needs.push({ type: "farm", priority: 32, reason: "continuous: maintain farm:lumber ratio" });
+    }
+    if (lumberCount * 2 <= farmCount && lumberCount < maxLumberForWorkers) {
+      needs.push({ type: "lumber", priority: 30, reason: "continuous: maintain farm:lumber ratio" });
+    }
+    // Quarry and herb garden every ~5 production buildings
+    if (quarryCount < Math.floor(prodBuildings / 5) + 1) {
+      needs.push({ type: "quarry", priority: 28, reason: "continuous: quarry scaling" });
+    }
+    if (herbGardenCount < Math.floor(prodBuildings / 6) + 1) {
+      needs.push({ type: "herb_garden", priority: 27, reason: "continuous: herb garden scaling" });
+    }
+    needs.push({ type: "road", priority: 22, reason: "continuous: extra road" });
+    needs.push({ type: "wall", priority: 20, reason: "continuous: extra wall" });
+    // Warehouse every 10 production buildings
+    const warehouseNeed = Math.floor(prodBuildings / 10) + 1;
+    if ((buildings.warehouses ?? 0) < warehouseNeed) {
+      needs.push({ type: "warehouse", priority: 35, reason: "continuous: warehouse coverage" });
+    }
+  } else if (food < 20 && farmCount < maxFarmsForWorkers) {
+    // Low food: add farms only if farm:worker ratio allows
+    needs.push({ type: "farm", priority: 35, reason: "continuous: food shortage" });
+    // Also ensure lumber keeps up for building
+    if (lumberCount < maxLumberForWorkers && lumberCount * 2 < farmCount) {
+      needs.push({ type: "lumber", priority: 33, reason: "continuous: lumber for construction" });
+    }
+  } else if (food < 20) {
+    // Too many farms but still no food — need more warehouses for logistics
+    const warehouseNeed = Math.floor(prodBuildings / 8) + 2;
+    if ((buildings.warehouses ?? 0) < warehouseNeed) {
+      needs.push({ type: "warehouse", priority: 36, reason: "continuous: logistics bottleneck" });
+    }
+    // And more lumber since we can't add farms
+    if (lumberCount < maxLumberForWorkers) {
+      needs.push({ type: "lumber", priority: 33, reason: "continuous: diversify from farms" });
+    }
   }
 
   // Sort by descending priority, deduplicate type (keep highest priority for each type)
@@ -239,11 +338,11 @@ function findPlacementTile(state, buildSystem, tool) {
     }
   }
 
-  // Phase 2: Fall back to general infrastructure anchors
+  // Phase 2: Fall back to general infrastructure anchors (wider radius)
   const anchorTypes = [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE];
   const anchors = listTilesByType(grid, anchorTypes);
 
-  for (let radius = 1; radius <= 4; radius += 1) {
+  for (let radius = 1; radius <= 10; radius += 1) {
     for (const anchor of anchors) {
       for (let dz = -radius; dz <= radius; dz += 1) {
         for (let dx = -radius; dx <= radius; dx += 1) {
@@ -255,14 +354,7 @@ function findPlacementTile(state, buildSystem, tool) {
     }
   }
 
-  // Phase 3: Full grid scan
-  for (let iz = 0; iz < grid.height; iz += 1) {
-    for (let ix = 0; ix < grid.width; ix += 1) {
-      const result = tryTile(ix, iz);
-      if (result) return result;
-    }
-  }
-
+  // No full grid scan — keep production buildings near existing infrastructure
   return null;
 }
 
@@ -339,7 +431,14 @@ export function selectNextBuilds(state, maxCount = MAX_BUILDS_PER_TICK, buffer =
 
     // Strategic builds use the base buffer (not the stockpile-inflated buffer)
     const effectiveBuffer = isStrategic ? RESOURCE_BUFFER : buffer;
-    const checkResources = isEmergency ? budgetResources : {
+    // Emergency builds still keep a small wood floor to prevent total depletion
+    const emergencyFloor = { food: 3, wood: 5 };
+    const checkResources = isEmergency ? {
+      food: (budgetResources.food ?? 0) - emergencyFloor.food,
+      wood: (budgetResources.wood ?? 0) - emergencyFloor.wood,
+      stone: budgetResources.stone ?? 0,
+      herbs: budgetResources.herbs ?? 0,
+    } : {
       food: (budgetResources.food ?? 0) - effectiveBuffer.food,
       wood: (budgetResources.wood ?? 0) - effectiveBuffer.wood,
       stone: budgetResources.stone ?? 0,
@@ -430,8 +529,11 @@ function fulfillScenarioRequirements(state, buildSystem) {
       if (!inBounds(gap.ix, gap.iz, state.grid)) continue;
 
       // If gap tile is blocked (wall, ruins, etc.), erase it first
+      // Never erase warehouses or production buildings — too valuable
       const currentTile = getTile(state.grid, gap.ix, gap.iz);
-      if (currentTile !== TILE.GRASS && currentTile !== TILE.ROAD) {
+      const protectedTiles = new Set([TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY,
+        TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+      if (currentTile !== TILE.GRASS && currentTile !== TILE.ROAD && !protectedTiles.has(currentTile)) {
         const erasePreview = buildSystem.previewToolAt(state, "erase", gap.ix, gap.iz);
         if (erasePreview.ok) {
           buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, { recordHistory: false });
@@ -485,8 +587,10 @@ function fulfillScenarioRequirements(state, buildSystem) {
             }
           }
         } else {
-          // Erase non-buildable tiles first
-          if (tile !== TILE.GRASS && tile !== TILE.RUINS) {
+          // Erase non-buildable tiles first — never erase production buildings
+          const protectedManhattan = new Set([TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY,
+            TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+          if (tile !== TILE.GRASS && tile !== TILE.RUINS && !protectedManhattan.has(tile)) {
             const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz);
             if (erasePreview.ok) {
               buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false });
@@ -615,7 +719,12 @@ export class ColonyDirectorSystem {
     director.buildsPlaced += scenarioBuilds;
 
     // Priority 2: phase-based colony development (including expansion after complete)
-    const builds = selectNextBuilds(state, MAX_BUILDS_PER_TICK, getObjectiveResourceBuffer(state));
+    // Scale build rate with colony resources — build faster when resources are abundant
+    const wood = state.resources?.wood ?? 0;
+    const food = state.resources?.food ?? 0;
+    const buildsPerTick = (wood > 50 && food > 30) ? MAX_BUILDS_PER_TICK
+      : (wood > 20 && food > 15) ? 3 : BASE_BUILDS_PER_TICK;
+    const builds = selectNextBuilds(state, buildsPerTick, getObjectiveResourceBuffer(state));
     for (const build of builds) {
       let tile = null;
 
