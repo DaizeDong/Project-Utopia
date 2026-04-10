@@ -10,6 +10,8 @@ const UPDATE_INTERVAL_SEC = 2.0;
 
 const PRODUCTION_TILES = new Set([TILE.FARM, TILE.HERB_GARDEN, TILE.LUMBER]);
 const WEAR_TILES = new Set([TILE.ROAD, TILE.BRIDGE, TILE.WALL, TILE.QUARRY, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+const FLAMMABLE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.HERB_GARDEN]);
+const FIREBREAK_TILES = new Set([TILE.ROAD, TILE.BRIDGE, TILE.WATER, TILE.WALL]);
 
 // D1: Adjacency fertility bonuses per neighbor tile type → target tile type
 const ADJACENCY_EFFECTS = Object.freeze({
@@ -90,6 +92,100 @@ export class TileStateSystem {
           entry.wear = Math.min(1.0, entry.wear + WEAR_INCREASE_PER_SEC * elapsed * weatherMult);
           grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
         }
+      }
+    }
+
+    // E1: Drought wildfire system
+    const isDrought = state.weather?.current === "drought";
+    if (isDrought && grid.moisture) {
+      this._updateFire(grid);
+    }
+  }
+
+  _updateFire(grid) {
+    const w = grid.width;
+    const h = grid.height;
+    const newFires = [];
+
+    for (let iz = 0; iz < h; iz++) {
+      for (let ix = 0; ix < w; ix++) {
+        const idx = ix + iz * w;
+        const entry = grid.tileState.get(idx);
+
+        // Advance existing fires
+        if (entry?.onFire) {
+          entry.wear = Math.min(1.0, entry.wear + TERRAIN_MECHANICS.fireWearPerTick);
+          if (entry.wear >= 1.0) {
+            // Burn down to grass
+            grid.tiles[idx] = TILE.GRASS;
+            grid.tileState.delete(idx);
+            grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+            grid.version = (grid.version ?? 0) + 1;
+            continue;
+          }
+          // Try to spread (limited by fireAge)
+          if ((entry.fireAge ?? 0) < TERRAIN_MECHANICS.fireMaxSpread) {
+            for (const [dx, dz] of DIR4) {
+              const nx = ix + dx;
+              const nz = iz + dz;
+              if (nx < 0 || nz < 0 || nx >= w || nz >= h) continue;
+              const nIdx = nx + nz * w;
+              const nType = grid.tiles[nIdx];
+              if (FIREBREAK_TILES.has(nType)) continue;
+              if (!FLAMMABLE_TILES.has(nType)) continue;
+              const nMoist = grid.moisture[nIdx] ?? 0.5;
+              if (nMoist >= TERRAIN_MECHANICS.fireMoistureThreshold) continue;
+              const nEntry = grid.tileState.get(nIdx);
+              if (nEntry?.onFire) continue;
+              if (Math.random() < TERRAIN_MECHANICS.fireIgniteChance * 2) {
+                newFires.push({ idx: nIdx, fireAge: (entry.fireAge ?? 0) + 1 });
+              }
+            }
+          }
+          grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+          continue;
+        }
+
+        // Spontaneous ignition on low-moisture flammable tiles
+        const type = grid.tiles[idx];
+        if (!FLAMMABLE_TILES.has(type)) continue;
+        const moist = grid.moisture[idx] ?? 0.5;
+        if (moist >= TERRAIN_MECHANICS.fireMoistureThreshold) continue;
+        // Check water adjacency immunity
+        let waterAdjacent = false;
+        for (const [dx, dz] of DIR4) {
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (nx >= 0 && nz >= 0 && nx < w && nz < h && grid.tiles[nx + nz * w] === TILE.WATER) {
+            waterAdjacent = true;
+            break;
+          }
+        }
+        if (waterAdjacent) continue;
+        if (Math.random() < TERRAIN_MECHANICS.fireIgniteChance) {
+          let e = grid.tileState.get(idx);
+          if (!e) {
+            e = { fertility: 0.85, wear: 0, growthStage: 0, exhaustion: 0 };
+            grid.tileState.set(idx, e);
+          }
+          e.onFire = true;
+          e.fireAge = 0;
+          grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+        }
+      }
+    }
+
+    // Apply spread fires
+    for (const { idx, fireAge } of newFires) {
+      let e = grid.tileState.get(idx);
+      if (!e) {
+        e = { fertility: 0.85, wear: 0, growthStage: 0, exhaustion: 0 };
+        grid.tileState.set(idx, e);
+      }
+      if (!e.onFire) {
+        e.onFire = true;
+        e.fireAge = fireAge;
+        grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
       }
     }
   }

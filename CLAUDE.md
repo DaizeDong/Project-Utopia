@@ -39,10 +39,11 @@ Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players
 - Processed goods (meals, medicine, tools) are colony-wide, stored in `state.resources`, not carried
 - **Changelog** — Every commit must include a corresponding update to `CHANGELOG.md`. Add entries under the current unreleased version section describing what changed and why. Group entries by category (New Features, Bug Fixes, Files Changed, etc.).
 
-## Current State (as of v0.5.9)
+## Current State (as of v0.6.0)
 
 - **Phase 1 complete** — Resource chains with 5 new buildings, 5 new resources, 5 new roles, full UI integration
 - **Terrain diversity complete** — All 6 map templates have dedicated terrain generators with dramatically different profiles
+- **Terrain depth complete** — 10-feature overhaul: persistent elevation/moisture, ruin salvage, elevation movement/build/defense costs, seasonal weather, soil exhaustion, adjacency fertility, moisture cap, drought wildfire
 - **Phase 2-5 planned** — Defense, wildlife expansion, colonist depth (see `docs/superpowers/plans/2026-04-07-game-richness-expansion.md`)
 - **Tile types** — 14 types (GRASS through BRIDGE, IDs 0-13)
 - **337 tests passing** across 60+ test files

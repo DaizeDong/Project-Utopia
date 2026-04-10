@@ -1,33 +1,38 @@
 # Changelog
 
-## [0.6.0] - 2026-04-10 — Terrain Depth: Core Mechanics
+## [0.6.0] - 2026-04-10 — Terrain Depth: Full Ecology Integration
 
-Terrain attributes now deeply affect gameplay: elevation, moisture, and ruins create meaningful spatial decisions for building, pathfinding, and defense.
+10-feature terrain depth overhaul across 5 phases. Terrain attributes now deeply affect gameplay: elevation, moisture, seasons, soil exhaustion, adjacency effects, and drought wildfire create meaningful spatial decisions.
 
-### New Features
+### Phase A: Foundation
+- **Persistent terrain data** — Elevation and moisture Float32Arrays stored on grid, used by all systems
+- **Ruin salvage** — Erasing RUINS yields random rewards: wood/stone (60%), food/herbs (25%), tools/medicine (15%)
 
-- **Persistent terrain data** — Elevation and moisture Float32Arrays are stored on the grid object and used by game systems
-- **Ruin salvage** — Erasing RUINS tiles yields random resource rewards (wood/stone, food/herbs, or rare tools/medicine)
-- **Elevation movement penalty** — Higher elevation tiles cost more to traverse (A* pathfinding)
-- **Terrain-based build costs** — Building costs scale with elevation; dry tiles require extra stone; ruins provide a 30% discount
-- **Elevation wall defense** — Walls on high ground contribute more to threat mitigation (up to +50% per wall)
+### Phase B: Core Terrain Mechanics
+- **Elevation movement penalty** — Higher tiles cost more to traverse (+30% at max elevation)
+- **Terrain-based build costs** — Costs scale with elevation; dry tiles need extra stone; ruins give 30% discount
+- **Elevation wall defense** — Walls on high ground contribute up to +50% more threat mitigation
 
-### Balance Constants
+### Phase C: Time Systems
+- **Seasonal weather cycle** — 4 seasons (spring/summer/autumn/winter, 50-60s each) with weighted weather probabilities replacing fixed 8-entry weather cycle
+- **Soil exhaustion** — Consecutive harvests increase exhaustion counter, amplifying fertility drain. Decays when fallow.
 
-- `TERRAIN_MECHANICS.elevationMovePenalty: 0.3`
-- `TERRAIN_MECHANICS.elevationBuildCostPerLevel: 0.15`
-- `TERRAIN_MECHANICS.lowMoistureStoneCostThreshold: 0.3`
-- `TERRAIN_MECHANICS.ruinsBuildDiscount: 0.3`
-- `TERRAIN_MECHANICS.wallElevationDefenseBonus: 0.5`
-- `RUIN_SALVAGE` — 3-tier weighted loot table (60/25/15 weights)
+### Phase D: Ecology Linkage
+- **Adjacency fertility cascade** — Herb gardens boost adjacent farms (+0.003/tick), quarries damage them (-0.004/tick), kitchens compost (+0.001/tick). Capped at ±0.008/tile/tick.
+- **Moisture fertility cap** — Dry tiles (moisture=0) cap at 0.25 fertility; well-watered (≥0.54) reach full 1.0
+
+### Phase E: Disaster
+- **Drought wildfire** — During drought, low-moisture (<0.25) flammable tiles ignite (0.5%/tick). Fire spreads up to 3 tiles, blocked by roads/bridges/water/walls. Burns to grass when wear reaches 1.0.
 
 ### Files Changed
 
 - `src/world/grid/Grid.js` — Persist elevation/moisture from terrain generation
-- `src/config/balance.js` — RUIN_SALVAGE and TERRAIN_MECHANICS constants
+- `src/config/balance.js` — RUIN_SALVAGE, TERRAIN_MECHANICS constants (fire, exhaustion, adjacency, moisture cap)
 - `src/simulation/construction/BuildAdvisor.js` — Ruin salvage rolls, terrain cost modifiers
 - `src/simulation/navigation/AStar.js` — Elevation-based movement cost
 - `src/simulation/meta/ProgressionSystem.js` — Elevation-enhanced wall defense
+- `src/world/weather/WeatherSystem.js` — Seasonal weather cycle with weighted probabilities
+- `src/simulation/economy/TileStateSystem.js` — Soil exhaustion, adjacency fertility, moisture cap, wildfire
 - `test/build-system.test.js` — Updated cost assertions for terrain-variable costs
 
 ## [0.5.9] - 2026-04-10 — Terrain Diversity Overhaul
