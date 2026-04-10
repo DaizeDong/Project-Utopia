@@ -1,6 +1,7 @@
-import { BALANCE } from "../../config/balance.js";
+import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
 import { createWorker } from "../../entities/EntityFactory.js";
-import { randomPassableTile, tileToWorld } from "../../world/grid/Grid.js";
+import { TILE } from "../../config/constants.js";
+import { randomPassableTile, tileToWorld, toIndex } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 
@@ -489,11 +490,28 @@ function computeProsperity(state) {
   return clamp(resScore + infraScore - weatherPenalty - eventPenalty + 18, 0, 100);
 }
 
+function computeWallMitigation(state) {
+  const grid = state.grid;
+  const wallCount = state.buildings.walls;
+  if (!wallCount || !grid.elevation) {
+    return clamp(wallCount / 24, 0, 1) * 18;
+  }
+  let weightedWalls = 0;
+  const tiles = grid.tiles;
+  const len = grid.width * grid.height;
+  for (let i = 0; i < len; i++) {
+    if (tiles[i] === TILE.WALL) {
+      weightedWalls += 1 + grid.elevation[i] * TERRAIN_MECHANICS.wallElevationDefenseBonus;
+    }
+  }
+  return clamp(weightedWalls / 24, 0, 1) * 18;
+}
+
 function computeThreat(state) {
   const predators = state.animals.filter((a) => a.kind === "PREDATOR").length;
   const sabotageEvents = state.events.active.filter((e) => e.type === "sabotage").length;
   const lowFoodPenalty = state.resources.food < 25 ? (25 - state.resources.food) * 0.8 : 0;
-  const wallMitigation = clamp(state.buildings.walls / 24, 0, 1) * 18;
+  const wallMitigation = computeWallMitigation(state);
   const chaos = clamp(state.debug.boids?.avgNeighbors ?? 0, 0, 4) * 6;
   const spatial = state.metrics?.spatialPressure ?? {};
   const weatherThreat = Number(spatial.weatherPressure ?? 0) * Number(BALANCE.weatherPressureThreat ?? 4.8);
