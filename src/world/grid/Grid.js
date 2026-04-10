@@ -63,8 +63,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     roadHubs: 14,
     roadJitter: 0.24,
     sideRoads: 15,
-    farmBlobs: 11,
-    lumberBlobs: 7,
+    farmBlobs: 5,
+    lumberBlobs: 3,
     quarryBlobs: 2,
     herbGardenBlobs: 2,
     ruinsBlobs: 3,
@@ -77,7 +77,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.08,
     roadDensity: 0.72,
     settlementDensity: 0.78,
-    validation: { waterMinRatio: 0.06, waterMaxRatio: 0.52, passableMin: 0.46, passableMax: 0.93, roadMinRatio: 0.022 },
+    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.35, passableMin: 0.60, passableMax: 0.96, roadMinRatio: 0.02 },
   }),
   rugged_highlands: Object.freeze({
     waterLevel: 0.16,
@@ -163,8 +163,8 @@ const TEMPLATE_PROFILES = Object.freeze({
     roadHubs: 15,
     roadJitter: 0.27,
     sideRoads: 16,
-    farmBlobs: 12,
-    lumberBlobs: 7,
+    farmBlobs: 6,
+    lumberBlobs: 4,
     quarryBlobs: 1,
     herbGardenBlobs: 2,
     ruinsBlobs: 3,
@@ -177,23 +177,23 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.1,
     roadDensity: 0.8,
     settlementDensity: 0.86,
-    validation: { waterMinRatio: 0.16, waterMaxRatio: 0.60, passableMin: 0.38, passableMax: 0.9, roadMinRatio: 0.025 },
+    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.45, passableMin: 0.45, passableMax: 0.96, roadMinRatio: 0.02 },
   }),
   fortified_basin: Object.freeze({
     waterLevel: 0.19,
-    riverCount: 1,
+    riverCount: 0,
     riverWidth: 1.9,
     riverAmp: 0.11,
     riverVertical: false,
-    roadHubs: 11,
+    roadHubs: 8,
     roadJitter: 0.22,
-    sideRoads: 10,
-    farmBlobs: 8,
-    lumberBlobs: 8,
-    quarryBlobs: 2,
+    sideRoads: 6,
+    farmBlobs: 4,
+    lumberBlobs: 4,
+    quarryBlobs: 1,
     herbGardenBlobs: 1,
-    ruinsBlobs: 4,
-    wallMode: "fortress",
+    ruinsBlobs: 2,
+    wallMode: "none",
     edgeWaterBoost: 0.02,
     valleyFactor: 0.2,
     islandBias: 0.04,
@@ -202,7 +202,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.22,
     roadDensity: 0.56,
     settlementDensity: 0.65,
-    validation: { waterMinRatio: 0.088, waterMaxRatio: 0.55, passableMin: 0.38, passableMax: 0.9, roadMinRatio: 0.02 },
+    validation: { waterMinRatio: 0.0, waterMaxRatio: 0.40, passableMin: 0.35, passableMax: 0.95, roadMinRatio: 0.015 },
   }),
 });
 
@@ -1284,6 +1284,354 @@ function convertHighlandRidgesToWalls(tiles, width, height, ridge, seed) {
   }
 }
 
+function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+
+  // Flat terrain base — low octave count for smooth plains
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      elevation[idx] = clamp(fbm2D(nx * 1.8, nz * 1.8, seed + 11, 3, 2.0, 0.4) * 0.6 + 0.35, 0, 1);
+      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      ridge[idx] = Math.abs(fbm2D(nx * 5, nz * 5, seed + 71, 2, 2.2, 0.5) * 2 - 1) * 0.3;
+      tiles[idx] = TILE.GRASS;
+    }
+  }
+
+  // Generate 2-3 convergent rivers meeting near center
+  const cx = Math.floor(width * (0.4 + hash2D(7, 13, seed + 6001) * 0.2));
+  const cz = Math.floor(height * (0.4 + hash2D(11, 17, seed + 6002) * 0.2));
+  const riverCount = 2 + (hash2D(3, 5, seed + 6003) > 0.5 ? 1 : 0);
+
+  const riverPaths = [];
+  for (let r = 0; r < riverCount; r += 1) {
+    const angle = (r / riverCount) * Math.PI * 2 + hash2D(r, 0, seed + 6010) * 0.6;
+    // Start from edge
+    let startX, startZ;
+    if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
+      startX = Math.cos(angle) > 0 ? width - 2 : 1;
+      startZ = clamp(Math.round(cz + Math.sin(angle) * height * 0.4), 2, height - 3);
+    } else {
+      startZ = Math.sin(angle) > 0 ? height - 2 : 1;
+      startX = clamp(Math.round(cx + Math.cos(angle) * width * 0.4), 2, width - 3);
+    }
+
+    // Carve river from edge toward confluence
+    const path = [];
+    let px = startX;
+    let pz = startZ;
+    const riverWidth = lerp(2.5, 4.5, hash2D(r, 7, seed + 6020));
+    const steps = Math.abs(px - cx) + Math.abs(pz - cz) + 20;
+
+    for (let s = 0; s <= steps; s += 1) {
+      const frac = s / Math.max(1, steps);
+      // Noise-based meander
+      const meander = fbm2D(frac * 4.0 + r * 3.1, 0.5, seed + 6100 + r * 311, 3, 2.1, 0.5) - 0.5;
+      const targetX = lerp(startX, cx, frac);
+      const targetZ = lerp(startZ, cz, frac);
+      px = Math.round(targetX + meander * Math.min(width, height) * 0.12);
+      pz = Math.round(targetZ + meander * Math.min(width, height) * 0.08);
+      px = clamp(px, 1, width - 2);
+      pz = clamp(pz, 1, height - 2);
+
+      const half = Math.max(1, Math.round(riverWidth * lerp(0.7, 1.3, hash2D(px, pz, seed + 6200)) * 0.5));
+      for (let dz = -half; dz <= half; dz += 1) {
+        for (let dx = -half; dx <= half; dx += 1) {
+          const wx = px + dx;
+          const wz = pz + dz;
+          if (wx >= 0 && wz >= 0 && wx < width && wz < height) {
+            tiles[toIndex(wx, wz, width)] = TILE.WATER;
+            path.push({ x: wx, z: wz });
+          }
+        }
+      }
+    }
+    riverPaths.push(path);
+  }
+
+  // Widen confluence area
+  const confluenceR = Math.max(4, Math.floor(Math.min(width, height) * 0.06));
+  for (let dz = -confluenceR; dz <= confluenceR; dz += 1) {
+    for (let dx = -confluenceR; dx <= confluenceR; dx += 1) {
+      if (dx * dx + dz * dz > confluenceR * confluenceR) continue;
+      const wx = cx + dx;
+      const wz = cz + dz;
+      if (wx >= 0 && wz >= 0 && wx < width && wz < height) {
+        tiles[toIndex(wx, wz, width)] = TILE.WATER;
+      }
+    }
+  }
+
+  // Add scattered floodplain ponds near rivers
+  const pondRng = createRng(seed + 6300);
+  for (let p = 0; p < 6; p += 1) {
+    // Pick a random river tile and place a pond nearby
+    const rIdx = Math.floor(pondRng() * riverPaths.length);
+    const rPath = riverPaths[rIdx];
+    if (!rPath || rPath.length === 0) continue;
+    const rTile = rPath[Math.floor(pondRng() * rPath.length)];
+    const ox = rTile.x + Math.floor((pondRng() - 0.5) * 8);
+    const oz = rTile.z + Math.floor((pondRng() - 0.5) * 8);
+    const pr = lerp(1.5, 3, pondRng());
+    paintBlob(tiles, width, height, ox, oz, pr, pr * lerp(0.7, 1.3, pondRng()), TILE.WATER, seed + 6400 + p * 17, new Set([TILE.GRASS]));
+  }
+
+  // Update moisture near rivers — fertile floodplains
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] === TILE.WATER) {
+        moisture[idx] = 1.0;
+        // Boost moisture for nearby land tiles
+        for (let dz = -4; dz <= 4; dz += 1) {
+          for (let dx = -4; dx <= 4; dx += 1) {
+            const nx2 = ix + dx;
+            const nz2 = iz + dz;
+            if (nx2 < 0 || nz2 < 0 || nx2 >= width || nz2 >= height) continue;
+            const nIdx = toIndex(nx2, nz2, width);
+            if (tiles[nIdx] !== TILE.WATER) {
+              const dist = Math.sqrt(dx * dx + dz * dz);
+              moisture[nIdx] = Math.max(moisture[nIdx], 1.0 - dist * 0.18);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
+function generateFortifiedBasinTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+
+  const cx = Math.floor(width / 2);
+  const cz = Math.floor(height / 2);
+
+  // Base terrain with moderate elevation variation
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      elevation[idx] = clamp(domainWarpedFbm(nx * 2.0, nz * 2.0, seed + 11, 0.15) * 0.7 + 0.3, 0, 1);
+      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      ridge[idx] = Math.abs(fbm2D(nx * 6, nz * 6, seed + 71, 3, 2.2, 0.5) * 2 - 1);
+
+      // Determine if inside fortress walls
+      tiles[idx] = TILE.GRASS;
+    }
+  }
+
+  // Draw elliptical fortress wall with gates
+  const wallRx = Math.max(10, Math.floor(width * 0.28));
+  const wallRz = Math.max(9, Math.floor(height * 0.28));
+  const wallThickness = 1.5;
+
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const dx = (ix - cx) / Math.max(1, wallRx);
+      const dz = (iz - cz) / Math.max(1, wallRz);
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const wallDist = Math.abs(d - 1.0) * Math.min(wallRx, wallRz);
+
+      if (wallDist < wallThickness) {
+        const idx = toIndex(ix, iz, width);
+        if (tiles[idx] !== TILE.WATER) {
+          tiles[idx] = TILE.WALL;
+        }
+      }
+    }
+  }
+
+  // Add a moat just outside the walls
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const dx = (ix - cx) / Math.max(1, wallRx);
+      const dz = (iz - cz) / Math.max(1, wallRz);
+      const d = Math.sqrt(dx * dx + dz * dz);
+      const moatDist = Math.abs(d - 1.12) * Math.min(wallRx, wallRz);
+      if (moatDist < 1.2 && d > 1.0) {
+        const idx = toIndex(ix, iz, width);
+        if (tiles[idx] !== TILE.WALL) {
+          tiles[idx] = TILE.WATER;
+        }
+      }
+    }
+  }
+
+  // Carve 4 gates in cardinal directions (3-wide openings)
+  const gatePositions = [
+    { x: cx, z: cz - wallRz },     // north
+    { x: cx, z: cz + wallRz },     // south
+    { x: cx - wallRx, z: cz },     // west
+    { x: cx + wallRx, z: cz },     // east
+  ];
+
+  for (const gate of gatePositions) {
+    for (let dz = -2; dz <= 2; dz += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        const gx = gate.x + dx;
+        const gz = gate.z + dz;
+        if (gx < 0 || gz < 0 || gx >= width || gz >= height) continue;
+        const idx = toIndex(gx, gz, width);
+        if (tiles[idx] === TILE.WALL) tiles[idx] = TILE.ROAD;
+        if (tiles[idx] === TILE.WATER) tiles[idx] = TILE.BRIDGE;
+      }
+    }
+  }
+
+  // Interior grid roads
+  const gridSpacing = Math.max(6, Math.floor(Math.min(wallRx, wallRz) * 0.55));
+  for (let iz = cz - wallRz + 2; iz <= cz + wallRz - 2; iz += 1) {
+    for (let ix = cx - wallRx + 2; ix <= cx + wallRx - 2; ix += 1) {
+      const dx = (ix - cx) / Math.max(1, wallRx);
+      const dz = (iz - cz) / Math.max(1, wallRz);
+      if (dx * dx + dz * dz >= 0.85) continue; // Stay inside walls
+
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+
+      // Grid roads along major axes
+      const relX = ix - (cx - wallRx);
+      const relZ = iz - (cz - wallRz);
+      if (relX % gridSpacing === 0 || relZ % gridSpacing === 0) {
+        tiles[idx] = TILE.ROAD;
+      }
+    }
+  }
+
+  // Place farms in interior quadrants
+  const quadrants = [
+    { qx: cx - wallRx * 0.45, qz: cz - wallRz * 0.45 },
+    { qx: cx + wallRx * 0.45, qz: cz - wallRz * 0.45 },
+    { qx: cx - wallRx * 0.45, qz: cz + wallRz * 0.45 },
+    { qx: cx + wallRx * 0.45, qz: cz + wallRz * 0.45 },
+  ];
+
+  const rng = createRng(seed + 5500);
+  for (let q = 0; q < quadrants.length; q += 1) {
+    const qr = Math.max(3, Math.floor(Math.min(wallRx, wallRz) * 0.2));
+    const tileType = q < 2 ? TILE.FARM : (q === 2 ? TILE.LUMBER : TILE.FARM);
+    paintBlob(tiles, width, height, Math.round(quadrants[q].qx), Math.round(quadrants[q].qz),
+      qr, qr * lerp(0.8, 1.2, rng()), tileType, seed + 5600 + q * 31,
+      new Set([TILE.GRASS, TILE.ROAD]));
+  }
+
+  // Outer wilderness: scatter ruins and lumber
+  for (let iz = 2; iz < height - 2; iz += 3) {
+    for (let ix = 2; ix < width - 2; ix += 3) {
+      const ndx = Math.abs(ix - cx) / Math.max(1, width * 0.5);
+      const ndz = Math.abs(iz - cz) / Math.max(1, height * 0.5);
+      if (Math.sqrt(ndx * ndx + ndz * ndz) < 0.65) continue;
+
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+
+      const noise = hash2D(ix, iz, seed + 5700);
+      if (noise > 0.82) {
+        paintBlob(tiles, width, height, ix, iz, 2, 2, TILE.RUINS, seed + 5800 + ix * 7, new Set([TILE.GRASS]));
+      } else if (noise > 0.65) {
+        paintBlob(tiles, width, height, ix, iz, 2.5, 2.5, TILE.LUMBER, seed + 5900 + iz * 11, new Set([TILE.GRASS]));
+      }
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
+function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+
+  // Very flat terrain — fewer octaves, lower amplitude
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+
+      // Gentle rolling hills with 2-3 octaves instead of 5
+      const base = fbm2D(nx * 1.6, nz * 1.6, seed + 11, 2, 2.0, 0.35);
+      const detail = fbm2D(nx * 3.5, nz * 3.5, seed + 29, 2, 2.0, 0.3) * 0.15;
+      elevation[idx] = clamp(base * 0.55 + detail + 0.35, 0, 1);
+      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      ridge[idx] = Math.abs(fbm2D(nx * 4, nz * 4, seed + 71, 2, 2.2, 0.4) * 2 - 1) * 0.2;
+
+      // Minimal water — only in very low elevation areas
+      tiles[idx] = elevation[idx] < profile.waterLevel * 0.6 ? TILE.WATER : TILE.GRASS;
+    }
+  }
+
+  // Single meandering river
+  const riverVertical = hash2D(1, 1, seed + 4001) > 0.5;
+  const axisLen = riverVertical ? height : width;
+  const span = riverVertical ? width : height;
+  const basePos = span * 0.5;
+
+  for (let t = 0; t < axisLen; t += 1) {
+    const nt = t / Math.max(1, axisLen - 1);
+    const meander = fbm2D(nt * 3.5, 0.5, seed + 4100, 4, 2.0, 0.5) - 0.5;
+    const center = basePos + meander * span * 0.25;
+    const half = lerp(1, 2.5, hash2D(t, 0, seed + 4200));
+
+    for (let k = Math.max(0, Math.floor(center - half)); k <= Math.min(span - 1, Math.ceil(center + half)); k += 1) {
+      if (riverVertical) {
+        setTileRaw(tiles, width, height, k, t, TILE.WATER);
+      } else {
+        setTileRaw(tiles, width, height, t, k, TILE.WATER);
+      }
+    }
+  }
+
+  // Lumber clusters at map edges
+  const rng = createRng(seed + 4300);
+  const edgeMargin = Math.floor(Math.min(width, height) * 0.15);
+  for (let i = 0; i < 8; i += 1) {
+    // Place near edges
+    let lx, lz;
+    const side = Math.floor(rng() * 4);
+    if (side === 0) { lx = Math.floor(rng() * edgeMargin + 2); lz = Math.floor(rng() * (height - 4) + 2); }
+    else if (side === 1) { lx = Math.floor(width - edgeMargin + rng() * edgeMargin - 2); lz = Math.floor(rng() * (height - 4) + 2); }
+    else if (side === 2) { lx = Math.floor(rng() * (width - 4) + 2); lz = Math.floor(rng() * edgeMargin + 2); }
+    else { lx = Math.floor(rng() * (width - 4) + 2); lz = Math.floor(height - edgeMargin + rng() * edgeMargin - 2); }
+
+    lx = clamp(lx, 3, width - 4);
+    lz = clamp(lz, 3, height - 4);
+    const r = lerp(2.5, 5, rng());
+    paintBlob(tiles, width, height, lx, lz, r, r * lerp(0.7, 1.3, rng()), TILE.LUMBER, seed + 4400 + i * 13, new Set([TILE.GRASS]));
+  }
+
+  // Farm strips along the river
+  for (let t = 0; t < axisLen; t += 4) {
+    const nt = t / Math.max(1, axisLen - 1);
+    const meander = fbm2D(nt * 3.5, 0.5, seed + 4100, 4, 2.0, 0.5) - 0.5;
+    const center = basePos + meander * span * 0.25;
+    // Place farms 3-6 tiles from river on both sides
+    for (const offset of [-1, 1]) {
+      const farmCenter = Math.round(center + offset * lerp(4, 7, hash2D(t, offset + 5, seed + 4500)));
+      if (farmCenter < 3 || farmCenter >= span - 3) continue;
+      const fx = riverVertical ? farmCenter : t;
+      const fz = riverVertical ? t : farmCenter;
+      if (hash2D(fx, fz, seed + 4600) > 0.55) {
+        paintBlob(tiles, width, height, fx, fz, 2.5, 2, TILE.FARM, seed + 4700 + t * 7, new Set([TILE.GRASS]));
+      }
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
 function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   const baseProfile = getProfile(templateId);
   const normalizedTuning = sanitizeTerrainTuning(tuning, templateId);
@@ -1298,6 +1646,12 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     fields = generateArchipelagoTerrain(tiles, width, height, seed, profile);
   } else if (templateId === "coastal_ocean") {
     fields = generateCoastlineTerrain(tiles, width, height, seed, profile);
+  } else if (templateId === "fertile_riverlands") {
+    fields = generateFertileRiverlandsTerrain(tiles, width, height, seed, profile);
+  } else if (templateId === "fortified_basin") {
+    fields = generateFortifiedBasinTerrain(tiles, width, height, seed, profile);
+  } else if (templateId === "temperate_plains") {
+    fields = generateTemperatePlainsTerrain(tiles, width, height, seed, profile);
   } else {
     fields = baseTerrainPass(tiles, width, height, seed, profile);
     for (let i = 0; i < profile.riverCount; i += 1) {
