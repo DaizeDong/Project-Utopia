@@ -11,6 +11,15 @@ const UPDATE_INTERVAL_SEC = 2.0;
 const PRODUCTION_TILES = new Set([TILE.FARM, TILE.HERB_GARDEN, TILE.LUMBER]);
 const WEAR_TILES = new Set([TILE.ROAD, TILE.BRIDGE, TILE.WALL, TILE.QUARRY, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
 
+// D1: Adjacency fertility bonuses per neighbor tile type → target tile type
+const ADJACENCY_EFFECTS = Object.freeze({
+  [TILE.HERB_GARDEN]: { [TILE.FARM]: 0.003, [TILE.LUMBER]: 0.002 },
+  [TILE.KITCHEN]: { [TILE.FARM]: 0.001 },
+  [TILE.QUARRY]: { [TILE.FARM]: -0.004, [TILE.HERB_GARDEN]: -0.003 },
+  [TILE.LUMBER]: { [TILE.HERB_GARDEN]: 0.002 },
+});
+const DIR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
 export class TileStateSystem {
   constructor() {
     this.name = "TileStateSystem";
@@ -47,8 +56,23 @@ export class TileStateSystem {
           if (entry.exhaustion > 0) {
             entry.exhaustion = Math.max(0, entry.exhaustion - TERRAIN_MECHANICS.soilExhaustionDecayPerTick);
           }
-          // Fertility slowly recovers toward 1.0
-          entry.fertility = Math.min(1.0, entry.fertility + FERTILITY_RECOVERY_PER_SEC * elapsed);
+          // D1: Adjacency fertility modifier
+          let adjBonus = 0;
+          for (const [dx, dz] of DIR4) {
+            const nx = ix + dx;
+            const nz = iz + dz;
+            if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) continue;
+            const neighborType = grid.tiles[nx + nz * grid.width];
+            const effects = ADJACENCY_EFFECTS[neighborType];
+            if (effects && effects[type] !== undefined) adjBonus += effects[type];
+          }
+          adjBonus = Math.max(-TERRAIN_MECHANICS.adjacencyFertilityMax, Math.min(TERRAIN_MECHANICS.adjacencyFertilityMax, adjBonus));
+
+          // Fertility slowly recovers toward moisture-based cap
+          const moistCap = grid.moisture
+            ? Math.min(1.0, grid.moisture[idx] * TERRAIN_MECHANICS.moistureFertilityCap.scale + TERRAIN_MECHANICS.moistureFertilityCap.base)
+            : 1.0;
+          entry.fertility = Math.min(moistCap, entry.fertility + FERTILITY_RECOVERY_PER_SEC * elapsed + adjBonus);
           // Growth stage cycles: 0→1→2→3→0 based on fertility
           const prevStage = entry.growthStage ?? 0;
           entry.growthStage = Math.min(3, Math.floor(entry.fertility * 4));
