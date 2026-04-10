@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 1 Complete (v1.1)
+> **Status**: Phase 2 Complete (v1.2)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1107,15 +1107,21 @@ const scenarios = [
 
 **Files**: `src/simulation/ai/colony/ColonyPerceiver.js`, `test/colony-perceiver.test.js`, `scripts/perceiver-benchmark.mjs`
 
-### Phase 2: Skill Library + Executor (2-3 days)
+### Phase 2: Skill Library + Executor ✅ COMPLETE
 
-- Define 6 initial skills as frozen config
-- Implement `PlanExecutor` with skill expansion
-- Implement `resolveLocationHint()` with terrain-aware search
-- Implement affordance scoring
-- Test skill execution in headless runner
+- ✅ Define 6 frozen skills: logistics_hub, processing_cluster, defense_line, food_district, expansion_outpost, bridge_link
+- ✅ Implement `SkillLibrary` with skill queries: getSkillTotalCost, checkSkillPreconditions, expandSkillSteps, assessSkillFeasibility, scoreSkillTerrain, selectSkillForGoal, listSkillStatus
+- ✅ Implement `PlanExecutor` with `resolveLocationHint()` supporting 7 hint types (near_cluster, near_step, expansion, coverage_gap, defense_line, terrain:high_moisture, explicit coords)
+- ✅ Implement SayCan-inspired `computeAffordanceScore()` for resource gating
+- ✅ Implement `rankByTerrainQuality()` with type-specific weights (moisture for farms, elevation for walls)
+- ✅ Implement `groundPlan()` with topological dependency ordering
+- ✅ Implement `executeNextSteps()` with per-tick build limit, skill sub-step atomic execution
+- ✅ Implement `isPlanComplete()`, `isPlanBlocked()`, `getPlanProgress()` status queries
+- ✅ Terrain scoring uses average across all step positions (not just anchor) with soft penalty floor
+- ✅ 50 unit tests (all passing)
+- ✅ LLM judge benchmark: avg 9.5/10 across 3 templates (temperate_plains 9/10, archipelago_isles 9.5/10, fortified_basin 10/10)
 
-**Files**: `src/simulation/ai/colony/SkillLibrary.js`, `src/simulation/ai/colony/PlanExecutor.js`
+**Files**: `src/simulation/ai/colony/SkillLibrary.js`, `src/simulation/ai/colony/PlanExecutor.js`, `test/skill-library-executor.test.js`, `scripts/executor-benchmark.mjs`
 
 ### Phase 3: Planner + LLM Integration (3-4 days)
 
