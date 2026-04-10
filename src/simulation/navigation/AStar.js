@@ -1,4 +1,5 @@
 ﻿import { MOVE_DIRECTIONS_4, TILE_INFO } from "../../config/constants.js";
+import { TERRAIN_MECHANICS } from "../../config/balance.js";
 import { inBounds, toIndex } from "../../world/grid/Grid.js";
 
 class MinHeap {
@@ -137,6 +138,9 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
       if (!tileInfo.passable) continue;
 
       let stepCost = tileInfo.baseCost;
+      if (grid.elevation) {
+        stepCost += (grid.elevation[nKey] ?? 0.5) * TERRAIN_MECHANICS.elevationMovePenalty;
+      }
       if (tileType !== 1) {
         stepCost *= weatherMoveCostMultiplier;
       }

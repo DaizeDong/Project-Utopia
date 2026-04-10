@@ -1,6 +1,6 @@
-import { BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE } from "../../config/balance.js";
+import { BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE, TERRAIN_MECHANICS } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
-import { getTile, inBounds, listTilesByType } from "../../world/grid/Grid.js";
+import { getTile, inBounds, listTilesByType, toIndex } from "../../world/grid/Grid.js";
 import { toolToTile } from "../../world/grid/TileTypes.js";
 
 const TOOL_INFO = Object.freeze({
@@ -182,6 +182,23 @@ function getScenarioTileTags(state, tile) {
   return { routeLinks, depotZones, chokePoints, wildlifeZones, inCoreZone };
 }
 
+function applyTerrainCostModifiers(baseCost, grid, ix, iz, oldType, tool) {
+  if (tool === "erase") return { ...baseCost };
+  const idx = toIndex(ix, iz, grid.width);
+  const elev = grid.elevation?.[idx] ?? 0.5;
+  const moist = grid.moisture?.[idx] ?? 0.5;
+  const adjusted = {};
+  const elevMult = 1 + elev * TERRAIN_MECHANICS.elevationBuildCostPerLevel;
+  const ruinDiscount = oldType === TILE.RUINS ? (1 - TERRAIN_MECHANICS.ruinsBuildDiscount) : 1;
+  for (const [res, amt] of Object.entries(baseCost)) {
+    adjusted[res] = Math.max(1, Math.round(amt * elevMult * ruinDiscount));
+  }
+  if (moist < TERRAIN_MECHANICS.lowMoistureStoneCostThreshold && tool !== "road" && tool !== "wall" && tool !== "bridge") {
+    adjusted.stone = (adjusted.stone ?? 0) + TERRAIN_MECHANICS.lowMoistureStoneCostFlat;
+  }
+  return adjusted;
+}
+
 function rollRuinSalvage() {
   const rolls = RUIN_SALVAGE.rolls;
   let totalWeight = 0;
@@ -280,7 +297,8 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   // Erasing a bridge restores water, not grass
   const newType = (tool === "erase" && oldType === TILE.BRIDGE) ? TILE.WATER : toolToTile(tool);
   const tile = { ix, iz };
-  const cost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
+  const baseCost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
+  const cost = applyTerrainCostModifiers(baseCost, state.grid, ix, iz, oldType, tool);
   const salvage = getTileRefund(oldType);
   const activeRefund = tool === "erase" ? salvage : { food: 0, wood: 0, stone: 0, herbs: 0 };
   const effects = [];

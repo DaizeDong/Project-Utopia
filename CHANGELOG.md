@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.6.0] - 2026-04-10 — Terrain Depth: Core Mechanics
+
+Terrain attributes now deeply affect gameplay: elevation, moisture, and ruins create meaningful spatial decisions for building, pathfinding, and defense.
+
+### New Features
+
+- **Persistent terrain data** — Elevation and moisture Float32Arrays are stored on the grid object and used by game systems
+- **Ruin salvage** — Erasing RUINS tiles yields random resource rewards (wood/stone, food/herbs, or rare tools/medicine)
+- **Elevation movement penalty** — Higher elevation tiles cost more to traverse (A* pathfinding)
+- **Terrain-based build costs** — Building costs scale with elevation; dry tiles require extra stone; ruins provide a 30% discount
+- **Elevation wall defense** — Walls on high ground contribute more to threat mitigation (up to +50% per wall)
+
+### Balance Constants
+
+- `TERRAIN_MECHANICS.elevationMovePenalty: 0.3`
+- `TERRAIN_MECHANICS.elevationBuildCostPerLevel: 0.15`
+- `TERRAIN_MECHANICS.lowMoistureStoneCostThreshold: 0.3`
+- `TERRAIN_MECHANICS.ruinsBuildDiscount: 0.3`
+- `TERRAIN_MECHANICS.wallElevationDefenseBonus: 0.5`
+- `RUIN_SALVAGE` — 3-tier weighted loot table (60/25/15 weights)
+
+### Files Changed
+
+- `src/world/grid/Grid.js` — Persist elevation/moisture from terrain generation
+- `src/config/balance.js` — RUIN_SALVAGE and TERRAIN_MECHANICS constants
+- `src/simulation/construction/BuildAdvisor.js` — Ruin salvage rolls, terrain cost modifiers
+- `src/simulation/navigation/AStar.js` — Elevation-based movement cost
+- `src/simulation/meta/ProgressionSystem.js` — Elevation-enhanced wall defense
+- `test/build-system.test.js` — Updated cost assertions for terrain-variable costs
+
 ## [0.5.9] - 2026-04-10 — Terrain Diversity Overhaul
 
 Major terrain generation rewrite: all 6 map templates now use dedicated terrain generators producing dramatically different maps instead of shared noise with minor parameter tweaks.

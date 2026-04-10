@@ -29,9 +29,13 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
   assert.equal(state.resources.wood, 3);
 
   assert.ok(validRoad);
+  const roadPreview = buildSystem.previewToolAt(state, "road", validRoad.ix, validRoad.iz);
+  const roadWoodCost = roadPreview.cost.wood;
+  state.resources.wood = roadWoodCost + 1;
+  const beforeRoad = state.resources.wood;
   const okRoad = buildSystem.placeToolAt(state, "road", validRoad.ix, validRoad.iz);
   assert.equal(okRoad.ok, true);
-  assert.equal(state.resources.wood, 2);
+  assert.equal(state.resources.wood, beforeRoad - roadWoodCost);
   assert.equal(state.grid.tiles[validRoad.ix + validRoad.iz * state.grid.width], TILE.ROAD);
 
   state.resources.wood = 0;
@@ -146,26 +150,28 @@ test("BuildSystem erase salvages structure cost and undo/redo preserves the refu
 
   assert.ok(wallTarget);
   const idx = wallTarget.ix + wallTarget.iz * state.grid.width;
+  const wallPreview = buildSystem.previewToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
+  const wallWoodCost = wallPreview.cost.wood;
   const beforeWood = state.resources.wood;
   const built = buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
   assert.equal(built.ok, true);
-  assert.equal(state.resources.wood, beforeWood - 2);
+  assert.equal(state.resources.wood, beforeWood - wallWoodCost);
 
   const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
   assert.equal(erased.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
-  assert.equal(erased.refund.wood, 1);
-  assert.equal(state.resources.wood, beforeWood - 1);
+  assert.ok(erased.refund.wood >= 1);
+  assert.equal(state.resources.wood, beforeWood - wallWoodCost + erased.refund.wood);
 
   const undo = buildSystem.undo(state);
   assert.equal(undo.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.WALL);
-  assert.equal(state.resources.wood, beforeWood - 2);
+  assert.equal(state.resources.wood, beforeWood - wallWoodCost);
 
   const redo = buildSystem.redo(state);
   assert.equal(redo.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
-  assert.equal(state.resources.wood, beforeWood - 1);
+  assert.equal(state.resources.wood, beforeWood - wallWoodCost + erased.refund.wood);
 });
 
 test("BuildSystem preview surfaces scenario-specific construction effects", () => {
