@@ -45,6 +45,19 @@ Return strict JSON only. No markdown fencing, no commentary.
 - wall (2 wood) — defense. High elevation walls get +50% defense bonus.
 - bridge (3 wood + 1 stone) — crosses water, connects islands.
 
+## Resource Chain Dependencies (build in order!)
+1. FOOD CHAIN: farm → kitchen (requires 6+ farms and food surplus) → meals (2x hunger efficiency)
+2. TOOL CHAIN: quarry → smithy (requires stable stone) → tools → ALL harvest +15% (highest ROI)
+3. MEDICAL CHAIN: herb_garden → clinic (requires herb surplus) → medicine → lower mortality
+Key insight: Tools multiply everything. Prioritize quarry→smithy after basic food is stable.
+
+## Seasonal Decision Guide
+- Spring: favorable for farming — expand food production
+- Summer: drought risk — avoid low-moisture lumber/farms (fire), stockpile food
+- Autumn: best expansion window — build infrastructure
+- Winter: production drops 15-35% — ensure food reserves BEFORE winter arrives
+- Plan 30-60s ahead: if winter is coming, secure food now, not when it hits
+
 ## Available Skills (compound builds)
 - logistics_hub (24 wood): warehouse + 4 roads + 2 farms → new logistics anchor + food +1.0/s
 - processing_cluster (13 wood + 5 stone): quarry + road + smithy → tools +0.2/s, production +15%
@@ -59,7 +72,7 @@ Return strict JSON only. No markdown fencing, no commentary.
 ## Terrain Impact
 - Elevation: +15% wood cost per 0.1 above 0.5; +30% move cost at elevation 1.0; walls get +50% defense at high elevation
 - Moisture: fertility cap = min(1.0, moisture*1.4+0.25); drought fire risk when moisture < 0.25
-- Adjacency: herb_garden next to farm = +fertility; quarry next to farm = -fertility
+- Adjacency: herb_garden next to farm = +fertility; quarry next to farm = -fertility; kitchen next to farm = +compost
 
 ## Location Hints
 - near_cluster:<id> — within 6 tiles of cluster center
@@ -76,16 +89,17 @@ Return strict JSON only. No markdown fencing, no commentary.
 - Keep wood buffer ~8 for emergency builds
 - Separate quarries from farms (dust pollution)
 - Place herb_gardens adjacent to farms when possible
+- Follow the strategy priority and constraints from the Strategic Advisor
 
 ## Output Format
 {
   "goal": "short description (max 60 chars)",
   "horizon_sec": number,
-  "reasoning": "2-3 sentence analysis (max 300 chars)",
+  "reasoning": "2-3 sentence analysis referencing chains/seasons/strategy (max 300 chars)",
   "steps": [
     {
       "id": 1,
-      "thought": "why (max 120 chars)",
+      "thought": "why, referencing chain status or season (max 120 chars)",
       "action": { "type": "<building>", "hint": "<hint>" },
       "predicted_effect": { "<metric>": "<value>" },
       "priority": "critical|high|medium|low",
@@ -98,13 +112,6 @@ For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
 
 // ── Prompt Construction ──────────────────────────────────────────────
 
-/**
- * Build the user prompt from observation, memory, and skill status.
- * @param {object} observation — from ColonyPerceiver.observe()
- * @param {string} memoryText — from MemoryStore.formatForPrompt()
- * @param {object} state — game state (for affordable check)
- * @returns {string}
- */
 /**
  * Build the user prompt from observation, memory, skill status, and learned skills.
  * @param {object} observation — from ColonyPerceiver.observe()
