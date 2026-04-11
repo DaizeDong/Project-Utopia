@@ -76,6 +76,8 @@ export const BALANCE = Object.freeze({
   predatorFarmPressureAttraction: 1.05,
   predatorHomeZoneBias: 0.72,
   workerSpeed: 2.2,
+  roadSpeedMultiplier: 1.35,
+  roadLogisticsBonus: 1.15,
   visitorSpeed: 1.95,
   herbivoreSpeed: 1.85,
   predatorSpeed: 2.25,

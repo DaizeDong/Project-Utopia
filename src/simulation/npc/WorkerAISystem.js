@@ -10,6 +10,7 @@ import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { JobReservation } from "./JobReservation.js";
+import { RoadNetwork } from "../navigation/RoadNetwork.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -74,6 +75,18 @@ function getUnreadyDepotAnchors(runtime) {
     .filter(Boolean);
 }
 
+function buildOccupancyMap(state, excludeId) {
+  const map = new Map();
+  for (const agent of state.agents) {
+    if (agent.type !== "WORKER" || agent.alive === false || agent.id === excludeId) continue;
+    const target = agent.targetTile;
+    if (!target) continue;
+    const key = `${target.ix},${target.iz}`;
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return map;
+}
+
 function chooseWorkerTarget(worker, state, targetTileTypes) {
   const candidates = listTilesByType(state.grid, targetTileTypes);
   if (candidates.length <= 0) return null;
@@ -84,6 +97,7 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
   const brokenRouteTiles = getBrokenRouteGapTiles(runtime);
   const depotAnchors = getUnreadyDepotAnchors(runtime);
   const reservation = state._jobReservation;
+  const occupancy = buildOccupancyMap(state, worker.id);
   let best = null;
 
   for (const candidate of candidates) {
@@ -105,8 +119,11 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
     const warehouseLoad = tileType === TILE.WAREHOUSE
       ? Number(state.metrics?.logistics?.warehouseLoadByKey?.[tileKey(candidate)] ?? 0)
       : 0;
+    const occupants = occupancy.get(tileKey(candidate)) ?? 0;
 
-    let score = -distance * 0.08;
+    // Sqrt-based distance penalty: strong at short range, diminishing at long range
+    // dist=1: -0.18, dist=4: -0.36, dist=9: -0.54, dist=16: -0.72, dist=25: -0.9
+    let score = -Math.sqrt(distance) * 0.18;
     score += roadNeighbors * 0.1 * resolveTargetPriority(policy, "road", 1);
     score += wallCoverage * 0.07 * resolveTargetPriority(policy, "safety", 1);
     score += frontierAffinity * 0.42 * resolveTargetPriority(policy, "frontier", 1);
@@ -130,6 +147,12 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
       score += 0.58 * resolveTargetPriority(policy, "smithy", 1);
     } else if (tileType === TILE.CLINIC) {
       score += 0.58 * resolveTargetPriority(policy, "clinic", 1);
+    }
+
+    // Occupancy penalty: steep diminishing returns per worker already targeting this tile
+    // First occupant: -0.45, second: -0.75 total, third: -0.95 total
+    if (occupants > 0 && tileType !== TILE.WAREHOUSE) {
+      score -= 0.45 * occupants / (1 + 0.3 * (occupants - 1));
     }
 
     if (reservation && tileType !== TILE.WAREHOUSE && reservation.isReserved(candidate.ix, candidate.iz, worker.id)) {
@@ -482,6 +505,11 @@ function handleHarvest(worker, state, services, dt) {
   if (!isAtTargetTile(worker, state)) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
   const isNight = Boolean(state.environment?.isNight);
+  // Logistics bonus: buildings adjacent to road connected to warehouse get yield bonus
+  const roadNet = state._roadNetwork;
+  const logisticsBonus = (roadNet && worker.targetTile &&
+    roadNet.isAdjacentToConnectedRoad(worker.targetTile.ix, worker.targetTile.iz, state.grid))
+    ? (BALANCE.roadLogisticsBonus ?? 1.15) : 1.0;
   // HAUL workers: determine resource type from tile they're standing on
   let effectiveRole = worker.role;
   if (worker.role === ROLE.HAUL && worker.targetTile) {
@@ -501,7 +529,7 @@ function handleHarvest(worker, state, services, dt) {
     resolveWorkCooldown(
       worker,
       dt,
-      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility),
+      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility * logisticsBonus),
       "food",
       services.rng,
       isNight,
@@ -515,14 +543,14 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const quarryWeather = Number(BALANCE.quarryWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    resolveWorkCooldown(worker, dt, Math.max(0.2, quarryWeather * toolMultiplier), "stone", services.rng, isNight);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, quarryWeather * toolMultiplier * logisticsBonus), "stone", services.rng, isNight);
   } else if (effectiveRole === ROLE.HERBS) {
     const herbFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const herbWeather = Number(BALANCE.herbGardenWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    resolveWorkCooldown(worker, dt, Math.max(0.2, herbWeather * toolMultiplier * herbFertility), "herbs", services.rng, isNight);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, herbWeather * toolMultiplier * herbFertility * logisticsBonus), "herbs", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
     }
@@ -532,7 +560,7 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility), "wood", services.rng, isNight);
+    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility * logisticsBonus), "wood", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
     }
@@ -660,6 +688,9 @@ export class WorkerAISystem {
     state._jobReservation ??= new JobReservation();
     const reservation = state._jobReservation;
     reservation.cleanupStale(state.metrics.timeSec);
+
+    state._roadNetwork ??= new RoadNetwork();
+    state._roadNetwork.rebuild(state.grid);
 
     for (const worker of state.agents) {
       if (worker.type !== "WORKER") continue;
