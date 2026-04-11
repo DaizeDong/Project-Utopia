@@ -9,6 +9,7 @@ import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { JobReservation } from "./JobReservation.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -82,6 +83,7 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
   const runtime = getScenarioRuntime(state);
   const brokenRouteTiles = getBrokenRouteGapTiles(runtime);
   const depotAnchors = getUnreadyDepotAnchors(runtime);
+  const reservation = state._jobReservation;
   let best = null;
 
   for (const candidate of candidates) {
@@ -128,6 +130,10 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
       score += 0.58 * resolveTargetPriority(policy, "smithy", 1);
     } else if (tileType === TILE.CLINIC) {
       score += 0.58 * resolveTargetPriority(policy, "clinic", 1);
+    }
+
+    if (reservation && tileType !== TILE.WAREHOUSE && reservation.isReserved(candidate.ix, candidate.iz, worker.id)) {
+      score -= 2.0;
     }
 
     if (!best || score > best.score) {
@@ -322,11 +328,14 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
     if (!canAttemptPath(worker, state)) {
       return hasActivePath(worker, state) || isAtTargetTile(worker, state);
     }
+    const reservation = state._jobReservation;
+    if (reservation) reservation.releaseAll(worker.id);
     const target = chooseWorkerTarget(worker, state, targetTileTypes)
       ?? findNearestTileOfTypes(state.grid, worker, targetTileTypes);
     if (!target || !setTargetAndPath(worker, target, state, services)) {
       return false;
     }
+    if (reservation) reservation.reserve(worker.id, target.ix, target.iz, intentKey, nowSec);
     blackboard.intentTargetIntent = intentKey;
     blackboard.nextTargetRefreshSec = nowSec + TARGET_REFRESH_BASE_SEC + services.rng.next() * TARGET_REFRESH_JITTER_SEC;
   }
@@ -648,9 +657,16 @@ export class WorkerAISystem {
   }
 
   update(dt, state, services) {
+    state._jobReservation ??= new JobReservation();
+    const reservation = state._jobReservation;
+    reservation.cleanupStale(state.metrics.timeSec);
+
     for (const worker of state.agents) {
       if (worker.type !== "WORKER") continue;
-      if (worker.alive === false) continue;
+      if (worker.alive === false) {
+        reservation.releaseAll(worker.id);
+        continue;
+      }
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
 
