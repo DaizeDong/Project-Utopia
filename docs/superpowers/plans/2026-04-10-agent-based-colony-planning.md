@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 6 Complete (v1.6)
+> **Status**: Phase 7 Complete (v1.7 — Hierarchical Agent Enhancement P1-P4)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1194,6 +1194,45 @@ const scenarios = [
 - ✅ Benchmark: 87/87 (100%), self-assessment 10/10 across 8 dimensions
 
 **Files**: `src/simulation/ai/colony/LearnedSkillLibrary.js`, `src/simulation/ai/colony/SkillLibrary.js`, `src/simulation/ai/colony/ColonyPlanner.js`, `src/simulation/ai/colony/AgentDirectorSystem.js`, `test/learned-skills.test.js`, `scripts/skills-benchmark.mjs`
+
+### Phase 7: Hierarchical Agent Enhancement (P1-P4) ✅ COMPLETE
+
+Agent-centric deepening: give the LLM richer formatted context and let it be the sole decision-maker across strategic, tactical, and placement layers. No new algorithmic decision-making added — all enhancements focus on information quality for LLM consumption.
+
+#### P1: Enriched Perceiver ✅
+- ✅ `analyzeResourceChains()` — maps 3 resource chains with status/bottleneck/nextAction/ROI
+- ✅ `forecastSeasonImpact()` — current season modifiers + next-season preparation advice
+- ✅ `summarizePlanHistory()` — recent plan outcomes with success rate and fail reasons
+- ✅ `formatObservationForLLM()` enhanced — resource chains, critical depletion warnings, season forecast, strategy section
+- ✅ SYSTEM_PROMPT updated with resource chain dependencies + seasonal decision guide
+- ✅ 28 tests in `test/enriched-perceiver.test.js`
+
+#### P2: Strategic Layer Enhancement ✅
+- ✅ Phase detection: bootstrap → industrialize → process → growth → fortify → optimize
+- ✅ Resource budgets and up to 5 constraints per strategy phase
+- ✅ `buildPromptContent()` enhanced: 7 resource types, building counts, chain status, LLM instructions
+- ✅ `guardStrategy()` extended: phase enum, primaryGoal, constraints, resourceBudget validation
+- ✅ 24 tests in `test/strategic-layer-p2.test.js`
+
+#### P3: Placement Specialist ✅
+- ✅ `analyzeCandidateTiles()` — 40-candidate terrain scoring (moisture, elevation, coverage, workers, adjacency)
+- ✅ `formatCandidatesForLLM()` — markdown table for LLM placement decisions
+- ✅ `PlacementSpecialist` class — LLM for key buildings, algorithmic for simple types
+- ✅ PlanExecutor integration — enhanced grounding with terrain-aware candidate analysis
+- ✅ 19 tests in `test/placement-specialist.test.js`
+
+#### P4: Evaluation Enhancement ✅
+- ✅ `analyzeSystemicBottlenecks()` — colony-wide coverage gaps, terrain issues, worker shortages, chain gaps
+- ✅ `detectRecurringPatterns()` — consecutive failure streaks, repeated reasons, goal keyword failures
+- ✅ `formatEvaluationForLLM()` — structured evaluation summary for next plan request
+- ✅ Enhanced reflections with actionable REMEDY instructions
+- ✅ AgentDirectorSystem → ColonyPlanner feedback loop (evaluation text consumed once per cycle)
+- ✅ SYSTEM_PROMPT instructs LLM to address issues and break recurring patterns
+- ✅ 26 tests in `test/evaluation-p4.test.js`
+
+**Total**: 97 new tests, 646 total (0 failures)
+
+**Files**: `ColonyPerceiver.js`, `ColonyPlanner.js`, `StrategicDirector.js`, `PlacementSpecialist.js` (new), `PlanExecutor.js`, `PlanEvaluator.js`, `AgentDirectorSystem.js`
 
 ---
 

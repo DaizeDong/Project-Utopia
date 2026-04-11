@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.6.8] - 2026-04-10 — Hierarchical Agent Enhancement (P1-P4)
+
+Four-phase enhancement to the agent-based colony planning system, deepening the LLM's role as the sole decision-maker with richer context, structured strategy, precise placement, and self-correcting evaluation.
+
+### New Features
+
+#### P1: Enriched Perceiver
+- **Resource chain analysis** — `analyzeResourceChains()` maps 3 chains (food→kitchen→meals, quarry→smithy→tools, herb_garden→clinic→medicine) with status (✅/🔓/❌), bottleneck, next action, and ROI
+- **Season forecast** — `forecastSeasonImpact()` provides current season modifiers and next-season preparation advice
+- **Plan history summary** — `summarizePlanHistory()` formats recent plan outcomes with success rate and fail reasons
+- **LLM observation format** — `formatObservationForLLM()` now includes resource chain section, critical depletion warnings (⚠ for <30s), season forecast, strategy directives, and plan history
+- **SYSTEM_PROMPT** — Added resource chain dependencies section and seasonal decision guide
+
+#### P2: Strategic Layer Enhancement
+- **Phase detection** — `buildFallbackStrategy()` detects 6 colony phases: bootstrap, industrialize, process, growth, fortify, optimize
+- **Resource budgets** — Each phase sets `reserveWood` and `reserveFood` constraints
+- **Constraints system** — Up to 5 prioritized constraints per strategy phase
+- **Enhanced prompt content** — `buildPromptContent()` includes all 7 resource types, building counts, chain status (food/tools/medical), and structured LLM instructions
+- **guardStrategy()** — Validates phase enum, primaryGoal (truncated 80 chars), constraints array (max 5), and resource budgets (clamped)
+
+#### P3: Placement Specialist
+- **Candidate tile analysis** — `analyzeCandidateTiles()` scores up to 40 candidates on moisture, elevation, warehouse distance, worker distance, adjacency synergies, and composite score
+- **LLM placement prompt** — `formatCandidatesForLLM()` generates markdown table with 8 candidates for LLM consumption
+- **PlacementSpecialist class** — LLM placement for key buildings (warehouse, farm, quarry, herb_garden, kitchen, smithy, clinic), algorithmic fallback for simple types (road, wall, bridge)
+- **PLACEMENT_SYSTEM_PROMPT** — Instructs LLM to choose tile with `{chosen_index, reasoning, confidence}` output
+- **PlanExecutor integration** — Enhanced `groundPlanStep()` uses terrain-aware candidate analysis for key buildings
+
+#### P4: Evaluation Enhancement
+- **Systemic bottleneck analysis** — `analyzeSystemicBottlenecks()` detects colony-wide coverage gaps, terrain issues, worker shortages, and resource chain gaps across all step evaluations
+- **Recurring pattern detection** — `detectRecurringPatterns()` identifies consecutive failure streaks, repeated failure reasons, and recurring goal keyword failures
+- **LLM evaluation feedback** — `formatEvaluationForLLM()` generates structured evaluation summary with issues, systemic analysis, and recurring patterns, consumed by next plan request
+- **Enhanced reflections** — All failure reflections now include actionable REMEDY instructions
+- **Feedback loop** — AgentDirectorSystem passes evaluation text to ColonyPlanner (consumed once per cycle), SYSTEM_PROMPT instructs LLM to address issues and break recurring patterns
+
+### Tests
+- **97 new tests** across 4 test files:
+  - `test/enriched-perceiver.test.js` — 28 tests (P1)
+  - `test/strategic-layer-p2.test.js` — 24 tests (P2)
+  - `test/placement-specialist.test.js` — 19 tests (P3)
+  - `test/evaluation-p4.test.js` — 26 tests (P4)
+- Full suite: **646 tests, 0 failures**
+
+### Files Changed
+- `src/simulation/ai/colony/ColonyPerceiver.js` — P1: resource chains, season forecast, plan history, enhanced LLM format
+- `src/simulation/ai/colony/ColonyPlanner.js` — P1: system prompt enhancements; P4: evaluation text in prompt
+- `src/simulation/ai/strategic/StrategicDirector.js` — P2: phase detection, constraints, resource budgets
+- `src/simulation/ai/colony/PlacementSpecialist.js` — P3: new file, terrain-aware LLM placement
+- `src/simulation/ai/colony/PlanExecutor.js` — P3: enhanced grounding with candidate analysis
+- `src/simulation/ai/colony/PlanEvaluator.js` — P4: systemic analysis, recurring patterns, LLM feedback format
+- `src/simulation/ai/colony/AgentDirectorSystem.js` — P3: placement specialist; P4: evaluation feedback loop
+
 ## [0.6.7] - 2026-04-10 — Agent-Based Colony Planning: Phase 6 (Tuning & Learned Skills)
 
 Sixth phase of the Agent-Based Colony Planning system — implements Voyager-inspired skill learning from successful plans, adds 3 new built-in skills, and tunes the LLM prompt with calibrated yield rates and terrain impact data.
