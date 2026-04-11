@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 3 Complete (v1.3)
+> **Status**: Phase 4 Complete (v1.4)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1140,14 +1140,21 @@ const scenarios = [
 
 **Files**: `src/simulation/ai/colony/ColonyPlanner.js`, `src/data/prompts/npc-colony-planner.md`, `test/colony-planner.test.js`, `scripts/planner-benchmark.mjs`
 
-### Phase 4: Evaluator + Memory (2-3 days)
+### Phase 4: Evaluator + Memory ✅ COMPLETE
 
-- Implement `PlanEvaluator` with prediction comparison
-- Implement failure diagnosis
-- Implement reflection generation + MemoryStore integration
-- Test full planning loop
+- ✅ Implement `parsePredictedValue()` — parses rate (+0.5/s), percentage (+15%), plain number, qualitative values
+- ✅ Implement `snapshotState()` — captures resources, time, worker count for before/after comparison
+- ✅ Implement `evaluateStep()` — build success (60%) + prediction accuracy (40%) scoring with tolerance
+- ✅ Implement `diagnoseFailure()` — 8 structured cause types: no_valid_tile, placement_rejected, uncovered, no_workers, poor_terrain, high_elevation, adjacency_conflict, prediction_mismatch
+- ✅ Implement `generateReflection()` — template-based reflections with cause-specific categories and importance scoring
+- ✅ Implement `evaluatePlan()` — completion (40%) + time efficiency (20%) + build success (30%) + no-failure bonus (10%)
+- ✅ Implement `PlanEvaluator` class with MemoryStore integration, stats tracking, batch reflection generation (capped at 5/plan)
+- ✅ Memory categories: construction_failure, construction_reflection, terrain_knowledge, construction_pattern
+- ✅ Compatible with `state.agents` (game state) and `state.workers` (test state) worker access patterns
+- ✅ 39 unit tests (all passing)
+- ✅ Benchmark: 61/61 (100%), self-assessment 10/10 across 8 dimensions
 
-**Files**: `src/simulation/ai/colony/PlanEvaluator.js`
+**Files**: `src/simulation/ai/colony/PlanEvaluator.js`, `test/plan-evaluator.test.js`, `scripts/evaluator-benchmark.mjs`
 
 ### Phase 5: AgentDirectorSystem Integration (2-3 days)
 
