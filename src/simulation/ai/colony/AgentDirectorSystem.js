@@ -16,6 +16,7 @@ import { ColonyPlanner, shouldReplan, generateFallbackPlan } from "./ColonyPlann
 import { groundPlan, executeNextSteps, isPlanComplete, isPlanBlocked, getPlanProgress } from "./PlanExecutor.js";
 import { PlanEvaluator, snapshotState } from "./PlanEvaluator.js";
 import { LearnedSkillLibrary } from "./LearnedSkillLibrary.js";
+import { PlacementSpecialist } from "./PlacementSpecialist.js";
 import { BuildSystem } from "../../construction/BuildSystem.js";
 import { rebuildBuildingStats } from "../../../world/grid/Grid.js";
 
@@ -108,6 +109,11 @@ export class AgentDirectorSystem {
     });
     this._evaluator = new PlanEvaluator(memoryStore);
     this._learnedSkills = new LearnedSkillLibrary();
+    this._placementSpecialist = new PlacementSpecialist({
+      apiKey: options.apiKey ?? null,
+      baseUrl: options.baseUrl ?? "https://api.openai.com/v1",
+      model: options.model ?? "gpt-4o-mini",
+    });
     this._buildSystem = new BuildSystem();
 
     // Active plan state
@@ -329,6 +335,7 @@ export class AgentDirectorSystem {
       planner: this._planner.stats,
       evaluator: this._evaluator.stats,
       learnedSkills: this._learnedSkills.stats,
+      placement: this._placementSpecialist.stats,
     };
   }
 
