@@ -91,9 +91,9 @@ export const BALANCE = Object.freeze({
   },
   boidsGroupProfiles: {
     workers: {
-      neighborRadius: 1.65,
-      separationRadius: 1.05,
-      weights: { separation: 1.9, alignment: 0.18, cohesion: 0.08, seek: 1.28 },
+      neighborRadius: 2.2,
+      separationRadius: 1.4,
+      weights: { separation: 2.6, alignment: 0.12, cohesion: 0.04, seek: 1.22 },
     },
     traders: {
       neighborRadius: 1.55,
