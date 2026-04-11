@@ -975,10 +975,20 @@ export function formatObservationForLLM(obs) {
   // Strategy context (from StrategicDirector)
   if (obs.strategy) {
     lines.push("");
-    lines.push("### Current Strategy (from Strategic Advisor)");
+    lines.push("### Current Strategy (from Strategic Advisor) — FOLLOW THIS");
+    if (obs.strategy.phase) lines.push(`- Phase: ${obs.strategy.phase}`);
+    if (obs.strategy.primaryGoal) lines.push(`- Goal: ${obs.strategy.primaryGoal}`);
     lines.push(`- Priority: ${obs.strategy.priority}, Focus: ${obs.strategy.resourceFocus}`);
     lines.push(`- Defense posture: ${obs.strategy.defensePosture}, Risk tolerance: ${obs.strategy.riskTolerance}`);
     if (obs.strategy.workerFocus !== "balanced") lines.push(`- Worker focus: ${obs.strategy.workerFocus}`);
+    if (obs.strategy.constraints && obs.strategy.constraints.length > 0) {
+      lines.push("- **Constraints (must follow):**");
+      for (const c of obs.strategy.constraints) lines.push(`  - ${c}`);
+    }
+    if (obs.strategy.resourceBudget) {
+      const rb = obs.strategy.resourceBudget;
+      lines.push(`- Resource reserves: keep wood >= ${rb.reserveWood}, food >= ${rb.reserveFood}`);
+    }
   }
 
   // Plan history summary

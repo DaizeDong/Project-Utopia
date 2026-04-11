@@ -8,15 +8,21 @@ export const DEFAULT_STRATEGY = {
   expansionDirection: "none",
   workerFocus: "balanced",
   environmentPreference: "neutral",
+  // P2: Extended strategy fields
+  phase: "bootstrap",
+  primaryGoal: "",
+  constraints: [],
+  resourceBudget: { reserveWood: 8, reserveFood: 15 },
 };
 
 const VALID_ENUMS = {
   priority: ["survive", "grow", "defend", "complete_objective"],
-  resourceFocus: ["food", "wood", "balanced"],
+  resourceFocus: ["food", "wood", "stone", "balanced"],
   defensePosture: ["aggressive", "defensive", "neutral"],
   expansionDirection: ["north", "south", "east", "west", "none"],
   workerFocus: ["farm", "wood", "deliver", "balanced"],
   environmentPreference: ["calm", "pressure", "neutral"],
+  phase: ["bootstrap", "growth", "industrialize", "process", "fortify", "optimize"],
 };
 
 function clamp(v, min, max) {
@@ -47,6 +53,18 @@ export function guardStrategy(raw) {
 
   const rawRisk = Number(rawStrategy.riskTolerance);
   strategy.riskTolerance = Number.isFinite(rawRisk) ? clamp(rawRisk, 0, 1) : DEFAULT_STRATEGY.riskTolerance;
+
+  // P2: Extended fields
+  strategy.primaryGoal = sanitizeString(rawStrategy.primaryGoal, 80) || DEFAULT_STRATEGY.primaryGoal;
+
+  const rawConstraints = Array.isArray(rawStrategy.constraints) ? rawStrategy.constraints : [];
+  strategy.constraints = rawConstraints.slice(0, 5).map(c => sanitizeString(c, 120)).filter(c => c.length > 0);
+
+  const rawBudget = rawStrategy.resourceBudget && typeof rawStrategy.resourceBudget === "object" ? rawStrategy.resourceBudget : {};
+  strategy.resourceBudget = {
+    reserveWood: clamp(Number(rawBudget.reserveWood) || 8, 0, 100),
+    reserveFood: clamp(Number(rawBudget.reserveFood) || 15, 0, 200),
+  };
 
   const reasoning = sanitizeString(input.reasoning, 500);
   const summary = sanitizeString(input.summary, 80);
@@ -82,20 +100,30 @@ export class StrategicDirector {
    * @returns {object} strategy object
    */
   buildFallbackStrategy(state) {
-    const { food, wood } = state.resources;
+    const { food, wood, stone, herbs, tools } = state.resources;
     const workers = state.metrics.populationStats?.workers ?? 0;
     const { threat, prosperity, objectiveIndex, objectives } = state.gameplay;
+    const buildings = state.buildings ?? {};
+    const farms = buildings.farms ?? 0;
+    const quarries = buildings.quarries ?? 0;
+    const smithies = buildings.smithies ?? 0;
+    const kitchens = buildings.kitchens ?? 0;
+    const clinics = buildings.clinics ?? 0;
 
     // Survival checks
     if (food < 15 || workers <= 3) {
       return {
         ...DEFAULT_STRATEGY,
         priority: "survive",
+        phase: "bootstrap",
+        primaryGoal: "Stabilize food production and prevent colony collapse",
         resourceFocus: "food",
         defensePosture: "defensive",
         riskTolerance: 0.2,
         workerFocus: "farm",
         environmentPreference: "calm",
+        constraints: ["do not build non-food buildings", "prioritize farms near warehouses"],
+        resourceBudget: { reserveWood: 5, reserveFood: 0 },
       };
     }
 
@@ -104,40 +132,100 @@ export class StrategicDirector {
       return {
         ...DEFAULT_STRATEGY,
         priority: "defend",
+        phase: "fortify",
+        primaryGoal: "Build walls and reduce threat before expanding",
         defensePosture: "defensive",
         riskTolerance: 0.2,
         environmentPreference: "calm",
+        constraints: ["build walls on high elevation for defense bonus", "do not expand to new clusters"],
+        resourceBudget: { reserveWood: 10, reserveFood: 20 },
       };
     }
 
-    // Near final objective with good conditions
+    // Near final objective
     const totalObjectives = Array.isArray(objectives) ? objectives.length : 1;
     const nearFinal = objectiveIndex >= totalObjectives - 1;
     if (nearFinal && prosperity >= 70 && threat <= 20) {
       return {
         ...DEFAULT_STRATEGY,
         priority: "complete_objective",
+        phase: "optimize",
+        primaryGoal: "Optimize production efficiency to complete final objective",
         riskTolerance: 0.7,
         environmentPreference: "calm",
+        constraints: ["focus on objective requirements", "maintain food surplus"],
+        resourceBudget: { reserveWood: 8, reserveFood: 20 },
       };
     }
 
-    // Resource-specific focus
+    // Phase detection based on colony state
+    // Only run detailed phase detection if building data is available
+    let phase = "growth";
+    let primaryGoal = "";
     let resourceFocus = "balanced";
     let workerFocus = "balanced";
-    if (wood < 15) {
-      resourceFocus = "wood";
-      workerFocus = "wood";
-    } else if (food < 30) {
+    const constraints = [];
+    let reserveWood = 8;
+    let reserveFood = 15;
+
+    const hasBuildingData = Object.keys(buildings).length > 0;
+
+    if (hasBuildingData && (farms < 4 || (buildings.warehouses ?? 0) < 1)) {
+      // Early game: need basic food + logistics
+      phase = "bootstrap";
+      primaryGoal = "Establish basic food production with 4+ farms and warehouse coverage";
       resourceFocus = "food";
       workerFocus = "farm";
+      constraints.push("build farms first, then lumber for wood income");
+      reserveWood = 5;
+    } else if (hasBuildingData && quarries === 0 && farms >= 4) {
+      phase = "industrialize";
+      primaryGoal = "Build quarry→smithy chain for tools (+15% all production)";
+      resourceFocus = "stone";
+      constraints.push("quarry is highest priority", "separate quarry from farms (dust pollution)");
+      reserveWood = 12;
+    } else if (hasBuildingData && smithies === 0 && quarries > 0 && stone >= 5) {
+      phase = "industrialize";
+      primaryGoal = "Build smithy to convert stone into tools";
+      resourceFocus = "stone";
+      constraints.push("smithy is highest priority — tools multiply everything");
+      reserveWood = 6;
+    } else if (hasBuildingData && kitchens === 0 && farms >= 6) {
+      phase = "process";
+      primaryGoal = "Build kitchen to convert food surplus into efficient meals";
+      resourceFocus = "food";
+      constraints.push("kitchen needs food surplus to be useful");
+      reserveWood = 8;
+    } else if (hasBuildingData && clinics === 0 && (buildings.herbGardens ?? 0) > 0 && herbs >= 4) {
+      phase = "process";
+      primaryGoal = "Build clinic for medicine production to reduce mortality";
+      constraints.push("clinic needs herb surplus");
+    } else {
+      // Mature colony or no building data — growth mode with resource focus
+      phase = "growth";
+      primaryGoal = "Expand colony with balanced production and new clusters";
+
+      if (wood < 15) {
+        resourceFocus = "wood";
+        workerFocus = "wood";
+      } else if (food < 30) {
+        resourceFocus = "food";
+        workerFocus = "farm";
+      }
+      constraints.push("maintain warehouse coverage for new buildings");
+      reserveWood = 10;
+      reserveFood = 20;
     }
 
     return {
       ...DEFAULT_STRATEGY,
       priority: "grow",
+      phase,
+      primaryGoal,
       resourceFocus,
       workerFocus,
+      constraints,
+      resourceBudget: { reserveWood, reserveFood },
     };
   }
 
@@ -147,22 +235,49 @@ export class StrategicDirector {
    * @returns {string} JSON string
    */
   buildPromptContent(state) {
+    const buildings = state.buildings ?? {};
     const payload = {
       channel: "strategic-director",
       summary: {
         timeSec: state.metrics.timeSec,
         workers: state.metrics.populationStats?.workers ?? 0,
         deaths: state.metrics.deathsTotal,
-        food: state.resources.food,
-        wood: state.resources.wood,
-        prosperity: state.gameplay.prosperity,
-        threat: state.gameplay.threat,
+        food: Math.round(state.resources.food),
+        wood: Math.round(state.resources.wood),
+        stone: Math.round(state.resources.stone ?? 0),
+        herbs: Math.round(state.resources.herbs ?? 0),
+        tools: Math.round(state.resources.tools ?? 0),
+        meals: Math.round(state.resources.meals ?? 0),
+        prosperity: Math.round(state.gameplay.prosperity),
+        threat: Math.round(state.gameplay.threat),
         objectiveIndex: state.gameplay.objectiveIndex,
         currentObjective: state.gameplay.objectives?.[state.gameplay.objectiveIndex]?.title ?? "",
         scenarioFamily: state.gameplay.scenario?.family ?? "",
         doctrine: state.gameplay.doctrine ?? "balanced",
         weather: state.weather?.current ?? "clear",
+        season: state.weather?.season ?? null,
       },
+      buildings: {
+        warehouses: buildings.warehouses ?? 0,
+        farms: buildings.farms ?? 0,
+        lumbers: buildings.lumbers ?? 0,
+        quarries: buildings.quarries ?? 0,
+        herbGardens: buildings.herbGardens ?? 0,
+        kitchens: buildings.kitchens ?? 0,
+        smithies: buildings.smithies ?? 0,
+        clinics: buildings.clinics ?? 0,
+      },
+      chainStatus: {
+        food: (buildings.kitchens ?? 0) > 0 ? "complete" : (buildings.farms ?? 0) >= 6 ? "ready_for_kitchen" : "building_farms",
+        tools: (buildings.smithies ?? 0) > 0 ? "complete" : (buildings.quarries ?? 0) > 0 ? "ready_for_smithy" : "no_quarry",
+        medical: (buildings.clinics ?? 0) > 0 ? "complete" : (buildings.herbGardens ?? 0) > 0 ? "ready_for_clinic" : "no_herbs",
+      },
+      instructions: `Determine the colony's strategic phase and set priorities.
+Output JSON with: strategy.phase (bootstrap|growth|industrialize|process|fortify|optimize),
+strategy.primaryGoal (max 80 chars), strategy.constraints (array of max 5 rules for the tactical planner),
+strategy.resourceBudget ({reserveWood, reserveFood} — minimums to keep in reserve),
+plus standard fields: priority, resourceFocus, defensePosture, riskTolerance, workerFocus.
+Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI.`,
     };
 
     const memoryText = this.memoryStore.formatForPrompt(
