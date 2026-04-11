@@ -90,6 +90,8 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - Separate quarries from farms (dust pollution)
 - Place herb_gardens adjacent to farms when possible
 - Follow the strategy priority and constraints from the Strategic Advisor
+- If "Last Plan Evaluation" is provided, address its issues — avoid repeating the same mistakes
+- If "Recurring Patterns" are listed, BREAK THE LOOP by choosing a different approach
 
 ## Output Format
 {
@@ -118,9 +120,10 @@ For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
  * @param {string} memoryText — from MemoryStore.formatForPrompt()
  * @param {object} state — game state (for affordable check)
  * @param {string} [learnedSkillsText] — from LearnedSkillLibrary.formatForPrompt()
+ * @param {string} [evaluationText] — from PlanEvaluator.formatEvaluationForLLM() (P4)
  * @returns {string}
  */
-export function buildPlannerPrompt(observation, memoryText, state, learnedSkillsText = "") {
+export function buildPlannerPrompt(observation, memoryText, state, learnedSkillsText = "", evaluationText = "") {
   const sections = [];
 
   // Observation
@@ -156,6 +159,11 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
     .filter(([, v]) => v)
     .map(([k]) => k);
   sections.push("\n## Affordable Buildings: " + (affordableTypes.join(", ") || "none"));
+
+  // P4: Evaluation feedback from last plan
+  if (evaluationText) {
+    sections.push("\n" + evaluationText);
+  }
 
   return sections.join("\n");
 }
@@ -622,12 +630,13 @@ export class ColonyPlanner {
    * @param {string} memoryText — from MemoryStore.formatForPrompt()
    * @param {object} state — game state
    * @param {string} [learnedSkillsText] — from LearnedSkillLibrary.formatForPrompt()
+   * @param {string} [evaluationText] — from PlanEvaluator.formatEvaluationForLLM() (P4)
    * @returns {Promise<{ plan: object, source: "llm"|"fallback", error: string }>}
    */
-  async requestPlan(observation, memoryText, state, learnedSkillsText = "") {
+  async requestPlan(observation, memoryText, state, learnedSkillsText = "", evaluationText = "") {
     // Try LLM if API key is available
     if (this._apiKey) {
-      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText);
+      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText, evaluationText);
       this._stats.llmCalls++;
 
       const result = await callLLM(SYSTEM_PROMPT, userPrompt, {

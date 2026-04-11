@@ -122,6 +122,7 @@ export class AgentDirectorSystem {
     this._lastPlanSec = -Infinity;
     this._pendingLLM = false;
     this._stepEvals = [];
+    this._lastEvalText = ""; // P4: formatted evaluation from last completed plan
   }
 
   /**
@@ -189,8 +190,10 @@ export class AgentDirectorSystem {
             ? this._memoryStore.formatForPrompt("construction planning building", nowSec, 5)
             : "";
           const learnedText = this._learnedSkills.formatForPrompt(state.resources ?? {});
+          const evalText = this._lastEvalText;
 
-          this._planner.requestPlan(observation, memText, state, learnedText)
+          this._lastEvalText = ""; // consume once
+          this._planner.requestPlan(observation, memText, state, learnedText, evalText)
             .then(({ plan, source, error }) => {
               this._pendingLLM = false;
               if (plan && plan.steps.length > 0) {
@@ -287,6 +290,11 @@ export class AgentDirectorSystem {
     if (agentState.planHistory.length > MAX_PLAN_HISTORY) {
       agentState.planHistory.shift();
     }
+
+    // P4: Generate formatted evaluation summary for next plan request
+    this._lastEvalText = this._evaluator.formatEvaluationForLLM(
+      planEval, this._stepEvals, state, agentState.planHistory
+    );
 
     this._activePlan = null;
     this._planStartSnap = null;
