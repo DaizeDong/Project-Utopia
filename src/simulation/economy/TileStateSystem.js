@@ -89,7 +89,14 @@ export class TileStateSystem {
             grid.tileState.set(idx, entry);
           }
           // Wear increases over time, faster during storms
-          entry.wear = Math.min(1.0, entry.wear + WEAR_INCREASE_PER_SEC * elapsed * weatherMult);
+          // Roads/bridges: traffic accelerates wear
+          let trafficMult = 1;
+          if (type === TILE.ROAD || type === TILE.BRIDGE) {
+            const tKey = `${ix},${iz}`;
+            const load = Number(state.metrics?.traffic?.loadByKey?.[tKey] ?? 0);
+            trafficMult = 1 + load * 0.3; // Each worker on tile adds 30% wear rate
+          }
+          entry.wear = Math.min(1.0, entry.wear + WEAR_INCREASE_PER_SEC * elapsed * weatherMult * trafficMult);
           grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
         }
       }

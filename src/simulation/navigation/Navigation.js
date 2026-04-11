@@ -274,12 +274,16 @@ export function followPath(entity, state, dt) {
         ? BALANCE.predatorSpeed
         : BALANCE.herbivoreSpeed;
 
-  // Road speed bonus: workers on road/bridge tiles move faster
+  // Road speed bonus: workers on road/bridge tiles move faster, degraded by wear
   if (entity.type === "WORKER" && state.grid) {
     const cur = worldToTile(entity.x, entity.z, state.grid);
     const curTile = getTile(state.grid, cur.ix, cur.iz);
     if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
-      speed *= (BALANCE.roadSpeedMultiplier ?? 1.35);
+      const idx = cur.ix + cur.iz * state.grid.width;
+      const wear = state.grid.tileState?.get(idx)?.wear ?? 0;
+      // Full bonus at wear=0, linearly degrades to 1.0x at wear=1.0
+      const roadBonus = (BALANCE.roadSpeedMultiplier ?? 1.35);
+      speed *= 1 + (roadBonus - 1) * (1 - wear);
     }
   }
 

@@ -50,7 +50,11 @@ export class LogisticsSystem {
       for (const t of tiles) {
         const key = `${t.ix},${t.iz}`;
         if (roadNet.isAdjacentToConnectedRoad(t.ix, t.iz, state.grid)) {
-          this._efficiencyMap.set(key, BALANCE.roadLogisticsBonus ?? 1.15);
+          // Degrade bonus based on average wear of adjacent road tiles
+          const avgWear = this._avgAdjacentRoadWear(t.ix, t.iz, state.grid, roadNet);
+          const baseBonus = BALANCE.roadLogisticsBonus ?? 1.15;
+          const degradedBonus = 1 + (baseBonus - 1) * (1 - avgWear);
+          this._efficiencyMap.set(key, degradedBonus);
           connected++;
         } else if (this._hasAnyRoadNeighbor(t.ix, t.iz, state.grid, roadNet)) {
           this._efficiencyMap.set(key, 1.0);
@@ -69,6 +73,25 @@ export class LogisticsSystem {
     state.metrics.logistics ??= {};
     state.metrics.logistics.buildingEfficiency = Object.fromEntries(this._efficiencyMap);
     state.metrics.logistics.logisticsStats = { ...this._stats };
+  }
+
+  /**
+   * Get average wear of adjacent road tiles.
+   */
+  _avgAdjacentRoadWear(ix, iz, grid, roadNet) {
+    const DIRS = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }];
+    let totalWear = 0, count = 0;
+    for (const d of DIRS) {
+      const nx = ix + d.x;
+      const nz = iz + d.z;
+      if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) continue;
+      const idx = toIndex(nx, nz, grid.width);
+      if (!roadNet.isRoadTile(idx)) continue;
+      const entry = grid.tileState?.get(idx);
+      totalWear += entry?.wear ?? 0;
+      count++;
+    }
+    return count > 0 ? totalWear / count : 0;
   }
 
   /**
