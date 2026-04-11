@@ -95,11 +95,10 @@ export function computeTaskScore(samples, config) {
   const T_composite =
     0.20 * T_surv +
     0.25 * T_obj +
-    0.10 * T_res +
-    0.10 * T_pop +
+    0.15 * T_res +
+    0.15 * T_pop +
     0.15 * T_pros +
-    0.10 * T_threat +
-    0.10 * T_surv;
+    0.10 * T_threat;
 
   return { T_surv, T_obj, T_res, T_pop, T_pros, T_threat, T_composite };
 }
@@ -154,4 +153,60 @@ export function computeDecisionQuality(guardrailLog, crisisEvents, crisisRespons
   const D_adapt = crisisEvents === 0 ? 1 : safeDivide(crisisResponses, crisisEvents, 1);
 
   return { D_hall, D_adapt };
+}
+
+// ── Infrastructure Metrics (v0.6.9) ─────────────────────────────────
+
+/**
+ * Compute infrastructure metrics from time-series samples.
+ *
+ * Measures worker distribution efficiency, road network utilisation,
+ * and logistics coverage over time.
+ *
+ * @param {Array<{t:number, reservationUtil?:number, roadTiles?:number, roadComponents?:number,
+ *   logisticsConnected?:number, logisticsIsolated?:number, avgWorkerSpread?:number}>} samples
+ * @returns {{I_spread:number, I_road:number, I_logis:number, I_wear:number, I_composite:number}}
+ */
+export function computeInfrastructureScore(samples) {
+  if (samples.length === 0) {
+    return { I_spread: 0, I_road: 0, I_logis: 0, I_wear: 0, I_composite: 0 };
+  }
+
+  // I_spread: worker spread efficiency — higher = workers better distributed
+  // avgWorkerSpread is ratio of unique-targeted-tiles / alive-workers (0..1)
+  const spreadValues = samples.map((s) => Number(s.avgWorkerSpread ?? 0));
+  const I_spread = clamp01(mean(spreadValues));
+
+  // I_road: road network connectivity — single connected component = 1.0
+  // Computed as: 1 - (components-1)/max(1, roadTiles/4)
+  // Fewer components relative to road count = better connectivity
+  const roadScores = samples.map((s) => {
+    const tiles = Number(s.roadTiles ?? 0);
+    const components = Number(s.roadComponents ?? 1);
+    if (tiles === 0) return 0;
+    return clamp01(1 - (components - 1) / Math.max(1, tiles / 4));
+  });
+  const I_road = clamp01(mean(roadScores));
+
+  // I_logis: logistics coverage — fraction of production buildings connected
+  const logisScores = samples.map((s) => {
+    const connected = Number(s.logisticsConnected ?? 0);
+    const isolated = Number(s.logisticsIsolated ?? 0);
+    const total = connected + isolated;
+    if (total === 0) return 1; // no buildings = fully covered (vacuously)
+    return connected / total;
+  });
+  const I_logis = clamp01(mean(logisScores));
+
+  // I_wear: road health — inverse of average wear across road tiles (0=ruined, 1=pristine)
+  const wearValues = samples.map((s) => 1 - Number(s.avgRoadWear ?? 0));
+  const I_wear = clamp01(mean(wearValues));
+
+  const I_composite =
+    0.30 * I_spread +
+    0.25 * I_road +
+    0.25 * I_logis +
+    0.20 * I_wear;
+
+  return { I_spread, I_road, I_logis, I_wear, I_composite };
 }

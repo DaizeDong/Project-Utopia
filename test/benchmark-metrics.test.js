@@ -4,6 +4,7 @@ import {
   computeTaskScore,
   computeCostMetrics,
   computeDecisionQuality,
+  computeInfrastructureScore,
 } from "../src/benchmark/BenchmarkMetrics.js";
 
 describe("computeTaskScore", () => {
@@ -163,5 +164,79 @@ describe("computeDecisionQuality", () => {
     const result = computeDecisionQuality(guardrailLog, 0, 0);
 
     assert.equal(result.D_adapt, 1);
+  });
+});
+
+describe("computeInfrastructureScore", () => {
+  it("returns all fields as numbers in [0,1] with realistic samples", () => {
+    const samples = [
+      { t: 0, avgWorkerSpread: 0.7, roadTiles: 10, roadComponents: 1, logisticsConnected: 5, logisticsIsolated: 1, avgRoadWear: 0.1 },
+      { t: 10, avgWorkerSpread: 0.8, roadTiles: 12, roadComponents: 1, logisticsConnected: 6, logisticsIsolated: 0, avgRoadWear: 0.15 },
+      { t: 20, avgWorkerSpread: 0.75, roadTiles: 14, roadComponents: 2, logisticsConnected: 6, logisticsIsolated: 1, avgRoadWear: 0.2 },
+    ];
+
+    const result = computeInfrastructureScore(samples);
+
+    const fields = ["I_spread", "I_road", "I_logis", "I_wear", "I_composite"];
+    for (const f of fields) {
+      assert.equal(typeof result[f], "number", `${f} should be a number`);
+      assert.ok(result[f] >= 0 && result[f] <= 1, `${f}=${result[f]} should be in [0,1]`);
+    }
+  });
+
+  it("returns zeros for empty samples", () => {
+    const result = computeInfrastructureScore([]);
+    assert.equal(result.I_spread, 0);
+    assert.equal(result.I_road, 0);
+    assert.equal(result.I_logis, 0);
+    assert.equal(result.I_wear, 0);
+    assert.equal(result.I_composite, 0);
+  });
+
+  it("scores perfect connectivity as I_road=1", () => {
+    const samples = [
+      { t: 0, roadTiles: 20, roadComponents: 1 },
+      { t: 10, roadTiles: 20, roadComponents: 1 },
+    ];
+    const result = computeInfrastructureScore(samples);
+    assert.equal(result.I_road, 1);
+  });
+
+  it("scores full logistics coverage as I_logis=1", () => {
+    const samples = [
+      { t: 0, logisticsConnected: 8, logisticsIsolated: 0 },
+      { t: 10, logisticsConnected: 10, logisticsIsolated: 0 },
+    ];
+    const result = computeInfrastructureScore(samples);
+    assert.equal(result.I_logis, 1);
+  });
+
+  it("scores zero wear as I_wear=1", () => {
+    const samples = [
+      { t: 0, avgRoadWear: 0 },
+      { t: 10, avgRoadWear: 0 },
+    ];
+    const result = computeInfrastructureScore(samples);
+    assert.equal(result.I_wear, 1);
+  });
+
+  it("handles missing optional fields gracefully", () => {
+    const samples = [
+      { t: 0 },
+      { t: 10 },
+    ];
+    const result = computeInfrastructureScore(samples);
+    assert.equal(typeof result.I_composite, "number");
+    assert.ok(Number.isFinite(result.I_composite));
+  });
+
+  it("composite weights sum to 1.0", () => {
+    // I_composite = 0.30*spread + 0.25*road + 0.25*logis + 0.20*wear
+    // All perfect scores → composite should be 1.0
+    const samples = [
+      { t: 0, avgWorkerSpread: 1.0, roadTiles: 10, roadComponents: 1, logisticsConnected: 5, logisticsIsolated: 0, avgRoadWear: 0 },
+    ];
+    const result = computeInfrastructureScore(samples);
+    assert.ok(Math.abs(result.I_composite - 1.0) < 1e-9, `composite should be 1.0, got ${result.I_composite}`);
   });
 });

@@ -214,6 +214,57 @@ export const BENCHMARK_PRESETS = [
     resources: { food: 50, wood: 40, stone: 10, herbs: 6 },
     disableDirector: true,
   },
+
+  // --- Infrastructure variants (v0.6.9) ---
+  {
+    id: "road_connected",
+    label: "Road-Connected Colony",
+    templateId: "temperate_plains",
+    category: "infrastructure",
+    resources: { food: 60, wood: 50, stone: 12, herbs: 8 },
+    buildings: { warehouses: 2, farms: 5, lumbers: 3, quarries: 1, herbGardens: 1, roads: 15 },
+  },
+  {
+    id: "road_disconnected",
+    label: "Disconnected Buildings",
+    templateId: "temperate_plains",
+    category: "infrastructure",
+    resources: { food: 60, wood: 50, stone: 12, herbs: 8 },
+    buildings: { warehouses: 2, farms: 5, lumbers: 3, quarries: 1, herbGardens: 1, roads: 0 },
+  },
+  {
+    id: "worker_crowded",
+    label: "Worker Crowding (12 workers, 3 sites)",
+    templateId: "temperate_plains",
+    category: "infrastructure",
+    extraWorkers: 4,
+    resources: { food: 60, wood: 40 },
+    buildings: { warehouses: 1, farms: 2, lumbers: 1 },
+  },
+  {
+    id: "worker_spread",
+    label: "Worker Spread (8 workers, 12 sites)",
+    templateId: "temperate_plains",
+    category: "infrastructure",
+    resources: { food: 60, wood: 50, stone: 10, herbs: 6 },
+    buildings: { warehouses: 2, farms: 4, lumbers: 3, quarries: 1, herbGardens: 1, kitchens: 1 },
+  },
+  {
+    id: "logistics_bottleneck",
+    label: "Logistics Bottleneck",
+    templateId: "fortified_basin",
+    category: "infrastructure",
+    resources: { food: 80, wood: 70, stone: 20, herbs: 10 },
+    buildings: { warehouses: 1, farms: 8, lumbers: 4, quarries: 2, herbGardens: 2, kitchens: 1, smithies: 1, clinics: 1, roads: 2 },
+  },
+  {
+    id: "mature_roads",
+    label: "Mature Road Network",
+    templateId: "temperate_plains",
+    category: "infrastructure",
+    resources: { food: 80, wood: 60, stone: 15, herbs: 8 },
+    buildings: { warehouses: 3, farms: 6, lumbers: 3, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 1, roads: 25 },
+  },
 ];
 
 // Map building stat keys to tile types

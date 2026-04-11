@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.7.0] - 2026-04-11 — Benchmark Framework Overhaul
+
+Complete architectural restructuring of the benchmark system, replacing ad-hoc per-runner scoring with a unified evaluation framework. Addresses three systemic issues: lack of generalizability (hardcoded scenarios), superficial metrics (format checks over behavioral probes), and siloed evaluation (no cross-cutting analysis).
+
+### New Benchmark Framework (`src/benchmark/framework/`)
+- **SimHarness** — Unified simulation harness extracting shared tick/advance/snapshot logic from 8 benchmark runners. System order matches GameApp.createSystems() exactly (19 systems)
+- **ScenarioSampler** — Procedural scenario generation with stratified difficulty sampling across 5 bins (trivial→extreme). Seeded mulberry32 PRNG, log-uniform/categorical parameter spaces, 5 hand-crafted edge cases
+- **ScoringEngine** — Bayesian Beta-Binomial scoring with Beta(2,2) prior, 95% credible intervals, P5/P95 tail risk. Relative scoring against baseline/ceiling. Consistency penalty (mean - λ·std). Cohen's d, Bayes Factor, Mann-Whitney U for A/B comparisons
+- **ProbeCollector** — 6 behavioral capability probes: RESOURCE_TRIAGE, THREAT_RESPONSE, BOTTLENECK_ID, PLAN_COHERENCE, ADAPTATION, SCALING. Each tests a single irreducible AI capability through behavioral assertions
+- **CrisisInjector** — Dynamic crisis injection (drought, predator_surge, resource_crash, epidemic) with steady-state detection, detection lag tracking, recovery curve measurement, composite resilience scoring
+- **DecisionTracer** — Backward causal attribution across perceiver→planner→executor→evaluator→director pipeline. Fault distribution analysis for negative events
+- **DimensionPlugin** — Pluggable evaluation dimension protocol with validation
+- **CLI utilities** — Argument parsing, markdown report formatting, JSON output
+
+### Bug Fixes
+- **T_composite weight duplication** — T_surv was counted twice in BenchmarkMetrics.js (0.20 + 0.10), fixed to proper 6-term weights summing to 1.0
+- **DecisionTracer analyzeAll idempotency** — Repeated calls to analyzeAll() no longer double-count fault attributions; fault counts reset before each analysis pass
+
+### Tests
+- **35 new tests** in `test/benchmark-framework.test.js` across 5 suites:
+  - ScenarioSampler (8): count, difficulty bins, determinism, difficulty range, preset conversion, edge cases
+  - ScoringEngine (11): Bayesian stats, relative scoring, consistency penalty, Cohen's d, group comparison
+  - DecisionTracer (6): recording, attribution, reset, fault distribution, idempotency
+  - CrisisInjector (5): crisis types, scoring, detection speed, crisis application
+  - DimensionPlugin (4): validation of plugin protocol
+  - T_composite weight (1): verifies weights sum to 1.0
+- Full suite: **731 tests, 0 failures**
+
+### New Files
+- `src/benchmark/framework/SimHarness.js`
+- `src/benchmark/framework/ScenarioSampler.js`
+- `src/benchmark/framework/ScoringEngine.js`
+- `src/benchmark/framework/ProbeCollector.js`
+- `src/benchmark/framework/CrisisInjector.js`
+- `src/benchmark/framework/DecisionTracer.js`
+- `src/benchmark/framework/DimensionPlugin.js`
+- `src/benchmark/framework/cli.js`
+- `src/benchmark/run.js`
+
 ## [0.6.9] - 2026-04-10 — Worker Intelligence & Road Infrastructure Overhaul
 
 Dual-track architecture upgrade addressing worker clustering and road system deficiencies. Workers now distribute across worksites via reservation, occupancy penalties, and role-based spreading. Roads gain real gameplay impact through speed bonuses, logistics efficiency, algorithmic planning, and wear mechanics.
@@ -36,7 +75,14 @@ Dual-track architecture upgrade addressing worker clustering and road system def
   - `test/road-network.test.js` — 12 tests (B1)
   - `test/road-planner.test.js` — 9 tests (B3)
   - `test/logistics-system.test.js` — 7 tests (B4)
-- Full suite: **686 tests, 0 failures**
+- Full suite: **696 tests, 0 failures**
+
+### Benchmark Infrastructure Coverage
+- **6 new infrastructure presets**: road_connected, road_disconnected, worker_crowded, worker_spread, logistics_bottleneck, mature_roads — covering road connectivity, worker distribution, logistics bottlenecks, and road wear scenarios
+- **`computeInfrastructureScore()`** — New metric group: I_spread (worker distribution), I_road (road connectivity), I_logis (logistics coverage), I_wear (road health), I_composite (weighted sum)
+- **benchmark-runner.mjs** — Extended sampling with avgWorkerSpread, roadTiles, roadComponents, logisticsConnected/Isolated, avgRoadWear, reservationCount; infraScore returned in results
+- **10 new tests** for infrastructure presets (4) and metrics (7) in existing test files
+- **docs/benchmark-catalog.md** — Updated to 26 presets, 4 metric groups, coverage gap analysis resolved
 
 ### Files Changed
 - `src/simulation/npc/WorkerAISystem.js` — A1-A5: reservation, occupancy, logistics integration
