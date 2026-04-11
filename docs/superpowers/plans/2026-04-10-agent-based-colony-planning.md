@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 7 Complete (v1.7 — Hierarchical Agent Enhancement P1-P4)
+> **Status**: Phase 8 Complete (v1.8 — Worker Intelligence & Road Infrastructure Overhaul)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1233,6 +1233,32 @@ Agent-centric deepening: give the LLM richer formatted context and let it be the
 **Total**: 97 new tests, 646 total (0 failures)
 
 **Files**: `ColonyPerceiver.js`, `ColonyPlanner.js`, `StrategicDirector.js`, `PlacementSpecialist.js` (new), `PlanExecutor.js`, `PlanEvaluator.js`, `AgentDirectorSystem.js`
+
+### Phase 8: Worker Intelligence & Road Infrastructure Overhaul ✅ COMPLETE
+
+Dual-track architecture upgrade addressing two critical deficiencies: workers clustering on the same tile, and roads having minimal gameplay impact.
+
+#### A-track: Worker Behavior ✅
+- ✅ **A1: Job Reservation** — Dual-map registry prevents same-tile targeting; -2.0 penalty, 30s stale timeout
+- ✅ **A2: Occupancy-Aware Scoring** — Occupancy map with diminishing-returns penalty; sqrt distance scaling
+- ✅ **A3: Enhanced Boids** — Separation radius 1.05→1.4, weight 1.9→2.6; reduced cohesion/alignment
+- ✅ **A4: Phase Jitter** — Per-worker retarget timer offset breaks synchronous re-evaluation
+- ✅ **A5: Role Clustering Penalty** — Same-role -0.25 penalty prevents redundant work clustering
+- ✅ 12 tests in `test/job-reservation.test.js`
+
+#### B-track: Road Infrastructure ✅
+- ✅ **B1: Road Network Graph** — Union-Find connectivity over road/bridge/warehouse tiles
+- ✅ **B2: Road Speed Bonus** — +35% speed on roads; +15% production yield for connected buildings
+- ✅ **B3: Algorithmic Road Planner** — A* road path planning connecting buildings to warehouses
+- ✅ **B4: Logistics System** — Per-building efficiency tiers based on road connectivity
+- ✅ **B5: Road Wear Mechanics** — Speed/logistics degrade with wear; traffic accelerates wear
+- ✅ 28 tests in `test/road-network.test.js`, `test/road-planner.test.js`, `test/logistics-system.test.js`
+
+**Total**: 40 new tests, 686 total (0 failures)
+
+**New files**: `JobReservation.js`, `RoadNetwork.js`, `RoadPlanner.js`, `LogisticsSystem.js`
+
+**Modified**: `WorkerAISystem.js`, `Navigation.js`, `TileStateSystem.js`, `balance.js`
 
 ---
 

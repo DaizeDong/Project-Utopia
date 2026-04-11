@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.9] - 2026-04-10 — Worker Intelligence & Road Infrastructure Overhaul
+
+Dual-track architecture upgrade addressing worker clustering and road system deficiencies. Workers now distribute across worksites via reservation, occupancy penalties, and role-based spreading. Roads gain real gameplay impact through speed bonuses, logistics efficiency, algorithmic planning, and wear mechanics.
+
+### Worker Behavior (A-track)
+- **A1: Job Reservation** — Dual-map registry (Map<tileKey, entry> + Map<workerId, tileKey>) prevents multiple workers targeting the same tile. -2.0 scoring penalty for reserved tiles, 30s stale timeout, automatic death cleanup
+- **A2: Occupancy-Aware Scoring** — Real-time occupancy map with diminishing-returns penalty (-0.45 per occupant). Sqrt-based distance penalty replaces linear for better balance between nearby and policy-priority targets
+- **A3: Enhanced Boids** — Worker separation radius 1.05→1.4, weight 1.9→2.6; reduced cohesion/alignment for less clumping
+- **A4: Phase Jitter** — Per-worker retarget timer offset (charCode-based) breaks synchronous re-evaluation waves
+- **A5: Role Clustering Penalty** — Same-role workers targeting same tile get extra -0.25 penalty to prevent redundant work
+
+### Road Infrastructure (B-track)
+- **B1: Road Network Graph** — Union-Find connectivity over ROAD/BRIDGE/WAREHOUSE tiles with lazy rebuild on grid version. Exposes warehouse connectivity, adjacency checks, component size queries
+- **B2: Road Speed Bonus** — Workers on ROAD/BRIDGE tiles move 35% faster (roadSpeedMultiplier: 1.35). Production buildings adjacent to connected roads get 15% yield bonus
+- **B3: Algorithmic Road Planner** — A* pathfinding plans optimal road paths connecting disconnected production buildings to nearest warehouse. Existing roads treated as near-zero cost. Plans sorted by cheapest first. `roadPlansToSteps()` converts to AI build step format
+- **B4: Logistics System** — Per-building efficiency tiers: connected to warehouse via road (+15%), adjacent to disconnected road (neutral), isolated (-15%). Exposed as `state.metrics.logistics` for AI/UI
+- **B5: Road Wear Mechanics** — Road speed bonus degrades linearly with wear. Traffic accelerates wear (+30% per worker). Logistics efficiency also degrades with adjacent road wear. Creates maintenance loop motivating strategic road placement
+
+### Balance Changes
+- `roadSpeedMultiplier: 1.35` — road/bridge movement speed bonus
+- `roadLogisticsBonus: 1.15` — production yield bonus for connected buildings
+- Worker boids: `separationRadius: 1.4`, `separation: 2.6`, `cohesion: 0.04`
+- Distance penalty: `-√(distance) * 0.18` (was `-distance * 0.08`)
+
+### New Files
+- `src/simulation/npc/JobReservation.js` — Reservation registry
+- `src/simulation/navigation/RoadNetwork.js` — Union-Find road connectivity
+- `src/simulation/ai/colony/RoadPlanner.js` — Algorithmic road planning
+- `src/simulation/economy/LogisticsSystem.js` — Building logistics efficiency
+
+### Tests
+- **40 new tests** across 4 test files:
+  - `test/job-reservation.test.js` — 12 tests (A1)
+  - `test/road-network.test.js` — 12 tests (B1)
+  - `test/road-planner.test.js` — 9 tests (B3)
+  - `test/logistics-system.test.js` — 7 tests (B4)
+- Full suite: **686 tests, 0 failures**
+
+### Files Changed
+- `src/simulation/npc/WorkerAISystem.js` — A1-A5: reservation, occupancy, logistics integration
+- `src/simulation/navigation/Navigation.js` — B2/B5: road speed bonus with wear degradation
+- `src/simulation/economy/TileStateSystem.js` — B5: traffic-based road wear acceleration
+- `src/config/balance.js` — B2: roadSpeedMultiplier, roadLogisticsBonus; A3: worker boids tuning
+
 ## [0.6.8] - 2026-04-10 — Hierarchical Agent Enhancement (P1-P4)
 
 Four-phase enhancement to the agent-based colony planning system, deepening the LLM's role as the sole decision-maker with richer context, structured strategy, precise placement, and self-correcting evaluation.
