@@ -75,16 +75,20 @@ function getUnreadyDepotAnchors(runtime) {
     .filter(Boolean);
 }
 
-function buildOccupancyMap(state, excludeId) {
+function buildOccupancyMap(state, excludeId, workerRole) {
   const map = new Map();
+  const roleMap = new Map();
   for (const agent of state.agents) {
     if (agent.type !== "WORKER" || agent.alive === false || agent.id === excludeId) continue;
     const target = agent.targetTile;
     if (!target) continue;
     const key = `${target.ix},${target.iz}`;
     map.set(key, (map.get(key) ?? 0) + 1);
+    if (agent.role === workerRole) {
+      roleMap.set(key, (roleMap.get(key) ?? 0) + 1);
+    }
   }
-  return map;
+  return { all: map, sameRole: roleMap };
 }
 
 function chooseWorkerTarget(worker, state, targetTileTypes) {
@@ -97,7 +101,7 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
   const brokenRouteTiles = getBrokenRouteGapTiles(runtime);
   const depotAnchors = getUnreadyDepotAnchors(runtime);
   const reservation = state._jobReservation;
-  const occupancy = buildOccupancyMap(state, worker.id);
+  const { all: occupancy, sameRole: sameRoleOccupancy } = buildOccupancyMap(state, worker.id, worker.role);
   let best = null;
 
   for (const candidate of candidates) {
@@ -150,9 +154,11 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
     }
 
     // Occupancy penalty: steep diminishing returns per worker already targeting this tile
-    // First occupant: -0.45, second: -0.75 total, third: -0.95 total
     if (occupants > 0 && tileType !== TILE.WAREHOUSE) {
       score -= 0.45 * occupants / (1 + 0.3 * (occupants - 1));
+      // Extra penalty for same-role clustering (redundant work)
+      const sameRoleCount = sameRoleOccupancy.get(tileKey(candidate)) ?? 0;
+      if (sameRoleCount > 0) score -= 0.25 * sameRoleCount;
     }
 
     if (reservation && tileType !== TILE.WAREHOUSE && reservation.isReserved(candidate.ix, candidate.iz, worker.id)) {
@@ -360,7 +366,9 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
     }
     if (reservation) reservation.reserve(worker.id, target.ix, target.iz, intentKey, nowSec);
     blackboard.intentTargetIntent = intentKey;
-    blackboard.nextTargetRefreshSec = nowSec + TARGET_REFRESH_BASE_SEC + services.rng.next() * TARGET_REFRESH_JITTER_SEC;
+    // Phase offset per worker to desynchronize re-evaluation waves
+    const workerPhase = ((worker.id?.charCodeAt?.(0) ?? 0) % 7) * 0.12;
+    blackboard.nextTargetRefreshSec = nowSec + TARGET_REFRESH_BASE_SEC + workerPhase + services.rng.next() * TARGET_REFRESH_JITTER_SEC;
   }
 
   return hasActivePath(worker, state) || isAtTargetTile(worker, state);
