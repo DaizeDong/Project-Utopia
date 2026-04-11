@@ -2,7 +2,7 @@
 
 > **Version**: v0.6.9  
 > **Last Updated**: 2026-04-10  
-> **Total**: 20 presets × 8 runners + 2 metric modules + 2 test files
+> **Total**: 26 presets × 8 runners + 2 metric modules (4 metric groups) + 2 test files
 
 ---
 
@@ -20,15 +20,18 @@
 │  skills-benchmark               │   ← Skill Learning 质量
 │  ablation-benchmark             │   ← 消融实验 (组件重要性)
 ├─────────────────────────────────┤
-│    Presets (20)                  │   src/benchmark/BenchmarkPresets.js
+│    Presets (26)                  │   src/benchmark/BenchmarkPresets.js
 │  terrain(3) economy(7)          │
 │  pressure(5) stress(5)          │
+│  infrastructure(6)              │
 ├─────────────────────────────────┤
 │    Metrics                      │   src/benchmark/BenchmarkMetrics.js
 │  Task: T_surv T_obj T_res       │
 │        T_pop T_pros T_threat    │
 │  Cost: C_tok C_min C_lat C_fb   │
 │  Quality: D_hall D_adapt        │
+│  Infra: I_spread I_road         │
+│         I_logis I_wear          │
 └─────────────────────────────────┘
 ```
 
@@ -83,6 +86,19 @@
 | `no_director` | No Director (Manual) | disableDirector:true | AI 禁用基线对照组 |
 
 **Agent-Centric?** **是**。Stress presets 是最核心的 agent-centric 测试——它们设计了极端场景来验证 AI 的鲁棒性和降级能力。
+
+### 2.6 Infrastructure Category (6)
+
+| ID | Label | Key Params | Purpose |
+|----|-------|-----------|---------|
+| `road_connected` | Road-Connected Colony | 15 roads, 2WH, 5F, 3L, Q, HG | 道路连通殖民地的物流效率基线 |
+| `road_disconnected` | Disconnected Buildings | 0 roads, 2WH, 5F, 3L, Q, HG | 无道路时建筑效率退化测量 |
+| `worker_crowded` | Worker Crowding (12w, 3 sites) | +4 workers, 1WH, 2F, 1L | Worker 拥挤时的分配效率 |
+| `worker_spread` | Worker Spread (8w, 12 sites) | 2WH, 4F, 3L, Q, HG, K | Worker 充足站点时的分散度 |
+| `logistics_bottleneck` | Logistics Bottleneck | 1WH, 8F, 4L, 2Q, 2HG, K, S, C, 2 roads | 建筑多但仓库/道路不足的瓶颈 |
+| `mature_roads` | Mature Road Network | 3WH, 6F, 3L, Q, HG, K, S, 25 roads | 成熟道路网络的长期维护压力 |
+
+**Agent-Centric?** **是**。Infrastructure presets 直接测试 v0.6.9 新增的 JobReservation、RoadNetwork、LogisticsSystem 对 AI 决策的影响，量化道路连通性、Worker 分散度、物流效率等指标。
 
 ---
 
@@ -210,6 +226,16 @@
 | D_hall | clampedValues / totalValues | 幻觉率 (guardrail clamp 频率) |
 | D_adapt | crisisResponses / crisisEvents | 危机适应率 |
 
+### 4.4 Infrastructure (computeInfrastructureScore)
+
+| Metric | Formula | Weight in Composite | Description |
+|--------|---------|---------------------|-------------|
+| I_spread | mean(uniqueTargets / aliveWorkers) | 30% | Worker 分散度 (越高 = 分配越均匀) |
+| I_road | 1 − (components−1) / max(1, roadTiles/4) | 25% | 道路连通性 (单连通分量 = 1.0) |
+| I_logis | connected / (connected + isolated) | 25% | 物流覆盖率 (生产建筑连接比) |
+| I_wear | 1 − avgRoadWear | 20% | 道路健康度 (0=损毁, 1=完好) |
+| **I_composite** | **weighted sum** | **100%** | **基础设施综合得分** |
+
 ---
 
 ## 5. Agent-Centric 分析
@@ -231,26 +257,18 @@
 | Director (编排) | director-benchmark | ★★★ |
 | 全系统 | benchmark-runner, ablation-benchmark | ★★★ |
 
-### 5.3 缺失的覆盖领域
+### 5.3 覆盖状态 (v0.6.9 更新)
 
-以下新系统尚未被 benchmark 覆盖：
+v0.6.9 新增系统现已被 infrastructure category presets + `computeInfrastructureScore` 指标覆盖：
 
-| 系统 | 版本 | 缺失原因 | 影响 |
-|------|------|---------|------|
-| **JobReservation** (A1) | v0.6.9 | 新增系统，benchmark 未更新 | Worker 分配效率无法量化对比 |
-| **RoadNetwork** (B1) | v0.6.9 | 新增系统 | Road 连通性对 AI 决策的影响未测量 |
-| **RoadPlanner** (B3) | v0.6.9 | 新增系统 | AI agent 可用的算法道路规划未纳入 benchmark |
-| **LogisticsSystem** (B4) | v0.6.9 | 新增系统 | 物流效率分级对殖民地表现的影响未测量 |
-| **Occupancy-Aware Scoring** (A2) | v0.6.9 | Worker 评分改进 | Worker 分散度改善缺乏量化数据 |
-| **Road Wear Mechanics** (B5) | v0.6.9 | 新增机制 | 道路维护成本对长期策略的影响未测量 |
-
-### 5.4 Preset 缺失
-
-当前 20 个 preset 没有专门测试：
-- **道路依赖场景**: 生产建筑与仓库的距离对效率的影响
-- **Worker 分散度**: 多 worker 共享少量 worksite 的拥挤场景
-- **物流压力**: 建筑大量但道路不足的瓶颈场景
-- **基建维护**: 长时间运行中道路磨损的影响
+| 系统 | 覆盖方式 | 对应 Preset | 对应指标 |
+|------|---------|------------|---------|
+| **JobReservation** (A1) | 采样 reservationCount | worker_crowded, worker_spread | I_spread |
+| **RoadNetwork** (B1) | 采样 roadTiles/roadComponents | road_connected, road_disconnected | I_road |
+| **RoadPlanner** (B3) | 间接 (通过道路 preset 对比) | road_connected vs road_disconnected | I_road |
+| **LogisticsSystem** (B4) | 采样 logisticsConnected/Isolated | logistics_bottleneck, mature_roads | I_logis |
+| **Occupancy-Aware Scoring** (A2) | 采样 avgWorkerSpread | worker_crowded, worker_spread | I_spread |
+| **Road Wear Mechanics** (B5) | 采样 avgRoadWear | mature_roads | I_wear |
 
 ---
 
@@ -258,8 +276,8 @@
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/benchmark/BenchmarkPresets.js` | 368 | 20 preset 定义 + applyPreset |
-| `src/benchmark/BenchmarkMetrics.js` | 158 | 3 组指标计算函数 |
+| `src/benchmark/BenchmarkPresets.js` | ~420 | 26 preset 定义 + applyPreset |
+| `src/benchmark/BenchmarkMetrics.js` | ~214 | 4 组指标计算函数 (Task/Cost/Quality/Infrastructure) |
 | `scripts/benchmark-runner.mjs` | ~470 | AI vs fallback A/B 对比 |
 | `scripts/perceiver-benchmark.mjs` | ~400 | Perceiver 质量评估 |
 | `scripts/planner-benchmark.mjs` | ~554 | Planner 质量评估 |

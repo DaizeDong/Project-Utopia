@@ -5,8 +5,8 @@ import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPreset
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 
 describe("BenchmarkPresets", () => {
-  it("exports exactly 20 presets", () => {
-    assert.equal(BENCHMARK_PRESETS.length, 20);
+  it("exports exactly 26 presets", () => {
+    assert.equal(BENCHMARK_PRESETS.length, 26);
   });
 
   it("each preset has required fields", () => {
@@ -44,11 +44,42 @@ describe("BenchmarkPresets", () => {
     assert.ok(predators >= 3, "should have more predators");
   });
 
-  it("presets cover all 3 categories", () => {
+  it("presets cover all 5 categories", () => {
     const categories = new Set(BENCHMARK_PRESETS.map((p) => p.category));
     assert.ok(categories.has("terrain"), "should have terrain category");
     assert.ok(categories.has("economy"), "should have economy category");
     assert.ok(categories.has("pressure"), "should have pressure category");
+    assert.ok(categories.has("stress"), "should have stress category");
+    assert.ok(categories.has("infrastructure"), "should have infrastructure category");
+  });
+
+  it("infrastructure presets have correct IDs", () => {
+    const infraPresets = BENCHMARK_PRESETS.filter((p) => p.category === "infrastructure");
+    assert.equal(infraPresets.length, 6, "should have 6 infrastructure presets");
+    const ids = new Set(infraPresets.map((p) => p.id));
+    assert.ok(ids.has("road_connected"), "should have road_connected");
+    assert.ok(ids.has("road_disconnected"), "should have road_disconnected");
+    assert.ok(ids.has("worker_crowded"), "should have worker_crowded");
+    assert.ok(ids.has("worker_spread"), "should have worker_spread");
+    assert.ok(ids.has("logistics_bottleneck"), "should have logistics_bottleneck");
+    assert.ok(ids.has("mature_roads"), "should have mature_roads");
+  });
+
+  it("road_connected preset places road tiles on grid", () => {
+    const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
+    const preset = BENCHMARK_PRESETS.find((p) => p.id === "road_connected");
+    applyPreset(state, preset);
+    assert.ok(state.buildings.roads >= 1, "should have placed road tiles");
+    assert.ok(state.buildings.warehouses >= 2, "should have at least 2 warehouses");
+  });
+
+  it("worker_crowded preset adds extra workers", () => {
+    const state = createInitialGameState({ templateId: "temperate_plains", seed: 42 });
+    const initialWorkers = state.agents.filter((a) => a.type === "WORKER").length;
+    const preset = BENCHMARK_PRESETS.find((p) => p.id === "worker_crowded");
+    applyPreset(state, preset);
+    const newWorkers = state.agents.filter((a) => a.type === "WORKER").length;
+    assert.ok(newWorkers > initialWorkers, "should have more workers after applying worker_crowded");
   });
 
   it("skeleton_crew keeps at least 2 workers", () => {

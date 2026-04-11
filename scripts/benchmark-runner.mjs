@@ -33,9 +33,12 @@ import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopu
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
+import { PopulationGrowthSystem } from "../src/simulation/population/PopulationGrowthSystem.js";
+import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
+import { ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
 import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
-import { computeTaskScore, computeCostMetrics } from "../src/benchmark/BenchmarkMetrics.js";
+import { computeTaskScore, computeCostMetrics, computeInfrastructureScore } from "../src/benchmark/BenchmarkMetrics.js";
 import { BENCHMARK_PRESETS, applyPreset } from "../src/benchmark/BenchmarkPresets.js";
 
 // ── Configuration ──────────────────────────────────────────────────────
@@ -86,10 +89,12 @@ function buildSystems(memoryStore) {
     new SimulationClock(),
     new ProgressionSystem(),
     new RoleAssignmentSystem(),
+    new PopulationGrowthSystem(),
     new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
     new WorldEventSystem(),
+    new TileStateSystem(),
     new NPCBrainSystem(),
     new WorkerAISystem(),
     new VisitorAISystem(),
@@ -99,6 +104,7 @@ function buildSystems(memoryStore) {
     new BoidsSystem(),
     new ResourceSystem(),
     new ProcessingSystem(),
+    new ColonyDirectorSystem(),
   ];
 }
 
@@ -169,13 +175,45 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
     // Collect time-series samples at the prescribed interval
     if (tick === 0 || tick === totalTicks - 1 || tick % sampleEveryTicks === 0) {
       const t = Number(state.metrics.timeSec ?? 0);
+      const aliveWorkers = state.agents.filter((a) => a.type === "WORKER" && a.alive !== false);
+
+      // Infrastructure: worker spread (unique target tiles / alive workers)
+      const targetSet = new Set();
+      for (const w of aliveWorkers) {
+        if (w.targetTile) targetSet.add(`${w.targetTile.ix},${w.targetTile.iz}`);
+      }
+      const avgWorkerSpread = aliveWorkers.length > 0
+        ? round(targetSet.size / aliveWorkers.length, 3) : 0;
+
+      // Infrastructure: road network stats
+      const roadStats = state._roadNetwork?.stats ?? {};
+      // Infrastructure: logistics stats
+      const logisStats = state.metrics?.logistics?.logisticsStats ?? {};
+      // Infrastructure: average road wear
+      let avgRoadWear = 0;
+      if (state.grid?.tileState && roadStats.totalRoadTiles > 0) {
+        let totalWear = 0, count = 0;
+        for (const [, entry] of state.grid.tileState) {
+          if (entry.wear !== undefined) { totalWear += entry.wear; count++; }
+        }
+        avgRoadWear = count > 0 ? round(totalWear / count, 3) : 0;
+      }
+
       timeSeries.push({
         t: round(t, 2),
         food: round(state.resources.food ?? 0, 2),
         wood: round(state.resources.wood ?? 0, 2),
-        workers: state.agents.filter((a) => a.type === "WORKER" && a.alive !== false).length,
+        workers: aliveWorkers.length,
         prosperity: round(state.gameplay.prosperity ?? 0, 2),
         threat: round(state.gameplay.threat ?? 0, 2),
+        // Infrastructure fields (v0.6.9)
+        avgWorkerSpread,
+        roadTiles: roadStats.totalRoadTiles ?? 0,
+        roadComponents: roadStats.componentCount ?? 0,
+        logisticsConnected: logisStats.connected ?? 0,
+        logisticsIsolated: logisStats.isolated ?? 0,
+        avgRoadWear,
+        reservationCount: state._jobReservation?.stats?.totalReservations ?? 0,
       });
     }
 
@@ -227,6 +265,8 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   const costPerToken = 0.00001; // nominal cost
   const costMetrics = computeCostMetrics(decisions, gameDurationMin, costPerToken);
 
+  const infraScore = computeInfrastructureScore(timeSeries);
+
   const finalTelemetry = buildLongRunTelemetry(state);
 
   return {
@@ -246,6 +286,7 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
     completedObjectives,
     taskScore,
     costMetrics,
+    infraScore,
     ai: {
       enabled: Boolean(condition.aiEnabled),
       decisionCount: aiDecisionCount,
