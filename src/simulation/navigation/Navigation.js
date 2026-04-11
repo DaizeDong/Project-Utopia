@@ -1,5 +1,6 @@
 import { BALANCE } from "../../config/balance.js";
-import { worldToTile, tileToWorld } from "../../world/grid/Grid.js";
+import { TILE } from "../../config/constants.js";
+import { worldToTile, tileToWorld, getTile } from "../../world/grid/Grid.js";
 import { aStar } from "./AStar.js";
 
 const PATH_RETRY_BUDGET_SKIP_BASE_SEC = 0.16;
@@ -265,13 +266,22 @@ export function followPath(entity, state, dt) {
     }
   }
 
-  const speed = entity.type === "WORKER"
+  let speed = entity.type === "WORKER"
     ? BALANCE.workerSpeed * Number(entity.preferences?.speedMultiplier ?? 1)
     : entity.type === "VISITOR"
       ? BALANCE.visitorSpeed
       : entity.kind === "PREDATOR"
         ? BALANCE.predatorSpeed
         : BALANCE.herbivoreSpeed;
+
+  // Road speed bonus: workers on road/bridge tiles move faster
+  if (entity.type === "WORKER" && state.grid) {
+    const cur = worldToTile(entity.x, entity.z, state.grid);
+    const curTile = getTile(state.grid, cur.ix, cur.iz);
+    if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
+      speed *= (BALANCE.roadSpeedMultiplier ?? 1.35);
+    }
+  }
 
   const len = Math.hypot(dx, dz) || 1;
   return {
