@@ -20,10 +20,14 @@
  */
 
 import { TILE, MOVE_DIRECTIONS_4, DEFAULT_GRID } from "../../../config/constants.js";
-import { BUILD_COST, WEATHER_MODIFIERS } from "../../../config/balance.js";
+import { BUILD_COST, WEATHER_MODIFIERS, BALANCE } from "../../../config/balance.js";
 import { inBounds, getTile, listTilesByType, toIndex } from "../../../world/grid/Grid.js";
 import { canAfford } from "../../construction/BuildAdvisor.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
+
+// ── Season definitions (must match WeatherSystem) ───────────────────────
+const SEASON_DURATION = { spring: 60, summer: 60, autumn: 50, winter: 50 };
+const SEASON_ORDER = ["spring", "summer", "autumn", "winter"];
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -402,6 +406,141 @@ export function computeAffordability(resources) {
   return result;
 }
 
+// ── Resource Chain Analysis ──────────────────────────────────────────────
+
+/**
+ * Analyze the status and ROI of each resource processing chain.
+ * Provides structured chain information for LLM decision-making.
+ * @param {object} state — game state
+ * @returns {Array<object>} chain status objects
+ */
+export function analyzeResourceChains(state) {
+  const buildings = state.buildings ?? {};
+  const resources = state.resources ?? {};
+  const chains = [];
+
+  // FOOD CHAIN: farm → kitchen → meals
+  const farms = buildings.farms ?? 0;
+  const kitchens = buildings.kitchens ?? 0;
+  const foodChain = {
+    name: "food",
+    stages: [
+      { building: "farm", count: farms, status: farms > 0 ? "active" : "missing", cost: "5w" },
+      { building: "kitchen", count: kitchens, status: kitchens > 0 ? "active" : (farms >= 6 ? "ready" : "blocked"), cost: "8w+3s", prereq: "6+ farms and food surplus" },
+    ],
+    bottleneck: null,
+    nextAction: null,
+  };
+  if (farms === 0) { foodChain.bottleneck = "no farms"; foodChain.nextAction = "build farm (5w)"; }
+  else if (farms < 6 && kitchens === 0) { foodChain.bottleneck = `only ${farms} farms (need 6 for kitchen)`; foodChain.nextAction = "build more farms"; }
+  else if (kitchens === 0 && farms >= 6) { foodChain.bottleneck = "no kitchen"; foodChain.nextAction = "build kitchen (8w+3s) — converts food→meals at 2x efficiency"; }
+  chains.push(foodChain);
+
+  // TOOL CHAIN: quarry → smithy → tools → +15% all production
+  const quarries = buildings.quarries ?? 0;
+  const smithies = buildings.smithies ?? 0;
+  const tools = resources.tools ?? 0;
+  const toolChain = {
+    name: "tools",
+    stages: [
+      { building: "quarry", count: quarries, status: quarries > 0 ? "active" : "missing", cost: "6w" },
+      { building: "smithy", count: smithies, status: smithies > 0 ? "active" : (quarries > 0 ? "ready" : "blocked"), cost: "6w+5s", prereq: "stable stone income" },
+    ],
+    bottleneck: null,
+    nextAction: null,
+    impact: `tools boost ALL harvest +${Math.round(BALANCE.toolHarvestSpeedBonus * 100)}% (current tools: ${Math.round(tools)})`,
+  };
+  if (quarries === 0) { toolChain.bottleneck = "no quarry"; toolChain.nextAction = "build quarry (6w) — stone income enables smithy"; }
+  else if (smithies === 0) { toolChain.bottleneck = "no smithy"; toolChain.nextAction = `build smithy (6w+5s) — unlocks tools for +${Math.round(BALANCE.toolHarvestSpeedBonus * 100)}% production`; }
+  chains.push(toolChain);
+
+  // MEDICAL CHAIN: herb_garden → clinic → medicine → lower mortality
+  const herbGardens = buildings.herbGardens ?? 0;
+  const clinics = buildings.clinics ?? 0;
+  const medChain = {
+    name: "medical",
+    stages: [
+      { building: "herb_garden", count: herbGardens, status: herbGardens > 0 ? "active" : "missing", cost: "4w" },
+      { building: "clinic", count: clinics, status: clinics > 0 ? "active" : (herbGardens > 0 ? "ready" : "blocked"), cost: "6w+4h", prereq: "herb surplus" },
+    ],
+    bottleneck: null,
+    nextAction: null,
+  };
+  if (herbGardens === 0) { medChain.bottleneck = "no herb_garden"; medChain.nextAction = "build herb_garden (4w) — herbs enable clinic"; }
+  else if (clinics === 0) { medChain.bottleneck = "no clinic"; medChain.nextAction = "build clinic (6w+4h) — medicine reduces colonist mortality"; }
+  chains.push(medChain);
+
+  return chains;
+}
+
+/**
+ * Forecast the impact of current and upcoming seasons.
+ * @param {object} weather — state.weather
+ * @returns {object} forecast with current + next season info
+ */
+export function forecastSeasonImpact(weather) {
+  if (!weather || !weather.season) return null;
+
+  const current = weather.season;
+  const progress = weather.seasonProgress ?? 0;
+  const currentIdx = SEASON_ORDER.indexOf(current);
+  const nextIdx = (currentIdx + 1) % 4;
+  const nextSeason = SEASON_ORDER[nextIdx];
+  const currentDuration = SEASON_DURATION[current] ?? 55;
+  const remainingSec = Math.round(currentDuration * (1 - progress));
+
+  const impacts = {
+    spring: { farmMod: "normal", lumberMod: "normal", risk: "none", advice: "favorable for farming" },
+    summer: { farmMod: "drought risk -45%", lumberMod: "normal", risk: "drought + fire on low-moisture tiles", advice: "stockpile food, avoid low-moisture lumber" },
+    autumn: { farmMod: "normal", lumberMod: "normal", risk: "storms possible", advice: "good expansion window" },
+    winter: { farmMod: "-35%", lumberMod: "-15%", risk: "reduced production", advice: "ensure food reserves before winter" },
+  };
+
+  return {
+    current,
+    currentProgress: Math.round(progress * 100),
+    remainingSec,
+    next: nextSeason,
+    nextInSec: remainingSec,
+    currentImpact: impacts[current],
+    nextImpact: impacts[nextSeason],
+    weatherNow: weather.current ?? "clear",
+    weatherRemaining: Math.round(weather.timeLeftSec ?? 0),
+  };
+}
+
+/**
+ * Summarize recent plan history for LLM context.
+ * @param {Array} planHistory — from agentDirector state
+ * @param {number} maxEntries — max entries to include
+ * @returns {object} summary with patterns
+ */
+export function summarizePlanHistory(planHistory, maxEntries = 5) {
+  if (!planHistory || planHistory.length === 0) return null;
+
+  const recent = planHistory.slice(-maxEntries);
+  const total = planHistory.length;
+  const successes = planHistory.filter(p => p.success).length;
+  const avgScore = planHistory.reduce((a, p) => a + (p.score ?? 0), 0) / total;
+
+  // Detect patterns
+  const failReasons = {};
+  for (const p of planHistory) {
+    if (!p.success && p.failReason) {
+      failReasons[p.failReason] = (failReasons[p.failReason] ?? 0) + 1;
+    }
+  }
+  const topFailReason = Object.entries(failReasons).sort((a, b) => b[1] - a[1])[0];
+
+  return {
+    recent,
+    totalPlans: total,
+    successRate: Math.round(successes / total * 100),
+    avgScore: Math.round(avgScore * 100) / 100,
+    topFailReason: topFailReason ? `${topFailReason[0]} (${topFailReason[1]}x)` : null,
+  };
+}
+
 // ── ColonyPerceiver Class ────────────────────────────────────────────────
 
 /**
@@ -546,11 +685,26 @@ export class ColonyPerceiver {
       wood: Math.round(resources?.wood ?? 0) - prev.wood,
     } : null;
 
+    // Resource chain analysis
+    const resourceChains = analyzeResourceChains(state);
+
+    // Season forecast
+    const seasonForecast = forecastSeasonImpact(weather);
+
+    // Strategy context (from StrategicDirector, if available)
+    const strategy = state.ai?.strategy ?? null;
+
+    // Plan history (from AgentDirector, if available)
+    const planHistory = state.ai?.agentDirector?.planHistory ?? null;
+    const planHistorySummary = summarizePlanHistory(planHistory);
+
     const observation = {
       timeSec: Math.round(timeSec),
       observeCount: ++this._observeCount,
 
       economy,
+
+      resourceChains,
 
       topology: {
         clusters,
@@ -584,6 +738,12 @@ export class ColonyPerceiver {
       },
 
       environment,
+
+      seasonForecast,
+
+      strategy,
+
+      planHistorySummary,
 
       prosperity,
 
@@ -715,13 +875,40 @@ export function formatObservationForLLM(obs) {
   }
   lines.push("");
 
-  // Economy
+  // Economy with prominent depletion warnings
   lines.push("### Economy");
+  const depletionWarnings = [];
   for (const [key, val] of Object.entries(obs.economy)) {
     let line = `- ${key}: ${val.stock}`;
     if (val.rate !== 0) line += ` (${val.rate > 0 ? "+" : ""}${val.rate}/s, ${val.trend})`;
-    if (val.projectedZeroSec != null) line += ` [depleted in ~${val.projectedZeroSec}s]`;
+    if (val.projectedZeroSec != null) {
+      if (val.projectedZeroSec < 30) {
+        line += ` ⚠ CRITICAL: depletes in ~${val.projectedZeroSec}s!`;
+        depletionWarnings.push(`${key} depletes in ${val.projectedZeroSec}s`);
+      } else {
+        line += ` [depleted in ~${val.projectedZeroSec}s]`;
+      }
+    }
     lines.push(line);
+  }
+  if (depletionWarnings.length > 0) {
+    lines.push(`- **URGENT**: ${depletionWarnings.join("; ")}`);
+  }
+
+  // Resource Chains — shows the LLM what to build next in each processing chain
+  if (obs.resourceChains) {
+    lines.push("");
+    lines.push("### Resource Chains (build order guidance)");
+    for (const chain of obs.resourceChains) {
+      const stageStr = chain.stages.map(s => {
+        const icon = s.status === "active" ? "✅" : s.status === "ready" ? "🔓" : "❌";
+        return `${icon}${s.building}(${s.count})`;
+      }).join(" → ");
+      lines.push(`- ${chain.name.toUpperCase()}: ${stageStr}`);
+      if (chain.bottleneck) lines.push(`  Bottleneck: ${chain.bottleneck}`);
+      if (chain.nextAction) lines.push(`  → Next: ${chain.nextAction}`);
+      if (chain.impact) lines.push(`  Impact: ${chain.impact}`);
+    }
   }
 
   // Topology
@@ -734,7 +921,7 @@ export function formatObservationForLLM(obs) {
   if (obs.topology.clusters.length > 0) {
     lines.push(`- Clusters (${obs.topology.clusters.length}):`);
     for (const c of obs.topology.clusters) {
-      lines.push(`  - ${c.id}: center=(${c.center.ix},${c.center.iz}), WH=${c.warehouses}, F=${c.farms}, L=${c.lumbers}, coverage=${c.coverageRatio}, workers=${c.workerCount}`);
+      lines.push(`  - ${c.id}: center=(${c.center.ix},${c.center.iz}), WH=${c.warehouses}, F=${c.farms}, L=${c.lumbers}, Q=${c.quarries}, HG=${c.herbGardens}, K=${c.kitchens}, S=${c.smithies}, C=${c.clinics}, coverage=${c.coverageRatio}, workers=${c.workerCount}, avgMoisture=${c.avgMoisture}`);
     }
   }
 
@@ -742,7 +929,7 @@ export function formatObservationForLLM(obs) {
   if (obs.topology.expansionFrontiers.length > 0) {
     lines.push(`- Expansion frontiers:`);
     for (const f of obs.topology.expansionFrontiers) {
-      lines.push(`  - ${f.direction}: grass=${f.availableGrass}, moisture=${f.avgMoisture}, density=${f.density}`);
+      lines.push(`  - ${f.direction}: grass=${f.availableGrass}, moisture=${f.avgMoisture}, elevation=${f.avgElevation}, density=${f.density}`);
     }
   }
 
@@ -759,7 +946,7 @@ export function formatObservationForLLM(obs) {
   // Logistics bottlenecks
   if (obs.topology.logisticsBottleneck) {
     lines.push(`- **Logistics bottlenecks:**`);
-    for (const b of obs.topology.logisticsBottleneck) lines.push(`  - ⚠ ${b}`);
+    for (const lb of obs.topology.logisticsBottleneck) lines.push(`  - ⚠ ${lb}`);
   }
 
   // Defense
@@ -771,12 +958,42 @@ export function formatObservationForLLM(obs) {
     lines.push(`- Active saboteurs: ${obs.defense.activeSaboteurs}`);
   }
 
-  // Environment
+  // Environment with season forecast
   lines.push("");
   lines.push("### Environment");
   lines.push(`- Weather: ${obs.environment.weather} (${obs.environment.weatherRemainingSec}s remaining)`);
-  if (obs.environment.season) {
+  if (obs.seasonForecast) {
+    const sf = obs.seasonForecast;
+    lines.push(`- Season: ${sf.current} (${sf.currentProgress}%, ~${sf.remainingSec}s left)`);
+    lines.push(`  Current impact: farm=${sf.currentImpact.farmMod}, lumber=${sf.currentImpact.lumberMod}`);
+    if (sf.currentImpact.risk !== "none") lines.push(`  ⚠ Risk: ${sf.currentImpact.risk}`);
+    lines.push(`  Next season: ${sf.next} in ~${sf.nextInSec}s — ${sf.nextImpact.advice}`);
+  } else if (obs.environment.season) {
     lines.push(`- Season: ${obs.environment.season} (${Math.round((obs.environment.seasonProgress ?? 0) * 100)}%)`);
+  }
+
+  // Strategy context (from StrategicDirector)
+  if (obs.strategy) {
+    lines.push("");
+    lines.push("### Current Strategy (from Strategic Advisor)");
+    lines.push(`- Priority: ${obs.strategy.priority}, Focus: ${obs.strategy.resourceFocus}`);
+    lines.push(`- Defense posture: ${obs.strategy.defensePosture}, Risk tolerance: ${obs.strategy.riskTolerance}`);
+    if (obs.strategy.workerFocus !== "balanced") lines.push(`- Worker focus: ${obs.strategy.workerFocus}`);
+  }
+
+  // Plan history summary
+  if (obs.planHistorySummary) {
+    const ph = obs.planHistorySummary;
+    lines.push("");
+    lines.push("### Recent Plan Performance");
+    lines.push(`- ${ph.totalPlans} plans total, ${ph.successRate}% success, avg score ${ph.avgScore}`);
+    if (ph.topFailReason) lines.push(`- Most common failure: ${ph.topFailReason}`);
+    for (const p of ph.recent) {
+      const icon = p.success ? "✓" : "✗";
+      let entry = `  ${icon} "${p.goal}" — ${p.completed}/${p.total} steps, score ${(p.score ?? 0).toFixed(2)}`;
+      if (p.failReason) entry += ` (${p.failReason})`;
+      lines.push(entry);
+    }
   }
 
   // Objective
