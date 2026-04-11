@@ -11,6 +11,7 @@ import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js"
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
+import { LogisticsSystem } from "../economy/LogisticsSystem.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -513,11 +514,10 @@ function handleHarvest(worker, state, services, dt) {
   if (!isAtTargetTile(worker, state)) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
   const isNight = Boolean(state.environment?.isNight);
-  // Logistics bonus: buildings adjacent to road connected to warehouse get yield bonus
-  const roadNet = state._roadNetwork;
-  const logisticsBonus = (roadNet && worker.targetTile &&
-    roadNet.isAdjacentToConnectedRoad(worker.targetTile.ix, worker.targetTile.iz, state.grid))
-    ? (BALANCE.roadLogisticsBonus ?? 1.15) : 1.0;
+  // Logistics efficiency: buildings connected to warehouse via road get bonus, isolated get penalty
+  const logistics = state._logisticsSystem;
+  const logisticsBonus = (logistics && worker.targetTile)
+    ? logistics.getEfficiency(worker.targetTile.ix, worker.targetTile.iz) : 1.0;
   // HAUL workers: determine resource type from tile they're standing on
   let effectiveRole = worker.role;
   if (worker.role === ROLE.HAUL && worker.targetTile) {
@@ -699,6 +699,9 @@ export class WorkerAISystem {
 
     state._roadNetwork ??= new RoadNetwork();
     state._roadNetwork.rebuild(state.grid);
+
+    state._logisticsSystem ??= new LogisticsSystem();
+    state._logisticsSystem.update(dt, state);
 
     for (const worker of state.agents) {
       if (worker.type !== "WORKER") continue;
