@@ -7,10 +7,14 @@
  * 3. Generate natural language reflections for MemoryStore
  * 4. Evaluate overall plan success and compute quality scores
  * 5. Track evaluation statistics across planning cycles
+ * 6. Systemic bottleneck analysis across step evaluations (P4)
+ * 7. Recurring failure pattern detection (P4)
+ * 8. Formatted evaluation summary for LLM consumption (P4)
  */
 
 import { TILE } from "../../../config/constants.js";
 import { listTilesByType, toIndex, inBounds } from "../../../world/grid/Grid.js";
+import { analyzeResourceChains } from "./ColonyPerceiver.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -386,28 +390,28 @@ export function generateReflection(step, evaluation, state) {
 function _reflectionFromCause(actionType, coords, cause, evaluation) {
   switch (cause.type) {
     case "no_valid_tile":
-      return `Failed to place ${actionType} — no valid tile found. Area may be congested or terrain unsuitable. Consider expanding to new territory first.`;
+      return `Failed to place ${actionType} — no valid tile found. REMEDY: Build a warehouse in a new area first, or clear ruins to free space. Check expansion frontiers for available grass tiles.`;
 
     case "placement_rejected":
-      return `${_capitalize(actionType)} at ${coords} was rejected by the build system. The chosen location may conflict with existing buildings or terrain.`;
+      return `${_capitalize(actionType)} at ${coords} was rejected by the build system. REMEDY: Use location hints (near_cluster, terrain:high_moisture) to target better tiles.`;
 
     case "uncovered":
-      return `${_capitalize(actionType)} at ${coords} is outside warehouse coverage (${cause.detail}). Future ${actionType} builds must be within ${WAREHOUSE_COVERAGE_DIST} tiles of a warehouse.`;
+      return `${_capitalize(actionType)} at ${coords} is outside warehouse coverage (${cause.detail}). REMEDY: Build warehouse before placing production buildings in new areas. All production must be within ${WAREHOUSE_COVERAGE_DIST} tiles of a warehouse.`;
 
     case "no_workers":
-      return `${_capitalize(actionType)} at ${coords} has no nearby workers and may be unserviced. Place production buildings near worker activity zones.`;
+      return `${_capitalize(actionType)} at ${coords} has no nearby workers — building will be unserviced. REMEDY: Build closer to existing clusters, or wait for population growth. Don't spread colony faster than workforce.`;
 
     case "poor_terrain":
-      return `${_capitalize(actionType)} at ${coords} is on poor terrain (${cause.detail}). Prioritize high-moisture tiles for farms and herb gardens.`;
+      return `${_capitalize(actionType)} at ${coords} is on poor terrain (${cause.detail}). REMEDY: For farms/herb_gardens, target moisture > 0.5 using terrain:high_moisture hint. Check expansion frontiers for better terrain.`;
 
     case "high_elevation":
-      return `${_capitalize(actionType)} at ${coords} is at high elevation (${cause.detail}). Prefer lower ground for production buildings to reduce costs.`;
+      return `${_capitalize(actionType)} at ${coords} is at high elevation (${cause.detail}). REMEDY: Prefer low-elevation tiles for production (cheaper build, better fertility). Reserve high elevation for walls (+50% defense).`;
 
     case "adjacency_conflict":
-      return `${_capitalize(actionType)} at ${coords} has an adjacency conflict (${cause.detail}). Separate quarries from farms to avoid fertility penalties.`;
+      return `${_capitalize(actionType)} at ${coords} has an adjacency conflict (${cause.detail}). REMEDY: Keep quarries at least 2 tiles from farms/herb_gardens. Place herb_gardens adjacent to farms for +fertility synergy.`;
 
     case "prediction_mismatch":
-      return `${_capitalize(actionType)} at ${coords} ${cause.detail}. Adjust future predictions for ${actionType} in similar conditions.`;
+      return `${_capitalize(actionType)} at ${coords} ${cause.detail}. REMEDY: Calibrate predictions — actual yields depend on moisture, worker availability, and season modifiers.`;
 
     default:
       return `${_capitalize(actionType)} at ${coords}: ${cause.detail}`;
@@ -627,4 +631,313 @@ export class PlanEvaluator {
 
     return reflections;
   }
+
+  /**
+   * Analyze systemic bottlenecks across all step evaluations in a plan.
+   * Detects colony-wide patterns like coverage gaps, terrain issues, chain gaps.
+   * @param {Array<object>} stepEvaluations — per-step evaluations
+   * @param {object} state — current game state
+   * @returns {object} systemic analysis
+   */
+  analyzeSystemicBottlenecks(stepEvaluations, state) {
+    return analyzeSystemicBottlenecks(stepEvaluations, state);
+  }
+
+  /**
+   * Detect recurring failure patterns across plan history.
+   * @param {Array<object>} planHistory — from agentState.planHistory
+   * @returns {Array<{pattern: string, count: number, remedy: string}>}
+   */
+  detectRecurringPatterns(planHistory) {
+    return detectRecurringPatterns(planHistory);
+  }
+
+  /**
+   * Format a comprehensive evaluation summary for LLM consumption.
+   * @param {object} planEval — from evaluatePlan()
+   * @param {Array<object>} stepEvaluations — per-step evaluations
+   * @param {object} state — current game state
+   * @param {Array<object>} [planHistory] — recent plan history
+   * @returns {string}
+   */
+  formatEvaluationForLLM(planEval, stepEvaluations, state, planHistory = []) {
+    return formatEvaluationForLLM(planEval, stepEvaluations, state, planHistory);
+  }
+}
+
+// ── P4: Systemic Bottleneck Analysis ───────────────────────────────
+
+/**
+ * Analyze systemic bottlenecks across step evaluations.
+ * Groups diagnoses by type and detects colony-wide patterns.
+ * @param {Array<object>} stepEvaluations
+ * @param {object} state
+ * @returns {object} { coverageIssues, terrainIssues, workerIssues, chainGaps, summary }
+ */
+export function analyzeSystemicBottlenecks(stepEvaluations, state) {
+  const diagCounts = {};
+  const diagDetails = {};
+
+  // Aggregate all diagnoses across steps
+  for (const ev of stepEvaluations) {
+    for (const cause of (ev.diagnosis ?? [])) {
+      diagCounts[cause.type] = (diagCounts[cause.type] ?? 0) + 1;
+      if (!diagDetails[cause.type]) diagDetails[cause.type] = [];
+      diagDetails[cause.type].push({ action: ev.action, detail: cause.detail, severity: cause.severity });
+    }
+  }
+
+  const totalSteps = stepEvaluations.length;
+  const failedSteps = stepEvaluations.filter(e => !e.success).length;
+
+  // Coverage issues
+  const uncoveredCount = diagCounts.uncovered ?? 0;
+  const coverageIssues = uncoveredCount > 0 ? {
+    count: uncoveredCount,
+    ratio: totalSteps > 0 ? uncoveredCount / totalSteps : 0,
+    remedy: uncoveredCount >= 2
+      ? "CRITICAL: Multiple buildings outside warehouse coverage. Build a new warehouse closer to expansion area before placing more production buildings."
+      : "Place production buildings within 12 tiles of a warehouse.",
+  } : null;
+
+  // Terrain issues
+  const terrainCount = (diagCounts.poor_terrain ?? 0) + (diagCounts.high_elevation ?? 0);
+  const terrainIssues = terrainCount > 0 ? {
+    count: terrainCount,
+    types: diagDetails.poor_terrain?.map(d => d.detail) ?? [],
+    remedy: "Prioritize high-moisture, low-elevation tiles for farms/herb_gardens. Use PlacementSpecialist terrain scoring.",
+  } : null;
+
+  // Worker coverage
+  const workerCount = diagCounts.no_workers ?? 0;
+  const workerIssues = workerCount > 0 ? {
+    count: workerCount,
+    remedy: workerCount >= 2
+      ? "CRITICAL: Multiple unserviced buildings. Colony may be too spread out — consolidate or wait for more workers."
+      : "Build closer to worker activity zones.",
+  } : null;
+
+  // Resource chain gap analysis
+  const chainGaps = _analyzeChainGaps(stepEvaluations, state);
+
+  // Overall summary
+  const issues = [];
+  if (coverageIssues) issues.push(`${uncoveredCount} uncovered builds`);
+  if (terrainIssues) issues.push(`${terrainCount} terrain issues`);
+  if (workerIssues) issues.push(`${workerCount} unserviced builds`);
+  if (chainGaps.length > 0) issues.push(`${chainGaps.length} chain gap(s)`);
+
+  return {
+    coverageIssues,
+    terrainIssues,
+    workerIssues,
+    chainGaps,
+    failureRate: totalSteps > 0 ? failedSteps / totalSteps : 0,
+    summary: issues.length > 0
+      ? `Systemic issues: ${issues.join(", ")}`
+      : "No systemic issues detected",
+  };
+}
+
+/**
+ * Analyze resource chain gaps based on what was built vs what's missing.
+ * @param {Array<object>} stepEvaluations
+ * @param {object} state
+ * @returns {Array<{chain: string, gap: string, remedy: string}>}
+ */
+function _analyzeChainGaps(stepEvaluations, state) {
+  const gaps = [];
+
+  let chains;
+  try {
+    chains = analyzeResourceChains(state);
+  } catch {
+    return gaps;
+  }
+
+  // Count what was just built
+  const builtTypes = {};
+  for (const ev of stepEvaluations) {
+    if (ev.buildSuccess) {
+      builtTypes[ev.action] = (builtTypes[ev.action] ?? 0) + 1;
+    }
+  }
+
+  for (const chain of chains) {
+    if (!chain.bottleneck) continue;
+
+    // Check if we built upstream without addressing the bottleneck
+    const stages = chain.stages ?? [];
+    const bottleneckStage = stages.find(s => s.status === "missing" || s.status === "ready");
+    if (!bottleneckStage) continue;
+
+    // If we built the upstream building but NOT the bottleneck building, flag it
+    const upstreamBuilt = stages.some(s => s.status === "active" && builtTypes[s.building]);
+    const bottleneckBuilt = builtTypes[bottleneckStage.building];
+
+    if (upstreamBuilt && !bottleneckBuilt && bottleneckStage.status === "ready") {
+      gaps.push({
+        chain: chain.name,
+        gap: `Built more ${stages[0].building}s but ${bottleneckStage.building} is ready and unbuilt`,
+        remedy: chain.nextAction ?? `Build ${bottleneckStage.building}`,
+      });
+    }
+  }
+
+  return gaps;
+}
+
+// ── P4: Recurring Pattern Detection ────────────────────────────────
+
+/**
+ * Detect recurring failure patterns across plan history.
+ * Groups consecutive failures by reason and suggests remedies.
+ * @param {Array<object>} planHistory — from agentState.planHistory
+ * @returns {Array<{pattern: string, count: number, remedy: string}>}
+ */
+export function detectRecurringPatterns(planHistory) {
+  if (!planHistory || planHistory.length < 2) return [];
+
+  const patterns = [];
+  const failReasons = {};
+  const goalFailures = {};
+  let consecutiveFailures = 0;
+
+  for (const entry of planHistory) {
+    if (!entry.success) {
+      consecutiveFailures++;
+      const reason = entry.failReason ?? "unknown";
+      failReasons[reason] = (failReasons[reason] ?? 0) + 1;
+
+      // Track goal keywords
+      const goalWords = (entry.goal ?? "").toLowerCase().split(/\s+/);
+      for (const word of goalWords) {
+        if (word.length > 3) {
+          goalFailures[word] = (goalFailures[word] ?? 0) + 1;
+        }
+      }
+    } else {
+      consecutiveFailures = 0;
+    }
+  }
+
+  // Consecutive failure streak
+  if (consecutiveFailures >= 3) {
+    patterns.push({
+      pattern: `${consecutiveFailures} consecutive plan failures`,
+      count: consecutiveFailures,
+      remedy: "Consider simplifying plans (fewer steps) or switching to a different goal. The colony may need to consolidate before expanding.",
+    });
+  }
+
+  // Repeated failure reasons
+  for (const [reason, count] of Object.entries(failReasons)) {
+    if (count >= 2) {
+      const remedy = _remedyForFailReason(reason);
+      patterns.push({ pattern: `Repeated "${reason}" failures`, count, remedy });
+    }
+  }
+
+  // Repeated goal keyword failures (same type of plan keeps failing)
+  for (const [word, count] of Object.entries(goalFailures)) {
+    if (count >= 3) {
+      patterns.push({
+        pattern: `Plans involving "${word}" fail repeatedly`,
+        count,
+        remedy: `Deprioritize "${word}"-related plans. The colony may lack prerequisites or terrain for this goal.`,
+      });
+    }
+  }
+
+  return patterns;
+}
+
+function _remedyForFailReason(reason) {
+  switch (reason) {
+    case "blocked":
+      return "Plans are getting blocked — likely resource shortage or no buildable tiles. Ensure resource reserves before planning builds.";
+    case "timeout":
+      return "Plans are timing out — reduce plan scope (fewer steps) or increase horizon.";
+    case "no_tiles":
+      return "No buildable tiles available — expand warehouse coverage or clear ruins for space.";
+    default:
+      return "Investigate root cause. Consider switching strategy phase or simplifying plan goals.";
+  }
+}
+
+// ── P4: LLM-Formatted Evaluation Summary ───────────────────────────
+
+/**
+ * Format a comprehensive evaluation summary for LLM consumption.
+ * Provides structured feedback the planner can use to improve future plans.
+ * @param {object} planEval — from evaluatePlan()
+ * @param {Array<object>} stepEvaluations — per-step evaluations
+ * @param {object} state — current game state
+ * @param {Array<object>} [planHistory] — recent plan history
+ * @returns {string}
+ */
+export function formatEvaluationForLLM(planEval, stepEvaluations, state, planHistory = []) {
+  const lines = [];
+
+  // ── Plan outcome
+  lines.push("## Last Plan Evaluation");
+  lines.push(`Goal: ${planEval.goal}`);
+  lines.push(`Result: ${planEval.success ? "✅ SUCCESS" : "❌ FAILED"} (${planEval.completed}/${planEval.total} steps, score ${planEval.overallScore.toFixed(2)})`);
+  lines.push(`Time: ${planEval.elapsedSec}s / ${planEval.horizonSec}s budget (${(planEval.timeEfficiency * 100).toFixed(0)}% efficient)`);
+
+  // Resource impact
+  const changes = Object.entries(planEval.resourceChanges ?? {}).filter(([, v]) => Math.abs(v) > 0.5);
+  if (changes.length > 0) {
+    lines.push(`Resources: ${changes.map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${Math.round(v)}`).join(", ")}`);
+  }
+
+  // ── Step-level issues (top 3 worst)
+  const worstSteps = [...stepEvaluations]
+    .filter(e => !e.success || e.score < 0.8)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 3);
+
+  if (worstSteps.length > 0) {
+    lines.push("");
+    lines.push("## Issues Found");
+    for (const ev of worstSteps) {
+      const topCause = (ev.diagnosis ?? []).sort((a, b) => b.severity - a.severity)[0];
+      if (topCause) {
+        lines.push(`- ${ev.action}: ${topCause.detail} [severity ${topCause.severity}/5]`);
+      } else if (!ev.success) {
+        lines.push(`- ${ev.action}: build failed (score ${ev.score.toFixed(2)})`);
+      }
+    }
+  }
+
+  // ── Systemic analysis
+  const systemic = analyzeSystemicBottlenecks(stepEvaluations, state);
+  if (systemic.coverageIssues || systemic.terrainIssues || systemic.workerIssues || systemic.chainGaps.length > 0) {
+    lines.push("");
+    lines.push("## Systemic Issues");
+    if (systemic.coverageIssues) {
+      lines.push(`⚠ COVERAGE: ${systemic.coverageIssues.count} builds outside warehouse range → ${systemic.coverageIssues.remedy}`);
+    }
+    if (systemic.workerIssues) {
+      lines.push(`⚠ WORKERS: ${systemic.workerIssues.count} unserviced builds → ${systemic.workerIssues.remedy}`);
+    }
+    if (systemic.terrainIssues) {
+      lines.push(`⚠ TERRAIN: ${systemic.terrainIssues.count} poor placement(s) → ${systemic.terrainIssues.remedy}`);
+    }
+    for (const gap of systemic.chainGaps) {
+      lines.push(`⚠ CHAIN (${gap.chain}): ${gap.gap} → ${gap.remedy}`);
+    }
+  }
+
+  // ── Recurring patterns
+  const patterns = detectRecurringPatterns(planHistory);
+  if (patterns.length > 0) {
+    lines.push("");
+    lines.push("## Recurring Patterns (IMPORTANT — break the loop!)");
+    for (const p of patterns.slice(0, 3)) {
+      lines.push(`🔄 ${p.pattern} (×${p.count}) → ${p.remedy}`);
+    }
+  }
+
+  return lines.join("\n");
 }
