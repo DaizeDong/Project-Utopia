@@ -20,6 +20,7 @@ import { detectClusters, analyzeExpansionFrontiers } from "./ColonyPerceiver.js"
 import {
   SKILL_LIBRARY, expandSkillSteps, assessSkillFeasibility, scoreSkillTerrain,
 } from "./SkillLibrary.js";
+import { analyzeCandidateTiles } from "./PlacementSpecialist.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -319,6 +320,11 @@ export function rankByTerrainQuality(tiles, buildType, grid) {
  * @param {Map} groundedSteps — previously grounded step tiles
  * @returns {object} — step with groundedTile, affordanceScore, feasible
  */
+/** Building types that get enhanced placement analysis */
+const ENHANCED_PLACEMENT_TYPES = new Set([
+  "warehouse", "farm", "quarry", "herb_garden", "kitchen", "smithy", "clinic",
+]);
+
 export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map()) {
   const action = step.action;
 
@@ -337,15 +343,36 @@ export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map
     return preview.ok;
   });
 
-  const ranked = rankByTerrainQuality(feasibleTiles, action.type, state.grid);
+  let bestTile = null;
+  let placementDetails = null;
+
+  // Use enhanced placement analysis for key building types
+  if (ENHANCED_PLACEMENT_TYPES.has(action.type) && feasibleTiles.length > 0) {
+    const analyzed = analyzeCandidateTiles(feasibleTiles, action.type, state.grid, state);
+    if (analyzed.length > 0) {
+      bestTile = { ix: analyzed[0].ix, iz: analyzed[0].iz, terrainScore: analyzed[0].score };
+      placementDetails = {
+        topCandidates: analyzed.slice(0, 3).map(c => ({
+          ix: c.ix, iz: c.iz, score: c.score, notes: c.notes,
+        })),
+      };
+    }
+  }
+
+  // Fallback to basic terrain ranking for simple types
+  if (!bestTile) {
+    const ranked = rankByTerrainQuality(feasibleTiles, action.type, state.grid);
+    bestTile = ranked[0] ?? null;
+  }
 
   return {
     ...step,
-    groundedTile: ranked[0] ?? null,
+    groundedTile: bestTile,
     affordanceScore,
-    feasible: ranked.length > 0 && affordanceScore > 0.5,
+    feasible: bestTile != null && affordanceScore > 0.5,
     candidateCount: candidates.length,
-    feasibleCount: ranked.length,
+    feasibleCount: feasibleTiles.length,
+    placementDetails,
     status: "pending",
   };
 }
