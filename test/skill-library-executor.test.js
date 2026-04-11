@@ -118,15 +118,18 @@ function makeMockBuildSystem() {
 // SkillLibrary Tests
 // ══════════════════════════════════════════════════════════════════════
 
-test("SKILL_LIBRARY has 6 frozen skills", () => {
+test("SKILL_LIBRARY has 9 frozen skills", () => {
   const keys = Object.keys(SKILL_LIBRARY);
-  assert.equal(keys.length, 6);
+  assert.equal(keys.length, 9);
   assert.ok(keys.includes("logistics_hub"));
   assert.ok(keys.includes("processing_cluster"));
   assert.ok(keys.includes("defense_line"));
   assert.ok(keys.includes("food_district"));
   assert.ok(keys.includes("expansion_outpost"));
   assert.ok(keys.includes("bridge_link"));
+  assert.ok(keys.includes("medical_center"));
+  assert.ok(keys.includes("resource_hub"));
+  assert.ok(keys.includes("rapid_farms"));
 });
 
 test("SKILL_LIBRARY skills are frozen", () => {
@@ -281,9 +284,9 @@ test("selectSkillForGoal returns null for unknown goal", () => {
   assert.equal(selectSkillForGoal("unknown", { wood: 100 }, {}), null);
 });
 
-test("listSkillStatus returns status for all 6 skills", () => {
+test("listSkillStatus returns status for all 9 skills", () => {
   const statuses = listSkillStatus({ wood: 50, stone: 10 }, { farms: 8 });
-  assert.equal(statuses.length, 6);
+  assert.equal(statuses.length, 9);
   for (const s of statuses) {
     assert.ok(typeof s.affordable === "boolean");
     assert.ok(Array.isArray(s.missing));
