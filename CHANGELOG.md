@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.6.5] - 2026-04-10 — Agent-Based Colony Planning: Phase 4 (Evaluator + Memory)
+
+Fourth phase of the Agent-Based Colony Planning system — implements Reflexion-based plan evaluation with prediction comparison, structured failure diagnosis, natural language reflection generation, and MemoryStore integration for learning from past mistakes.
+
+### New Features
+- **PlanEvaluator** — Reflexion-inspired outcome assessment:
+  - `parsePredictedValue()` — handles rates (+0.5/s), percentages (+15%), plain numbers, qualitative values
+  - `snapshotState()` — captures resource/time/worker snapshots for before/after comparison
+  - `evaluateStep()` — composite scoring: build success (60%) + prediction accuracy (40%) with 50% tolerance
+  - `diagnoseFailure()` — 8 structured cause types with severity scoring (1-5):
+    - no_valid_tile, placement_rejected (build failures)
+    - uncovered, no_workers (logistics issues)
+    - poor_terrain, high_elevation (terrain quality)
+    - adjacency_conflict (spatial conflicts)
+    - prediction_mismatch (accuracy tracking)
+  - `generateReflection()` — template-based natural language reflections with cause-specific categories
+  - `evaluatePlan()` — overall plan quality: completion (40%) + time efficiency (20%) + builds (30%) + no-failure bonus (10%)
+  - `PlanEvaluator` class — stateful wrapper with MemoryStore write, stats tracking, batch reflections (max 5/plan)
+- **Memory Categories** — construction_failure, construction_reflection, terrain_knowledge, construction_pattern
+- **Evaluator Benchmark** — 7-scenario evaluation (`scripts/evaluator-benchmark.mjs`) covering prediction parsing, step evaluation, diagnosis, reflection generation, plan evaluation, memory integration, and full cycle
+
+### Benchmark Results
+- 61/61 tests passing (100%)
+- Self-assessment: 10/10 across 8 dimensions (prediction_accuracy, diagnosis_quality, reflection_quality, plan_scoring, memory_integration, full_cycle_quality, error_resilience, architecture_quality)
+
+### Tests
+- 39 new unit tests in `test/plan-evaluator.test.js` (all passing)
+- Full suite: 493 tests, 0 failures
+
+### Files Changed
+- `src/simulation/ai/colony/PlanEvaluator.js` — New file: step/plan evaluation, diagnosis, reflection, memory integration
+- `test/plan-evaluator.test.js` — New file: 39 unit tests
+- `scripts/evaluator-benchmark.mjs` — New file: 7-scenario benchmark with LLM judge
+- `docs/superpowers/plans/2026-04-10-agent-based-colony-planning.md` — Updated Phase 4 status to complete
+
 ## [0.6.4] - 2026-04-10 — Agent-Based Colony Planning: Phase 3 (Planner + LLM Integration)
 
 Third phase of the Agent-Based Colony Planning system — implements the LLM-powered construction planner with ReAct + Plan-and-Solve prompting, robust validation/sanitization pipeline, and priority-based algorithmic fallback.
