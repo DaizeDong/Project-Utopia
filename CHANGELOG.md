@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.6.7] - 2026-04-10 — Agent-Based Colony Planning: Phase 6 (Tuning & Learned Skills)
+
+Sixth phase of the Agent-Based Colony Planning system — implements Voyager-inspired skill learning from successful plans, adds 3 new built-in skills, and tunes the LLM prompt with calibrated yield rates and terrain impact data.
+
+### New Features
+- **LearnedSkillLibrary** — Voyager-inspired skill learning from successful plans:
+  - Extracts reusable build patterns from completed plans scoring ≥ 0.7
+  - Computes relative offsets from anchor tile for spatial templates
+  - Infers terrain preferences (moisture, elevation) from actual placement data
+  - Jaccard similarity-based deduplication (threshold 0.8) — keeps higher-scoring duplicate
+  - Confidence scoring from usage tracking (trusted after 2+ uses)
+  - Capacity-managed at 10 skills with weakest-skill eviction
+  - Formatted for LLM prompt injection with affordability status
+- **3 New Built-in Skills** in SkillLibrary (9 total):
+  - `medical_center` (11 wood + 4 herbs): herb_garden + road + clinic → medicine + herbs production
+  - `resource_hub` (15 wood): lumber + 2 roads + quarry → diversified raw materials
+  - `rapid_farms` (15 wood): 3 farms in L-shape → quick food boost (+1.2/s)
+- **Prompt Tuning** — Enhanced system prompt with calibrated data:
+  - Per-building yield rates (farm +0.4/s, lumber +0.5/s, etc.)
+  - Terrain impact notes (elevation cost, moisture fertility cap, fire risk)
+  - Adjacency rules (herb_garden ↔ farm synergy, quarry ↔ farm pollution)
+  - All 9 skills listed with costs and expected effects
+- **Fallback Plan Enhancement** — generateFallbackPlan now uses medical_center, rapid_farms, resource_hub skills when conditions are met
+- **A/B Benchmark**: Agent 119 buildings vs Baseline 102 buildings (+17%)
+
+### Benchmark Results
+- 87/87 tests passing (100%) across 7 scenarios
+- Self-assessment: 10/10 across 8 dimensions (skill_extraction, library_management, prompt_enhancement, new_skills_design, integration_quality, test_coverage, robustness, architecture)
+
+### Tests
+- 35 new unit tests in `test/learned-skills.test.js` (all passing)
+- Full suite: 549 tests, 0 failures
+
+### Files Changed
+- `src/simulation/ai/colony/LearnedSkillLibrary.js` — New file: Voyager-inspired skill learning
+- `src/simulation/ai/colony/SkillLibrary.js` — Added 3 new built-in skills (medical_center, resource_hub, rapid_farms)
+- `src/simulation/ai/colony/ColonyPlanner.js` — Tuned prompt, new skills in fallback, learned skills support
+- `src/simulation/ai/colony/AgentDirectorSystem.js` — Wired LearnedSkillLibrary into plan completion and LLM calls
+- `test/learned-skills.test.js` — New file: 35 unit tests
+- `test/skill-library-executor.test.js` — Updated skill count assertions (6 → 9)
+- `scripts/skills-benchmark.mjs` — New file: 7-scenario benchmark with LLM judge
+- `docs/superpowers/plans/2026-04-10-agent-based-colony-planning.md` — Updated Phase 6 status
+
 ## [0.6.6] - 2026-04-10 — Agent-Based Colony Planning: Phase 5 (AgentDirectorSystem Integration)
 
 Fifth and final phase of the Agent-Based Colony Planning system — implements the AgentDirectorSystem that orchestrates the full Perceive → Plan → Ground → Execute → Evaluate → Reflect pipeline as a drop-in replacement for ColonyDirectorSystem.

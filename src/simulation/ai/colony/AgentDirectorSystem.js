@@ -15,6 +15,7 @@ import { ColonyPerceiver } from "./ColonyPerceiver.js";
 import { ColonyPlanner, shouldReplan, generateFallbackPlan } from "./ColonyPlanner.js";
 import { groundPlan, executeNextSteps, isPlanComplete, isPlanBlocked, getPlanProgress } from "./PlanExecutor.js";
 import { PlanEvaluator, snapshotState } from "./PlanEvaluator.js";
+import { LearnedSkillLibrary } from "./LearnedSkillLibrary.js";
 import { BuildSystem } from "../../construction/BuildSystem.js";
 import { rebuildBuildingStats } from "../../../world/grid/Grid.js";
 
@@ -106,6 +107,7 @@ export class AgentDirectorSystem {
       model: options.model ?? "gpt-4o-mini",
     });
     this._evaluator = new PlanEvaluator(memoryStore);
+    this._learnedSkills = new LearnedSkillLibrary();
     this._buildSystem = new BuildSystem();
 
     // Active plan state
@@ -180,8 +182,9 @@ export class AgentDirectorSystem {
           const memText = this._memoryStore
             ? this._memoryStore.formatForPrompt("construction planning building", nowSec, 5)
             : "";
+          const learnedText = this._learnedSkills.formatForPrompt(state.resources ?? {});
 
-          this._planner.requestPlan(observation, memText, state)
+          this._planner.requestPlan(observation, memText, state, learnedText)
             .then(({ plan, source, error }) => {
               this._pendingLLM = false;
               if (plan && plan.steps.length > 0) {
@@ -254,6 +257,14 @@ export class AgentDirectorSystem {
       this._evaluator.generatePlanReflections(this._activePlan, this._stepEvals, state);
     }
 
+    // Attempt to learn a skill from this successful plan
+    const learnedId = this._learnedSkills.maybeLearnSkill(
+      this._activePlan, planEval, this._stepEvals, state.grid
+    );
+    if (learnedId) {
+      agentState.stats.skillsLearned = (agentState.stats.skillsLearned ?? 0) + 1;
+    }
+
     agentState.stats.plansCompleted++;
     agentState.stats.reflectionsGenerated = this._evaluator.stats.reflectionsGenerated;
 
@@ -312,13 +323,17 @@ export class AgentDirectorSystem {
     agentState.activePlan = null;
   }
 
-  /** Get combined stats from planner and evaluator. */
+  /** Get combined stats from planner, evaluator, and learned skills. */
   get stats() {
     return {
       planner: this._planner.stats,
       evaluator: this._evaluator.stats,
+      learnedSkills: this._learnedSkills.stats,
     };
   }
+
+  /** Expose learned skill library for external access. */
+  get learnedSkills() { return this._learnedSkills; }
 
   /** Expose active plan for UI/debug. */
   get activePlan() { return this._activePlan; }

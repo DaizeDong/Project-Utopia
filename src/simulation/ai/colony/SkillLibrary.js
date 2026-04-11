@@ -101,6 +101,46 @@ export const SKILL_LIBRARY = Object.freeze({
     expectedEffect: Object.freeze({ connectivity: "+1 route" }),
     terrain_preference: Object.freeze({}),
   }),
+
+  medical_center: Object.freeze({
+    name: "Medical Center",
+    description: "Clinic + herb garden + road — establishes healing infrastructure for colony health",
+    preconditions: Object.freeze({ wood: 11, herbs: 4 }),
+    steps: Object.freeze([
+      Object.freeze({ type: "herb_garden", offset: [0, 0] }),
+      Object.freeze({ type: "road", offset: [1, 0] }),
+      Object.freeze({ type: "clinic", offset: [2, 0] }),
+    ]),
+    expectedEffect: Object.freeze({ medicine_rate: "+0.15/s", herbs_rate: "+0.2/s" }),
+    terrain_preference: Object.freeze({ minMoisture: 0.4 }),
+  }),
+
+  resource_hub: Object.freeze({
+    name: "Resource Hub",
+    description: "Quarry + lumber + 2 roads near warehouse — diversifies raw material production",
+    preconditions: Object.freeze({ wood: 15 }),
+    steps: Object.freeze([
+      Object.freeze({ type: "lumber", offset: [0, 0] }),
+      Object.freeze({ type: "road", offset: [1, 0] }),
+      Object.freeze({ type: "road", offset: [2, 0] }),
+      Object.freeze({ type: "quarry", offset: [3, 0] }),
+    ]),
+    expectedEffect: Object.freeze({ wood_rate: "+0.5/s", stone_rate: "+0.3/s" }),
+    terrain_preference: Object.freeze({ maxElevation: 0.6 }),
+  }),
+
+  rapid_farms: Object.freeze({
+    name: "Rapid Farms",
+    description: "3 farms in L-shape near warehouse — quick food boost for population growth",
+    preconditions: Object.freeze({ wood: 15 }),
+    steps: Object.freeze([
+      Object.freeze({ type: "farm", offset: [0, 0] }),
+      Object.freeze({ type: "farm", offset: [1, 0] }),
+      Object.freeze({ type: "farm", offset: [0, 1] }),
+    ]),
+    expectedEffect: Object.freeze({ food_rate: "+1.2/s" }),
+    terrain_preference: Object.freeze({ minMoisture: 0.5 }),
+  }),
 });
 
 // ── Skill Queries ────────────────────────────────────────────────────

@@ -32,26 +32,34 @@ const VALID_SKILL_NAMES = new Set(Object.keys(SKILL_LIBRARY));
 const SYSTEM_PROMPT = `You are the construction planner for a medieval colony simulation.
 Return strict JSON only. No markdown fencing, no commentary.
 
-## Available Build Actions
-- farm (5 wood) — food production, needs warehouse within 12 tiles
-- lumber (5 wood) — wood production
-- warehouse (10 wood) — logistics anchor, spacing >= 5 from others
-- quarry (6 wood) — stone production
-- herb_garden (4 wood) — herb production
-- kitchen (8 wood + 3 stone) — food → meals
-- smithy (6 wood + 5 stone) — stone → tools
-- clinic (6 wood + 4 herbs) — herbs → medicine
-- road (1 wood) — logistics network
-- wall (2 wood) — defense
-- bridge (3 wood + 1 stone) — crosses water
+## Available Build Actions (cost → expected yield)
+- farm (5 wood) — food +0.4/s per farm, needs warehouse within 12 tiles. High moisture (>0.5) improves fertility cap.
+- lumber (5 wood) — wood +0.5/s per lumber. Fire risk on low moisture (<0.25) during drought.
+- warehouse (10 wood) — logistics anchor, spacing >= 5 from others. Enables worker delivery.
+- quarry (6 wood) — stone +0.3/s per quarry. Dust pollution hurts adjacent farms (-0.004 fertility/tick).
+- herb_garden (4 wood) — herbs +0.2/s. Boosts adjacent farm fertility (+0.003/tick).
+- kitchen (8 wood + 3 stone) — food → meals. Needs food surplus. Adjacent farm gets compost bonus.
+- smithy (6 wood + 5 stone) — stone → tools +0.2/s. Tools boost all production by ~15%.
+- clinic (6 wood + 4 herbs) — herbs → medicine +0.15/s. Reduces colonist mortality.
+- road (1 wood) — extends logistics, reduces worker travel time.
+- wall (2 wood) — defense. High elevation walls get +50% defense bonus.
+- bridge (3 wood + 1 stone) — crosses water, connects islands.
 
 ## Available Skills (compound builds)
-- logistics_hub (24 wood): warehouse + 4 roads + 2 farms → new logistics anchor
-- processing_cluster (13 wood + 5 stone): quarry + road + smithy → tools production
-- defense_line (10 wood): 5 walls → perimeter defense
-- food_district (25 wood + 3 stone): 4 farms + kitchen → food throughput (needs 6+ farms)
-- expansion_outpost (22 wood): warehouse + 2 roads + farm + lumber → new territory
+- logistics_hub (24 wood): warehouse + 4 roads + 2 farms → new logistics anchor + food +1.0/s
+- processing_cluster (13 wood + 5 stone): quarry + road + smithy → tools +0.2/s, production +15%
+- defense_line (10 wood): 5 walls → threat -5, wall coverage +0.05
+- food_district (25 wood + 3 stone): 4 farms + kitchen → food +2.0/s, meals +0.3/s (needs 6+ farms)
+- expansion_outpost (22 wood): warehouse + 2 roads + farm + lumber → new territory, food +0.4/s
 - bridge_link (12 wood + 4 stone): 2 roads + 2 bridges → island connectivity
+- medical_center (11 wood + 4 herbs): herb_garden + road + clinic → medicine +0.15/s, herbs +0.2/s
+- resource_hub (15 wood): lumber + 2 roads + quarry → wood +0.5/s, stone +0.3/s
+- rapid_farms (15 wood): 3 farms in L-shape → food +1.2/s (best on high moisture terrain)
+
+## Terrain Impact
+- Elevation: +15% wood cost per 0.1 above 0.5; +30% move cost at elevation 1.0; walls get +50% defense at high elevation
+- Moisture: fertility cap = min(1.0, moisture*1.4+0.25); drought fire risk when moisture < 0.25
+- Adjacency: herb_garden next to farm = +fertility; quarry next to farm = -fertility
 
 ## Location Hints
 - near_cluster:<id> — within 6 tiles of cluster center
@@ -66,6 +74,8 @@ Return strict JSON only. No markdown fencing, no commentary.
 - Production buildings within 12 tiles of a warehouse
 - When food rate is negative, prioritize food before expansion
 - Keep wood buffer ~8 for emergency builds
+- Separate quarries from farms (dust pollution)
+- Place herb_gardens adjacent to farms when possible
 
 ## Output Format
 {
@@ -95,7 +105,15 @@ For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
  * @param {object} state — game state (for affordable check)
  * @returns {string}
  */
-export function buildPlannerPrompt(observation, memoryText, state) {
+/**
+ * Build the user prompt from observation, memory, skill status, and learned skills.
+ * @param {object} observation — from ColonyPerceiver.observe()
+ * @param {string} memoryText — from MemoryStore.formatForPrompt()
+ * @param {object} state — game state (for affordable check)
+ * @param {string} [learnedSkillsText] — from LearnedSkillLibrary.formatForPrompt()
+ * @returns {string}
+ */
+export function buildPlannerPrompt(observation, memoryText, state, learnedSkillsText = "") {
   const sections = [];
 
   // Observation
@@ -119,6 +137,11 @@ export function buildPlannerPrompt(observation, memoryText, state) {
   }
   if (unaffordableSkills.length > 0) {
     sections.push("Unaffordable: " + unaffordableSkills.join("; "));
+  }
+
+  // Learned skills (from successful past plans)
+  if (learnedSkillsText) {
+    sections.push("\n" + learnedSkillsText);
   }
 
   // Affordable building types
@@ -335,7 +358,46 @@ export function generateFallbackPlan(observation, state) {
       { logistics: "improved" }));
   }
 
-  // Priority 7: Expansion skill if flush with resources
+  // Priority 7: Medical center if no clinic and herbs available
+  if ((buildings.clinics ?? 0) === 0 && herbs >= 4 && wood >= 11 && steps.length < 6) {
+    steps.push({
+      id: nextId++,
+      thought: "No clinic — establish medical infrastructure for colonist health",
+      action: { type: "skill", skill: "medical_center", hint: "near_cluster:c0" },
+      predicted_effect: { medicine_rate: "+0.15/s", herbs_rate: "+0.2/s" },
+      priority: "medium",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+
+  // Priority 8: Rapid farms if food rate still low and need quick boost
+  if (foodRate < 1 && wood >= 15 && farms >= 2 && steps.length < 5) {
+    steps.push({
+      id: nextId++,
+      thought: "Food production low, rapid farm cluster for quick boost",
+      action: { type: "skill", skill: "rapid_farms", hint: "terrain:high_moisture" },
+      predicted_effect: { food_rate: "+1.2/s" },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+
+  // Priority 9: Resource hub if no quarry and lumber balanced
+  if ((buildings.quarries ?? 0) === 0 && lumbers >= 1 && wood >= 15 && steps.length < 5) {
+    steps.push({
+      id: nextId++,
+      thought: "Diversify raw materials with combined lumber + quarry hub",
+      action: { type: "skill", skill: "resource_hub", hint: "near_cluster:c0" },
+      predicted_effect: { wood_rate: "+0.5/s", stone_rate: "+0.3/s" },
+      priority: "medium",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+
+  // Priority 10: Expansion skill if flush with resources
   if (wood >= 25 && steps.length < 4 && clusters.length < 3) {
     const bestFrontier = observation.topology?.expansionFrontiers?.[0];
     const hint = bestFrontier ? `expansion:${bestFrontier.direction}` : null;
@@ -552,12 +614,13 @@ export class ColonyPlanner {
    * @param {object} observation — from ColonyPerceiver.observe()
    * @param {string} memoryText — from MemoryStore.formatForPrompt()
    * @param {object} state — game state
+   * @param {string} [learnedSkillsText] — from LearnedSkillLibrary.formatForPrompt()
    * @returns {Promise<{ plan: object, source: "llm"|"fallback", error: string }>}
    */
-  async requestPlan(observation, memoryText, state) {
+  async requestPlan(observation, memoryText, state, learnedSkillsText = "") {
     // Try LLM if API key is available
     if (this._apiKey) {
-      const userPrompt = buildPlannerPrompt(observation, memoryText, state);
+      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText);
       this._stats.llmCalls++;
 
       const result = await callLLM(SYSTEM_PROMPT, userPrompt, {

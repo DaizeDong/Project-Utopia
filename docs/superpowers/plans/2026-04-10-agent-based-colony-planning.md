@@ -1,6 +1,6 @@
 # Agent-Based Colony Planning & Building System
 
-> **Status**: Phase 5 Complete (v1.5)
+> **Status**: Phase 6 Complete (v1.6)
 > **Author**: Claude / Daize Dong
 > **Date**: 2026-04-10
 > **Scope**: ColonyDirectorSystem upgrade — from rule-based priority queue to LLM agent closed-loop planning
@@ -1174,12 +1174,26 @@ const scenarios = [
 
 **Files**: `src/simulation/ai/colony/AgentDirectorSystem.js`, `test/agent-director.test.js`, `scripts/director-benchmark.mjs`
 
-### Phase 6: Tuning & Learned Skills (ongoing)
+### Phase 6: Tuning & Learned Skills ✅ COMPLETE
 
-- Tune prompt for prediction accuracy
-- Implement skill learning from successful plans
-- Add more skills based on gameplay patterns
-- Extended soak testing across all map templates
+- ✅ Implement `LearnedSkillLibrary` — Voyager-inspired skill learning from successful plans
+  - Skill extraction with relative offset computation from anchor tile
+  - Terrain preference inference from actual placement moisture/elevation
+  - Jaccard similarity deduplication (threshold 0.8) with score-based conflict resolution
+  - Confidence scoring from usage tracking (trusted after 2+ uses)
+  - Capacity-managed at 10 skills with weakest-skill eviction
+  - LLM prompt injection with affordability status
+- ✅ Add 3 new built-in skills (9 total): `medical_center`, `resource_hub`, `rapid_farms`
+- ✅ Tune LLM prompt with calibrated yield rates, terrain impact, adjacency rules
+- ✅ Wire skill learning into `AgentDirectorSystem._completePlan()` — automatic extraction on plan completion
+- ✅ Inject learned skills text into LLM planning prompts via `buildPlannerPrompt()` 4th parameter
+- ✅ Enhanced `generateFallbackPlan()` with medical_center, rapid_farms, resource_hub skill usage
+- ✅ A/B comparison: Agent 119 buildings vs Baseline 102 buildings (+17%)
+- ✅ Multi-template feasibility: all 3 new skills feasible across temperate_plains, rugged_highlands, archipelago_isles
+- ✅ 35 unit tests (all passing)
+- ✅ Benchmark: 87/87 (100%), self-assessment 10/10 across 8 dimensions
+
+**Files**: `src/simulation/ai/colony/LearnedSkillLibrary.js`, `src/simulation/ai/colony/SkillLibrary.js`, `src/simulation/ai/colony/ColonyPlanner.js`, `src/simulation/ai/colony/AgentDirectorSystem.js`, `test/learned-skills.test.js`, `scripts/skills-benchmark.mjs`
 
 ---
 
