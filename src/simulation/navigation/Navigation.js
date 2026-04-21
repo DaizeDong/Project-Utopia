@@ -235,7 +235,32 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   return true;
 }
 
+/**
+ * M4 road compounding: per-worker consecutive-on-road-step counter.
+ * Tracks how many ticks in a row the worker has occupied a ROAD or BRIDGE
+ * tile. Caps at BALANCE.roadStackStepCap. Resets to 0 as soon as the worker
+ * steps off a road/bridge tile. Stored on entity.blackboard.roadStep.
+ */
+function updateRoadStep(entity, state) {
+  if (!entity || entity.type !== "WORKER" || !state?.grid) return;
+  const blackboard = entity.blackboard ?? (entity.blackboard = {});
+  const cur = worldToTile(entity.x, entity.z, state.grid);
+  const curTile = getTile(state.grid, cur.ix, cur.iz);
+  if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
+    const cap = Math.max(0, Number(BALANCE.roadStackStepCap ?? 0));
+    const prev = Math.max(0, Number(blackboard.roadStep ?? 0));
+    blackboard.roadStep = Math.min(cap, prev + 1);
+  } else {
+    blackboard.roadStep = 0;
+  }
+}
+
 export function followPath(entity, state, dt) {
+  // M4 road compounding: update per-tick roadStep BEFORE any early-return so the
+  // counter stays in sync with the worker's actual tile occupancy (including
+  // the final tick when the path completes).
+  updateRoadStep(entity, state);
+
   if (!entity.path || entity.pathIndex >= entity.path.length) {
     return { done: true, desired: { x: 0, z: 0 } };
   }
@@ -274,16 +299,23 @@ export function followPath(entity, state, dt) {
         ? BALANCE.predatorSpeed
         : BALANCE.herbivoreSpeed;
 
-  // Road speed bonus: workers on road/bridge tiles move faster, degraded by wear
+  // Road speed bonus: workers on road/bridge tiles move faster, degraded by wear.
+  // M4 road compounding: the consecutive-step counter (roadStep) was already
+  // advanced at the top of followPath; here we apply the stacked multiplier.
   if (entity.type === "WORKER" && state.grid) {
     const cur = worldToTile(entity.x, entity.z, state.grid);
     const curTile = getTile(state.grid, cur.ix, cur.iz);
     if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
       const idx = cur.ix + cur.iz * state.grid.width;
       const wear = state.grid.tileState?.get(idx)?.wear ?? 0;
-      // Full bonus at wear=0, linearly degrades to 1.0x at wear=1.0
-      const roadBonus = (BALANCE.roadSpeedMultiplier ?? 1.35);
-      speed *= 1 + (roadBonus - 1) * (1 - wear);
+      const baseRoadBonus = (BALANCE.roadSpeedMultiplier ?? 1.35);
+      const cap = Math.max(0, Number(BALANCE.roadStackStepCap ?? 0));
+      const perStep = Math.max(0, Number(BALANCE.roadStackPerStep ?? 0));
+      const step = Math.min(cap, Math.max(0, Number(entity.blackboard?.roadStep ?? 0)));
+      const stackMultiplier = 1 + step * perStep;
+      const wearDegrade = 1 - wear;
+      // Stacking scales the bonus delta; wear-degradation still applies multiplicatively.
+      speed *= 1 + (baseRoadBonus - 1) * wearDegrade * stackMultiplier;
     }
   }
 

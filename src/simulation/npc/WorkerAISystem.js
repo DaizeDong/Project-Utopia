@@ -11,7 +11,7 @@ import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js"
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
-import { LogisticsSystem } from "../economy/LogisticsSystem.js";
+import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -451,7 +451,17 @@ function handleDeliver(worker, state, services, dt) {
     const logistics = state.metrics?.logistics ?? {};
     const inboundLoad = Math.max(1, Number(logistics.warehouseLoadByKey?.[key] ?? 1));
     const penalty = Math.max(1, 1 + Math.max(0, inboundLoad - 1) * Number(BALANCE.warehouseQueuePenalty ?? 0.32));
-    const unloadBudget = Math.max(0.2, Number(BALANCE.workerUnloadRatePerSecond ?? 4.2) / penalty) * dt;
+    // M4 isolation deposit penalty: if the warehouse tile's logistics efficiency
+    // matches the isolation value (i.e., no connected road path), slow down unload.
+    const isolationPenalty = Number(
+      logistics.isolationDepositPenalty ?? BALANCE.isolationDepositPenalty ?? 1,
+    );
+    const tileEfficiency = Number(logistics.buildingEfficiency?.[key] ?? 1);
+    // Treat efficiency at or below LogisticsSystem.ISOLATION_PENALTY as isolated.
+    const isolatedMultiplier = tileEfficiency <= ISOLATION_PENALTY + 1e-6 ? isolationPenalty : 1;
+    const unloadBudget = Math.max(0.2, Number(BALANCE.workerUnloadRatePerSecond ?? 4.2) / penalty)
+      * dt
+      * isolatedMultiplier;
     let remaining = unloadBudget;
     const unloadFood = Math.min(Number(worker.carry.food ?? 0), remaining);
     worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - unloadFood);
@@ -478,6 +488,9 @@ function handleDeliver(worker, state, services, dt) {
       worker.carry.herbs = 0;
       worker.blackboard ??= {};
       worker.blackboard.carryAgeSec = 0;
+      // M3: carryTicks tracks the current carry leg for spoilage grace; reset
+      // on full unload so the next pickup starts with a fresh grace window.
+      worker.blackboard.carryTicks = 0;
       state.metrics.deliveries = (state.metrics.deliveries ?? 0) + 1;
     }
   }
@@ -712,11 +725,45 @@ export class WorkerAISystem {
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
 
+      // M3a — Carry fatigue: a loaded worker tires faster. Multiplier stacks with night modifier.
+      const _carryTotal = Number(worker.carry?.food ?? 0)
+        + Number(worker.carry?.wood ?? 0)
+        + Number(worker.carry?.stone ?? 0)
+        + Number(worker.carry?.herbs ?? 0);
+      const _fatigueMult = _carryTotal > 0
+        ? Number(BALANCE.carryFatigueLoadedMultiplier ?? 1.0)
+        : 1;
+
       // Rest & morale decay
       const isNight = Boolean(state.environment?.isNight);
-      const restDecay = Number(BALANCE.workerRestDecayPerSecond ?? 0.003)
-        * (isNight ? Number(BALANCE.workerRestNightDecayMultiplier ?? 2.0) : 1);
+      const restDecay = Number(BALANCE.workerRestDecayPerSecond ?? 0.004)
+        * (isNight ? Number(BALANCE.workerRestNightDecayMultiplier ?? 2.4) : 1)
+        * _fatigueMult;
       worker.rest = clamp(Number(worker.rest ?? 1) - restDecay * dt, 0, 1);
+
+      // M3b — In-transit spoilage: perishables (food, herbs) decay off-road.
+      worker.blackboard ??= {};
+      if (_carryTotal <= 1e-4) {
+        worker.blackboard.carryTicks = 0;
+      } else if (Number(worker.carry?.food ?? 0) > 0 || Number(worker.carry?.herbs ?? 0) > 0) {
+        const _cur = worldToTile(worker.x, worker.z, state.grid);
+        const _curTile = getTile(state.grid, _cur.ix, _cur.iz);
+        const _onRoad = (_curTile === TILE.ROAD || _curTile === TILE.BRIDGE);
+        if (!_onRoad) {
+          const _ticks = Number(worker.blackboard.carryTicks ?? 0);
+          const _graceTicks = Number(BALANCE.spoilageGracePeriodTicks ?? 0);
+          const _rateScale = _ticks < _graceTicks ? 0.5 : 1.0;
+          const _foodLoss = Number(BALANCE.foodSpoilageRatePerSec ?? 0) * dt * _rateScale;
+          const _herbLoss = Number(BALANCE.herbSpoilageRatePerSec ?? 0) * dt * _rateScale;
+          if (_foodLoss > 0) {
+            worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - _foodLoss);
+          }
+          if (_herbLoss > 0) {
+            worker.carry.herbs = Math.max(0, Number(worker.carry.herbs ?? 0) - _herbLoss);
+          }
+          worker.blackboard.carryTicks = _ticks + 1;
+        }
+      }
       // Morale decay: faster during adverse weather
       const weatherMoraleMult = (state.weather?.current === "storm") ? 2.5
         : (state.weather?.current === "drought" || state.weather?.current === "rain") ? 1.5 : 1.0;

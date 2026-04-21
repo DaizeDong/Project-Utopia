@@ -42,8 +42,8 @@
 
 | Phase | Scope | Status | Commit | Date |
 |---|---|---|---|---|
-| 0 | Branch + progress scaffolding | in_progress | — | 2026-04-21 |
-| 1 | M3 fatigue/spoilage + M4 road compounding | pending | — | — |
+| 0 | Branch + progress scaffolding | completed | 53e7e74 | 2026-04-21 |
+| 1 | M3 fatigue/spoilage + M4 road compounding | in_progress | — | 2026-04-21 |
 | 2 | M2 warehouse queue + density risk | pending | — | — |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | pending | — | — |
 | 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
@@ -74,8 +74,39 @@ _2026-04-21 — Started._
 - Full test suite confirmed green: 731 pass / 0 fail / 60 suites / 3.8s.
 - No code changes this phase.
 
-_Phase 0 commit:_ — pending below.
+_Phase 0 commit:_ `53e7e74` (chore(v0.8.0 phase-0): branch setup + baseline snapshot).
 
 ---
 
-(Phases 1-7 entries will be appended as they complete.)
+### Phase 1 — Infrastructure mechanics (M3 + M4)
+
+_2026-04-21 — Started._
+
+**Subagents dispatched (parallel, 2-way):**
+- Agent 1.A (M4 road compounding): Navigation.js `roadStep` stacking, LogisticsSystem warehouse-inclusion + `isolationDepositPenalty` exposure, WorkerAISystem deliver-block isolation detection. Produced `test/road-compounding.test.js` (7 cases).
+- Agent 1.B+1.C (M3 fatigue + spoilage): WorkerAISystem update loop `_fatigueMult` + spoilage block. Produced `test/carry-fatigue.test.js` (1 case), `test/carry-spoilage.test.js` (4 cases), `test/m3-m4-integration.test.js` (1 case).
+
+**Review rounds:**
+- Code-reviewer (`pr-review-toolkit:code-reviewer`): flagged 3 must-fix (balance values diverged from spec, carryTicks reset bug, missing CHANGELOG) + 4 nits → all 3 must-fix addressed.
+- Silent-failure-hunter (`pr-review-toolkit:silent-failure-hunter`): 11 findings (3 CRITICAL, 4 HIGH, 4 MEDIUM). Fixed CRITICAL #1 (carryTicks reset) which overlapped code-reviewer #2. Remaining defensive-fallback findings accepted as pragmatic (they guard against system-order init order and are tested green); can be re-evaluated in Phase 7 hardening pass.
+- Legacy sweep (`general-purpose`): flagged hardcoded `0.85` magic literal in WorkerAISystem deliver block + stale `?? 0.003` fallback for rest decay. Both fixed: exported `ISOLATION_PENALTY` from LogisticsSystem, updated fallback to `0.004`.
+
+**Deviations from original spec caught:**
+- Subagents initially wrote `carryFatigueLoadedMultiplier=1.8` (spec 1.5), spoilage rates 4× too aggressive, and `roadStackStepCap=5` (spec 20). All corrected to spec § 14.1 values.
+
+**Fixes applied in iteration pass:**
+- Aligned all 7 balance params with spec § 14.1.
+- Added `carryTicks = 0` reset inside deliver full-unload block (`WorkerAISystem:492`).
+- Exported `ISOLATION_PENALTY` constant from LogisticsSystem.
+- Updated `?? 0.003` → `?? 0.004` in WorkerAISystem and m3-m4 integration test.
+- Added CHANGELOG `[0.8.0]` unreleased section with Phase 1 entries.
+
+**Test delta:** 731 → 744 (+13: 7 road-compounding + 1 carry-fatigue + 4 carry-spoilage + 1 integration).
+**Soak sim:** temperate_plains/fortified_basin/archipelago_isles all survived 2703 ticks, peakThreat 27-48, deaths=1 each — no regression vs baseline.
+**LOC changed (src/ only):** +111 / -15 across 4 files.
+
+_Phase 1 commit:_ — appended below.
+
+---
+
+(Phases 2-7 entries will be appended as they complete.)
