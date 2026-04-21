@@ -286,4 +286,138 @@ _Phase 6 commit:_ d692689 (`feat(v0.8.0 phase-6): long-horizon benchmark harness
 
 ---
 
-(Phase 7 entry will be appended as it completes.)
+## Phase 7 — Param tuning + regression fixes + release (2026-04-21)
+
+### Phase 7.A — parameter tuning loop
+
+- Spec § 14.2 proposed 9 balance adjustments targeting day-365 DevIndex ≥ 70 on
+  `bench:long --seed 42 --preset temperate_plains`.
+- Initial pass landed 8 of 9 parameters (`kitchenCycleSec`,
+  `warehouseSoftCapacity`, `banditRaidLossPerPressure`,
+  `foodEmergencyThreshold`, `objectiveHoldDecayPerSecond`,
+  `lumberProductionMultiplier` × 5 weather tiers, `MIN_FOOD_FOR_GROWTH`,
+  `FOOD_COST_PER_COLONIST`). `workerIntentCooldownSec` 1.5 → 2.2 was
+  deferred at the time because `test/worker-intent-stability.test.js:49`
+  hard-asserted literal 1.5 (test edits were outside Phase 7.A scope).
+- Day-365 result on seed 42: DevIndex **36.27** (gap −33.73 vs target 70).
+  Root cause: systemic starvation spiral (food=0, wood=0 from day 30,
+  pop pinned at 5, deaths ≥ 460 by day 365). Parameter tuning cannot
+  close the gap alone — requires BuildAdvisor priority fix, fog-of-war
+  bootstrap, or INITIAL_RESOURCES/INITIAL_POPULATION rebalance. All three
+  scoped out of Phase 7.A and documented in `docs/benchmarks/tuning-log.md`.
+- `passed=true` under `--soft-validation` (no hard violations: no
+  monotonicity break, no non-finite values, no crashes, no loss before
+  day 180). Soft threshold misses recorded honestly in the run artefacts.
+- **`bench:logic`:** goalFlipCount 73 → 63, `deliverWithoutCarryCount` 0
+  (no regression), deathsTotal noise. **`bench:perf`:** no regression.
+
+_Phase 7.A commit:_ a002c36 (`feat(v0.8.0 phase-7.A): param tuning — long-horizon survival to day 365`).
+
+### Phase 7.B — deliverWithoutCarry fix + exploit regression suite
+
+- **Root cause.** Plan-cooldown + FSM hold window + commitment-cycle latch
+  could pin a worker in `deliver` state with empty carry, causing
+  `handleDeliver` to repeatedly short-circuit and increment
+  `metrics.deliverWithoutCarryCount`. Baseline soak produced 19 counts.
+- **Fix** in `src/simulation/npc/WorkerAISystem.js:1022-1101` — two-layer
+  guard: plan-time `deliverStuckReplan` that rewrites the desired state
+  to `seek_task` when carry is empty and plan cooldown has expired, plus
+  a post-transition defensive rewrite that catches the latch before the
+  next tick runs `handleDeliver`. Counter 19 → 0 on 60 s soak.
+- **7 exploit regression tests** per spec § 8.2 added to
+  `test/exploit-regression.test.js`: exploit-degradation,
+  strategy-diversity (k-means layout clustering), road-roi,
+  survival-scaling (raid escalator tier/interval), escalation-lethality,
+  ghost-road-starve, starvation-cliff. Sim-survival preconditions are
+  explicitly guarded so regressions stay visible in CI.
+- Test count 858 → 865 (+7).
+
+_Phase 7.B commits:_ dd448f7, 9387d18, 3b66724.
+
+### Phase 7.C — PressureLens heat + v0.8.0 release metadata
+
+- Supply-Chain Heat Lens (spec § 6) — `buildHeatLens` + `heatLensSignature`
+  in `src/render/PressureLens.js` classify every buildable tile into
+  red / blue / grey using `warehouseDensity` + colony resources +
+  processor-input checks. Zero new art: existing `pressureMarkerPool`
+  re-colours via three new style entries (`heat_surplus`, `heat_starved`,
+  `heat_idle`).
+- L-key binding in `src/app/shortcutResolver.js`, HUD button in
+  `index.html`, cycle `pressure → heat → off` via `SceneRenderer.lensMode`.
+- `package.json` `0.7.0 → 0.8.0`. `CHANGELOG.md` finalised with 7-phase
+  mechanics summary. `CLAUDE.md` retagged `as of v0.8.0`.
+
+_Phase 7.C commit:_ 4fa81b1.
+
+### Phase 7 review sweep (5-way parallel)
+
+- Dispatched 5 reviewers concurrently: `pr-review-toolkit:code-reviewer`,
+  `pr-review-toolkit:silent-failure-hunter`,
+  `pr-review-toolkit:pr-test-analyzer`,
+  `pr-review-toolkit:type-design-analyzer`, legacy-sweep via
+  `general-purpose`. Surfaced 3 CRITICAL + 8 HIGH + N MEDIUM/LOW.
+- **Review-sweep iteration** addressed every CRITICAL and every
+  ship-blocking HIGH:
+  - CRITICAL 1: `MIN_FOOD_FOR_GROWTH` desync between
+    `PopulationGrowthSystem` (25) and `ColonyPerceiver` / `WorldSummary`
+    (hardcoded 20). Constant exported and imported; AI reports truthful.
+  - CRITICAL 2: `StrategicDirector.nearFinal` fired trivially on empty
+    objectives. Gated on `totalObjectives > 0`.
+  - CRITICAL 3: `BenchmarkMetrics.T_obj` dragged composite by 25% when
+    objectives retired. Neutral `T_obj=1` when `totalObjectives=0`.
+  - CRITICAL 4 (from code-reviewer): `exploit-degradation` used
+    `console.log` as an assertion. Replaced with split diagnostic + hard
+    `assert.ok`. Other silent-skip `return` fallbacks promoted to
+    `t.skip(reason)` for proper SKIPPED visibility in `node --test`.
+  - HIGH: `workerIntentCooldownSec` 1.5 → 2.2 landed (9 of 9 § 14.2
+    params). `test/worker-intent-stability.test.js:49` relaxed from
+    literal 1.5 to band `[1.2, 3.0]`. Day-365 DevIndex `36.27 → 39.03`
+    (+2.76 on soft-validation run).
+  - HIGH: `test/deliver-without-carry.test.js` added to lock in the
+    Phase 7.B invariant.
+  - HIGH: `CLAUDE.md` stale bits fixed (tile count 0-12 → 0-13, test
+    count 686 → 865 across 107 files, tagline). `src/app/types.js`
+    `GameplayState` typedef extended with the v0.8.0 survival bundle.
+    `package-lock.json` synced to 0.8.0.
+- **Test suite:** 866 total / 864 pass / 2 skip (intentional
+  pre-v0.9.0 starvation guards) / 0 fail.
+
+_Iteration commit:_ 2809303 (`fix(v0.8.0 phase-7 iter): review-sweep fixes`).
+
+### Deferred to v0.9.0
+
+- Day-365 DevIndex gap (39.03 vs target 70) — systemic, driven by the
+  starvation spiral. Requires BuildAdvisor priority work, fog-of-war
+  bootstrap, or INITIAL_RESOURCES rebalance (all scoped out of Phase 7).
+- Dead objective code paths across `ProgressionSystem`,
+  `GameStateOverlay`, `MemoryObserver`, `DecisionScheduler`,
+  `RoleAssignmentSystem`, `DeveloperPanel`, etc. (functionally dormant
+  since `buildObjectivesForScenario` returns `[]`; typedef updated but
+  factory still populates the fields).
+- PressureLens heat refinements (deeper density gradient, animation).
+- Type-design-analyzer encapsulation refactors for large
+  systems/panels.
+- Soft-skip guards in exploit-regression → hard asserts once
+  starvation spiral is closed.
+
+### Phase 7 exit
+
+`v0.8.0 — "Living World"` ships with:
+- **All 4 milestones delivered** (M1 ecology, M2 warehouse queue + density,
+  M3 carry economy, M4 road compounding).
+- **Survival mode** replacing the 3-objective system; DevIndex + 6-tier
+  raid escalator live.
+- **AI 18-patch adaptation sweep** wired across perceiver / planner /
+  evaluator.
+- **Long-horizon benchmark harness** with deterministic checkpoints,
+  monotonicity enforcement, CI integration.
+- **Supply-Chain Heat Lens** (L-key) and HUD button.
+- **`deliverWithoutCarry` exploit** closed; 7-test regression suite
+  guards the invariant surface.
+- **866 tests** (864 pass, 2 intentional skip, 0 fail).
+- **Day-365 DevIndex 39.03** on seed 42 / temperate_plains with
+  `passed=true` under soft-validation; gate-to-target shortfall
+  documented in `tuning-log.md` as a v0.9.0 item.
+
+Tag: `v0.8.0-living-world`.
+
