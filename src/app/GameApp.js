@@ -37,6 +37,7 @@ import { WarehouseQueueSystem } from "../simulation/economy/WarehouseQueueSystem
 import { ColonyDirectorSystem } from "../simulation/meta/ColonyDirectorSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
 import { DevIndexSystem } from "../simulation/meta/DevIndexSystem.js";
+import { RaidEscalatorSystem } from "../simulation/meta/RaidEscalatorSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
@@ -197,6 +198,7 @@ export class GameApp {
       new VisibilitySystem(),
       new ProgressionSystem(),
       new DevIndexSystem(),
+      new RaidEscalatorSystem(),
       new RoleAssignmentSystem(),
       new PopulationGrowthSystem(),
       new StrategicDirector(this.memoryStore),
