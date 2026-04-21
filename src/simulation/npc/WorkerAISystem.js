@@ -425,7 +425,7 @@ function handleEat(worker, state, services, dt) {
   consumeEmergencyRation(worker, state, dt, Number(state.metrics.timeSec ?? 0));
 }
 
-function handleDeliver(worker, state, services, dt) {
+export function handleDeliver(worker, state, services, dt) {
   const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   if (carryTotal <= 0 || Number(state.buildings?.warehouses ?? 0) <= 0) {
     clearPath(worker);
@@ -448,6 +448,30 @@ function handleDeliver(worker, state, services, dt) {
 
   if (isAtTargetTile(worker, state)) {
     const key = `${worker.targetTile?.ix ?? -1},${worker.targetTile?.iz ?? -1}`;
+    // M2 warehouse throughput queue: enforce per-tick intake cap before unload.
+    state.warehouseQueues ??= {};
+    const queueEntry = (state.warehouseQueues[key] ??= {
+      intakeTokensUsed: 0,
+      queue: [],
+      lastResetTick: Number(state.metrics?.tick ?? 0),
+    });
+    queueEntry.queue ??= [];
+    const intakeCap = Number(BALANCE.warehouseIntakePerTick ?? 2);
+    if (Number(queueEntry.intakeTokensUsed ?? 0) >= intakeCap) {
+      // No intake slot this tick — enqueue and skip unload.
+      worker.blackboard ??= {};
+      if (!queueEntry.queue.includes(worker.id)) {
+        queueEntry.queue.push(worker.id);
+        worker.blackboard.queueEnteredTick = Number(state.metrics?.tick ?? 0);
+      }
+      return;
+    }
+    // Intake available — consume a token, unload, and remove from queue if present.
+    queueEntry.intakeTokensUsed = Number(queueEntry.intakeTokensUsed ?? 0) + 1;
+    const qIdx = queueEntry.queue.indexOf(worker.id);
+    if (qIdx >= 0) queueEntry.queue.splice(qIdx, 1);
+    if (worker.blackboard) worker.blackboard.queueEnteredTick = null;
+
     const logistics = state.metrics?.logistics ?? {};
     const inboundLoad = Math.max(1, Number(logistics.warehouseLoadByKey?.[key] ?? 1));
     const penalty = Math.max(1, 1 + Math.max(0, inboundLoad - 1) * Number(BALANCE.warehouseQueuePenalty ?? 0.32));

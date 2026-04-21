@@ -6,6 +6,75 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 2 — Warehouse throughput & density risk (M2)
+
+- **M2 warehouse throughput queue** — New `WarehouseQueueSystem` runs before
+  `WorkerAISystem` each tick. Each warehouse accepts at most
+  `BALANCE.warehouseIntakePerTick` (2) deposits per tick; excess workers are
+  enqueued on their target tile and skip their unload for that tick. Workers
+  that wait longer than `BALANCE.warehouseQueueMaxWaitTicks` (120) are removed
+  from the queue, fire a `WAREHOUSE_QUEUE_TIMEOUT` event, and have
+  `worker.targetTile` nulled so the intent layer re-plans toward an
+  alternative warehouse. The system also cleans up queue entries for
+  demolished warehouses automatically.
+- **Queue state shape** — `state.warehouseQueues[tileKey] = { intakeTokensUsed, queue[workerId...], lastResetTick }`.
+  Worker-owned state lives in `worker.blackboard.queueEnteredTick` /
+  `queueTimeoutTick`.
+- **Files changed:** `src/simulation/economy/WarehouseQueueSystem.js` (NEW),
+  `src/config/constants.js` (SYSTEM_ORDER +1), `src/app/GameApp.js` (import +
+  system instantiation), `src/simulation/npc/WorkerAISystem.js` (deliver block
+  gates on intake tokens; `handleDeliver` exported for tests).
+- **New tests (+3):** `test/warehouse-queue.test.js` covering per-tick intake
+  cap, queue timeout event firing, and demolished-warehouse cleanup.
+- **M2 density risk (warehouse fire / vermin swarm)** — `ResourceSystem` now
+  rebuilds a per-warehouse density score (producer/storage tiles within
+  `warehouseDensityRadius = 6` Manhattan × avg stock constant) into
+  `state.metrics.warehouseDensity = { byKey, peak, hotWarehouses, threshold, radius }`
+  on the same cadence as logistics sampling. Warehouses above
+  `warehouseDensityRiskThreshold = 400` enter a "hot" state and are armed for
+  per-tick risk rolls in `WorldEventSystem`. Each hot warehouse rolls (at most
+  one event per tick): `warehouseFireIgniteChancePerTick = 0.008` for
+  `WAREHOUSE_FIRE` (deducts 20% of up to 30 of each stored resource) and
+  `verminSwarmIgniteChancePerTick = 0.005` for `VERMIN_SWARM` (deducts 15% of
+  up to 40 food). Both push a warning and carry `{ ix, iz, key, densityScore, loss }`
+  payloads. Tests can stub randomness via `state._riskRng`.
+- **`GameEventBus.EVENT_TYPES`** — Added `WAREHOUSE_FIRE`, `VERMIN_SWARM`, and
+  `WAREHOUSE_QUEUE_TIMEOUT` event types.
+- **SceneRenderer** — TODO stub for an amber pulse on hot warehouses; the
+  instanced-tile render path doesn't expose per-instance tinting, so the
+  visual is deferred to a later pass.
+- **Files changed:** `src/simulation/economy/ResourceSystem.js` (new
+  `rebuildWarehouseDensity` helper), `src/world/events/WorldEventSystem.js`
+  (new `applyWarehouseDensityRisk` per-tick hook), `src/render/SceneRenderer.js`
+  (TODO comment), `src/simulation/meta/GameEventBus.js` (+3 event types).
+- **New tests (+5):** `test/warehouse-density.test.js` covering hot-warehouse
+  detection, sparse-layout rejection, stubbed-rng event emission, a negative
+  case asserting zero events under high-rng stub, and a seeded-RNG
+  determinism case comparing two runs with identical seed.
+
+#### Phase 2 iteration pass (post-review hardening)
+
+- **BALANCE keys added** — Phase 2 params now live in `src/config/balance.js`
+  (they were only accessible via `??` fallbacks before): `warehouseIntakePerTick`,
+  `warehouseQueueMaxWaitTicks`, `warehouseDensityRadius`,
+  `warehouseDensityRiskThreshold`, `warehouseDensityAvgStockPerTile`,
+  `warehouseFireIgniteChancePerTick`, `verminSwarmIgniteChancePerTick`,
+  `warehouseFireLossFraction`, `warehouseFireLossCap`,
+  `verminSwarmLossFraction`, `verminSwarmLossCap`.
+- **Deterministic density rolls** — `WorldEventSystem.update` signature now
+  accepts `services` and threads `services.rng.next` through
+  `applyWarehouseDensityRisk`. `state._riskRng` stub kept for tests.
+- **Queue-leak fix** — `WarehouseQueueSystem` now prunes queued workers whose
+  `targetTile` no longer points at the queued warehouse (role switch,
+  re-plan, eat/flee state). Prevents permanent queue growth under
+  re-prioritization.
+- **Density stale-tile guard** — `applyWarehouseDensityRisk` re-validates
+  each `hotWarehouses` key against the grid before rolling, so mid-tick
+  demolitions don't spawn ghost events.
+- **Loss/score constants out of source** — Fire/vermin loss fractions, caps,
+  and density avg-stock multiplier now read from BALANCE instead of inline
+  magic numbers.
+
 ### Phase 1 — Infrastructure mechanics (M3 + M4)
 
 - **M3 carry fatigue** — Workers tire faster while loaded. `worker.rest` decay

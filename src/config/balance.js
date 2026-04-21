@@ -246,6 +246,25 @@ export const BALANCE = Object.freeze({
   // M4 isolation deposit penalty: unload rate multiplier when delivering to a warehouse
   // whose logistics efficiency matches ISOLATION_PENALTY (no connected road). Lower = slower.
   isolationDepositPenalty: 0.8,
+  // --- Living World v0.8.0 — Phase 2 (M2 warehouse throughput + density risk), spec § 14.1 ---
+  // M2a: per-tick intake cap per warehouse. Excess workers queue on the tile.
+  warehouseIntakePerTick: 2,
+  // M2a: queue timeout (sim ticks). Expired workers emit WAREHOUSE_QUEUE_TIMEOUT and retarget.
+  // NOTE: spec § 3 cites 180; implementation uses 120 pending tuning sweep (§ 16.5).
+  warehouseQueueMaxWaitTicks: 120,
+  // M2b density scan: manhattan radius + producer-tile score threshold.
+  warehouseDensityRadius: 6,
+  warehouseDensityRiskThreshold: 400,
+  warehouseDensityAvgStockPerTile: 50,
+  // M2b per-tick ignition probabilities (before dt scaling). Fire rolled before vermin;
+  // at most one density-risk event per warehouse per tick.
+  warehouseFireIgniteChancePerTick: 0.008,
+  verminSwarmIgniteChancePerTick: 0.005,
+  // M2b loss fractions and caps applied to colony-wide stockpile on ignition.
+  warehouseFireLossFraction: 0.2,
+  warehouseFireLossCap: 30,
+  verminSwarmLossFraction: 0.15,
+  verminSwarmLossCap: 40,
 });
 
 // --- Terrain depth constants ---

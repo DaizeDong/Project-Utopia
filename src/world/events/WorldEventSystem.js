@@ -2,6 +2,8 @@ import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { getLongRunEventTuning } from "../../config/longRunProfile.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../scenarios/ScenarioFactory.js";
+import { emitEvent, EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
+import { pushWarning } from "../../app/warnings.js";
 
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
@@ -527,12 +529,88 @@ function advanceLifecycle(event, dt) {
   return false;
 }
 
+// v0.8.0 Phase 2 M2: per-tick density-risk roll for warehouses above threshold.
+// Spec § 3: high resource density around a warehouse probabilistically ignites
+// WAREHOUSE_FIRE or VERMIN_SWARM. A given warehouse emits at most one event
+// per tick (fire rolled first, then vermin if fire missed).
+function parseWarehouseKey(key) {
+  const parts = String(key ?? "").split(",");
+  const ix = Number.parseInt(parts[0], 10);
+  const iz = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(ix) || !Number.isFinite(iz)) return null;
+  return { ix, iz, key };
+}
+
+function applyWarehouseDensityRisk(dt, state, services) {
+  const density = state.metrics?.warehouseDensity;
+  const hot = density?.hotWarehouses;
+  if (!Array.isArray(hot) || hot.length <= 0) return;
+
+  const fireChance = Number(BALANCE.warehouseFireIgniteChancePerTick ?? 0.008) * Math.max(0, dt);
+  const verminChance = Number(BALANCE.verminSwarmIgniteChancePerTick ?? 0.005) * Math.max(0, dt);
+  const fireLossFraction = Number(BALANCE.warehouseFireLossFraction ?? 0.2);
+  const fireLossCap = Number(BALANCE.warehouseFireLossCap ?? 30);
+  const verminLossFraction = Number(BALANCE.verminSwarmLossFraction ?? 0.15);
+  const verminLossCap = Number(BALANCE.verminSwarmLossCap ?? 40);
+  // Deterministic RNG: prefer test stub, then services.rng (seeded), then Math.random.
+  const rng = typeof state._riskRng === "function"
+    ? state._riskRng
+    : (typeof services?.rng?.next === "function" ? () => services.rng.next() : Math.random);
+
+  const grid = state.grid;
+  const width = Number(grid?.width ?? 0);
+
+  for (const key of hot) {
+    const loc = parseWarehouseKey(key);
+    if (!loc) continue;
+    // Revalidate the warehouse still exists at this tile (density metrics run on a
+    // throttled cadence; a mid-tick demolition could leave a stale key).
+    if (grid?.tiles?.[loc.ix + loc.iz * width] !== TILE.WAREHOUSE) continue;
+    const densityScore = Number(density.byKey?.[key] ?? 0);
+
+    if (rng() < fireChance) {
+      const lossFood = fireLossFraction * Math.min(Number(state.resources.food ?? 0), fireLossCap);
+      const lossWood = fireLossFraction * Math.min(Number(state.resources.wood ?? 0), fireLossCap);
+      const lossStone = fireLossFraction * Math.min(Number(state.resources.stone ?? 0), fireLossCap);
+      const lossHerbs = fireLossFraction * Math.min(Number(state.resources.herbs ?? 0), fireLossCap);
+      state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
+      state.resources.wood = Math.max(0, Number(state.resources.wood ?? 0) - lossWood);
+      state.resources.stone = Math.max(0, Number(state.resources.stone ?? 0) - lossStone);
+      state.resources.herbs = Math.max(0, Number(state.resources.herbs ?? 0) - lossHerbs);
+      emitEvent(state, EVENT_TYPES.WAREHOUSE_FIRE, {
+        entityId: null,
+        ix: loc.ix,
+        iz: loc.iz,
+        key,
+        densityScore,
+        loss: { food: lossFood, wood: lossWood, stone: lossStone, herbs: lossHerbs },
+      });
+      pushWarning(state, `Warehouse fire at (${loc.ix},${loc.iz}) — stored goods damaged`, "warning", "WorldEventSystem");
+      continue; // at most one density-risk event per warehouse per tick
+    }
+
+    if (rng() < verminChance) {
+      const lossFood = verminLossFraction * Math.min(Number(state.resources.food ?? 0), verminLossCap);
+      state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
+      emitEvent(state, EVENT_TYPES.VERMIN_SWARM, {
+        entityId: null,
+        ix: loc.ix,
+        iz: loc.iz,
+        key,
+        densityScore,
+        loss: { food: lossFood },
+      });
+      pushWarning(state, `Vermin swarm at warehouse (${loc.ix},${loc.iz}) — food stores gnawed`, "warning", "WorldEventSystem");
+    }
+  }
+}
+
 export class WorldEventSystem {
   constructor() {
     this.name = "WorldEventSystem";
   }
 
-  update(dt, state) {
+  update(dt, state, services) {
     if (state.events.queue.length > 0) {
       const spawned = state.events.queue.splice(0, state.events.queue.length);
       for (const event of spawned) ensureSpatialPayload(event, state);
@@ -580,5 +658,8 @@ export class WorldEventSystem {
     for (const event of state.events.active) ensureSpatialPayload(event, state);
     applyContestedEventPressure(state);
     rebuildSpatialPressureMetrics(state);
+
+    // v0.8.0 Phase 2 M2: per-tick density-risk rolls for hot warehouses.
+    applyWarehouseDensityRisk(dt, state, services);
   }
 }

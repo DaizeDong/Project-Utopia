@@ -21,6 +21,10 @@ const EVENT_TYPES = Object.freeze({
   COLONY_MILESTONE: "colony_milestone",
   ANIMAL_MIGRATION: "animal_migration",
   WORKER_SOCIALIZED: "worker_socialized",
+  // v0.8.0 Phase 2 M2 warehouse density risk events.
+  WAREHOUSE_FIRE: "warehouse_fire",
+  VERMIN_SWARM: "vermin_swarm",
+  WAREHOUSE_QUEUE_TIMEOUT: "warehouse_queue_timeout",
 });
 
 export { EVENT_TYPES };
