@@ -46,7 +46,7 @@
 | 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
 | 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | 6eb7325 | 2026-04-21 |
-| 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
+| 4 | Survival mode + DevIndex + Plan C raids | completed | 7dd2ffa+iter | 2026-04-21 |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
 | 6 | Long-horizon benchmark harness | pending | — | — |
 | 7 | Param tuning + regression fixes + release | pending | — | — |
@@ -166,4 +166,42 @@ _Phase 3 commit:_ `6eb7325` (feat(v0.8.0 phase-3): M1 soil + M1a nodes + M1b fog
 
 ---
 
-(Phases 4-7 entries will be appended as they complete.)
+### Phase 4 — Survival mode + DevIndex + Plan C raids
+
+_2026-04-21 — Started + completed._
+
+**Subagents dispatched (3 in parallel, staged):**
+- Agent 4.A (survival mode): retired "win" outcome in favour of open-ended survival, added `state.metrics.survivalScore` monotonic counter + per-second/birth/death deltas, updated `runOutcome.js` + `deriveAtmosphereProfile` + HUD badge, wired `buildObjectivesForScenario` to return `[]`. Produced `test/survival-score.test.js` (+4).
+- Agent 4.B (Plan C raids): new `RaidEscalatorSystem` that converts `devIndexSmoothed` into a raid tier (interval↓ + intensity↑), WorldEventSystem `readRaidEscalation` helper gates bandit raids on cooldown and applies tier multiplier. Produced `test/raid-escalator.test.js` (+6).
+- Agent 4.C (DevIndex): new `DevIndexSystem` computes a 6-dim weighted composite (population/economy/infrastructure/production/defense/resilience) on ring-buffer smoothing. New `EconomyTelemetry.js` extracts signal collection for unit-testable per-dim scoring. Produced `test/dev-index-system.test.js` + `test/economy-telemetry.test.js` (+15).
+
+**Review rounds:**
+- Code-reviewer (`pr-review-toolkit:code-reviewer`): 2 MUST-FIX (systemOrder invariant guard missing, runOutcome counted non-worker agents as survivors), 4 SHOULD-FIX, 3 NIT.
+- Silent-failure-hunter: 2 CRITICAL (PopulationGrowthSystem `Math.random` broke determinism under seeded services, timestamp-based birth cursor dropped births colliding on same integer `timeSec`), 3 HIGH (no DevIndex tick sentinel, no warning when `raidEscalation` missing after tick 1, SYSTEM_ORDER ordering not asserted), 4 MEDIUM, 3 SR-nits.
+- Legacy-sweep: flagged 14+ objective-related dead code paths across types.js, benchmark/run.js, StrategicDirector, DecisionScheduler, RoleAssignmentSystem, PromptBuilder, WorldExplain, DeveloperPanel, ColonyDirectorSystem, ColonyPerceiver, WorldSummary, MemoryObserver, updateObjectiveProgress — deferred to Phase 7 cleanup sweep (functionally dormant since `buildObjectivesForScenario` returns `[]`).
+
+**Fixes applied in iteration pass:**
+- **C1:** `PopulationGrowthSystem.update(dt, state, services = null)` — threaded `services.rng.next` with Math.random fallback so seeded benchmarks stay reproducible.
+- **C2:** Replaced broken timestamp cursor (which dropped same-second births) with monotonic `state.metrics.birthsTotal` counter; `ProgressionSystem.updateSurvivalScore` now diffs `birthsTotal` against `survivalLastBirthsSeen`. Fields initialised in `createInitialGameState`.
+- **H1:** Added `state.gameplay.devIndexTicksComputed` sentinel in `DevIndexSystem` so HUD/consumers can detect missed ticks.
+- **H2:** `WorldEventSystem.readRaidEscalation` now logs a one-shot warning if `state.gameplay.raidEscalation` is absent after tick 1 (caught SYSTEM_ORDER misconfigs early instead of silently defaulting to tier-0).
+- **H3:** `GameApp.createSystems` runs `assertSystemOrder(systems, ["DevIndexSystem","RaidEscalatorSystem","WorldEventSystem"])` at boot; throws if the chain is reordered.
+- **M4:** `runOutcome.js` — collapsed `aliveAgents <= 0` and the redundant `workers <= 0` branch into a single `workers <= 0` check so surviving animals/visitors no longer mask a worker-wipe.
+- **SR1:** `HUDController` survival badge now appends `· Dev D/100` once `devIndexTicksComputed > 0`; removed stale `TODO(Agent 4.C)` marker.
+- **SR2:** `ProgressionSystem.updateSurvivalScore` seeds `survivalLastBirthsSeen` / `survivalLastDeathsSeen` to the current total when those cursors are `undefined`, protecting tests that bypass `createInitialGameState`.
+- **SR3:** WorldEventSystem raid tier application now sets `event.payload.raidTierApplied = true` to prevent double-application of the intensity multiplier if a raid is ever re-queued.
+- Tests updated: `test/progression-system.test.js` and `test/survival-score.test.js` migrated from `lastBirthGameSec` timestamp semantics to `birthsTotal` counter semantics; `test/atmosphere-profile.test.js` compares loss vs neutral (no-win) endings.
+
+**Deviations + deferrals:**
+- 14+ dead-code objective paths (functionally dormant) deferred to Phase 7 legacy-sweep rather than bloat this iteration.
+- M2 "NaN clamp guard" review item — already covered by existing `Number.isFinite` gate in `RaidEscalatorSystem.clamp`; no change needed.
+- M3 "warehouses<1 timeSec<20 dead code" — not found in current source (likely removed in Phase 3 work); marked complete without change.
+
+**Test delta:** 769 → 799 (+30: +4 survival-score, +6 raid-escalator, +8 dev-index, +7 economy-telemetry, +5 misc).
+**LOC changed (src/):** +1,120 / -180 across 18 files + 3 new files (`DevIndexSystem.js`, `RaidEscalatorSystem.js`, `EconomyTelemetry.js`).
+
+_Phase 4 commits:_ `93f6dc2` (DevIndex + EconomyTelemetry), `0056320` (Survival mode), `7dd2ffa` (Plan C raids), plus this iteration pass commit.
+
+---
+
+(Phases 5-7 entries will be appended as they complete.)

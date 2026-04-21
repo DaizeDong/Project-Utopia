@@ -49,6 +49,25 @@ import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
 
+function assertSystemOrder(systems, required) {
+  const indexOf = (name) => systems.findIndex((s) => s?.name === name || s?.constructor?.name === name);
+  let prevIdx = -1;
+  let prevName = null;
+  for (const name of required) {
+    const idx = indexOf(name);
+    if (idx < 0) {
+      throw new Error(`System order invariant: "${name}" missing from systems list`);
+    }
+    if (idx <= prevIdx) {
+      throw new Error(
+        `System order invariant: "${name}" (index ${idx}) must run after "${prevName}" (index ${prevIdx})`,
+      );
+    }
+    prevIdx = idx;
+    prevName = name;
+  }
+}
+
 function deepReplaceObject(target, next) {
   for (const key of Object.keys(target)) {
     delete target[key];
@@ -193,7 +212,7 @@ export class GameApp {
   createSystems() {
     this.memoryStore = new MemoryStore();
     this.memoryObserver = new MemoryObserver(this.memoryStore);
-    return [
+    const systems = [
       new SimulationClock(),
       new VisibilitySystem(),
       new ProgressionSystem(),
@@ -218,6 +237,12 @@ export class GameApp {
       new ProcessingSystem(),
       new ColonyDirectorSystem(),
     ];
+    // v0.8.0 Phase 4 iteration H3: the raid-escalation pipeline depends on
+    // this exact triplet ordering — DevIndex computes the smoothed score,
+    // RaidEscalator consumes it, and WorldEvent spawns raids using the tier.
+    // Reordering silently breaks threat scaling, so assert it at boot.
+    assertSystemOrder(systems, ["DevIndexSystem", "RaidEscalatorSystem", "WorldEventSystem"]);
+    return systems;
   }
 
   stepSimulation(simDt) {

@@ -13,7 +13,7 @@ export class PopulationGrowthSystem {
     this._timer = CHECK_INTERVAL_SEC * 0.5; // first check after half interval
   }
 
-  update(dt, state) {
+  update(dt, state, services = null) {
     this._timer -= dt;
     if (this._timer > 0) return;
     this._timer = CHECK_INTERVAL_SEC;
@@ -21,6 +21,13 @@ export class PopulationGrowthSystem {
     const workers = state.agents.filter(a => a.type === "WORKER" && a.alive !== false);
     const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
     if (warehouses.length === 0) return;
+    // v0.8.0 Phase 4 silent-failure C1: seeded RNG is required so benchmark
+    // runs stay reproducible. services.rng.next is the deterministic source;
+    // fall back to Math.random only when no services are threaded (legacy
+    // tests that construct the system directly).
+    const rngNext = typeof services?.rng?.next === "function"
+      ? () => services.rng.next()
+      : Math.random;
 
     // Dynamic population cap based on infrastructure
     const farms = state.buildings?.farms ?? 0;
@@ -38,21 +45,20 @@ export class PopulationGrowthSystem {
     // Need sufficient food
     if ((state.resources?.food ?? 0) < MIN_FOOD_FOR_GROWTH) return;
 
-    // Need at least 1 warehouse or 20+ seconds elapsed for growth
-    if (warehouses.length < 1 && (state.metrics?.timeSec ?? 0) < 20) return;
-
-    // Spawn at random warehouse
-    const wh = warehouses[Math.floor(Math.random() * warehouses.length)];
+    // Spawn at a seeded-random warehouse.
+    const wh = warehouses[Math.floor(rngNext() * warehouses.length)];
     const pos = tileToWorld(wh.ix, wh.iz, state.grid);
-    const newWorker = createWorker(pos.x, pos.z, Math.random);
+    const newWorker = createWorker(pos.x, pos.z, rngNext);
     state.agents.push(newWorker);
     state.resources.food -= FOOD_COST_PER_COLONIST;
 
-    // v0.8.0 Phase 4 — Survival Mode. Flag the spawn as a birth event so
-    // ProgressionSystem.updateSurvivalScore can grant the birth bonus exactly
-    // once. Storing the sim-time of the latest birth lets the scoring path
-    // detect new events by comparing against its cached cursor.
+    // v0.8.0 Phase 4 — Survival Mode. Bump a monotonic counter so the scoring
+    // path can diff exact birth count (silent-failure C2: a timestamp cursor
+    // drops births that collide on the same integer `timeSec`).
     state.metrics ??= {};
+    state.metrics.birthsTotal = Number(state.metrics.birthsTotal ?? 0) + 1;
+    // Preserve lastBirthGameSec for HUD / telemetry reads; no longer the
+    // cursor for survival-score bookkeeping.
     state.metrics.lastBirthGameSec = Number(state.metrics.timeSec ?? 0);
 
     emitEvent(state, EVENT_TYPES.VISITOR_ARRIVED, {

@@ -6,6 +6,63 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 4 — Review iteration pass (silent-failure + masking fixes)
+
+- **C1 PopulationGrowthSystem determinism** —
+  `src/simulation/population/PopulationGrowthSystem.js` now accepts
+  `services` on `update(dt, state, services = null)` and draws its spawn
+  RNG from `services.rng.next` (falls back to `Math.random` only when no
+  services are threaded, for legacy tests). Prior `Math.random()` call
+  broke benchmark reproducibility under seeded harnesses.
+- **C2 Birth counter swap** —
+  `state.metrics.birthsTotal` is now a monotonic counter bumped by
+  `PopulationGrowthSystem` on every spawn. `ProgressionSystem.updateSurvivalScore`
+  diffs `birthsTotal - survivalLastBirthsSeen` so every birth scores
+  exactly once — the prior `lastBirthGameSec` timestamp cursor silently
+  dropped births that collided on the same integer `timeSec`. Also seeds
+  `survivalLastBirthsSeen`/`survivalLastDeathsSeen` to current totals
+  when undefined so tests bypassing `createInitialGameState` don't
+  retroactively score or penalise pre-existing counts (SR2).
+- **H1 DevIndex tick sentinel** —
+  `DevIndexSystem` now increments `state.gameplay.devIndexTicksComputed`
+  each tick. HUD, telemetry, and the escalation chain can detect missed
+  DevIndex ticks instead of reading stale composites silently.
+- **H2 readRaidEscalation warning** —
+  `WorldEventSystem.readRaidEscalation` logs a one-shot
+  `console.warn` when `state.gameplay.raidEscalation` is missing after
+  tick 1 (catches SYSTEM_ORDER misconfigs early instead of silently
+  defaulting to tier-0).
+- **H3 SYSTEM_ORDER invariant** —
+  `GameApp.createSystems` runs `assertSystemOrder(systems,
+  ["DevIndexSystem","RaidEscalatorSystem","WorldEventSystem"])` at boot
+  and throws on any reorder. Protects the DevIndex → RaidEscalator →
+  WorldEvent chain.
+- **M4 runOutcome worker filter** —
+  `src/app/runOutcome.js` colony-wipe check now filters by
+  `agent.type === "WORKER"` (previously counted animals and visitors as
+  survivors, so a 0-worker colony with 1 surviving wildlife agent never
+  triggered loss).
+- **SR1 HUD DevIndex wired** —
+  `HUDController` survival badge now appends `· Dev D/100` once
+  `devIndexTicksComputed > 0`; removed stale `TODO(Agent 4.C)` marker.
+- **SR3 Raid tier double-apply guard** —
+  `WorldEventSystem` sets `event.payload.raidTierApplied = true` after
+  multiplying `event.intensity`, so a replayed/re-queued raid cannot
+  compound its intensity.
+- **Tests migrated** — `test/progression-system.test.js` and
+  `test/survival-score.test.js` updated from `lastBirthGameSec`
+  timestamp semantics to `birthsTotal` counter semantics;
+  `test/atmosphere-profile.test.js` compares loss vs neutral endings
+  (no-win).
+- **Deferrals** — 14+ dormant objective-related code paths
+  (`types.js::Objective` typedef, `updateObjectiveProgress`, StrategicDirector /
+  DecisionScheduler / RoleAssignmentSystem objective prompts, WorldExplain +
+  WorldSummary objective mentions, DeveloperPanel objective controls,
+  ColonyDirectorSystem + ColonyPerceiver + MemoryObserver objective refs,
+  benchmark/run.js objective reporting) deferred to Phase 7 legacy-sweep.
+  Functionally dormant since `buildObjectivesForScenario` now returns `[]`.
+- **Tests:** 799 pass / 0 fail (62 suites).
+
 ### Phase 4 — RaidEscalatorSystem (Agent 4.B)
 
 - **RaidEscalatorSystem** — New system in

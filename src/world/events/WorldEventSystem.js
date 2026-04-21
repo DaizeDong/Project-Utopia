@@ -31,6 +31,18 @@ function readRaidEscalation(state) {
       devIndexSample: Number(esc.devIndexSample ?? 0),
     };
   }
+  // v0.8.0 Phase 4 iteration H2: in a real game tick RaidEscalatorSystem runs
+  // before WorldEventSystem and populates state.gameplay.raidEscalation. If the
+  // field is still missing after tick 1, system ordering or init was skipped —
+  // log once so the silent-failure isn't masked by the defaults below.
+  const tick = Number(state?.metrics?.tick ?? 0);
+  const timeSec = Number(state?.metrics?.timeSec ?? 0);
+  if ((tick > 1 || timeSec > 1) && !state?.__raidEscalationMissingWarned) {
+    console.warn(
+      "[WorldEventSystem] raidEscalation missing after tick 1 — is RaidEscalatorSystem wired into SYSTEM_ORDER? Falling back to tier-0 defaults.",
+    );
+    if (state) state.__raidEscalationMissingWarned = true;
+  }
   return {
     tier: 0,
     intervalTicks: Number(BALANCE.raidIntervalBaseTicks ?? 3600),
@@ -659,8 +671,15 @@ export class WorldEventSystem {
             continue;
           }
           // Apply the tier's intensity multiplier to the raid's base intensity.
-          event.intensity = Number(event.intensity ?? 1) * escalation.intensityMultiplier;
+          // v0.8.0 Phase 4 iteration SR3: guard against double-application if
+          // the same queued raid ever re-enters this loop (e.g. a pre-tiered
+          // replay from a savegame). A raid carries its applied tier forward
+          // so intensity cannot be silently compounded.
           event.payload ??= {};
+          if (!event.payload.raidTierApplied) {
+            event.intensity = Number(event.intensity ?? 1) * escalation.intensityMultiplier;
+            event.payload.raidTierApplied = true;
+          }
           event.payload.raidTier = escalation.tier;
           event.payload.raidIntensityMultiplier = escalation.intensityMultiplier;
           event.payload.raidDevIndexSample = escalation.devIndexSample;

@@ -114,5 +114,10 @@ export class DevIndexSystem {
     g.devIndexSmoothed = history.length > 0
       ? clamp0to100(sum / history.length)
       : composite;
+
+    // v0.8.0 Phase 4 iteration H1: sentinel so downstream consumers
+    // (RaidEscalatorSystem, HUD) can detect if DevIndex failed to run
+    // on a tick instead of silently reading stale composites.
+    g.devIndexTicksComputed = Number(g.devIndexTicksComputed ?? 0) + 1;
   }
 }

@@ -45,8 +45,8 @@ test("updateSurvivalScore adds +BALANCE.survivalScorePerSecond per in-game secon
 test("a birth event adds +BALANCE.survivalScorePerBirth bonus", () => {
   const state = createInitialGameState();
   state.metrics.survivalScore = 0;
-  state.metrics.lastBirthGameSec = -1;
-  state.metrics.survivalLastBirthSeenSec = -1;
+  state.metrics.birthsTotal = 0;
+  state.metrics.survivalLastBirthsSeen = 0;
   state.metrics.deathsTotal = 0;
   state.metrics.survivalLastDeathsSeen = 0;
 
@@ -54,7 +54,7 @@ test("a birth event adds +BALANCE.survivalScorePerBirth bonus", () => {
 
   // Simulate PopulationGrowthSystem flagging a birth at sim-time=12s.
   state.metrics.timeSec = 12;
-  state.metrics.lastBirthGameSec = 12;
+  state.metrics.birthsTotal = 1;
   updateSurvivalScore(state, 0);
   assert.ok(
     Math.abs(state.metrics.survivalScore - perBirth) < 1e-9,

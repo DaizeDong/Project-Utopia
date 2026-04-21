@@ -441,13 +441,15 @@ export function createInitialGameState(options = {}) {
       // v0.8.0 Phase 4 — Survival Mode. Running score on state.metrics.
       // `survivalScore` accrues +survivalScorePerSecond each in-game second,
       // +survivalScorePerBirth per birth, -survivalScorePenaltyPerDeath per
-      // death. `lastBirthGameSec` is set by PopulationGrowthSystem when a
-      // colonist spawns. `survivalLastBirthSeenSec` /
-      // `survivalLastDeathsSeen` are bookkeeping cursors so ProgressionSystem
-      // doesn't double-count events across ticks.
+      // death. `birthsTotal` is a monotonic counter bumped by
+      // PopulationGrowthSystem on each spawn; `survivalLastBirthsSeen` and
+      // `survivalLastDeathsSeen` are cursors so ProgressionSystem diffs
+      // exactly once per event (silent-failure C2 fix: timestamp cursor
+      // dropped births that collided on the same integer timeSec).
       survivalScore: 0,
+      birthsTotal: 0,
       lastBirthGameSec: -1,
-      survivalLastBirthSeenSec: -1,
+      survivalLastBirthsSeen: 0,
       survivalLastDeathsSeen: 0,
       invalidTransitionCount: 0,
       idleWithoutReasonSec: {},
