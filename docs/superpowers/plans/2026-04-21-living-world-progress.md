@@ -44,7 +44,7 @@
 |---|---|---|---|---|
 | 0 | Branch + progress scaffolding | completed | 53e7e74 | 2026-04-21 |
 | 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
-| 2 | M2 warehouse queue + density risk | completed | pending-commit | 2026-04-21 |
+| 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | pending | — | — |
 | 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
@@ -132,7 +132,7 @@ _2026-04-21 — Started + completed._
 **Test delta:** 744 → 752 (+8: 3 warehouse-queue + 5 warehouse-density).
 **LOC changed (src/):** +201 / -1 across 8 files + 1 new file (`WarehouseQueueSystem.js`, ~115 lines).
 
-_Phase 2 commit:_ (pending — appended after commit).
+_Phase 2 commit:_ `c23a50b` (feat(v0.8.0 phase-2): M2 warehouse throughput queue + density risk events).
 
 ---
 
