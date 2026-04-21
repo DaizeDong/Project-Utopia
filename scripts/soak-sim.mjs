@@ -21,6 +21,9 @@ import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopu
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
+import { PopulationGrowthSystem } from "../src/simulation/population/PopulationGrowthSystem.js";
+import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
+import { ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
 import { makeSerializableSnapshot, restoreSnapshotState } from "../src/app/snapshotService.js";
 import { buildLongRunTelemetry } from "../src/app/longRunTelemetry.js";
 import { LONG_RUN_PROFILE } from "../src/config/longRunProfile.js";
@@ -88,10 +91,12 @@ function buildSystems(memoryStore) {
     new SimulationClock(),
     new ProgressionSystem(),
     new RoleAssignmentSystem(),
+    new PopulationGrowthSystem(),
     new StrategicDirector(memoryStore),
     new EnvironmentDirectorSystem(),
     new WeatherSystem(),
     new WorldEventSystem(),
+    new TileStateSystem(),
     new NPCBrainSystem(),
     new WorkerAISystem(),
     new VisitorAISystem(),
@@ -101,6 +106,7 @@ function buildSystems(memoryStore) {
     new BoidsSystem(),
     new ResourceSystem(),
     new ProcessingSystem(),
+    new ColonyDirectorSystem(),
   ];
 }
 

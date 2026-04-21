@@ -8,3 +8,11 @@ docs/assignment4/metrics/
 docs/assignment4/release-manifest.json
 output/playwright/
 .playwright-mcp/
+results/
+screenshot-*
+snapshot-*.md
+.claude/
+desktop-dist/
+launcher-dist/
+output/asar-extract/
+output/benchmark-runs/

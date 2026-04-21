@@ -298,6 +298,89 @@ function domainWarpedFbm(x, z, seed, warpAmp = 0.22) {
   return fbm2D(x + wx * warpAmp, z + wz * warpAmp, seed + 303, 5, 2.0, 0.5);
 }
 
+function recursiveWarp(x, z, seed, depth = 2, amp = 0.3) {
+  let px = x, pz = z;
+  for (let i = 0; i < depth; i += 1) {
+    const wx = fbm2D(px * 2.2 + 13.2 + i * 5.3, pz * 2.2 - 9.7, seed + 101 + i * 400, 3, 2.1, 0.5) - 0.5;
+    const wz = fbm2D(px * 2.2 - 7.1, pz * 2.2 + 5.9 + i * 4.1, seed + 202 + i * 400, 3, 2.1, 0.5) - 0.5;
+    px = x + wx * amp;
+    pz = z + wz * amp;
+  }
+  return fbm2D(px, pz, seed + 303, 5, 2.0, 0.5);
+}
+
+function worleyNoise(x, z, seed, cellSize = 1.0) {
+  const cx = Math.floor(x / cellSize);
+  const cz = Math.floor(z / cellSize);
+  let minDist = 999;
+  let secondDist = 999;
+  for (let dz = -1; dz <= 1; dz += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const ncx = cx + dx;
+      const ncz = cz + dz;
+      const px = (ncx + hash2D(ncx, ncz, seed + 1)) * cellSize;
+      const pz = (ncz + hash2D(ncx, ncz, seed + 2)) * cellSize;
+      const d = Math.hypot(x - px, z - pz);
+      if (d < minDist) { secondDist = minDist; minDist = d; }
+      else if (d < secondDist) { secondDist = d; }
+    }
+  }
+  return { f1: minDist / cellSize, f2: secondDist / cellSize, edge: (secondDist - minDist) / cellSize };
+}
+
+function poissonDiskSample(width, height, minDist, rng, maxPoints = 200) {
+  const cellSize = minDist / Math.SQRT2;
+  const gridW = Math.ceil(width / cellSize);
+  const gridH = Math.ceil(height / cellSize);
+  const grid = new Int32Array(gridW * gridH).fill(-1);
+  const points = [];
+  const active = [];
+
+  function gridIdx(x, z) { return Math.floor(x / cellSize) + Math.floor(z / cellSize) * gridW; }
+
+  const x0 = width * (0.3 + rng() * 0.4);
+  const z0 = height * (0.3 + rng() * 0.4);
+  points.push({ x: x0, z: z0 });
+  active.push(0);
+  grid[gridIdx(x0, z0)] = 0;
+
+  while (active.length > 0 && points.length < maxPoints) {
+    const ai = Math.floor(rng() * active.length);
+    const pi = active[ai];
+    const p = points[pi];
+    let found = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const angle = rng() * Math.PI * 2;
+      const r = minDist * (1 + rng());
+      const nx = p.x + Math.cos(angle) * r;
+      const nz = p.z + Math.sin(angle) * r;
+      if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+      const gi = gridIdx(nx, nz);
+      const gx = Math.floor(nx / cellSize);
+      const gz = Math.floor(nz / cellSize);
+      let ok = true;
+      for (let dz = -2; dz <= 2 && ok; dz += 1) {
+        for (let dx = -2; dx <= 2 && ok; dx += 1) {
+          const cgx = gx + dx, cgz = gz + dz;
+          if (cgx < 0 || cgz < 0 || cgx >= gridW || cgz >= gridH) continue;
+          const ci = grid[cgx + cgz * gridW];
+          if (ci >= 0 && Math.hypot(points[ci].x - nx, points[ci].z - nz) < minDist) ok = false;
+        }
+      }
+      if (ok) {
+        const ni = points.length;
+        points.push({ x: nx, z: nz });
+        active.push(ni);
+        grid[gi] = ni;
+        found = true;
+        break;
+      }
+    }
+    if (!found) active.splice(ai, 1);
+  }
+  return points;
+}
+
 function chooseWeighted(rng, weighted) {
   let total = 0;
   for (const item of weighted) total += Math.max(0, item.w);
@@ -1047,42 +1130,59 @@ function generateArchipelagoTerrain(tiles, width, height, seed, profile) {
     return da - db;
   });
 
-  // Paint islands as GRASS blobs with varying sizes
+  // Paint islands with domain-warped shapes for organic coastlines
   for (let i = 0; i < islands.length; i += 1) {
     const isl = islands[i];
     const baseRadius = i === 0
-      ? Math.max(8, Math.min(width, height) * 0.16)
-      : lerp(4, Math.min(width, height) * 0.11, rng());
-    const rx = baseRadius * lerp(0.8, 1.3, rng());
-    const rz = baseRadius * lerp(0.8, 1.3, rng());
-    paintBlob(tiles, width, height, isl.x, isl.z, rx, rz, TILE.GRASS, seed + 7100 + i * 31, new Set([TILE.WATER]));
+      ? Math.max(10, Math.min(width, height) * 0.18)
+      : lerp(5, Math.min(width, height) * 0.13, rng());
+    const rx = baseRadius * lerp(0.75, 1.35, rng());
+    const rz = baseRadius * lerp(0.75, 1.35, rng());
+    // Use noise-distorted distance for organic island shapes
+    const islandSeed = seed + 7100 + i * 31;
+    for (let iz2 = Math.max(0, Math.floor(isl.z - rz - 3)); iz2 <= Math.min(height - 1, Math.ceil(isl.z + rz + 3)); iz2 += 1) {
+      for (let ix2 = Math.max(0, Math.floor(isl.x - rx - 3)); ix2 <= Math.min(width - 1, Math.ceil(isl.x + rx + 3)); ix2 += 1) {
+        const dx = (ix2 - isl.x) / Math.max(1, rx);
+        const dz = (iz2 - isl.z) / Math.max(1, rz);
+        const baseDist = Math.sqrt(dx * dx + dz * dz);
+        const angle = Math.atan2(dz, dx);
+        const wobble = fbm2D(angle * 4.0, baseDist * 3.0, islandSeed, 3, 2.0, 0.5) * 0.3;
+        if (baseDist + wobble < 1.0) {
+          tiles[toIndex(ix2, iz2, width)] = TILE.GRASS;
+        }
+      }
+    }
   }
 
-  // Connect some island pairs with narrow land bridges (60%)
+  // Connect some island pairs with narrow land strips (60%)
   for (let i = 1; i < islands.length; i += 1) {
     if (rng() > 0.6) continue;
     const from = islands[i];
     const to = islands[Math.floor(rng() * i)];
-    // Draw a 1-2 tile wide bridge path
     const steps = Math.abs(from.x - to.x) + Math.abs(from.z - to.z);
     for (let t = 0; t <= steps; t += 1) {
       const frac = steps > 0 ? t / steps : 0;
       const bx = Math.round(lerp(from.x, to.x, frac));
       const bz = Math.round(lerp(from.z, to.z, frac));
-      setTileRaw(tiles, width, height, bx, bz, TILE.BRIDGE);
-      if (rng() > 0.4) setTileRaw(tiles, width, height, bx + (rng() > 0.5 ? 1 : 0), bz + (rng() > 0.5 ? 1 : 0), TILE.BRIDGE);
+      setTileRaw(tiles, width, height, bx, bz, TILE.GRASS);
+      if (rng() > 0.5) setTileRaw(tiles, width, height, bx + (rng() > 0.5 ? 1 : 0), bz + (rng() > 0.5 ? 1 : 0), TILE.GRASS);
     }
   }
 
-  // Compute fields for district placement compatibility
+  // Compute elevation/moisture with terrain variation per island
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       const nx = ix / Math.max(1, width - 1);
       const nz = iz / Math.max(1, height - 1);
-      elevation[idx] = tiles[idx] === TILE.WATER ? 0.1 : 0.6;
-      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
-      ridge[idx] = 0;
+      if (tiles[idx] === TILE.WATER) {
+        elevation[idx] = 0.08;
+      } else {
+        // Varied elevation within islands using recursive warping
+        elevation[idx] = clamp(recursiveWarp(nx * 3.0, nz * 3.0, seed + 11, 2, 0.2) * 0.5 + 0.4, 0.2, 0.9);
+      }
+      moisture[idx] = clamp(domainWarpedFbm(nx * 3.0, nz * 3.0, seed + 47, 0.18), 0, 1);
+      ridge[idx] = tiles[idx] === TILE.WATER ? 0 : fbm2D(nx * 5, nz * 5, seed + 71, 2, 2.0, 0.4) * 0.3;
     }
   }
 
@@ -1098,8 +1198,9 @@ function generateCoastlineTerrain(tiles, width, height, seed, profile) {
   const side = profile.oceanSide || "east";
   const isVertical = side === "east" || side === "west";
   const isFlipped = side === "west" || side === "north";
+  const rng = createRng(seed + 8100);
 
-  // Generate a jagged coastline using 1D noise
+  // Domain-warped coastline for organic shape
   const axisLen = isVertical ? height : width;
   const crossLen = isVertical ? width : height;
   const coastBase = Math.floor(crossLen * (isFlipped ? 0.38 : 0.62));
@@ -1107,55 +1208,99 @@ function generateCoastlineTerrain(tiles, width, height, seed, profile) {
 
   for (let t = 0; t < axisLen; t += 1) {
     const nt = t / Math.max(1, axisLen - 1);
-    const n1 = fbm2D(nt * 4.5, 0.5, seed + 8001, 4, 2.1, 0.5) - 0.5;
-    const n2 = fbm2D(nt * 9.0, 1.5, seed + 8002, 3, 2.3, 0.45) - 0.5;
-    const jag = n1 * crossLen * 0.18 + n2 * crossLen * 0.08;
+    // Multi-scale coastline with domain warping for organic fractal shape
+    const warp = fbm2D(nt * 6.0, 2.0, seed + 7999, 2, 2.0, 0.5) * 0.15;
+    const n1 = fbm2D((nt + warp) * 4.5, 0.5, seed + 8001, 4, 2.1, 0.5) - 0.5;
+    const n2 = fbm2D((nt + warp) * 9.0, 1.5, seed + 8002, 3, 2.3, 0.45) - 0.5;
+    const n3 = fbm2D((nt + warp) * 18.0, 3.5, seed + 8003, 2, 2.0, 0.4) - 0.5;
+    const jag = n1 * crossLen * 0.20 + n2 * crossLen * 0.10 + n3 * crossLen * 0.04;
     coastline[t] = coastBase + jag;
   }
 
-  // Fill tiles: land on one side, water on the other
+  // Fill tiles with domain-warped elevation for cliff terraces
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       const t = isVertical ? iz : ix;
       const cross = isVertical ? ix : iz;
       const coastPos = coastline[t];
+      const distToCoast = isFlipped ? (cross - coastPos) : (coastPos - cross);
 
-      const isOcean = isFlipped ? (cross < coastPos) : (cross > coastPos);
+      const isOcean = distToCoast < 0;
       tiles[idx] = isOcean ? TILE.WATER : TILE.GRASS;
 
       const nx = ix / Math.max(1, width - 1);
       const nz = iz / Math.max(1, height - 1);
-      elevation[idx] = isOcean ? 0.1 : 0.5 + fbm2D(nx * 3, nz * 3, seed + 8050, 3, 2, 0.5) * 0.3;
-      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
-      ridge[idx] = 0;
+      if (isOcean) {
+        elevation[idx] = 0.08;
+      } else {
+        // Cliff terraces: elevation rises steeply near coast, then plateaus
+        const coastFrac = clamp(distToCoast / crossLen, 0, 1);
+        const terrace = recursiveWarp(nx * 3.0, nz * 3.0, seed + 8050, 2, 0.2);
+        elevation[idx] = clamp(coastFrac * 0.8 + terrace * 0.35, 0.15, 0.95);
+      }
+      // Moisture highest near coast, decreasing inland
+      const coastDist = Math.abs(distToCoast) / crossLen;
+      moisture[idx] = clamp(0.85 - coastDist * 0.6 + fbm2D(nx * 4, nz * 4, seed + 47, 3, 2, 0.5) * 0.25, 0, 1);
+      ridge[idx] = isOcean ? 0 : clamp(fbm2D(nx * 6, nz * 6, seed + 71, 2, 2.2, 0.5) * 0.4, 0, 1);
     }
   }
 
-  // Add small offshore islands (2-4)
-  const rng = createRng(seed + 8100);
-  const islandCount = 2 + Math.floor(rng() * 3);
+  // Tidal pools: small water patches carved into land near coastline
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+      const t = isVertical ? iz : ix;
+      const cross = isVertical ? ix : iz;
+      const distToCoast = isFlipped ? (cross - coastline[t]) : (coastline[t] - cross);
+      if (distToCoast > 6 || distToCoast < 1) continue;
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const poolNoise = worleyNoise(nx * 12, nz * 12, seed + 8400, 1.0);
+      if (poolNoise.f1 < 0.15 && rng() < 0.6) {
+        tiles[idx] = TILE.WATER;
+        elevation[idx] = 0.12;
+      }
+    }
+  }
+
+  // Offshore islands with varied shapes (3-5)
+  const islandCount = 3 + Math.floor(rng() * 3);
   for (let i = 0; i < islandCount; i += 1) {
-    // Place in the ocean portion
-    let ox, oz;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    let ox = 0, oz = 0;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
       ox = Math.floor(rng() * (width - 10) + 5);
       oz = Math.floor(rng() * (height - 10) + 5);
       const t = isVertical ? oz : ox;
       const cross = isVertical ? ox : oz;
       const coastPos = coastline[Math.min(t, axisLen - 1)];
-      const inOcean = isFlipped ? (cross < coastPos - 5) : (cross > coastPos + 5);
+      const inOcean = isFlipped ? (cross < coastPos - 6) : (cross > coastPos + 6);
       if (inOcean) break;
     }
-    const r = lerp(2, 5, rng());
-    paintBlob(tiles, width, height, ox, oz, r, r * lerp(0.7, 1.3, rng()), TILE.GRASS, seed + 8200 + i * 17, new Set([TILE.WATER]));
+    const r = lerp(2.5, 6, rng());
+    // Noise-shaped islands
+    const islSeed = seed + 8200 + i * 17;
+    for (let dz = -Math.ceil(r) - 2; dz <= Math.ceil(r) + 2; dz += 1) {
+      for (let dx = -Math.ceil(r) - 2; dx <= Math.ceil(r) + 2; dx += 1) {
+        const px = ox + dx, pz = oz + dz;
+        if (px < 0 || pz < 0 || px >= width || pz >= height) continue;
+        const nd = Math.sqrt((dx / r) ** 2 + (dz / (r * lerp(0.7, 1.3, rng()))) ** 2);
+        const wobble = fbm2D(Math.atan2(dz, dx) * 3, nd * 2, islSeed, 2, 2, 0.5) * 0.25;
+        if (nd + wobble < 1.0) {
+          const pidx = toIndex(px, pz, width);
+          tiles[pidx] = TILE.GRASS;
+          elevation[pidx] = clamp(0.3 + (1 - nd) * 0.4, 0.2, 0.7);
+        }
+      }
+    }
   }
 
-  // Add bays by carving water into land near coastline
+  // Bays carved with domain-warped depth
   for (let t = 0; t < axisLen; t += 1) {
     const bayNoise = fbm2D(t / axisLen * 6.0, 3.3, seed + 8300, 3, 2, 0.5);
-    if (bayNoise < 0.38) continue;
-    const depth = Math.floor((bayNoise - 0.38) * crossLen * 0.25);
+    if (bayNoise < 0.42) continue;
+    const depth = Math.floor((bayNoise - 0.42) * crossLen * 0.22);
     const coastPos = Math.round(coastline[t]);
     for (let d = 0; d < depth; d += 1) {
       const cross = isFlipped ? (coastPos + d) : (coastPos - d);
@@ -1289,29 +1434,30 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
   const elevation = new Float32Array(area);
   const moisture = new Float32Array(area);
   const ridge = new Float32Array(area);
+  const rng = createRng(seed + 6000);
 
-  // Flat terrain base — low octave count for smooth plains
+  // Gentle rolling terrain — recursive warp for organic variation
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       const nx = ix / Math.max(1, width - 1);
       const nz = iz / Math.max(1, height - 1);
-      elevation[idx] = clamp(fbm2D(nx * 1.8, nz * 1.8, seed + 11, 3, 2.0, 0.4) * 0.6 + 0.35, 0, 1);
-      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
-      ridge[idx] = Math.abs(fbm2D(nx * 5, nz * 5, seed + 71, 2, 2.2, 0.5) * 2 - 1) * 0.3;
+      elevation[idx] = clamp(recursiveWarp(nx * 2.0, nz * 2.0, seed + 11, 2, 0.15) * 0.45 + 0.35, 0.1, 0.7);
+      moisture[idx] = clamp(domainWarpedFbm(nx * 3.0, nz * 3.0, seed + 47, 0.15) * 0.6 + 0.4, 0, 1);
+      ridge[idx] = Math.abs(fbm2D(nx * 5, nz * 5, seed + 71, 2, 2.2, 0.5) * 2 - 1) * 0.2;
       tiles[idx] = TILE.GRASS;
     }
   }
 
-  // Generate 2-3 convergent rivers meeting near center
+  // Generate 2-3 convergent rivers with deep domain-warped meanders
   const cx = Math.floor(width * (0.4 + hash2D(7, 13, seed + 6001) * 0.2));
   const cz = Math.floor(height * (0.4 + hash2D(11, 17, seed + 6002) * 0.2));
   const riverCount = 2 + (hash2D(3, 5, seed + 6003) > 0.5 ? 1 : 0);
 
-  const riverPaths = [];
+  // Store river center-line for oxbow and floodplain generation
+  const riverCenterLines = [];
   for (let r = 0; r < riverCount; r += 1) {
     const angle = (r / riverCount) * Math.PI * 2 + hash2D(r, 0, seed + 6010) * 0.6;
-    // Start from edge
     let startX, startZ;
     if (Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle))) {
       startX = Math.cos(angle) > 0 ? width - 2 : 1;
@@ -1321,85 +1467,210 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
       startX = clamp(Math.round(cx + Math.cos(angle) * width * 0.4), 2, width - 3);
     }
 
-    // Carve river from edge toward confluence
-    const path = [];
-    let px = startX;
-    let pz = startZ;
-    const riverWidth = lerp(2.5, 4.5, hash2D(r, 7, seed + 6020));
-    const steps = Math.abs(px - cx) + Math.abs(pz - cz) + 20;
+    const centerLine = [];
+    const baseWidth = lerp(2.0, 3.5, hash2D(r, 7, seed + 6020));
+    const steps = Math.abs(startX - cx) + Math.abs(startZ - cz) + 20;
 
     for (let s = 0; s <= steps; s += 1) {
       const frac = s / Math.max(1, steps);
-      // Noise-based meander
-      const meander = fbm2D(frac * 4.0 + r * 3.1, 0.5, seed + 6100 + r * 311, 3, 2.1, 0.5) - 0.5;
-      const targetX = lerp(startX, cx, frac);
-      const targetZ = lerp(startZ, cz, frac);
-      px = Math.round(targetX + meander * Math.min(width, height) * 0.12);
-      pz = Math.round(targetZ + meander * Math.min(width, height) * 0.08);
-      px = clamp(px, 1, width - 2);
-      pz = clamp(pz, 1, height - 2);
+      // Domain-warped meander — 2 layers of warp for deep sinuosity
+      const warpX = fbm2D(frac * 3.0 + r * 2.7, 1.5, seed + 6050 + r * 100, 2, 2.0, 0.5) * 0.12;
+      const m1 = fbm2D((frac + warpX) * 5.0 + r * 3.1, 0.5, seed + 6100 + r * 311, 4, 2.0, 0.5) - 0.5;
+      const m2 = fbm2D((frac + warpX) * 10.0 + r * 1.7, 1.5, seed + 6150 + r * 211, 3, 2.2, 0.45) - 0.5;
+      const meander = m1 * 0.16 + m2 * 0.06;
+      const dim = Math.min(width, height);
+      const px = clamp(Math.round(lerp(startX, cx, frac) + meander * dim), 1, width - 2);
+      const pz = clamp(Math.round(lerp(startZ, cz, frac) + meander * dim * 0.7), 1, height - 2);
+      // River widens approaching confluence
+      const widthMult = lerp(0.8, 1.6, frac);
+      centerLine.push({ x: px, z: pz, w: baseWidth * widthMult });
+    }
+    riverCenterLines.push(centerLine);
 
-      const half = Math.max(1, Math.round(riverWidth * lerp(0.7, 1.3, hash2D(px, pz, seed + 6200)) * 0.5));
+    // Paint river tiles
+    for (const pt of centerLine) {
+      const half = Math.max(1, Math.round(pt.w * lerp(0.8, 1.2, hash2D(pt.x, pt.z, seed + 6200)) * 0.5));
       for (let dz = -half; dz <= half; dz += 1) {
         for (let dx = -half; dx <= half; dx += 1) {
-          const wx = px + dx;
-          const wz = pz + dz;
+          if (dx * dx + dz * dz > (half + 0.5) * (half + 0.5)) continue;
+          const wx = pt.x + dx;
+          const wz = pt.z + dz;
           if (wx >= 0 && wz >= 0 && wx < width && wz < height) {
             tiles[toIndex(wx, wz, width)] = TILE.WATER;
-            path.push({ x: wx, z: wz });
           }
         }
       }
     }
-    riverPaths.push(path);
   }
 
-  // Widen confluence area
-  const confluenceR = Math.max(4, Math.floor(Math.min(width, height) * 0.06));
-  for (let dz = -confluenceR; dz <= confluenceR; dz += 1) {
-    for (let dx = -confluenceR; dx <= confluenceR; dx += 1) {
-      if (dx * dx + dz * dz > confluenceR * confluenceR) continue;
+  // Noise-distorted confluence lake
+  const confluenceR = Math.max(4, Math.floor(Math.min(width, height) * 0.065));
+  for (let dz = -confluenceR - 2; dz <= confluenceR + 2; dz += 1) {
+    for (let dx = -confluenceR - 2; dx <= confluenceR + 2; dx += 1) {
       const wx = cx + dx;
       const wz = cz + dz;
-      if (wx >= 0 && wz >= 0 && wx < width && wz < height) {
+      if (wx < 0 || wz < 0 || wx >= width || wz >= height) continue;
+      const nd = Math.sqrt((dx / confluenceR) ** 2 + (dz / confluenceR) ** 2);
+      const wobble = fbm2D(Math.atan2(dz, dx) * 3.0, nd * 2.0, seed + 6250, 2, 2.0, 0.5) * 0.25;
+      if (nd + wobble < 1.0) {
         tiles[toIndex(wx, wz, width)] = TILE.WATER;
       }
     }
   }
 
-  // Add scattered floodplain ponds near rivers
-  const pondRng = createRng(seed + 6300);
-  for (let p = 0; p < 6; p += 1) {
-    // Pick a random river tile and place a pond nearby
-    const rIdx = Math.floor(pondRng() * riverPaths.length);
-    const rPath = riverPaths[rIdx];
-    if (!rPath || rPath.length === 0) continue;
-    const rTile = rPath[Math.floor(pondRng() * rPath.length)];
-    const ox = rTile.x + Math.floor((pondRng() - 0.5) * 8);
-    const oz = rTile.z + Math.floor((pondRng() - 0.5) * 8);
-    const pr = lerp(1.5, 3, pondRng());
-    paintBlob(tiles, width, height, ox, oz, pr, pr * lerp(0.7, 1.3, pondRng()), TILE.WATER, seed + 6400 + p * 17, new Set([TILE.GRASS]));
-  }
-
-  // Update moisture near rivers — fertile floodplains
-  for (let iz = 0; iz < height; iz += 1) {
-    for (let ix = 0; ix < width; ix += 1) {
-      const idx = toIndex(ix, iz, width);
-      if (tiles[idx] === TILE.WATER) {
-        moisture[idx] = 1.0;
-        // Boost moisture for nearby land tiles
-        for (let dz = -4; dz <= 4; dz += 1) {
-          for (let dx = -4; dx <= 4; dx += 1) {
-            const nx2 = ix + dx;
-            const nz2 = iz + dz;
-            if (nx2 < 0 || nz2 < 0 || nx2 >= width || nz2 >= height) continue;
-            const nIdx = toIndex(nx2, nz2, width);
-            if (tiles[nIdx] !== TILE.WATER) {
-              const dist = Math.sqrt(dx * dx + dz * dz);
-              moisture[nIdx] = Math.max(moisture[nIdx], 1.0 - dist * 0.18);
+  // Oxbow lakes — abandoned meander loops alongside rivers
+  for (let r = 0; r < riverCenterLines.length; r += 1) {
+    const line = riverCenterLines[r];
+    const oxbowCount = 1 + Math.floor(rng() * 2);
+    for (let o = 0; o < oxbowCount; o += 1) {
+      // Pick a mid-section of the river (avoid endpoints)
+      const startFrac = 0.2 + rng() * 0.5;
+      const startIdx = Math.floor(startFrac * line.length);
+      const arcLen = Math.floor(line.length * lerp(0.08, 0.18, rng()));
+      if (startIdx + arcLen >= line.length) continue;
+      const offsetDir = rng() > 0.5 ? 1 : -1;
+      const offsetDist = lerp(4, 8, rng());
+      // Carve a crescent-shaped water body offset from the river
+      for (let i = 0; i < arcLen; i += 1) {
+        const pt = line[startIdx + i];
+        // Compute perpendicular offset from river direction
+        const nextPt = line[Math.min(startIdx + i + 1, line.length - 1)];
+        const dirX = nextPt.x - pt.x;
+        const dirZ = nextPt.z - pt.z;
+        const len = Math.max(1, Math.sqrt(dirX * dirX + dirZ * dirZ));
+        const perpX = -dirZ / len;
+        const perpZ = dirX / len;
+        // Arc shape: thickest in middle, thin at ends
+        const arcFrac = i / Math.max(1, arcLen - 1);
+        const thickness = Math.sin(arcFrac * Math.PI) * lerp(1.5, 2.5, rng());
+        const ox = Math.round(pt.x + perpX * offsetDist * offsetDir);
+        const oz = Math.round(pt.z + perpZ * offsetDist * offsetDir);
+        const half = Math.max(1, Math.round(thickness));
+        for (let dz2 = -half; dz2 <= half; dz2 += 1) {
+          for (let dx2 = -half; dx2 <= half; dx2 += 1) {
+            if (dx2 * dx2 + dz2 * dz2 > half * half) continue;
+            const fx = ox + dx2;
+            const fz = oz + dz2;
+            if (fx >= 1 && fz >= 1 && fx < width - 1 && fz < height - 1) {
+              tiles[toIndex(fx, fz, width)] = TILE.WATER;
             }
           }
         }
+      }
+    }
+  }
+
+  // Delta / distributary channels downstream of confluence
+  const deltaCount = 2 + Math.floor(rng() * 2);
+  const deltaAngleBase = rng() * Math.PI * 2;
+  for (let d = 0; d < deltaCount; d += 1) {
+    const angle = deltaAngleBase + (d / deltaCount) * Math.PI * 0.8 - Math.PI * 0.2;
+    const length = lerp(12, 22, rng());
+    let dx2 = cx;
+    let dz2 = cz;
+    const channelWidth = lerp(1.0, 1.8, rng());
+    for (let s = 0; s < length; s += 1) {
+      const frac = s / length;
+      const wobble = fbm2D(frac * 6.0 + d * 4.1, 0.5, seed + 6300 + d * 71, 2, 2.0, 0.5) - 0.5;
+      dx2 = clamp(Math.round(dx2 + Math.cos(angle + wobble * 1.5) * 1.3), 1, width - 2);
+      dz2 = clamp(Math.round(dz2 + Math.sin(angle + wobble * 1.5) * 1.3), 1, height - 2);
+      const half = Math.max(1, Math.round(channelWidth * (1 - frac * 0.4)));
+      for (let ddz = -half; ddz <= half; ddz += 1) {
+        for (let ddx = -half; ddx <= half; ddx += 1) {
+          const fx = dx2 + ddx;
+          const fz = dz2 + ddz;
+          if (fx >= 0 && fz >= 0 && fx < width && fz < height) {
+            tiles[toIndex(fx, fz, width)] = TILE.WATER;
+          }
+        }
+      }
+    }
+  }
+
+  // Marshland / wetland zones — Worley noise patches near water
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+      // Check proximity to water
+      let nearWater = false;
+      for (const n of NEIGHBORS_4) {
+        const ni = ix + n.x;
+        const nj = iz + n.z;
+        if (ni >= 0 && nj >= 0 && ni < width && nj < height && tiles[toIndex(ni, nj, width)] === TILE.WATER) {
+          nearWater = true;
+          break;
+        }
+      }
+      if (!nearWater) continue;
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const marsh = worleyNoise(nx * 10, nz * 10, seed + 6500, 1.0);
+      // Scattered marsh ponds where Worley cell centers are close
+      if (marsh.f1 < 0.12 && rng() < 0.45) {
+        tiles[idx] = TILE.WATER;
+      }
+    }
+  }
+
+  // Floodplain ponds via Poisson disk sampling
+  const pondCenters = poissonDiskSample(width, height, 10, createRng(seed + 6600), 12);
+  for (const pt of pondCenters) {
+    const pix = Math.floor(pt.x);
+    const piz = Math.floor(pt.y);
+    if (pix < 3 || piz < 3 || pix >= width - 3 || piz >= height - 3) continue;
+    // Only place ponds near rivers (within 12 tiles of water)
+    let distToWater = Infinity;
+    for (let dz = -12; dz <= 12; dz += 3) {
+      for (let dx = -12; dx <= 12; dx += 3) {
+        const ci = pix + dx;
+        const cj = piz + dz;
+        if (ci >= 0 && cj >= 0 && ci < width && cj < height && tiles[toIndex(ci, cj, width)] === TILE.WATER) {
+          distToWater = Math.min(distToWater, Math.sqrt(dx * dx + dz * dz));
+        }
+      }
+    }
+    if (distToWater > 10) continue;
+    const pr = lerp(1.5, 3.5, rng());
+    paintBlob(tiles, width, height, pix, piz, pr, pr * lerp(0.7, 1.3, rng()), TILE.WATER, seed + 6700 + pix * 7, new Set([TILE.GRASS]));
+  }
+
+  // Compute moisture — distance-to-water gradient with domain-warped variation
+  const waterDist = new Float32Array(area).fill(255);
+  const wQueue = [];
+  for (let i = 0; i < area; i += 1) {
+    if (tiles[i] === TILE.WATER) { waterDist[i] = 0; wQueue.push(i); }
+  }
+  // BFS distance to water
+  let qi = 0;
+  while (qi < wQueue.length) {
+    const cur = wQueue[qi++];
+    const ci = cur % width;
+    const cj = Math.floor(cur / width);
+    const nd = waterDist[cur] + 1;
+    if (nd > 12) continue;
+    for (const n of NEIGHBORS_4) {
+      const ni = ci + n.x;
+      const nj = cj + n.z;
+      if (ni < 0 || nj < 0 || ni >= width || nj >= height) continue;
+      const nIdx = toIndex(ni, nj, width);
+      if (waterDist[nIdx] <= nd) continue;
+      waterDist[nIdx] = nd;
+      wQueue.push(nIdx);
+    }
+  }
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const wd = waterDist[idx];
+      const baseMoist = tiles[idx] === TILE.WATER ? 1.0 : clamp(1.0 - wd * 0.07, 0.15, 1.0);
+      const variation = fbm2D(nx * 4.0, nz * 4.0, seed + 47, 3, 2.0, 0.5) * 0.15;
+      moisture[idx] = clamp(baseMoist + variation, 0, 1);
+      // Lower elevation near water (floodplain)
+      if (tiles[idx] !== TILE.WATER && wd < 6) {
+        elevation[idx] = clamp(elevation[idx] - (6 - wd) * 0.03, 0.1, 0.7);
       }
     }
   }
@@ -1412,69 +1683,99 @@ function generateFortifiedBasinTerrain(tiles, width, height, seed, profile) {
   const elevation = new Float32Array(area);
   const moisture = new Float32Array(area);
   const ridge = new Float32Array(area);
+  const rng = createRng(seed + 5500);
 
   const cx = Math.floor(width / 2);
   const cz = Math.floor(height / 2);
+  const wallRx = Math.max(12, Math.floor(width * 0.30));
+  const wallRz = Math.max(10, Math.floor(height * 0.30));
 
-  // Base terrain with moderate elevation variation
+  // Base terrain with recursive warping for organic variation
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       const nx = ix / Math.max(1, width - 1);
       const nz = iz / Math.max(1, height - 1);
-      elevation[idx] = clamp(domainWarpedFbm(nx * 2.0, nz * 2.0, seed + 11, 0.15) * 0.7 + 0.3, 0, 1);
-      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
+      elevation[idx] = clamp(recursiveWarp(nx * 2.2, nz * 2.2, seed + 11, 2, 0.25) * 0.65 + 0.3, 0, 1);
+      moisture[idx] = clamp(domainWarpedFbm(nx * 3.0, nz * 3.0, seed + 47, 0.2), 0, 1);
       ridge[idx] = Math.abs(fbm2D(nx * 6, nz * 6, seed + 71, 3, 2.2, 0.5) * 2 - 1);
-
-      // Determine if inside fortress walls
       tiles[idx] = TILE.GRASS;
     }
   }
 
-  // Draw elliptical fortress wall with gates
-  const wallRx = Math.max(10, Math.floor(width * 0.28));
-  const wallRz = Math.max(9, Math.floor(height * 0.28));
-  const wallThickness = 1.5;
+  // Heavily irregular fortress wall — recursive domain warping + anisotropic radius
+  const wallNoiseSeed = seed + 8800;
+  // Pre-compute angular radius variation: 16 control points with smooth interpolation
+  const radialPts = 16;
+  const radialR = new Float32Array(radialPts);
+  for (let i = 0; i < radialPts; i += 1) {
+    radialR[i] = lerp(0.7, 1.3, hash2D(i, 0, wallNoiseSeed + 500));
+  }
+  function wallRadius(angle) {
+    const t = ((angle / (Math.PI * 2)) % 1 + 1) % 1;
+    const fi = t * radialPts;
+    const i0 = Math.floor(fi) % radialPts;
+    const i1 = (i0 + 1) % radialPts;
+    const frac = fi - Math.floor(fi);
+    // Smooth hermite interpolation between control points
+    const s = frac * frac * (3 - 2 * frac);
+    return lerp(radialR[i0], radialR[i1], s);
+  }
 
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const dx = (ix - cx) / Math.max(1, wallRx);
       const dz = (iz - cz) / Math.max(1, wallRz);
-      const d = Math.sqrt(dx * dx + dz * dz);
+      const baseD = Math.sqrt(dx * dx + dz * dz);
+      const angle = Math.atan2(dz, dx);
+      // Anisotropic radius from control points
+      const rScale = wallRadius(angle);
+      // Deep recursive warp for highly irregular outline
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const warpVal = recursiveWarp(nx * 4.0, nz * 4.0, wallNoiseSeed, 2, 0.3) - 0.5;
+      const d = baseD / rScale + warpVal * 0.22;
       const wallDist = Math.abs(d - 1.0) * Math.min(wallRx, wallRz);
 
-      if (wallDist < wallThickness) {
+      if (wallDist < 1.6) {
         const idx = toIndex(ix, iz, width);
-        if (tiles[idx] !== TILE.WATER) {
-          tiles[idx] = TILE.WALL;
-        }
+        tiles[idx] = TILE.WALL;
       }
     }
   }
 
-  // Add a moat just outside the walls
+  // Irregular moat outside walls — independent warp for offset from wall
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const dx = (ix - cx) / Math.max(1, wallRx);
       const dz = (iz - cz) / Math.max(1, wallRz);
-      const d = Math.sqrt(dx * dx + dz * dz);
-      const moatDist = Math.abs(d - 1.12) * Math.min(wallRx, wallRz);
-      if (moatDist < 1.2 && d > 1.0) {
+      const baseD = Math.sqrt(dx * dx + dz * dz);
+      const angle = Math.atan2(dz, dx);
+      const rScale = wallRadius(angle);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const warpVal = recursiveWarp(nx * 4.0, nz * 4.0, wallNoiseSeed, 2, 0.3) - 0.5;
+      const moatWarp = fbm2D(nx * 6.0, nz * 6.0, wallNoiseSeed + 300, 2, 2.0, 0.5) * 0.06;
+      const d = baseD / rScale + warpVal * 0.22 + moatWarp;
+      const moatDist = Math.abs(d - 1.14) * Math.min(wallRx, wallRz);
+      if (moatDist < 1.4 && d > 1.0) {
         const idx = toIndex(ix, iz, width);
-        if (tiles[idx] !== TILE.WALL) {
-          tiles[idx] = TILE.WATER;
-        }
+        if (tiles[idx] !== TILE.WALL) tiles[idx] = TILE.WATER;
       }
     }
   }
 
-  // Carve 4 gates in cardinal directions (3-wide openings)
-  const gatePositions = [
-    { x: cx, z: cz - wallRz },     // north
-    { x: cx, z: cz + wallRz },     // south
-    { x: cx - wallRx, z: cz },     // west
-    { x: cx + wallRx, z: cz },     // east
-  ];
+  // Asymmetric gate positions (3-5 gates at irregular angles)
+  const gateCount = 3 + Math.floor(rng() * 3);
+  const gateAngles = [];
+  const baseAngle = rng() * Math.PI * 2;
+  for (let g = 0; g < gateCount; g += 1) {
+    gateAngles.push(baseAngle + (g / gateCount) * Math.PI * 2 + (rng() - 0.5) * 0.6);
+  }
+  const gatePositions = gateAngles.map(a => ({
+    x: Math.round(cx + Math.cos(a) * wallRx),
+    z: Math.round(cz + Math.sin(a) * wallRz),
+  }));
 
   for (const gate of gatePositions) {
     for (let dz = -2; dz <= 2; dz += 1) {
@@ -1483,64 +1784,295 @@ function generateFortifiedBasinTerrain(tiles, width, height, seed, profile) {
         const gz = gate.z + dz;
         if (gx < 0 || gz < 0 || gx >= width || gz >= height) continue;
         const idx = toIndex(gx, gz, width);
-        if (tiles[idx] === TILE.WALL) tiles[idx] = TILE.ROAD;
-        if (tiles[idx] === TILE.WATER) tiles[idx] = TILE.BRIDGE;
+        if (tiles[idx] === TILE.WALL || tiles[idx] === TILE.WATER) tiles[idx] = TILE.ROAD;
       }
     }
   }
 
-  // Interior grid roads
-  const gridSpacing = Math.max(6, Math.floor(Math.min(wallRx, wallRz) * 0.55));
-  for (let iz = cz - wallRz + 2; iz <= cz + wallRz - 2; iz += 1) {
-    for (let ix = cx - wallRx + 2; ix <= cx + wallRx - 2; ix += 1) {
-      const dx = (ix - cx) / Math.max(1, wallRx);
-      const dz = (iz - cz) / Math.max(1, wallRz);
-      if (dx * dx + dz * dz >= 0.85) continue; // Stay inside walls
+  // Interior: Voronoi-based districts instead of grid roads
+  const districtSeeds = poissonDiskSample(wallRx * 1.6, wallRz * 1.6, Math.max(5, Math.min(wallRx, wallRz) * 0.35), rng, 12);
+  const districts = districtSeeds.map((p, i) => ({
+    x: Math.round(cx - wallRx * 0.8 + p.x),
+    z: Math.round(cz - wallRz * 0.8 + p.z),
+    type: [TILE.FARM, TILE.LUMBER, TILE.FARM, TILE.QUARRY, TILE.HERB_GARDEN, TILE.FARM][i % 6],
+  }));
 
+  // Assign interior tiles to nearest district, paint cluster around center
+  for (const dist of districts) {
+    const dr = Math.max(3, Math.floor(Math.min(wallRx, wallRz) * lerp(0.12, 0.22, rng())));
+    const dxn = (dist.x - cx) / Math.max(1, wallRx);
+    const dzn = (dist.z - cz) / Math.max(1, wallRz);
+    if (dxn * dxn + dzn * dzn > 0.7) continue;
+    paintBlob(tiles, width, height, dist.x, dist.z,
+      dr, dr * lerp(0.7, 1.3, rng()), dist.type, seed + 5600 + dist.x * 7,
+      new Set([TILE.GRASS]));
+  }
+
+  // Connect districts to center with organic roads
+  for (const dist of districts) {
+    const dxn = (dist.x - cx) / Math.max(1, wallRx);
+    const dzn = (dist.z - cz) / Math.max(1, wallRz);
+    if (dxn * dxn + dzn * dzn > 0.7) continue;
+    drawOrganicRoad(tiles, width, height, { ix: cx, iz: cz }, { ix: dist.x, iz: dist.z }, rng, 0.3);
+  }
+  // Connect gates to center
+  for (const gate of gatePositions) {
+    drawOrganicRoad(tiles, width, height, { ix: cx, iz: cz }, { ix: gate.x, iz: gate.z }, rng, 0.25);
+  }
+
+  // Outer wilderness: Poisson-distributed ruins, lumber, herb gardens
+  const outerFeatures = poissonDiskSample(width, height, 6, rng, 60);
+  for (const feat of outerFeatures) {
+    const fx = Math.round(feat.x);
+    const fz = Math.round(feat.z);
+    if (fx < 2 || fz < 2 || fx >= width - 2 || fz >= height - 2) continue;
+    const dxn = Math.abs(fx - cx) / (width * 0.5);
+    const dzn = Math.abs(fz - cz) / (height * 0.5);
+    if (Math.sqrt(dxn * dxn + dzn * dzn) < 0.55) continue;
+    const idx = toIndex(fx, fz, width);
+    if (tiles[idx] !== TILE.GRASS) continue;
+    const roll = rng();
+    const tileType = roll < 0.35 ? TILE.RUINS : roll < 0.65 ? TILE.LUMBER : TILE.GRASS;
+    if (tileType !== TILE.GRASS) {
+      const r = lerp(1.5, 3.5, rng());
+      paintBlob(tiles, width, height, fx, fz, r, r * lerp(0.7, 1.3, rng()), tileType, seed + 5800 + fx * 7, new Set([TILE.GRASS]));
+    }
+  }
+
+  return { elevation, moisture, ridge };
+}
+
+function generateRuggedHighlandsTerrain(tiles, width, height, seed, profile) {
+  const area = width * height;
+  const elevation = new Float32Array(area);
+  const moisture = new Float32Array(area);
+  const ridge = new Float32Array(area);
+  const rng = createRng(seed + 9000);
+  const cx = (width - 1) / 2;
+  const cz = (height - 1) / 2;
+
+  // High-elevation terrain with recursive warp for dramatic peaks and valleys
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      // Multi-layered elevation: recursive warp base + ridge overlay
+      const base = recursiveWarp(nx * 2.5, nz * 2.5, seed + 11, 3, 0.25);
+      const ridgeVal = Math.abs(fbm2D(nx * 7.2 + 9.7, nz * 7.2 - 4.4, seed + 71, 4, 2.2, 0.5) * 2 - 1);
+      ridge[idx] = ridgeVal;
+      // Highland bias: overall higher elevation with valley carving
+      const valleyDist = Math.hypot(ix - cx, iz - cz) / Math.max(1, Math.hypot(cx, cz));
+      const valleyCarve = (1 - valleyDist) * 0.08;
+      elevation[idx] = clamp(base * 0.5 + 0.45 + ridgeVal * 0.22 - valleyCarve, 0.15, 1.0);
+      moisture[idx] = clamp(domainWarpedFbm(nx * 3.5, nz * 3.5, seed + 47, 0.15) * 0.5 + 0.15, 0, 0.7);
+      tiles[idx] = TILE.GRASS;
+    }
+  }
+
+  // Worley crevasses — deep fissures cutting through the highlands
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       if (tiles[idx] !== TILE.GRASS) continue;
-
-      // Grid roads along major axes
-      const relX = ix - (cx - wallRx);
-      const relZ = iz - (cz - wallRz);
-      if (relX % gridSpacing === 0 || relZ % gridSpacing === 0) {
-        tiles[idx] = TILE.ROAD;
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const w = worleyNoise(nx * 6.0, nz * 6.0, seed + 9100, 1.0);
+      // Edge detection: where f2-f1 is small, we're on a Voronoi edge = crevasse
+      const edgeDist = w.f2 - w.f1;
+      if (edgeDist < 0.05) {
+        // Deep crevasse — water at the bottom (narrow fissures only)
+        tiles[idx] = TILE.WATER;
+        elevation[idx] = 0.1;
+        moisture[idx] = clamp(moisture[idx] + 0.3, 0, 1);
+      } else if (edgeDist < 0.10 && ridge[idx] > 0.45) {
+        // Crevasse walls — steep sides become natural walls (sparse)
+        tiles[idx] = TILE.WALL;
+        elevation[idx] = clamp(elevation[idx] + 0.1, 0, 1);
       }
     }
   }
 
-  // Place farms in interior quadrants
-  const quadrants = [
-    { qx: cx - wallRx * 0.45, qz: cz - wallRz * 0.45 },
-    { qx: cx + wallRx * 0.45, qz: cz - wallRz * 0.45 },
-    { qx: cx - wallRx * 0.45, qz: cz + wallRz * 0.45 },
-    { qx: cx + wallRx * 0.45, qz: cz + wallRz * 0.45 },
-  ];
-
-  const rng = createRng(seed + 5500);
-  for (let q = 0; q < quadrants.length; q += 1) {
-    const qr = Math.max(3, Math.floor(Math.min(wallRx, wallRz) * 0.2));
-    const tileType = q < 2 ? TILE.FARM : (q === 2 ? TILE.LUMBER : TILE.FARM);
-    paintBlob(tiles, width, height, Math.round(quadrants[q].qx), Math.round(quadrants[q].qz),
-      qr, qr * lerp(0.8, 1.2, rng()), tileType, seed + 5600 + q * 31,
-      new Set([TILE.GRASS, TILE.ROAD]));
+  // Highland plateaus — flat elevated areas using Worley cell interiors
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+      const nx = ix / Math.max(1, width - 1);
+      const nz = iz / Math.max(1, height - 1);
+      const w = worleyNoise(nx * 3.5, nz * 3.5, seed + 9200, 1.0);
+      // Interior of cells = plateaus — flatten elevation
+      if (w.f1 < 0.2) {
+        const flatness = 1 - w.f1 / 0.2;
+        const plateauElev = 0.7 + fbm2D(nx * 2, nz * 2, seed + 9250, 2, 2.0, 0.4) * 0.08;
+        elevation[idx] = lerp(elevation[idx], plateauElev, flatness * 0.6);
+      }
+    }
   }
 
-  // Outer wilderness: scatter ruins and lumber
+  // Mountain ridge walls — high ridge areas become impassable rock
+  const ridgeValues = [];
+  for (let iz = 1; iz < height - 1; iz += 1) {
+    for (let ix = 1; ix < width - 1; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] === TILE.GRASS) {
+        ridgeValues.push(ridge[idx]);
+      }
+    }
+  }
+  ridgeValues.sort((a, b) => b - a);
+  const targetWallPct = 0.08 + rng() * 0.05;
+  const targetWallCount = Math.floor(ridgeValues.length * targetWallPct);
+  const wallThreshold = targetWallCount > 0 && targetWallCount < ridgeValues.length
+    ? ridgeValues[targetWallCount] : 0.85;
+
+  for (let iz = 1; iz < height - 1; iz += 1) {
+    for (let ix = 1; ix < width - 1; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+      if (ridge[idx] > wallThreshold) {
+        tiles[idx] = TILE.WALL;
+        elevation[idx] = clamp(elevation[idx] + 0.15, 0, 1);
+      }
+    }
+  }
+
+  // Mountain streams — narrow water ribbons flowing down from peaks
+  const streamCount = 3 + Math.floor(rng() * 3);
+  for (let s = 0; s < streamCount; s += 1) {
+    // Start from a high-elevation point
+    let sx = Math.floor(rng() * (width - 10) + 5);
+    let sz = Math.floor(rng() * (height - 10) + 5);
+    // Walk downhill with noise perturbation
+    for (let step = 0; step < 40; step += 1) {
+      const sIdx = toIndex(sx, sz, width);
+      if (tiles[sIdx] === TILE.WATER) break;
+      if (tiles[sIdx] === TILE.GRASS || tiles[sIdx] === TILE.WALL) {
+        tiles[sIdx] = TILE.WATER;
+        elevation[sIdx] = Math.min(elevation[sIdx], 0.15);
+        moisture[sIdx] = 1.0;
+      }
+      // Find lowest neighbor with noise jitter
+      let bestX = sx;
+      let bestZ = sz;
+      let bestElev = Infinity;
+      for (const n of NEIGHBORS_4) {
+        const ni = sx + n.x;
+        const nj = sz + n.z;
+        if (ni < 1 || nj < 1 || ni >= width - 1 || nj >= height - 1) continue;
+        const nIdx = toIndex(ni, nj, width);
+        const jitter = hash2D(ni + step, nj, seed + 9300 + s * 37) * 0.15;
+        if (elevation[nIdx] + jitter < bestElev) {
+          bestElev = elevation[nIdx] + jitter;
+          bestX = ni;
+          bestZ = nj;
+        }
+      }
+      if (bestX === sx && bestZ === sz) break;
+      sx = bestX;
+      sz = bestZ;
+    }
+  }
+
+  // Boost moisture near water features
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.WATER) continue;
+      for (let dz = -3; dz <= 3; dz += 1) {
+        for (let dx = -3; dx <= 3; dx += 1) {
+          const ni = ix + dx;
+          const nj = iz + dz;
+          if (ni < 0 || nj < 0 || ni >= width || nj >= height) continue;
+          const nIdx = toIndex(ni, nj, width);
+          if (tiles[nIdx] === TILE.WATER) continue;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          moisture[nIdx] = Math.max(moisture[nIdx], 0.7 - dist * 0.15);
+        }
+      }
+    }
+  }
+
+  // Scattered ruins on exposed plateaus
+  const ruinPts = poissonDiskSample(width, height, 8, createRng(seed + 9400), 15);
+  for (const pt of ruinPts) {
+    const rx = Math.round(pt.x);
+    const rz = Math.round(pt.y);
+    if (rx < 2 || rz < 2 || rx >= width - 2 || rz >= height - 2) continue;
+    const rIdx = toIndex(rx, rz, width);
+    if (tiles[rIdx] !== TILE.GRASS) continue;
+    if (elevation[rIdx] < 0.5) continue;
+    const r = lerp(1.2, 2.5, rng());
+    paintBlob(tiles, width, height, rx, rz, r, r * lerp(0.8, 1.2, rng()), TILE.RUINS, seed + 9500 + rx * 7, new Set([TILE.GRASS]));
+  }
+
+  // Ensure connectivity: flood fill from center, carve passes through walls
+  let startIdx = toIndex(Math.floor(cx), Math.floor(cz), width);
+  if (tiles[startIdx] === TILE.WALL || tiles[startIdx] === TILE.WATER) {
+    for (let r2 = 1; r2 < Math.max(width, height); r2 += 1) {
+      let found = false;
+      for (let dz = -r2; dz <= r2 && !found; dz += 1) {
+        for (let dx = -r2; dx <= r2 && !found; dx += 1) {
+          const ix = Math.floor(cx) + dx;
+          const iz = Math.floor(cz) + dz;
+          if (ix < 0 || iz < 0 || ix >= width || iz >= height) continue;
+          const idx = toIndex(ix, iz, width);
+          if (tiles[idx] !== TILE.WALL && tiles[idx] !== TILE.WATER) {
+            startIdx = idx;
+            found = true;
+          }
+        }
+      }
+      if (found) break;
+    }
+  }
+  const visited = new Uint8Array(area);
+  const queue = [startIdx];
+  visited[startIdx] = 1;
+  while (queue.length > 0) {
+    const cur = queue.pop();
+    const ci = cur % width;
+    const cj = Math.floor(cur / width);
+    for (const n of NEIGHBORS_4) {
+      const ni = ci + n.x;
+      const nj = cj + n.z;
+      if (ni < 0 || nj < 0 || ni >= width || nj >= height) continue;
+      const nIdx = toIndex(ni, nj, width);
+      if (visited[nIdx]) continue;
+      if (tiles[nIdx] === TILE.WALL || tiles[nIdx] === TILE.WATER) continue;
+      visited[nIdx] = 1;
+      queue.push(nIdx);
+    }
+  }
   for (let iz = 2; iz < height - 2; iz += 3) {
     for (let ix = 2; ix < width - 2; ix += 3) {
-      const ndx = Math.abs(ix - cx) / Math.max(1, width * 0.5);
-      const ndz = Math.abs(iz - cz) / Math.max(1, height * 0.5);
-      if (Math.sqrt(ndx * ndx + ndz * ndz) < 0.65) continue;
-
       const idx = toIndex(ix, iz, width);
-      if (tiles[idx] !== TILE.GRASS) continue;
-
-      const noise = hash2D(ix, iz, seed + 5700);
-      if (noise > 0.82) {
-        paintBlob(tiles, width, height, ix, iz, 2, 2, TILE.RUINS, seed + 5800 + ix * 7, new Set([TILE.GRASS]));
-      } else if (noise > 0.65) {
-        paintBlob(tiles, width, height, ix, iz, 2.5, 2.5, TILE.LUMBER, seed + 5900 + iz * 11, new Set([TILE.GRASS]));
+      if (visited[idx] || tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL) continue;
+      let px = ix;
+      let pz = iz;
+      for (let step = 0; step < width + height; step += 1) {
+        if (visited[toIndex(px, pz, width)]) break;
+        const dirX = Math.floor(cx) - px;
+        const dirZ = Math.floor(cz) - pz;
+        if (Math.abs(dirX) >= Math.abs(dirZ)) { px += dirX > 0 ? 1 : -1; }
+        else { pz += dirZ > 0 ? 1 : -1; }
+        px = clamp(px, 1, width - 2);
+        pz = clamp(pz, 1, height - 2);
+        const pIdx = toIndex(px, pz, width);
+        if (tiles[pIdx] === TILE.WALL || tiles[pIdx] === TILE.WATER) {
+          tiles[pIdx] = TILE.ROAD;
+          // Widen pass for better accessibility
+          for (const n2 of NEIGHBORS_4) {
+            const wi = px + n2.x;
+            const wj = pz + n2.z;
+            if (wi >= 0 && wj >= 0 && wi < width && wj < height) {
+              const wIdx = toIndex(wi, wj, width);
+              if ((tiles[wIdx] === TILE.WALL || tiles[wIdx] === TILE.WATER) && hash2D(wi, wj, seed + 9001) > 0.3) {
+                tiles[wIdx] = TILE.ROAD;
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -1553,27 +2085,26 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
   const elevation = new Float32Array(area);
   const moisture = new Float32Array(area);
   const ridge = new Float32Array(area);
+  const rng = createRng(seed + 4300);
 
-  // Very flat terrain — fewer octaves, lower amplitude
+  // Domain-warped terrain with gentle rolling hills
   for (let iz = 0; iz < height; iz += 1) {
     for (let ix = 0; ix < width; ix += 1) {
       const idx = toIndex(ix, iz, width);
       const nx = ix / Math.max(1, width - 1);
       const nz = iz / Math.max(1, height - 1);
 
-      // Gentle rolling hills with 2-3 octaves instead of 5
-      const base = fbm2D(nx * 1.6, nz * 1.6, seed + 11, 2, 2.0, 0.35);
-      const detail = fbm2D(nx * 3.5, nz * 3.5, seed + 29, 2, 2.0, 0.3) * 0.15;
-      elevation[idx] = clamp(base * 0.55 + detail + 0.35, 0, 1);
-      moisture[idx] = clamp(fbm2D(nx * 3.4 - 1.3, nz * 3.4 + 0.7, seed + 47, 4, 2, 0.55), 0, 1);
-      ridge[idx] = Math.abs(fbm2D(nx * 4, nz * 4, seed + 71, 2, 2.2, 0.4) * 2 - 1) * 0.2;
-
-      // Minimal water — only in very low elevation areas
-      tiles[idx] = elevation[idx] < profile.waterLevel * 0.6 ? TILE.WATER : TILE.GRASS;
+      // Recursive warping for organic terrain instead of flat FBM
+      const base = recursiveWarp(nx * 1.8, nz * 1.8, seed + 11, 2, 0.18);
+      const detail = fbm2D(nx * 4.0, nz * 4.0, seed + 29, 3, 2.0, 0.4) * 0.12;
+      elevation[idx] = clamp(base * 0.55 + detail + 0.32, 0, 1);
+      moisture[idx] = clamp(domainWarpedFbm(nx * 3.0, nz * 3.0, seed + 47, 0.15), 0, 1);
+      ridge[idx] = Math.abs(fbm2D(nx * 5, nz * 5, seed + 71, 2, 2.2, 0.4) * 2 - 1) * 0.25;
+      tiles[idx] = TILE.GRASS;
     }
   }
 
-  // Single meandering river
+  // Meandering river with varied width
   const riverVertical = hash2D(1, 1, seed + 4001) > 0.5;
   const axisLen = riverVertical ? height : width;
   const span = riverVertical ? width : height;
@@ -1581,52 +2112,75 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
 
   for (let t = 0; t < axisLen; t += 1) {
     const nt = t / Math.max(1, axisLen - 1);
-    const meander = fbm2D(nt * 3.5, 0.5, seed + 4100, 4, 2.0, 0.5) - 0.5;
-    const center = basePos + meander * span * 0.25;
-    const half = lerp(1, 2.5, hash2D(t, 0, seed + 4200));
+    const warp = fbm2D(nt * 5.0, 1.5, seed + 4050, 2, 2.0, 0.5) * 0.08;
+    const meander = fbm2D((nt + warp) * 3.5, 0.5, seed + 4100, 4, 2.0, 0.5) - 0.5;
+    const center = basePos + meander * span * 0.28;
+    const half = lerp(1, 3, hash2D(t, 0, seed + 4200));
 
     for (let k = Math.max(0, Math.floor(center - half)); k <= Math.min(span - 1, Math.ceil(center + half)); k += 1) {
-      if (riverVertical) {
-        setTileRaw(tiles, width, height, k, t, TILE.WATER);
-      } else {
-        setTileRaw(tiles, width, height, t, k, TILE.WATER);
+      const rx = riverVertical ? k : t;
+      const rz = riverVertical ? t : k;
+      setTileRaw(tiles, width, height, rx, rz, TILE.WATER);
+      const ridx = toIndex(clamp(rx, 0, width - 1), clamp(rz, 0, height - 1), width);
+      moisture[ridx] = 1.0;
+      elevation[ridx] = 0.1;
+    }
+    // Boost moisture near river
+    for (let d = -4; d <= 4; d += 1) {
+      const k = Math.round(center + d);
+      if (k < 0 || k >= span) continue;
+      const rx = riverVertical ? k : t;
+      const rz = riverVertical ? t : k;
+      if (rx < 0 || rz < 0 || rx >= width || rz >= height) continue;
+      const ridx = toIndex(rx, rz, width);
+      moisture[ridx] = clamp(moisture[ridx] + 0.3 * (1 - Math.abs(d) / 5), 0, 1);
+    }
+  }
+
+  // Scattered lakes using Worley noise (2-4 lakes)
+  const lakeSeeds = poissonDiskSample(width, height, Math.min(width, height) * 0.25, rng, 4);
+  for (const lake of lakeSeeds) {
+    const lx = Math.round(lake.x);
+    const lz = Math.round(lake.z);
+    if (lx < 4 || lz < 4 || lx >= width - 4 || lz >= height - 4) continue;
+    const lakeR = lerp(3, 6, rng());
+    for (let dz = -Math.ceil(lakeR) - 1; dz <= Math.ceil(lakeR) + 1; dz += 1) {
+      for (let dx = -Math.ceil(lakeR) - 1; dx <= Math.ceil(lakeR) + 1; dx += 1) {
+        const px = lx + dx, pz = lz + dz;
+        if (px < 0 || pz < 0 || px >= width || pz >= height) continue;
+        const nd = Math.sqrt((dx / lakeR) ** 2 + (dz / (lakeR * lerp(0.7, 1.4, rng()))) ** 2);
+        const wobble = fbm2D(Math.atan2(dz, dx) * 3, nd, seed + 4800 + lx, 2, 2, 0.5) * 0.2;
+        if (nd + wobble < 1.0) {
+          const pidx = toIndex(px, pz, width);
+          tiles[pidx] = TILE.WATER;
+          elevation[pidx] = 0.1;
+          moisture[pidx] = 1.0;
+        }
       }
     }
   }
 
-  // Lumber clusters at map edges
-  const rng = createRng(seed + 4300);
-  const edgeMargin = Math.floor(Math.min(width, height) * 0.15);
-  for (let i = 0; i < 8; i += 1) {
-    // Place near edges
-    let lx, lz;
-    const side = Math.floor(rng() * 4);
-    if (side === 0) { lx = Math.floor(rng() * edgeMargin + 2); lz = Math.floor(rng() * (height - 4) + 2); }
-    else if (side === 1) { lx = Math.floor(width - edgeMargin + rng() * edgeMargin - 2); lz = Math.floor(rng() * (height - 4) + 2); }
-    else if (side === 2) { lx = Math.floor(rng() * (width - 4) + 2); lz = Math.floor(rng() * edgeMargin + 2); }
-    else { lx = Math.floor(rng() * (width - 4) + 2); lz = Math.floor(height - edgeMargin + rng() * edgeMargin - 2); }
-
-    lx = clamp(lx, 3, width - 4);
-    lz = clamp(lz, 3, height - 4);
-    const r = lerp(2.5, 5, rng());
-    paintBlob(tiles, width, height, lx, lz, r, r * lerp(0.7, 1.3, rng()), TILE.LUMBER, seed + 4400 + i * 13, new Set([TILE.GRASS]));
+  // Lumber clusters with Poisson distribution (not just edges)
+  const lumberPoints = poissonDiskSample(width, height, 12, rng, 12);
+  for (const pt of lumberPoints) {
+    const lx = Math.round(pt.x);
+    const lz = Math.round(pt.z);
+    if (lx < 3 || lz < 3 || lx >= width - 3 || lz >= height - 3) continue;
+    if (tiles[toIndex(lx, lz, width)] === TILE.WATER) continue;
+    const r = lerp(2, 5, rng());
+    paintBlob(tiles, width, height, lx, lz, r, r * lerp(0.7, 1.3, rng()), TILE.LUMBER, seed + 4400 + lx * 13, new Set([TILE.GRASS]));
   }
 
-  // Farm strips along the river
-  for (let t = 0; t < axisLen; t += 4) {
-    const nt = t / Math.max(1, axisLen - 1);
-    const meander = fbm2D(nt * 3.5, 0.5, seed + 4100, 4, 2.0, 0.5) - 0.5;
-    const center = basePos + meander * span * 0.25;
-    // Place farms 3-6 tiles from river on both sides
-    for (const offset of [-1, 1]) {
-      const farmCenter = Math.round(center + offset * lerp(4, 7, hash2D(t, offset + 5, seed + 4500)));
-      if (farmCenter < 3 || farmCenter >= span - 3) continue;
-      const fx = riverVertical ? farmCenter : t;
-      const fz = riverVertical ? t : farmCenter;
-      if (hash2D(fx, fz, seed + 4600) > 0.55) {
-        paintBlob(tiles, width, height, fx, fz, 2.5, 2, TILE.FARM, seed + 4700 + t * 7, new Set([TILE.GRASS]));
-      }
-    }
+  // Farm clusters near river and lakes (Poisson distributed)
+  const farmPoints = poissonDiskSample(width, height, 8, rng, 16);
+  for (const pt of farmPoints) {
+    const fx = Math.round(pt.x);
+    const fz = Math.round(pt.z);
+    if (fx < 3 || fz < 3 || fx >= width - 3 || fz >= height - 3) continue;
+    const fidx = toIndex(fx, fz, width);
+    if (tiles[fidx] !== TILE.GRASS) continue;
+    if (moisture[fidx] < 0.4) continue;
+    paintBlob(tiles, width, height, fx, fz, lerp(2, 3.5, rng()), lerp(1.5, 3, rng()), TILE.FARM, seed + 4700 + fx * 7, new Set([TILE.GRASS]));
   }
 
   return { elevation, moisture, ridge };
@@ -1650,6 +2204,8 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     fields = generateFertileRiverlandsTerrain(tiles, width, height, seed, profile);
   } else if (templateId === "fortified_basin") {
     fields = generateFortifiedBasinTerrain(tiles, width, height, seed, profile);
+  } else if (templateId === "rugged_highlands") {
+    fields = generateRuggedHighlandsTerrain(tiles, width, height, seed, profile);
   } else if (templateId === "temperate_plains") {
     fields = generateTemperatePlainsTerrain(tiles, width, height, seed, profile);
   } else {
@@ -1658,12 +2214,6 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       carveRiver(tiles, width, height, profile, seed + i * 311, i);
     }
   }
-
-  if (templateId === "rugged_highlands") {
-    convertHighlandRidgesToWalls(tiles, width, height, fields.ridge, seed);
-  }
-
-  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 2207);
 
   const hubs = [];
   const centerHub = { ix: Math.floor(width / 2), iz: Math.floor(height / 2) };

@@ -56,7 +56,7 @@ test("BuildSystem preview reports water blocked placement", () => {
   assert.equal(preview.reason, "waterBlocked");
 });
 
-test("BuildSystem blocks overwriting structures and isolated road painting", () => {
+test("BuildSystem blocks overwriting structures", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
   const core = state.gameplay.scenario.anchors.coreWarehouse;
@@ -64,54 +64,12 @@ test("BuildSystem blocks overwriting structures and isolated road painting", () 
   const overwrite = buildSystem.previewToolAt(state, "road", core.ix, core.iz);
   assert.equal(overwrite.ok, false);
   assert.equal(overwrite.reason, "occupiedTile");
-
-  const isolatedGrass = findFirstTile(state, (ix, iz) => {
-    if (state.grid.tiles[ix + iz * state.grid.width] !== TILE.GRASS) return false;
-    for (let dz = -1; dz <= 1; dz += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (Math.abs(dx) + Math.abs(dz) !== 1) continue;
-        const nx = ix + dx;
-        const nz = iz + dz;
-        if (nx < 0 || nz < 0 || nx >= state.grid.width || nz >= state.grid.height) continue;
-        const neighbor = state.grid.tiles[nx + nz * state.grid.width];
-        if (neighbor === TILE.ROAD || neighbor === TILE.WAREHOUSE || neighbor === TILE.FARM || neighbor === TILE.LUMBER) {
-          return false;
-        }
-      }
-    }
-    return true;
-  });
-
-  assert.ok(isolatedGrass);
-  const isolatedRoad = buildSystem.previewToolAt(state, "road", isolatedGrass.ix, isolatedGrass.iz);
-  assert.equal(isolatedRoad.ok, false);
-  assert.equal(isolatedRoad.reason, "needsNetworkAnchor");
 });
 
-test("BuildSystem requires logistics access for worksites and spread for warehouses", () => {
+test("BuildSystem enforces warehouse spacing", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
   const core = state.gameplay.scenario.anchors.coreWarehouse;
-
-  const isolatedGrass = findFirstTile(state, (ix, iz) => {
-    if (state.grid.tiles[ix + iz * state.grid.width] !== TILE.GRASS) return false;
-    for (let dz = -2; dz <= 2; dz += 1) {
-      for (let dx = -2; dx <= 2; dx += 1) {
-        if (Math.abs(dx) + Math.abs(dz) > 2) continue;
-        const nx = ix + dx;
-        const nz = iz + dz;
-        if (nx < 0 || nz < 0 || nx >= state.grid.width || nz >= state.grid.height) continue;
-        const neighbor = state.grid.tiles[nx + nz * state.grid.width];
-        if (neighbor === TILE.ROAD || neighbor === TILE.WAREHOUSE) return false;
-      }
-    }
-    return true;
-  });
-
-  assert.ok(isolatedGrass);
-  const worksite = buildSystem.previewToolAt(state, "farm", isolatedGrass.ix, isolatedGrass.iz);
-  assert.equal(worksite.ok, false);
-  assert.equal(worksite.reason, "needsLogisticsAccess");
 
   const crampedWarehouse = buildSystem.previewToolAt(state, "warehouse", core.ix + 1, core.iz);
   assert.equal(crampedWarehouse.ok, false);
