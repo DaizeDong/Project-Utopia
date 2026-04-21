@@ -1,10 +1,85 @@
 # Changelog
 
-## [0.8.0] - Unreleased — Living World Balance Overhaul (in progress)
+## [0.8.0] - 2026-04-21 — Living World Balance Overhaul
 
 > Phase-by-phase implementation of the v3 spec
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
+
+**Summary — mechanics shipped across all 7 phases:**
+
+- **M1 ecological depth** — soil salinization + per-farm `yieldPool`, node
+  layer (`FOREST`/`STONE`/`HERB` tile flags), fog-of-war (`HIDDEN` /
+  `EXPLORED` / `VISIBLE` with persistent reveal radius per live actor), and
+  demolition recycling (partial wood/stone refund on erase).
+- **M2 warehouse throughput queue + density risk events** — per-tick
+  `warehouseIntakePerTick` cap with aging queue and `WAREHOUSE_QUEUE_TIMEOUT`
+  retarget, plus radius-6 producer-density scan feeding probabilistic
+  `WAREHOUSE_FIRE` / `VERMIN_SWARM` events above
+  `warehouseDensityRiskThreshold = 400`.
+- **M3 carry economy** — worker carry fatigue (multi-step decay), in-transit
+  food spoilage tied to `spoilageHalfLifeSeconds`, and the grace-period
+  shield that stops fresh-placed buildings from being punished before the
+  first tick.
+- **M4 road compounding** — stacking per-step speed bonus capped at 20 steps
+  (1.6× peak), wear degradation that bleeds the bonus back out, and
+  isolation deposit penalty for warehouses off the road network.
+- **Survival mode** — 5 new `gameplay.stats` (days survived, peak pop,
+  score, deaths, disasters) and a 6-dimension `DevIndex` the headless
+  harness gates against.
+- **Plan C RaidEscalatorSystem** — 6-tier threat ladder (0-5) that ramps
+  `banditRaid` pressure as prosperity climbs, with cooldowns between raids
+  and explicit de-escalation on loss.
+- **AI 18-patch adaptation sweep** — Perceiver + Planner + Evaluator wired
+  to the new M1-M4 signals so the hierarchical director reacts to
+  salinized farms, hot warehouses, starved processors, and wear hotspots.
+- **Long-horizon benchmark harness** — `bench:long`, `bench:long:smoke`,
+  `bench:long:matrix` scripts with deterministic 30/90/180/365/548/730-day
+  checkpoints, spec § 16.2 threshold gates, and the 15% DevIndex
+  monotonicity rule.
+- **Supply-Chain Heat Lens** — new L-key (and HUD button) toggle on
+  `src/render/PressureLens.js`: red = producer adjacent to a saturated
+  warehouse, blue = processor or warehouse starved of input, grey = idle.
+- **`deliverWithoutCarry` bug fix** — closed the state-planner exploit that
+  let workers credit drop-offs with an empty carry; shipped with a
+  7-assertion regression suite in `test/exploit-regression.test.js`.
+
+### Phase 7 — Param tuning + regression fixes + release (2026-04-21)
+
+- **Supply-Chain Heat Lens (spec § 6)** — extended
+  `src/render/PressureLens.js` with a second marker source
+  (`buildHeatLens` + `heatLensSignature`) alongside the existing scenario
+  lens. `SceneRenderer.lensMode` cycles `pressure → heat → off` and the
+  precompute pass classifies every buildable tile into red / blue / grey
+  channels using `state.metrics.warehouseDensity` + colony resources +
+  processor-input checks (kitchen → food, smithy → wood+stone, clinic →
+  herbs). Zero new art: the existing `pressureMarkerPool` (disc + ring)
+  re-colours via three new `PRESSURE_MARKER_STYLE` entries
+  (`heat_surplus`, `heat_starved`, `heat_idle`).
+- **L-key binding** — added `{ type: "toggleHeatLens" }` to
+  `src/app/shortcutResolver.js` (and the `SHORTCUT_HINT` string so
+  overlays reflect the new control) with `KeyL` / `l` matching;
+  `#onGlobalKeyDown` in `src/app/GameApp.js` dispatches to the new
+  `toggleHeatLens()` method that also drives the overlay message + syncs
+  the HUD button's `.active` class.
+- **HUD button** — added `#heatLensBtn` ("Heat Lens (L)") to the
+  `#panelToggles` row in `index.html` next to the existing Build / Colony /
+  Settings / Debug toggles; click handler wired in the `GameApp`
+  constructor and unbound on `dispose()`. Overlay controls hint now
+  lists `L heat lens`.
+- **CHANGELOG finalization** — version header `[0.8.0] - Unreleased …
+  (in progress)` → `[0.8.0] - 2026-04-21 — Living World Balance
+  Overhaul`, prepended a mechanics summary paragraph covering all 7
+  phases, and added this sub-section above Phase 6. Per-phase entries
+  below are preserved.
+- **Version bump** — `package.json` `0.7.0 → 0.8.0`.
+- **CLAUDE.md current-state refresh** — header retagged
+  `as of v0.8.0`, prepended a `v0.8.0 "Living World" complete` bullet
+  summarising the 7-phase delivery.
+- Note: the Phase 7.A balance tuning diff and the Phase 7.B
+  `deliverWithoutCarry` fix + 7-test exploit regression suite ship in
+  **separate commits**. This Phase 7 entry summarises all three pieces
+  of the release.
 
 ### Phase 6 — Long-horizon benchmark harness + review iteration pass
 

@@ -39,8 +39,9 @@ Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players
 - Processed goods (meals, medicine, tools) are colony-wide, stored in `state.resources`, not carried
 - **Changelog** — Every commit must include a corresponding update to `CHANGELOG.md`. Add entries under the current unreleased version section describing what changed and why. Group entries by category (New Features, Bug Fixes, Files Changed, etc.).
 
-## Current State (as of v0.6.9)
+## Current State (as of v0.8.0)
 
+- **v0.8.0 "Living World" complete** — 7-phase balance overhaul: soil/nodes/fog/recycling (M1), warehouse queue/density (M2), fatigue/spoilage/grace (M3), road compounding (M4), survival mode + DevIndex, raid escalator, 18-patch AI adaptation, long-horizon benchmark harness, PressureLens heat mode, deliverWithoutCarry bug fix + 7 exploit regression tests. Day-365 DevIndex gate ≥ 70 (Phase 7.A tuning pending).
 - **Phase 1 complete** — Resource chains with 5 new buildings, 5 new resources, 5 new roles, full UI integration
 - **Terrain diversity complete** — All 6 map templates have dedicated terrain generators with dramatically different profiles
 - **Terrain depth complete** — 10-feature overhaul: persistent elevation/moisture, ruin salvage, elevation movement/build/defense costs, seasonal weather, soil exhaustion, adjacency fertility, moisture cap, drought wildfire

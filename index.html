@@ -695,6 +695,8 @@
           <button class="panel-toggle" data-panel-target="colonyFloatingPanel" title="Colony Info">Colony</button>
           <button class="panel-toggle" data-panel-target="settingsFloatingPanel" title="Settings">Settings</button>
           <button class="panel-toggle" data-panel-target="debugFloatingPanel" title="Debug Info">Debug</button>
+          <!-- v0.8.0 Phase 7.C — Supply-Chain Heat Lens (spec § 6). Cycles pressure → heat → off. -->
+          <button class="panel-toggle" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — red = producer piling up next to saturated warehouse, blue = processor/warehouse starved of input">Heat Lens (L)</button>
         </div>
       </div>
 
@@ -728,7 +730,7 @@
             <span class="small muted">tiles</span>
           </div>
           <div class="overlay-controls-hint">
-            <span>RMB</span> drag to preview &nbsp; <span>Scroll</span> zoom &nbsp; <span>1-12</span> tools &nbsp; <span>Space</span> pause
+            <span>RMB</span> drag to preview &nbsp; <span>Scroll</span> zoom &nbsp; <span>1-12</span> tools &nbsp; <span>Space</span> pause &nbsp; <span>L</span> heat lens
           </div>
           <div class="overlay-actions">
             <button id="overlayStartBtn" class="primary" type="button" title="Begin the simulation with this map">Start Colony</button>
