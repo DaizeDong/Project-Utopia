@@ -353,10 +353,54 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
   return recovery;
 }
 
+// v0.8.0 Phase 4 — Survival Mode. Replaces updateObjectiveProgress as the
+// primary per-tick scoring path. Accrues a running score on
+// `state.metrics.survivalScore`:
+//   +BALANCE.survivalScorePerSecond per in-game second survived
+//   +BALANCE.survivalScorePerBirth on each newly observed birth event
+//   -BALANCE.survivalScorePenaltyPerDeath on each newly observed colonist death
+// Births are surfaced by PopulationGrowthSystem setting
+// `state.metrics.lastBirthGameSec` = `state.metrics.timeSec` on spawn; this
+// function caches the previous value to detect new births. Deaths are
+// detected via delta on `state.metrics.deathsTotal`.
+export function updateSurvivalScore(state, dt) {
+  if (!state || !state.metrics) return;
+  const metrics = state.metrics;
+  metrics.survivalScore = Number.isFinite(Number(metrics.survivalScore))
+    ? Number(metrics.survivalScore)
+    : 0;
+
+  const perSec = Number(BALANCE.survivalScorePerSecond ?? 1);
+  const perBirth = Number(BALANCE.survivalScorePerBirth ?? 5);
+  const perDeath = Number(BALANCE.survivalScorePenaltyPerDeath ?? 10);
+  const ticks = Math.max(0, Number(dt) || 0);
+  metrics.survivalScore += perSec * ticks;
+
+  // Birth detection: PopulationGrowthSystem updates metrics.lastBirthGameSec
+  // when a new colonist spawns. Track the last-observed value here so repeat
+  // reads don't double-count.
+  const lastBirthSec = Number(metrics.lastBirthGameSec ?? -1);
+  const prevObservedBirthSec = Number(metrics.survivalLastBirthSeenSec ?? -1);
+  if (Number.isFinite(lastBirthSec) && lastBirthSec > prevObservedBirthSec) {
+    metrics.survivalScore += perBirth;
+    metrics.survivalLastBirthSeenSec = lastBirthSec;
+  }
+
+  // Death detection: MortalitySystem increments metrics.deathsTotal on every
+  // death. Diff against a cached baseline to apply the penalty exactly once
+  // per death.
+  const deathsTotal = Number(metrics.deathsTotal ?? 0);
+  const prevDeathsSeen = Number(metrics.survivalLastDeathsSeen ?? 0);
+  if (Number.isFinite(deathsTotal) && deathsTotal > prevDeathsSeen) {
+    metrics.survivalScore -= perDeath * (deathsTotal - prevDeathsSeen);
+    metrics.survivalLastDeathsSeen = deathsTotal;
+  }
+}
+
 function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, recovery) {
   const objectives = state.gameplay.objectives;
   const idx = state.gameplay.objectiveIndex;
-  if (idx >= objectives.length) return;
+  if (!Array.isArray(objectives) || idx >= objectives.length) return;
   const objective = objectives[idx];
   if (objective.completed) {
     state.gameplay.objectiveIndex += 1;
@@ -560,6 +604,10 @@ export class ProgressionSystem {
     this.name = "ProgressionSystem";
   }
 
+  // v0.8.0 Phase 4: DevIndexSystem (runs next in SYSTEM_ORDER) owns the
+  // per-tick economy/colony aggregation into state.gameplay.devIndex* —
+  // do not aggregate economy signals here.
+
   update(dt, state) {
     applyDoctrine(state);
     ensureProgressionState(state);
@@ -581,6 +629,12 @@ export class ProgressionSystem {
     const doctrineTargets = getDoctrineAdjustedTargets(state, runtime);
     const coverage = buildCoverageStatus(state);
     const updatedRecovery = maybeTriggerRecovery(state, runtime, coverage, dt);
+    // v0.8.0 Phase 4 — Survival Mode. Objectives no longer trigger a "win"
+    // outcome; survival score is the primary per-tick scoring path. The
+    // legacy updateObjectiveProgress call is retained for any state that
+    // pre-populates `state.gameplay.objectives` (tests, legacy saves) — it
+    // no-ops when the array is empty.
+    updateSurvivalScore(state, dt);
     updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, updatedRecovery);
   }
 }

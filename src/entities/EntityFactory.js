@@ -438,6 +438,17 @@ export function createInitialGameState(options = {}) {
         event: 0,
       },
       deathsByGroup: {},
+      // v0.8.0 Phase 4 — Survival Mode. Running score on state.metrics.
+      // `survivalScore` accrues +survivalScorePerSecond each in-game second,
+      // +survivalScorePerBirth per birth, -survivalScorePenaltyPerDeath per
+      // death. `lastBirthGameSec` is set by PopulationGrowthSystem when a
+      // colonist spawns. `survivalLastBirthSeenSec` /
+      // `survivalLastDeathsSeen` are bookkeeping cursors so ProgressionSystem
+      // doesn't double-count events across ticks.
+      survivalScore: 0,
+      lastBirthGameSec: -1,
+      survivalLastBirthSeenSec: -1,
+      survivalLastDeathsSeen: 0,
       invalidTransitionCount: 0,
       idleWithoutReasonSec: {},
       pathRecalcPerEntityPerMin: 0,
@@ -623,6 +634,20 @@ export function createInitialGameState(options = {}) {
       },
       objectiveHint: scenarioBundle.objectiveHint,
       objectiveLog: [],
+      // v0.8.0 Phase 4 — DevIndex system fields. Initialised to zero so tests
+      // that skip DevIndexSystem.update() can still safely read these fields.
+      // See `src/simulation/meta/DevIndexSystem.js` for the live contract.
+      devIndex: 0,
+      devIndexSmoothed: 0,
+      devIndexDims: {
+        population: 0,
+        economy: 0,
+        infrastructure: 0,
+        production: 0,
+        defense: 0,
+        resilience: 0,
+      },
+      devIndexHistory: [],
     },
     controls: {
       farmRatio: 0.5,

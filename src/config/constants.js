@@ -109,6 +109,7 @@ export const SYSTEM_ORDER = Object.freeze([
   "SimulationClock",
   "VisibilitySystem",
   "ProgressionSystem",
+  "DevIndexSystem",
   "ColonyDirectorSystem",
   "RoleAssignmentSystem",
   "PopulationGrowthSystem",

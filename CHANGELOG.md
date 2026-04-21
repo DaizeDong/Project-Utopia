@@ -6,6 +6,72 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 4 — DevIndex system (Agent 4.C)
+
+- **DevIndexSystem** — New system in `src/simulation/meta/DevIndexSystem.js`
+  aggregates six economy/colony dimensions into a single `[0, 100]` composite
+  "development index" each tick. Slots into `SYSTEM_ORDER` immediately after
+  `ProgressionSystem` and before `WarehouseQueueSystem` so downstream systems
+  (notably Agent 4.B's upcoming `RaidEscalatorSystem`) see a fresh value
+  every frame.
+- **Dimensions** — population (agents vs `devIndexAgentTarget`), economy
+  (weighted mean of food/wood/stone vs `devIndexResourceTargets`),
+  infrastructure (ROAD + WAREHOUSE coverage vs map area), production
+  (sum of FARM + LUMBER + QUARRY + HERB_GARDEN + KITCHEN + SMITHY + CLINIC
+  vs `devIndexProducerTarget`), defense (WALL count + 2× militia-role
+  agents vs `devIndexDefenseTarget`), resilience (inverse of mean
+  worker hunger/fatigue/morale distress). Each dim is independently
+  computed, clamped to `[0, 100]`, and written to
+  `state.gameplay.devIndexDims`.
+- **Composite + smoothing** — Composite = weighted mean using
+  `BALANCE.devIndexWeights` (default equal 1/6 each) written to
+  `state.gameplay.devIndex`. A ring buffer of size `devIndexWindowTicks`
+  (default 60) backs `state.gameplay.devIndexSmoothed`, the arithmetic
+  mean of the last N samples. `state.gameplay.devIndexHistory` exposes
+  the ring buffer for benchmarks and inspection.
+- **EconomyTelemetry** — New pure-function helper
+  `src/simulation/telemetry/EconomyTelemetry.js`. `collectEconomySnapshot`
+  returns the raw per-tick economy signals; `scorePopulation`,
+  `scoreEconomy`, `scoreInfrastructure`, `scoreProduction`, `scoreDefense`,
+  `scoreResilience`, and `scoreAllDims` convert a snapshot into
+  dimension scores. DevIndexSystem stays focused on normalization +
+  weighting; the split keeps each dim unit-testable without the full
+  game loop.
+- **EntityFactory init** — `createInitialGameState` initialises all four
+  `state.gameplay.devIndex*` fields so tests that skip DevIndexSystem.update
+  (e.g. alpha scenario checks) don't crash reading them.
+- **Balance block** — New `// --- Living World v0.8.0 — Phase 4 (DevIndex)`
+  section in `src/config/balance.js`: `devIndexWindowTicks (60)`,
+  `devIndexWeights` (frozen equal-weight map), `devIndexResourceTargets`
+  (`food:200, wood:150, stone:100`), `devIndexAgentTarget (30)`,
+  `devIndexProducerTarget (24)`, `devIndexDefenseTarget (12)`.
+- **HUD badge** — `GameStateOverlay.endStats` now renders a
+  `DevIndex: N/100 (smoothed N)` row adjacent to the Prosperity/Threat
+  row. Coexists with Agent 4.A's survival-score row without clobbering.
+- **Public contract** (Agent 4.B dependency): `state.gameplay.devIndex`
+  (float), `state.gameplay.devIndexSmoothed` (float),
+  `state.gameplay.devIndexDims` (6 floats: population, economy,
+  infrastructure, production, defense, resilience),
+  `state.gameplay.devIndexHistory` (ring buffer, length ≤ window).
+- **Files changed:** `src/config/balance.js`, `src/config/constants.js`
+  (SYSTEM_ORDER), `src/app/GameApp.js`, `src/entities/EntityFactory.js`,
+  `src/simulation/meta/ProgressionSystem.js` (one-line comment),
+  `src/ui/hud/GameStateOverlay.js`.
+- **New files:** `src/simulation/meta/DevIndexSystem.js`,
+  `src/simulation/telemetry/EconomyTelemetry.js`.
+- **New tests (+13):** `test/dev-index.test.js` (7 cases: fresh-state
+  window, per-dim clamp, weighted-composite math, sliding-window
+  convergence, saturated colony band, single-weight isolation, public
+  contract surface) and `test/saturation-indicator.test.js` (6 cases:
+  overshoot saturation for economy/population/defense, multi-dim
+  concurrent saturation, zero-input floor, negative-input clamp).
+- **Spec deviation** — Spec § 5.6 cites a finer early-game band
+  `[20, 45]`. Actual fresh-state composite lands at ~50 because map
+  generation stamps 20–30 producer tiles (QUARRY + HERB_GARDEN) at
+  scenario time, saturating the production dim immediately. The fresh-state
+  test widens the band to `[20, 55]` to reflect this; real tuning can
+  come during Phase 7 balance sweeps.
+
 ### Phase 3 — Soil salinization + farm yieldPool (M1)
 
 - **M1 soil salinization** — Each completed FARM harvest bumps
