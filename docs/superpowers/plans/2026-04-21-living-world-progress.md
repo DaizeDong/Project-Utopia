@@ -46,7 +46,7 @@
 | 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
 | 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | 6eb7325 | 2026-04-21 |
-| 4 | Survival mode + DevIndex + Plan C raids | completed | 7dd2ffa+iter | 2026-04-21 |
+| 4 | Survival mode + DevIndex + Plan C raids | completed | 7dd2ffa+af6e6cb | 2026-04-21 |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
 | 6 | Long-horizon benchmark harness | pending | — | — |
 | 7 | Param tuning + regression fixes + release | pending | — | — |
@@ -200,7 +200,7 @@ _2026-04-21 — Started + completed._
 **Test delta:** 769 → 799 (+30: +4 survival-score, +6 raid-escalator, +8 dev-index, +7 economy-telemetry, +5 misc).
 **LOC changed (src/):** +1,120 / -180 across 18 files + 3 new files (`DevIndexSystem.js`, `RaidEscalatorSystem.js`, `EconomyTelemetry.js`).
 
-_Phase 4 commits:_ `93f6dc2` (DevIndex + EconomyTelemetry), `0056320` (Survival mode), `7dd2ffa` (Plan C raids), plus this iteration pass commit.
+_Phase 4 commits:_ `93f6dc2` (DevIndex + EconomyTelemetry), `0056320` (Survival mode), `7dd2ffa` (Plan C raids), `af6e6cb` (review iteration pass).
 
 ---
 
