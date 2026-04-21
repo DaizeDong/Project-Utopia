@@ -1,5 +1,6 @@
-import { EVENT_TYPE, TILE, WEATHER } from "../../config/constants.js";
-import { countTilesByType } from "../grid/Grid.js";
+import { EVENT_TYPE, NODE_FLAGS, TILE, WEATHER } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
+import { countTilesByType, setTileField } from "../grid/Grid.js";
 
 const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
   temperate_plains: "frontier_repair",
@@ -644,6 +645,227 @@ export function getScenarioFamilyForTemplate(templateId) {
   return SCENARIO_FAMILY_BY_TEMPLATE[templateId] ?? "frontier_repair";
 }
 
+// --- Phase 3 M1a resource node seeding ---
+// Seeds forest, stone, and herb nodes on GRASS tiles of a freshly-generated
+// map. Each seeded tile receives a node-flag bitmask and an initial yieldPool
+// on its tileState entry. Uses services.rng for determinism; callers can also
+// pass a bare `{ next }` object or a raw function for test ergonomics.
+
+function asRngFn(services) {
+  // v0.8.0 Phase 3 M1a — deterministic world-gen. Silent fallback to Math.random
+  // would break benchmark reproducibility (silent-failure C1), so refuse rather
+  // than drift. Callers are responsible for supplying a seeded source.
+  if (typeof services === "function") return services;
+  if (services && typeof services.next === "function") return () => services.next();
+  const rng = services?.rng;
+  if (rng && typeof rng.next === "function") return () => rng.next();
+  if (typeof rng === "function") return rng;
+  throw new Error("seedResourceNodes: deterministic RNG required (pass fn, { next }, or services with .rng.next)");
+}
+
+function getGrid(target) {
+  if (!target) return null;
+  if (target.tiles && typeof target.width === "number") return target;
+  return target.grid ?? null;
+}
+
+function gridIndex(grid, ix, iz) {
+  return ix + iz * grid.width;
+}
+
+function isGrassAt(grid, ix, iz) {
+  if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) return false;
+  return grid.tiles[gridIndex(grid, ix, iz)] === TILE.GRASS;
+}
+
+function collectGrassTiles(grid) {
+  const out = [];
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      if (grid.tiles[gridIndex(grid, ix, iz)] === TILE.GRASS) out.push({ ix, iz });
+    }
+  }
+  return out;
+}
+
+function shuffleInPlace(arr, rngFn) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rngFn() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+function rangeInt(rngFn, range, fallbackMin = 0, fallbackMax = 0) {
+  const lo = Number(Array.isArray(range) ? range[0] : fallbackMin) | 0;
+  const hi = Number(Array.isArray(range) ? range[1] : fallbackMax) | 0;
+  const lowBound = Math.min(lo, hi);
+  const highBound = Math.max(lo, hi);
+  if (highBound <= lowBound) return lowBound;
+  return lowBound + Math.floor(rngFn() * (highBound - lowBound + 1));
+}
+
+function setNodeOnTile(grid, ix, iz, flag, yieldPool) {
+  // Read existing tileState entry (may be null for bare grass tiles) and OR
+  // the new flag in. Also seed the yieldPool so tests / harvest flow can read
+  // it immediately via getTileState.
+  const idx = gridIndex(grid, ix, iz);
+  const prev = grid.tileState?.get?.(idx) ?? null;
+  const prevFlags = Number(prev?.nodeFlags ?? 0) | 0;
+  setTileField(grid, ix, iz, "nodeFlags", (prevFlags | flag) >>> 0);
+  setTileField(grid, ix, iz, "yieldPool", Number(yieldPool) || 0);
+}
+
+function seedForestNodes(grid, rngFn) {
+  // Poisson-disk-ish sampling with min-distance 3 tiles. Walk a shuffled list
+  // of GRASS tiles and accept a candidate if it sits >= MIN_DIST from all
+  // previously accepted FOREST nodes.
+  const MIN_DIST = 3;
+  const count = rangeInt(rngFn, BALANCE.forestNodeCountRange, 18, 32);
+  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const accepted = [];
+  for (const tile of grass) {
+    if (accepted.length >= count) break;
+    let ok = true;
+    for (const other of accepted) {
+      const dx = other.ix - tile.ix;
+      const dz = other.iz - tile.iz;
+      if (dx * dx + dz * dz < MIN_DIST * MIN_DIST) { ok = false; break; }
+    }
+    if (!ok) continue;
+    accepted.push(tile);
+    setNodeOnTile(grid, tile.ix, tile.iz, NODE_FLAGS.FOREST, BALANCE.nodeYieldPoolForest ?? 80);
+  }
+  return accepted.length;
+}
+
+function seedStoneNodes(grid, rngFn) {
+  // Cluster-walk from N seed GRASS tiles; each seed walks 3-6 steps in random
+  // 4-directional moves, laying a STONE flag on each GRASS step.
+  const count = rangeInt(rngFn, BALANCE.stoneNodeCountRange, 10, 18);
+  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  let placed = 0;
+  const seeds = grass.slice(0, count);
+  for (const seed of seeds) {
+    const steps = 3 + Math.floor(rngFn() * 4); // 3..6 inclusive
+    let cx = seed.ix;
+    let cz = seed.iz;
+    if (isGrassAt(grid, cx, cz)) {
+      setNodeOnTile(grid, cx, cz, NODE_FLAGS.STONE, BALANCE.nodeYieldPoolStone ?? 120);
+      placed += 1;
+    }
+    for (let step = 0; step < steps; step += 1) {
+      const [dx, dz] = dirs[Math.floor(rngFn() * dirs.length)];
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (!isGrassAt(grid, nx, nz)) continue;
+      cx = nx; cz = nz;
+      setNodeOnTile(grid, cx, cz, NODE_FLAGS.STONE, BALANCE.nodeYieldPoolStone ?? 120);
+      placed += 1;
+    }
+  }
+  return placed;
+}
+
+function seedHerbNodes(grid, rngFn) {
+  // Link-seek: prefer GRASS tiles adjacent to WATER or FARM. Fall back to
+  // any GRASS tile if preferred candidates are exhausted.
+  const count = rangeInt(rngFn, BALANCE.herbNodeCountRange, 12, 22);
+  const preferred = [];
+  const fallback = [];
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      if (grid.tiles[gridIndex(grid, ix, iz)] !== TILE.GRASS) continue;
+      const hasLink =
+        (ix + 1 < grid.width && (grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.FARM)) ||
+        (ix - 1 >= 0 && (grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.FARM)) ||
+        (iz + 1 < grid.height && (grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.FARM)) ||
+        (iz - 1 >= 0 && (grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.FARM));
+      if (hasLink) preferred.push({ ix, iz });
+      else fallback.push({ ix, iz });
+    }
+  }
+  shuffleInPlace(preferred, rngFn);
+  shuffleInPlace(fallback, rngFn);
+  const ordered = preferred.concat(fallback);
+  let placed = 0;
+  for (const tile of ordered) {
+    if (placed >= count) break;
+    setNodeOnTile(grid, tile.ix, tile.iz, NODE_FLAGS.HERB, BALANCE.nodeYieldPoolHerb ?? 60);
+    placed += 1;
+  }
+  return placed;
+}
+
+// v0.8.0 Phase 3 M1a — world-seeded LUMBER/QUARRY/HERB_GARDEN tiles predate the
+// node layer and would otherwise read nodeFlags=0 (BuildAdvisor would then
+// correctly forbid rebuilding on them after demolish, a jarring UX regression).
+// Auto-tag them so the map is internally consistent — player-visible gating is
+// then uniform: a LUMBER tile is always sitting on a FOREST node.
+function autoFlagExistingProductionTiles(grid) {
+  const pairs = [
+    [TILE.LUMBER, NODE_FLAGS.FOREST, Number(BALANCE.nodeYieldPoolForest ?? 80)],
+    [TILE.QUARRY, NODE_FLAGS.STONE, Number(BALANCE.nodeYieldPoolStone ?? 120)],
+    [TILE.HERB_GARDEN, NODE_FLAGS.HERB, Number(BALANCE.nodeYieldPoolHerb ?? 60)],
+  ];
+  // FARM tiles don't use nodeFlags (no corresponding NODE_FLAGS entry), but they
+  // still need a seeded yieldPool or the M1 harvest-cap branch will clamp the
+  // refund to zero. Scenario-placed FARMs bypass setTile() and therefore skip
+  // the Grid.js init-loop pre-seed, so reconcile here.
+  const farmPoolInit = Number(BALANCE.farmYieldPoolInitial ?? 120);
+  let flagged = 0;
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      const type = grid.tiles[gridIndex(grid, ix, iz)];
+      if (type === TILE.FARM) {
+        const prev = grid.tileState?.get?.(gridIndex(grid, ix, iz)) ?? null;
+        // Only reconcile scenario-stamped FARMs that have no tileState yet
+        // (prev == null). A live depleted FARM (yieldPool === 0 from soil
+        // exhaustion) still has a tileState entry and must NOT be silently
+        // refilled — that would mask the M1 salinization gameplay loop.
+        if (prev == null) {
+          setTileField(grid, ix, iz, "yieldPool", farmPoolInit);
+          // Mirror the setTile(TILE.FARM) path: fixed 0.9 fertility. Grid.js
+          // init uses 0.8 + random*0.2; scenario-stamped FARMs get this
+          // deterministic floor so M1 harvest math doesn't zero out before
+          // the 0.2 clamp (animal-ecology.test.js).
+          setTileField(grid, ix, iz, "fertility", 0.9);
+          flagged += 1;
+        }
+        continue;
+      }
+      for (const [tileType, flag, initialPool] of pairs) {
+        if (type !== tileType) continue;
+        const prev = grid.tileState?.get?.(gridIndex(grid, ix, iz)) ?? null;
+        const prevFlags = Number(prev?.nodeFlags ?? 0) | 0;
+        if ((prevFlags & flag) !== 0) break;
+        setTileField(grid, ix, iz, "nodeFlags", (prevFlags | flag) >>> 0);
+        // Only seed yieldPool if not already populated (preserve mid-game saves).
+        if (!prev || Number(prev.yieldPool ?? 0) <= 0) {
+          setTileField(grid, ix, iz, "yieldPool", initialPool);
+        }
+        flagged += 1;
+        break;
+      }
+    }
+  }
+  return flagged;
+}
+
+export function seedResourceNodes(target, services) {
+  const grid = getGrid(target);
+  if (!grid) return { forest: 0, stone: 0, herb: 0, autoFlagged: 0 };
+  const rngFn = asRngFn(services);
+  const forest = seedForestNodes(grid, rngFn);
+  const stone = seedStoneNodes(grid, rngFn);
+  const herb = seedHerbNodes(grid, rngFn);
+  const autoFlagged = autoFlagExistingProductionTiles(grid);
+  return { forest, stone, herb, autoFlagged };
+}
+
 export function buildScenarioBundle(grid) {
   const family = getScenarioFamilyForTemplate(grid.templateId);
   const scenario = family === "gate_chokepoints"
@@ -651,6 +873,10 @@ export function buildScenarioBundle(grid) {
     : family === "island_relay"
       ? buildIslandRelayScenario(grid)
       : buildFrontierRepairScenario(grid);
+  // Scenario stamping uses setTileDirect, which writes grid.tiles but skips
+  // tileState — so any FARM/LUMBER/HERB_GARDEN/QUARRY placed by scenario has no
+  // yieldPool. Reconcile now so M1 harvest-gating sees a seeded pool from tick 0.
+  autoFlagExistingProductionTiles(grid);
   return {
     scenario,
     objectives: buildObjectivesForScenario(scenario),

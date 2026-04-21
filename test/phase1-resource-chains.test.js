@@ -757,9 +757,9 @@ test("BuildSystem: erase of new tiles returns correct salvage refund", () => {
   const eraseResult = buildSystem.placeToolAt(state, "erase", validSmithy.ix, validSmithy.iz);
   assert.equal(eraseResult.ok, true, "Should be able to erase smithy");
 
-  // Salvage should return half of build cost (floor)
-  const expectedWoodRefund = Math.floor((BUILD_COST.smithy.wood ?? 0) * 0.5);
-  const expectedStoneRefund = Math.floor((BUILD_COST.smithy.stone ?? 0) * 0.5);
+  // v0.8.0 M1c: type-specific demolition recovery fractions (floor of original cost).
+  const expectedWoodRefund = Math.floor((BUILD_COST.smithy.wood ?? 0) * BALANCE.demoWoodRecovery);
+  const expectedStoneRefund = Math.floor((BUILD_COST.smithy.stone ?? 0) * BALANCE.demoStoneRecovery);
 
   assert.equal(state.resources.wood, woodBeforeErase + expectedWoodRefund, "Wood refund mismatch");
   assert.equal(state.resources.stone, stoneBeforeErase + expectedStoneRefund, "Stone refund mismatch");
@@ -791,8 +791,9 @@ test("BuildSystem: erase of clinic returns herbs salvage refund", () => {
   const eraseResult = buildSystem.placeToolAt(state, "erase", validClinic.ix, validClinic.iz);
   assert.equal(eraseResult.ok, true, "Should be able to erase clinic");
 
-  const expectedWoodRefund = Math.floor((BUILD_COST.clinic.wood ?? 0) * 0.5);
-  const expectedHerbsRefund = Math.floor((BUILD_COST.clinic.herbs ?? 0) * 0.5);
+  // v0.8.0 M1c: herbs are biodegradable — demoHerbsRecovery is 0 by default.
+  const expectedWoodRefund = Math.floor((BUILD_COST.clinic.wood ?? 0) * BALANCE.demoWoodRecovery);
+  const expectedHerbsRefund = Math.floor((BUILD_COST.clinic.herbs ?? 0) * BALANCE.demoHerbsRecovery);
 
   assert.equal(state.resources.wood, woodBeforeErase + expectedWoodRefund, "Clinic wood refund mismatch");
   assert.equal(state.resources.herbs, herbsBeforeErase + expectedHerbsRefund, "Clinic herbs refund mismatch");

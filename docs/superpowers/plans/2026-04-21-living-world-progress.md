@@ -45,7 +45,7 @@
 | 0 | Branch + progress scaffolding | completed | 53e7e74 | 2026-04-21 |
 | 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
 | 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
-| 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | pending | — | — |
+| 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | _pending_ | 2026-04-21 |
 | 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
 | 6 | Long-horizon benchmark harness | pending | — | — |
@@ -136,4 +136,34 @@ _Phase 2 commit:_ `c23a50b` (feat(v0.8.0 phase-2): M2 warehouse throughput queue
 
 ---
 
-(Phases 3-7 entries will be appended as they complete.)
+### Phase 3 — Tile-state mechanics (M1 + M1a + M1b + M1c)
+
+_2026-04-21 — Started + completed._
+
+**Subagents dispatched (4 in parallel):**
+- Agent 3.A (M1 soil salinization): BALANCE block (`soilSalinizationPerHarvest`, `soilSalinizationThreshold`, `soilFallowRecoveryTicks`, `soilSalinizationDecayPerTick`, `farmYieldPoolInitial/Max/RegenPerTick`). `TileStateSystem._updateSoil` runs per-tick for fallow expiry + yieldPool regen; `WorkerAISystem` farm branch accumulates salinized, triggers fallow at threshold, caps harvest by yieldPool with carry-refund on overflow. Produced `test/soil-salinization.test.js` (+4).
+- Agent 3.B (M1a resource nodes): `NODE_FLAGS` bitmask + `seedResourceNodes` (Poisson forest, cluster-walk stone, link-seek herb). `BuildAdvisor` gates LUMBER/QUARRY/HERB_GARDEN on matching nodeFlag via `missing_resource_node`. `WorkerAISystem.applyNodeYieldHarvest` + `applyResourceNodeRegen` drain-then-regen per type. Produced `test/node-layer.test.js` (+4).
+- Agent 3.C (M1b fog of war): `FOG_STATE` enum, `state.fog.visibility` Uint8Array, new `VisibilitySystem` (VISIBLE→EXPLORED sticky-memory walker), BuildAdvisor `hidden_tile` rejection, worker `explore_fog` intent fallback + `findNearestHiddenTile` frontier biasing, FogOverlay + Minimap stubs. Produced `test/fog-visibility.test.js` (+4).
+- Agent 3.D (M1c demolition recycling): Per-resource `demo{Stone|Wood|Food|Herbs}Recovery` ratios replace the single `salvageRefundRatio`. BuildSystem emits `DEMOLITION_RECYCLED` event on non-zero refund; undo/redo parity across all 4 resource types. Produced `test/demo-recycling.test.js` (+4); adjusted `test/build-system.test.js` (wall refund now rounds to 0) and `test/phase1-resource-chains.test.js` (smithy/clinic refund math).
+
+**Review rounds:**
+- Code-reviewer (×2): caught CONSTRUCTION_BALANCE fallback preserved where it should be removed, salvage/ruin RNG non-determinism, setTile schema drift, hardcoded `"eligibleForPromotion"` shape drift in worker sort. All must-fix addressed; `createTileStateEntry` factory now single source of truth.
+- Silent-failure-hunter (×2): 3 CRITICAL (services.rng not threaded through TileStateSystem fire, BuildAdvisor ruin salvage, M1 cap silently bypassed when tileState missing post-wildfire), 6 HIGH. CRITICALs all fixed; `services` now threads from `update(dt, state, services)` → internals; lazy-create pattern in WorkerAISystem harvest completion path; `asRngFn` throws on missing RNG instead of Math.random fallback.
+- Legacy-sweep (general-purpose, ×2): 9 items (frontier cache on `state.fog` = state pollution, Grid.js duplicate init logic, stale `salvageRefundRatio` comment, etc.). 7 fixed in iteration pass; 2 deferred to Phase 7 (minimap perf, FogOverlay shader).
+- Final silent-failure pass on scenario FARM reconcile fix: flagged HIGH — gating on `yieldPool <= 0` would silently refill live depleted farms, masking M1 loop. Fixed by gating on `prev == null` only.
+
+**Deviations + deferrals:**
+- `ProceduralTileTextures.drawFarm` salinization crack overlay deferred to Phase 7 (per-tile-type texture bake; per-instance material variant needed).
+- FogOverlay is a zero-dep stub — real Three.js data-texture shader deferred to Phase 7.
+- `salvageRefundRatio` fallback preserved as the safe-default when BALANCE values go missing (defensive only; never hit in practice).
+
+**Bug caught during convergence:** Scenario-stamped FARMs had no `tileState` entry (ScenarioFactory uses `setTileDirect`, bypassing `setTile`). Phase 3 harvest-cap then read `yieldPool === 0` and clamped every scenario-FARM harvest to zero food, surfacing as a broken `animal-ecology.test.js` pressured<clean assertion. Fix: extended `autoFlagExistingProductionTiles` to reconcile FARM yieldPool+fertility, invoked post-scenario-stamp via `buildScenarioBundle`. Gated on `prev == null` per reviewer HIGH finding to preserve M1 salinization loop integrity.
+
+**Test delta:** 752 → 769 (+17: +4 soil + +4 nodes + +4 fog + +4 recycling + adjustments).
+**LOC changed (src/):** +784 / -32 across 13 files + 3 new files (`VisibilitySystem.js`, `FogOverlay.js`, `Minimap.js`).
+
+_Phase 3 commit:_ (to record after this write).
+
+---
+
+(Phases 4-7 entries will be appended as they complete.)

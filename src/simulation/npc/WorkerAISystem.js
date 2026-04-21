@@ -1,7 +1,7 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { ROLE, TILE } from "../../config/constants.js";
+import { FOG_STATE, NODE_FLAGS, ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
-import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
@@ -254,7 +254,65 @@ export function chooseWorkerIntent(worker, state) {
   if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) return "smith";
   if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) return "heal";
   if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) return "haul";
+  // Phase 3 / M1b — low-priority fog exploration fallback. Only surfaces when
+  // no role-specific work is available AND the colony still has HIDDEN tiles
+  // to scout. Sits below every normal role intent, above "wander".
+  if (hasHiddenFrontier(state)) return "explore_fog";
   return "wander";
+}
+
+function hasHiddenFrontier(state) {
+  const vis = state?.fog?.visibility;
+  if (!(vis instanceof Uint8Array)) return false;
+  // v0.8.0 Phase 3 post-review — cache moved off state.fog (owned by
+  // VisibilitySystem) onto state._fogFrontierCache so a fog reset cannot
+  // orphan stale fields (legacy-sweep SHOULD-CLEAN #7).
+  const cache = state._fogFrontierCache ??= { version: -1, grid: -1, found: false };
+  const gridVersion = Number(state?.grid?.version ?? 0);
+  const fogVersion = Number(state.fog.version ?? 0);
+  if (cache.version === fogVersion && cache.grid === gridVersion) return cache.found;
+  let found = false;
+  for (let i = 0; i < vis.length; i += 1) {
+    if (vis[i] === FOG_STATE.HIDDEN) { found = true; break; }
+  }
+  cache.version = fogVersion;
+  cache.grid = gridVersion;
+  cache.found = found;
+  return found;
+}
+
+/**
+ * Find the nearest HIDDEN tile that has at least one non-HIDDEN neighbor
+ * (the fog frontier) relative to the worker's current tile. Manhattan metric.
+ * Returns null if the grid is fully explored.
+ */
+export function findNearestHiddenTile(worker, state) {
+  const vis = state?.fog?.visibility;
+  const grid = state?.grid;
+  if (!(vis instanceof Uint8Array) || !grid) return null;
+  const width = Number(grid.width ?? 0);
+  const height = Number(grid.height ?? 0);
+  if (width <= 0 || height <= 0) return null;
+  const current = worldToTile(worker.x, worker.z, grid);
+  let best = null;
+  let bestDist = Infinity;
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      if (vis[ix + iz * width] !== FOG_STATE.HIDDEN) continue;
+      let onFrontier = false;
+      if (ix + 1 < width && vis[(ix + 1) + iz * width] !== FOG_STATE.HIDDEN) onFrontier = true;
+      else if (ix - 1 >= 0 && vis[(ix - 1) + iz * width] !== FOG_STATE.HIDDEN) onFrontier = true;
+      else if (iz + 1 < height && vis[ix + (iz + 1) * width] !== FOG_STATE.HIDDEN) onFrontier = true;
+      else if (iz - 1 >= 0 && vis[ix + (iz - 1) * width] !== FOG_STATE.HIDDEN) onFrontier = true;
+      if (!onFrontier) continue;
+      const d = Math.abs(ix - current.ix) + Math.abs(iz - current.iz);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { ix, iz };
+      }
+    }
+  }
+  return best;
 }
 
 function estimateNearestWarehouseDistance(worker, state) {
@@ -534,7 +592,7 @@ const ROLE_PROCESS_CONFIG = {
   [ROLE.HERBALIST]: { intentKey: "heal", tileTypes: [TILE.CLINIC] },
 };
 
-function handleHarvest(worker, state, services, dt) {
+export function handleHarvest(worker, state, services, dt) {
   const config = ROLE_HARVEST_CONFIG[worker.role];
   const intentKey = config?.intentKey ?? (worker.role === ROLE.FARM ? "farm" : "lumber");
   const targetTypes = config?.tileTypes ?? (worker.role === ROLE.FARM ? [TILE.FARM] : [TILE.LUMBER]);
@@ -571,10 +629,14 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = ecology.pressure;
     worker.debug.lastFarmYieldMultiplier = ecology.multiplier;
+    const farmAmount = Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility * logisticsBonus);
+    // Capture pre-resolve cooldown so we can tell whether this tick was the
+    // completion tick (amount was added inside resolveWorkCooldown).
+    const preCooldown = Number(worker.cooldown ?? 0);
     resolveWorkCooldown(
       worker,
       dt,
-      Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility * logisticsBonus),
+      farmAmount,
       "food",
       services.rng,
       isNight,
@@ -582,22 +644,69 @@ function handleHarvest(worker, state, services, dt) {
     // Drain tile fertility on harvest
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      // M1 soil salinization + yieldPool cap: only on the completion tick,
+      // i.e. resolveWorkCooldown decremented a positive cooldown to ≤0 and
+      // credited carry.food. (The "start tick" has preCooldown ≤ 0 and exits
+      // resolveWorkCooldown with a positive cooldown, so it won't enter this
+      // branch — but guard anyway to make intent explicit.)
+      if (preCooldown > 0 && worker.targetTile) {
+        // Lazy-create tileState so M1 cap/salinization cannot be silently
+        // bypassed when the entry was wiped (e.g. by wildfire) mid-harvest
+        // (silent-failure H3). setTileField handles the create-if-missing.
+        let tileState = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+        if (!tileState) {
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "fertility", 0.85);
+          tileState = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+        }
+        if (tileState) {
+          // Cap harvest by remaining yieldPool — the excess is refunded back
+          // out of carry.food so a depleted pool effectively zeros the yield.
+          const pool = Math.max(0, Number(tileState.yieldPool ?? 0));
+          const effective = Math.min(farmAmount, pool);
+          const refund = Math.max(0, farmAmount - effective);
+          if (refund > 0) {
+            worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - refund);
+          }
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "yieldPool", Math.max(0, pool - effective));
+
+          // Accumulate salinization; trigger fallow if threshold reached.
+          const perHarvest = Number(BALANCE.soilSalinizationPerHarvest ?? 0);
+          const threshold = Number(BALANCE.soilSalinizationThreshold ?? 1);
+          const newSalinized = Number(tileState.salinized ?? 0) + perHarvest;
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "salinized", newSalinized);
+          if (newSalinized >= threshold) {
+            const nowTick = Number(state.metrics?.tick ?? 0);
+            const fallowTicks = Number(BALANCE.soilFallowRecoveryTicks ?? 1800);
+            setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "fallowUntil", nowTick + fallowTicks);
+            setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "fertility", 0);
+          }
+        }
+      }
     }
   } else if (effectiveRole === ROLE.STONE) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const quarryWeather = Number(BALANCE.quarryWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    resolveWorkCooldown(worker, dt, Math.max(0.2, quarryWeather * toolMultiplier * logisticsBonus), "stone", services.rng, isNight);
+    const stoneAmount = Math.max(0.2, quarryWeather * toolMultiplier * logisticsBonus);
+    const preCooldown = Number(worker.cooldown ?? 0);
+    resolveWorkCooldown(worker, dt, stoneAmount, "stone", services.rng, isNight);
+    // v0.8.0 Phase 3 M1a: decrement the STONE node yieldPool on the completion tick.
+    if (preCooldown > 0 && worker.cooldown <= 0 && worker.targetTile) {
+      applyNodeYieldHarvest(state, worker, "stone", stoneAmount);
+    }
   } else if (effectiveRole === ROLE.HERBS) {
     const herbFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const herbWeather = Number(BALANCE.herbGardenWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    resolveWorkCooldown(worker, dt, Math.max(0.2, herbWeather * toolMultiplier * herbFertility * logisticsBonus), "herbs", services.rng, isNight);
+    const herbAmount = Math.max(0.2, herbWeather * toolMultiplier * herbFertility * logisticsBonus);
+    const preCooldown = Number(worker.cooldown ?? 0);
+    resolveWorkCooldown(worker, dt, herbAmount, "herbs", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      if (preCooldown > 0) applyNodeYieldHarvest(state, worker, "herbs", herbAmount);
     }
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
@@ -605,11 +714,41 @@ function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    resolveWorkCooldown(worker, dt, Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility * logisticsBonus), "wood", services.rng, isNight);
+    const woodAmount = Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility * logisticsBonus);
+    const preCooldown = Number(worker.cooldown ?? 0);
+    resolveWorkCooldown(worker, dt, woodAmount, "wood", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      if (preCooldown > 0) applyNodeYieldHarvest(state, worker, "wood", woodAmount);
     }
   }
+}
+
+// v0.8.0 Phase 3 M1a: deduct yieldPool on the tile the worker just harvested.
+// When the node is exhausted, refund the excess carry so depleted nodes stop
+// producing. Also marks the tile as harvested-this-tick so the regen pass
+// can skip it until a fresh tick.
+function applyNodeYieldHarvest(state, worker, carryKey, amount) {
+  if (!worker?.targetTile) return;
+  const { ix, iz } = worker.targetTile;
+  // Lazy-create tileState so harvest+regen bookkeeping cannot be silently
+  // skipped when the entry is missing (silent-failure H4). BuildAdvisor's
+  // node-gate normally prevents this, but scenario-stamped / save-loaded
+  // tiles can land here without a backing entry.
+  let entry = getTileState(state.grid, ix, iz);
+  if (!entry) {
+    setTileField(state.grid, ix, iz, "lastHarvestTick", -1);
+    entry = getTileState(state.grid, ix, iz);
+  }
+  if (!entry) return;
+  const pool = Math.max(0, Number(entry.yieldPool ?? 0));
+  const effective = Math.min(amount, pool);
+  const refundAmount = Math.max(0, amount - effective);
+  if (refundAmount > 0 && worker.carry) {
+    worker.carry[carryKey] = Math.max(0, Number(worker.carry[carryKey] ?? 0) - refundAmount);
+  }
+  setTileField(state.grid, ix, iz, "yieldPool", Math.max(0, pool - effective));
+  setTileField(state.grid, ix, iz, "lastHarvestTick", Number(state.metrics?.tick ?? 0));
 }
 
 function handleProcess(worker, state, services, dt) {
@@ -678,7 +817,11 @@ function handleWander(worker, state, services, dt) {
   }
 
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
-  blackboard.intentTargetIntent = "wander";
+  // v0.8.0 Phase 3 M1b post-review — if fog has hidden tiles, bias the wander
+  // destination toward the nearest frontier so "explore_fog" intent is actually
+  // load-bearing (was dead label per legacy-sweep MUST #2 / silent-failure H2).
+  const wantsFogExploration = hasHiddenFrontier(state);
+  blackboard.intentTargetIntent = wantsFogExploration ? "explore_fog" : "wander";
 
   const nowSec = state.metrics.timeSec;
   const nextWanderRefreshSec = Number(blackboard.nextWanderRefreshSec ?? -Infinity);
@@ -689,7 +832,9 @@ function handleWander(worker, state, services, dt) {
     const shouldRetarget = stalePath || driftedFromTarget || nowSec >= nextWanderRefreshSec || pathStuck;
     if (shouldRetarget && canAttemptPath(worker, state)) {
       clearPath(worker);
-      if (setTargetAndPath(worker, randomPassableTile(state.grid), state, services)) {
+      const fogTarget = wantsFogExploration ? findNearestHiddenTile(worker, state) : null;
+      const target = fogTarget ?? randomPassableTile(state.grid);
+      if (setTargetAndPath(worker, target, state, services)) {
         blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
       }
     }
@@ -950,5 +1095,43 @@ export class WorkerAISystem {
 
       updateIdleWithoutReasonMetric(worker, stateNode, dt, state);
     }
+
+    // v0.8.0 Phase 3 M1a: per-tile node regen. Scan tileState entries and
+    // bump yieldPool on tiles carrying a node flag, skipping any tile that
+    // was harvested this tick. Stone nodes have a 0 regen rate by default
+    // (permanent deposit) so they are left alone.
+    applyResourceNodeRegen(state);
   }
+}
+
+function applyResourceNodeRegen(state) {
+  const grid = state?.grid;
+  if (!grid?.tileState?.forEach) return;
+  const tick = Number(state.metrics?.tick ?? 0);
+  const forestRegen = Number(BALANCE.nodeRegenPerTickForest ?? 0);
+  const stoneRegen = Number(BALANCE.nodeRegenPerTickStone ?? 0);
+  const herbRegen = Number(BALANCE.nodeRegenPerTickHerb ?? 0);
+  const forestCap = Number(BALANCE.nodeYieldPoolForest ?? 0);
+  const stoneCap = Number(BALANCE.nodeYieldPoolStone ?? 0);
+  const herbCap = Number(BALANCE.nodeYieldPoolHerb ?? 0);
+  grid.tileState.forEach((entry, idx) => {
+    if (!entry) return;
+    const flags = Number(entry.nodeFlags ?? 0) | 0;
+    if (!flags) return;
+    const lastHarvest = Number(entry.lastHarvestTick ?? -1);
+    if (lastHarvest === tick) return;
+    let add = 0;
+    let cap = 0;
+    if (flags & NODE_FLAGS.FOREST) { add += forestRegen; cap = Math.max(cap, forestCap); }
+    if (flags & NODE_FLAGS.STONE) { add += stoneRegen; cap = Math.max(cap, stoneCap); }
+    if (flags & NODE_FLAGS.HERB) { add += herbRegen; cap = Math.max(cap, herbCap); }
+    if (add <= 0) return;
+    const pool = Number(entry.yieldPool ?? 0);
+    if (cap > 0 && pool >= cap) return;
+    const next = cap > 0 ? Math.min(cap, pool + add) : pool + add;
+    if (next === pool) return;
+    const ix = idx % grid.width;
+    const iz = (idx - ix) / grid.width;
+    setTileField(grid, ix, iz, "yieldPool", next);
+  });
 }

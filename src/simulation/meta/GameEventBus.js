@@ -25,6 +25,8 @@ const EVENT_TYPES = Object.freeze({
   WAREHOUSE_FIRE: "warehouse_fire",
   VERMIN_SWARM: "vermin_swarm",
   WAREHOUSE_QUEUE_TIMEOUT: "warehouse_queue_timeout",
+  // v0.8.0 Phase 3 M1c demolition recycling.
+  DEMOLITION_RECYCLED: "demolition_recycled",
 });
 
 export { EVENT_TYPES };

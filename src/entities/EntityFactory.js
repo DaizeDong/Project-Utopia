@@ -12,7 +12,7 @@ import {
   DEFAULT_MAP_TEMPLATE_ID,
   describeMapTemplate,
 } from "../world/grid/Grid.js";
-import { buildScenarioBundle } from "../world/scenarios/ScenarioFactory.js";
+import { buildScenarioBundle, seedResourceNodes } from "../world/scenarios/ScenarioFactory.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
   food: INITIAL_RESOURCES.food,
@@ -339,6 +339,11 @@ export function createInitialGameState(options = {}) {
   const seed = options.seed ?? 1337;
   const terrainTuning = options.terrainTuning ?? {};
   const grid = createInitialGrid({ templateId, seed, terrainTuning, width: options.width, height: options.height });
+  // v0.8.0 Phase 3 M1a: seed resource nodes (forest / stone / herb) across
+  // eligible GRASS tiles before scenario stamping. Uses a deterministic RNG
+  // derived from the grid seed so benchmark runs stay reproducible.
+  const nodeRng = createDeterministicRandom(grid.seed ^ 0xa1a1a1a1);
+  seedResourceNodes(grid, nodeRng);
   const scenarioBundle = buildScenarioBundle(grid);
   const templateMeta = describeMapTemplate(grid.templateId);
   const random = createDeterministicRandom(grid.seed);

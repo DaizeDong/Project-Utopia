@@ -56,6 +56,25 @@ export const EVENT_TYPE = Object.freeze({
   TRADE_CARAVAN: "tradeCaravan",
 });
 
+// v0.8.0 Phase 3 M1a — per-tile resource node bitmask stored on tileState.nodeFlags.
+// FOREST → only valid placement surface for LUMBER.
+// STONE  → only valid placement surface for QUARRY.
+// HERB   → only valid placement surface for HERB_GARDEN.
+// FARM is not node-gated (arable tiles are derived from fertility + moisture).
+export const NODE_FLAGS = Object.freeze({
+  NONE: 0,
+  FOREST: 1,
+  STONE: 2,
+  HERB: 4,
+});
+
+// v0.8.0 Phase 3 M1b — fog of war tile visibility state (stored in parallel Uint8Array).
+export const FOG_STATE = Object.freeze({
+  HIDDEN: 0,   // never revealed
+  EXPLORED: 1, // previously revealed, currently out of sight
+  VISIBLE: 2,  // currently within an actor's reveal radius
+});
+
 export const DEFAULT_GRID = Object.freeze({
   width: 96,
   height: 72,
@@ -88,6 +107,7 @@ export const MOVE_DIRECTIONS_4 = Object.freeze([
 
 export const SYSTEM_ORDER = Object.freeze([
   "SimulationClock",
+  "VisibilitySystem",
   "ProgressionSystem",
   "ColonyDirectorSystem",
   "RoleAssignmentSystem",

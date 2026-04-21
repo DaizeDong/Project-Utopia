@@ -1,4 +1,5 @@
 ﻿import { DEFAULT_GRID, TILE, TILE_INFO } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
 
 export const MAP_TEMPLATES = Object.freeze([
   {
@@ -2369,14 +2370,28 @@ export function createInitialGrid(options = {}) {
 
   const generated = generateTerrainTiles(width, height, templateId, seed, tuning);
 
-  // Initialize tile state metadata for production/wear tiles
+  // Initialize tile state metadata for production/wear tiles. v0.8.0 Phase 3 fields:
+  //   salinized    (0..1)    — M1 soil exhaustion accumulator
+  //   fallowUntil  (tickNum)  — M1 soil recovery gate
+  //   yieldPool    (number)   — M1/M1a remaining harvestable yield on this tile
+  //   nodeFlags    (Uint8)    — M1a node bitmask: FOREST=1, STONE=2, HERB=4
+  // Seed production tiles with an initial yieldPool so harvest-gating works
+  // from tick 0 (silent-failure H3 regression fix — tests that skip
+  // TileStateSystem still need non-zero pool on FARM/LUMBER/HERB_GARDEN).
+  const farmPoolInit = Number(BALANCE.farmYieldPoolInitial ?? 120);
+  const lumberPoolInit = Number(BALANCE.nodeYieldPoolForest ?? 80);
+  const herbPoolInit = Number(BALANCE.nodeYieldPoolHerb ?? 60);
   const tileState = new Map();
   for (let i = 0; i < generated.tiles.length; i++) {
     const type = generated.tiles[i];
-    if (type === TILE.FARM || type === TILE.HERB_GARDEN || type === TILE.LUMBER) {
-      tileState.set(i, { fertility: 0.8 + Math.random() * 0.2, wear: 0, growthStage: 0 });
+    if (type === TILE.FARM) {
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: farmPoolInit }));
+    } else if (type === TILE.LUMBER) {
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: lumberPoolInit }));
+    } else if (type === TILE.HERB_GARDEN) {
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: herbPoolInit }));
     } else if (type === TILE.ROAD || type === TILE.BRIDGE || type === TILE.WALL) {
-      tileState.set(i, { fertility: 0, wear: 0, growthStage: 0 });
+      tileState.set(i, createTileStateEntry());
     }
   }
 
@@ -2423,20 +2438,54 @@ export function getTile(grid, ix, iz) {
   return grid.tiles[toIndex(ix, iz, grid.width)];
 }
 
+// v0.8.0 Phase 3 — single source of truth for a new tileState entry. All three
+// init sites (createInitialGrid, setTile, setTileField) route through this to
+// avoid schema drift (silent-failure H3/H4, legacy-sweep MUST-CLEAN #1).
+export function createTileStateEntry(overrides = {}) {
+  return {
+    fertility: 0,
+    wear: 0,
+    growthStage: 0,
+    salinized: 0,
+    fallowUntil: 0,
+    yieldPool: 0,
+    nodeFlags: 0,
+    lastHarvestTick: -1,
+    ...overrides,
+  };
+}
+
 export function setTile(grid, ix, iz, tileType) {
   if (!inBounds(ix, iz, grid)) return false;
   const idx = toIndex(ix, iz, grid.width);
   if (grid.tiles[idx] === tileType) return false;
   grid.tiles[idx] = tileType;
   grid.version += 1;
-  // Initialize tile state for new building tiles
   if (grid.tileState) {
-    if (tileType === TILE.FARM || tileType === TILE.HERB_GARDEN || tileType === TILE.LUMBER) {
-      grid.tileState.set(idx, { fertility: 0.9, wear: 0, growthStage: 0 });
+    // v0.8.0 Phase 3 M1a — persistent node flags (FOREST/STONE/HERB) are a
+    // property of the map, not the building. Preserve across both build AND
+    // erase so demolishing a LUMBER keeps its forest node intact (reviewer #2).
+    const prev = grid.tileState.get(idx);
+    const preservedNodeFlags = Number(prev?.nodeFlags ?? 0);
+    const preservedYieldPool = Number(prev?.yieldPool ?? 0);
+    if (tileType === TILE.FARM) {
+      // Preserve a non-zero pool if one was already there (rebuild on an old
+      // node), otherwise seed to the Phase 3 initial value (silent-failure H3).
+      const initPool = preservedYieldPool > 0 ? preservedYieldPool : Number(BALANCE.farmYieldPoolInitial ?? 120);
+      grid.tileState.set(idx, createTileStateEntry({ fertility: 0.9, nodeFlags: preservedNodeFlags, yieldPool: initPool }));
+    } else if (tileType === TILE.LUMBER) {
+      const initPool = preservedYieldPool > 0 ? preservedYieldPool : Number(BALANCE.nodeYieldPoolForest ?? 80);
+      grid.tileState.set(idx, createTileStateEntry({ fertility: 0.9, nodeFlags: preservedNodeFlags, yieldPool: initPool }));
+    } else if (tileType === TILE.HERB_GARDEN) {
+      const initPool = preservedYieldPool > 0 ? preservedYieldPool : Number(BALANCE.nodeYieldPoolHerb ?? 60);
+      grid.tileState.set(idx, createTileStateEntry({ fertility: 0.9, nodeFlags: preservedNodeFlags, yieldPool: initPool }));
     } else if (tileType === TILE.ROAD || tileType === TILE.BRIDGE || tileType === TILE.WALL) {
-      grid.tileState.set(idx, { fertility: 0, wear: 0, growthStage: 0 });
+      grid.tileState.set(idx, createTileStateEntry({ nodeFlags: preservedNodeFlags, yieldPool: preservedYieldPool }));
     } else if (tileType === TILE.QUARRY || tileType === TILE.KITCHEN || tileType === TILE.SMITHY || tileType === TILE.CLINIC) {
-      grid.tileState.set(idx, { fertility: 0, wear: 0, growthStage: 0 });
+      grid.tileState.set(idx, createTileStateEntry({ nodeFlags: preservedNodeFlags, yieldPool: preservedYieldPool }));
+    } else if (preservedNodeFlags !== 0 || preservedYieldPool !== 0) {
+      // Erase-to-bare-tile path: keep a minimal entry so nodeFlags persist.
+      grid.tileState.set(idx, createTileStateEntry({ nodeFlags: preservedNodeFlags, yieldPool: preservedYieldPool }));
     } else {
       grid.tileState.delete(idx);
     }
@@ -2455,7 +2504,7 @@ export function setTileField(grid, ix, iz, field, value) {
   const idx = toIndex(ix, iz, grid.width);
   let entry = grid.tileState.get(idx);
   if (!entry) {
-    entry = { fertility: 0, wear: 0 };
+    entry = createTileStateEntry();
     grid.tileState.set(idx, entry);
   }
   entry[field] = value;

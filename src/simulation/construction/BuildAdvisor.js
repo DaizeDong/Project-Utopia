@@ -1,7 +1,17 @@
-import { BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE, TERRAIN_MECHANICS } from "../../config/balance.js";
-import { TILE } from "../../config/constants.js";
-import { getTile, inBounds, listTilesByType, toIndex } from "../../world/grid/Grid.js";
+import { BALANCE, BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE, TERRAIN_MECHANICS } from "../../config/balance.js";
+// v0.8.0 Phase 3 M1c post-review — thread services.rng through salvage rolls
+// for seeded reproducibility (silent-failure C2, reviewer #5).
+import { FOG_STATE, NODE_FLAGS, TILE } from "../../config/constants.js";
+import { getTile, getTileState, inBounds, listTilesByType, toIndex } from "../../world/grid/Grid.js";
 import { toolToTile } from "../../world/grid/TileTypes.js";
+
+// v0.8.0 Phase 3 M1a: node-gated tools. Tool must match a node flag on the
+// target tileState to be placeable.
+const NODE_GATED_TOOLS = Object.freeze({
+  lumber: NODE_FLAGS.FOREST,
+  quarry: NODE_FLAGS.STONE,
+  herb_garden: NODE_FLAGS.HERB,
+});
 
 const TOOL_INFO = Object.freeze({
   road: {
@@ -199,17 +209,25 @@ function applyTerrainCostModifiers(baseCost, grid, ix, iz, oldType, tool) {
   return adjusted;
 }
 
-function rollRuinSalvage() {
+function resolveRng(services) {
+  if (typeof services === "function") return services;
+  const rng = services?.rng;
+  if (rng && typeof rng.next === "function") return () => rng.next();
+  if (typeof rng === "function") return rng;
+  return Math.random;
+}
+
+function rollRuinSalvage(rngFn = Math.random) {
   const rolls = RUIN_SALVAGE.rolls;
   let totalWeight = 0;
   for (const r of rolls) totalWeight += r.weight;
-  let pick = Math.random() * totalWeight;
+  let pick = rngFn() * totalWeight;
   for (const r of rolls) {
     pick -= r.weight;
     if (pick <= 0) {
       const result = { food: 0, wood: 0, stone: 0, herbs: 0, tools: 0, medicine: 0 };
       for (const [key, [lo, hi]] of Object.entries(r.rewards)) {
-        result[key] = lo + Math.floor(Math.random() * (hi - lo + 1));
+        result[key] = lo + Math.floor(rngFn() * (hi - lo + 1));
       }
       return result;
     }
@@ -217,16 +235,22 @@ function rollRuinSalvage() {
   return { food: 0, wood: 0, stone: 0, herbs: 0 };
 }
 
-function getTileRefund(oldType) {
-  if (oldType === TILE.RUINS) return rollRuinSalvage();
+function getTileRefund(oldType, rngFn = Math.random) {
+  if (oldType === TILE.RUINS) return rollRuinSalvage(rngFn);
   const oldTool = TILE_TO_TOOL[oldType];
   if (!oldTool) return { food: 0, wood: 0, stone: 0, herbs: 0 };
   const baseCost = BUILD_COST[oldTool] ?? { food: 0, wood: 0 };
+  // Living World v0.8.0 Phase 3 M1c — type-specific recovery fractions applied
+  // to the ORIGINAL build cost. Stone 35%, wood 25%, food/herbs 0% (biodegrade).
+  const stoneFrac = Number(BALANCE.demoStoneRecovery ?? 0);
+  const woodFrac = Number(BALANCE.demoWoodRecovery ?? 0);
+  const foodFrac = Number(BALANCE.demoFoodRecovery ?? 0);
+  const herbsFrac = Number(BALANCE.demoHerbsRecovery ?? 0);
   return {
-    food: Math.floor((baseCost.food ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
-    wood: Math.floor((baseCost.wood ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
-    stone: Math.floor((baseCost.stone ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
-    herbs: Math.floor((baseCost.herbs ?? 0) * CONSTRUCTION_BALANCE.salvageRefundRatio),
+    food: Math.floor((baseCost.food ?? 0) * foodFrac),
+    wood: Math.floor((baseCost.wood ?? 0) * woodFrac),
+    stone: Math.floor((baseCost.stone ?? 0) * stoneFrac),
+    herbs: Math.floor((baseCost.herbs ?? 0) * herbsFrac),
   };
 }
 
@@ -284,10 +308,27 @@ export function explainBuildReason(reason, context = {}) {
   if (reason === "occupiedTile") return `Clear the ${BUILDABLE_TILE_LABEL[context.oldType] ?? "existing structure"} before building here.`;
   if (reason === "insufficientResource") return "Insufficient resources.";
   if (reason === "warehouseTooClose") return "Warehouses are too close together. Spread depots to widen logistics coverage.";
+  if (reason === "hidden_tile") return "Cannot build on unexplored terrain. Scout this area first.";
+  if (reason === "missing_resource_node") {
+    if (context.tool === "lumber") return "No forest node on this tile. Lumber camps must be sited on a forest.";
+    if (context.tool === "quarry") return "No stone node on this tile. Quarries must be sited on a stone deposit.";
+    if (context.tool === "herb_garden") return "No herb node on this tile. Herb gardens must be sited on a herb patch.";
+    return "Required resource node is missing on this tile.";
+  }
   return "Build action failed.";
 }
 
-export function evaluateBuildPreview(state, tool, ix, iz) {
+// Phase 3 / M1b — reject placement on fog-HIDDEN tiles.
+function isTileHidden(state, ix, iz) {
+  const vis = state?.fog?.visibility;
+  if (!(vis instanceof Uint8Array)) return false;
+  const width = Number(state?.grid?.width ?? 0);
+  const height = Number(state?.grid?.height ?? 0);
+  if (ix < 0 || iz < 0 || ix >= width || iz >= height) return false;
+  return vis[ix + iz * width] === FOG_STATE.HIDDEN;
+}
+
+export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
   const info = getBuildToolInfo(tool);
   const oldType = getTile(state.grid, ix, iz);
   // Erasing a bridge restores water, not grass
@@ -295,7 +336,8 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   const tile = { ix, iz };
   const baseCost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
   const cost = applyTerrainCostModifiers(baseCost, state.grid, ix, iz, oldType, tool);
-  const salvage = getTileRefund(oldType);
+  const rngFn = resolveRng(services);
+  const salvage = getTileRefund(oldType, rngFn);
   const activeRefund = tool === "erase" ? salvage : { food: 0, wood: 0, stone: 0, herbs: 0 };
   const effects = [];
   const warnings = [];
@@ -303,11 +345,24 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   if (newType === oldType || (tool === "erase" && oldType === TILE.GRASS)) {
     return buildFailure("unchanged", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
+  if (isTileHidden(state, ix, iz)) {
+    return buildFailure("hidden_tile", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
   if (oldType === TILE.WATER && tool !== "bridge") {
     return buildFailure("waterBlocked", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
   if (!info.allowedOldTypes.includes(oldType)) {
     return buildFailure("occupiedTile", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+  }
+  // v0.8.0 Phase 3 M1a: gate LUMBER / QUARRY / HERB_GARDEN on the presence
+  // of the corresponding resource-node flag on the target tileState.
+  const requiredFlag = NODE_GATED_TOOLS[tool];
+  if (requiredFlag) {
+    const entry = getTileState(state.grid, ix, iz);
+    const flags = Number(entry?.nodeFlags ?? 0) | 0;
+    if ((flags & requiredFlag) === 0) {
+      return buildFailure("missing_resource_node", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
   }
   if (tool !== "erase" && !canAfford(state.resources, cost)) {
     return buildFailure("insufficientResource", oldType, newType, cost, activeRefund, tool, ix, iz, info);
