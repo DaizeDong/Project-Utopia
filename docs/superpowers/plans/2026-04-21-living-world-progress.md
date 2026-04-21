@@ -48,7 +48,7 @@
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | 6eb7325 | 2026-04-21 |
 | 4 | Survival mode + DevIndex + Plan C raids | completed | 7dd2ffa+af6e6cb | 2026-04-21 |
 | 5 | AI adaptation 18-patch sweep | completed | 8d6850b | 2026-04-21 |
-| 6 | Long-horizon benchmark harness | completed | (pending) | 2026-04-21 |
+| 6 | Long-horizon benchmark harness | completed | d692689 | 2026-04-21 |
 | 7 | Param tuning + regression fixes + release | pending | — | — |
 
 ## Final Exit Gate (check at end of Phase 7)
@@ -282,7 +282,7 @@ _2026-04-21 — Started and completed (parallel subagent build + 3-stage review 
 **Modified:** `package.json` (+3 scripts), `.gitignore` (2 drift
 guards), `CHANGELOG.md` (`[0.8.0]` Phase 6 section).
 
-_Phase 6 commit:_ (to be populated on commit).
+_Phase 6 commit:_ d692689 (`feat(v0.8.0 phase-6): long-horizon benchmark harness + CI integration`).
 
 ---
 
