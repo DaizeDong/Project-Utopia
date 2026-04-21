@@ -8,7 +8,7 @@ export const TOOL_SHORTCUTS = Object.freeze({
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-6 tools | 0 reset camera | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-6 tools | 0 reset camera | L heat lens | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -40,6 +40,10 @@ export function resolveGlobalShortcut(event, context = {}) {
 
   if (code === "Digit0" || code === "Numpad0" || code === "Home" || key === "0" || key === "home") {
     return { type: "resetCamera" };
+  }
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens toggle.
+  if (code === "KeyL" || key === "l") {
+    return { type: "toggleHeatLens" };
   }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
   if (code === "Space" || key === " ") {

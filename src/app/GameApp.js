@@ -156,6 +156,13 @@ export class GameApp {
       window.addEventListener("keydown", this.boundOnGlobalKeyDown);
     }
 
+    // v0.8.0 Phase 7.C — Supply-Chain Heat Lens HUD button (mirrors L-key).
+    this.boundOnHeatLensClick = () => this.toggleHeatLens();
+    if (typeof document !== "undefined") {
+      this.heatLensBtn = document.getElementById("heatLensBtn");
+      this.heatLensBtn?.addEventListener("click", this.boundOnHeatLensClick);
+    }
+
     this.benchmark = {
       running: false,
       activeConfig: null,
@@ -1343,7 +1350,32 @@ export class GameApp {
     }
     if (action.type === "redo") {
       this.redoLastBuild();
+      return;
     }
+    if (action.type === "toggleHeatLens") {
+      this.toggleHeatLens();
+    }
+  }
+
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens handler.
+  // Invoked by the L-key (see shortcutResolver → #onGlobalKeyDown) and by the
+  // "Heat Lens (L)" HUD button wired in main.js / index.html.
+  toggleHeatLens() {
+    if (!this.renderer?.toggleHeatLens) return "pressure";
+    const mode = this.renderer.toggleHeatLens();
+    const label = mode === "heat"
+      ? "Supply-chain heat lens ON — red = surplus, blue = starved."
+      : mode === "off"
+        ? "Pressure lens hidden."
+        : "Pressure lens restored.";
+    this.state.controls.actionMessage = label;
+    this.state.controls.actionKind = "info";
+    // Sync the HUD button's active-state indicator if it exists.
+    const btn = typeof document !== "undefined"
+      ? document.getElementById("heatLensBtn")
+      : null;
+    if (btn) btn.classList.toggle("active", mode === "heat");
+    return mode;
   }
 
   startSession() {
@@ -1472,6 +1504,9 @@ export class GameApp {
     this.stop();
     if (typeof window !== "undefined" && this.boundOnGlobalKeyDown) {
       window.removeEventListener("keydown", this.boundOnGlobalKeyDown);
+    }
+    if (this.heatLensBtn && this.boundOnHeatLensClick) {
+      this.heatLensBtn.removeEventListener("click", this.boundOnHeatLensClick);
     }
     this.renderer?.dispose?.();
   }

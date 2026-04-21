@@ -1,4 +1,5 @@
-import { EVENT_TYPE } from "../config/constants.js";
+import { EVENT_TYPE, TILE } from "../config/constants.js";
+import { BALANCE } from "../config/balance.js";
 import { getScenarioRuntime } from "../world/scenarios/ScenarioFactory.js";
 
 function clamp(value, min, max) {
@@ -205,3 +206,180 @@ export function buildPressureLens(state) {
     .slice(0, 24);
 }
 
+// v0.8.0 Phase 7.C — Supply-Chain Heat Lens (spec § 6).
+// Precompute pass over state.resources + grid tiles + warehouseDensity metrics
+// that classifies every buildable tile into one of three channels:
+//   RED   — producer adjacent to a "hot" warehouse (density ≥ risk threshold),
+//           i.e. surplus input piling up next to saturated storage.
+//   BLUE  — processing building (KITCHEN/SMITHY/CLINIC) whose colony-wide input
+//           is empty (food / wood+stone / herbs), OR warehouse that is clearly
+//           underused (no connected density score at all) and therefore starved.
+//   GREY  — idle / healthy tiles (default; not rendered to keep pool cost low).
+// Zero art: the existing pressureMarkerPool renders these via disc+ring colour.
+const HEAT_PRODUCER_TILES = Object.freeze([
+  TILE.FARM,
+  TILE.LUMBER,
+  TILE.QUARRY,
+  TILE.HERB_GARDEN,
+]);
+
+const HEAT_PROCESSOR_INPUT_CHECK = Object.freeze({
+  // Kitchen consumes raw food (crafts meals). Blue when food == 0.
+  [TILE.KITCHEN]: (resources) => Number(resources?.food ?? 0) <= 0,
+  // Smithy consumes wood + stone (crafts tools). Blue when either is exhausted.
+  [TILE.SMITHY]: (resources) => (
+    Number(resources?.wood ?? 0) <= 0 || Number(resources?.stone ?? 0) <= 0
+  ),
+  // Clinic consumes herbs (crafts medicine). Blue when herbs == 0.
+  [TILE.CLINIC]: (resources) => Number(resources?.herbs ?? 0) <= 0,
+});
+
+function isHotWarehouseKey(state, key) {
+  const hot = state.metrics?.warehouseDensity?.hotWarehouses;
+  if (!Array.isArray(hot) || hot.length <= 0) return false;
+  return hot.includes(key);
+}
+
+function anyHotWarehouseAdjacent(state, ix, iz) {
+  // Manhattan-4 adjacency. We intentionally don't walk the full density radius
+  // here — the metrics layer already did the radial scan and bucketed hot
+  // warehouses for us; we just need to know if this producer sits next to one.
+  const width = Number(state.grid?.width ?? 0);
+  const height = Number(state.grid?.height ?? 0);
+  const tiles = state.grid?.tiles;
+  if (!tiles || width <= 0 || height <= 0) return false;
+  const DELTAS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dz] of DELTAS) {
+    const nx = ix + dx;
+    const nz = iz + dz;
+    if (nx < 0 || nx >= width || nz < 0 || nz >= height) continue;
+    if (tiles[nx + nz * width] !== TILE.WAREHOUSE) continue;
+    if (isHotWarehouseKey(state, tileKey(nx, nz))) return true;
+  }
+  return false;
+}
+
+function warehouseStarvationScore(state, key) {
+  const density = state.metrics?.warehouseDensity;
+  const score = Number(density?.byKey?.[key] ?? 0);
+  const threshold = Number(
+    density?.threshold ?? BALANCE.warehouseDensityRiskThreshold ?? 400,
+  );
+  if (threshold <= 0) return 0;
+  return score / threshold;
+}
+
+export function buildHeatLens(state) {
+  const grid = state.grid;
+  const width = Number(grid?.width ?? 0);
+  const height = Number(grid?.height ?? 0);
+  const tiles = grid?.tiles;
+  if (!tiles || width <= 0 || height <= 0) return [];
+
+  const resources = state.resources ?? {};
+  const markers = [];
+  const seen = new Set();
+  // Spec § 6: blue warehouses are "< 20% capacity" analogue — we treat an empty
+  // density score (< 0.2 of the risk threshold) as the idle/starving state.
+  const STARVATION_FRACTION = 0.2;
+
+  // Budget: cap total emitted markers so the pool stays bounded on huge maps.
+  const MAX_HEAT_MARKERS = 48;
+
+  for (let iz = 0; iz < height && markers.length < MAX_HEAT_MARKERS; iz += 1) {
+    for (let ix = 0; ix < width && markers.length < MAX_HEAT_MARKERS; ix += 1) {
+      const tileType = tiles[ix + iz * width];
+      const key = tileKey(ix, iz);
+
+      // RED — raw producer beside a saturated warehouse.
+      if (HEAT_PRODUCER_TILES.includes(tileType)) {
+        if (anyHotWarehouseAdjacent(state, ix, iz)) {
+          pushUniqueMarker(markers, {
+            id: `heat-red:${key}`,
+            kind: "heat_surplus",
+            ix,
+            iz,
+            radius: 0.95,
+            weight: 0.9,
+            priority: 118,
+            label: "supply surplus",
+          }, seen);
+        }
+        continue;
+      }
+
+      // BLUE — starved processing building or idle warehouse.
+      const processorCheck = HEAT_PROCESSOR_INPUT_CHECK[tileType];
+      if (typeof processorCheck === "function") {
+        if (processorCheck(resources)) {
+          pushUniqueMarker(markers, {
+            id: `heat-blue:${key}`,
+            kind: "heat_starved",
+            ix,
+            iz,
+            radius: 0.95,
+            weight: 0.82,
+            priority: 116,
+            label: "input starved",
+          }, seen);
+        }
+        continue;
+      }
+
+      if (tileType === TILE.WAREHOUSE) {
+        // Only flag warehouses as blue if the density metrics exist AND report
+        // a near-zero score — otherwise we'd light up every new warehouse
+        // before the metrics pass has scored it.
+        const density = state.metrics?.warehouseDensity;
+        if (density && density.byKey && Object.prototype.hasOwnProperty.call(density.byKey, key)) {
+          const fraction = warehouseStarvationScore(state, key);
+          if (fraction < STARVATION_FRACTION) {
+            pushUniqueMarker(markers, {
+              id: `heat-blue:${key}`,
+              kind: "heat_starved",
+              ix,
+              iz,
+              radius: 1.05,
+              weight: 0.68,
+              priority: 110,
+              label: "warehouse idle",
+            }, seen);
+          }
+        }
+      }
+    }
+  }
+
+  return markers.sort((a, b) => {
+    const priorityDelta = Number(b.priority ?? 0) - Number(a.priority ?? 0);
+    if (priorityDelta !== 0) return priorityDelta;
+    const weightDelta = Number(b.weight ?? 0) - Number(a.weight ?? 0);
+    if (Math.abs(weightDelta) > 0.0001) return weightDelta;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
+// Heat-mode signature: cheap string the renderer can diff per frame to know
+// whether to rebuild the marker set. Covers grid topology + colony resources +
+// warehouse density metrics (the three inputs the precompute uses).
+export function heatLensSignature(state) {
+  const density = state.metrics?.warehouseDensity;
+  const hot = Array.isArray(density?.hotWarehouses)
+    ? density.hotWarehouses.join(",")
+    : "";
+  const peak = Number(density?.peak ?? 0).toFixed(1);
+  const resources = state.resources ?? {};
+  const r = [
+    resources.food,
+    resources.wood,
+    resources.stone,
+    resources.herbs,
+  ].map((v) => Math.max(0, Math.round(Number(v ?? 0))));
+  return [
+    state.grid?.version ?? 0,
+    state.grid?.tileStateVersion ?? 0,
+    r.join("|"),
+    hot,
+    peak,
+  ].join("||");
+}

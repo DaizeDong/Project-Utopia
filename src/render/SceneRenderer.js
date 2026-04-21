@@ -8,7 +8,7 @@ import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
-import { buildPressureLens } from "./PressureLens.js";
+import { buildPressureLens, buildHeatLens, heatLensSignature } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 
 const TILE_LABEL = Object.freeze(
@@ -215,6 +215,10 @@ const PRESSURE_MARKER_STYLE = Object.freeze({
   traffic: Object.freeze({ ring: 0xffcd6c, fill: 0xffefc5, ringOpacity: 0.52, fillOpacity: 0.13 }),
   ecology: Object.freeze({ ring: 0x8ed66f, fill: 0xd8efb7, ringOpacity: 0.48, fillOpacity: 0.12 }),
   event: Object.freeze({ ring: 0xff9d80, fill: 0xffdccb, ringOpacity: 0.5, fillOpacity: 0.12 }),
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens channels (spec § 6).
+  heat_surplus: Object.freeze({ ring: 0xff5a48, fill: 0xff9180, ringOpacity: 0.72, fillOpacity: 0.22 }),
+  heat_starved: Object.freeze({ ring: 0x4aa8ff, fill: 0x9fd0ff, ringOpacity: 0.7, fillOpacity: 0.22 }),
+  heat_idle: Object.freeze({ ring: 0x8a94a2, fill: 0xb6bdc6, ringOpacity: 0.34, fillOpacity: 0.08 }),
 });
 
 export class SceneRenderer {
@@ -318,6 +322,11 @@ export class SceneRenderer {
     this.lastEntityRenderSignature = "";
     this.pressureLensMarkers = [];
     this.lastPressureLensSignature = "";
+    // v0.8.0 Phase 7.C — supply-chain heat lens overlay toggle.
+    // Modes: "pressure" (default scenario/weather markers), "heat" (supply-chain
+    // red/blue/grey channels), "off" (hide all lens markers entirely).
+    this.lensMode = "pressure";
+    this.lastHeatLensSignature = "";
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -1126,10 +1135,25 @@ export class SceneRenderer {
   }
 
   #updatePressureLens() {
-    const signature = this.#pressureLensSignature();
-    if (signature !== this.lastPressureLensSignature) {
-      this.lastPressureLensSignature = signature;
-      this.pressureLensMarkers = buildPressureLens(this.state);
+    // v0.8.0 Phase 7.C — heat mode swaps the marker source + signature diff.
+    if (this.lensMode === "off") {
+      for (const entry of this.pressureMarkerPool) entry.group.visible = false;
+      this.pressureLensMarkers = [];
+      return;
+    }
+
+    if (this.lensMode === "heat") {
+      const signature = heatLensSignature(this.state);
+      if (signature !== this.lastHeatLensSignature) {
+        this.lastHeatLensSignature = signature;
+        this.pressureLensMarkers = buildHeatLens(this.state);
+      }
+    } else {
+      const signature = this.#pressureLensSignature();
+      if (signature !== this.lastPressureLensSignature) {
+        this.lastPressureLensSignature = signature;
+        this.pressureLensMarkers = buildPressureLens(this.state);
+      }
     }
 
     this.#ensurePressureMarkerPool(this.pressureLensMarkers.length);
@@ -1991,6 +2015,34 @@ export class SceneRenderer {
     this.camera.position.set(targetX, this.camera.position.y, targetZ);
     this.camera.updateProjectionMatrix();
     this.isCameraInteracting = false;
+  }
+
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens toggle (spec § 6).
+  // Cycle order: pressure → heat → off → pressure. Returns the new mode so
+  // callers (L-key handler, HUD button) can update their UI state.
+  toggleHeatLens() {
+    const next = this.lensMode === "pressure"
+      ? "heat"
+      : this.lensMode === "heat"
+        ? "off"
+        : "pressure";
+    this.setLensMode(next);
+    return this.lensMode;
+  }
+
+  setLensMode(mode) {
+    const valid = mode === "heat" || mode === "off" ? mode : "pressure";
+    if (this.lensMode === valid) return this.lensMode;
+    this.lensMode = valid;
+    // Invalidate cached signatures so the next update() rebuilds the marker set
+    // against the freshly-selected mode regardless of whether state has changed.
+    this.lastPressureLensSignature = "";
+    this.lastHeatLensSignature = "";
+    return this.lensMode;
+  }
+
+  getLensMode() {
+    return this.lensMode;
   }
 
   resetView() {
