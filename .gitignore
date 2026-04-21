@@ -16,3 +16,6 @@ desktop-dist/
 launcher-dist/
 output/asar-extract/
 output/benchmark-runs/
+output/bench-run-*.log
+docs/benchmarks/long-horizon-*
+docs/benchmarks/nightly/

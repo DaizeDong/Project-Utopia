@@ -6,6 +6,87 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 6 — Long-horizon benchmark harness + review iteration pass
+
+- **Harness scripts (new):**
+  `scripts/long-horizon-helpers.mjs` (bootHeadlessSim, runToDayBoundary,
+  sampleCheckpoint, computeSaturation, validateCheckpoints) and
+  `scripts/long-horizon-bench.mjs` (CLI with `--seed`/`--max-days`/
+  `--preset`/`--tick-rate`/`--stop-on-death`/`--stop-on-saturation`/
+  `--soft-validation`/`--out-dir`). Runs deterministic 30/90/180/365/
+  548/730-day checkpoints from a headless sim, emits JSON + Markdown
+  reports under `output/benchmark-runs/long-horizon/`, applies the spec
+  § 16.2 threshold gates + the 15% DevIndex monotonicity rule.
+- **Matrix runner (new):** `scripts/long-horizon-matrix.mjs` sweeps 10
+  seeds × 3 presets = 30 runs, writes per-run artefacts plus
+  `matrix-summary.json` with split `{passed, thresholdFailures, crashes,
+  writeErrors}` totals so operators can distinguish tuning misses from
+  code crashes.
+- **CI tests (new):** `test/long-horizon-smoke.test.js` (5 tests) and
+  `test/monotonicity.test.js` (3 tests). Exercise helpers directly (no
+  child_process), validate harness-shape (finite DevIndex/dims, correct
+  day tagging, post-terminal handling), and enforce monotonicity over
+  the surviving-checkpoint prefix.
+- **CRITICAL death-ticking fix (review iteration)** —
+  `runToDayBoundary` previously kept calling `tickFn()` on a terminated
+  sim when `earlyStopOnDeath: false` — smoke/monotonicity both pass
+  false, so an early collapse silently produced a "day N reached"
+  checkpoint from a frozen corpse. Now always stops on
+  `phase === "end"`; when `earlyStopOnDeath: false`, returns
+  `stopped: "post_terminal"` with `checkpoint.postTerminal = true`.
+- **CRITICAL partial-report on crash (review iteration)** —
+  `runBench` now catches boot/tick exceptions internally, preserves
+  partial checkpoints, writes artefacts with `crashed: true` +
+  `simulation_crash` violation, dumps fallback JSON to stderr on
+  write errors.
+- **CRITICAL guard + outcome classification (review iteration)** —
+  `classifyOutcome` no longer has a dead `max_days_reached`
+  fallthrough that masked stalled runs; emits `"stalled"`/
+  `"post_terminal"`/`"crash"`/`"unknown"` for the respective paths.
+- **CRITICAL non-finite checkpoint surface (review iteration)** —
+  `validateCheckpoints` runs a data-integrity pass FIRST, rejecting
+  non-finite `devIndex`/`saturation`/dims via
+  `non_finite_in_checkpoint`. `round2` returns `NaN` on non-finite
+  input; `computeSaturation` returns `NaN` when `devIndexDims` is
+  absent. `warnOnce` logs upstream shape drift to stderr.
+- **CRITICAL plateau-exemption hoist (review iteration)** —
+  Day 548/730 "DevIndex OR plateau" exemption waives the entire
+  threshold row, not just devIndex.
+- **HIGH parseArgs whitelist + strict parseBool (review iteration)** —
+  Unknown flags (`--max-dayz`) now throw. `parseBool` throws on
+  malformed input.
+- **HIGH matrix pass/crash split (review iteration)** —
+  Matrix summary adds `totals: {passed, thresholdFailures, crashes,
+  writeErrors}`.
+- **HIGH soft-validation hardening (review iteration)** —
+  `HARD_VIOLATION_KINDS` includes `non_finite_in_checkpoint`,
+  `post_terminal_checkpoint`, `loss_before_day_180`,
+  `simulation_crash`, `monotonicity_violation` — soft-validation can
+  never mask these.
+- **HIGH fs error handling (review iteration)** —
+  `runBench` wraps writes in try/catch, logs path + errno, dumps
+  fallback JSON to stderr; exit code 1 on write error.
+- **MEDIUM output dir convention (review iteration)** —
+  Default output moved from `docs/benchmarks/` to
+  `output/benchmark-runs/long-horizon/` (already gitignored).
+  `.gitignore` belt-and-braces blocks accidental drift.
+- **MEDIUM stub markers + docs (review iteration)** —
+  `sampleCheckpoint.nodes` includes `_stub: true`;
+  `docs/benchmarks/README.md` documents all pre-Phase-7 deferrals
+  (node telemetry, raidsRepelled, saturationIndicator proxy, Day-90
+  food reserves, smoke soft floors) and cross-references the other
+  harness families (soak-sim, ablation-benchmark, unified eval).
+- **MEDIUM monotonic raidsRepelled (review iteration)** —
+  `countRaidsRepelled` prefers `state.metrics.raidsRepelled` monotonic
+  counter (to be wired by Phase 7) over the ring-buffer log scan.
+- **Tests:** 858 pass / 0 fail (73 suites).
+- **Phase 7 deferrals:** node-layer telemetry wiring, monotonic
+  `raidsRepelled` instrumentation, real
+  `usedTiles/revealedUsableTiles` saturation field, Day-90 food
+  reserves threshold, smoke soft-floor promotion, sim pre-tuning
+  nondeterminism (different runs of the same seed produce different
+  lifespans — Phase 7 tuning stabilises this).
+
 ### Phase 5 — Review iteration pass (AI wiring + silent-failure fixes)
 
 - **C1 minsUntilExhaustion inversion** —
