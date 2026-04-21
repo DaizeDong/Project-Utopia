@@ -19,8 +19,8 @@ test("RoleAssignmentSystem biases workers toward farms when stockpile food is th
   const roles = new RoleAssignmentSystem();
 
   progression.update(0.2, state);
-  state.gameplay.objectives[0].completed = true;
-  state.gameplay.objectiveIndex = 1;
+  // v0.8.0 Phase 4 — Survival Mode. Objectives are retired; the role
+  // assignment bias is now driven purely by resource deficit + prosperity.
   state.resources.food = 12;
   state.resources.wood = 180;
   state.gameplay.prosperity = 60;

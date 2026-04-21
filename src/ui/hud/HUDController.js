@@ -166,10 +166,17 @@ export class HUDController {
     if (this.prosperityVal) this.prosperityVal.textContent = state.gameplay.prosperity.toFixed(1);
     if (this.threatVal) this.threatVal.textContent = state.gameplay.threat.toFixed(1);
     if (this.objectiveVal) {
-      const currentObjective = state.gameplay.objectives[state.gameplay.objectiveIndex];
-      this.objectiveVal.textContent = currentObjective
-        ? `${currentObjective.title} (${currentObjective.progress.toFixed(0)}%) | ${digest.headline}`
-        : "All objectives completed";
+      // v0.8.0 Phase 4 — Survival Mode: display the running survival score and
+      // elapsed time instead of objective progress. Keep the legacy headline
+      // digest as secondary context. The legacy objectives array is no longer
+      // populated by buildObjectivesForScenario; fall back to survival status.
+      const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      const score = Math.floor(Number(state.metrics?.survivalScore ?? 0));
+      this.objectiveVal.textContent = `Survived ${formatted} · Score ${score} | ${digest.headline}`;
     }
     const proxyModel = state.metrics.proxyModel || "-";
     this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode} (${state.metrics.proxyHealth ?? "unknown"}, ${proxyModel})`;
@@ -242,8 +249,19 @@ export class HUDController {
     if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
 
     if (this.statusObjective) {
-      const obj = state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0];
-      this.statusObjective.textContent = obj ? `${obj.title} (${obj.progress}%)` : "";
+      // v0.8.0 Phase 4 — Survival Mode badge. Shows "Survived HH:MM:SS  Score N".
+      // TODO(Agent 4.C): once DevIndex is wired into state.gameplay.devIndex,
+      // append " · Dev <score>/100" here so the endless-mode badge surfaces the
+      // live colony-health index alongside survival time.
+      const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const hh = String(h).padStart(2, "0");
+      const mm = String(m).padStart(2, "0");
+      const ss = String(s).padStart(2, "0");
+      const score = Math.floor(Number(state.metrics?.survivalScore ?? 0));
+      this.statusObjective.textContent = `Survived ${hh}:${mm}:${ss}  Score ${score}`;
     }
     if (this.statusAction) {
       if (state.controls.actionMessage) {

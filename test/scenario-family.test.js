@@ -16,7 +16,10 @@ test("fortified basin uses gate chokepoint scenario metadata", () => {
   assert.equal(runtime.connectedRoutes, 0);
   assert.equal(runtime.readyDepots, 0);
   assert.ok(runtime.counts.walls >= 6);
-  assert.match(state.gameplay.objectives[0]?.description ?? "", /north timber gate/i);
+  // v0.8.0 Phase 4 — Survival Mode. Objectives are retired; scenario
+  // metadata still drives route/depot setup and family identity.
+  assert.equal(Array.isArray(state.gameplay.objectives), true);
+  assert.equal(state.gameplay.objectives.length, 0);
 });
 
 test("archipelago isles uses island relay scenario metadata", () => {
@@ -28,7 +31,9 @@ test("archipelago isles uses island relay scenario metadata", () => {
   assert.equal(runtime.depots.length, 1);
   assert.equal(runtime.connectedRoutes, 0);
   assert.equal(runtime.readyDepots, 0);
-  assert.match(state.gameplay.objectives[0]?.description ?? "", /causeways/i);
+  // v0.8.0 Phase 4 — Survival Mode. Objectives are retired.
+  assert.equal(Array.isArray(state.gameplay.objectives), true);
+  assert.equal(state.gameplay.objectives.length, 0);
 });
 
 test("scenario families expose event and weather focus tiles", () => {

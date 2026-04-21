@@ -80,7 +80,8 @@ test("All-workers-gone loss triggers immediately with no grace period", () => {
   });
   assert.notEqual(result, null, "Expected immediate loss when all workers are gone");
   assert.equal(result.outcome, "loss");
-  assert.match(result.reason, /workers/i);
+  // v0.8.0 Phase 4 — Survival Mode also phrases this as "Colony wiped".
+  assert.match(result.reason, /workers|wiped|colonists/i);
 });
 
 // --- Pressure multiplier tests (Task 3) ---

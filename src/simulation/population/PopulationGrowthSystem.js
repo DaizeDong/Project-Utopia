@@ -48,6 +48,13 @@ export class PopulationGrowthSystem {
     state.agents.push(newWorker);
     state.resources.food -= FOOD_COST_PER_COLONIST;
 
+    // v0.8.0 Phase 4 — Survival Mode. Flag the spawn as a birth event so
+    // ProgressionSystem.updateSurvivalScore can grant the birth bonus exactly
+    // once. Storing the sim-time of the latest birth lets the scoring path
+    // detect new events by comparing against its cached cursor.
+    state.metrics ??= {};
+    state.metrics.lastBirthGameSec = Number(state.metrics.timeSec ?? 0);
+
     emitEvent(state, EVENT_TYPES.VISITOR_ARRIVED, {
       entityId: newWorker.id,
       entityName: newWorker.displayName ?? newWorker.id,

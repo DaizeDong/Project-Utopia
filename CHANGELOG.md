@@ -6,6 +6,79 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 4 — Survival mode (Agent 4.A)
+
+- **Win outcome retired** — `evaluateRunOutcomeState` (`src/app/runOutcome.js`)
+  no longer emits `"win"`. The only terminal outcome in survival mode is
+  `"loss"` (colony wiped or collapse spiral); an ongoing run returns `null`
+  which callers map to `session.outcome === "none"`. Colony-wipe
+  (`state.agents.length === 0` or all agents dead) triggers an immediate
+  `"loss"` with reason `"Colony wiped — no surviving colonists."`.
+- **Objective deck removed** — `buildObjectivesForScenario` in
+  `src/world/scenarios/ScenarioFactory.js` now returns `[]`. The
+  3-objective deck (logistics → stockpile → stability) has been retired;
+  `state.gameplay.objectives` still exists as an empty array so legacy
+  callers (HUD overlay, benchmark telemetry, prompt payload) keep the
+  same shape.
+- **ProgressionSystem survival score** — New export
+  `updateSurvivalScore(state, dt)` in `src/simulation/meta/ProgressionSystem.js`
+  accrues `state.metrics.survivalScore`:
+  `+BALANCE.survivalScorePerSecond` (default `1`) per in-game second,
+  `+BALANCE.survivalScorePerBirth` (default `5`) when
+  `state.metrics.lastBirthGameSec` advances, and
+  `-BALANCE.survivalScorePenaltyPerDeath` (default `10`) per new death
+  observed on `state.metrics.deathsTotal`. Cached cursors
+  (`survivalLastBirthSeenSec`, `survivalLastDeathsSeen`) ensure every
+  birth/death is counted exactly once. Called from `ProgressionSystem.update`
+  before the legacy `updateObjectiveProgress` path (which now no-ops when
+  `objectives` is empty, preserving compatibility with any state that
+  manually populates the array).
+- **Birth flag** — `src/simulation/population/PopulationGrowthSystem.js`
+  writes `state.metrics.lastBirthGameSec = state.metrics.timeSec` right
+  after each colonist spawn. ProgressionSystem detects the delta to grant
+  the birth bonus.
+- **Metrics init** — `createInitialGameState` (`src/entities/EntityFactory.js`)
+  initialises `survivalScore: 0`, `lastBirthGameSec: -1`,
+  `survivalLastBirthSeenSec: -1`, `survivalLastDeathsSeen: 0` so fresh
+  runs start from a clean baseline.
+- **HUD status line** — `GameStateOverlay` (`src/ui/hud/GameStateOverlay.js`)
+  replaces the 3-objective card deck with a single survival status card
+  showing `Survived: HH:MM:SS · Score: N pts` and emits a `Survived / Score`
+  summary line in the end-run stats block. `HUDController` status row shows
+  `Survived HH:MM:SS  Score N` (label updated in `index.html` from
+  "Objective" to "Survival"). The end-screen title is fixed at
+  `"Colony Lost"`; the `"Victory!"` branch is gone.
+- **Downstream outcome plumbing** — `src/app/GameApp.js`,
+  `src/app/snapshotService.js`, and `src/app/types.js` now only accept
+  `"loss"` (any other value collapses to `"none"`).
+  `src/render/AtmosphereProfile.js` drops the win-atmosphere branch
+  while keeping the loss darkening. `src/benchmark/run.js` redefines
+  `survived` as `phase !== "end" || outcome !== "loss"`.
+- **Balance block** — New `// --- Living World v0.8.0 — Phase 4 (Survival Mode)`
+  section in `src/config/balance.js`: `survivalScorePerSecond: 1`,
+  `survivalScorePerBirth: 5`, `survivalScorePenaltyPerDeath: 10`.
+- **Files changed:** `src/world/scenarios/ScenarioFactory.js`,
+  `src/app/runOutcome.js`, `src/app/GameApp.js`, `src/app/snapshotService.js`,
+  `src/app/types.js`, `src/simulation/meta/ProgressionSystem.js`,
+  `src/simulation/population/PopulationGrowthSystem.js`,
+  `src/entities/EntityFactory.js`, `src/render/AtmosphereProfile.js`,
+  `src/benchmark/run.js`, `src/ui/hud/GameStateOverlay.js`,
+  `src/ui/hud/HUDController.js`, `src/config/balance.js`, `index.html`.
+- **Tests updated** (objective-deck semantics → survival semantics):
+  `test/alpha-scenario.test.js`, `test/scenario-family.test.js`,
+  `test/run-outcome.test.js`, `test/progression-system.test.js`,
+  `test/role-assignment-system.test.js`, `test/balance-playability.test.js`.
+- **New tests (+7):** `test/survival-score.test.js` (4 cases: +1/sec,
+  +5/birth, -10/death, and "outcome stays 'none' after 3 in-game minutes
+  with a healthy colony"). `test/death-condition.test.js` (3 cases:
+  empty-agents wipes, all-dead wipes, a living colony never produces a
+  loss). All 789 tests pass (`node --test test/*.test.js`).
+- **Spec deviation** — The task spec uses `"lose"`; the existing codebase
+  uses `"loss"` consistently across `runOutcome.js`, `GameApp.js`,
+  `snapshotService.js`, `types.js`, telemetry, and atmosphere code.
+  Agent 4.A kept `"loss"` to avoid a renaming sweep that would touch
+  unrelated paths; the public contract value is `"loss"`.
+
 ### Phase 4 — DevIndex system (Agent 4.C)
 
 - **DevIndexSystem** — New system in `src/simulation/meta/DevIndexSystem.js`

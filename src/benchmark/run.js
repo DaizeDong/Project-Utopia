@@ -132,7 +132,8 @@ async function runScenarioStressTest(args) {
         bin,
         difficulty: round(difficulty, 3),
         T_composite: round(taskScore.T_composite, 4),
-        survived: harness.state.session.phase !== "end" || harness.state.session.outcome === "win",
+        // v0.8.0 Phase 4 — "win" outcome retired; survival = run didn't reach a loss ending.
+        survived: harness.state.session.phase !== "end" || harness.state.session.outcome !== "loss",
         workers: harness.aliveWorkers.length,
       });
 

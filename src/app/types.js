@@ -284,7 +284,7 @@
  *
  * @typedef {{
  *  phase: "menu"|"active"|"end",
- *  outcome: "none"|"win"|"loss",
+ *  outcome: "none"|"loss",
  *  reason: string,
  *  endedAtSec: number
  * }} SessionState
