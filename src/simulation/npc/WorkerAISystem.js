@@ -1019,14 +1019,38 @@ export class WorkerAISystem {
       const lastPlanSec = Number(worker.blackboard.lastPlanSec ?? -Infinity);
       const planCooldownReady = nowSec - lastPlanSec >= 0.5;
 
+      // v0.8.0 Phase 7.B — deliverWithoutCarry guard. `handleDeliver` records
+      // the `deliverWithoutCarryCount` metric whenever the deliver action
+      // executes while either (a) carry is empty, or (b) no warehouse exists
+      // to deliver to. Both conditions mean "the worker is stuck in deliver
+      // but cannot make progress". The plan-cooldown (0.5s), FSM hold (~0.8s),
+      // and commitment-cycle latch can all keep the FSM pinned to "deliver"
+      // after the unload completes OR after the only warehouse is destroyed,
+      // producing silent no-op ticks. Force an immediate, high-priority
+      // re-plan with no hold so the worker exits deliver the tick the
+      // stuck-condition is detected.
+      const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
+      const deliverStuckReplan = currentState === "deliver"
+        && (carryNow <= 0 || !hasWarehouse);
+
       let plan;
-      if (!planCooldownReady && !survivalInterrupt && currentState) {
+      if (!planCooldownReady && !survivalInterrupt && !deliverStuckReplan && currentState) {
         plan = { desiredState: currentState, reason: "cooldown:hold" };
       } else {
         plan = planEntityDesiredState(worker, state);
         worker.blackboard.lastPlanSec = nowSec;
 
-        if (inCommitment) {
+        if (deliverStuckReplan) {
+          // Break the commitment cycle so the planner's non-deliver choice
+          // (seek_task / idle / seek_food / etc.) is allowed through.
+          worker.blackboard.commitmentCycle = null;
+          if (plan.desiredState === "deliver") {
+            // Feasibility already blocks deliver when the preconditions fail,
+            // but if any upstream override still asks for it, reroute to a
+            // safe fallback state.
+            plan = { desiredState: "seek_task", reason: "deliver-stuck:seek_task" };
+          }
+        } else if (inCommitment) {
           // Commitment allows forward progression within work cycle (harvest→deliver→seek_task)
           // but blocks exits to non-work states (idle, wander)
           if (!TASK_LOCK_STATES.has(plan.desiredState)) {
@@ -1038,13 +1062,37 @@ export class WorkerAISystem {
       }
 
       const desiredState = plan.desiredState;
-      const stateNode = transitionEntityState(
+      let stateNode = transitionEntityState(
         worker,
         "workers",
         desiredState,
         nowSec,
         plan.reason,
+        // Force bypasses the FSM hold window so a stuck-deliver worker cannot
+        // stay pinned between the tick the stuck condition arises (unload
+        // finishes OR warehouse lost) and the hold expiry ~0.8s later.
+        deliverStuckReplan ? { force: true } : undefined,
       );
+
+      // v0.8.0 Phase 7.B — defensive post-transition guard. Even after the
+      // plan-time guard above and the feasibility pass, multi-step state
+      // graph shortest-paths + hold windows can still land the FSM in
+      // "deliver" the same tick the stuck condition appears (e.g. warehouse
+      // just collapsed, or the force-transition from a non-deliver source
+      // routed through deliver). If `stateNode` is deliver but the action
+      // has no chance of progress (empty carry or no warehouse), immediately
+      // redirect to seek_task so `handleDeliver` never fires a no-op.
+      if (stateNode === "deliver" && (carryNow <= 0 || !hasWarehouse)) {
+        stateNode = transitionEntityState(
+          worker,
+          "workers",
+          "seek_task",
+          nowSec,
+          "deliver-stuck:post-guard",
+          { force: true },
+        );
+        worker.blackboard.commitmentCycle = null;
+      }
 
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
