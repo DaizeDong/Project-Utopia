@@ -36,12 +36,14 @@ export const INITIAL_POPULATION = Object.freeze({
   predators: 1,
 });
 
+// v0.8.0 Phase 7.A § 14.2: +0.05 lumberProductionMultiplier across all
+// weather modes (wood undersupply was constraining long-horizon survival).
 export const WEATHER_MODIFIERS = Object.freeze({
-  [WEATHER.CLEAR]: { moveCostMultiplier: 1.0, farmProductionMultiplier: 1.0, lumberProductionMultiplier: 1.0 },
-  [WEATHER.RAIN]: { moveCostMultiplier: 1.15, farmProductionMultiplier: 1.0, lumberProductionMultiplier: 0.95 },
-  [WEATHER.STORM]: { moveCostMultiplier: 1.3, farmProductionMultiplier: 0.8, lumberProductionMultiplier: 0.9 },
-  [WEATHER.DROUGHT]: { moveCostMultiplier: 1.0, farmProductionMultiplier: 0.55, lumberProductionMultiplier: 1.0 },
-  [WEATHER.WINTER]: { moveCostMultiplier: 1.25, farmProductionMultiplier: 0.65, lumberProductionMultiplier: 0.85 },
+  [WEATHER.CLEAR]: { moveCostMultiplier: 1.0, farmProductionMultiplier: 1.0, lumberProductionMultiplier: 1.05 },
+  [WEATHER.RAIN]: { moveCostMultiplier: 1.15, farmProductionMultiplier: 1.0, lumberProductionMultiplier: 1.0 },
+  [WEATHER.STORM]: { moveCostMultiplier: 1.3, farmProductionMultiplier: 0.8, lumberProductionMultiplier: 0.95 },
+  [WEATHER.DROUGHT]: { moveCostMultiplier: 1.0, farmProductionMultiplier: 0.55, lumberProductionMultiplier: 1.05 },
+  [WEATHER.WINTER]: { moveCostMultiplier: 1.25, farmProductionMultiplier: 0.65, lumberProductionMultiplier: 0.9 },
 });
 
 export const BALANCE = Object.freeze({
@@ -116,22 +118,31 @@ export const BALANCE = Object.freeze({
     },
   },
   managerIntervalSec: 1.2,
-  foodEmergencyThreshold: 14,
+  // Phase 7.A § 14.2: 14 → 18. Aligns emergency trigger with 48h death grace,
+  // reducing AI panic flips when food momentarily dips.
+  foodEmergencyThreshold: 18,
   productionCooldownSec: 0.9,
   workerDeliverThreshold: 1.8,
   workerDeliverLowThreshold: 1.0,
+  // Phase 7.A § 14.2 proposed 1.5 → 2.2 but is blocked by
+  // test/worker-intent-stability.test.js line 49 asserting literal 1.5.
+  // Test updates are outside Phase 7.A scope; leaving at 1.5 and documenting
+  // the deferral in docs/benchmarks/tuning-log.md.
   workerIntentCooldownSec: 1.5,
   workerCarryPressureSec: 4.5,
   workerFarDepotDistance: 14,
   workerUnloadRatePerSecond: 4.2,
   warehouseQueuePenalty: 0.32,
-  warehouseSoftCapacity: 3,
+  // Phase 7.A § 14.2: 3 → 4. Small colonies no longer queue after M2 intake cap.
+  warehouseSoftCapacity: 4,
   worksiteCoverageSoftRadius: 10,
   worksiteCoverageHardRadius: 16,
   objectiveRoleBiasWeight: 0.58,
   objectiveFarmRatioMin: 0.18,
   objectiveFarmRatioMax: 0.82,
-  objectiveHoldDecayPerSecond: 0.6,
+  // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
+  // its chosen objective longer, so long-range plans stop thrashing.
+  objectiveHoldDecayPerSecond: 0.4,
   recoveryCooldownSec: 30,
   recoveryWindowSec: 16,
   recoveryChargeCap: 3,
@@ -185,7 +196,9 @@ export const BALANCE = Object.freeze({
   banditRaidChokeBonus: 0.34,
   banditRaidWallMitigationPerWall: 0.06,
   banditRaidHazardPressureScale: 0.52,
-  banditRaidLossPerPressure: 0.36,
+  // Phase 7.A § 14.2: 0.36 → 0.28. The raid escalator already scales
+  // intensity by DevIndex tier; the per-pressure loss was double-taxing.
+  banditRaidLossPerPressure: 0.28,
   banditRaidSecondaryImpactPressure: 1.2,
   tradeCaravanDepotReadyBonus: 0.42,
   tradeCaravanConnectedRouteBonus: 0.24,
@@ -199,7 +212,9 @@ export const BALANCE = Object.freeze({
   // Phase 1: Resource chain production rates
   quarryProductionPerSecond: 0.45,
   herbGardenProductionPerSecond: 0.28,
-  kitchenCycleSec: 3,
+  // Phase 7.A § 14.2: 3.0 → 2.8. Shorter kitchen cycle eases the
+  // wood-equivalent bottleneck on meal throughput.
+  kitchenCycleSec: 2.8,
   kitchenFoodCost: 2,
   kitchenMealOutput: 1,
   smithyCycleSec: 8,

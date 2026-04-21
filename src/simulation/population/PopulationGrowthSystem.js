@@ -4,8 +4,12 @@ import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const CHECK_INTERVAL_SEC = 10;
-const FOOD_COST_PER_COLONIST = 5;
-const MIN_FOOD_FOR_GROWTH = 20;
+// v0.8.0 Phase 7.A § 14.2: 5 → 6. Survival mode rewards lean populations;
+// higher per-birth food cost throttles growth when the pantry is tight.
+const FOOD_COST_PER_COLONIST = 6;
+// v0.8.0 Phase 7.A § 14.2: 20 → 25. Pairs with the 48h birth window so the
+// colony doesn't spawn a new mouth while already rationing.
+const MIN_FOOD_FOR_GROWTH = 25;
 
 export class PopulationGrowthSystem {
   constructor() {
