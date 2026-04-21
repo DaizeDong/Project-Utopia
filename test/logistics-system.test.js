@@ -37,7 +37,9 @@ describe("LogisticsSystem", () => {
     sys.update(0.1, state);
     const eff = sys.getEfficiency(3, 0);
     assert.equal(eff, BALANCE.roadLogisticsBonus ?? 1.15);
-    assert.equal(sys.stats.connected, 1);
+    // v0.8.0 M4: warehouses now participate in the efficiency scan so the
+    // deposit code can detect isolated depots; W + F are both "connected".
+    assert.equal(sys.stats.connected, 2);
   });
 
   it("gives neutral efficiency to building adjacent to disconnected road", () => {

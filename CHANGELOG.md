@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.8.0] - Unreleased — Living World Balance Overhaul (in progress)
+
+> Phase-by-phase implementation of the v3 spec
+> (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
+> Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
+
+### Phase 1 — Infrastructure mechanics (M3 + M4)
+
+- **M3 carry fatigue** — Workers tire faster while loaded. `worker.rest` decay
+  now scales by `BALANCE.carryFatigueLoadedMultiplier` (1.5) whenever
+  `carry.total > 0`, stacking with the existing night multiplier.
+- **M3 in-transit spoilage** — Per-tick loss of `carry.food`
+  (`foodSpoilageRatePerSec = 0.005`) and `carry.herbs`
+  (`herbSpoilageRatePerSec = 0.01`) while off ROAD/BRIDGE. First
+  `spoilageGracePeriodTicks` (500) off-road ticks after each full unload halve
+  the rate. `worker.blackboard.carryTicks` tracks the current carry leg and
+  resets on full deposit.
+- **M4 road step-compounding** — Consecutive ROAD/BRIDGE steps accumulate into
+  `worker.blackboard.roadStep` (capped at `roadStackStepCap = 20`). Effective
+  speed bonus = `1 + (roadSpeedMultiplier - 1) × (1 - wear) × (1 + step × roadStackPerStep)`.
+  Max 1.6× at 20 consecutive road steps. Resets to 0 when the worker leaves
+  the road network.
+- **M4 isolation deposit penalty** — Warehouses with no connected road path
+  (logistics efficiency ≤ `ISOLATION_PENALTY`) slow unload rate by
+  `isolationDepositPenalty` (0.8×). Warehouses now participate in the
+  `LogisticsSystem` efficiency scan so isolated depots can be detected.
+- **ISOLATION_PENALTY exported** from `LogisticsSystem.js` so `WorkerAISystem`
+  references the constant instead of duplicating the literal 0.85.
+- **Files changed:** `src/config/balance.js` (+16 lines, 7 new params),
+  `src/simulation/economy/LogisticsSystem.js`, `src/simulation/navigation/Navigation.js`,
+  `src/simulation/npc/WorkerAISystem.js`, `test/logistics-system.test.js`.
+- **New tests (+13):** `test/road-compounding.test.js`, `test/carry-fatigue.test.js`,
+  `test/carry-spoilage.test.js`, `test/m3-m4-integration.test.js`.
+
 ## [0.7.1] - 2026-04-20 — HW05 Beta Build & Cleanup
 
 ### HW05 Submission

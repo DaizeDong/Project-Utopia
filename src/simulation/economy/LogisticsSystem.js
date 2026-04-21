@@ -18,9 +18,16 @@ import { RoadNetwork } from "../navigation/RoadNetwork.js";
 const PRODUCTION_TILES = [
   TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
   TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC,
+  // M4: warehouses participate so deposit code can detect isolated depots.
+  TILE.WAREHOUSE,
 ];
 
-const ISOLATION_PENALTY = 0.85;
+/**
+ * Efficiency value assigned to a building whose adjacent tile has no road
+ * neighbour at all. Exported so deposit-path code (WorkerAISystem) can detect
+ * isolated warehouses without duplicating the literal 0.85.
+ */
+export const ISOLATION_PENALTY = 0.85;
 
 export class LogisticsSystem {
   constructor() {
@@ -73,6 +80,11 @@ export class LogisticsSystem {
     state.metrics.logistics ??= {};
     state.metrics.logistics.buildingEfficiency = Object.fromEntries(this._efficiencyMap);
     state.metrics.logistics.logisticsStats = { ...this._stats };
+    // M4: surface the isolation deposit penalty so deposit code (WorkerAISystem)
+    // can apply it without re-reading BALANCE directly.
+    state.metrics.logistics.isolationDepositPenalty = Number(
+      BALANCE.isolationDepositPenalty ?? 1,
+    );
   }
 
   /**

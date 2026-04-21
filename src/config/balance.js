@@ -229,6 +229,23 @@ export const BALANCE = Object.freeze({
   // Action duration constants
   workerHarvestDurationSec: 2.5,
   workerProcessDurationSec: 3.0,
+  // --- Living World v0.8.0 — Phase 1 (M3 + M4), values per spec § 14.1 ---
+  // M3 carry fatigue: rest decay multiplier while carrying anything (>0 carry.total).
+  carryFatigueLoadedMultiplier: 1.5,
+  // M3 in-transit spoilage: per-second decay of carried perishables while off-road.
+  // Grace period halves the rate for the first spoilageGracePeriodTicks off-road ticks
+  // since the worker last fully unloaded (see WorkerAISystem.handleDeliver).
+  foodSpoilageRatePerSec: 0.005,
+  herbSpoilageRatePerSec: 0.01,
+  spoilageGracePeriodTicks: 500,
+  // M4 road compounding: per-step speed stack accrued while consecutive on-road steps land.
+  // Effective bonus = 1 + (roadSpeedMultiplier - 1) × (1 - wear) × (1 + min(step, cap) × perStep).
+  // roadStep resets when the worker steps off a ROAD/BRIDGE tile. Max 1.6× at 20 steps.
+  roadStackPerStep: 0.03,
+  roadStackStepCap: 20,
+  // M4 isolation deposit penalty: unload rate multiplier when delivering to a warehouse
+  // whose logistics efficiency matches ISOLATION_PENALTY (no connected road). Lower = slower.
+  isolationDepositPenalty: 0.8,
 });
 
 // --- Terrain depth constants ---
