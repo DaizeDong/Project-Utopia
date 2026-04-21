@@ -47,7 +47,7 @@
 | 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | 6eb7325 | 2026-04-21 |
 | 4 | Survival mode + DevIndex + Plan C raids | completed | 7dd2ffa+af6e6cb | 2026-04-21 |
-| 5 | AI adaptation 18-patch sweep | completed | (pending commit) | 2026-04-21 |
+| 5 | AI adaptation 18-patch sweep | completed | 8d6850b | 2026-04-21 |
 | 6 | Long-horizon benchmark harness | pending | — | — |
 | 7 | Param tuning + regression fixes + release | pending | — | — |
 
