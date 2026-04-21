@@ -340,9 +340,11 @@ export class StrategicDirector {
       };
     }
 
-    // Near final objective
-    const totalObjectives = Array.isArray(objectives) ? objectives.length : 1;
-    const nearFinal = objectiveIndex >= totalObjectives - 1;
+    // Near final objective. Gated on totalObjectives > 0 — v0.8.0 retired the
+    // objective system (ScenarioFactory returns []); without this guard the
+    // branch would fire trivially (objectiveIndex 0 >= -1) every eval.
+    const totalObjectives = Array.isArray(objectives) ? objectives.length : 0;
+    const nearFinal = totalObjectives > 0 && objectiveIndex >= totalObjectives - 1;
     if (nearFinal && prosperity >= 70 && threat <= 20) {
       return {
         ...DEFAULT_STRATEGY,

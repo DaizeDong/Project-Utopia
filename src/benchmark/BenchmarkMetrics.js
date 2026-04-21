@@ -78,7 +78,14 @@ export function computeTaskScore(samples, config) {
   } = config;
 
   const T_surv = clamp01(safeDivide(survivalSec, maxSurvivalSec, 0));
-  const T_obj = clamp01(safeDivide(completedObjectives, totalObjectives, 0));
+  // v0.8.0 retired the objective system — ScenarioFactory returns no
+  // objectives. When totalObjectives is 0, T_obj is semantically undefined;
+  // scoring it as 0 drags the composite by 25% for no reason. Treat the
+  // objective-less case as "nothing to fail on" (T_obj=1) so composite
+  // reflects the remaining 5 dims faithfully.
+  const T_obj = totalObjectives > 0
+    ? clamp01(safeDivide(completedObjectives, totalObjectives, 0))
+    : 1;
 
   // T_res: resource stability via coefficient of variation
   const foodValues = samples.map((s) => s.food);

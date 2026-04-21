@@ -24,6 +24,7 @@ import { BUILD_COST, WEATHER_MODIFIERS, BALANCE } from "../../../config/balance.
 import { inBounds, getTile, listTilesByType, toIndex } from "../../../world/grid/Grid.js";
 import { canAfford } from "../../construction/BuildAdvisor.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
+import { MIN_FOOD_FOR_GROWTH } from "../../population/PopulationGrowthSystem.js";
 
 // ── v0.8.0 Phase 5 Patch constants ──────────────────────────────────────
 // Match SimulationClock: dt ≈ 1/30, so 30 ticks per simulated second.
@@ -1019,7 +1020,7 @@ export class ColonyPerceiver {
 
     // Growth blockers
     const growthBlockers = [];
-    if ((resources?.food ?? 0) < 20) growthBlockers.push("food < 20");
+    if ((resources?.food ?? 0) < MIN_FOOD_FOR_GROWTH) growthBlockers.push(`food < ${MIN_FOOD_FOR_GROWTH}`);
     if (workers.length >= popCap) growthBlockers.push("at pop cap");
 
     // Defense

@@ -309,7 +309,14 @@ test("ColonyPerceiver.observe identifies growth blockers", () => {
   const perceiver = new ColonyPerceiver();
   const obs = perceiver.observe(state);
 
-  assert.ok(obs.workforce.growthBlockers.includes("food < 20"), "should detect food shortage blocker");
+  // Phase 7.A raised MIN_FOOD_FOR_GROWTH from 20 → 25; the blocker message is
+  // now derived from the exported constant. Assert the prefix so future
+  // tuning does not desync the test.
+  const foodBlocker = obs.workforce.growthBlockers.find((b) => b.startsWith("food <"));
+  assert.ok(
+    foodBlocker,
+    `should detect food shortage blocker, got blockers=${JSON.stringify(obs.workforce.growthBlockers)}`,
+  );
 });
 
 test("ColonyPerceiver.observe has expansion frontiers", () => {

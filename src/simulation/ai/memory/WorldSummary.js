@@ -6,6 +6,7 @@ import {
   listGroupTransitions,
 } from "../../npc/state/StateGraph.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
+import { MIN_FOOD_FOR_GROWTH } from "../../population/PopulationGrowthSystem.js";
 
 const POLICY_GROUP_ORDER = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -57,7 +58,7 @@ function buildTransitionHints(groupId, world, groupStats) {
   const hints = [];
 
   if (groupId === GROUP_IDS.WORKERS) {
-    if (food < 20 || avgHunger < 0.34) hints.push("seek_food -> eat -> seek_task");
+    if (food < MIN_FOOD_FOR_GROWTH || avgHunger < 0.34) hints.push("seek_food -> eat -> seek_task");
     if ((groupStats.carrying ?? 0) > Math.max(4, groupStats.count * 0.5)) hints.push("deliver -> seek_task");
     if (dominant === "wander" || dominant === "idle") hints.push("wander -> seek_task -> harvest");
   } else if (groupId === GROUP_IDS.TRADERS) {
