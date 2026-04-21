@@ -6,9 +6,6 @@ import { BALANCE } from "../config/balance.js";
 // return one of { outcome: "loss", ... } | null. Callers map "in progress"
 // to session.outcome === "none".
 export function evaluateRunOutcomeState(state) {
-  const aliveAgents = Array.isArray(state.agents)
-    ? state.agents.filter((agent) => agent && agent.alive !== false).length
-    : 0;
   const workers = Number(
     state.metrics?.populationStats?.workers
       ?? state.agents?.filter((agent) => agent.type === "WORKER" && agent.alive !== false).length
@@ -16,7 +13,9 @@ export function evaluateRunOutcomeState(state) {
   );
 
   // Colony-wiped is the authoritative loss condition in survival mode.
-  if (aliveAgents <= 0) {
+  // v0.8.0 Phase 4 iteration M4: only WORKER agents count — animals and
+  // visitors surviving alone do not save the colony.
+  if (workers <= 0) {
     return {
       outcome: "loss",
       reason: "Colony wiped — no surviving colonists.",
@@ -34,9 +33,7 @@ export function evaluateRunOutcomeState(state) {
   const simTime = Number(state.metrics?.simTimeSec ?? 0);
 
   let reason = "";
-  if (workers <= 0) {
-    reason = "All workers are gone.";
-  } else if (
+  if (
     food <= 0
     && wood <= 0
     && carryingWorkers <= 0

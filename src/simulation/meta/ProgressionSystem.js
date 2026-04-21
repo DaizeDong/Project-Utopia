@@ -376,20 +376,32 @@ export function updateSurvivalScore(state, dt) {
   const ticks = Math.max(0, Number(dt) || 0);
   metrics.survivalScore += perSec * ticks;
 
-  // Birth detection: PopulationGrowthSystem updates metrics.lastBirthGameSec
-  // when a new colonist spawns. Track the last-observed value here so repeat
-  // reads don't double-count.
-  const lastBirthSec = Number(metrics.lastBirthGameSec ?? -1);
-  const prevObservedBirthSec = Number(metrics.survivalLastBirthSeenSec ?? -1);
-  if (Number.isFinite(lastBirthSec) && lastBirthSec > prevObservedBirthSec) {
-    metrics.survivalScore += perBirth;
-    metrics.survivalLastBirthSeenSec = lastBirthSec;
+  // Birth detection: PopulationGrowthSystem increments metrics.birthsTotal on
+  // each spawn. Diff against a cached cursor so every birth scores exactly
+  // once, even when multiple births land inside the same integer `timeSec`
+  // (silent-failure C2: the prior timestamp cursor dropped those).
+  //
+  // v0.8.0 Phase 4 iteration SR2: if a caller constructed `metrics` without
+  // `survivalLastBirthsSeen` but set `birthsTotal` to a non-zero baseline
+  // (tests that bypass createInitialGameState), seed the cursor to the
+  // current total so we don't retroactively score pre-existing births.
+  const birthsTotal = Number(metrics.birthsTotal ?? 0);
+  if (metrics.survivalLastBirthsSeen === undefined) {
+    metrics.survivalLastBirthsSeen = birthsTotal;
+  }
+  const prevBirthsSeen = Number(metrics.survivalLastBirthsSeen ?? 0);
+  if (Number.isFinite(birthsTotal) && birthsTotal > prevBirthsSeen) {
+    metrics.survivalScore += perBirth * (birthsTotal - prevBirthsSeen);
+    metrics.survivalLastBirthsSeen = birthsTotal;
   }
 
   // Death detection: MortalitySystem increments metrics.deathsTotal on every
   // death. Diff against a cached baseline to apply the penalty exactly once
-  // per death.
+  // per death. Same SR2 seeding rule as births above.
   const deathsTotal = Number(metrics.deathsTotal ?? 0);
+  if (metrics.survivalLastDeathsSeen === undefined) {
+    metrics.survivalLastDeathsSeen = deathsTotal;
+  }
   const prevDeathsSeen = Number(metrics.survivalLastDeathsSeen ?? 0);
   if (Number.isFinite(deathsTotal) && deathsTotal > prevDeathsSeen) {
     metrics.survivalScore -= perDeath * (deathsTotal - prevDeathsSeen);

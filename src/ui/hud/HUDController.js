@@ -249,10 +249,8 @@ export class HUDController {
     if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
 
     if (this.statusObjective) {
-      // v0.8.0 Phase 4 — Survival Mode badge. Shows "Survived HH:MM:SS  Score N".
-      // TODO(Agent 4.C): once DevIndex is wired into state.gameplay.devIndex,
-      // append " · Dev <score>/100" here so the endless-mode badge surfaces the
-      // live colony-health index alongside survival time.
+      // v0.8.0 Phase 4 — Survival Mode badge. Shows
+      // "Survived HH:MM:SS  Score N · Dev D/100" once DevIndex is live.
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
@@ -261,7 +259,10 @@ export class HUDController {
       const mm = String(m).padStart(2, "0");
       const ss = String(s).padStart(2, "0");
       const score = Math.floor(Number(state.metrics?.survivalScore ?? 0));
-      this.statusObjective.textContent = `Survived ${hh}:${mm}:${ss}  Score ${score}`;
+      const devTicks = Number(state.gameplay?.devIndexTicksComputed ?? 0);
+      const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
+      const devSuffix = devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
+      this.statusObjective.textContent = `Survived ${hh}:${mm}:${ss}  Score ${score}${devSuffix}`;
     }
     if (this.statusAction) {
       if (state.controls.actionMessage) {

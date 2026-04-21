@@ -50,9 +50,11 @@ test("ProgressionSystem grants birth bonus exactly once per birth event", () => 
   const state = createInitialGameState();
   state.metrics.survivalScore = 0;
   state.metrics.timeSec = 10;
+  state.metrics.birthsTotal = 0;
+  state.metrics.survivalLastBirthsSeen = 0;
 
-  // Simulate PopulationGrowthSystem setting lastBirthGameSec on spawn.
-  state.metrics.lastBirthGameSec = 10;
+  // Simulate PopulationGrowthSystem incrementing birthsTotal on spawn.
+  state.metrics.birthsTotal = 1;
   updateSurvivalScore(state, 0);
   const perBirth = Number(BALANCE.survivalScorePerBirth ?? 5);
   assert.ok(
@@ -67,8 +69,8 @@ test("ProgressionSystem grants birth bonus exactly once per birth event", () => 
     "score should not double-count an already-observed birth",
   );
 
-  // New birth at a later timestamp — second bonus applies.
-  state.metrics.lastBirthGameSec = 25;
+  // New birth — second bonus applies.
+  state.metrics.birthsTotal = 2;
   updateSurvivalScore(state, 0);
   assert.ok(
     Math.abs(state.metrics.survivalScore - perBirth * 2) < 1e-6,
