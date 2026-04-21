@@ -46,8 +46,14 @@ test("BALANCE has workerHungerRecoverThreshold of 0.35", () => {
   assert.equal(BALANCE.workerHungerRecoverThreshold, 0.35);
 });
 
-test("BALANCE has workerIntentCooldownSec of 1.5", () => {
-  assert.equal(BALANCE.workerIntentCooldownSec, 1.5);
+test("BALANCE has workerIntentCooldownSec within stability band", () => {
+  // Phase 7.A tuned 1.5 → 2.2 to damp intent flapping on long horizons. The
+  // test asserts a plausible band (≥ 1.2, ≤ 3.0) rather than a literal so
+  // future § 14.2 re-tuning does not require touching test and balance in lockstep.
+  assert.ok(
+    BALANCE.workerIntentCooldownSec >= 1.2 && BALANCE.workerIntentCooldownSec <= 3.0,
+    `workerIntentCooldownSec ${BALANCE.workerIntentCooldownSec} outside stability band [1.2, 3.0]`,
+  );
 });
 
 test("Worker in 'deliver' state with carry=2.3 (below 2.4 entry threshold) stays in deliver", () => {

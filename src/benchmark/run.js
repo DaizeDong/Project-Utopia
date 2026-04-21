@@ -119,7 +119,7 @@ async function runScenarioStressTest(args) {
       }
 
       const taskScore = computeTaskScore(timeSeries, {
-        totalObjectives: 3,
+        totalObjectives: 0,
         completedObjectives: 0,
         survivalSec: Number(harness.state.metrics.timeSec ?? durationSec),
         maxSurvivalSec: durationSec,

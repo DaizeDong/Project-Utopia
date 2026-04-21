@@ -326,7 +326,14 @@
  *    lastReason:string
  *  },
  *  objectiveHint?: string,
- *  objectiveLog: string[]
+ *  objectiveLog: string[],
+ *  devIndex: number,
+ *  devIndexSmoothed: number,
+ *  devIndexDims: {population:number, economy:number, infrastructure:number, production:number, defense:number, resilience:number},
+ *  devIndexHistory: Array<{tick:number, value:number, dims:Record<string,number>}>,
+ *  raidEscalation: {tier:number, intervalTicks:number, intensityMultiplier:number, devIndexSample:number},
+ *  lastRaidTick: number,
+ *  wildlifeRuntime?: Record<string, unknown>
  * }} GameplayState
  *
  * @typedef {{

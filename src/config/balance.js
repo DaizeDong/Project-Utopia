@@ -124,11 +124,9 @@ export const BALANCE = Object.freeze({
   productionCooldownSec: 0.9,
   workerDeliverThreshold: 1.8,
   workerDeliverLowThreshold: 1.0,
-  // Phase 7.A § 14.2 proposed 1.5 → 2.2 but is blocked by
-  // test/worker-intent-stability.test.js line 49 asserting literal 1.5.
-  // Test updates are outside Phase 7.A scope; leaving at 1.5 and documenting
-  // the deferral in docs/benchmarks/tuning-log.md.
-  workerIntentCooldownSec: 1.5,
+  // Phase 7.A § 14.2: 1.5 → 2.2. Damps worker intent flapping so food gathers
+  // and deliveries are less likely to be interrupted by shallow priority noise.
+  workerIntentCooldownSec: 2.2,
   workerCarryPressureSec: 4.5,
   workerFarDepotDistance: 14,
   workerUnloadRatePerSecond: 4.2,

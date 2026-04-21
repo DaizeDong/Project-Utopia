@@ -2,12 +2,12 @@
 
 ## Project Overview
 
-Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players manage workers, build infrastructure, and survive through 3 objectives. RimWorld-inspired resource chain economy.
+Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players manage workers, build infrastructure, and survive indefinitely in endless survival mode (v0.8.0+). RimWorld-inspired resource chain economy.
 
 ## Architecture
 
 - **ECS-like system architecture** — 15 systems in fixed update order defined in `SYSTEM_ORDER` (src/config/constants.js)
-- **Tile types** — Integer IDs 0-12 (GRASS through CLINIC), defined in `TILE` constant
+- **Tile types** — Integer IDs 0-13 (GRASS through BRIDGE), defined in `TILE` constant
 - **Worker AI pipeline** — Intent (chooseWorkerIntent) → State (StatePlanner/StateGraph) → Action (WorkerAISystem)
 - **AI fallback** — State-adaptive policy fallback when LLM is unavailable; PromptBuilder constructs LLM prompts
 - **Processing chain** — Raw resources (food/wood/stone/herbs) → Processing buildings → Refined goods (meals/tools/medicine)
@@ -49,7 +49,7 @@ Three.js colony simulation game with tile-based grid (96x72 Uint8Array). Players
 - **Road infrastructure** — Union-Find road network, speed bonus, logistics efficiency, algorithmic road planner, wear mechanics
 - **Phase 2-5 planned** — Defense, wildlife expansion, colonist depth (see `docs/superpowers/plans/2026-04-07-game-richness-expansion.md`)
 - **Tile types** — 14 types (GRASS through BRIDGE, IDs 0-13)
-- **686 tests passing** across 60+ test files
+- **865 tests passing** across 107 test files
 - **15 benchmark presets** across terrain/economy/pressure categories
 - **AI system** — Hierarchical (StrategicDirector → Tactical) with memory stream, fallback policies, evaluation feedback loop
 - **Map templates** — 6 templates: temperate_plains, rugged_highlands, archipelago_isles, coastal_ocean, fertile_riverlands, fortified_basin

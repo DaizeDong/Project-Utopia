@@ -9,7 +9,9 @@ const CHECK_INTERVAL_SEC = 10;
 const FOOD_COST_PER_COLONIST = 6;
 // v0.8.0 Phase 7.A § 14.2: 20 → 25. Pairs with the 48h birth window so the
 // colony doesn't spawn a new mouth while already rationing.
-const MIN_FOOD_FOR_GROWTH = 25;
+// Exported so AI perceiver/summary sites stay in sync — a hardcoded 20 there
+// previously made AI growth-blocker reporting lie when food ∈ [20, 25).
+export const MIN_FOOD_FOR_GROWTH = 25;
 
 export class PopulationGrowthSystem {
   constructor() {

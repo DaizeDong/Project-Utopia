@@ -81,6 +81,51 @@
   **separate commits**. This Phase 7 entry summarises all three pieces
   of the release.
 
+#### Phase 7 review-sweep iteration (2026-04-21)
+
+- **CRITICAL — `MIN_FOOD_FOR_GROWTH` desync** — Phase 7.A raised the
+  growth threshold 20 → 25 in `PopulationGrowthSystem.js`, but
+  `ColonyPerceiver.js` (growth blocker string) and
+  `WorldSummary.js` (eat hint) still hardcoded `< 20`, so AI growth
+  reports quietly lied for food ∈ [20, 25). Constant is now exported
+  from `PopulationGrowthSystem.js` and imported at both sites.
+- **CRITICAL — Retired objective scorer** — `benchmark/run.js` still
+  passed `totalObjectives: 3` / `completedObjectives: 0`, dragging the
+  `T_composite` by 25% for an objective system that v0.8.0 retired
+  (ScenarioFactory returns `[]`). Changed to `totalObjectives: 0`;
+  `computeTaskScore` now treats the objective-less case as `T_obj = 1`
+  (nothing to fail on) with inline rationale.
+- **CRITICAL — `StrategicDirector.nearFinal`** — the
+  `complete_objective` priority fired trivially (`0 >= -1`) every eval
+  because the retired objectives list is `[]`. Gated on
+  `totalObjectives > 0`.
+- **CRITICAL — Broken assertions in exploit-regression** —
+  `console.log` used as an assertion; replaced with split
+  `if (ratio < 1.2) console.log(...)` diagnostic + hard
+  `assert.ok(distFood >= adjFood)` invariant. Silent-skip guards
+  (`console.log + return`) promoted to `t.skip(reason)` so
+  `node --test` reports SKIPPED instead of PASSED.
+- **HIGH — `workerIntentCooldownSec` 1.5 → 2.2 applied** — the Phase
+  7.A § 14.2 param was deferred because
+  `test/worker-intent-stability.test.js:49` hard-asserted literal 1.5.
+  Test relaxed to a stability band `[1.2, 3.0]` and the tuning
+  landed. Day-365 DevIndex `36.27 → 39.03` on seed 42 / temperate_plains
+  (`passed=true`, `violations=[]`).
+- **HIGH — deliverWithoutCarry regression test** — new
+  `test/deliver-without-carry.test.js` locks in the Phase 7.B invariant
+  (counter stays at 0 across a 60-second soak).
+- **HIGH — Stale docs + typedef** — `CLAUDE.md` tile-count fixed
+  (`IDs 0-12` → `0-13`), test-count refreshed (`686` → `865 across 107
+  test files`), tagline swapped from "3 objectives" to "survive
+  indefinitely in endless survival mode". `src/app/types.js`
+  `GameplayState` typedef extended with the v0.8.0 survival bundle
+  (`devIndex`, `devIndexSmoothed`, `devIndexDims`, `devIndexHistory`,
+  `raidEscalation`, `lastRaidTick`, `wildlifeRuntime`).
+- **HIGH — Lockfile sync** — `package-lock.json` regenerated so its
+  `version` matches `package.json` `0.8.0`.
+- **Test suite:** 866 total / 864 pass / 2 skip (the intentional
+  pre-v0.9.0 starvation-guard skips in exploit-regression) / 0 fail.
+
 ### Phase 6 — Long-horizon benchmark harness + review iteration pass
 
 - **Harness scripts (new):**
