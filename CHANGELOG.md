@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.7.1] - 2026-04-20 — HW05 Beta Build & Cleanup
+
+### HW05 Submission
+- Updated `assignments/homework5/a5.md` beta build notes with local demo link
+- Added desktop/launcher packaging (`desktop/`, `scripts/package-browser-app.mjs`, `scripts/zip-desktop.mjs`) and Electron config in `package.json`
+- Added `scripts/ablation-benchmark.mjs` and `docs/ai-research/benchmark-results.json` for capability ablation evidence
+
+### Build Rule Relaxation
+- **BuildAdvisor** — Removed rigid placement gates (`needsNetworkAnchor`, `needsLogisticsAccess`, `needsRoadAccess`, `needsFortificationAnchor`) so players can iterate on layouts without geometry errors. Only warehouse spacing and basic blockers (water/occupied/cost) now fail placement
+- **test/build-system.test.js** — Removed assertions for the dropped rules
+
+### Residual Code Cleanup
+- Removed unused failure-reason strings in `explainBuildReason` for the deprecated placement gates
+- Removed dead `hasDefenseAnchor` variable and orphaned `wallAnchorRadius` entry in `CONSTRUCTION_BALANCE`
+
+### Simulation Tuning
+- **PopulationGrowthSystem** — Faster cadence (12→10s), cheaper cost (6→5 food), higher floor (15→20), expanded cap formula factors lumber/smithy/clinic/herbGarden buildings; absolute cap 40→80
+- **Grid generators** — Added recursive domain warp, Worley noise, Poisson disk sampling; archipelago islands now use noise-distorted coastlines and grass land strips instead of straight bridges
+- **soak-sim** — Added `PopulationGrowthSystem`, `TileStateSystem`, and `ColonyDirectorSystem` to the soak system roster to match `GameApp`
+- **GameApp** — Wired `ColonyDirectorSystem` into the live system chain
+
+### UI
+- Custom tooltip system replaces default browser `title` popups (`index.html`) with styled, cursor-tracking tips for resources, population roles, and HUD controls
+
+### Gitignore
+- Added `desktop-dist/`, `launcher-dist/`, `output/asar-extract/`, `output/benchmark-runs/` to `.gitignore`
+
 ## [0.7.0] - 2026-04-11 — Benchmark Framework Overhaul
 
 Complete architectural restructuring of the benchmark system, replacing ad-hoc per-runner scoring with a unified evaluation framework. Addresses three systemic issues: lack of generalizability (hardcoded scenarios), superficial metrics (format checks over behavioral probes), and siloed evaluation (no cross-cutting analysis).

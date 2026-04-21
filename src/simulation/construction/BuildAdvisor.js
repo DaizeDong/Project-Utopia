@@ -283,11 +283,7 @@ export function explainBuildReason(reason, context = {}) {
   if (reason === "waterBlocked") return "Cannot build on water tile.";
   if (reason === "occupiedTile") return `Clear the ${BUILDABLE_TILE_LABEL[context.oldType] ?? "existing structure"} before building here.`;
   if (reason === "insufficientResource") return "Insufficient resources.";
-  if (reason === "needsNetworkAnchor") return "Roads must extend from existing infrastructure or repair a scenario route gap.";
-  if (reason === "needsLogisticsAccess") return "This worksite needs nearby road or warehouse access.";
-  if (reason === "needsRoadAccess") return "Warehouses need to touch the road network.";
   if (reason === "warehouseTooClose") return "Warehouses are too close together. Spread depots to widen logistics coverage.";
-  if (reason === "needsFortificationAnchor") return "Walls should extend from a road, warehouse, wall line, or scenario chokepoint.";
   return "Build action failed.";
 }
 
@@ -320,38 +316,12 @@ export function evaluateBuildPreview(state, tool, ix, iz) {
   const tags = getScenarioTileTags(state, tile);
   const hasRoadAccess = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.worksiteAccessRadius);
   const hasRoadTouch = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.warehouseRoadRadius);
-  const hasDefenseAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.WALL, TILE.ROAD, TILE.WAREHOUSE], CONSTRUCTION_BALANCE.wallAnchorRadius);
   const warehouseDistance = findNearestDistance(state.grid, tile, [TILE.WAREHOUSE]);
 
-  if (tool === "road") {
-    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.BRIDGE], 1);
-    if (!hasNetworkAnchor && tags.routeLinks.length === 0) {
-      return buildFailure("needsNetworkAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
-    }
-  }
-
-  if (tool === "bridge") {
-    const hasNetworkAnchor = hasTypeWithinRadius(state.grid, tile, [TILE.ROAD, TILE.WAREHOUSE, TILE.BRIDGE], 1);
-    if (!hasNetworkAnchor) {
-      return buildFailure("needsNetworkAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
-    }
-  }
-
-  if ((tool === "farm" || tool === "lumber" || tool === "quarry" || tool === "herb_garden" || tool === "kitchen" || tool === "smithy" || tool === "clinic") && !hasRoadAccess) {
-    return buildFailure("needsLogisticsAccess", oldType, newType, cost, activeRefund, tool, ix, iz, info);
-  }
-
   if (tool === "warehouse") {
-    if (!hasRoadTouch && tags.depotZones.length === 0 && !tags.inCoreZone) {
-      return buildFailure("needsRoadAccess", oldType, newType, cost, activeRefund, tool, ix, iz, info);
-    }
     if (warehouseDistance <= CONSTRUCTION_BALANCE.warehouseSpacingRadius && tags.depotZones.length === 0) {
       return buildFailure("warehouseTooClose", oldType, newType, cost, activeRefund, tool, ix, iz, info);
     }
-  }
-
-  if (tool === "wall" && !hasDefenseAnchor && tags.chokePoints.length === 0) {
-    return buildFailure("needsFortificationAnchor", oldType, newType, cost, activeRefund, tool, ix, iz, info);
   }
 
   if (tags.routeLinks.length > 0 && tool === "road") {

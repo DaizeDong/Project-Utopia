@@ -20,7 +20,6 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
   worksiteAccessRadius: 2,
   warehouseRoadRadius: 1,
   warehouseSpacingRadius: 5,
-  wallAnchorRadius: 1,
 });
 
 export const INITIAL_RESOURCES = Object.freeze({

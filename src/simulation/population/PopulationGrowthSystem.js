@@ -3,9 +3,9 @@ import { createWorker } from "../../entities/EntityFactory.js";
 import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
-const CHECK_INTERVAL_SEC = 12;
-const FOOD_COST_PER_COLONIST = 6;
-const MIN_FOOD_FOR_GROWTH = 15;
+const CHECK_INTERVAL_SEC = 10;
+const FOOD_COST_PER_COLONIST = 5;
+const MIN_FOOD_FOR_GROWTH = 20;
 
 export class PopulationGrowthSystem {
   constructor() {
@@ -26,8 +26,13 @@ export class PopulationGrowthSystem {
     const farms = state.buildings?.farms ?? 0;
     const quarries = state.buildings?.quarries ?? 0;
     const kitchens = state.buildings?.kitchens ?? 0;
-    const cap = Math.min(40, 8 + warehouses.length * 3 + Math.floor(farms * 0.5)
-      + quarries + kitchens);
+    const lumbers = state.buildings?.lumbers ?? 0;
+    const smithies = state.buildings?.smithies ?? 0;
+    const clinics = state.buildings?.clinics ?? 0;
+    const herbGardens = state.buildings?.herbGardens ?? 0;
+    const cap = Math.min(80, 8 + warehouses.length * 4 + Math.floor(farms * 0.8)
+      + Math.floor(lumbers * 0.5) + quarries * 2 + kitchens * 2
+      + smithies * 2 + clinics * 2 + herbGardens);
     if (workers.length >= cap) return;
 
     // Need sufficient food

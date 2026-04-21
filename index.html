@@ -581,6 +581,26 @@
     #entityFocusBody::-webkit-scrollbar-track,
     .dock-body::-webkit-scrollbar-track { background: transparent; }
 
+    /* === CUSTOM TOOLTIP === */
+    #customTooltip {
+      position: fixed;
+      z-index: 9999;
+      max-width: 280px;
+      padding: 6px 10px;
+      background: rgba(8, 16, 28, 0.95);
+      color: #d0e8ff;
+      font-size: 11.5px;
+      line-height: 1.45;
+      border: 1px solid rgba(80, 160, 220, 0.3);
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+      white-space: pre-line;
+    }
+    #customTooltip.visible { opacity: 1; }
+
     /* === RESPONSIVE === */
     @media (max-width: 900px) {
       .floating-panel-left { width: 220px; }
@@ -668,8 +688,8 @@
           </div>
         </div>
         <div class="hud-spacer"></div>
-        <span id="statusObjective" class="hud-objective">-</span>
-        <span id="statusAction" class="hud-action"></span>
+        <span id="statusObjective" class="hud-objective" title="Current objective — complete all 3 to win">-</span>
+        <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
           <button class="panel-toggle" data-panel-target="colonyFloatingPanel" title="Colony Info">Colony</button>
@@ -683,7 +703,7 @@
         <button id="speedPauseBtn" type="button" title="Pause (Space)" aria-label="Pause simulation">&#9208;</button>
         <button id="speedPlayBtn" type="button" title="Normal speed (1x)" aria-label="Normal speed" class="active">&#9654;</button>
         <button id="speedFastBtn" type="button" title="Fast forward (2x)" aria-label="Fast forward">&#9193;</button>
-        <span id="gameTimer" class="game-timer">0:00</span>
+        <span id="gameTimer" class="game-timer" title="Elapsed game time">0:00</span>
       </div>
 
       <!-- === CANVAS === -->
@@ -786,20 +806,20 @@
         <details class="card" data-panel-key="resources" open>
           <summary>Resources</summary>
           <div class="panel-body">
-            <div class="kv"><div>Food</div><div id="foodVal">0</div></div>
+            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div id="foodVal">0</div></div>
             <div class="bar"><div id="foodBar"></div></div>
-            <div class="kv" style="margin-top:6px"><div>Wood</div><div id="woodVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div id="woodVal">0</div></div>
             <div class="bar"><div id="woodBar"></div></div>
-            <div class="kv" style="margin-top:6px"><div>Stone</div><div id="stoneVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div id="stoneVal">0</div></div>
             <div class="bar"><div id="stoneBar" style="background:linear-gradient(90deg,#a0896e,#8b7d6b)"></div></div>
-            <div class="kv" style="margin-top:6px"><div>Herbs</div><div id="herbsVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Gathered from herb gardens, refined into medicine"><div>Herbs</div><div id="herbsVal">0</div></div>
             <div class="bar"><div id="herbsBar" style="background:linear-gradient(90deg,#7bb86a,#5a9a4a)"></div></div>
             <div style="margin-top:8px; border-top:1px solid var(--divider); padding-top:6px">
-              <div class="kv"><div>Meals</div><div id="mealsVal">0</div></div>
+              <div class="kv" title="Cooked in kitchens from food, provides 2x hunger recovery"><div>Meals</div><div id="mealsVal">0</div></div>
               <div class="bar"><div id="mealsBar" style="background:linear-gradient(90deg,#d4a65a,#c89040)"></div></div>
-              <div class="kv" style="margin-top:6px"><div>Tools</div><div id="toolsVal">0</div></div>
+              <div class="kv" style="margin-top:6px" title="Forged in smithies from stone+wood, boosts harvest speed by 15%"><div>Tools</div><div id="toolsVal">0</div></div>
               <div class="bar"><div id="toolsBar" style="background:linear-gradient(90deg,#8c7a6b,#706050)"></div></div>
-              <div class="kv" style="margin-top:6px"><div>Medicine</div><div id="medicineVal">0</div></div>
+              <div class="kv" style="margin-top:6px" title="Produced in clinics from herbs, heals injured workers"><div>Medicine</div><div id="medicineVal">0</div></div>
               <div class="bar"><div id="medicineBar" style="background:linear-gradient(90deg,#c4d8c0,#90b88a)"></div></div>
             </div>
           </div>
@@ -808,19 +828,19 @@
         <details class="card" data-panel-key="population" open>
           <summary>Population</summary>
           <div class="panel-body">
-            <div class="kv"><div>Workers</div><div id="workersVal">0</div></div>
-            <div class="kv"><div>Visitors</div><div id="visitorsVal">0</div></div>
-            <div class="kv"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
-            <div class="kv"><div>Predators</div><div id="predatorsVal">0</div></div>
+            <div class="kv" title="Colony workers — harvest, build, and haul resources"><div>Workers</div><div id="workersVal">0</div></div>
+            <div class="kv" title="Traders who visit to exchange goods, boosted by depots and roads"><div>Visitors</div><div id="visitorsVal">0</div></div>
+            <div class="kv" title="Wild animals that graze on farms, attracted by high fertility"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
+            <div class="kv" title="Dangerous animals that attack workers and livestock"><div>Predators</div><div id="predatorsVal">0</div></div>
             <div style="margin-top:6px; border-top:1px solid var(--divider); padding-top:6px">
-              <div class="kv"><div>FARM</div><div id="farmersVal">0</div></div>
-              <div class="kv"><div>WOOD</div><div id="loggersVal">0</div></div>
-              <div class="kv"><div>STONE</div><div id="stonersVal">0</div></div>
-              <div class="kv"><div>HERBS</div><div id="herbistsVal">0</div></div>
-              <div class="kv"><div>COOK</div><div id="cooksVal">0</div></div>
-              <div class="kv"><div>SMITH</div><div id="smithsVal">0</div></div>
-              <div class="kv"><div>HERBALIST</div><div id="herbalistsVal">0</div></div>
-              <div class="kv"><div>HAUL</div><div id="haulersVal">0</div></div>
+              <div class="kv" title="Workers assigned to harvest food from farms"><div>FARM</div><div id="farmersVal">0</div></div>
+              <div class="kv" title="Workers assigned to chop wood at lumber mills"><div>WOOD</div><div id="loggersVal">0</div></div>
+              <div class="kv" title="Workers assigned to mine stone at quarries"><div>STONE</div><div id="stonersVal">0</div></div>
+              <div class="kv" title="Workers assigned to gather herbs at herb gardens"><div>HERBS</div><div id="herbistsVal">0</div></div>
+              <div class="kv" title="Workers assigned to cook food into meals at kitchens"><div>COOK</div><div id="cooksVal">0</div></div>
+              <div class="kv" title="Workers assigned to forge tools at smithies"><div>SMITH</div><div id="smithsVal">0</div></div>
+              <div class="kv" title="Workers assigned to produce medicine at clinics"><div>HERBALIST</div><div id="herbalistsVal">0</div></div>
+              <div class="kv" title="Workers assigned to transport resources to warehouses"><div>HAUL</div><div id="haulersVal">0</div></div>
             </div>
           </div>
         </details>
@@ -831,8 +851,8 @@
         <details class="card" data-panel-key="management" open>
           <summary>Map &amp; Doctrine</summary>
           <div class="panel-body">
-            <div class="small muted">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
-            <input id="farmRatio" type="range" min="0" max="100" value="50" />
+            <div class="small muted" title="Percentage of workers assigned to farming vs other roles">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
+            <input id="farmRatio" type="range" min="0" max="100" value="50" title="Drag to adjust the farm-to-other worker ratio" />
 
             <div class="pregame-only">
               <div class="small muted" style="margin-top:8px;">Map Template</div>
@@ -1161,6 +1181,74 @@
       </div>
     </section>
   </div>
+
+  <div id="customTooltip"></div>
+
+  <!-- Custom tooltip system: converts title attrs to styled tooltips -->
+  <script>
+    (function() {
+      const tip = document.getElementById('customTooltip');
+      let activeEl = null;
+
+      function show(el, text, e) {
+        if (activeEl === el) return;
+        activeEl = el;
+        tip.textContent = text;
+        tip.classList.add('visible');
+        position(e);
+      }
+
+      function hide() {
+        activeEl = null;
+        tip.classList.remove('visible');
+      }
+
+      function position(e) {
+        const pad = 10;
+        let x = e.clientX + pad;
+        let y = e.clientY + pad;
+        const r = tip.getBoundingClientRect();
+        if (x + r.width > window.innerWidth - pad) x = e.clientX - r.width - pad;
+        if (y + r.height > window.innerHeight - pad) y = e.clientY - r.height - pad;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      }
+
+      // Convert all title attrs to data-tip on load and on mutation
+      function migrateTitles(root) {
+        for (const el of root.querySelectorAll('[title]')) {
+          if (!el.dataset.tip) el.dataset.tip = el.getAttribute('title');
+          el.removeAttribute('title');
+        }
+      }
+      migrateTitles(document);
+      new MutationObserver((muts) => {
+        for (const m of muts) {
+          if (m.type === 'attributes' && m.attributeName === 'title' && m.target.getAttribute('title')) {
+            m.target.dataset.tip = m.target.getAttribute('title');
+            m.target.removeAttribute('title');
+          }
+          for (const n of m.addedNodes) {
+            if (n.nodeType === 1) migrateTitles(n);
+          }
+        }
+      }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+
+      document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest('[data-tip]');
+        if (el) show(el, el.dataset.tip, e);
+        else hide();
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (activeEl) position(e);
+      });
+      document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest('[data-tip]');
+        if (el === activeEl) hide();
+      });
+      document.addEventListener('mousedown', hide);
+    })();
+  </script>
 
   <!-- Panel toggle logic -->
   <script>

@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-04-11T09:12:52.146Z",
+  "seed": 1337,
+  "durationSec": 120,
+  "goalFlipCount": 91,
+  "invalidTransitionCount": 0,
+  "deathsTotal": 2,
+  "deliverWithoutCarryCount": 1,
+  "stateDistributionByGroup": {
+    "workers:idle": 372,
+    "traders:idle": 50,
+    "saboteurs:idle": 50,
+    "herbivores:idle": 75,
+    "predators:idle": 25,
+    "traders:seek_trade": 2086,
+    "saboteurs:scout": 380,
+    "herbivores:wander": 2636,
+    "predators:stalk": 1037,
+    "workers:seek_task": 28455,
+    "saboteurs:sabotage": 6510,
+    "predators:hunt": 2002,
+    "workers:harvest": 8798,
+    "herbivores:regroup": 49,
+    "herbivores:graze": 3599,
+    "herbivores:flee": 1985,
+    "predators:feed": 536,
+    "workers:deliver": 227,
+    "traders:wander": 4864,
+    "workers:wander": 5267,
+    "traders:seek_food": 100,
+    "traders:eat": 100,
+    "saboteurs:seek_food": 123,
+    "saboteurs:eat": 25,
+    "saboteurs:evade": 112
+  },
+  "pathRecalcByEntityTopN": [
+    {
+      "id": "animal_17",
+      "count": 69
+    },
+    {
+      "id": "animal_19",
+      "count": 51
+    },
+    {
+      "id": "animal_20",
+      "count": 40
+    },
+    {
+      "id": "worker_3",
+      "count": 24
+    },
+    {
+      "id": "worker_2",
+      "count": 23
+    },
+    {
+      "id": "worker_1",
+      "count": 22
+    },
+    {
+      "id": "worker_8",
+      "count": 22
+    },
+    {
+      "id": "worker_10",
+      "count": 20
+    },
+    {
+      "id": "animal_18",
+      "count": 20
+    },
+    {
+      "id": "worker_6",
+      "count": 15
+    }
+  ]
+}

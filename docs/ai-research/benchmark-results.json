@@ -1,0 +1,809 @@
+{
+  "generatedAt": "2026-04-11T09:39:26.307Z",
+  "config": {
+    "scenarios": [
+      "Temperate Plains"
+    ],
+    "conditions": [
+      "No AI (fallback)",
+      "Full AI"
+    ],
+    "seeds": [
+      42
+    ],
+    "durationSec": 30,
+    "sampleIntervalSec": 5
+  },
+  "summary": [
+    {
+      "scenario": "Temperate Plains",
+      "condition": "No AI (fallback)",
+      "n": 1,
+      "t_composite": 0.5938,
+      "t_surv": 1,
+      "avgSurvival": 30,
+      "outcomes": "1A"
+    },
+    {
+      "scenario": "Temperate Plains",
+      "condition": "Full AI",
+      "n": 1,
+      "t_composite": 0.5955,
+      "t_surv": 1,
+      "avgSurvival": 30,
+      "outcomes": "1A"
+    }
+  ],
+  "runs": [
+    {
+      "scenario": "Temperate Plains",
+      "templateId": "temperate_plains",
+      "condition": "no-ai",
+      "conditionLabel": "No AI (fallback)",
+      "seed": 42,
+      "durationSec": 30,
+      "survivalSec": 30,
+      "finalPhase": "active",
+      "outcome": "none",
+      "reason": "",
+      "initialWorkers": 12,
+      "deathsTotal": 1,
+      "objectiveCount": 3,
+      "completedObjectives": 0,
+      "taskScore": {
+        "T_surv": 1,
+        "T_obj": 0,
+        "T_res": 0.6226559433867112,
+        "T_pop": 0.9166666666666666,
+        "T_pros": 0.5863645979312646,
+        "T_threat": 0.7490371871871873,
+        "T_composite": 0.5937567999164151
+      },
+      "costMetrics": {
+        "totalDecisions": 6,
+        "llmDecisions": 0,
+        "fallbackDecisions": 6,
+        "totalTokens": 0,
+        "C_tok": 0,
+        "C_min": 0,
+        "C_lat": 0,
+        "C_fb": 1
+      },
+      "infraScore": {
+        "I_spread": 0.33514285714285713,
+        "I_road": 0.5601472530043958,
+        "I_logis": 1,
+        "I_wear": 0.9994285714285713,
+        "I_composite": 0.6904653846796704
+      },
+      "ai": {
+        "enabled": false,
+        "decisionCount": 6,
+        "strategyCount": 2,
+        "llmCount": 0,
+        "fallbackCount": 6
+      },
+      "memory": {
+        "observations": 1,
+        "reflections": 0
+      },
+      "sampleCount": 7,
+      "timeSeries": [
+        {
+          "t": 0.03,
+          "food": 100,
+          "wood": 32,
+          "workers": 12,
+          "prosperity": 35.98,
+          "threat": 24.19,
+          "avgWorkerSpread": 0,
+          "roadTiles": 16,
+          "roadComponents": 2,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 0
+        },
+        {
+          "t": 5.03,
+          "food": 115,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 61.29,
+          "threat": 24.88,
+          "avgWorkerSpread": 0.385,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 5
+        },
+        {
+          "t": 10.03,
+          "food": 115,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 60.98,
+          "threat": 23.81,
+          "avgWorkerSpread": 0.462,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 6
+        },
+        {
+          "t": 15.03,
+          "food": 117.14,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 61.26,
+          "threat": 24.65,
+          "avgWorkerSpread": 0.385,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 5
+        },
+        {
+          "t": 20.03,
+          "food": 114.95,
+          "wood": 8.48,
+          "workers": 14,
+          "prosperity": 59.58,
+          "threat": 26.42,
+          "avgWorkerSpread": 0.357,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 5
+        },
+        {
+          "t": 25.03,
+          "food": 120.53,
+          "wood": 8.94,
+          "workers": 14,
+          "prosperity": 60.44,
+          "threat": 24.83,
+          "avgWorkerSpread": 0.357,
+          "roadTiles": 35,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 5
+        },
+        {
+          "t": 30,
+          "food": 121.53,
+          "wood": 9.38,
+          "workers": 15,
+          "prosperity": 60.58,
+          "threat": 27.8,
+          "avgWorkerSpread": 0.4,
+          "roadTiles": 37,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 6
+        }
+      ],
+      "finalTelemetry": {
+        "capturedAtIso": "2026-04-11T09:39:13.233Z",
+        "phase": "active",
+        "tick": 903,
+        "simTimeSec": 30.1,
+        "world": {
+          "templateId": "temperate_plains",
+          "templateName": "Temperate Plains",
+          "scenarioId": "alpha_broken_frontier",
+          "scenarioTitle": "Broken Frontier",
+          "scenarioFamily": "frontier_repair",
+          "buildings": {
+            "warehouses": 5,
+            "farms": 6,
+            "lumbers": 2,
+            "roads": 32,
+            "walls": 7
+          },
+          "frontier": {
+            "connectedRoutes": 1,
+            "totalRoutes": 1,
+            "readyDepots": 1,
+            "totalDepots": 1,
+            "brokenRoutes": [],
+            "unreadyDepots": []
+          },
+          "weather": {
+            "current": "clear",
+            "timeLeftSec": 17.7,
+            "pressureScore": 0,
+            "hazardFrontCount": 0,
+            "hazardFocusSummary": "",
+            "summary": "Weather: clear"
+          },
+          "events": [
+            {
+              "type": "tradeCaravan",
+              "status": "active",
+              "intensity": 0.8,
+              "targetLabel": "east ruined depot",
+              "pressure": 0.08,
+              "contestedTiles": 0
+            }
+          ],
+          "spatialPressure": {
+            "weatherPressure": 0,
+            "eventPressure": 0.08,
+            "contestedZones": 0,
+            "contestedTiles": 0,
+            "activeEventCount": 1,
+            "peakEventSeverity": 0.08,
+            "summary": "Spatial pressure: weather 0.00 across 0 fronts; events 0.08 across 1 active zones; contested zones 0."
+          }
+        },
+        "objective": {
+          "index": 0,
+          "id": "logistics-1",
+          "title": "Reconnect the Frontier",
+          "progress": 66.7,
+          "hint": "Under Balanced Council, expand to 2 warehouses, 4 farms, 3 lumbers, 20 roads, and 4 walls."
+        },
+        "gameplay": {
+          "prosperity": 60.61,
+          "threat": 27.55,
+          "recovery": {
+            "charges": 0,
+            "activeBoostSec": 0,
+            "collapseRisk": 5.9,
+            "lastReason": "resource collapse"
+          }
+        },
+        "resources": {
+          "food": 121.61,
+          "wood": 9.43
+        },
+        "population": {
+          "byGroup": {
+            "workers": 15,
+            "traders": 2,
+            "saboteurs": 2,
+            "herbivores": 2,
+            "predators": 1
+          }
+        },
+        "deaths": {
+          "total": 1,
+          "byReason": {
+            "starvation": 0,
+            "predation": 1,
+            "event": 0
+          }
+        },
+        "logistics": {
+          "carryingWorkers": 6,
+          "totalCarryInTransit": 4.88,
+          "avgDepotDistance": 4.17,
+          "strandedCarryWorkers": 0,
+          "overloadedWarehouses": 0,
+          "busiestWarehouseLoad": 0,
+          "stretchedWorksites": 0,
+          "isolatedWorksites": 0,
+          "warehouseLoadByKey": {},
+          "summary": "Logistics: carriers 6, avg depot dist 4.2, overloaded depots 0, stretched worksites 0, isolated worksites 0"
+        },
+        "ecology": {
+          "activeGrazers": 0,
+          "pressuredFarms": 0,
+          "maxFarmPressure": 0,
+          "frontierPredators": 1,
+          "migrationHerds": 0,
+          "hotspotFarms": [],
+          "zoneStats": [
+            {
+              "id": "west-wilds",
+              "label": "west frontier wilds",
+              "herbivoreCount": 2,
+              "predatorCount": 1,
+              "herbivoreCapacity": {
+                "min": 3,
+                "target": 4,
+                "max": 6
+              },
+              "predatorCapacity": {
+                "min": 0,
+                "target": 1,
+                "max": 2
+              },
+              "recoveryCooldownSec": 0,
+              "breedingCooldownSec": 0,
+              "predatorRecoveryCooldownSec": 0,
+              "herbivoreLowSec": 0,
+              "predatorAbsentSec": 0,
+              "stableSec": 13.53,
+              "extinctionSec": 0,
+              "crowdScore": 0
+            }
+          ],
+          "events": {
+            "births": 0,
+            "breedingSpawns": 0,
+            "recoverySpawns": 0,
+            "predatorRecoverySpawns": 0,
+            "predatorRetreats": 0,
+            "predationDeaths": 1,
+            "starvationDeaths": 0
+          },
+          "clusters": {
+            "maxSameSpeciesClusterSize": 1,
+            "stuckClusterCount": 0,
+            "longestClusterDurationSec": 7.13,
+            "byGroup": {
+              "herbivores": {
+                "ratio": 0,
+                "crowdedCount": 0,
+                "componentCount": 0,
+                "maxClusterSize": 1,
+                "currentDurationSec": 0,
+                "longestDurationSec": 7.13
+              },
+              "predators": {
+                "ratio": 0,
+                "crowdedCount": 0,
+                "componentCount": 0,
+                "maxClusterSize": 1,
+                "currentDurationSec": 0,
+                "longestDurationSec": 0
+              }
+            }
+          },
+          "flags": {
+            "extinctionRisk": true,
+            "overgrowthRisk": false,
+            "clumpingRisk": false,
+            "predatorWithoutPrey": false
+          },
+          "summary": "Ecology: pressured farms 0, no active farm pressure, frontier predators 1, migration herds 0. busiest zone west frontier wilds (herds 2, predators 1)",
+          "activePressure": 0.08
+        },
+        "warnings": {
+          "count": 1,
+          "errorCount": 0,
+          "errorWarnings": []
+        },
+        "performance": {
+          "fps": 60,
+          "frameMs": 0,
+          "headroomFps": 0,
+          "heapMb": 0,
+          "renderMode": "detailed",
+          "entityCount": 22,
+          "renderFrameCount": 0,
+          "simStepsThisFrame": 0,
+          "uiCpuMs": 0,
+          "renderCpuMs": 0
+        },
+        "ai": {
+          "enabled": false,
+          "coverageTarget": "fallback",
+          "mode": "fallback",
+          "runtimeProfile": "long_run",
+          "model": "offline-fallback",
+          "latencyMs": 0,
+          "error": "",
+          "proxyHealth": "fallback",
+          "fallbackActive": true,
+          "requestCount": 4,
+          "timeoutCount": 0,
+          "fallbackCount": 4,
+          "llmCount": 0,
+          "avgLatencyMs": 0,
+          "consecutiveFallbackResponses": 0,
+          "maxUnrecoveredFallbackSec": 0,
+          "recoveryCount": 0,
+          "lastErrorKind": "none",
+          "liveCoverageSatisfied": false
+        },
+        "view": {
+          "targetX": 0,
+          "targetZ": 0,
+          "zoom": 0
+        },
+        "actionMessage": "Emergency relief stabilized the colony. Use the window to rebuild routes and depots.",
+        "nonFiniteMetrics": []
+      }
+    },
+    {
+      "scenario": "Temperate Plains",
+      "templateId": "temperate_plains",
+      "condition": "full-ai",
+      "conditionLabel": "Full AI",
+      "seed": 42,
+      "durationSec": 30,
+      "survivalSec": 30,
+      "finalPhase": "active",
+      "outcome": "none",
+      "reason": "",
+      "initialWorkers": 12,
+      "deathsTotal": 1,
+      "objectiveCount": 3,
+      "completedObjectives": 0,
+      "taskScore": {
+        "T_surv": 1,
+        "T_obj": 0,
+        "T_res": 0.6518736513036731,
+        "T_pop": 0.9166666666666666,
+        "T_pros": 0.5739960126793461,
+        "T_threat": 0.7414807140473807,
+        "T_composite": 0.595528521002191
+      },
+      "costMetrics": {
+        "totalDecisions": 6,
+        "llmDecisions": 0,
+        "fallbackDecisions": 6,
+        "totalTokens": 0,
+        "C_tok": 0,
+        "C_min": 0,
+        "C_lat": 0,
+        "C_fb": 1
+      },
+      "infraScore": {
+        "I_spread": 0.33599999999999997,
+        "I_road": 0.5601472530043958,
+        "I_logis": 1,
+        "I_wear": 0.9994285714285713,
+        "I_composite": 0.6907225275368132
+      },
+      "ai": {
+        "enabled": true,
+        "decisionCount": 6,
+        "strategyCount": 2,
+        "llmCount": 0,
+        "fallbackCount": 6
+      },
+      "memory": {
+        "observations": 2,
+        "reflections": 0
+      },
+      "sampleCount": 7,
+      "timeSeries": [
+        {
+          "t": 0.03,
+          "food": 103,
+          "wood": 29,
+          "workers": 12,
+          "prosperity": 35.98,
+          "threat": 24.19,
+          "avgWorkerSpread": 0,
+          "roadTiles": 16,
+          "roadComponents": 2,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 0
+        },
+        {
+          "t": 5.03,
+          "food": 118,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 60.75,
+          "threat": 24.22,
+          "avgWorkerSpread": 0.385,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 5
+        },
+        {
+          "t": 10.03,
+          "food": 118,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 60.37,
+          "threat": 24.34,
+          "avgWorkerSpread": 0.462,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0,
+          "reservationCount": 6
+        },
+        {
+          "t": 15.03,
+          "food": 121.5,
+          "wood": 8,
+          "workers": 13,
+          "prosperity": 60.76,
+          "threat": 24.81,
+          "avgWorkerSpread": 0.462,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 6
+        },
+        {
+          "t": 20.03,
+          "food": 118.2,
+          "wood": 8.44,
+          "workers": 14,
+          "prosperity": 59.01,
+          "threat": 25.49,
+          "avgWorkerSpread": 0.357,
+          "roadTiles": 33,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 5
+        },
+        {
+          "t": 25.03,
+          "food": 123.55,
+          "wood": 8.81,
+          "workers": 14,
+          "prosperity": 57.1,
+          "threat": 27.19,
+          "avgWorkerSpread": 0.286,
+          "roadTiles": 35,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 4
+        },
+        {
+          "t": 30,
+          "food": 124.77,
+          "wood": 8.9,
+          "workers": 15,
+          "prosperity": 56.83,
+          "threat": 33.99,
+          "avgWorkerSpread": 0.4,
+          "roadTiles": 37,
+          "roadComponents": 5,
+          "logisticsConnected": 0,
+          "logisticsIsolated": 0,
+          "avgRoadWear": 0.001,
+          "reservationCount": 6
+        }
+      ],
+      "finalTelemetry": {
+        "capturedAtIso": "2026-04-11T09:39:26.306Z",
+        "phase": "active",
+        "tick": 903,
+        "simTimeSec": 30.1,
+        "world": {
+          "templateId": "temperate_plains",
+          "templateName": "Temperate Plains",
+          "scenarioId": "alpha_broken_frontier",
+          "scenarioTitle": "Broken Frontier",
+          "scenarioFamily": "frontier_repair",
+          "buildings": {
+            "warehouses": 5,
+            "farms": 5,
+            "lumbers": 2,
+            "roads": 32,
+            "walls": 8
+          },
+          "frontier": {
+            "connectedRoutes": 1,
+            "totalRoutes": 1,
+            "readyDepots": 1,
+            "totalDepots": 1,
+            "brokenRoutes": [],
+            "unreadyDepots": []
+          },
+          "weather": {
+            "current": "rain",
+            "timeLeftSec": 9,
+            "pressureScore": 0.4,
+            "hazardFrontCount": 2,
+            "hazardFocusSummary": "west lumber route, east ruined depot",
+            "summary": "Weather: rain, 2 hazard fronts, focus west lumber route, east ruined depot"
+          },
+          "events": [
+            {
+              "type": "tradeCaravan",
+              "status": "active",
+              "intensity": 0.8,
+              "targetLabel": "east ruined depot",
+              "pressure": 0.26,
+              "contestedTiles": 13
+            }
+          ],
+          "spatialPressure": {
+            "weatherPressure": 0.4,
+            "eventPressure": 0.26,
+            "contestedZones": 1,
+            "contestedTiles": 13,
+            "activeEventCount": 1,
+            "peakEventSeverity": 0.26,
+            "summary": "Spatial pressure: weather 0.40 across 2 fronts; events 0.26 across 1 active zones; contested zones 1."
+          }
+        },
+        "objective": {
+          "index": 0,
+          "id": "logistics-1",
+          "title": "Reconnect the Frontier",
+          "progress": 66.7,
+          "hint": "Spatial pressure is spiking around east ruined depot. Adjust roads, depots, or walls before waiting out the timer."
+        },
+        "gameplay": {
+          "prosperity": 56.85,
+          "threat": 33.95,
+          "recovery": {
+            "charges": 0,
+            "activeBoostSec": 0,
+            "collapseRisk": 6.5,
+            "lastReason": "resource collapse"
+          }
+        },
+        "resources": {
+          "food": 124.84,
+          "wood": 8.95
+        },
+        "population": {
+          "byGroup": {
+            "workers": 15,
+            "traders": 2,
+            "saboteurs": 2,
+            "herbivores": 2,
+            "predators": 1
+          }
+        },
+        "deaths": {
+          "total": 1,
+          "byReason": {
+            "starvation": 0,
+            "predation": 1,
+            "event": 0
+          }
+        },
+        "logistics": {
+          "carryingWorkers": 6,
+          "totalCarryInTransit": 3.12,
+          "avgDepotDistance": 3.83,
+          "strandedCarryWorkers": 0,
+          "overloadedWarehouses": 0,
+          "busiestWarehouseLoad": 0,
+          "stretchedWorksites": 0,
+          "isolatedWorksites": 0,
+          "warehouseLoadByKey": {},
+          "summary": "Logistics: carriers 6, avg depot dist 3.8, overloaded depots 0, stretched worksites 0, isolated worksites 0"
+        },
+        "ecology": {
+          "activeGrazers": 0,
+          "pressuredFarms": 0,
+          "maxFarmPressure": 0,
+          "frontierPredators": 1,
+          "migrationHerds": 0,
+          "hotspotFarms": [],
+          "zoneStats": [
+            {
+              "id": "west-wilds",
+              "label": "west frontier wilds",
+              "herbivoreCount": 2,
+              "predatorCount": 1,
+              "herbivoreCapacity": {
+                "min": 3,
+                "target": 4,
+                "max": 6
+              },
+              "predatorCapacity": {
+                "min": 0,
+                "target": 1,
+                "max": 2
+              },
+              "recoveryCooldownSec": 0,
+              "breedingCooldownSec": 0,
+              "predatorRecoveryCooldownSec": 0,
+              "herbivoreLowSec": 0,
+              "predatorAbsentSec": 0,
+              "stableSec": 13.44,
+              "extinctionSec": 0,
+              "crowdScore": 0
+            }
+          ],
+          "events": {
+            "births": 0,
+            "breedingSpawns": 0,
+            "recoverySpawns": 0,
+            "predatorRecoverySpawns": 0,
+            "predatorRetreats": 0,
+            "predationDeaths": 1,
+            "starvationDeaths": 0
+          },
+          "clusters": {
+            "maxSameSpeciesClusterSize": 1,
+            "stuckClusterCount": 0,
+            "longestClusterDurationSec": 7.13,
+            "byGroup": {
+              "herbivores": {
+                "ratio": 0,
+                "crowdedCount": 0,
+                "componentCount": 0,
+                "maxClusterSize": 1,
+                "currentDurationSec": 0,
+                "longestDurationSec": 7.13
+              },
+              "predators": {
+                "ratio": 0,
+                "crowdedCount": 0,
+                "componentCount": 0,
+                "maxClusterSize": 1,
+                "currentDurationSec": 0,
+                "longestDurationSec": 0
+              }
+            }
+          },
+          "flags": {
+            "extinctionRisk": true,
+            "overgrowthRisk": false,
+            "clumpingRisk": false,
+            "predatorWithoutPrey": false
+          },
+          "summary": "Ecology: pressured farms 0, no active farm pressure, frontier predators 1, migration herds 0. busiest zone west frontier wilds (herds 2, predators 1)",
+          "activePressure": 0.4
+        },
+        "warnings": {
+          "count": 1,
+          "errorCount": 0,
+          "errorWarnings": []
+        },
+        "performance": {
+          "fps": 60,
+          "frameMs": 0,
+          "headroomFps": 0,
+          "heapMb": 0,
+          "renderMode": "detailed",
+          "entityCount": 22,
+          "renderFrameCount": 0,
+          "simStepsThisFrame": 0,
+          "uiCpuMs": 0,
+          "renderCpuMs": 0
+        },
+        "ai": {
+          "enabled": true,
+          "coverageTarget": "fallback",
+          "mode": "fallback",
+          "runtimeProfile": "long_run",
+          "model": "fallback",
+          "latencyMs": 0,
+          "error": "fetch failed",
+          "proxyHealth": "down",
+          "fallbackActive": true,
+          "requestCount": 4,
+          "timeoutCount": 0,
+          "fallbackCount": 4,
+          "llmCount": 0,
+          "avgLatencyMs": 0,
+          "consecutiveFallbackResponses": 0,
+          "maxUnrecoveredFallbackSec": 0,
+          "recoveryCount": 0,
+          "lastErrorKind": "proxy",
+          "liveCoverageSatisfied": false
+        },
+        "view": {
+          "targetX": 0,
+          "targetZ": 0,
+          "zoom": 0
+        },
+        "actionMessage": "Emergency relief stabilized the colony. Use the window to rebuild routes and depots.",
+        "nonFiniteMetrics": []
+      }
+    }
+  ]
+}
