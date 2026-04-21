@@ -36,6 +36,7 @@ import { TileStateSystem } from "../simulation/economy/TileStateSystem.js";
 import { WarehouseQueueSystem } from "../simulation/economy/WarehouseQueueSystem.js";
 import { ColonyDirectorSystem } from "../simulation/meta/ColonyDirectorSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
+import { DevIndexSystem } from "../simulation/meta/DevIndexSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
@@ -195,6 +196,7 @@ export class GameApp {
       new SimulationClock(),
       new VisibilitySystem(),
       new ProgressionSystem(),
+      new DevIndexSystem(),
       new RoleAssignmentSystem(),
       new PopulationGrowthSystem(),
       new StrategicDirector(this.memoryStore),
@@ -1254,7 +1256,8 @@ export class GameApp {
       endedAtSec: -1,
     };
     const phase = session.phase === "active" || session.phase === "end" ? session.phase : "menu";
-    const outcome = session.outcome === "win" || session.outcome === "loss" ? session.outcome : "none";
+    // v0.8.0 Phase 4 — "win" outcome retired; survival mode only persists "loss".
+    const outcome = session.outcome === "loss" ? session.outcome : "none";
     this.state.session = {
       phase,
       outcome: phase === "end" ? outcome : "none",

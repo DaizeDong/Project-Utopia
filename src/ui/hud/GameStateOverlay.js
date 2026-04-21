@@ -9,11 +9,22 @@ function formatOverlayMeta(state) {
   return `${scenario.title} · ${family}`;
 }
 
+// v0.8.0 Phase 4 — Survival Mode. The outcome meta now surfaces survival time
+// and the running score rather than objective progress (which has been retired
+// along with the "win" outcome).
+function formatSurvivalTime(totalSec) {
+  const clamped = Math.max(0, Math.floor(Number(totalSec) || 0));
+  const h = Math.floor(clamped / 3600);
+  const m = Math.floor((clamped % 3600) / 60);
+  const s = clamped % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
 function formatOutcomeMeta(state) {
   const scenarioTitle = state?.gameplay?.scenario?.title ?? "Scenario";
-  const totalObjectives = Number(state?.gameplay?.objectives?.length ?? 0);
-  const completedObjectives = (state?.gameplay?.objectives ?? []).filter((objective) => objective.completed).length;
-  return `${scenarioTitle} · objectives ${completedObjectives}/${totalObjectives}`;
+  const survived = formatSurvivalTime(state?.metrics?.timeSec ?? 0);
+  const score = Math.floor(Number(state?.metrics?.survivalScore ?? 0));
+  return `${scenarioTitle} · Survived: ${survived} · Score: ${score}`;
 }
 
 export class GameStateOverlay {
@@ -106,18 +117,32 @@ export class GameStateOverlay {
     if (this.endPanel) this.endPanel.hidden = !isEnd;
 
     if (this.objectiveCards) {
+      // v0.8.0 Phase 4 — Survival Mode. The 3-objective card deck has been
+      // replaced by a single survival status card. Objectives are still
+      // rendered if anything upstream populates them (nothing does today),
+      // preserving the legacy codepath while phase 7 finalises HUD polish.
       const objectives = this.state.gameplay?.objectives ?? [];
-      const objectiveIndex = this.state.gameplay?.objectiveIndex ?? 0;
-      this.objectiveCards.innerHTML = objectives.map((obj, idx) => {
-        const isCurrent = idx === objectiveIndex && !obj.completed;
-        const label = obj.completed ? "✓" : String(idx + 1);
-        const pct = Number(obj.progress ?? 0).toFixed(0);
-        return `<div class="overlay-obj-card${isCurrent ? " current" : ""}">
+      if (objectives.length > 0) {
+        const objectiveIndex = this.state.gameplay?.objectiveIndex ?? 0;
+        this.objectiveCards.innerHTML = objectives.map((obj, idx) => {
+          const isCurrent = idx === objectiveIndex && !obj.completed;
+          const label = obj.completed ? "✓" : String(idx + 1);
+          const pct = Number(obj.progress ?? 0).toFixed(0);
+          return `<div class="overlay-obj-card${isCurrent ? " current" : ""}">
       <div class="overlay-obj-num">${label}</div>
       <div class="overlay-obj-text">${obj.title}</div>
       <div class="overlay-obj-pct">${pct}%</div>
     </div>`;
-      }).join("");
+        }).join("");
+      } else {
+        const survived = formatSurvivalTime(this.state.metrics?.timeSec ?? 0);
+        const score = Math.floor(Number(this.state.metrics?.survivalScore ?? 0));
+        this.objectiveCards.innerHTML = `<div class="overlay-obj-card current">
+      <div class="overlay-obj-num">∞</div>
+      <div class="overlay-obj-text">Survive as long as you can</div>
+      <div class="overlay-obj-pct">${survived} · ${score} pts</div>
+    </div>`;
+      }
     }
     if (this.menuTitle) {
       this.menuTitle.textContent = "Project Utopia";
@@ -136,12 +161,11 @@ export class GameStateOverlay {
 
 
     if (isEnd) {
-      const outcome = session?.outcome ?? "loss";
+      // v0.8.0 Phase 4 — Survival Mode only produces "loss" (or "none" before
+      // evaluation). The legacy "win" branch has been removed.
       if (this.endTitle) {
-        this.endTitle.textContent = outcome === "win" ? "Victory!" : "Colony Lost";
-        this.endTitle.style.background = outcome === "win"
-          ? "linear-gradient(135deg, #1b7a3d, #27ae60)"
-          : "linear-gradient(135deg, #922b21, #e74c3c)";
+        this.endTitle.textContent = "Colony Lost";
+        this.endTitle.style.background = "linear-gradient(135deg, #922b21, #e74c3c)";
         this.endTitle.style.webkitBackgroundClip = "text";
         this.endTitle.style.webkitTextFillColor = "transparent";
         this.endTitle.style.backgroundClip = "text";
@@ -159,12 +183,24 @@ export class GameStateOverlay {
         const totalSec = Math.floor(Number(this.state.metrics.timeSec ?? 0));
         const min = Math.floor(totalSec / 60);
         const sec = totalSec % 60;
-        this.endStats.textContent = [
+        // v0.8.0 Phase 4 — DevIndex badge line. Agent 4.A's survival-score row
+        // (if added separately) should sit adjacent to this one without
+        // clobbering it; both live in the endStats multi-line block.
+        const devIndex = Number(this.state.gameplay?.devIndex ?? 0);
+        const devIndexSmoothed = Number(this.state.gameplay?.devIndexSmoothed ?? 0);
+        const survivalScore = Number(this.state.metrics?.survivalScore ?? 0);
+        const survivalLine = Number.isFinite(survivalScore) && survivalScore !== 0
+          ? `Survival Score: ${survivalScore.toFixed(0)}`
+          : null;
+        const lines = [
           `Time Survived: ${min}:${sec.toString().padStart(2, "0")}`,
           `Workers: ${workers}  |  Total Entities: ${total}`,
           `Prosperity: ${Number(this.state.gameplay?.prosperity ?? 0).toFixed(0)}  |  Threat: ${Number(this.state.gameplay?.threat ?? 0).toFixed(0)}`,
+          `DevIndex: ${devIndex.toFixed(0)}/100  (smoothed ${devIndexSmoothed.toFixed(0)})`,
           `Deaths: ${deaths}`,
-        ].join("\n");
+        ];
+        if (survivalLine) lines.splice(3, 0, survivalLine);
+        this.endStats.textContent = lines.join("\n");
       }
     }
   }

@@ -315,6 +315,40 @@ export const BALANCE = Object.freeze({
   nodeRegenPerTickForest: 0.05,
   nodeRegenPerTickStone: 0.0,
   nodeRegenPerTickHerb: 0.08,
+  // --- Living World v0.8.0 — Phase 4 (Survival Mode), spec §§ 5.1-5.6 ---
+  // Endless survival mode replaces the 3-objective win path. ProgressionSystem
+  // accrues a running score at `state.metrics.survivalScore` that rewards
+  // longevity and births while penalising colonist deaths. The colony-wiped
+  // condition (no remaining agents) remains the sole loss trigger.
+  survivalScorePerSecond: 1,
+  survivalScorePerBirth: 5,
+  survivalScorePenaltyPerDeath: 10,
+  // --- Living World v0.8.0 — Phase 4 (DevIndex), spec § 5.6 ---
+  // DevIndexSystem ring-buffer window size (sim ticks). The smoothed score
+  // published at state.gameplay.devIndexSmoothed is the arithmetic mean of
+  // the last N per-tick composite samples.
+  devIndexWindowTicks: 60,
+  // Per-dimension weights for the composite (must normalise internally;
+  // DevIndexSystem divides by the sum of active weights). Default = equal
+  // 1/6 each. Tune during balance sweeps per spec § 16.
+  devIndexWeights: Object.freeze({
+    population: 1 / 6,
+    economy: 1 / 6,
+    infrastructure: 1 / 6,
+    production: 1 / 6,
+    defense: 1 / 6,
+    resilience: 1 / 6,
+  }),
+  // Economy dim: resource stockpile targets. Reaching the target scores 80;
+  // saturating at 100 requires ~25% over the target.
+  devIndexResourceTargets: Object.freeze({ food: 200, wood: 150, stone: 100 }),
+  // Population dim: agent count that scores 80 points.
+  devIndexAgentTarget: 30,
+  // Production dim: unique producer-tile count that scores 80 points (sum of
+  // FARM + LUMBER + QUARRY + HERB_GARDEN + KITCHEN + SMITHY + CLINIC).
+  devIndexProducerTarget: 24,
+  // Defense dim: scoring target for walls + 2× militia agents.
+  devIndexDefenseTarget: 12,
 });
 
 // --- Terrain depth constants ---
