@@ -97,6 +97,7 @@ export const SYSTEM_ORDER = Object.freeze([
   "WorldEventSystem",
   "TileStateSystem",
   "NPCBrainSystem",
+  "WarehouseQueueSystem",
   "WorkerAISystem",
   "VisitorAISystem",
   "AnimalAISystem",

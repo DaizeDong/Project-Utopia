@@ -111,6 +111,54 @@ function rebuildLogisticsMetrics(state) {
   state.debug.logistics = state.metrics.logistics;
 }
 
+// v0.8.0 Phase 2 M2: producer-density risk scoring around warehouses.
+// Per spec § 3: high resource density around a warehouse probabilistically
+// ignites WAREHOUSE_FIRE or VERMIN_SWARM events. Because per-building stocks
+// are not tracked in this codebase, we approximate "stored resources in radius"
+// by counting producer/storage tiles in radius × an average stock constant.
+const DENSITY_PRODUCER_TYPES = [
+  TILE.FARM,
+  TILE.LUMBER,
+  TILE.QUARRY,
+  TILE.HERB_GARDEN,
+  TILE.WAREHOUSE,
+  TILE.KITCHEN,
+  TILE.SMITHY,
+  TILE.CLINIC,
+];
+function rebuildWarehouseDensity(state) {
+  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  const radius = Number(BALANCE.warehouseDensityRadius ?? 6);
+  const threshold = Number(BALANCE.warehouseDensityRiskThreshold ?? 400);
+  const avgStock = Number(BALANCE.warehouseDensityAvgStockPerTile ?? 50);
+  const producers = listTilesByType(state.grid, DENSITY_PRODUCER_TYPES);
+
+  const byKey = {};
+  const hotWarehouses = [];
+  let peak = 0;
+
+  for (const wh of warehouses) {
+    let producerTiles = 0;
+    for (const producer of producers) {
+      if (manhattan(wh, producer) <= radius) producerTiles += 1;
+    }
+    const score = producerTiles * avgStock;
+    const key = tileKey(wh);
+    byKey[key] = score;
+    if (score > peak) peak = score;
+    if (score >= threshold) hotWarehouses.push(key);
+  }
+
+  state.metrics.warehouseDensity = {
+    byKey,
+    peak,
+    hotWarehouses,
+    threshold,
+    radius,
+  };
+  if (state.debug) state.debug.warehouseDensity = state.metrics.warehouseDensity;
+}
+
 export class ResourceSystem {
   constructor() {
     this.name = "ResourceSystem";
@@ -200,6 +248,7 @@ export class ResourceSystem {
     const nowSec = Number(state.metrics.timeSec ?? 0);
     if (gridChanged || nowSec >= this.nextLogisticsSampleSec) {
       rebuildLogisticsMetrics(state);
+      rebuildWarehouseDensity(state);
       this.nextLogisticsSampleSec = nowSec + 0.4;
     }
 

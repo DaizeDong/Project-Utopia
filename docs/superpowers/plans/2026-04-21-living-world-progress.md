@@ -43,8 +43,8 @@
 | Phase | Scope | Status | Commit | Date |
 |---|---|---|---|---|
 | 0 | Branch + progress scaffolding | completed | 53e7e74 | 2026-04-21 |
-| 1 | M3 fatigue/spoilage + M4 road compounding | in_progress | — | 2026-04-21 |
-| 2 | M2 warehouse queue + density risk | pending | — | — |
+| 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
+| 2 | M2 warehouse queue + density risk | completed | pending-commit | 2026-04-21 |
 | 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | pending | — | — |
 | 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
@@ -105,8 +105,35 @@ _2026-04-21 — Started._
 **Soak sim:** temperate_plains/fortified_basin/archipelago_isles all survived 2703 ticks, peakThreat 27-48, deaths=1 each — no regression vs baseline.
 **LOC changed (src/ only):** +111 / -15 across 4 files.
 
-_Phase 1 commit:_ — appended below.
+_Phase 1 commit:_ `5710da3` (feat(v0.8.0 phase-1): M3 carry fatigue + spoilage, M4 road compounding).
 
 ---
 
-(Phases 2-7 entries will be appended as they complete.)
+### Phase 2 — Warehouse economy (M2 throughput queue + density risk)
+
+_2026-04-21 — Started + completed._
+
+**Subagents dispatched (2 in parallel):**
+- Agent 2.A (warehouse queue): new `WarehouseQueueSystem`, SYSTEM_ORDER + GameApp wiring, WorkerAISystem deliver-block intake gate. Produced `test/warehouse-queue.test.js` (3 cases). Also exported `handleDeliver` for targeted test access.
+- Agent 2.B (density risk): `rebuildWarehouseDensity` helper in ResourceSystem (producer-count × avg-stock approximation since per-building stocks don't exist), `applyWarehouseDensityRisk` in WorldEventSystem, 3 new EVENT_TYPES, SceneRenderer TODO stub for amber pulse. Produced `test/warehouse-density.test.js` (3 cases).
+
+**Review rounds:**
+- Code-reviewer (`pr-review-toolkit:code-reviewer`): 3 MUST-FIX (missing BALANCE keys, tautological density Case C, non-deterministic RNG), 6 SHOULD-FIX (O(N²) queue scan, queued-contract recovery, demolition blackboard clear, handleDeliver export, magic loss fractions, DENSITY_AVG_STOCK_PER_TILE), 3 NIT. All 3 MUST-FIX addressed; 6 SHOULD-FIX partially addressed (loss fractions + avg-stock moved to BALANCE; queue-leak fixed; remaining items deferred to Phase 7 hardening).
+- Silent-failure-hunter: 2 CRITICAL (queue leak on retarget, non-deterministic production RNG), 5 HIGH, 4 MEDIUM, 2 LOW. Both CRITICAL addressed via targetTile-match pruning in WarehouseQueueSystem and services.rng threading in WorldEventSystem. HIGH/MEDIUM findings related to save/load semantics and token-reset edge cases deferred to Phase 7 (no current save/load flow touches warehouse state).
+- Legacy sweep (general-purpose): 2 MUST-CLEAN (balance keys, double-jeopardy queue penalty), 4 SHOULD-CLEAN, 4 NIT. Balance keys fixed. `warehouseQueuePenalty` double-jeopardy accepted as intentional: the new token gate is a hard throughput cap while the existing `warehouseLoadByKey`-based unload slowdown remains a soft penalty for shared tiles — they compose correctly under test cases.
+
+**Fixes applied in iteration pass:**
+- Added 11 new BALANCE keys (`warehouseIntakePerTick`, `warehouseQueueMaxWaitTicks`, density radius/threshold/avg-stock, fire/vermin chance/fraction/cap × 2). Decided 120 for `warehouseQueueMaxWaitTicks` (spec § 3 mentions 180 — deviation documented in balance.js comment, targeted for Phase 7 tuning sweep).
+- Threaded `services` through `WorldEventSystem.update` → `applyWarehouseDensityRisk` → `services.rng.next`. Preserves `state._riskRng` as test override.
+- Added queue pruning for workers whose `targetTile` drifted off the queued warehouse (prevents permanent queue growth under re-prioritization).
+- Added stale-tile guard in `applyWarehouseDensityRisk` (re-checks `grid.tiles[i] === TILE.WAREHOUSE` before rolling, handles mid-tick demolitions).
+- Strengthened `test/warehouse-density.test.js` with Case D (rng=0.99 → zero events) and Case E (seeded services.rng determinism across two runs).
+
+**Test delta:** 744 → 752 (+8: 3 warehouse-queue + 5 warehouse-density).
+**LOC changed (src/):** +201 / -1 across 8 files + 1 new file (`WarehouseQueueSystem.js`, ~115 lines).
+
+_Phase 2 commit:_ (pending — appended after commit).
+
+---
+
+(Phases 3-7 entries will be appended as they complete.)

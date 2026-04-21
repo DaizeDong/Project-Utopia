@@ -132,6 +132,10 @@ const TILE_MODEL_BINDINGS = Object.freeze({
   [TILE.FARM]: { key: "farmTile", scale: { x: 0.8, y: 0.62, z: 0.8 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.LUMBER]: { key: "lumberTile", scale: { x: 0.82, y: 0.62, z: 0.82 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.WAREHOUSE]: { key: "warehouseTile", scale: { x: 0.88, y: 0.88, z: 0.88 }, y: 0.04, randomYaw: true, jitter: 0.05, scaleJitter: 0.05 },
+  // TODO visual (v0.8.0 Phase 2 M2): amber pulse tint for warehouses present in
+  // state.metrics.warehouseDensity.hotWarehouses. Deferred — the current
+  // instanced-tile render path doesn't expose per-instance material tinting.
+  // See docs/superpowers/specs/2026-04-21-living-world-balance-design.md § 3.
   [TILE.WALL]: { key: "wallTile", scale: { x: 0.95, y: 0.46, z: 0.26 }, y: 0.03, randomYaw: false, autoYaw: true },
   [TILE.RUINS]: { key: "ruinsTile", scale: { x: 0.68, y: 0.42, z: 0.68 }, y: 0.04, randomYaw: true, jitter: 0.1, scaleJitter: 0.12 },
 });
