@@ -136,33 +136,12 @@ function inflateTiles(grid, seeds = [], radius = 1, options = {}) {
   return tiles;
 }
 
-function buildObjectivesForScenario(scenario) {
-  return [
-    {
-      id: "logistics-1",
-      title: scenario.objectiveCopy.logisticsTitle,
-      description: scenario.objectiveCopy.logisticsDescription,
-      completed: false,
-      progress: 0,
-      reward: "+18 food, +18 wood",
-    },
-    {
-      id: "stockpile-1",
-      title: scenario.objectiveCopy.stockpileTitle,
-      description: scenario.objectiveCopy.stockpileDescription,
-      completed: false,
-      progress: 0,
-      reward: "Spawn +4 workers",
-    },
-    {
-      id: "stability-1",
-      title: scenario.objectiveCopy.stabilityTitle,
-      description: scenario.objectiveCopy.stabilityDescription,
-      completed: false,
-      progress: 0,
-      reward: "Permanent doctrine bonus +8%",
-    },
-  ];
+function buildObjectivesForScenario(_scenario) {
+  // v0.8.0 Phase 4 — Survival Mode. Objectives no longer drive a "win"
+  // outcome; ProgressionSystem accrues a per-tick survival score instead.
+  // `scenario.hintCopy` is still surfaced by the HUD, so this helper only
+  // clears the objective list (keeping the array shape for legacy readers).
+  return [];
 }
 
 function buildFrontierRepairScenario(grid) {

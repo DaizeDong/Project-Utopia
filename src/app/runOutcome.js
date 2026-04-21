@@ -1,22 +1,30 @@
 import { BALANCE } from "../config/balance.js";
 
+// v0.8.0 Phase 4 — Survival Mode.
+// The "win" outcome has been retired. Runs continue until the colony is
+// wiped (no remaining agents) or the collapse spiral fires. Outcomes here
+// return one of { outcome: "loss", ... } | null. Callers map "in progress"
+// to session.outcome === "none".
 export function evaluateRunOutcomeState(state) {
-  const objectiveCount = Array.isArray(state.gameplay?.objectives) ? state.gameplay.objectives.length : 0;
-  const objectiveIndex = Number(state.gameplay?.objectiveIndex ?? 0);
-  if (objectiveCount > 0 && objectiveIndex >= objectiveCount) {
-    return {
-      outcome: "win",
-      reason: "All objectives completed. Colony is stable.",
-      actionMessage: "Victory achieved. You can restart or reset.",
-      actionKind: "success",
-    };
-  }
-
+  const aliveAgents = Array.isArray(state.agents)
+    ? state.agents.filter((agent) => agent && agent.alive !== false).length
+    : 0;
   const workers = Number(
     state.metrics?.populationStats?.workers
       ?? state.agents?.filter((agent) => agent.type === "WORKER" && agent.alive !== false).length
       ?? 0,
   );
+
+  // Colony-wiped is the authoritative loss condition in survival mode.
+  if (aliveAgents <= 0) {
+    return {
+      outcome: "loss",
+      reason: "Colony wiped — no surviving colonists.",
+      actionMessage: "Run ended: the colony was wiped out.",
+      actionKind: "error",
+    };
+  }
+
   const food = Number(state.resources?.food ?? 0);
   const wood = Number(state.resources?.wood ?? 0);
   const prosperity = Number(state.gameplay?.prosperity ?? 0);

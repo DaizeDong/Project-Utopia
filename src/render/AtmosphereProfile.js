@@ -193,15 +193,8 @@ function applySessionOutcome(profile, state) {
     };
   }
   if (phase !== "end") return profile;
-  if (outcome === "win") {
-    return {
-      ...profile,
-      background: mixHex(profile.background, 0xf6f1c0, 0.12),
-      fogColor: mixHex(profile.fogColor, 0xf5efc8, 0.1),
-      sunIntensity: profile.sunIntensity * 1.06,
-      exposure: profile.exposure + 0.08,
-    };
-  }
+  // v0.8.0 Phase 4 — "win" outcome retired; only darken the ending for loss.
+  if (outcome !== "loss") return profile;
   return {
     ...profile,
     background: mixHex(profile.background, 0x243246, 0.26),

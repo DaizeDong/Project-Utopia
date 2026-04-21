@@ -102,7 +102,8 @@ function migrateLegacySessionState(snapshot) {
   const outcome = String(session.outcome ?? "none");
   snapshot.session = {
     phase: phase === "active" || phase === "end" ? phase : "menu",
-    outcome: outcome === "win" || outcome === "loss" ? outcome : "none",
+    // v0.8.0 Phase 4 — "win" outcome retired; survival mode only persists "loss".
+    outcome: outcome === "loss" ? outcome : "none",
     reason: typeof session.reason === "string" ? session.reason : "",
     endedAtSec: Number.isFinite(Number(session.endedAtSec)) ? Number(session.endedAtSec) : -1,
   };
