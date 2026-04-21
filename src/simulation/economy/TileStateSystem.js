@@ -1,5 +1,7 @@
 import { TILE } from "../../config/constants.js";
-import { TERRAIN_MECHANICS } from "../../config/balance.js";
+import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
+import { createTileStateEntry } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const FERTILITY_RECOVERY_PER_SEC = 0.002;
 const FERTILITY_HARVEST_DRAIN = 0.08;
@@ -28,12 +30,19 @@ export class TileStateSystem {
     this._nextUpdateSec = 0;
   }
 
-  update(dt, state) {
+  update(dt, state, services = null) {
     const grid = state.grid;
     if (!grid.tileState) {
       grid.tileState = new Map();
       grid.tileStateVersion = 1;
     }
+
+    // --- M1 soil maintenance (runs every tick, before the 2s interval gate) ---
+    // Slow per-tick salinization decay, fallow-expiry restoration, and farm
+    // yieldPool regen/initialization. Kept out of the interval gate so that
+    // simulations that advance `state.metrics.tick` directly (tests, fast
+    // benchmarks) observe recovery without needing to push timeSec forward.
+    this._updateSoil(state);
 
     const nowSec = Number(state.metrics?.timeSec ?? 0);
     if (nowSec < this._nextUpdateSec) return;
@@ -42,6 +51,11 @@ export class TileStateSystem {
     const isStorm = state.weather?.current === "storm";
     const weatherMult = isStorm ? WEAR_STORM_MULTIPLIER : 1;
     const elapsed = UPDATE_INTERVAL_SEC;
+    // Fire RNG: prefer seeded services.rng for benchmark determinism
+    // (silent-failure C2); fall back to Math.random when unavailable.
+    const rngFn = (typeof services?.rng?.next === "function")
+      ? () => services.rng.next()
+      : Math.random;
 
     for (let iz = 0; iz < grid.height; iz++) {
       for (let ix = 0; ix < grid.width; ix++) {
@@ -105,11 +119,58 @@ export class TileStateSystem {
     // E1: Drought wildfire system
     const isDrought = state.weather?.current === "drought";
     if (isDrought && grid.moisture) {
-      this._updateFire(grid);
+      this._updateFire(grid, rngFn, state);
     }
   }
 
-  _updateFire(grid) {
+  _updateSoil(state) {
+    const grid = state.grid;
+    const tick = Number(state.metrics?.tick ?? 0);
+    const decay = Number(BALANCE.soilSalinizationDecayPerTick ?? 0);
+    const poolRegen = Number(BALANCE.farmYieldPoolRegenPerTick ?? 0);
+    const poolMax = Number(BALANCE.farmYieldPoolMax ?? 180);
+    const poolInit = Number(BALANCE.farmYieldPoolInitial ?? 120);
+
+    for (const [idx, entry] of grid.tileState) {
+      const type = grid.tiles[idx];
+      if (!PRODUCTION_TILES.has(type)) continue;
+
+      // Fallow expiry: restore fertility + reset salinized + refill yieldPool.
+      const fallowUntil = Number(entry.fallowUntil ?? 0);
+      if (fallowUntil > 0 && tick >= fallowUntil) {
+        entry.fertility = 0.9;
+        entry.salinized = 0;
+        entry.fallowUntil = 0;
+        entry.yieldPool = poolInit;
+        grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+        continue;
+      }
+
+      // During active fallow, hard-cap fertility at 0 (harvests will return 0).
+      if (fallowUntil > 0 && tick < fallowUntil) {
+        entry.fertility = 0;
+        continue;
+      }
+
+      // Slow passive salinization decay (applied unconditionally — it's tiny
+      // and self-limiting vs. per-harvest increments of 0.02).
+      if ((entry.salinized ?? 0) > 0 && decay > 0) {
+        entry.salinized = Math.max(0, Number(entry.salinized) - decay);
+      }
+
+      // FARM-only yieldPool: initialise a freshly-placed farm and passively regen.
+      if (type === TILE.FARM) {
+        if ((entry.yieldPool ?? 0) <= 0 && Number(entry.fertility ?? 0) > 0 && fallowUntil === 0) {
+          entry.yieldPool = poolInit;
+          grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
+        } else if ((entry.yieldPool ?? 0) < poolMax) {
+          entry.yieldPool = Math.min(poolMax, Number(entry.yieldPool ?? 0) + poolRegen);
+        }
+      }
+    }
+  }
+
+  _updateFire(grid, rngFn = Math.random, state = null) {
     const w = grid.width;
     const h = grid.height;
     const newFires = [];
@@ -123,11 +184,19 @@ export class TileStateSystem {
         if (entry?.onFire) {
           entry.wear = Math.min(1.0, entry.wear + TERRAIN_MECHANICS.fireWearPerTick);
           if (entry.wear >= 1.0) {
-            // Burn down to grass
+            // Burn down to grass — preserve M1a nodeFlags so wildfire does not
+            // silently eat the map's resource layer (silent-failure H1). We
+            // also emit a NODE_DESTROYED event so listeners can react.
+            const preservedFlags = Number(entry.nodeFlags ?? 0) | 0;
             grid.tiles[idx] = TILE.GRASS;
-            grid.tileState.delete(idx);
+            if (preservedFlags !== 0) {
+              grid.tileState.set(idx, createTileStateEntry({ nodeFlags: preservedFlags }));
+            } else {
+              grid.tileState.delete(idx);
+            }
             grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
             grid.version = (grid.version ?? 0) + 1;
+            if (state) emitEvent(state, EVENT_TYPES.BUILDING_DESTROYED, { ix, iz, cause: "wildfire" });
             continue;
           }
           // Try to spread (limited by fireAge)
@@ -144,7 +213,7 @@ export class TileStateSystem {
               if (nMoist >= TERRAIN_MECHANICS.fireMoistureThreshold) continue;
               const nEntry = grid.tileState.get(nIdx);
               if (nEntry?.onFire) continue;
-              if (Math.random() < TERRAIN_MECHANICS.fireIgniteChance * 2) {
+              if (rngFn() < TERRAIN_MECHANICS.fireIgniteChance * 2) {
                 newFires.push({ idx: nIdx, fireAge: (entry.fireAge ?? 0) + 1 });
               }
             }
@@ -169,10 +238,10 @@ export class TileStateSystem {
           }
         }
         if (waterAdjacent) continue;
-        if (Math.random() < TERRAIN_MECHANICS.fireIgniteChance) {
+        if (rngFn() < TERRAIN_MECHANICS.fireIgniteChance) {
           let e = grid.tileState.get(idx);
           if (!e) {
-            e = { fertility: 0.85, wear: 0, growthStage: 0, exhaustion: 0 };
+            e = createTileStateEntry({ fertility: 0.85 });
             grid.tileState.set(idx, e);
           }
           e.onFire = true;
@@ -186,7 +255,7 @@ export class TileStateSystem {
     for (const { idx, fireAge } of newFires) {
       let e = grid.tileState.get(idx);
       if (!e) {
-        e = { fertility: 0.85, wear: 0, growthStage: 0, exhaustion: 0 };
+        e = createTileStateEntry({ fertility: 0.85 });
         grid.tileState.set(idx, e);
       }
       if (!e.onFire) {

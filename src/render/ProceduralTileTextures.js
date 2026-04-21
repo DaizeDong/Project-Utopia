@@ -217,6 +217,13 @@ function drawRoad(ctx, profile) {
 }
 
 function drawFarm(ctx, profile) {
+  // TODO (Phase 7, M1 visual polish): overlay dry-soil crack pattern when
+  // `tileState.salinized > 0.5`. Textures are currently baked once per tile
+  // TYPE (not per tile instance) and returned as a shared CanvasTexture, so
+  // per-tile dynamic salinized-state cannot be threaded through without
+  // restructuring the renderer to a per-instance material/texture variant
+  // (e.g. an atlas + salinization overlay blended in-shader, or per-instance
+  // uniform). Deferred to the Phase 7 visuals pass per spec § 3 M1.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);

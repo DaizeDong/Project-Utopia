@@ -14,6 +14,7 @@ import { DeveloperPanel } from "../ui/panels/DeveloperPanel.js";
 import { EntityFocusPanel } from "../ui/panels/EntityFocusPanel.js";
 import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
+import { VisibilitySystem } from "../simulation/world/VisibilitySystem.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
 import { PopulationGrowthSystem } from "../simulation/population/PopulationGrowthSystem.js";
 import { MemoryStore } from "../simulation/ai/memory/MemoryStore.js";
@@ -192,6 +193,7 @@ export class GameApp {
     this.memoryObserver = new MemoryObserver(this.memoryStore);
     return [
       new SimulationClock(),
+      new VisibilitySystem(),
       new ProgressionSystem(),
       new RoleAssignmentSystem(),
       new PopulationGrowthSystem(),

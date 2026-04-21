@@ -265,6 +265,56 @@ export const BALANCE = Object.freeze({
   warehouseFireLossCap: 30,
   verminSwarmLossFraction: 0.15,
   verminSwarmLossCap: 40,
+  // --- Living World v0.8.0 — Phase 3 (M1 soil + yieldPool), spec § 14 ---
+  // Per-harvest accumulator increment on tileState.salinized for FARM harvests.
+  soilSalinizationPerHarvest: 0.02,
+  // At/above this salinized level the farm tile enters fallow (fertility→0)
+  // until fallowUntil elapses.
+  soilSalinizationThreshold: 0.8,
+  // Ticks the farm stays fallow before auto-recovery (fertility→0.9,
+  // salinized→0, yieldPool refilled to farmYieldPoolInitial).
+  // ~3 in-game minutes at the default tick cadence.
+  soilFallowRecoveryTicks: 1800,
+  // Slow passive per-tick decay of tileState.salinized.
+  soilSalinizationDecayPerTick: 0.00002,
+  // Fresh-farm yieldPool initial value, idle regen per tick, and cap.
+  farmYieldPoolInitial: 120,
+  farmYieldPoolRegenPerTick: 0.1,
+  farmYieldPoolMax: 180,
+  // --- Living World v0.8.0 — Phase 3 (M1c demolition recycling), spec § 3 M1c + § 14.1 ---
+  // Per-resource recovery fractions applied on demolish ("erase" tool) to the
+  // ORIGINAL build cost table (BUILD_COST) — not the terrain-adjusted cost.
+  // Stone is partially recoverable (blocks can be re-dressed); wood is partially
+  // recoverable (beams re-cut). Food and herbs are biodegradable — zero recovery.
+  // On success, BuildSystem emits DEMOLITION_RECYCLED with { ix, iz, refund }.
+  demoStoneRecovery: 0.35,
+  demoWoodRecovery: 0.25,
+  demoFoodRecovery: 0.0,
+  demoHerbsRecovery: 0.0,
+  // --- Living World v0.8.0 — Phase 3 (M1b fog of war), spec § 3 M1b + § 14.1 ---
+  // Manhattan reveal radius around every live actor per tick. Tiles within this
+  // Chebyshev/Manhattan square become VISIBLE; HIDDEN tiles upgrade to VISIBLE.
+  fogRevealRadius: 5,
+  // Initial reveal radius centred on the colony spawn. 4 ⇒ 9×9 area.
+  fogInitialRevealRadius: 4,
+  // Master toggle. Disable for benchmark presets that need full vision.
+  fogEnabled: true,
+  // --- Living World v0.8.0 — Phase 3 (M1a resource nodes), spec § 14 ---
+  // Node count ranges (min/max per map) seeded at map generation end.
+  // FOREST / STONE / HERB node flags gate placement of LUMBER / QUARRY /
+  // HERB_GARDEN respectively. Stored as frozen [min, max] tuples.
+  forestNodeCountRange: Object.freeze([18, 32]),
+  stoneNodeCountRange: Object.freeze([10, 18]),
+  herbNodeCountRange: Object.freeze([12, 22]),
+  // Yield pool per-node at spawn. Consumed on each harvest; regenerates
+  // per-tick at the nodeRegenPerTickX rate when not currently being harvested.
+  // Stone nodes do not regenerate (finite mineral deposit).
+  nodeYieldPoolForest: 80,
+  nodeYieldPoolStone: 120,
+  nodeYieldPoolHerb: 60,
+  nodeRegenPerTickForest: 0.05,
+  nodeRegenPerTickStone: 0.0,
+  nodeRegenPerTickHerb: 0.08,
 });
 
 // --- Terrain depth constants ---

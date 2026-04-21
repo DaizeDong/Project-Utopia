@@ -6,6 +6,199 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 3 — Soil salinization + farm yieldPool (M1)
+
+- **M1 soil salinization** — Each completed FARM harvest bumps
+  `tileState.salinized` by `BALANCE.soilSalinizationPerHarvest` (`0.02`). When
+  the accumulator reaches `BALANCE.soilSalinizationThreshold` (`0.8`), the
+  tile enters **fallow**: `fertility` is hard-pinned at `0` and `fallowUntil`
+  is set to `metrics.tick + BALANCE.soilFallowRecoveryTicks` (`1800`, ~3
+  in-game minutes at the default tick cadence). While fallow, further
+  harvests yield zero food. On fallow expiry, `TileStateSystem._updateSoil`
+  restores `fertility = 0.9`, clears `salinized`, and refills `yieldPool` to
+  `BALANCE.farmYieldPoolInitial` (`120`). A tiny passive decay of
+  `soilSalinizationDecayPerTick` (`0.00002`) slowly relaxes the accumulator
+  on idle tiles — a safety valve, not the primary recovery path.
+- **M1 farm yieldPool** — Freshly-placed FARMs now initialise
+  `tileState.yieldPool` to `farmYieldPoolInitial` (`120`) and regenerate
+  passively toward `farmYieldPoolMax` (`180`) at
+  `farmYieldPoolRegenPerTick` (`0.1`). On each completed harvest, the
+  effective yield is capped by the remaining pool: if the pool is empty, the
+  harvested food amount is refunded back out of the worker's carry so a
+  depleted tile produces nothing until regen catches up. LUMBER / QUARRY /
+  HERB_GARDEN harvests are untouched — those become node-gated in Phase 3.B
+  per spec § 3 M1a.
+- **TileStateSystem** — New per-tick `_updateSoil` method runs **before** the
+  existing 2s interval gate so that simulations advancing
+  `state.metrics.tick` directly (tests, fast benchmarks) observe fallow
+  recovery and yieldPool regen without needing to push `timeSec` forward.
+  The interval-gated fertility/wear/exhaustion pass is unchanged.
+- **ProceduralTileTextures** — TODO comment on `drawFarm` flags the salinized
+  crack-overlay visual for Phase 7. The current renderer bakes one texture
+  per tile **type** (not per tile instance), so threading dynamic
+  `tileState.salinized` through requires a per-instance material variant or
+  a shader-level overlay; deferred per spec § 3 M1.
+- **Files changed:** `src/config/balance.js` (+7 Phase 3 M1 keys),
+  `src/simulation/economy/TileStateSystem.js` (new `_updateSoil` + BALANCE
+  import), `src/simulation/npc/WorkerAISystem.js` (`handleHarvest` exported;
+  FARM branch now caps harvest by yieldPool, accumulates salinized, triggers
+  fallow on threshold), `src/render/ProceduralTileTextures.js` (Phase 7
+  TODO).
+- **New tests (+4):** `test/soil-salinization.test.js` covering (A) repeated
+  harvests trigger fallow near the expected threshold, (B) harvests during
+  fallow yield zero food, (C) fallow expiry restores fertility + refills
+  yieldPool via `TileStateSystem._updateSoil`, (D) yieldPool passively regens
+  toward `farmYieldPoolMax` and saturates at the cap.
+
+### Phase 3 — Resource node layer (M1a)
+
+- **M1a resource nodes** — New per-tile `tileState.nodeFlags` bitmask
+  (`NODE_FLAGS.FOREST | STONE | HERB`) seeded at map generation time by
+  `seedResourceNodes(grid, rng)` in `src/world/scenarios/ScenarioFactory.js`.
+  Forests use Poisson-disk sampling (min-distance 3 tiles), stone nodes
+  cluster-walk from N GRASS seeds for 3-6 steps, and herb nodes link-seek
+  GRASS tiles adjacent to WATER or FARM. Each node tile is tagged with a
+  `yieldPool` pulled from the per-type `BALANCE.nodeYieldPool{Forest|Stone|Herb}`
+  (80 / 120 / 60).
+- **BuildAdvisor node gate** — `evaluateBuildPreview` now rejects LUMBER,
+  QUARRY, and HERB_GARDEN placements on tiles whose `nodeFlags` lack the
+  matching flag, returning `{ ok: false, reason: "missing_resource_node" }`
+  with a tool-specific `reasonText`.
+- **Harvest yield drain + regen** — `WorkerAISystem.handleHarvest` now
+  decrements `tileState.yieldPool` on completion of each lumber/quarry/herb
+  harvest (farms already handled by Agent 3.A). An end-of-tick regen pass
+  (`applyResourceNodeRegen`) adds `BALANCE.nodeRegenPerTickForest` (`0.05`),
+  `...Stone` (`0.0`, permanent deposit), or `...Herb` (`0.08`) per idle tick,
+  capped at the node type's yieldPool ceiling. Tiles harvested this tick are
+  skipped via a `lastHarvestTick` marker.
+- **BALANCE keys added** — `forestNodeCountRange`, `stoneNodeCountRange`,
+  `herbNodeCountRange`, `nodeYieldPoolForest|Stone|Herb`,
+  `nodeRegenPerTickForest|Stone|Herb`.
+- **Files changed:** `src/config/balance.js` (+M1a block),
+  `src/world/scenarios/ScenarioFactory.js` (+`seedResourceNodes` exports),
+  `src/entities/EntityFactory.js` (wire seeding into `createInitialGameState`),
+  `src/simulation/construction/BuildAdvisor.js` (NODE_GATED_TOOLS table +
+  missing_resource_node failure reason), `src/simulation/npc/WorkerAISystem.js`
+  (`applyNodeYieldHarvest` + `applyResourceNodeRegen`).
+- **New tests (+4):** `test/node-layer.test.js` — per-template count ranges,
+  LUMBER/QUARRY/HERB_GARDEN build-gate accept/reject cases, and yieldPool
+  deduct-then-regen over simulated ticks.
+
+### Phase 3 — Fog of war (M1b)
+
+- **M1b tile visibility pipeline** — New per-tile `state.fog.visibility`
+  Uint8Array with three states (`FOG_STATE.HIDDEN`/`EXPLORED`/`VISIBLE`)
+  exported from `src/config/constants.js`. Freshly initialised worlds seed a
+  9×9 reveal (radius `BALANCE.fogInitialRevealRadius = 4`) around the spawn
+  point; unvisited tiles stay HIDDEN until an actor walks near them.
+- **`VisibilitySystem`** — New system at
+  `src/simulation/world/VisibilitySystem.js`, inserted into `SYSTEM_ORDER`
+  immediately after `SimulationClock`. On each tick it downgrades previously
+  VISIBLE tiles to EXPLORED, then walks every live `state.agents` entry and
+  re-reveals a Manhattan square of radius `BALANCE.fogRevealRadius = 5` around
+  them. VISIBLE is therefore a one-tick state while EXPLORED is sticky memory
+  — preserving the classic RTS "what you saw is dimmed, what you've never
+  seen is black" feel. Bumps `state.fog.version` whenever any tile changes.
+- **Build rejection on HIDDEN** — `BuildAdvisor.evaluateBuildPreview` now
+  returns `{ ok: false, reason: "hidden_tile" }` when the cursor tile is
+  fully HIDDEN, before any other gating. Players must scout before they can
+  place road/warehouse/etc. on unexplored terrain.
+- **Worker explore-fog intent** — `WorkerAISystem.chooseWorkerIntent` gains a
+  low-priority `"explore_fog"` fallback that sits between role intents and
+  `"wander"`. Fires only when the colony still has HIDDEN tiles, so finished
+  maps do not force workers into pointless exploration. Exposed helper
+  `findNearestHiddenTile(worker, state)` returns the nearest Manhattan fog
+  frontier for downstream targeting.
+- **FogOverlay + Minimap (stubs)** — `src/render/FogOverlay.js` ships a
+  zero-dep Three.js stub (`attach(scene)` + `update(state)`) with TODO notes
+  deferring the real data-texture shader to Phase 7. `src/ui/hud/Minimap.js`
+  ships a minimal canvas minimap that paints 0.45 alpha over EXPLORED tiles
+  and 0.9 alpha over HIDDEN tiles so the HUD layer has a visible fog tint
+  today.
+- **Balance (`Phase 3 M1b`)** — `fogRevealRadius: 5`,
+  `fogInitialRevealRadius: 4`, `fogEnabled: true`.
+- **New tests (+4):** `test/fog-visibility.test.js` — (A) initial 9×9 reveal
+  bounds, (B) worker footprint permanence (HIDDEN → VISIBLE → EXPLORED),
+  (C) `BuildAdvisor` `"hidden_tile"` rejection, (D) `"explore_fog"` intent
+  surfaces when HIDDEN tiles exist and no role work is available.
+- **GameApp wiring** — `new VisibilitySystem()` is inserted into the systems
+  array immediately after `new SimulationClock()`, matching the Phase 2
+  `WarehouseQueueSystem` wiring pattern.
+- **Files changed:** `src/config/balance.js` (+3 BALANCE keys),
+  `src/config/constants.js` (+`"VisibilitySystem"` in `SYSTEM_ORDER`),
+  `src/app/GameApp.js` (+import + systems array insertion),
+  `src/simulation/construction/BuildAdvisor.js`
+  (+`isTileHidden` + `"hidden_tile"` failure path),
+  `src/simulation/npc/WorkerAISystem.js` (+`"explore_fog"` intent fallback,
+  `hasHiddenFrontier`, `findNearestHiddenTile`). New files:
+  `src/simulation/world/VisibilitySystem.js`, `src/render/FogOverlay.js`,
+  `src/ui/hud/Minimap.js`, `test/fog-visibility.test.js`.
+- **Test count:** 760 → 764 (all pass).
+
+### Phase 3 — Demolition recycling (M1c)
+
+- **M1c stone-endgame guard** — Demolishing a built tile via the "erase" tool
+  now refunds a type-specific fraction of the **original** `BUILD_COST` for
+  that structure (not the terrain-adjusted cost). Rates are exposed on
+  `BALANCE` so the long-horizon benchmark can tune them: `demoStoneRecovery`
+  (`0.35`), `demoWoodRecovery` (`0.25`), `demoFoodRecovery` (`0.0`),
+  `demoHerbsRecovery` (`0.0`). Food and herbs are biodegradable — zero
+  recovery — which preserves the endgame pressure for herb gardens while
+  letting stone slowly recycle between builds.
+- **BuildAdvisor refund math** — `getTileRefund` now reads the four
+  `demo*Recovery` constants instead of the single legacy
+  `CONSTRUCTION_BALANCE.salvageRefundRatio` (kept as the safe-fallback when
+  BALANCE values go missing). Refund is computed BEFORE `setTile` writes
+  `TILE.GRASS`, so downstream listeners always see a valid payload.
+- **`GameEventBus.EVENT_TYPES.DEMOLITION_RECYCLED`** — New event type
+  `"demolition_recycled"`. Emitted by `BuildSystem.placeToolAt` after a
+  successful erase that produced a non-zero refund, with payload
+  `{ ix, iz, refund: { wood, stone, [food], [herbs] }, oldType }`. The
+  StrategicDirector's planned `recycle_abandoned_worksite` skill (§ 13.5)
+  will consume this to update memory; for now it is HUD/telemetry-ready.
+- **Undo/redo parity** — `BuildSystem.undo` and `.redo` now check all four
+  refund keys (previously food/wood only) so the round-trip spend-and-return
+  stays balanced after M1c stone/herbs refunds flow through the history.
+- **Files changed:** `src/config/balance.js` (+4 BALANCE keys in a new
+  `// --- Living World v0.8.0 — Phase 3` block),
+  `src/simulation/meta/GameEventBus.js` (+`DEMOLITION_RECYCLED` enum),
+  `src/simulation/construction/BuildAdvisor.js`
+  (`getTileRefund` rewritten to per-resource fractions),
+  `src/simulation/construction/BuildSystem.js`
+  (`placeToolAt` now emits `DEMOLITION_RECYCLED`; undo/redo refund checks
+  cover all four resource types).
+- **New tests (+4):** `test/demo-recycling.test.js` covers A) farm refund
+  math, B) warehouse refund math, C) food/herbs zero-recovery invariant, and
+  D) `DEMOLITION_RECYCLED` event payload shape.
+- **Existing tests adjusted:** `test/build-system.test.js` (erase salvage
+  test now builds a warehouse — wall's wood:2 floors to a zero refund under
+  the new 0.25 wood ratio) and `test/phase1-resource-chains.test.js`
+  (smithy/clinic erase expectations switched from the legacy
+  `salvageRefundRatio × cost` formula to the new `BALANCE.demo*Recovery`
+  constants; herbs refund is now 0 by design).
+- **Test count:** 752 → 756 (all pass).
+
+### Phase 3 — Scenario FARM tileState reconciliation (bug fix)
+
+- **Bug** — Scenario-stamped FARM tiles (placed via `setTileDirect` in
+  `ScenarioFactory.js`, which bypasses `setTile`) had no `tileState` entry, so
+  the M1 harvest-cap branch in `WorkerAISystem` read `yieldPool === 0` and
+  refunded the full `farmAmount` out of the worker's carry — clamping every
+  scenario-FARM harvest to zero food. Surfaced in `animal-ecology.test.js`
+  where both pressured and clean workers ended at `carry.food === 0`, hiding
+  the ecology-differentiation signal.
+- **Fix** — Extended `autoFlagExistingProductionTiles` to also reconcile FARM
+  tiles (seed `yieldPool: 120`, `fertility: 0.9` only when `tileState` entry
+  is missing, i.e. `prev == null`), and added a second invocation inside
+  `buildScenarioBundle` after scenario builders run so scenario-stamped tiles
+  are reconciled before the first tick. Gating on `prev == null` (not on
+  `yieldPool <= 0`) prevents silently refilling live depleted farms mid-game,
+  preserving the M1 salinization loop.
+- **Files changed:** `src/world/scenarios/ScenarioFactory.js` (FARM branch in
+  `autoFlagExistingProductionTiles` + second call from `buildScenarioBundle`).
+- **Test count:** unchanged; `animal-ecology.test.js` green. Full suite
+  769/769.
+
 ### Phase 2 — Warehouse throughput & density risk (M2)
 
 - **M2 warehouse throughput queue** — New `WarehouseQueueSystem` runs before

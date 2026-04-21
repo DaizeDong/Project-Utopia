@@ -104,32 +104,48 @@ test("BuildSystem undo/redo restores tiles and resources", () => {
 test("BuildSystem erase salvages structure cost and undo/redo preserves the refund", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
-  const wallTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "wall", ix, iz).ok);
+  // Use warehouse (wood:10) — post-M1c demoWoodRecovery=0.25 yields a non-zero
+  // wood refund (floor(10×0.25)=2). Wall (wood:2) now rounds down to zero.
+  const warehouseTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "warehouse", ix, iz).ok);
 
-  assert.ok(wallTarget);
-  const idx = wallTarget.ix + wallTarget.iz * state.grid.width;
-  const wallPreview = buildSystem.previewToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
-  const wallWoodCost = wallPreview.cost.wood;
+  assert.ok(warehouseTarget);
+  const idx = warehouseTarget.ix + warehouseTarget.iz * state.grid.width;
+  const whPreview = buildSystem.previewToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
+  const whWoodCost = whPreview.cost.wood;
   const beforeWood = state.resources.wood;
-  const built = buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
+  const built = buildSystem.placeToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
   assert.equal(built.ok, true);
-  assert.equal(state.resources.wood, beforeWood - wallWoodCost);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost);
 
-  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", warehouseTarget.ix, warehouseTarget.iz);
   assert.equal(erased.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
   assert.ok(erased.refund.wood >= 1);
-  assert.equal(state.resources.wood, beforeWood - wallWoodCost + erased.refund.wood);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost + erased.refund.wood);
 
   const undo = buildSystem.undo(state);
   assert.equal(undo.ok, true);
-  assert.equal(state.grid.tiles[idx], TILE.WALL);
-  assert.equal(state.resources.wood, beforeWood - wallWoodCost);
+  assert.equal(state.grid.tiles[idx], TILE.WAREHOUSE);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost);
 
   const redo = buildSystem.redo(state);
   assert.equal(redo.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
-  assert.equal(state.resources.wood, beforeWood - wallWoodCost + erased.refund.wood);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost + erased.refund.wood);
+});
+
+test("BuildSystem erasing a wall rounds refund to zero under 0.25 wood recovery", () => {
+  // Locks the demoWoodRecovery invariant — if tuning bumps recovery above 0.5,
+  // wall (wood:2) would start refunding 1 and this test flags the behavior
+  // change so CHANGELOG / baselines get reviewed intentionally.
+  const state = createInitialGameState();
+  const buildSystem = new BuildSystem();
+  const wallTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "wall", ix, iz).ok);
+  assert.ok(wallTarget);
+  buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
+  assert.equal(erased.ok, true);
+  assert.equal(erased.refund.wood ?? 0, 0, "wall wood refund must round to zero under current demoWoodRecovery");
 });
 
 test("BuildSystem preview surfaces scenario-specific construction effects", () => {
