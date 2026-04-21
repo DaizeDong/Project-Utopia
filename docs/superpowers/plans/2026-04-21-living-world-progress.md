@@ -45,7 +45,7 @@
 | 0 | Branch + progress scaffolding | completed | 53e7e74 | 2026-04-21 |
 | 1 | M3 fatigue/spoilage + M4 road compounding | completed | 5710da3 | 2026-04-21 |
 | 2 | M2 warehouse queue + density risk | completed | c23a50b | 2026-04-21 |
-| 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | _pending_ | 2026-04-21 |
+| 3 | M1 soil + M1a nodes + M1b fog + M1c recycling | completed | 6eb7325 | 2026-04-21 |
 | 4 | Survival mode + DevIndex + Plan C raids | pending | — | — |
 | 5 | AI adaptation 18-patch sweep | pending | — | — |
 | 6 | Long-horizon benchmark harness | pending | — | — |
@@ -162,7 +162,7 @@ _2026-04-21 — Started + completed._
 **Test delta:** 752 → 769 (+17: +4 soil + +4 nodes + +4 fog + +4 recycling + adjustments).
 **LOC changed (src/):** +784 / -32 across 13 files + 3 new files (`VisibilitySystem.js`, `FogOverlay.js`, `Minimap.js`).
 
-_Phase 3 commit:_ (to record after this write).
+_Phase 3 commit:_ `6eb7325` (feat(v0.8.0 phase-3): M1 soil + M1a nodes + M1b fog + M1c recycling).
 
 ---
 
