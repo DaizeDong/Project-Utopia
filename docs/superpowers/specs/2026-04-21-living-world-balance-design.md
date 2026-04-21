@@ -317,7 +317,9 @@ Expected impacts:
 | 7 | M1 Yield pools for lumber/quarry/herb + visual hooks | `TileStateSystem.js`, `ProceduralTileTextures.js` |
 | 8 | Remove objectives; add survival score accumulation | `ScenarioFactory.js`, `runOutcome.js`, `ProgressionSystem.js` |
 | 9 | RaidEscalatorSystem + HUD survival mode + death condition | `RaidEscalatorSystem.js` (NEW), `GameStateOverlay.js`, `PopulationGrowthSystem.js`, `index.html` |
-| 10 | Supply-chain heat lens + new tests + CHANGELOG + regression fixes | `PressureLens.js`, `test/exploit-regression.test.js`, `CHANGELOG.md` |
+| 10 | AI Perceiver + Planner adaptation (tile state, density, carry spoilage, survival stats) | `ColonyPerceiver.js`, `ColonyPlanner.js`, `PromptBuilder.js` |
+| 11 | AI Evaluator + StrategicDirector + SkillLibrary (postconditions, threat tier goal, isolation-recovery skill) | `PlanEvaluator.js`, `StrategicDirector.js`, `SkillLibrary.js`, fallback policies |
+| 12 | Parameter retuning pass + supply-chain heat lens + new tests + CHANGELOG + regression fixes | `balance.js`, `PressureLens.js`, `test/exploit-regression.test.js`, `CHANGELOG.md` |
 
 **Version bump**: 0.7.1 → **0.8.0** ("Living World")
 
@@ -340,3 +342,120 @@ Design is successful if, after implementation:
 3. Manual playthrough: placing 6 farms against a warehouse produces strictly worse 30-minute survival than placing 4 farms in a road-connected radial layout.
 4. Average new-player colony survives ≥ 10 in-game days without micromanagement.
 5. No regression in frame time or tick time > 10% (measured via `npm run bench:perf`).
+
+## 13. AI Agent Adaptation
+
+The existing hierarchical AI stack (Perceiver → Planner → Evaluator + StrategicDirector + Tactical policies + MemoryStore + SkillLibrary) has no awareness of M1–M4 state. Without adaptation, the AI fallback will still recommend warehouse-adjacent layouts and will not recognise spoilage, density, or escalation risk. The following 15 patches (~240 lines across 5 files) bring full coverage.
+
+### 13.1 ColonyPerceiver (`src/simulation/ai/perception/ColonyPerceiver.js`)
+1. **Tile-state sampling** — emit `salinizedCount`, `fallowCount`, `avgYieldPool.{farm,lumber,quarry,herb}`, `depletedTileCount` per snapshot.
+2. **Warehouse density stats** — for each warehouse, compute producer-tiles inside `DENSITY_RADIUS=6`; emit `maxWarehouseDensity`, `densityRiskActive` boolean.
+3. **Carry-spoilage risk** — sample worker carry ages; emit `avgCarryAgeTicks`, `spoilageInTransitLastMinute`.
+4. **Survival stats** — emit `currentThreatTier`, `secondsUntilNextRaid`, `refinedGoodsProducedTotal`, `avgPopulationWindow`, `hoursSinceLastBirth`.
+
+### 13.2 ColonyPlanner (`src/simulation/ai/planner/ColonyPlanner.js` + `PromptBuilder.js`)
+5. **SYSTEM_PROMPT extension** — add M1–M4 quantification block ("A farm with `yieldPool<50` produces at 40%; a warehouse with density>400 has 0.8%/s fire ignite chance; carried food spoils at 0.005/s off-road; roads grant 3%/step stacking speed up to 1.6× at 20 steps").
+6. **Depletion-aware fallback** — when LLM unavailable, the fallback policy checks `yieldPool` and `salinized` on each candidate placement and down-ranks sites with pool < 60.
+7. **Isolation-sensitive scoring** — fallback scorer applies 0.8× penalty when placing on a tile with no connected road path to any warehouse ≥ 3 steps away.
+
+### 13.3 PlanEvaluator (`src/simulation/ai/evaluator/PlanEvaluator.js`)
+8. **Tile-state postconditions** — detect plan steps that place producers on `salinized` tiles or tiles with `yieldPool<50`; log `violatedPostcondition: "depleted_site"` to MemoryStore for Planner to learn.
+9. **Density postcondition** — flag placements that push a warehouse's producer-count above `DENSITY_RISK_THRESHOLD=400`; feed back as `violatedPostcondition: "density_saturated"`.
+10. **Spoilage postcondition** — detect worker haul chains where expected transit time > `spoilageHalfLifeSeconds`; annotate plan with `riskSpoilage` flag.
+
+### 13.4 StrategicDirector (`src/simulation/ai/strategic/StrategicDirector.js`)
+11. **Threat-tier detection** — read `currentThreatTier` from perception; when tier ≥ 3, switch strategic goal from "economic growth" to `"fortify_and_survive"`.
+12. **Survival-mode goal chain** — new goal template: `preserve_food_reserve → maintain_worker_count → maintain_wall_perimeter → repel_raid`.
+13. **Opportunity-cost prompts** — when a prime tile (high fertility + adjacent warehouse) is a candidate, emit a "consider distributed layout for long-term survival" hint to fallback.
+
+### 13.5 SkillLibrary & Fallback (`src/simulation/ai/skills/SkillLibrary.js`, `src/simulation/ai/fallback/*`)
+14. **Isolation-recovery skill** — new skill `relocate_depleted_producer`: detects producers with `yieldPool<30` + connected road; recommends demolish + rebuild 4-6 tiles away on road network.
+15. **Fatigue-aware dispatch** — Tactical policy respects `workerRestDecayPerSecond × carryMassMultiplier`; prefers roaded assignments when worker rest < 0.35.
+
+## 14. Parameter Tuning Table
+
+Audit of `src/config/balance.js` revealed **166 exposed** + **72 inline** parameters. The following targeted adjustments align the old tuning with the new M1–M4 mechanics and close three documented rebalance gaps (goal thrash, wood bottleneck, raid lethality).
+
+### 14.1 New parameters (M1–M4)
+
+| Key | Value | Mechanic | Notes |
+|-----|-------|----------|-------|
+| `soilSalinationThreshold` | `0.85` | M1 | exhaustion frac at which tile becomes `salinized` |
+| `fallowDurationTicks` | `400` | M1 | ticks before salinized tile auto-recovers (if not rebuilt) |
+| `farmYieldPoolInitial` | `200` | M1 | food units before depletion |
+| `lumberYieldPoolInitial` | `300` | M1 | wood units before regrowth cooldown |
+| `quarryYieldPoolInitial` | `400` | M1 | stone — **permanent** depletion |
+| `herbYieldPoolInitial` | `180` | M1 | herbs |
+| `yieldPoolLowOutputFraction` | `0.4` | M1 | output multiplier when `yieldPool<50` |
+| `warehouseIntakePerTick` | `2` | M2 | max deliveries accepted per warehouse per tick |
+| `warehouseDensityRadius` | `6` | M2 | radius for producer-density scan |
+| `warehouseDensityRiskThreshold` | `400` | M2 | aggregate producer score above this triggers fire/vermin roll |
+| `warehouseFireIgniteChancePerTick` | `0.008` | M2 | when density risk active |
+| `verminSwarmIgniteChancePerTick` | `0.005` | M2 | when density risk active |
+| `carryFatigueLoadedMultiplier` | `1.5` | M3 | extra rest decay when carrying |
+| `foodSpoilageRatePerSec` | `0.005` | M3 | fraction/sec off-road/off-bridge |
+| `herbSpoilageRatePerSec` | `0.01` | M3 | higher than food (delicate) |
+| `spoilageGracePeriodTicks` | `500` | M3 | first 500 ticks of run halve rates |
+| `roadStackPerStep` | `0.03` | M4 | per-tile cumulative speed bonus |
+| `roadStackStepCap` | `20` | M4 | max 1.6× at 20 consecutive road steps |
+| `isolationDepositPenalty` | `0.8` | M4 | when no road path ≥3 tiles |
+| `raidTierCap` | `6` | Survival | ceiling for escalator |
+| `raidEscalatorCoefficient` | `3.0` | Survival | `tier = floor(sqrt(gameMinutes/3))` |
+| `raidIntervalBaseSec` | `180` | Survival | decreases by 15 per tier |
+| `raidIntervalFloorSec` | `45` | Survival | minimum interval |
+| `deathConfirmationGameSeconds` | `172800` | Survival | 48 in-game hours |
+| `survivalScoreDayCoef` | `100` | Survival | days × pop × 100 |
+| `survivalScoreRaidCoef` | `500` | Survival | raids × 500 |
+| `survivalScoreGoodsCoef` | `0.1` | Survival | refined × 0.1 |
+
+### 14.2 Rebalance adjustments (existing params)
+
+| Key | Current | Proposed | Rationale |
+|-----|---------|----------|-----------|
+| `kitchenCycleSec` | `3.0` | `2.8` | reduce wood-equivalent bottleneck (see § 15) |
+| `warehouseSoftCapacity` | `3` | `4` | small colonies no longer queue after M2 intake cap |
+| `banditRaidLossPerPressure` | `0.36` | `0.28` | escalator handles lethality; avoid double-tax |
+| `foodEmergencyThreshold` | `14` | `18` | aligns with 48h death grace, fewer AI panic flips |
+| `workerIntentCooldownSec` | `1.5` | `2.2` | reduce goal thrash (goalFlipCount 71→target ≤40) |
+| `objectiveHoldDecayPerSecond` | `0.6` | `0.4` | slower switching → more coherent long-range plans |
+| `lumberProductionPerSecond` (implicit) | — | bump weather modifiers by +0.05 across the board | wood undersupply (see § 15) |
+| `MIN_FOOD_FOR_GROWTH` | `20` | `25` | pair with new 48h birth window |
+| `FOOD_COST_PER_COLONIST` | `5` | `6` | survival mode rewards lean populations |
+
+All new parameters land in a new section of `balance.js` labelled `// --- Living World (v0.8.0) ---` to keep the diff readable.
+
+## 15. Baseline Benchmark Findings & Improvement Targets
+
+Three benchmarks were run against the pre-M1/M2/M3/M4 baseline (`v0.7.1`) to anchor the regression targets.
+
+### 15.1 `bench:perf` (`docs/assignment4/metrics/perf-baseline.csv`)
+- Grid generation: temperate 18–43 ms, rugged 22–32 ms, archipelago 6–7 ms. No regression expected (M1 adds only per-tile struct fields).
+- A* pathfinding: all runs sub-ms. M4 compounding bonus is read from `tileFlags[]` — no path cost.
+- **Target**: post-patch tick time ≤ 1.10× baseline (contractual from § 12.5).
+
+### 15.2 `logic-baseline-2026-03.json`
+- `goalFlipCount = 71` over 120 s of AI control → **AI thrashing**. Root cause: `workerIntentCooldownSec=1.5` too short given new tile-state signals would amplify switching.
+- `invalidTransitionCount = 0` → state planner is sound; no action.
+- `deathsTotal = 3` in 120 s → baseline lethality is high; escalator must not compound this early.
+- **`deliverWithoutCarryCount = 23`** → silent bug: worker enters deliver state with empty carry. Fix in day 12 regression pass (likely an unchecked state transition in `StatePlanner.js`).
+- **Targets**: `goalFlipCount ≤ 40`, `deliverWithoutCarryCount = 0`, `deathsTotal ≤ 2` at baseline preset.
+
+### 15.3 `soak-report.json` (3 × 3-minute runs)
+- Average pop 22–23 (healthy), food 115–138 (surplus), **wood 10–19** (chronic shortfall).
+- `peakThreat` 25–33 → within grace window at current balance; escalator will push this up after patch.
+- 0–1 deaths per run → baseline is stable enough for survival-mode extension.
+- **Target**: post-patch 30-minute soak should sustain wood ≥ 30 median and pop ≥ 15 median across ≥ 8/10 seeds.
+
+### 15.4 Improvement Targets rollup
+
+| Metric | Baseline | Post-M1..M4 Target | Measurement |
+|--------|----------|--------------------|-------------|
+| Adjacency exploit throughput | distributed = 0.72× adj | distributed ≥ 1.2× adj | `exploit-degradation` test |
+| Goal-flip rate (AI thrashing) | 71 / 120 s | ≤ 40 / 120 s | `logic-baseline` |
+| Empty-carry deliveries | 23 | 0 | `logic-baseline` |
+| Median wood (soak 3 min) | 10–19 | ≥ 30 | `soak-sim` |
+| Median survival days | N/A (objectives) | ≥ 10 for default preset | new `survival-scaling` test |
+| Raid tier @ 30 min | N/A | ≥ 3 (tier 3) | new `survival-scaling` test |
+| Frame time regression | — | ≤ +10% | `bench:perf` |
+
+These targets are the exit criteria for v0.8.0.
