@@ -112,6 +112,24 @@ export class MemoryStore {
     return entries.map((e) => `[T=${e.timeSec}s, ${e.type}] ${e.text}`).join("\n");
   }
 
+  /**
+   * Return the N most recent observations with the given category, newest
+   * first. Unlike retrieve(), this does not score by relevance — callers use
+   * it when they need a deterministic "what just happened in bucket X" feed.
+   * @param {string} category
+   * @param {number} [limit=5]
+   * @returns {Array<{timeSec:number, text:string, category:string, importance:number}>}
+   */
+  getRecentByCategory(category, limit = 5) {
+    if (!category) return [];
+    const out = [];
+    for (let i = this.observations.length - 1; i >= 0 && out.length < limit; i--) {
+      const o = this.observations[i];
+      if (o.category === category) out.push(o);
+    }
+    return out;
+  }
+
   /** Remove all observations and reflections. */
   clear() {
     this.observations.length = 0;

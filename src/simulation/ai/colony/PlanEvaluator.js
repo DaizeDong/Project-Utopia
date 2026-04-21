@@ -13,8 +13,24 @@
  */
 
 import { TILE } from "../../../config/constants.js";
-import { listTilesByType, toIndex, inBounds } from "../../../world/grid/Grid.js";
+import { BALANCE } from "../../../config/balance.js";
+import { listTilesByType, toIndex, inBounds, getTileState } from "../../../world/grid/Grid.js";
 import { analyzeResourceChains } from "./ColonyPerceiver.js";
+
+// ── Living World v0.8.0 Phase 5 (patches 11-13) — postcondition thresholds ──
+/** Producer tile types gated by yieldPool / salinization. */
+const YIELD_POSTCONDITION_TILES = new Set(["farm", "lumber", "quarry", "herb_garden"]);
+/** Low-yield threshold under which placement is considered on a depleted site. */
+const DEPLETED_YIELD_POOL_THRESHOLD = 60;
+/** Producer-building tiles counted toward warehouse density. */
+const DENSITY_PRODUCER_TILES = new Set([
+  TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+  TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC,
+]);
+/** Per-tile density score contribution (mirrors ResourceSystem density heuristic). */
+const DENSITY_SCORE_PER_PRODUCER = Number(BALANCE.warehouseDensityAvgStockPerTile ?? 50);
+/** Default spoilage half-life (sec) used when BALANCE.spoilageHalfLifeSeconds is absent. */
+const DEFAULT_SPOILAGE_HALF_LIFE_SEC = 120;
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -445,6 +461,251 @@ function _capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
 }
 
+// ── Living World v0.8.0 Phase 5 — Postcondition Checks (patches 11-13) ────
+
+/**
+ * Extract target tile coords from a plan step. Producer steps may either have
+ * resolved `groundedTile`/`actualTile`, or carry an absolute coord under
+ * `action.ix`/`action.iz` / `step.ix`/`step.iz`. Returns null if unknown.
+ * @param {object} step
+ * @returns {{ix:number, iz:number}|null}
+ */
+function _stepTile(step) {
+  const t = step.groundedTile ?? step.actualTile ?? null;
+  if (t && Number.isFinite(t.ix) && Number.isFinite(t.iz)) return { ix: t.ix, iz: t.iz };
+  if (Number.isFinite(step?.ix) && Number.isFinite(step?.iz)) return { ix: step.ix, iz: step.iz };
+  const a = step?.action ?? {};
+  if (Number.isFinite(a.ix) && Number.isFinite(a.iz)) return { ix: a.ix, iz: a.iz };
+  return null;
+}
+
+/** Action-type extractor mirroring the rest of the module. */
+function _stepAction(step) {
+  return step?.action?.skill ?? step?.action?.type ?? step?.action ?? "";
+}
+
+/**
+ * Patch 11 — Detect producers placed on salinized tiles or on tiles with
+ * yieldPool below the depleted threshold. Returns zero or more violation
+ * records per offending step.
+ * @param {object} plan
+ * @param {object} state
+ * @returns {Array<{stepId:any, action:string, violatedPostcondition:string, detail:string, ix:number, iz:number}>}
+ */
+export function checkDepletedSitePostcondition(plan, state) {
+  const violations = [];
+  const grid = state?.grid;
+  if (!grid || !Array.isArray(plan?.steps)) return violations;
+
+  const threshold = Number(BALANCE.yieldPoolDepletedThreshold ?? DEPLETED_YIELD_POOL_THRESHOLD);
+
+  for (const step of plan.steps) {
+    const action = String(_stepAction(step) ?? "").toLowerCase();
+    if (!YIELD_POSTCONDITION_TILES.has(action)) continue;
+    const tile = _stepTile(step);
+    if (!tile) continue;
+    const ts = getTileState(grid, tile.ix, tile.iz);
+    if (!ts) continue;
+    const yieldPool = Number(ts.yieldPool ?? 0);
+    const salinized = Number(ts.salinized ?? 0);
+    if (salinized >= 0.5) {
+      violations.push({
+        stepId: step.id,
+        action,
+        violatedPostcondition: "depleted_site",
+        detail: `${action} placed on salinized tile (${salinized.toFixed(2)}) at (${tile.ix},${tile.iz})`,
+        ix: tile.ix, iz: tile.iz,
+      });
+    } else if (yieldPool < threshold) {
+      violations.push({
+        stepId: step.id,
+        action,
+        violatedPostcondition: "depleted_site",
+        detail: `${action} placed on low-yield tile (pool=${yieldPool.toFixed(0)} < ${threshold}) at (${tile.ix},${tile.iz})`,
+        ix: tile.ix, iz: tile.iz,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * Count producer-like tiles within `radius` (Manhattan) of a warehouse.
+ * @param {object} grid
+ * @param {number} wx
+ * @param {number} wz
+ * @param {number} radius
+ * @returns {number} producer tile count (unweighted)
+ */
+function _countProducersNearWarehouse(grid, wx, wz, radius) {
+  let count = 0;
+  for (let dz = -radius; dz <= radius; dz++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (Math.abs(dx) + Math.abs(dz) > radius) continue;
+      const ix = wx + dx;
+      const iz = wz + dz;
+      if (!inBounds(ix, iz, grid)) continue;
+      const t = grid.tiles[toIndex(ix, iz, grid.width)];
+      if (DENSITY_PRODUCER_TILES.has(t)) count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Patch 12 — Detect placements that push an existing warehouse's density
+ * (producer-count × per-tile score) above BALANCE.warehouseDensityRiskThreshold.
+ * Each offending step is flagged once for the worst (closest-saturated) warehouse.
+ * @param {object} plan
+ * @param {object} state
+ * @returns {Array<{stepId:any, action:string, violatedPostcondition:string, detail:string}>}
+ */
+export function checkDensityPostcondition(plan, state) {
+  const violations = [];
+  const grid = state?.grid;
+  if (!grid || !Array.isArray(plan?.steps)) return violations;
+
+  const radius = Math.max(1, Number(BALANCE.warehouseDensityRadius ?? 6));
+  const riskThreshold = Number(BALANCE.warehouseDensityRiskThreshold ?? 400);
+  const perTile = Math.max(1, DENSITY_SCORE_PER_PRODUCER);
+
+  const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+  if (warehouses.length === 0) return violations;
+
+  // Baseline producer counts at plan-evaluation time (already placed).
+  const baseline = warehouses.map((w) => ({
+    ix: w.ix, iz: w.iz,
+    count: _countProducersNearWarehouse(grid, w.ix, w.iz, radius),
+  }));
+
+  // Track simulated additions per-warehouse as we walk the plan.
+  const added = new Array(warehouses.length).fill(0);
+
+  for (const step of plan.steps) {
+    const action = String(_stepAction(step) ?? "").toLowerCase();
+    const actionTile = _actionTileType(action);
+    if (!actionTile || !DENSITY_PRODUCER_TILES.has(actionTile)) continue;
+    const tile = _stepTile(step);
+    if (!tile) continue;
+
+    let flaggedForStep = false;
+    for (let i = 0; i < warehouses.length; i++) {
+      const w = warehouses[i];
+      const dist = Math.abs(w.ix - tile.ix) + Math.abs(w.iz - tile.iz);
+      if (dist > radius) continue;
+      added[i] += 1;
+      const projectedScore = (baseline[i].count + added[i]) * perTile;
+      if (projectedScore > riskThreshold && !flaggedForStep) {
+        violations.push({
+          stepId: step.id,
+          action,
+          violatedPostcondition: "density_saturated",
+          detail: `${action} at (${tile.ix},${tile.iz}) pushes warehouse (${w.ix},${w.iz}) density to ${projectedScore} (>${riskThreshold})`,
+        });
+        flaggedForStep = true;
+      }
+    }
+  }
+
+  return violations;
+}
+
+/** Map action string to the concrete TILE id used by BuildSystem (best-effort). */
+function _actionTileType(action) {
+  switch (action) {
+    case "farm": return TILE.FARM;
+    case "lumber": return TILE.LUMBER;
+    case "quarry": return TILE.QUARRY;
+    case "herb_garden": return TILE.HERB_GARDEN;
+    case "kitchen": return TILE.KITCHEN;
+    case "smithy": return TILE.SMITHY;
+    case "clinic": return TILE.CLINIC;
+    case "warehouse": return TILE.WAREHOUSE;
+    default: return null;
+  }
+}
+
+/**
+ * Patch 13 — Detect haul chains whose expected transit time exceeds the
+ * spoilage half-life. Plans carrying worker-haul metadata (`step.action.haul`
+ * or `step.haul`) are examined; when absent, the check is a no-op. Returns
+ * `{ risk: boolean, worstStepId, worstTransitSec, limitSec }`.
+ * @param {object} plan
+ * @returns {{risk:boolean, worstStepId:any, worstTransitSec:number, limitSec:number, steps:Array}}
+ */
+export function checkSpoilagePostcondition(plan) {
+  const limit = Number(BALANCE.spoilageHalfLifeSeconds ?? DEFAULT_SPOILAGE_HALF_LIFE_SEC);
+  const offendingSteps = [];
+  let worstTransit = 0;
+  let worstId = null;
+
+  const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+  for (const step of steps) {
+    const haul = step?.action?.haul ?? step?.haul ?? null;
+    const transitSec = Number(haul?.expectedTransitSec ?? haul?.transitSec ?? NaN);
+    if (!Number.isFinite(transitSec)) continue;
+    if (transitSec > limit) {
+      offendingSteps.push({ stepId: step.id, transitSec, limitSec: limit });
+      if (transitSec > worstTransit) {
+        worstTransit = transitSec;
+        worstId = step.id;
+      }
+    }
+  }
+
+  return {
+    risk: offendingSteps.length > 0,
+    worstStepId: worstId,
+    worstTransitSec: worstTransit,
+    limitSec: limit,
+    steps: offendingSteps,
+  };
+}
+
+/**
+ * Phase 5 entry point — run all postconditions (patches 11-13), log via
+ * MemoryStore when provided, and annotate the passed-in plan result object.
+ *
+ * @param {object} plan — plan being validated (with .steps)
+ * @param {object} state — game state
+ * @param {object} [planResult] — object to annotate with postconditionViolations / riskSpoilage
+ * @param {object} [memoryStore] — optional MemoryStore to record violations
+ * @returns {object} the annotated planResult (creates a new one if none provided)
+ */
+export function runPlanPostconditions(plan, state, planResult = null, memoryStore = null) {
+  const result = planResult ?? {};
+  const depleted = checkDepletedSitePostcondition(plan, state);
+  const density = checkDensityPostcondition(plan, state);
+  const spoilage = checkSpoilagePostcondition(plan);
+
+  const violations = [...depleted, ...density];
+  result.postconditionViolations = violations;
+  result.riskSpoilage = Boolean(spoilage.risk);
+  if (spoilage.risk) {
+    result.spoilageDetail = {
+      worstStepId: spoilage.worstStepId,
+      worstTransitSec: spoilage.worstTransitSec,
+      limitSec: spoilage.limitSec,
+    };
+  }
+
+  if (memoryStore && typeof memoryStore.addObservation === "function") {
+    const timeSec = Number(state?.metrics?.timeSec ?? 0);
+    for (const v of violations) {
+      const text = `violatedPostcondition: "${v.violatedPostcondition}" — ${v.detail}`;
+      memoryStore.addObservation(timeSec, text, "postcondition_violation", 4);
+    }
+    if (spoilage.risk && typeof memoryStore.addReflection === "function") {
+      memoryStore.addReflection(
+        timeSec,
+        `riskSpoilage: plan contains haul step ${spoilage.worstStepId} with transit ${spoilage.worstTransitSec.toFixed(0)}s > half-life ${spoilage.limitSec}s.`,
+      );
+    }
+  }
+
+  return result;
+}
+
 // ── Plan-Level Evaluation ───────────────────────────────────────────
 
 /**
@@ -453,9 +714,10 @@ function _capitalize(s) {
  * @param {object} planStartSnap — state snapshot when plan started
  * @param {object} planEndSnap — state snapshot when plan ended
  * @param {object} state — current game state
+ * @param {object} [options] — { memoryStore, skipPostconditions }
  * @returns {object} plan-level evaluation
  */
-export function evaluatePlan(plan, planStartSnap, planEndSnap, state) {
+export function evaluatePlan(plan, planStartSnap, planEndSnap, state, options = {}) {
   const steps = plan.steps ?? [];
   const completed = steps.filter(s => s.status === "completed").length;
   const failed = steps.filter(s => s.status === "failed").length;
@@ -487,7 +749,7 @@ export function evaluatePlan(plan, planStartSnap, planEndSnap, state) {
   // Determine success
   const success = completionRatio >= 0.5 && completed > 0;
 
-  return {
+  const result = {
     goal: plan.goal,
     source: plan.source ?? "unknown",
     completed,
@@ -501,6 +763,16 @@ export function evaluatePlan(plan, planStartSnap, planEndSnap, state) {
     overallScore,
     success,
   };
+
+  // Phase 5 (patches 11-13). H8 fix: run postconditions exactly once per
+  // evaluatePlan invocation. Callers that need memory-backed violation
+  // logging (the PlanEvaluator class wrapper) pass `{ memoryStore }`; pure
+  // functional callers get a side-effect-free pass with `skipPostconditions`.
+  if (!options.skipPostconditions) {
+    runPlanPostconditions(plan, state, result, options.memoryStore ?? null);
+  }
+
+  return result;
 }
 
 // ── PlanEvaluator Class ─────────────────────────────────────────────
@@ -571,7 +843,12 @@ export class PlanEvaluator {
    * @returns {object} plan evaluation
    */
   evaluatePlan(plan, planStartSnap, planEndSnap, state) {
-    const result = evaluatePlan(plan, planStartSnap, planEndSnap, state);
+    // Pass memoryStore through so postconditions run exactly once with
+    // memory-backed logging — avoids the double-run that used to evaluate
+    // violations twice per plan completion.
+    const result = evaluatePlan(plan, planStartSnap, planEndSnap, state, {
+      memoryStore: this._memoryStore,
+    });
 
     this._stats.plansEvaluated++;
     if (result.success) this._stats.planSuccesses++;

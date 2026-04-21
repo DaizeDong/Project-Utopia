@@ -238,6 +238,15 @@ export const BALANCE = Object.freeze({
   foodSpoilageRatePerSec: 0.005,
   herbSpoilageRatePerSec: 0.01,
   spoilageGracePeriodTicks: 500,
+  // v0.8.0 Phase 5 § 13.2 patch 13: planner's spoilage postcondition flags haul
+  // steps whose estimated transit exceeds this half-life. Treated as a soft
+  // alarm — violation does not abort the plan but emits a riskSpoilage note the
+  // LLM must address next cycle.
+  spoilageHalfLifeSeconds: 120,
+  // v0.8.0 Phase 5 § 13.2 patches 9/11: yieldPool threshold below which a tile
+  // is treated as "depleted" by the planner fallback and the postcondition
+  // evaluator. Centralised here so the two subsystems can't drift apart.
+  yieldPoolDepletedThreshold: 60,
   // M4 road compounding: per-step speed stack accrued while consecutive on-road steps land.
   // Effective bonus = 1 + (roadSpeedMultiplier - 1) × (1 - wear) × (1 + min(step, cap) × perStep).
   // roadStep resets when the worker steps off a ROAD/BRIDGE tile. Max 1.6× at 20 steps.
