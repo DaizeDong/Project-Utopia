@@ -9,9 +9,150 @@
  * 5. Manage planning cadence (trigger conditions, cooldowns)
  */
 
-import { BUILD_COST } from "../../../config/balance.js";
-import { SKILL_LIBRARY, listSkillStatus, getSkillTotalCost } from "./SkillLibrary.js";
+import { BALANCE, BUILD_COST } from "../../../config/balance.js";
+import { TILE, MOVE_DIRECTIONS_4 } from "../../../config/constants.js";
+import { inBounds, toIndex, getTileState, listTilesByType } from "../../../world/grid/Grid.js";
+import {
+  SKILL_LIBRARY,
+  listSkillStatus,
+  getSkillTotalCost,
+  suggestProspectFogFrontier,
+  suggestRecycleAbandonedWorksite,
+  suggestRelocateDepletedProducer,
+} from "./SkillLibrary.js";
 import { formatObservationForLLM } from "./ColonyPerceiver.js";
+
+// ── v0.8.0 Phase 5 (patches 9-10) constants ──────────────────────────
+// Depletion down-rank threshold + multiplier per spec 13.2 patch 9. The
+// threshold reads from BALANCE so the planner and PlanEvaluator agree on what
+// "depleted" means; local fallback covers older BALANCE snapshots.
+const FALLBACK_DEPLETION_POOL_THRESHOLD = Number(BALANCE.yieldPoolDepletedThreshold ?? 60);
+const FALLBACK_DEPLETION_MULTIPLIER = 0.6;
+// Isolation penalty per spec 13.2 patch 10.
+const FALLBACK_ISOLATION_MULTIPLIER = 0.8;
+const FALLBACK_ISOLATION_MIN_STEPS = 3;
+const FALLBACK_ISOLATION_BFS_RADIUS = 6;
+// Tiles that form a contiguous road network for connectivity checks.
+const ROAD_LIKE = new Set([TILE.ROAD, TILE.BRIDGE, TILE.WAREHOUSE]);
+
+/**
+ * Patch 10 — Isolation-sensitive connectivity probe for fallback scoring.
+ * Returns a result object describing whether the candidate tile sits adjacent
+ * to a road-network component that reaches a warehouse at least `minSteps`
+ * Manhattan steps away. BFS is capped at `FALLBACK_ISOLATION_BFS_RADIUS` to
+ * keep this cheap; callers can inspect `truncated` to know the probe hit the
+ * radius wall and `skipped` when the map has no warehouses at all (early
+ * game), in which case the isolation penalty is meaningless and we avoid
+ * silently taxing every candidate.
+ *
+ * Back-compat: callers that compare against a boolean still work because the
+ * legacy signature (`if (!candidateHasReachableWarehouse(...))`) coerces the
+ * object to truthy. `.reachable` is the intended boolean accessor.
+ *
+ * @param {object} grid
+ * @param {number} ix
+ * @param {number} iz
+ * @param {number} [minSteps]
+ * @returns {{reachable:boolean, truncated:boolean, skipped:boolean}}
+ */
+export function candidateHasReachableWarehouse(grid, ix, iz, minSteps = FALLBACK_ISOLATION_MIN_STEPS) {
+  if (!grid || !inBounds(ix, iz, grid)) {
+    return { reachable: false, truncated: false, skipped: false };
+  }
+  // Short-circuit: no warehouses on the map → isolation probe is meaningless.
+  const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+  if (!warehouses || warehouses.length === 0) {
+    return { reachable: true, truncated: false, skipped: true };
+  }
+  const { width } = grid;
+  const visited = new Set();
+  const start = toIndex(ix, iz, width);
+  visited.add(start);
+  // Head-index queue: avoids O(N) queue.shift() on large BFS frontiers.
+  const queue = [[ix, iz, 0]];
+  let head = 0;
+  let truncated = false;
+  while (head < queue.length) {
+    const [cx, cz, hops] = queue[head++];
+    if (hops > FALLBACK_ISOLATION_BFS_RADIUS) { truncated = true; continue; }
+    const tile = grid.tiles[toIndex(cx, cz, width)];
+    if (tile === TILE.WAREHOUSE && hops >= minSteps) {
+      return { reachable: true, truncated: false, skipped: false };
+    }
+    for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (!inBounds(nx, nz, grid)) continue;
+      const nIdx = toIndex(nx, nz, width);
+      if (visited.has(nIdx)) continue;
+      const nTile = grid.tiles[nIdx];
+      if (ROAD_LIKE.has(nTile) || (hops === 0 && nTile === TILE.GRASS)) {
+        visited.add(nIdx);
+        queue.push([nx, nz, hops + 1]);
+      }
+    }
+  }
+  return { reachable: false, truncated, skipped: false };
+}
+
+/**
+ * Patch 9 + 10 — Score a fallback candidate placement with depletion and
+ * isolation awareness. Returns a multiplier in [0, 1] that callers apply to
+ * their base score. Factors in:
+ *   - yieldPool < 60 → × 0.6 (depleted site)
+ *   - salinized      → × 0.6 (treated same as low pool)
+ *   - no road-connected warehouse ≥ 3 steps away → × 0.8 (isolation)
+ *
+ * Multipliers compose (worst-case: 0.48). Designed so existing scoring code
+ * can do `baseScore *= scoreFallbackCandidate(...)` without breaking.
+ * @param {object} grid
+ * @param {number} ix
+ * @param {number} iz
+ * @returns {{multiplier:number, reasons:string[]}}
+ */
+export function scoreFallbackCandidate(grid, ix, iz) {
+  let mult = 1;
+  const reasons = [];
+  const ts = getTileState(grid, ix, iz);
+  if (ts) {
+    const pool = Number(ts.yieldPool ?? 0);
+    const salinized = Number(ts.salinized ?? 0) > 0;
+    if (salinized || (pool > 0 && pool < FALLBACK_DEPLETION_POOL_THRESHOLD)) {
+      mult *= FALLBACK_DEPLETION_MULTIPLIER;
+      reasons.push(salinized ? "salinized" : `low_pool(${pool})`);
+    }
+  }
+  const probe = candidateHasReachableWarehouse(grid, ix, iz);
+  if (probe.skipped) {
+    reasons.push("isolation_probe_skipped");
+  } else if (!probe.reachable) {
+    mult *= FALLBACK_ISOLATION_MULTIPLIER;
+    reasons.push(probe.truncated ? "isolated_probe_truncated" : "isolated");
+  }
+  return { multiplier: Math.round(mult * 1000) / 1000, reasons };
+}
+
+/**
+ * Rank a list of candidate tile placements by applying depletion + isolation
+ * multipliers on top of each candidate's `score`. Pure helper — callers in
+ * PlacementSpecialist or other fallback enumerators can pipe their scored
+ * candidates through this before selecting the winner.
+ * @param {object} grid
+ * @param {Array<{ix:number, iz:number, score:number}>} candidates
+ * @returns {Array<{ix:number, iz:number, score:number, multiplier:number, reasons:string[]}>}
+ */
+export function rankFallbackCandidates(grid, candidates) {
+  return candidates.map((c) => {
+    const { multiplier, reasons } = scoreFallbackCandidate(grid, c.ix, c.iz);
+    return {
+      ix: c.ix,
+      iz: c.iz,
+      score: (Number(c.score) || 0) * multiplier,
+      multiplier,
+      reasons,
+    };
+  }).sort((a, b) => b.score - a.score);
+}
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -81,6 +222,14 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - coverage_gap — near uncovered worksites
 - terrain:high_moisture — moist tiles near infrastructure
 
+## M1-M4 Quantified Mechanics (v0.8.0 "living world")
+- A farm with yieldPool<50 produces at 40%; avoid rebuilding on tiles where avgYieldPool.farm is near zero.
+- A warehouse with density>400 has 0.8%/s fire ignite chance; never stack >6 producers on one warehouse.
+- Carried food spoils at 0.005/s off-road (herbs at 0.010/s); keep hauls short or roaded.
+- Roads grant 3%/step stacking speed up to 1.6× at 20 steps; long producer-to-warehouse legs benefit most.
+- When densityRiskActive is true, prefer expansion via a new warehouse over piling producers on the hot one.
+- When nextExhaustionMinutes.<type> drops under 10, relocate or rotate; do not keep feeding the depleted node.
+
 ## Hard Rules
 - Never plan more buildings than current resources can afford
 - Warehouse spacing >= 5 tiles from nearest warehouse
@@ -121,13 +270,48 @@ For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
  * @param {object} state — game state (for affordable check)
  * @param {string} [learnedSkillsText] — from LearnedSkillLibrary.formatForPrompt()
  * @param {string} [evaluationText] — from PlanEvaluator.formatEvaluationForLLM() (P4)
+ * @param {object} [options] — { memoryStore } — Phase 5 H7: when present, the
+ *                              prompt includes the last few
+ *                              `postcondition_violation` observations so the
+ *                              LLM can address them explicitly.
  * @returns {string}
  */
-export function buildPlannerPrompt(observation, memoryText, state, learnedSkillsText = "", evaluationText = "") {
+export function buildPlannerPrompt(observation, memoryText, state, learnedSkillsText = "", evaluationText = "", options = {}) {
   const sections = [];
 
+  // H7: decorate the observation with recent postcondition violations so
+  // formatObservationForLLM renders them inline. We avoid mutating the caller's
+  // object by shallow-cloning when we have violations to attach.
+  let obs = observation;
+  const memStore = options.memoryStore;
+  if (memStore && typeof memStore.getRecentByCategory === "function") {
+    const recent = memStore.getRecentByCategory("postcondition_violation", 3);
+    if (recent.length > 0) {
+      obs = { ...observation, postconditionViolations: recent.map((r) => r.text) };
+    }
+  }
+
   // Observation
-  sections.push("## Current Observation\n" + formatObservationForLLM(observation));
+  sections.push("## Current Observation\n" + formatObservationForLLM(obs));
+
+  // Phase 5 H7 / strategic wiring — surface the current strategic goal +
+  // chain + repair goal + fallback hints so the LLM sees what the strategic
+  // layer has decided since its last turn. These live on state.gameplay /
+  // state.ai and were published by StrategicDirector.applyPhase5StrategicAdaptations.
+  const gp = state?.gameplay ?? {};
+  const strategicLines = [];
+  if (gp.strategicGoal) strategicLines.push(`- Goal: ${gp.strategicGoal}`);
+  if (Array.isArray(gp.strategicGoalChain) && gp.strategicGoalChain.length > 0) {
+    strategicLines.push(`- Goal chain: ${gp.strategicGoalChain.join(" → ")}`);
+  }
+  if (gp.strategicRepairGoal) strategicLines.push(`- Repair focus: ${gp.strategicRepairGoal}`);
+  const hints = state?.ai?.fallbackHints ?? {};
+  if (hints.distributed_layout_hint) {
+    strategicLines.push(`- Layout hint: ${hints.distributed_layout_hint.message}`);
+  }
+  if (strategicLines.length > 0) {
+    sections.push("\n## Strategic State (Phase 5)\n" + strategicLines.join("\n"));
+  }
 
   // Recent reflections
   if (memoryText) {
@@ -329,6 +513,51 @@ export function generateFallbackPlan(observation, state) {
         "Food crisis but insufficient wood for farm, extend logistics",
         { logistics: "improved" }));
     }
+  }
+
+  // Phase 5 — SkillLibrary suggestion hooks. These run once we've addressed
+  // any food crisis (Priority 1) and before generic coverage/wood priorities
+  // so the planner reacts to M1-M4 terrain depletion signals even when the
+  // LLM isn't available. Each helper emits 0..N suggestions; we cap their
+  // footprint so they don't swamp the existing priority ladder.
+  const prospectSuggestions = suggestProspectFogFrontier(state);
+  for (const s of prospectSuggestions.slice(0, 1)) {
+    steps.push({
+      id: nextId++,
+      thought: `All ${s.resource} nodes depleted — prospect fog frontier`,
+      action: { type: "skill", skill: "prospect_fog_frontier", hint: `coords:${s.target.ix},${s.target.iz}` },
+      predicted_effect: { exploration: "+1 frontier tile", resource: s.resource },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+
+  const recycleSuggestions = suggestRecycleAbandonedWorksite(state);
+  for (const s of recycleSuggestions.slice(0, 1)) {
+    steps.push({
+      id: nextId++,
+      thought: `Abandoned ${s.producer ?? "producer"} at (${s.target.ix},${s.target.iz}) — recycle for stone refund`,
+      action: { type: "skill", skill: "recycle_abandoned_worksite", hint: `coords:${s.target.ix},${s.target.iz}` },
+      predicted_effect: { stone: "+refund", logistics: "freed tile" },
+      priority: "medium",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+
+  const relocateSuggestions = suggestRelocateDepletedProducer(state);
+  for (const s of relocateSuggestions.slice(0, 1)) {
+    if (!s.to) continue;
+    steps.push({
+      id: nextId++,
+      thought: `${s.producer} at (${s.from.ix},${s.from.iz}) depleted — relocate to (${s.to.ix},${s.to.iz})`,
+      action: { type: "skill", skill: "relocate_depleted_producer", hint: `coords:${s.to.ix},${s.to.iz}` },
+      predicted_effect: { production: "restored", coverage: "preserved" },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
   }
 
   // Priority 2: Coverage gap — add warehouse if many disconnected worksites
@@ -633,10 +862,10 @@ export class ColonyPlanner {
    * @param {string} [evaluationText] — from PlanEvaluator.formatEvaluationForLLM() (P4)
    * @returns {Promise<{ plan: object, source: "llm"|"fallback", error: string }>}
    */
-  async requestPlan(observation, memoryText, state, learnedSkillsText = "", evaluationText = "") {
+  async requestPlan(observation, memoryText, state, learnedSkillsText = "", evaluationText = "", options = {}) {
     // Try LLM if API key is available
     if (this._apiKey) {
-      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText, evaluationText);
+      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText, evaluationText, options);
       this._stats.llmCalls++;
 
       const result = await callLLM(SYSTEM_PROMPT, userPrompt, {

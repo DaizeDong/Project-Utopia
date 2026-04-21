@@ -6,6 +6,69 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 5 — Review iteration pass (AI wiring + silent-failure fixes)
+
+- **C1 minsUntilExhaustion inversion** —
+  `src/simulation/ai/colony/ColonyPerceiver.js::minsUntilExhaustion` now
+  returns `0` (highest urgency) when every node of a type is depleted or
+  the array is empty. Previous `Infinity` silently flipped the urgency
+  signal so the planner treated fully-exhausted resources as having
+  unlimited runway.
+- **C2 Isolation probe short-circuit** —
+  `candidateHasReachableWarehouse` now returns
+  `{ reachable, truncated, skipped }` and short-circuits with
+  `{ reachable:true, skipped:true }` on maps with no warehouses. Prevents
+  every early-game candidate from being silently penalised by 0.8×.
+  Replaces the old `queue.shift()` O(N²) BFS with a head-index queue.
+- **C3 Fog sampler missing-array sentinel** —
+  `sampleFogState` returns an explicit `reason:"fog_array_missing"`
+  sentinel when `fog.visibility` is absent, so downstream readers can
+  distinguish "no fog system" from "fully revealed".
+- **CRITICAL 1 Perceiver dead-flow fix** —
+  `formatObservationForLLM` now renders a `### Living-World Signals
+  (M1-M4)` section with tileState, warehouseDensity, spoilage, survival,
+  nodes (incl. exhaustion warnings under 10 min), fog and DevIndex dim
+  blocks. The Phase 5 perceiver patches previously attached data to the
+  observation without ever rendering it to the LLM prompt.
+- **H5 StrategicDirector goalChain preservation** —
+  `applyThreatTierGoal` no longer wipes `state.gameplay.strategicGoalChain`
+  every tick during economic mode. The chain is only reset on the
+  transition out of `fortify_and_survive`, preventing thrash for async
+  planner consumers that snapshot the chain between ticks.
+- **H6 DevIndex dim iteration stability** —
+  `updateDevIndexRepairGoal` iterates a frozen `DEV_INDEX_DIM_KEYS`
+  constant instead of `Object.entries(dims)` so repair-goal selection is
+  deterministic regardless of DevIndexSystem emission order.
+- **H7 Postcondition violations in prompt** —
+  `buildPlannerPrompt` accepts `{ memoryStore }` and pulls the 3 most
+  recent `postcondition_violation` observations via new
+  `MemoryStore.getRecentByCategory`. `formatObservationForLLM` then
+  renders them under `### Last Plan Postcondition Violations (avoid
+  repeating)` so the LLM sees what tripped the evaluator.
+- **H8 Double runPlanPostconditions** —
+  `evaluatePlan` now accepts `{ memoryStore, skipPostconditions }`; the
+  PlanEvaluator class passes its memoryStore in directly so postcondition
+  work runs exactly once per plan completion instead of twice.
+- **Strategic state wired into planner** —
+  `buildPlannerPrompt` renders a `### Strategic State (Phase 5)` section
+  that surfaces `state.gameplay.strategicGoal`, `strategicGoalChain`,
+  `strategicRepairGoal` and `state.ai.fallbackHints.distributed_layout_hint`
+  (all published by `applyPhase5StrategicAdaptations` every tick).
+- **SkillLibrary suggestions wired into fallback** —
+  `generateFallbackPlan` now consumes `suggestProspectFogFrontier`,
+  `suggestRecycleAbandonedWorksite`, and `suggestRelocateDepletedProducer`
+  from `SkillLibrary`, each capped at one suggestion per plan so they
+  complement the existing priority ladder instead of swamping it.
+- **SHOULD-FIX cleanup** —
+  Added `BALANCE.spoilageHalfLifeSeconds = 120` and
+  `BALANCE.yieldPoolDepletedThreshold = 60` so PlanEvaluator and
+  ColonyPlanner can't drift out of sync. Replaced magic `& 1 / & 2 / & 4`
+  checks in `SkillLibrary` with `NODE_FLAGS.FOREST/STONE/HERB` constants.
+- **Tests:** 850 pass / 0 fail (73 suites). Added 5 new tests:
+  perceiver Living-World section rendering, postcondition-violation
+  rendering, isolation probe skip-on-empty, planner prompt postcondition
+  injection, and strategic-state rendering.
+
 ### Phase 4 — Review iteration pass (silent-failure + masking fixes)
 
 - **C1 PopulationGrowthSystem determinism** —

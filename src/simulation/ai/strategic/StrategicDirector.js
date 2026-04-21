@@ -1,4 +1,35 @@
 import { DecisionScheduler } from "./DecisionScheduler.js";
+import { BALANCE } from "../../../config/balance.js";
+import { TILE } from "../../../config/constants.js";
+import { listTilesByType, toIndex, getTileState } from "../../../world/grid/Grid.js";
+
+// ── Living World v0.8.0 Phase 5 (patches 14-18) — strategic goal tuning ─────
+/** Threat-tier at or above which we switch to fortify_and_survive. */
+const FORTIFY_THREAT_TIER = 3;
+/** Prime-tile fertility threshold for the opportunity-cost hint. */
+const PRIME_FERTILITY_THRESHOLD = 0.8;
+/** Seconds a DevIndex dimension must stay below 50 before repair goal fires. */
+const DEV_INDEX_DIM_REPAIR_SEC = 60;
+/** Dimension-threshold that triggers a repair goal. */
+const DEV_INDEX_DIM_THRESHOLD = 50;
+/** Ordered goal chain for survival/fortify mode (patch 15). */
+export const SURVIVAL_GOAL_CHAIN = Object.freeze([
+  "preserve_food_reserve",
+  "maintain_worker_count",
+  "maintain_wall_perimeter",
+  "repel_raid",
+]);
+/** Fixed-order DevIndex dimension keys — iterate this rather than Object.entries
+ * so repair-goal selection is deterministic and stable across runs. Must match
+ * the dim keys populated by DevIndexSystem. */
+export const DEV_INDEX_DIM_KEYS = Object.freeze([
+  "population",
+  "economy",
+  "infrastructure",
+  "production",
+  "defense",
+  "resilience",
+]);
 
 export const DEFAULT_STRATEGY = {
   priority: "grow",
@@ -76,6 +107,173 @@ export function guardStrategy(raw) {
     .filter((o) => o.length > 0);
 
   return { reasoning, strategy, observations, summary };
+}
+
+// ── Phase 5 helpers (patches 14-16, 18) ─────────────────────────────────────
+
+/** Read current threat tier from raid escalation, falling back to 0. */
+export function getCurrentThreatTier(state) {
+  const v = Number(state?.gameplay?.raidEscalation?.tier ?? 0);
+  return Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Determine whether we should switch to fortify_and_survive (patch 14).
+ * Also writes `state.gameplay.strategicGoal` / `strategicGoalChain` (patch 15).
+ * @param {object} state
+ * @returns {{goal:string, chain:Array<string>}}
+ */
+export function applyThreatTierGoal(state) {
+  const tier = getCurrentThreatTier(state);
+  state.gameplay ??= {};
+  const prevGoal = state.gameplay.strategicGoal;
+
+  if (tier >= FORTIFY_THREAT_TIER) {
+    state.gameplay.strategicGoal = "fortify_and_survive";
+    // Only install the survival chain on the transition into fortify mode so
+    // we don't thrash async consumers that snapshot the chain between ticks.
+    if (prevGoal !== "fortify_and_survive" || !Array.isArray(state.gameplay.strategicGoalChain)) {
+      state.gameplay.strategicGoalChain = [...SURVIVAL_GOAL_CHAIN];
+    }
+    return {
+      goal: "fortify_and_survive",
+      chain: [...(state.gameplay.strategicGoalChain ?? SURVIVAL_GOAL_CHAIN)],
+    };
+  }
+
+  state.gameplay.strategicGoal = "economic_growth";
+  // Only clear the chain when transitioning out of fortify — during sustained
+  // economic ticks we leave whatever the planner wrote (empty or otherwise)
+  // untouched, preventing wipe/refill churn every tick.
+  if (prevGoal === "fortify_and_survive") {
+    state.gameplay.strategicGoalChain = [];
+  } else if (!Array.isArray(state.gameplay.strategicGoalChain)) {
+    state.gameplay.strategicGoalChain = [];
+  }
+  return { goal: "economic_growth", chain: [...state.gameplay.strategicGoalChain] };
+}
+
+/**
+ * Patch 16 — if any candidate tile in the fallback pool is "prime" (high
+ * fertility AND adjacent to a warehouse) and we are NOT in fortify mode, emit
+ * a `distributed_layout_hint` so ColonyPlanner's fallback can down-rank it.
+ * The hint bag lives on `state.ai.fallbackHints`.
+ *
+ * Returns `{ emitted, primeTiles }` describing whether a hint was emitted.
+ * @param {object} state
+ */
+export function emitOpportunityCostHint(state) {
+  state.ai ??= {};
+  const fallbackHints = state.ai.fallbackHints ?? (state.ai.fallbackHints = {});
+  // Fortify mode: clear any stale hint and bail (survival overrides growth).
+  if (state.gameplay?.strategicGoal === "fortify_and_survive") {
+    delete fallbackHints.distributed_layout_hint;
+    return { emitted: false, primeTiles: [] };
+  }
+  const grid = state?.grid;
+  if (!grid) return { emitted: false, primeTiles: [] };
+
+  const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+  if (warehouses.length === 0) return { emitted: false, primeTiles: [] };
+
+  const primeTiles = [];
+  const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+  for (const w of warehouses) {
+    for (const [dx, dz] of dirs) {
+      const ix = w.ix + dx;
+      const iz = w.iz + dz;
+      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
+      const tsEntry = getTileState(grid, ix, iz);
+      const fertility = Number(tsEntry?.fertility ?? 0);
+      const tile = grid.tiles[toIndex(ix, iz, grid.width)];
+      if (tile !== TILE.GRASS) continue;
+      if (fertility >= PRIME_FERTILITY_THRESHOLD) {
+        primeTiles.push({ ix, iz, fertility });
+      }
+    }
+  }
+
+  if (primeTiles.length > 0) {
+    fallbackHints.distributed_layout_hint = {
+      issuedAtSec: Number(state?.metrics?.timeSec ?? 0),
+      reason: "prime_tile_near_warehouse",
+      primeTiles: primeTiles.slice(0, 5),
+      message:
+        "Consider distributing new producers further from warehouses — prime-fertility warehouse-adjacent tiles carry long-term density risk.",
+    };
+    return { emitted: true, primeTiles };
+  }
+
+  // No prime tiles this tick — clear any stale hint.
+  delete fallbackHints.distributed_layout_hint;
+  return { emitted: false, primeTiles: [] };
+}
+
+/**
+ * Patch 18 — DevIndex-aware repair goal. When any dim stays < 50 for
+ * DEV_INDEX_DIM_REPAIR_SEC game-seconds, emit `rebalance_<dim>` on
+ * `state.gameplay.strategicRepairGoal`. Dimension timers live on
+ * `state.ai.devIndexDimBelow50TimerSec` as a `{ dimName: seconds }` map.
+ * @param {object} state
+ * @param {number} dt
+ */
+export function updateDevIndexRepairGoal(state, dt) {
+  const dims = state?.gameplay?.devIndexDims;
+  if (!dims || typeof dims !== "object") return null;
+  state.ai ??= {};
+  const timers = state.ai.devIndexDimBelow50TimerSec ?? (state.ai.devIndexDimBelow50TimerSec = {});
+  const dtSec = Number.isFinite(dt) && dt > 0 ? Number(dt) : 0;
+
+  let triggered = null;
+  let worstDuration = 0;
+
+  // Iterate the fixed dim list so selection is deterministic; Object.entries
+  // order can vary if DevIndexSystem ever emits keys in a different order.
+  for (const dim of DEV_INDEX_DIM_KEYS) {
+    if (!(dim in dims)) continue;
+    const value = Number(dims[dim] ?? 0);
+    if (value < DEV_INDEX_DIM_THRESHOLD) {
+      timers[dim] = Number(timers[dim] ?? 0) + dtSec;
+      if (timers[dim] >= DEV_INDEX_DIM_REPAIR_SEC && timers[dim] > worstDuration) {
+        triggered = dim;
+        worstDuration = timers[dim];
+      }
+    } else if (timers[dim] > 0) {
+      timers[dim] = 0;
+    }
+  }
+
+  state.gameplay ??= {};
+  if (triggered) {
+    state.gameplay.strategicRepairGoal = `rebalance_${triggered}`;
+  } else {
+    // Don't clobber a repair goal that another system wrote; only clear
+    // the one we own.
+    const current = state.gameplay.strategicRepairGoal;
+    if (typeof current === "string" && current.startsWith("rebalance_")) {
+      const dim = current.slice("rebalance_".length);
+      const value = Number(dims[dim] ?? 0);
+      if (value >= DEV_INDEX_DIM_THRESHOLD) {
+        state.gameplay.strategicRepairGoal = null;
+      }
+    }
+  }
+  return state.gameplay.strategicRepairGoal ?? null;
+}
+
+/**
+ * Phase 5 integration point — runs every tick, independent of the LLM's
+ * async cadence. Publishes all Phase 5 strategic outputs.
+ * @param {object} state
+ * @param {number} dt
+ */
+export function applyPhase5StrategicAdaptations(state, dt) {
+  if (!state) return;
+  state.gameplay ??= {};
+  state.ai ??= {};
+  applyThreatTierGoal(state);
+  emitOpportunityCostHint(state);
+  updateDevIndexRepairGoal(state, dt);
 }
 
 export class StrategicDirector {
@@ -298,6 +496,9 @@ Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI
    * @param {object} services
    */
   update(_dt, state, services) {
+    // Phase 5 — per-tick adaptations run regardless of LLM cadence.
+    applyPhase5StrategicAdaptations(state, _dt);
+
     // 1. Initialize state.ai.strategy if missing
     if (!state.ai.strategy) {
       state.ai.strategy = { ...DEFAULT_STRATEGY };

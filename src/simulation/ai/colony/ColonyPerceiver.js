@@ -19,11 +19,28 @@
  * - SayCan [7] — affordance-aware observation
  */
 
-import { TILE, MOVE_DIRECTIONS_4, DEFAULT_GRID } from "../../../config/constants.js";
+import { TILE, MOVE_DIRECTIONS_4, DEFAULT_GRID, FOG_STATE, NODE_FLAGS } from "../../../config/constants.js";
 import { BUILD_COST, WEATHER_MODIFIERS, BALANCE } from "../../../config/balance.js";
 import { inBounds, getTile, listTilesByType, toIndex } from "../../../world/grid/Grid.js";
 import { canAfford } from "../../construction/BuildAdvisor.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
+
+// ── v0.8.0 Phase 5 Patch constants ──────────────────────────────────────
+// Match SimulationClock: dt ≈ 1/30, so 30 ticks per simulated second.
+const TICKS_PER_SEC = 30;
+// Population window for avgPopulationWindow (trailing buffer, seconds).
+const POPULATION_WINDOW_SEC = 120;
+// DevIndex saturation threshold: all dims above this → saturationIndicator = true.
+const DEV_INDEX_SATURATION_DIM = 80;
+// Depletion pessimistic drain rate (yieldPool/sec) per node-type for
+// `nextExhaustionMinutes`. These are upper-bound estimates matching the
+// per-harvest-tick debits in TileStateSystem (conservative → plans err early).
+const PESSIMISTIC_DRAIN_PER_SEC = Object.freeze({
+  forest: 0.6,
+  stone: 0.4,
+  herb: 0.3,
+  farm: 0.8,
+});
 
 // ── Season definitions (must match WeatherSystem) ───────────────────────
 const SEASON_DURATION = { spring: 60, summer: 60, autumn: 50, winter: 50 };
@@ -541,6 +558,394 @@ export function summarizePlanHistory(planHistory, maxEntries = 5) {
   };
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// v0.8.0 Phase 5 — Patches 1-7: M1–M4 perception extensions
+// ══════════════════════════════════════════════════════════════════════════
+
+// PRODUCER_TILE_SET — tiles that count toward warehouse-density saturation
+// (mirrors the set used by ResourceSystem when computing the density metric).
+const PRODUCER_TILE_SET = new Set([
+  TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+  TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC,
+]);
+
+/**
+ * Patch 1 — Tile-state sampling.
+ * Walks grid.tileState once and emits aggregate counters the planner can
+ * use for depletion/soil-health decisions.
+ * @param {object} grid
+ * @returns {{salinizedCount:number, fallowCount:number, depletedTileCount:number,
+ *   avgYieldPool:{farm:number, lumber:number, quarry:number, herb:number}}}
+ */
+export function sampleTileStateAggregates(grid) {
+  const out = {
+    salinizedCount: 0,
+    fallowCount: 0,
+    depletedTileCount: 0,
+    avgYieldPool: { farm: 0, lumber: 0, quarry: 0, herb: 0 },
+  };
+  if (!grid?.tileState) return out;
+
+  const sums = { farm: 0, lumber: 0, quarry: 0, herb: 0 };
+  const counts = { farm: 0, lumber: 0, quarry: 0, herb: 0 };
+  const width = grid.width;
+
+  for (const [idx, entry] of grid.tileState) {
+    if (!entry) continue;
+    if ((entry.salinized ?? 0) > 0) out.salinizedCount++;
+    if ((entry.fallowUntil ?? 0) > 0) out.fallowCount++;
+    const pool = Number(entry.yieldPool ?? 0);
+    if (pool <= 0) out.depletedTileCount++;
+
+    // Categorize by tile type for avg pool
+    const tile = grid.tiles?.[idx];
+    if (tile === TILE.FARM) {
+      sums.farm += pool;
+      counts.farm++;
+    } else if (tile === TILE.LUMBER) {
+      sums.lumber += pool;
+      counts.lumber++;
+    } else if (tile === TILE.QUARRY) {
+      sums.quarry += pool;
+      counts.quarry++;
+    } else if (tile === TILE.HERB_GARDEN) {
+      sums.herb += pool;
+      counts.herb++;
+    }
+  }
+
+  out.avgYieldPool.farm = counts.farm > 0 ? Math.round(sums.farm / counts.farm * 10) / 10 : 0;
+  out.avgYieldPool.lumber = counts.lumber > 0 ? Math.round(sums.lumber / counts.lumber * 10) / 10 : 0;
+  out.avgYieldPool.quarry = counts.quarry > 0 ? Math.round(sums.quarry / counts.quarry * 10) / 10 : 0;
+  out.avgYieldPool.herb = counts.herb > 0 ? Math.round(sums.herb / counts.herb * 10) / 10 : 0;
+  return out;
+}
+
+/**
+ * Patch 2 — Warehouse density sampling.
+ * For each WAREHOUSE tile, count producer-type tiles inside the density
+ * radius; emit the max and a boolean risk indicator. Radius and threshold
+ * fall back to sensible defaults when balance keys are absent.
+ * @param {object} grid
+ * @returns {{maxWarehouseDensity:number, densityRiskActive:boolean, perWarehouse:Array}}
+ */
+export function sampleWarehouseDensity(grid) {
+  const radius = Number(BALANCE.warehouseDensityRadius ?? 6);
+  const threshold = Number(BALANCE.warehouseDensityRiskThreshold ?? 400);
+  const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+  let max = 0;
+  const per = [];
+
+  for (const wh of warehouses) {
+    let count = 0;
+    // Box scan inside Manhattan-radius
+    const x0 = Math.max(0, wh.ix - radius);
+    const x1 = Math.min(grid.width - 1, wh.ix + radius);
+    const z0 = Math.max(0, wh.iz - radius);
+    const z1 = Math.min(grid.height - 1, wh.iz + radius);
+    for (let iz = z0; iz <= z1; iz++) {
+      for (let ix = x0; ix <= x1; ix++) {
+        if (Math.abs(ix - wh.ix) + Math.abs(iz - wh.iz) > radius) continue;
+        const t = grid.tiles[toIndex(ix, iz, grid.width)];
+        if (PRODUCER_TILE_SET.has(t)) count++;
+      }
+    }
+    // Spec aligns with ResourceSystem scoring: each producer contributes
+    // ~50 units to the density score (so 8 producers → ~400). Multiply so the
+    // risk threshold (400) is comparable to the underlying system.
+    const score = count * 50;
+    per.push({ ix: wh.ix, iz: wh.iz, producers: count, score });
+    if (score > max) max = score;
+  }
+
+  return {
+    maxWarehouseDensity: max,
+    densityRiskActive: max >= threshold,
+    perWarehouse: per,
+  };
+}
+
+/**
+ * Patch 3 — Carry spoilage risk.
+ * Samples worker carry ages from state.agents and reads a last-minute
+ * spoiled-in-transit counter from state.metrics if the ResourceSystem tracks
+ * it. Both fields fall back to 0 when not present (backward-compatible).
+ * @param {Array} workers
+ * @param {object} metrics
+ */
+export function sampleCarrySpoilageRisk(workers, metrics) {
+  let totalAge = 0;
+  let count = 0;
+  for (const w of workers) {
+    const carryTotal = (w.carry?.food ?? 0) + (w.carry?.wood ?? 0)
+      + (w.carry?.stone ?? 0) + (w.carry?.herbs ?? 0);
+    if (carryTotal <= 0) continue;
+    const age = Number(w.blackboard?.carryAgeSec ?? 0);
+    totalAge += age;
+    count++;
+  }
+  const avgCarryAgeTicks = count > 0 ? Math.round(totalAge / count * TICKS_PER_SEC) : 0;
+  const spoilageInTransitLastMinute = Number(metrics?.spoilageInTransitLastMinute
+    ?? metrics?.spoiledInTransitLastMinute ?? 0);
+  return { avgCarryAgeTicks, spoilageInTransitLastMinute };
+}
+
+/**
+ * Patch 4 — Survival stats bundle.
+ * Threat tier, seconds-until-next-raid, refined-goods totals, population
+ * rolling-window average, and time since last birth.
+ *
+ * Uses `state.ai.perceptionScratch` (created on demand) for the population
+ * trailing buffer. Nothing is mutated outside that scratch object, so the
+ * existing callers remain unaffected.
+ * @param {object} state
+ * @param {number} workerCount
+ * @param {number} timeSec
+ */
+export function sampleSurvivalStats(state, workerCount, timeSec) {
+  const gp = state.gameplay ?? {};
+  const esc = gp.raidEscalation ?? null;
+  const currentThreatTier = Number(esc?.tier ?? 0);
+
+  const lastRaidTick = Number(gp.lastRaidTick ?? -9999);
+  const currentTick = Number(state.metrics?.tick ?? Math.round(timeSec * TICKS_PER_SEC));
+  const intervalTicks = Number(esc?.intervalTicks ?? BALANCE.raidIntervalBaseTicks ?? 3600);
+  const ticksRemaining = Math.max(0, intervalTicks - (currentTick - lastRaidTick));
+  const secondsUntilNextRaid = Math.round(ticksRemaining / TICKS_PER_SEC);
+
+  const refinedGoodsProducedTotal = Number(state.metrics?.refinedGoodsProducedTotal ?? 0);
+
+  // Population rolling window — stored in state.ai.perceptionScratch
+  state.ai ??= {};
+  state.ai.perceptionScratch ??= { populationSamples: [] };
+  const samples = state.ai.perceptionScratch.populationSamples;
+  samples.push({ t: timeSec, n: workerCount });
+  while (samples.length > 0 && timeSec - samples[0].t > POPULATION_WINDOW_SEC) {
+    samples.shift();
+  }
+  let sum = 0;
+  for (const s of samples) sum += s.n;
+  const avgPopulationWindow = samples.length > 0
+    ? Math.round(sum / samples.length * 10) / 10
+    : workerCount;
+
+  // Hours since last birth
+  const lastBirthGameSec = Number(state.metrics?.lastBirthGameSec ?? -1);
+  const hoursSinceLastBirth = lastBirthGameSec < 0
+    ? -1
+    : Math.round((timeSec - lastBirthGameSec) / 3600 * 100) / 100;
+
+  return {
+    currentThreatTier,
+    secondsUntilNextRaid,
+    refinedGoodsProducedTotal,
+    avgPopulationWindow,
+    hoursSinceLastBirth,
+  };
+}
+
+/**
+ * Patch 5 — Node inventory (M1a).
+ * Walks `grid.tileState` entries looking for tiles with FOREST/STONE/HERB
+ * node flags or active producer buildings, and groups them into per-type
+ * arrays with `{ix, iz, yieldPool, depleted}`. Also emits:
+ *   - nodeUtilizationRatio: built producers ÷ discovered nodes
+ *   - nextExhaustionMinutes: {forest, stone, herb} — min yieldPool ÷ drain
+ */
+export function sampleNodeInventory(grid) {
+  const knownNodes = { forest: [], stone: [], herb: [] };
+  const builtCount = { forest: 0, stone: 0, herb: 0 };
+  if (!grid?.tileState) {
+    return {
+      knownNodes,
+      nodeUtilizationRatio: 0,
+      nextExhaustionMinutes: { forest: Infinity, stone: Infinity, herb: Infinity },
+    };
+  }
+
+  const width = grid.width;
+  for (const [idx, entry] of grid.tileState) {
+    if (!entry) continue;
+    const ix = idx % width;
+    const iz = Math.floor(idx / width);
+    const flags = Number(entry.nodeFlags ?? 0);
+    const pool = Number(entry.yieldPool ?? 0);
+    const depleted = pool <= 0;
+    const tile = grid.tiles?.[idx];
+
+    if ((flags & NODE_FLAGS.FOREST) || tile === TILE.LUMBER) {
+      knownNodes.forest.push({ ix, iz, yieldPool: pool, depleted });
+      if (tile === TILE.LUMBER) builtCount.forest++;
+    }
+    if ((flags & NODE_FLAGS.STONE) || tile === TILE.QUARRY) {
+      knownNodes.stone.push({ ix, iz, yieldPool: pool, depleted });
+      if (tile === TILE.QUARRY) builtCount.stone++;
+    }
+    if ((flags & NODE_FLAGS.HERB) || tile === TILE.HERB_GARDEN) {
+      knownNodes.herb.push({ ix, iz, yieldPool: pool, depleted });
+      if (tile === TILE.HERB_GARDEN) builtCount.herb++;
+    }
+  }
+
+  const totalDiscovered = knownNodes.forest.length + knownNodes.stone.length + knownNodes.herb.length;
+  const totalBuilt = builtCount.forest + builtCount.stone + builtCount.herb;
+  const nodeUtilizationRatio = totalDiscovered > 0
+    ? Math.round(totalBuilt / totalDiscovered * 100) / 100
+    : 0;
+
+  function minsUntilExhaustion(nodes, type) {
+    // v0.8.0 Phase 5 iteration C1 (code-reviewer MUST-FIX, silent-failure CRITICAL 4):
+    // if every node of this type is discovered but depleted, the honest answer
+    // is "0 minutes until exhaustion" — not Infinity. Returning Infinity (the
+    // prior behaviour) inverted the signal: the planner read "no urgency"
+    // exactly when urgency was maximal. Also return 0 when there are no
+    // discovered nodes so the LLM treats "nothing to drain" as a relocate
+    // trigger, not as "fine forever".
+    if (!Array.isArray(nodes) || nodes.length === 0) return 0;
+    let minPool = Infinity;
+    let anyLive = false;
+    for (const n of nodes) {
+      if (!n.depleted) {
+        anyLive = true;
+        if (n.yieldPool < minPool) minPool = n.yieldPool;
+      }
+    }
+    if (!anyLive) return 0;
+    if (!Number.isFinite(minPool)) return 0;
+    const drain = PESSIMISTIC_DRAIN_PER_SEC[type] ?? 0.5;
+    return Math.round(minPool / drain / 60 * 10) / 10;
+  }
+
+  return {
+    knownNodes,
+    nodeUtilizationRatio,
+    nextExhaustionMinutes: {
+      forest: minsUntilExhaustion(knownNodes.forest, "forest"),
+      stone: minsUntilExhaustion(knownNodes.stone, "stone"),
+      herb: minsUntilExhaustion(knownNodes.herb, "herb"),
+    },
+  };
+}
+
+/**
+ * Patch 6 — Fog state (M1b).
+ * Emits revealed fraction, fog-boundary length (EXPLORED tiles adjacent to
+ * HIDDEN tiles), and a conservative suspected-node-candidate count (HIDDEN
+ * tiles bordering any discovered node tile).
+ * Returns zeros when fog is not active.
+ */
+export function sampleFogState(state, discoveredNodeIndices = null) {
+  const vis = state.fog?.visibility;
+  if (!(vis instanceof Uint8Array)) {
+    // v0.8.0 Phase 5 iteration C3 (silent-failure CRITICAL 3): the previous
+    // implementation silently reported the whole map as revealed when
+    // VisibilitySystem had not initialised. That masked a broken fog feature
+    // as a disabled one. Emit an explicit sentinel so the planner/LLM can
+    // distinguish "fog off" from "fog array missing".
+    return {
+      revealedFraction: null,
+      fogActive: false,
+      fogBoundaryLength: 0,
+      suspectedNodeCandidates: 0,
+      reason: "fog_array_missing",
+    };
+  }
+  const grid = state.grid;
+  const { width, height } = grid;
+  let revealed = 0;
+  let boundary = 0;
+  let suspected = 0;
+  const total = width * height;
+
+  // Build a set of discovered node indices if not supplied (fall back scan)
+  let nodeIdxSet = discoveredNodeIndices;
+  if (!nodeIdxSet && grid.tileState) {
+    nodeIdxSet = new Set();
+    for (const [idx, entry] of grid.tileState) {
+      const flags = Number(entry?.nodeFlags ?? 0);
+      if (flags !== 0) nodeIdxSet.add(idx);
+    }
+  }
+  if (!nodeIdxSet) nodeIdxSet = new Set();
+
+  for (let iz = 0; iz < height; iz++) {
+    for (let ix = 0; ix < width; ix++) {
+      const idx = toIndex(ix, iz, width);
+      const v = vis[idx];
+      if (v >= FOG_STATE.EXPLORED) revealed++;
+
+      if (v === FOG_STATE.EXPLORED) {
+        // Boundary tile: adjacent to any HIDDEN tile?
+        for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (!inBounds(nx, nz, grid)) continue;
+          const nIdx = toIndex(nx, nz, width);
+          if (vis[nIdx] === FOG_STATE.HIDDEN) {
+            boundary++;
+            break;
+          }
+        }
+      } else if (v === FOG_STATE.HIDDEN) {
+        // Conservative suspected node: HIDDEN tile adjacent to a discovered node
+        for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (!inBounds(nx, nz, grid)) continue;
+          const nIdx = toIndex(nx, nz, width);
+          if (nodeIdxSet.has(nIdx)) {
+            suspected++;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    revealedFraction: total > 0 ? Math.round(revealed / total * 1000) / 1000 : 1,
+    fogBoundaryLength: boundary,
+    suspectedNodeCandidates: suspected,
+  };
+}
+
+/**
+ * Patch 7 — DevIndex dimensions.
+ * Surfaces the 6 per-dim values + composite + smoothed composite + boolean
+ * saturation flag. All fields default to safe zeros when DevIndexSystem has
+ * not yet run (test scaffolds, early ticks).
+ * @param {object} state
+ */
+export function sampleDevIndexDims(state) {
+  const g = state.gameplay ?? {};
+  const dims = g.devIndexDims ?? null;
+  const devIndex = Number(g.devIndex ?? 0);
+  const devIndexSmoothed = Number(g.devIndexSmoothed ?? devIndex);
+  if (!dims) {
+    return {
+      dims: { population: 0, economy: 0, infrastructure: 0, production: 0, defense: 0, resilience: 0 },
+      devIndex,
+      devIndexSmoothed,
+      saturationIndicator: false,
+    };
+  }
+  const d = {
+    population: Number(dims.population ?? 0),
+    economy: Number(dims.economy ?? 0),
+    infrastructure: Number(dims.infrastructure ?? 0),
+    production: Number(dims.production ?? 0),
+    defense: Number(dims.defense ?? 0),
+    resilience: Number(dims.resilience ?? 0),
+  };
+  const minDim = Math.min(d.population, d.economy, d.infrastructure, d.production, d.defense, d.resilience);
+  return {
+    dims: d,
+    devIndex,
+    devIndexSmoothed,
+    saturationIndicator: minDim > DEV_INDEX_SATURATION_DIM,
+  };
+}
+
 // ── ColonyPerceiver Class ────────────────────────────────────────────────
 
 /**
@@ -698,6 +1103,15 @@ export class ColonyPerceiver {
     const planHistory = state.ai?.agentDirector?.planHistory ?? null;
     const planHistorySummary = summarizePlanHistory(planHistory);
 
+    // ── v0.8.0 Phase 5 (patches 1-7) ───────────────────────────────────
+    const tileAgg = sampleTileStateAggregates(grid);
+    const whDensity = sampleWarehouseDensity(grid);
+    const spoilage = sampleCarrySpoilageRisk(workers, state.metrics ?? {});
+    const survival = sampleSurvivalStats(state, workers.length, timeSec);
+    const nodeInv = sampleNodeInventory(grid);
+    const fog = sampleFogState(state);
+    const devIdx = sampleDevIndexDims(state);
+
     const observation = {
       timeSec: Math.round(timeSec),
       observeCount: ++this._observeCount,
@@ -763,6 +1177,49 @@ export class ColonyPerceiver {
         roads: buildings.roads ?? 0,
         walls: buildings.walls ?? 0,
         bridges: buildings.bridges ?? 0,
+      },
+
+      // ── v0.8.0 Phase 5 (patches 1-7): additive M1-M4 perception fields ──
+      // These are new, backward-compatible fields. Existing readers that
+      // don't know about them keep functioning; the planner & evaluator
+      // use them for depletion/density/isolation-aware decisions.
+      tileState: {
+        salinizedCount: tileAgg.salinizedCount,
+        fallowCount: tileAgg.fallowCount,
+        depletedTileCount: tileAgg.depletedTileCount,
+        avgYieldPool: tileAgg.avgYieldPool,
+      },
+      warehouseDensity: {
+        maxWarehouseDensity: whDensity.maxWarehouseDensity,
+        densityRiskActive: whDensity.densityRiskActive,
+        perWarehouse: whDensity.perWarehouse,
+      },
+      spoilage: {
+        avgCarryAgeTicks: spoilage.avgCarryAgeTicks,
+        spoilageInTransitLastMinute: spoilage.spoilageInTransitLastMinute,
+      },
+      survival: {
+        currentThreatTier: survival.currentThreatTier,
+        secondsUntilNextRaid: survival.secondsUntilNextRaid,
+        refinedGoodsProducedTotal: survival.refinedGoodsProducedTotal,
+        avgPopulationWindow: survival.avgPopulationWindow,
+        hoursSinceLastBirth: survival.hoursSinceLastBirth,
+      },
+      nodes: {
+        knownNodes: nodeInv.knownNodes,
+        nodeUtilizationRatio: nodeInv.nodeUtilizationRatio,
+        nextExhaustionMinutes: nodeInv.nextExhaustionMinutes,
+      },
+      fog: {
+        revealedFraction: fog.revealedFraction,
+        fogBoundaryLength: fog.fogBoundaryLength,
+        suspectedNodeCandidates: fog.suspectedNodeCandidates,
+      },
+      devIndex: {
+        dims: devIdx.dims,
+        devIndex: devIdx.devIndex,
+        devIndexSmoothed: devIdx.devIndexSmoothed,
+        saturationIndicator: devIdx.saturationIndicator,
       },
 
       delta,
@@ -947,6 +1404,77 @@ export function formatObservationForLLM(obs) {
   if (obs.topology.logisticsBottleneck) {
     lines.push(`- **Logistics bottlenecks:**`);
     for (const lb of obs.topology.logisticsBottleneck) lines.push(`  - ⚠ ${lb}`);
+  }
+
+  // ── v0.8.0 Phase 5: M1-M4 living-world signals ──────────────────────
+  // Render new perceiver fields so the LLM can reason about tile depletion,
+  // warehouse density/fire risk, spoilage pressure, survival tier, node
+  // exhaustion, fog frontier, and DevIndex dimensions. Without this block
+  // the upstream patches would be dead weight (data on the bus with no
+  // consumer).
+  if (obs.tileState || obs.warehouseDensity || obs.spoilage || obs.survival || obs.nodes || obs.fog || obs.devIndex) {
+    lines.push("");
+    lines.push("### Living-World Signals (M1-M4)");
+    if (obs.tileState) {
+      const ts = obs.tileState;
+      const avg = ts.avgYieldPool ?? {};
+      lines.push(`- Tile state: salinized=${ts.salinizedCount ?? 0}, fallow=${ts.fallowCount ?? 0}, depleted=${ts.depletedTileCount ?? 0}`);
+      lines.push(`  avgYieldPool: farm=${avg.farm ?? 0}, lumber=${avg.lumber ?? 0}, quarry=${avg.quarry ?? 0}, herb=${avg.herb ?? 0}`);
+    }
+    if (obs.warehouseDensity) {
+      const wd = obs.warehouseDensity;
+      const risk = wd.densityRiskActive ? " ⚠ DENSITY RISK — expand, don't pile" : "";
+      lines.push(`- Warehouse density: max=${wd.maxWarehouseDensity ?? 0}${risk}`);
+    }
+    if (obs.spoilage) {
+      const sp = obs.spoilage;
+      if ((sp.spoilageInTransitLastMinute ?? 0) > 0 || (sp.avgCarryAgeTicks ?? 0) > 0) {
+        lines.push(`- Spoilage: avgCarryAge=${sp.avgCarryAgeTicks ?? 0} ticks, lost-in-transit/min=${sp.spoilageInTransitLastMinute ?? 0}`);
+      }
+    }
+    if (obs.survival) {
+      const sv = obs.survival;
+      const tierIcon = (sv.currentThreatTier ?? 0) >= 2 ? "⚠" : "·";
+      lines.push(`- Survival: ${tierIcon} threatTier=${sv.currentThreatTier ?? 0}, nextRaid~${sv.secondsUntilNextRaid ?? "?"}s, avgPop=${sv.avgPopulationWindow ?? 0}, hoursSinceBirth=${sv.hoursSinceLastBirth ?? 0}`);
+    }
+    if (obs.nodes) {
+      const n = obs.nodes;
+      const util = n.nodeUtilizationRatio ?? {};
+      const nxt = n.nextExhaustionMinutes ?? {};
+      const fmtMin = (m) => (Number.isFinite(m) ? `${m}min` : "∞");
+      lines.push(`- Nodes: forest=${(n.knownNodes?.forest ?? 0)} (util ${util.forest ?? 0}, exhaust ${fmtMin(nxt.forest)}), stone=${(n.knownNodes?.stone ?? 0)} (util ${util.stone ?? 0}, exhaust ${fmtMin(nxt.stone)}), herb=${(n.knownNodes?.herb ?? 0)} (util ${util.herb ?? 0}, exhaust ${fmtMin(nxt.herb)})`);
+      for (const type of ["forest", "stone", "herb"]) {
+        const m = nxt[type];
+        if (Number.isFinite(m) && m > 0 && m < 10) {
+          lines.push(`  ⚠ ${type} node exhausts in ~${m}min — relocate or rotate`);
+        }
+      }
+    }
+    if (obs.fog) {
+      const f = obs.fog;
+      if (f.revealedFraction != null) {
+        lines.push(`- Fog: revealed=${Math.round(100 * f.revealedFraction)}%, boundary=${f.fogBoundaryLength ?? 0} tiles, suspectedNodes=${f.suspectedNodeCandidates ?? 0}`);
+      }
+    }
+    if (obs.devIndex) {
+      const di = obs.devIndex;
+      const dims = di.dims ?? {};
+      const dimStr = Object.keys(dims).sort().map((k) => `${k}=${dims[k]}`).join(", ");
+      lines.push(`- DevIndex: ${di.devIndex ?? 0}/100 (smoothed ${di.devIndexSmoothed ?? 0}, saturation=${di.saturationIndicator ?? "none"})`);
+      if (dimStr) lines.push(`  dims: ${dimStr}`);
+    }
+  }
+
+  // Postcondition violations from the most recent plan evaluation (H7).
+  // These are surfaced by PlanEvaluator via memoryStore; ColonyPlanner passes
+  // them through obs._postconditionViolations when building the prompt. We
+  // render them here so the LLM reliably sees what tripped the evaluator.
+  if (Array.isArray(obs.postconditionViolations) && obs.postconditionViolations.length > 0) {
+    lines.push("");
+    lines.push("### Last Plan Postcondition Violations (avoid repeating)");
+    for (const v of obs.postconditionViolations) {
+      lines.push(`- ⚠ ${v}`);
+    }
   }
 
   // Defense

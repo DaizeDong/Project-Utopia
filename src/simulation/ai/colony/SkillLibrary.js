@@ -6,9 +6,18 @@
  * expected effects, and terrain preferences.
  */
 
-import { BUILD_COST } from "../../../config/balance.js";
-import { TILE } from "../../../config/constants.js";
-import { getTile, inBounds, toIndex } from "../../../world/grid/Grid.js";
+import { BALANCE, BUILD_COST } from "../../../config/balance.js";
+import { FOG_STATE, NODE_FLAGS, TILE } from "../../../config/constants.js";
+import { getTile, getTileState, inBounds, listTilesByType, toIndex } from "../../../world/grid/Grid.js";
+
+// ── Living World v0.8.0 Phase 5 (patches 14, 17-18) — skill thresholds ──
+/** Depleted-yield threshold for skill triggers (distinct from evaluator threshold). */
+const SKILL_DEPLETED_YIELD_THRESHOLD = 30;
+/** All-depleted threshold for prospect_fog_frontier trigger. */
+const SKILL_ALL_DEPLETED_THRESHOLD = 120;
+/** Relocation ring distance (min/max Manhattan offsets from the depleted producer). */
+const RELOCATE_MIN_DIST = 4;
+const RELOCATE_MAX_DIST = 6;
 
 // ── Skill Definitions ────────────────────────────────────────────────
 
@@ -325,6 +334,250 @@ export function selectSkillForGoal(goal, resources, buildings) {
     const { met } = checkSkillPreconditions(skillId, resources, buildings);
     if (met) {
       return { skillId, skill: SKILL_LIBRARY[skillId] };
+    }
+  }
+  return null;
+}
+
+// ── Phase 5 Skills (patches 14, 17, 18) ────────────────────────────────────
+
+const PRODUCER_TILE_NAMES = new Map([
+  [TILE.LUMBER, "lumber"],
+  [TILE.QUARRY, "quarry"],
+  [TILE.HERB_GARDEN, "herb_garden"],
+  [TILE.FARM, "farm"],
+]);
+
+/**
+ * Check whether a tile is adjacent (4-way) to a live resource node tile with
+ * a non-zero yieldPool. Used by recycle_abandoned_worksite.
+ * @param {object} grid
+ * @param {number} ix
+ * @param {number} iz
+ */
+function _hasAdjacentLiveNode(grid, ix, iz) {
+  const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+  for (const [dx, dz] of dirs) {
+    const nx = ix + dx;
+    const nz = iz + dz;
+    if (!inBounds(nx, nz, grid)) continue;
+    const ts = getTileState(grid, nx, nz);
+    if (!ts) continue;
+    const flags = Number(ts.nodeFlags ?? 0);
+    const pool = Number(ts.yieldPool ?? 0);
+    if (flags > 0 && pool > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Patch 17 — prospect_fog_frontier.
+ *
+ * When all discovered producer nodes of a given type have `yieldPool < 120`,
+ * suggest exploring the fog boundary nearest the most-depleted node. Returns
+ * one suggestion per exhausted resource class.
+ *
+ * @param {object} state
+ * @returns {Array<{skill:"prospect_fog_frontier", resource:string, target:{ix:number,iz:number}, assignments:Array<{intent:string, target:{ix:number, iz:number}}>}>}
+ */
+export function suggestProspectFogFrontier(state) {
+  const grid = state?.grid;
+  if (!grid) return [];
+  const threshold = Number(BALANCE.skillProspectYieldThreshold ?? SKILL_ALL_DEPLETED_THRESHOLD);
+  const suggestions = [];
+
+  const classes = [
+    [TILE.LUMBER, "wood"],
+    [TILE.QUARRY, "stone"],
+    [TILE.HERB_GARDEN, "herbs"],
+  ];
+
+  for (const [tileType, resource] of classes) {
+    const tiles = listTilesByType(grid, [tileType]);
+    if (tiles.length === 0) continue;
+    let worstTile = null;
+    let worstPool = Infinity;
+    let allDepleted = true;
+    for (const t of tiles) {
+      const ts = getTileState(grid, t.ix, t.iz);
+      const pool = Number(ts?.yieldPool ?? 0);
+      if (pool >= threshold) { allDepleted = false; break; }
+      if (pool < worstPool) {
+        worstPool = pool;
+        worstTile = t;
+      }
+    }
+    if (!allDepleted || !worstTile) continue;
+
+    const target = _nearestFogBoundaryTile(state, worstTile.ix, worstTile.iz);
+    if (!target) continue;
+
+    suggestions.push({
+      skill: "prospect_fog_frontier",
+      resource,
+      target,
+      assignments: [{ intent: "explore_fog", target: { ix: target.ix, iz: target.iz } }],
+    });
+  }
+
+  return suggestions;
+}
+
+/**
+ * Scan the fog.visibility array (Phase 3 M1b) for the nearest HIDDEN tile to
+ * the given anchor. Returns null if fog is disabled / no hidden tiles remain.
+ * @param {object} state
+ * @param {number} ax
+ * @param {number} az
+ */
+function _nearestFogBoundaryTile(state, ax, az) {
+  const grid = state?.grid;
+  const fog = state?.fog;
+  if (!grid || !fog?.visibility) return null;
+  const vis = fog.visibility;
+  const { width, height } = grid;
+
+  let bestDist = Infinity;
+  let bestTile = null;
+  for (let iz = 0; iz < height; iz++) {
+    for (let ix = 0; ix < width; ix++) {
+      if (vis[toIndex(ix, iz, width)] !== FOG_STATE.HIDDEN) continue;
+      const d = Math.abs(ix - ax) + Math.abs(iz - az);
+      if (d < bestDist) {
+        bestDist = d;
+        bestTile = { ix, iz };
+      }
+    }
+  }
+  return bestTile;
+}
+
+/**
+ * Patch 18 — recycle_abandoned_worksite.
+ *
+ * Detects producer tiles whose yieldPool is fully exhausted (≤0) AND whose
+ * neighbours contain no live (pool>0) node. Suggests a `demolish` intent so
+ * Plan C1c recycling refunds stone.
+ *
+ * @param {object} state
+ * @returns {Array<{skill:"recycle_abandoned_worksite", target:{ix:number,iz:number}, action:string}>}
+ */
+export function suggestRecycleAbandonedWorksite(state) {
+  const grid = state?.grid;
+  if (!grid) return [];
+
+  const results = [];
+  const producerTiles = listTilesByType(grid, [TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  for (const t of producerTiles) {
+    const ts = getTileState(grid, t.ix, t.iz);
+    if (!ts) continue;
+    const pool = Number(ts.yieldPool ?? 0);
+    if (pool > 0) continue;
+    if (_hasAdjacentLiveNode(grid, t.ix, t.iz)) continue;
+    const producerName = PRODUCER_TILE_NAMES.get(grid.tiles[toIndex(t.ix, t.iz, grid.width)]);
+    results.push({
+      skill: "recycle_abandoned_worksite",
+      target: { ix: t.ix, iz: t.iz },
+      producer: producerName ?? null,
+      action: "demolish",
+      assignments: [{ intent: "demolish", target: { ix: t.ix, iz: t.iz } }],
+    });
+  }
+  return results;
+}
+
+/**
+ * Patch 14 — relocate_depleted_producer.
+ *
+ * Detects producers whose tile has `yieldPool < 30` AND which are connected
+ * to the road network. Recommends demolish + rebuild 4-6 tiles away on a
+ * reachable road-adjacent tile. Relies on `state._roadNetwork` union-find
+ * (built by LogisticsSystem); when the network is absent, the proximity
+ * check falls back to "any adjacent road tile".
+ *
+ * @param {object} state
+ * @returns {Array<{skill:"relocate_depleted_producer", producer:string, from:{ix:number,iz:number}, to:{ix:number,iz:number}|null, steps:Array}>}
+ */
+export function suggestRelocateDepletedProducer(state) {
+  const grid = state?.grid;
+  if (!grid) return [];
+  const yieldThreshold = Number(BALANCE.skillRelocateYieldThreshold ?? SKILL_DEPLETED_YIELD_THRESHOLD);
+  const out = [];
+  const producerTiles = listTilesByType(grid, [TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN, TILE.FARM]);
+
+  for (const t of producerTiles) {
+    const ts = getTileState(grid, t.ix, t.iz);
+    if (!ts) continue;
+    const pool = Number(ts.yieldPool ?? 0);
+    if (pool >= yieldThreshold) continue;
+    if (!_isRoadConnected(state, t.ix, t.iz)) continue;
+
+    const tileType = grid.tiles[toIndex(t.ix, t.iz, grid.width)];
+    const producerName = PRODUCER_TILE_NAMES.get(tileType) ?? "producer";
+    const relocateTo = _findRelocateAnchor(state, t.ix, t.iz, tileType);
+    out.push({
+      skill: "relocate_depleted_producer",
+      producer: producerName,
+      from: { ix: t.ix, iz: t.iz },
+      to: relocateTo,
+      steps: [
+        { action: "demolish", target: { ix: t.ix, iz: t.iz } },
+        relocateTo ? { action: "build", buildingType: producerName, target: relocateTo } : null,
+      ].filter(Boolean),
+    });
+  }
+
+  return out;
+}
+
+/** Tile is road-adjacent (4-directional) or on a road/bridge itself. */
+function _isRoadConnected(state, ix, iz) {
+  const grid = state?.grid;
+  if (!grid) return false;
+  const selfTile = grid.tiles[toIndex(ix, iz, grid.width)];
+  if (selfTile === TILE.ROAD || selfTile === TILE.BRIDGE) return true;
+  const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+  for (const [dx, dz] of dirs) {
+    const nx = ix + dx;
+    const nz = iz + dz;
+    if (!inBounds(nx, nz, grid)) continue;
+    const t = grid.tiles[toIndex(nx, nz, grid.width)];
+    if (t === TILE.ROAD || t === TILE.BRIDGE) return true;
+  }
+  return false;
+}
+
+/**
+ * Scan tiles in RELOCATE_MIN_DIST..RELOCATE_MAX_DIST Manhattan ring around the
+ * depleted producer and return the first GRASS tile that is itself
+ * road-connected. Returns null if no suitable anchor exists.
+ * @param {object} state
+ * @param {number} ox
+ * @param {number} oz
+ * @param {number} producerTile
+ */
+function _findRelocateAnchor(state, ox, oz, producerTile) {
+  const grid = state?.grid;
+  if (!grid) return null;
+  for (let dist = RELOCATE_MIN_DIST; dist <= RELOCATE_MAX_DIST; dist++) {
+    for (let dz = -dist; dz <= dist; dz++) {
+      const dx = dist - Math.abs(dz);
+      for (const signed of [dx, -dx]) {
+        const ix = ox + signed;
+        const iz = oz + dz;
+        if (!inBounds(ix, iz, grid)) continue;
+        const tile = grid.tiles[toIndex(ix, iz, grid.width)];
+        if (tile !== TILE.GRASS) continue;
+        if (!_isRoadConnected(state, ix, iz)) continue;
+        // For node-gated producers (LUMBER/QUARRY/HERB_GARDEN), require the
+        // corresponding node flag bit on the target tile.
+        const ts = getTileState(grid, ix, iz);
+        const flags = Number(ts?.nodeFlags ?? 0);
+        if (producerTile === TILE.LUMBER && !(flags & NODE_FLAGS.FOREST)) continue;
+        if (producerTile === TILE.QUARRY && !(flags & NODE_FLAGS.STONE)) continue;
+        if (producerTile === TILE.HERB_GARDEN && !(flags & NODE_FLAGS.HERB)) continue;
+        return { ix, iz };
+      }
     }
   }
   return null;

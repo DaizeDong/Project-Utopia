@@ -193,7 +193,7 @@ export class AgentDirectorSystem {
           const evalText = this._lastEvalText;
 
           this._lastEvalText = ""; // consume once
-          this._planner.requestPlan(observation, memText, state, learnedText, evalText)
+          this._planner.requestPlan(observation, memText, state, learnedText, evalText, { memoryStore: this._memoryStore })
             .then(({ plan, source, error }) => {
               this._pendingLLM = false;
               if (plan && plan.steps.length > 0) {
