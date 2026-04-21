@@ -9,6 +9,36 @@ function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
 
+/**
+ * v0.8.0 Phase 4 — safe read of the RaidEscalator bundle.
+ *
+ * Normally populated each tick by `RaidEscalatorSystem` at
+ * `state.gameplay.raidEscalation`. Older savegames, benchmark harnesses, and
+ * tests that construct minimal state may omit the field, so this helper
+ * returns explicit baseline defaults (tier 0, baseline interval, 1× intensity).
+ *
+ * The defaults are deliberately visible (not silent): the comment exists so a
+ * future reader understands *why* the fallback is here and can track it back
+ * to Phase 4 § 5.4-5.5 of the spec.
+ */
+function readRaidEscalation(state) {
+  const esc = state?.gameplay?.raidEscalation;
+  if (esc && typeof esc === "object") {
+    return {
+      tier: Number(esc.tier ?? 0),
+      intervalTicks: Number(esc.intervalTicks ?? BALANCE.raidIntervalBaseTicks ?? 3600),
+      intensityMultiplier: Number(esc.intensityMultiplier ?? 1),
+      devIndexSample: Number(esc.devIndexSample ?? 0),
+    };
+  }
+  return {
+    tier: 0,
+    intervalTicks: Number(BALANCE.raidIntervalBaseTicks ?? 3600),
+    intensityMultiplier: 1,
+    devIndexSample: 0,
+  };
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -612,13 +642,46 @@ export class WorldEventSystem {
 
   update(dt, state, services) {
     if (state.events.queue.length > 0) {
-      const spawned = state.events.queue.splice(0, state.events.queue.length);
+      const escalation = readRaidEscalation(state);
+      const currentTick = Number(state.metrics?.tick ?? 0);
+      const lastRaidTick = Number(state.gameplay?.lastRaidTick ?? -9999);
+      const drained = state.events.queue.splice(0, state.events.queue.length);
+      const spawned = [];
+      const droppedRaids = [];
+
+      for (const event of drained) {
+        if (event.type === EVENT_TYPE.BANDIT_RAID) {
+          // v0.8.0 Phase 4 Plan C — enforce the DevIndex-driven raid cooldown.
+          // Raids queued faster than `raidEscalation.intervalTicks` apart are
+          // dropped so that frequency scales exclusively with DevIndex tier.
+          if (currentTick - lastRaidTick < escalation.intervalTicks) {
+            droppedRaids.push(event);
+            continue;
+          }
+          // Apply the tier's intensity multiplier to the raid's base intensity.
+          event.intensity = Number(event.intensity ?? 1) * escalation.intensityMultiplier;
+          event.payload ??= {};
+          event.payload.raidTier = escalation.tier;
+          event.payload.raidIntensityMultiplier = escalation.intensityMultiplier;
+          event.payload.raidDevIndexSample = escalation.devIndexSample;
+
+          state.gameplay ??= {};
+          state.gameplay.lastRaidTick = currentTick;
+        }
+        spawned.push(event);
+      }
+
       for (const event of spawned) ensureSpatialPayload(event, state);
       state.events.active.push(...spawned);
       if (state.debug?.eventTrace) {
         for (const event of spawned) {
           state.debug.eventTrace.unshift(
             `[${state.metrics.timeSec.toFixed(1)}s] spawn ${event.type} status=${event.status} target=${event.payload?.targetLabel ?? "-"} p=${Number(event.payload?.pressure ?? event.intensity ?? 0).toFixed(2)}`,
+          );
+        }
+        for (const event of droppedRaids) {
+          state.debug.eventTrace.unshift(
+            `[${state.metrics.timeSec.toFixed(1)}s] drop ${event.type} (raid cooldown: ${(currentTick - lastRaidTick)}/${escalation.intervalTicks} ticks)`,
           );
         }
         state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);

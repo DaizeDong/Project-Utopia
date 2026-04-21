@@ -349,6 +349,28 @@ export const BALANCE = Object.freeze({
   devIndexProducerTarget: 24,
   // Defense dim: scoring target for walls + 2× militia agents.
   devIndexDefenseTarget: 12,
+  // --- Living World v0.8.0 — Phase 4 (Raid Escalator), spec §§ 5.4-5.5 ---
+  // RaidEscalatorSystem converts `state.gameplay.devIndexSmoothed` into a
+  // tiered raid cadence + intensity bundle (`state.gameplay.raidEscalation`)
+  // which WorldEventSystem reads when rolling bandit raids.
+  //
+  //   tier = clamp(floor(devIndexSmoothed / devIndexPerRaidTier), 0, raidTierMax)
+  //   intervalTicks = max(raidIntervalMinTicks,
+  //                       raidIntervalBaseTicks - tier * raidIntervalReductionPerTier)
+  //   intensityMultiplier = 1 + tier * raidIntensityPerTier
+  //
+  // Defaults (spec § 14.1):
+  //   DI  0 → tier  0, 3600 ticks between raids, 1.0× intensity
+  //   DI 30 → tier  2, 3000 ticks, 1.6×
+  //   DI 60 → tier  4, 2400 ticks, 2.2×
+  //   DI 75 → tier  5, 2100 ticks, 2.5×
+  //   DI 100 → tier 6, 1800 ticks, 2.8× (capped at raidTierMax = 10)
+  devIndexPerRaidTier: 15,
+  raidTierMax: 10,
+  raidIntervalBaseTicks: 3600,
+  raidIntervalMinTicks: 600,
+  raidIntervalReductionPerTier: 300,
+  raidIntensityPerTier: 0.3,
 });
 
 // --- Terrain depth constants ---

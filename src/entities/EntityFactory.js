@@ -648,6 +648,17 @@ export function createInitialGameState(options = {}) {
         resilience: 0,
       },
       devIndexHistory: [],
+      // v0.8.0 Phase 4 — RaidEscalator bundle. Initialised to tier-0 baseline so
+      // WorldEventSystem has safe defaults even when RaidEscalatorSystem has
+      // not yet run (e.g. tests that skip the meta systems). See
+      // `src/simulation/meta/RaidEscalatorSystem.js` for the live contract.
+      raidEscalation: {
+        tier: 0,
+        intervalTicks: 3600,
+        intensityMultiplier: 1,
+        devIndexSample: 0,
+      },
+      lastRaidTick: -9999,
     },
     controls: {
       farmRatio: 0.5,

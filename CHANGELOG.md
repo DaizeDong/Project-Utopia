@@ -6,6 +6,69 @@
 > (`docs/superpowers/specs/2026-04-21-living-world-balance-design.md`).
 > Progress tracked in `docs/superpowers/plans/2026-04-21-living-world-progress.md`.
 
+### Phase 4 — RaidEscalatorSystem (Agent 4.B)
+
+- **RaidEscalatorSystem** — New system in
+  `src/simulation/meta/RaidEscalatorSystem.js` that consumes
+  `state.gameplay.devIndexSmoothed` (NOT the noisy per-tick `devIndex`) and
+  publishes a tiered raid bundle at `state.gameplay.raidEscalation` every
+  tick. Slots into `SYSTEM_ORDER` immediately after `DevIndexSystem` and
+  before `WorldEventSystem` so the event system always sees a fresh
+  escalation sample. Replaces the prior fixed `RAID_TIER_CAP = 6` model
+  (no remaining references under `src/`).
+- **Escalation math** — `tier = clamp(floor(devIndexSmoothed /
+  devIndexPerRaidTier), 0, raidTierMax)`. `intervalTicks = max(minTicks,
+  baseTicks - tier × reductionPerTier)` (faster raids at higher DevIndex).
+  `intensityMultiplier = 1 + tier × raidIntensityPerTier` (stronger raids
+  at higher DevIndex). Default curve: DI=0 → tier 0, 3600 ticks, 1.0×;
+  DI=30 → tier 2, 3000 ticks, 1.6×; DI=75 → tier 5, 2100 ticks, 2.5×.
+- **WorldEventSystem integration** —
+  `src/world/events/WorldEventSystem.js` now reads
+  `state.gameplay.raidEscalation` in the queue drain:
+  `BANDIT_RAID` events are dropped if `state.metrics.tick -
+  state.gameplay.lastRaidTick < raidEscalation.intervalTicks` (DevIndex
+  owns raid frequency). On spawn, the raid's `event.intensity` is
+  multiplied by `intensityMultiplier`, and the spawn payload records
+  `raidTier`, `raidIntensityMultiplier`, and `raidDevIndexSample` for
+  telemetry. Safe-default helper `readRaidEscalation(state)` returns
+  tier-0 baseline values if `state.gameplay.raidEscalation` is missing
+  (visible, commented fallback — NOT silent).
+- **Balance block** — New
+  `// --- Living World v0.8.0 — Phase 4 (Raid Escalator)` section in
+  `src/config/balance.js`: `devIndexPerRaidTier: 15`, `raidTierMax: 10`,
+  `raidIntervalBaseTicks: 3600`, `raidIntervalMinTicks: 600`,
+  `raidIntervalReductionPerTier: 300`, `raidIntensityPerTier: 0.3`.
+- **State init** — `createInitialGameState`
+  (`src/entities/EntityFactory.js`) initialises
+  `state.gameplay.raidEscalation = { tier: 0, intervalTicks: 3600,
+  intensityMultiplier: 1, devIndexSample: 0 }` and
+  `state.gameplay.lastRaidTick = -9999` so WorldEventSystem never sees
+  undefined fields on tick 0.
+- **Files created:** `src/simulation/meta/RaidEscalatorSystem.js`,
+  `test/raid-escalator.test.js`, `test/survival-scaling.test.js`.
+- **Files changed:** `src/config/constants.js` (+`"RaidEscalatorSystem"`
+  in `SYSTEM_ORDER` between `DevIndexSystem` and `ColonyDirectorSystem`),
+  `src/config/balance.js` (+6 balance knobs), `src/app/GameApp.js`
+  (import + `new RaidEscalatorSystem()` wired after `DevIndexSystem`),
+  `src/entities/EntityFactory.js` (+`raidEscalation` and `lastRaidTick`
+  init), `src/world/events/WorldEventSystem.js` (queue-drain cooldown
+  gate + intensity multiplier + safe-default reader).
+- **New tests (+10):** `test/raid-escalator.test.js` — 7 cases covering
+  DI=0 baseline, DI=30 tier-2, DI=500 cap, monotonic interval decrease,
+  monotonic intensity increase, missing `devIndexSmoothed` fallback, and
+  a parity check between the pure helper and the live class.
+  `test/survival-scaling.test.js` — 3 cases covering WorldEventSystem
+  cooldown enforcement, 2× intensity multiplier on raid spawn payload,
+  and a repo-wide guard that `RAID_TIER_CAP` no longer exists under
+  `src/`. All 799 tests pass (`node --test test/*.test.js`).
+- **Silent-failure posture** — WorldEventSystem's `readRaidEscalation`
+  helper carries an explicit docblock describing *why* the fallback
+  exists so future readers spot it as a deliberate, not accidental,
+  default. Tests that skip RaidEscalatorSystem (e.g. the existing
+  `world-event-spatial.test.js` and `world-explain.test.js` suites)
+  continue to pass because `createInitialGameState` pre-populates a
+  tier-0 baseline bundle.
+
 ### Phase 4 — Survival mode (Agent 4.A)
 
 - **Win outcome retired** — `evaluateRunOutcomeState` (`src/app/runOutcome.js`)
