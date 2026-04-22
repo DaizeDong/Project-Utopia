@@ -7,6 +7,7 @@ import {
 } from "../../world/grid/Grid.js";
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
+import { explainTerm } from "../hud/glossary.js";
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v2";
 const CORE_PANEL_KEYS = Object.freeze(["build", "costs", "resources", "population", "management", "world"]);
@@ -718,6 +719,33 @@ export class BuildToolbar {
       syncQuota(this.roleQuotaHaul, this.roleQuotaHaulLabel, "haul");
       syncQuota(this.roleQuotaStone, this.roleQuotaStoneLabel, "stone");
       syncQuota(this.roleQuotaHerbs, this.roleQuotaHerbsLabel, "herbs");
+    }
+
+    // v0.8.2 Round-1 01a-onboarding — attach glossary tooltips to role-quota
+    // labels exactly once per BuildToolbar instance. The parent div already
+    // carries a terse engine-oriented title (e.g. "Max workers assigned to
+    // cooking meals"); we append the player-facing glossary copy so new
+    // players see a full explanation on hover. One-shot via
+    // `_glossaryApplied` to avoid repeated DOM writes every sync().
+    if (!this._glossaryApplied) {
+      const glossPairs = [
+        [this.roleQuotaCookLabel, "cook"],
+        [this.roleQuotaSmithLabel, "smith"],
+        [this.roleQuotaHerbalistLabel, "herbalist"],
+        [this.roleQuotaHaulLabel, "haul"],
+      ];
+      for (const [node, key] of glossPairs) {
+        if (!node || typeof node.setAttribute !== "function") continue;
+        const gloss = explainTerm(key);
+        if (!gloss) continue;
+        const existing = typeof node.getAttribute === "function"
+          ? (node.getAttribute("title") ?? "")
+          : "";
+        if (existing.includes(gloss)) continue;
+        const composite = existing ? `${existing} | ${gloss}` : gloss;
+        node.setAttribute("title", composite);
+      }
+      this._glossaryApplied = true;
     }
 
     if (this.aiToggle) {

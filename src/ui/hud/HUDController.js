@@ -1,4 +1,5 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { explainTerm } from "./glossary.js";
 import { computeStorytellerStripText } from "./storytellerStrip.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
@@ -140,7 +141,59 @@ export class HUDController {
     // the flash-action pulse when the text actually changes (not every render).
     this.lastActionMessage = "";
 
+    // v0.8.2 Round-1 01a-onboarding — glossary tooltips are static metadata
+    // (title text never changes during a session), so we apply them exactly
+    // once per HUDController instance and use this flag to skip the DOM
+    // writes on subsequent render() calls. Keeps render hot-path allocation-
+    // free and avoids clobbering any Round-0 title attributes that were
+    // already present on these nodes.
+    this._glossaryApplied = false;
+
     this.setupSpeedControls();
+  }
+
+  /**
+   * Append glossary explanations to the `title` attribute of abbreviated
+   * HUD nodes so new players get plain-language tooltips on hover. Preserves
+   * any pre-existing Round-0 title (stored first in the composite) and
+   * appends the glossary copy after a " | " separator. Runs exactly once
+   * per instance — subsequent calls are no-ops.
+   */
+  #applyGlossaryTooltips() {
+    if (this._glossaryApplied) return;
+    // Note: #statusScoreBreak is intentionally excluded from glossary
+    // tooltips because Round-1 01c-ui clears its `title` in casual profile
+    // as an accessibility gate — appending the glossary explanation here
+    // would leak dev-copy keywords to screen readers. The per-sec / per-
+    // birth / per-death explanations live under "perSec"/"perBirth"/
+    // "perDeath" glossary keys for future targeted tooltips on standalone
+    // rule nodes if they're ever surfaced separately.
+    const pairs = [
+      [this.statusObjective, "dev"],
+      [this.statusScenario, "routes"],
+      [this.prosperityVal, "prosperity"],
+      [this.threatVal, "threat"],
+      [this.cooksVal, "cook"],
+      [this.smithsVal, "smith"],
+      [this.haulersVal, "haul"],
+      [this.herbalistsVal, "herbalist"],
+      [this.storytellerStrip, "storyteller"],
+    ];
+    for (const [node, key] of pairs) {
+      if (!node || typeof node.setAttribute !== "function") continue;
+      const gloss = explainTerm(key);
+      if (!gloss) continue;
+      const existing = typeof node.getAttribute === "function"
+        ? (node.getAttribute("title") ?? "")
+        : "";
+      // Don't duplicate if glossary copy already present (e.g. render()
+      // fires before first #applyGlossaryTooltips completes, or a Round-0
+      // tooltip path already wrote the same value).
+      if (existing.includes(gloss)) continue;
+      const composite = existing ? `${existing} | ${gloss}` : gloss;
+      node.setAttribute("title", composite);
+    }
+    this._glossaryApplied = true;
   }
 
   setupSpeedControls() {
@@ -622,5 +675,11 @@ export class HUDController {
     this.speedPauseBtn?.classList.toggle("active", paused);
     this.speedPlayBtn?.classList.toggle("active", !paused && !fast);
     this.speedFastBtn?.classList.toggle("active", fast && !paused);
+
+    // v0.8.2 Round-1 01a-onboarding — append glossary tooltips to abbreviated
+    // HUD nodes exactly once per HUDController instance. Placed at the end of
+    // render() so any Round-0 title set earlier in this frame is preserved as
+    // the prefix and the glossary copy is appended after " | ".
+    this.#applyGlossaryTooltips();
   }
 }
