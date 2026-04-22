@@ -154,7 +154,7 @@ export class AgentDirectorSystem {
     // ── Step 1: Execute current plan steps ──
     if (this._activePlan && this._activePlan.steps.length > 0) {
       const preSnap = snapshotState(state);
-      const executed = executeNextSteps(this._activePlan, state, this._buildSystem);
+      const executed = executeNextSteps(this._activePlan, state, this._buildSystem, services);
       const postSnap = snapshotState(state);
 
       // Evaluate each executed step
@@ -197,7 +197,7 @@ export class AgentDirectorSystem {
             .then(({ plan, source, error }) => {
               this._pendingLLM = false;
               if (plan && plan.steps.length > 0) {
-                const grounded = groundPlan(plan, state, this._buildSystem);
+                const grounded = groundPlan(plan, state, this._buildSystem, services);
                 const feasible = grounded.steps.filter(s => s.feasible).length;
                 if (feasible > 0) {
                   this._activePlan = grounded;
@@ -207,13 +207,13 @@ export class AgentDirectorSystem {
                   agentState.activePlan = { goal: plan.goal, steps: plan.steps.length, source };
                 } else {
                   // No feasible steps — use fallback plan inline
-                  this._adoptFallbackPlan(observation, state, agentState);
+                  this._adoptFallbackPlan(observation, state, agentState, services);
                 }
               } else {
                 // LLM failed — track failure and use fallback
                 agentState.stats.llmFailures++;
                 agentState.stats.lastLlmFailureSec = nowSec;
-                this._adoptFallbackPlan(observation, state, agentState);
+                this._adoptFallbackPlan(observation, state, agentState, services);
               }
             })
             .catch(() => {
@@ -223,7 +223,7 @@ export class AgentDirectorSystem {
             });
         } else {
           // Hybrid mode — use algorithmic fallback with memory-enriched planning
-          this._adoptFallbackPlan(observation, state, agentState);
+          this._adoptFallbackPlan(observation, state, agentState, services);
         }
       }
     }
@@ -237,11 +237,11 @@ export class AgentDirectorSystem {
   /**
    * Adopt a fallback (algorithmic) plan as the active plan.
    */
-  _adoptFallbackPlan(observation, state, agentState) {
+  _adoptFallbackPlan(observation, state, agentState, services = null) {
     const plan = generateFallbackPlan(observation, state);
     if (plan.steps.length === 0) return;
 
-    const grounded = groundPlan(plan, state, this._buildSystem);
+    const grounded = groundPlan(plan, state, this._buildSystem, services);
     const feasible = grounded.steps.filter(s => s.feasible).length;
     if (feasible > 0) {
       this._activePlan = grounded;

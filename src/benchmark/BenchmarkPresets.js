@@ -14,7 +14,7 @@ import { inBounds, getTile, setTile, listTilesByType, rebuildBuildingStats } fro
 
 let _presetIdCounter = 0;
 
-function cloneWorker(template, id, x, z) {
+function cloneWorker(template, id, x, z, rngFn) {
   return {
     ...template,
     id: `worker-preset-${id}`,
@@ -22,7 +22,7 @@ function cloneWorker(template, id, x, z) {
     z,
     vx: 0,
     vz: 0,
-    hunger: 0.8 + Math.random() * 0.2,
+    hunger: 0.8 + rngFn() * 0.2,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     path: null,
     pathIndex: 0,
@@ -333,8 +333,14 @@ function placeBuildingsOnGrid(state, buildings) {
  * @param {object} state - GameState from createInitialGameState
  * @param {object} preset - One of BENCHMARK_PRESETS
  */
-export function applyPreset(state, preset) {
+export function applyPreset(state, preset, services) {
   if (!preset) return;
+  // Seeded RNG is authoritative when services is present (bench harness
+  // contract). Fall back to Math.random only for ad-hoc callers that
+  // predate Phase 10.
+  const rngFn = typeof services?.rng?.next === "function"
+    ? () => services.rng.next()
+    : Math.random;
 
   // Resources
   if (preset.resources) {
@@ -366,9 +372,9 @@ export function applyPreset(state, preset) {
       console.warn(`[BenchmarkPresets] No WORKER template found for cloning`);
     } else {
       for (let i = 0; i < preset.extraWorkers; i++) {
-        const cx = template.x + (Math.random() - 0.5) * 4;
-        const cz = template.z + (Math.random() - 0.5) * 4;
-        state.agents.push(cloneWorker(template, ++_presetIdCounter, cx, cz));
+        const cx = template.x + (rngFn() - 0.5) * 4;
+        const cz = template.z + (rngFn() - 0.5) * 4;
+        state.agents.push(cloneWorker(template, ++_presetIdCounter, cx, cz, rngFn));
       }
     }
   }
@@ -395,8 +401,8 @@ export function applyPreset(state, preset) {
       console.warn(`[BenchmarkPresets] No PREDATOR template found for cloning`);
     } else {
       for (let i = 0; i < preset.extraPredators; i++) {
-        const cx = template.x + (Math.random() - 0.5) * 8;
-        const cz = template.z + (Math.random() - 0.5) * 8;
+        const cx = template.x + (rngFn() - 0.5) * 8;
+        const cz = template.z + (rngFn() - 0.5) * 8;
         state.animals.push(cloneAnimal(template, ++_presetIdCounter, "PREDATOR", cx, cz));
       }
     }
@@ -409,8 +415,8 @@ export function applyPreset(state, preset) {
       console.warn(`[BenchmarkPresets] No HERBIVORE template found for cloning`);
     } else {
       for (let i = 0; i < preset.extraHerbivores; i++) {
-        const cx = template.x + (Math.random() - 0.5) * 6;
-        const cz = template.z + (Math.random() - 0.5) * 6;
+        const cx = template.x + (rngFn() - 0.5) * 6;
+        const cz = template.z + (rngFn() - 0.5) * 6;
         state.animals.push(cloneAnimal(template, ++_presetIdCounter, "HERBIVORE", cx, cz));
       }
     }

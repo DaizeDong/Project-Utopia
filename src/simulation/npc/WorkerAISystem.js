@@ -801,7 +801,7 @@ function attemptAutoBuild(worker, state, services) {
 
   // Use BuildSystem to place (handles cost, validation, stats)
   const buildSystem = new BuildSystem();
-  const result = buildSystem.placeToolAt(state, tool, target.ix, target.iz, { recordHistory: false });
+  const result = buildSystem.placeToolAt(state, tool, target.ix, target.iz, { recordHistory: false, services });
   if (result.ok) {
     policy.buildQueue.shift();
     state.metrics.aiDecisions = (state.metrics.aiDecisions ?? 0) + 1;
@@ -844,7 +844,7 @@ function handleWander(worker, state, services, dt) {
     if (shouldRetarget && canAttemptPath(worker, state)) {
       clearPath(worker);
       const fogTarget = wantsFogExploration ? findNearestHiddenTile(worker, state) : null;
-      const target = fogTarget ?? randomPassableTile(state.grid);
+      const target = fogTarget ?? randomPassableTile(state.grid, () => services.rng.next());
       if (setTargetAndPath(worker, target, state, services)) {
         blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
       }

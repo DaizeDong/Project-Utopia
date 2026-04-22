@@ -309,7 +309,7 @@ function getPreferredAnchors(state, tool) {
   }
 }
 
-function findPlacementTile(state, buildSystem, tool) {
+function findPlacementTile(state, buildSystem, tool, services = null) {
   const { grid } = state;
   const tried = new Set();
 
@@ -318,7 +318,7 @@ function findPlacementTile(state, buildSystem, tool) {
     const key = `${ix},${iz}`;
     if (tried.has(key)) return null;
     tried.add(key);
-    const preview = buildSystem.previewToolAt(state, tool, ix, iz);
+    const preview = buildSystem.previewToolAt(state, tool, ix, iz, services);
     return preview.ok ? { ix, iz } : null;
   }
 
@@ -367,7 +367,7 @@ function findPlacementTile(state, buildSystem, tool) {
  * @param {number} maxRadius
  * @returns {{ix: number, iz: number} | null}
  */
-function findPlacementNear(state, buildSystem, tool, target, maxRadius = 4) {
+function findPlacementNear(state, buildSystem, tool, target, maxRadius = 4, services = null) {
   const { grid } = state;
   for (let radius = 0; radius <= maxRadius; radius += 1) {
     for (let dz = -radius; dz <= radius; dz += 1) {
@@ -376,7 +376,7 @@ function findPlacementNear(state, buildSystem, tool, target, maxRadius = 4) {
         const ix = target.ix + dx;
         const iz = target.iz + dz;
         if (!inBounds(ix, iz, grid)) continue;
-        const preview = buildSystem.previewToolAt(state, tool, ix, iz);
+        const preview = buildSystem.previewToolAt(state, tool, ix, iz, services);
         if (preview.ok) return { ix, iz };
       }
     }
@@ -494,7 +494,7 @@ function ensureDirectorState(state) {
  * Routes need connected road paths between anchors.
  * Depots need warehouses within radius of anchor points.
  */
-function fulfillScenarioRequirements(state, buildSystem) {
+function fulfillScenarioRequirements(state, buildSystem, services = null) {
   let placed = 0;
   const runtime = getScenarioRuntime(state);
   const resources = state.resources ?? {};
@@ -507,9 +507,9 @@ function fulfillScenarioRequirements(state, buildSystem) {
     const cost = BUILD_COST.warehouse ?? {};
     if (!canAfford(resources, cost)) continue;
 
-    const tile = findPlacementNear(state, buildSystem, "warehouse", anchor, depot.radius ?? 2);
+    const tile = findPlacementNear(state, buildSystem, "warehouse", anchor, depot.radius ?? 2, services);
     if (tile) {
-      const result = buildSystem.placeToolAt(state, "warehouse", tile.ix, tile.iz, { recordHistory: false });
+      const result = buildSystem.placeToolAt(state, "warehouse", tile.ix, tile.iz, { recordHistory: false, services });
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         placed += 1;
@@ -534,16 +534,16 @@ function fulfillScenarioRequirements(state, buildSystem) {
       const protectedTiles = new Set([TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY,
         TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
       if (currentTile !== TILE.GRASS && currentTile !== TILE.ROAD && !protectedTiles.has(currentTile)) {
-        const erasePreview = buildSystem.previewToolAt(state, "erase", gap.ix, gap.iz);
+        const erasePreview = buildSystem.previewToolAt(state, "erase", gap.ix, gap.iz, services);
         if (erasePreview.ok) {
-          buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, { recordHistory: false });
+          buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, { recordHistory: false, services });
           state.buildings = rebuildBuildingStats(state.grid);
         }
       }
 
-      const preview = buildSystem.previewToolAt(state, "road", gap.ix, gap.iz);
+      const preview = buildSystem.previewToolAt(state, "road", gap.ix, gap.iz, services);
       if (preview.ok) {
-        const result = buildSystem.placeToolAt(state, "road", gap.ix, gap.iz, { recordHistory: false });
+        const result = buildSystem.placeToolAt(state, "road", gap.ix, gap.iz, { recordHistory: false, services });
         if (result.ok) {
           state.buildings = rebuildBuildingStats(state.grid);
           placed += 1;
@@ -577,9 +577,9 @@ function fulfillScenarioRequirements(state, buildSystem) {
         if (tile === TILE.WATER) {
           const bridgeCost = BUILD_COST.bridge ?? {};
           if (canAfford(resources, bridgeCost)) {
-            const preview = buildSystem.previewToolAt(state, "bridge", nextIx, nextIz);
+            const preview = buildSystem.previewToolAt(state, "bridge", nextIx, nextIz, services);
             if (preview.ok) {
-              const result = buildSystem.placeToolAt(state, "bridge", nextIx, nextIz, { recordHistory: false });
+              const result = buildSystem.placeToolAt(state, "bridge", nextIx, nextIz, { recordHistory: false, services });
               if (result.ok) {
                 state.buildings = rebuildBuildingStats(state.grid);
                 placed += 1;
@@ -591,15 +591,15 @@ function fulfillScenarioRequirements(state, buildSystem) {
           const protectedManhattan = new Set([TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY,
             TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
           if (tile !== TILE.GRASS && tile !== TILE.RUINS && !protectedManhattan.has(tile)) {
-            const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz);
+            const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz, services);
             if (erasePreview.ok) {
-              buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false });
+              buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false, services });
               state.buildings = rebuildBuildingStats(state.grid);
             }
           }
-          const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz);
+          const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz, services);
           if (preview.ok) {
-            const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false });
+            const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false, services });
             if (result.ok) {
               state.buildings = rebuildBuildingStats(state.grid);
               placed += 1;
@@ -617,7 +617,7 @@ function fulfillScenarioRequirements(state, buildSystem) {
 /**
  * Find the best placement for a coverage warehouse — near the centroid of uncovered worksites.
  */
-function findCoverageWarehousePlacement(state, buildSystem) {
+function findCoverageWarehousePlacement(state, buildSystem, services = null) {
   const worksiteTiles = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
   const warehouseTiles = listTilesByType(state.grid, [TILE.WAREHOUSE]);
   if (worksiteTiles.length === 0 || warehouseTiles.length === 0) return null;
@@ -631,14 +631,14 @@ function findCoverageWarehousePlacement(state, buildSystem) {
   // Place warehouse near the centroid of uncovered worksites
   const cx = Math.round(uncovered.reduce((s, t) => s + t.ix, 0) / uncovered.length);
   const cz = Math.round(uncovered.reduce((s, t) => s + t.iz, 0) / uncovered.length);
-  return findPlacementNear(state, buildSystem, "warehouse", { ix: cx, iz: cz }, 6);
+  return findPlacementNear(state, buildSystem, "warehouse", { ix: cx, iz: cz }, 6, services);
 }
 
 /**
  * Build roads to connect isolated worksites to nearest warehouse.
  * Runs at most 2 road segments per tick to avoid resource drain.
  */
-function connectWorksitesToWarehouses(state, buildSystem) {
+function connectWorksitesToWarehouses(state, buildSystem, services = null) {
   const resources = state.resources ?? {};
   const cost = BUILD_COST.road ?? {};
   // Only build connector roads when wood is sufficient (>20) to avoid resource drain
@@ -681,9 +681,9 @@ function connectWorksitesToWarehouses(state, buildSystem) {
       const tile = getTile(state.grid, cx, cz);
       if (tile === TILE.GRASS) {
         if (!canAfford(resources, cost)) break;
-        const preview = buildSystem.previewToolAt(state, "road", cx, cz);
+        const preview = buildSystem.previewToolAt(state, "road", cx, cz, services);
         if (preview.ok) {
-          const result = buildSystem.placeToolAt(state, "road", cx, cz, { recordHistory: false });
+          const result = buildSystem.placeToolAt(state, "road", cx, cz, { recordHistory: false, services });
           if (result.ok) {
             state.buildings = rebuildBuildingStats(state.grid);
             placed++;
@@ -702,7 +702,7 @@ export class ColonyDirectorSystem {
     this._buildSystem = new BuildSystem();
   }
 
-  update(dt, state) {
+  update(dt, state, services) {
     if (state.session?.phase !== "active") return;
 
     const director = ensureDirectorState(state);
@@ -715,7 +715,7 @@ export class ColonyDirectorSystem {
     director.phase = determinePhase(state.buildings ?? {});
 
     // Priority 1: fulfill scenario objectives (routes, depots)
-    const scenarioBuilds = fulfillScenarioRequirements(state, this._buildSystem);
+    const scenarioBuilds = fulfillScenarioRequirements(state, this._buildSystem, services);
     director.buildsPlaced += scenarioBuilds;
 
     // Priority 2: phase-based colony development (including expansion after complete)
@@ -730,13 +730,13 @@ export class ColonyDirectorSystem {
 
       // Smart placement: warehouses for coverage go near uncovered worksites
       if (build.type === "warehouse" && build.reason.includes("coverage")) {
-        tile = findCoverageWarehousePlacement(state, this._buildSystem);
+        tile = findCoverageWarehousePlacement(state, this._buildSystem, services);
       }
 
-      if (!tile) tile = findPlacementTile(state, this._buildSystem, build.type);
+      if (!tile) tile = findPlacementTile(state, this._buildSystem, build.type, services);
       if (!tile) continue;
 
-      const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, { recordHistory: false });
+      const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, { recordHistory: false, services });
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         director.buildsPlaced += 1;
@@ -747,7 +747,7 @@ export class ColonyDirectorSystem {
     }
 
     // Priority 3: connect isolated worksites to warehouses with roads
-    connectWorksitesToWarehouses(state, this._buildSystem);
+    connectWorksitesToWarehouses(state, this._buildSystem, services);
 
     // Update phase after all builds
     director.phase = determinePhase(state.buildings);

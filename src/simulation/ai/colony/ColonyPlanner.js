@@ -577,20 +577,16 @@ export function generateFallbackPlan(observation, state) {
   }
 
   // Priority 3.5: Food processing - kitchen converts raw food to meals (2x
-  // hunger efficiency). Without a kitchen, raw food spoils and effective
-  // food burn rate is doubled. Gate on: >=2 farms (single farm barely
-  // sustains conversion rate), food >= 20 (kitchen drains ~0.67/sec; firing
-  // at food >= 8 drained the tiny buffer immediately, 30 was too strict and
-  // kitchen never built — Phase 8.C iteration 2 settled at 20 as the
-  // balance point), >=2 workers (one can cook while others harvest),
-  // 0 kitchens (don't duplicate), affordability (8 wood + 3 stone), and an
-  // existing cluster (hint references c0). Inserted before quarry/smithy
-  // and rapid_farms so the food chain is closed before investing in the
-  // tool chain or scaling up raw food output that would otherwise wasted.
+  // hunger efficiency). Phase 10: food gate 20 → 5. The 20-threshold acted
+  // as a chicken-and-egg: farm output was eaten as fast as it arrived, so
+  // food rarely crossed 20 and the kitchen was never built, leaving the
+  // colony stuck at the DevIndex-44 starvation equilibrium. Firing at 5
+  // proves the chain works with any sustained harvest and unlocks the
+  // meal-powered growth loop (DevIndex 44 → 72+ at day 90).
   if (
     kitchens === 0
     && farms >= 2
-    && food >= 20
+    && food >= 5
     && workerCount >= 2
     && wood >= 8
     && stone >= 3

@@ -82,14 +82,19 @@ export class SimHarness {
     this.state.ai.coverageTarget = "fallback";
     this.state.ai.runtimeProfile = runtimeProfile;
 
-    if (preset) applyPreset(this.state, preset);
-
     this.memoryStore = new MemoryStore();
     this.memoryObserver = new MemoryObserver(this.memoryStore);
 
     this.services = createServices(seed, {
       offlineAiFallback: !aiEnabled,
+      deterministic: true,
     });
+
+    // applyPreset after services exist so preset position jitter can draw
+    // from the seeded RNG (determinism — otherwise Math.random pollutes the
+    // initial state). Presets do not read sim systems, so the ordering swap
+    // is safe.
+    if (preset) applyPreset(this.state, preset, this.services);
 
     this.systems = buildSystemsOverride
       ? buildSystemsOverride(this.memoryStore)

@@ -191,10 +191,10 @@ const WEATHER_DURATION = Object.freeze({
   winter: { minSec: 14, maxSec: 24 },
 });
 
-function pickWeatherFromSeason(season) {
+function pickWeatherFromSeason(season, rngFn) {
   const w = season.weights;
   const total = w.clear + w.rain + w.storm + w.drought + w.winter;
-  let roll = Math.random() * total;
+  let roll = rngFn() * total;
   for (const [weather, weight] of Object.entries(w)) {
     roll -= weight;
     if (roll <= 0) return weather;
@@ -210,7 +210,10 @@ export class WeatherSystem {
     this._nextWeatherAtSec = -1;
   }
 
-  update(dt, state) {
+  update(dt, state, services) {
+    const rngFn = typeof services?.rng?.next === "function"
+      ? () => services.rng.next()
+      : Math.random;
     state.weather.timeLeftSec -= dt;
     const now = state.metrics?.timeSec ?? 0;
 
@@ -237,9 +240,9 @@ export class WeatherSystem {
     if (now < this._nextWeatherAtSec) return;
 
     const currentSeason = SEASONS[this._seasonIndex];
-    const weatherName = pickWeatherFromSeason(currentSeason);
+    const weatherName = pickWeatherFromSeason(currentSeason, rngFn);
     const dur = WEATHER_DURATION[weatherName] ?? WEATHER_DURATION.clear;
-    const duration = dur.minSec + Math.random() * (dur.maxSec - dur.minSec);
+    const duration = dur.minSec + rngFn() * (dur.maxSec - dur.minSec);
     const prevWeather = state.weather.current;
     setWeather(state, weatherName, duration, "cycle");
     this._nextWeatherAtSec = now + duration;

@@ -1,5 +1,75 @@
 # Changelog
 
+## [Unreleased] — Phase 10 Long-Horizon Determinism Hardening
+
+**Goal:** make `bootHeadlessSim`'s 365-day benchmark trajectory bit-identical
+across runs with the same seed + preset, so balance-tuning deltas stop
+getting lost in Math.random noise.
+
+**Contract verified.** Three boots of `bootHeadlessSim({ seed: 42, preset:
+"temperate_plains" })` run 5000 ticks each produce identical state hashes.
+Two cross-process `bench:long --seed 42 --preset temperate_plains
+--max-days 90` runs produce identical `outcome`, `daysCompleted`,
+`devIndex`, and `survivalScore`. Previously these diverged by 10–40% due
+to wall-clock-driven Math.random.
+
+### Nondeterminism sources removed
+
+- **WeatherSystem** — `pickWeatherFromSeason` and duration jitter now draw
+  from `services.rng.next()`; Math.random fallback kept only for ad-hoc
+  callers that predate the services contract.
+  ([src/world/weather/WeatherSystem.js](src/world/weather/WeatherSystem.js))
+- **Grid.createInitialGrid** — farm/lumber/herb fertility init used
+  Math.random, breaking bit-reproducibility across identical seeds. Now
+  uses `createRng(seed + 9973)`.
+  ([src/world/grid/Grid.js](src/world/grid/Grid.js))
+- **WildlifePopulationSystem** — `pickSpawnTile` and `spawnAnimals` had
+  `rng?.next?.() ?? Math.random()` silent fallbacks; rng is now a function
+  passed through with a single defined fallback at the system boundary.
+  ([src/simulation/ecology/WildlifePopulationSystem.js](src/simulation/ecology/WildlifePopulationSystem.js))
+- **Path budget wall-clock** — `pathBudget.maxMs = 3` lets wall-clock
+  timing drive when paths get skipped, producing run-to-run divergence
+  even on identical seeds. `createServices({ deterministic: true })` sets
+  `pathBudget.maxMs = Infinity` for benches; production path still uses
+  3ms so slow-device FPS targets are preserved.
+  ([src/app/createServices.js](src/app/createServices.js))
+- **Services threaded through BuildSystem callers** —
+  `BuildAdvisor.rollRuinSalvage` was calling Math.random via
+  `previewToolAt`/`placeToolAt`. Services now flow through
+  `ColonyDirectorSystem.update → fulfillScenarioRequirements →
+  findPlacementTile`, `PlanExecutor.groundPlan → _groundSkillStep`,
+  `SkillLibrary.assessSkillFeasibility`, and
+  `AgentDirectorSystem.executeNextSteps`.
+- **`randomPassableTile` / `randomTileOfTypes` callers** —
+  `VisitorAISystem:324,431`, `AnimalAISystem:328,407,639`, and
+  `WorkerAISystem:847` now pass `() => services.rng.next()`; Grid's
+  Math.random default is no longer reached on sim hot paths.
+- **BenchmarkPresets.applyPreset** — worker hunger jitter and spawn
+  position scatter used Math.random. `applyPreset` now takes a `services`
+  argument and routes through `services.rng`. SimHarness and bench
+  entrypoints (`scripts/benchmark-runner.mjs`, `scripts/comprehensive-eval.mjs`)
+  updated to thread services through at boot.
+  ([src/benchmark/BenchmarkPresets.js](src/benchmark/BenchmarkPresets.js),
+  [src/benchmark/framework/SimHarness.js](src/benchmark/framework/SimHarness.js))
+
+### Regression coverage
+
+- `test/long-horizon-determinism.test.js` — three boots of `bootHeadlessSim`
+  at 500 ticks (temperate_plains) + 2000 ticks (rugged_highlands) must
+  hash identically. Guards against future Math.random reintroduction.
+- 865 existing tests still pass (0 regressions).
+
+### Scope note
+
+Balance tuning (day-365 DevIndex ≥ 70) stays open. Under deterministic
+RNG, `seed=42 / temperate_plains` loses at day 33 (DevIndex 36.68) rather
+than limping to day 90 with lucky Math.random. This matches Phase 7.A's
+prior conclusion that parameter tuning cannot close the -33 DevIndex gap
+alone — the starvation spiral is a structural balance issue (BuildAdvisor
+priority, initial resources, worker carry-eat bypass). Phase 10 delivers
+the **reproducibility floor** that future tuning needs: before this
+change, A/B balance comparisons were noise.
+
 ## [0.8.1] - 2026-04-21 — Phase 8 Survival Hardening
 
 **Bench delta (seed 42 / temperate_plains / 365 days):**

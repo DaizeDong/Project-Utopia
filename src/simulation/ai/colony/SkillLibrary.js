@@ -230,7 +230,7 @@ export function expandSkillSteps(skillId, anchor) {
  * @param {object} state
  * @returns {{ ratio: number, feasible: number, total: number, steps: Array }}
  */
-export function assessSkillFeasibility(skillId, anchor, grid, buildSystem, state) {
+export function assessSkillFeasibility(skillId, anchor, grid, buildSystem, state, services = null) {
   const expanded = expandSkillSteps(skillId, anchor);
   if (expanded.length === 0) return { ratio: 0, feasible: 0, total: 0, steps: [] };
 
@@ -239,7 +239,7 @@ export function assessSkillFeasibility(skillId, anchor, grid, buildSystem, state
     if (!inBounds(step.ix, step.iz, grid)) {
       return { ...step, feasible: false, reason: "out_of_bounds" };
     }
-    const preview = buildSystem.previewToolAt(state, step.type, step.ix, step.iz);
+    const preview = buildSystem.previewToolAt(state, step.type, step.ix, step.iz, services);
     if (preview.ok) {
       feasibleCount++;
       return { ...step, feasible: true, reason: null };
