@@ -343,6 +343,7 @@
  *
  * @typedef {{
  *  farmRatio: number,
+ *  roleQuotas: {cook:number, smith:number, herbalist:number, haul:number, stone:number, herbs:number},
  *  selectedEntityId: string | null,
  *  selectedTile: SelectedTileState | null,
  *  tool: "road"|"farm"|"lumber"|"warehouse"|"wall"|"erase",

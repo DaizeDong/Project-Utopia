@@ -49,28 +49,39 @@ export class RoleAssignmentSystem {
     const woodMin = (lumberCount > 0) ? Math.min(1, n - farmMin) : 0;
     const reserved = farmMin + woodMin;
 
-    // Allocate specialist roles from remaining pool (capped at 1 per type for gathering,
-    // 1 per processing building type)
+    // Allocate specialist roles from remaining pool.
+    //
+    // v0.8.2 Round-1 02a-rimworld-veteran — slot caps per role now sourced from
+    // `state.controls.roleQuotas` (player-exposed sliders) instead of hardcoded
+    // 1-per-type. Gating (building must exist for COOK/SMITH/HERBALIST/STONE/
+    // HERBS, and `n>=10 && warehouseCount>=1` for HAUL) is preserved; the quota
+    // only defines the *maximum* — `specialistBudget` (hard n-reserved cap) and
+    // the gate still dominate. Defaults {cook:1,smith:1,...} keep this change
+    // byte-equivalent to the pre-change behaviour for any snapshot without the
+    // new field (loadSnapshot / legacy slots).
+    const quotas = state.controls?.roleQuotas ?? { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 };
+    const q = (key) => Math.max(0, (Number(quotas[key]) | 0));
     let specialistBudget = Math.max(0, n - reserved);
 
-    const cookSlots = (kitchenCount > 0 && specialistBudget > 0) ? 1 : 0;
+    const cookSlots = (kitchenCount > 0) ? Math.min(q("cook"), specialistBudget) : 0;
     specialistBudget -= cookSlots;
 
-    const smithSlots = (smithyCount > 0 && specialistBudget > 0) ? 1 : 0;
+    const smithSlots = (smithyCount > 0) ? Math.min(q("smith"), specialistBudget) : 0;
     specialistBudget -= smithSlots;
 
-    const herbalistSlots = (clinicCount > 0 && specialistBudget > 0) ? 1 : 0;
+    const herbalistSlots = (clinicCount > 0) ? Math.min(q("herbalist"), specialistBudget) : 0;
     specialistBudget -= herbalistSlots;
 
-    const stoneSlots = Math.min(quarryCount > 0 ? 1 : 0, specialistBudget);
+    const stoneSlots = (quarryCount > 0) ? Math.min(q("stone"), specialistBudget) : 0;
     specialistBudget -= stoneSlots;
 
-    const herbsSlots = Math.min(herbGardenCount > 0 ? 1 : 0, specialistBudget);
+    const herbsSlots = (herbGardenCount > 0) ? Math.min(q("herbs"), specialistBudget) : 0;
     specialistBudget -= herbsSlots;
 
-    // HAUL role: assign 1 hauler when there are multiple warehouses and enough workers
+    // HAUL role: gate on n>=10 + warehouseCount>=1 (hard floor preserved), then
+    // cap by quota.
     const warehouseCount = Number(state.buildings?.warehouses ?? 0);
-    const haulSlots = (warehouseCount >= 1 && n >= 10 && specialistBudget > 0) ? 1 : 0;
+    const haulSlots = (warehouseCount >= 1 && n >= 10) ? Math.min(q("haul"), specialistBudget) : 0;
     specialistBudget -= haulSlots;
 
     // Distribute remaining between FARM and WOOD using targetFarmRatio

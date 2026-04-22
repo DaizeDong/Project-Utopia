@@ -1066,6 +1066,24 @@
             <div class="small muted" title="Percentage of workers assigned to farming vs other roles">Target Farmer Ratio: <span id="farmRatioLabel">50%</span></div>
             <input id="farmRatio" type="range" min="0" max="100" value="50" title="Drag to adjust the farm-to-other worker ratio" />
 
+            <details class="subpanel" style="margin-top:8px;">
+              <summary title="Maximum workers assignable to each specialist role (gated by required building)">Role Quotas</summary>
+              <div class="subpanel-body">
+                <div class="small muted" title="Max workers assigned to cooking meals (requires Kitchen)">Cook: <span id="roleQuotaCookLabel">1</span></div>
+                <input id="roleQuotaCook" type="range" min="0" max="8" step="1" value="1" title="Maximum cook slots (requires Kitchen)" />
+                <div class="small muted" title="Max workers assigned to crafting tools (requires Smithy)">Smith: <span id="roleQuotaSmithLabel">1</span></div>
+                <input id="roleQuotaSmith" type="range" min="0" max="8" step="1" value="1" title="Maximum smith slots (requires Smithy)" />
+                <div class="small muted" title="Max workers brewing medicine (requires Clinic)">Herbalist: <span id="roleQuotaHerbalistLabel">1</span></div>
+                <input id="roleQuotaHerbalist" type="range" min="0" max="8" step="1" value="1" title="Maximum herbalist slots (requires Clinic)" />
+                <div class="small muted" title="Max workers moving goods between warehouses (requires pop >= 10 and a warehouse)">Haul: <span id="roleQuotaHaulLabel">1</span></div>
+                <input id="roleQuotaHaul" type="range" min="0" max="8" step="1" value="1" title="Maximum haul slots (requires >= 10 workers and a warehouse)" />
+                <div class="small muted" title="Max stone gatherers (requires Quarry)">Stone: <span id="roleQuotaStoneLabel">1</span></div>
+                <input id="roleQuotaStone" type="range" min="0" max="8" step="1" value="1" title="Maximum stone-gather slots (requires Quarry)" />
+                <div class="small muted" title="Max herb gatherers (requires Herb Garden)">Herbs: <span id="roleQuotaHerbsLabel">1</span></div>
+                <input id="roleQuotaHerbs" type="range" min="0" max="8" step="1" value="1" title="Maximum herbs-gather slots (requires Herb Garden)" />
+              </div>
+            </details>
+
             <div class="pregame-only">
               <div class="small muted" style="margin-top:8px;">Map Template</div>
               <select id="mapTemplateSelect"></select>
