@@ -64,6 +64,13 @@ export class HUDController {
     this._lastDeathsSeen = 0;
     this._obituaryText = "";
     this._obituaryUntilMs = 0;
+    // v0.8.2 Round-1 02d-roleplayer — dwell throttle for the storyteller
+    // strip's salient event-beat line. eventTrace unshifts a new row per
+    // tick so without dwell the beat span would flicker on every frame.
+    // We hold the last-rendered text for STRIP_BEAT_DWELL_MS (2500 ms)
+    // before accepting a new one. Mirrors the `_obituary*` pattern above.
+    this._stripBeatText = "";
+    this._stripBeatUntilMs = 0;
     this.deathVal = document.getElementById("deathVal");
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
@@ -465,6 +472,12 @@ export class HUDController {
       const getSummaryEl = typeof document !== "undefined"
         ? document.getElementById("storytellerSummary")
         : null;
+      // v0.8.2 Round-1 02d-roleplayer — optional beat span populated from
+      // model.beatText. May be null/absent in older templates; we fall
+      // back to hiding/ignoring the beat in that case.
+      const getBeatEl = typeof document !== "undefined"
+        ? document.getElementById("storytellerBeat")
+        : null;
       if (getBadgeEl && getFocusEl && getSummaryEl) {
         const model = computeStorytellerStripModel(state);
         if (getBadgeEl.textContent !== model.prefix) {
@@ -484,7 +497,50 @@ export class HUDController {
         if (getSummaryEl.textContent !== summaryWithSeparator) {
           getSummaryEl.textContent = summaryWithSeparator;
         }
-        const tooltipText = `[${model.prefix}] ${model.focusText}${summaryWithSeparator}`;
+
+        // v0.8.2 Round-1 02d-roleplayer — beat span with 2.5s dwell throttle.
+        // The eventTrace unshifts new rows every tick, so without dwell the
+        // beat would flicker / stutter. We only accept a new beat string
+        // once the dwell window has elapsed; stale text stays visible until
+        // then. Clearing beatText (null) always takes effect immediately so
+        // the span hides as soon as the 15s age horizon expires.
+        if (getBeatEl) {
+          const STRIP_BEAT_DWELL_MS = 2500;
+          const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+            ? performance.now()
+            : Date.now();
+          const incoming = typeof model.beatText === "string" ? model.beatText : null;
+          let renderText = this._stripBeatText;
+          if (incoming === null || incoming === "") {
+            renderText = "";
+            this._stripBeatText = "";
+            this._stripBeatUntilMs = 0;
+          } else if (incoming !== this._stripBeatText) {
+            if (now >= this._stripBeatUntilMs) {
+              this._stripBeatText = incoming;
+              this._stripBeatUntilMs = now + STRIP_BEAT_DWELL_MS;
+              renderText = incoming;
+            } // else: hold prior text until dwell elapses
+          } else {
+            renderText = this._stripBeatText;
+          }
+          if (renderText) {
+            if (getBeatEl.textContent !== renderText) {
+              getBeatEl.textContent = renderText;
+            }
+            if (getBeatEl.hasAttribute?.("hidden")) {
+              getBeatEl.removeAttribute?.("hidden");
+            }
+          } else {
+            if (getBeatEl.textContent !== "") getBeatEl.textContent = "";
+            if (!getBeatEl.hasAttribute?.("hidden")) {
+              getBeatEl.setAttribute?.("hidden", "");
+            }
+          }
+        }
+
+        const beatFrag = (getBeatEl && getBeatEl.textContent) ? ` · ${getBeatEl.textContent}` : "";
+        const tooltipText = `[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
       } else {
         const text = computeStorytellerStripText(state);

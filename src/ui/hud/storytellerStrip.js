@@ -20,6 +20,115 @@
 //   mode "llm"      → prefix "WHISPER"  (live LLM model in charge)
 //   mode "fallback" → prefix "DIRECTOR" (deterministic rule-based fallback)
 //   mode "idle"     → prefix "DRIFT"    (no policy yet — menu / first tick)
+//
+// v0.8.2 Round-1 02d-roleplayer — model now also surfaces `beatText`: the
+// latest salient event-trace line (SABOTAGE / SHORTAGE / VISITOR / WEATHER /
+// death / warehouse fire) within a 15-second horizon. HUDController renders
+// this into a dedicated `#storytellerBeat` child span (D4 arbitration),
+// **not** spliced into the main summary textContent — so the legacy pure
+// function `computeStorytellerStripText` is left untouched. When no salient
+// beat is present, `beatText` is `null` and the HUD simply hides the span.
+
+// v0.8.2 Round-1 02d-roleplayer — salient event-trace filters. We only
+// surface the 6 tag families that move the player's story forward
+// (sabotage / shortage / visitor arrival / weather shift / death / fire).
+// Anything else (routine event lifecycle transitions, raid cooldown drops,
+// spawn/drop bookkeeping) stays buried in the DeveloperPanel.
+const SALIENT_BEAT_PATTERNS = Object.freeze([
+  /\[SABOTAGE\]/i,
+  /\[SHORTAGE\]/i,
+  /\[VISITOR\]/i,
+  /\[WEATHER\]/i,
+  /\bdied \(/i,
+  /warehouse fire/i,
+]);
+
+const NARRATIVE_BEAT_MAX_AGE_SEC = 15;
+const NARRATIVE_BEAT_MAX_LEN = 140;
+
+/**
+ * Strip the leading `[12.3s]` timestamp prefix from an eventTrace line so
+ * the player-facing beat reads cleanly. Returns both the cleaned line and
+ * the parsed age (now - traceSec); if the prefix is malformed we fall
+ * back to age=0 (render as "just now").
+ *
+ * @param {string} rawLine
+ * @param {number} nowSec
+ * @returns {{ line: string, ageSec: number }}
+ */
+function parseBeatLine(rawLine, nowSec) {
+  const src = String(rawLine ?? "");
+  const m = src.match(/^\[([\d.]+)s\]\s*(.+)$/);
+  if (!m) return { line: src.trim(), ageSec: 0 };
+  const traceSec = Number(m[1]);
+  const body = String(m[2] ?? "").trim();
+  if (!Number.isFinite(traceSec)) return { line: body, ageSec: 0 };
+  const age = Math.max(0, Number(nowSec ?? 0) - traceSec);
+  return { line: body, ageSec: age };
+}
+
+/**
+ * Pull the latest salient narrative beat out of `state.debug.eventTrace`.
+ * The trace is maintained newest-first (via `unshift`), so we scan forward
+ * and return the first entry whose body matches one of the 6 salient
+ * tag patterns AND whose age is within NARRATIVE_BEAT_MAX_AGE_SEC.
+ *
+ * Pure function — no DOM, no side effects. Returns `null` when nothing
+ * salient is within the horizon, which signals HUDController to hide the
+ * `#storytellerBeat` child span.
+ *
+ * @param {object} state GameState-like with optional `debug.eventTrace` and
+ *   `metrics.timeSec`.
+ * @param {number} [nowSec] Override clock (for tests). Defaults to
+ *   `state.metrics.timeSec ?? 0`.
+ * @returns {{ line: string, ageSec: number } | null}
+ */
+export function extractLatestNarrativeBeat(state, nowSec) {
+  const trace = Array.isArray(state?.debug?.eventTrace) ? state.debug.eventTrace : null;
+  if (!trace || trace.length === 0) return null;
+  const clockSec = Number.isFinite(nowSec)
+    ? Number(nowSec)
+    : Number(state?.metrics?.timeSec ?? 0);
+  // Scan oldest index=0 first (which is actually newest given unshift()).
+  for (let i = 0; i < trace.length; i += 1) {
+    const parsed = parseBeatLine(trace[i], clockSec);
+    // Age gate — skip stale beats. `ageSec === 0` (no parseable timestamp)
+    // is treated as "just now" and passes the gate.
+    if (parsed.ageSec > NARRATIVE_BEAT_MAX_AGE_SEC) continue;
+    // Tag gate — must match one of the salient patterns.
+    let salient = false;
+    for (const pat of SALIENT_BEAT_PATTERNS) {
+      if (pat.test(parsed.line)) { salient = true; break; }
+    }
+    if (!salient) continue;
+    return parsed;
+  }
+  return null;
+}
+
+/**
+ * Format an extracted beat into the single-line copy HUDController writes
+ * into `#storytellerBeat`. Exported for testing; HUDController uses the
+ * `beatText` field on `computeStorytellerStripModel`'s return value.
+ *
+ * @param {{ line: string, ageSec: number } | null} beat
+ * @returns {string | null}
+ */
+function formatBeatText(beat) {
+  if (!beat) return null;
+  let body = String(beat.line ?? "").trim();
+  if (!body) return null;
+  // Clamp line length — event messages can be long (impact coordinates,
+  // target labels); avoid overflowing the single-line strip.
+  if (body.length > NARRATIVE_BEAT_MAX_LEN) {
+    body = `${body.slice(0, NARRATIVE_BEAT_MAX_LEN - 1)}\u2026`;
+  }
+  const ageSec = Number(beat.ageSec ?? 0);
+  // Round to nearest second; ageSec < 0.5 reads as "just now".
+  const ageRounded = Math.max(0, Math.round(ageSec));
+  const ageFrag = ageRounded <= 0 ? "just now" : `${ageRounded}s ago`;
+  return `Last: ${body} (${ageFrag})`;
+}
 
 /**
  * Normalise a raw LLM/rule focus+summary pair into slightly more
@@ -97,7 +206,7 @@ export function computeStorytellerStripText(state) {
  *   mode "idle"     → prefix "DRIFT"
  *
  * @param {object} state GameState or minimal shape.
- * @returns {{mode: "llm"|"fallback"|"idle", focusText: string, summaryText: string, prefix: string}}
+ * @returns {{mode: "llm"|"fallback"|"idle", focusText: string, summaryText: string, prefix: string, beatText: string | null}}
  */
 export function computeStorytellerStripModel(state) {
   const source = String(state?.ai?.lastPolicySource ?? "").toLowerCase();
@@ -146,5 +255,11 @@ export function computeStorytellerStripModel(state) {
     ? humaniseSummary(summary || "colony on autopilot")
     : "colony holding steady — awaiting the next directive";
 
-  return { mode, focusText, summaryText, prefix };
+  // v0.8.2 Round-1 02d-roleplayer — fan-out salient event-trace beats into
+  // the model so HUDController can render them into `#storytellerBeat`
+  // without splicing into the main summary textContent (D4 arbitration).
+  const beat = extractLatestNarrativeBeat(state);
+  const beatText = formatBeatText(beat);
+
+  return { mode, focusText, summaryText, prefix, beatText };
 }

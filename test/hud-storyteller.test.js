@@ -16,7 +16,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { computeStorytellerStripText } from "../src/ui/hud/storytellerStrip.js";
+import {
+  computeStorytellerStripText,
+  computeStorytellerStripModel,
+} from "../src/ui/hud/storytellerStrip.js";
 
 test("idle fallback text when no workers group policy is set", () => {
   const state = {
@@ -96,4 +99,77 @@ test("missing summary still produces a readable strip by falling back to 'colony
   assert.match(text, /Rule-based Storyteller/);
   assert.match(text, /frontier buildout/);
   assert.match(text, /colony on autopilot/);
+});
+
+// v0.8.2 Round-1 02d-roleplayer — `computeStorytellerStripModel` now returns
+// `beatText`: a formatted narrative-beat line extracted from the latest
+// salient entry in `state.debug.eventTrace`. HUDController renders that
+// field into a dedicated `#storytellerBeat` child span (D4 arbitration), so
+// the tests assert against the model return value — NOT the legacy
+// `computeStorytellerStripText` (which is intentionally untouched).
+
+test("computeStorytellerStripModel: salient SABOTAGE beat surfaces with age (s ago)", () => {
+  const state = {
+    metrics: { timeSec: 121.2 },
+    debug: {
+      eventTrace: [
+        "[120.5s] [SABOTAGE] visitor_16 sabotaged colony",
+      ],
+    },
+    ai: {
+      lastPolicySource: "fallback",
+      groupPolicies: new Map([
+        ["workers", { data: { focus: "frontier buildout", summary: "Stone is low." } }],
+      ]),
+    },
+  };
+  const model = computeStorytellerStripModel(state);
+  assert.ok(model.beatText, `expected a beatText but got ${model.beatText}`);
+  // 121.2 - 120.5 = 0.7 → rounds to 1 → "1s ago".
+  assert.match(model.beatText, /Last:\s*\[SABOTAGE\] visitor_16 sabotaged colony \(1s ago\)/);
+  // Focus/summary channels remain intact.
+  assert.equal(model.focusText, "frontier buildout");
+  assert.match(model.summaryText, /Stone is low/);
+});
+
+test("computeStorytellerStripModel: non-salient trace line (weather steady) does not produce a beat", () => {
+  const state = {
+    metrics: { timeSec: 50.5 },
+    debug: {
+      eventTrace: [
+        "[50.0s] weather steady",
+      ],
+    },
+    ai: {
+      lastPolicySource: "fallback",
+      groupPolicies: new Map([
+        ["workers", { data: { focus: "frontier buildout", summary: "Lumber stable." } }],
+      ]),
+    },
+  };
+  const model = computeStorytellerStripModel(state);
+  // Non-salient: prefix does not match any of the 6 salient patterns.
+  assert.equal(model.beatText, null,
+    `non-salient trace should not produce beat, got: ${model.beatText}`);
+});
+
+test("computeStorytellerStripModel: trace line older than 15s horizon is filtered out (expired beat)", () => {
+  const state = {
+    // ageSec = 40 - 0 = 40 → exceeds the 15s gate, beat must be null.
+    metrics: { timeSec: 40 },
+    debug: {
+      eventTrace: [
+        "[0.0s] [SABOTAGE] visitor_16 sabotaged colony",
+      ],
+    },
+    ai: {
+      lastPolicySource: "fallback",
+      groupPolicies: new Map([
+        ["workers", { data: { focus: "frontier buildout", summary: "Stone is low." } }],
+      ]),
+    },
+  };
+  const model = computeStorytellerStripModel(state);
+  assert.equal(model.beatText, null,
+    `expired beat should be filtered, got: ${model.beatText}`);
 });
