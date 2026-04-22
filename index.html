@@ -134,6 +134,17 @@
     }
     .hud-storyteller-focus { font-weight: 600; }
     .hud-storyteller-summary { opacity: 0.85; }
+    /* v0.8.2 Round-1 02d-roleplayer — salient event-trace beat appended to
+       the storyteller strip so the "hidden director" is audible (sabotage /
+       shortage / visitor / weather / death / fire). The span is hidden by
+       default and revealed only when a matching beat is within 15s. */
+    .hud-storyteller-beat {
+      margin-left: 8px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      opacity: 0.78;
+      font-style: italic;
+    }
 
     .heat-lens-legend {
       display: inline-flex; align-items: center; gap: 4px;
@@ -986,7 +997,7 @@
              populates this element; fallback text reads
              "Rule-based storyteller idle — colony on autopilot" when no
              groupPolicies entry is available. -->
-        <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 260px;min-width:180px;"><span id="storytellerBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerFocus" class="hud-storyteller-focus">autopilot</span><span id="storytellerSummary" class="hud-storyteller-summary">: colony holding steady — awaiting the next directive</span></div>
+        <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 260px;min-width:180px;"><span id="storytellerBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerFocus" class="hud-storyteller-focus">autopilot</span><span id="storytellerSummary" class="hud-storyteller-summary">: colony holding steady — awaiting the next directive</span><span id="storytellerBeat" class="hud-storyteller-beat" hidden></span></div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
