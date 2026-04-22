@@ -136,14 +136,6 @@ function inflateTiles(grid, seeds = [], radius = 1, options = {}) {
   return tiles;
 }
 
-function buildObjectivesForScenario(_scenario) {
-  // v0.8.0 Phase 4 — Survival Mode. Objectives no longer drive a "win"
-  // outcome; ProgressionSystem accrues a per-tick survival score instead.
-  // `scenario.hintCopy` is still surfaced by the HUD, so this helper only
-  // clears the objective list (keeping the array shape for legacy readers).
-  return [];
-}
-
 function buildFrontierRepairScenario(grid) {
   clearInfrastructure(grid);
 
@@ -858,7 +850,9 @@ export function buildScenarioBundle(grid) {
   autoFlagExistingProductionTiles(grid);
   return {
     scenario,
-    objectives: buildObjectivesForScenario(scenario),
+    // v0.8.0 Phase 4 — Survival Mode. Objectives no longer drive a "win" outcome;
+    // kept as an empty array for legacy readers (HUD, telemetry, tests).
+    objectives: [],
     objectiveHint: scenario.hintCopy.initial,
   };
 }

@@ -317,7 +317,6 @@
  *  objectiveIndex: number,
  *  scenario?: ScenarioState,
  *  objectives: Array<{id:string,title:string,description:string,completed:boolean,progress:number,reward:string}>,
- *  objectiveHoldSec: number,
  *  recovery?: {
  *    charges:number,
  *    activeBoostSec:number,
@@ -326,7 +325,6 @@
  *    lastReason:string
  *  },
  *  objectiveHint?: string,
- *  objectiveLog: string[],
  *  devIndex: number,
  *  devIndexSmoothed: number,
  *  devIndexDims: {population:number, economy:number, infrastructure:number, production:number, defense:number, resilience:number},

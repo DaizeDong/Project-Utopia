@@ -31,9 +31,10 @@ function removeAllAgents(state) {
 }
 
 // ---------------------------------------------------------------------------
-// A — Initial reveal area is a 9×9 window on first tick; rest is HIDDEN.
+// A — Initial reveal area is a (2r+1)² window on first tick (r =
+// fogInitialRevealRadius); rest is HIDDEN.
 // ---------------------------------------------------------------------------
-test("M1b fog: fresh state reveals exactly a 9x9 area, rest HIDDEN", () => {
+test("M1b fog: fresh state reveals exactly a (2r+1)² area, rest HIDDEN", () => {
   const state = createInitialGameState({ seed: 4242 });
   const services = createServices(state.world.mapSeed);
   const vis = new VisibilitySystem();

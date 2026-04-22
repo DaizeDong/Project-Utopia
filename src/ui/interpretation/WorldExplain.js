@@ -55,10 +55,6 @@ function summarizeEvent(event) {
   return `${event.type}:${event.status}${target}${pressureText}${overlapText}${contestedText}${impact}`;
 }
 
-function getCurrentObjective(state) {
-  return state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0] ?? null;
-}
-
 function pickTopFocusGroups(state, limit = 3) {
   const rows = GROUP_FOCUS_ORDER
     .map((groupId) => {
@@ -187,7 +183,6 @@ export function getAiInsight(state) {
 
 export function getCausalDigest(state) {
   const runtime = getScenarioRuntime(state);
-  const objective = getCurrentObjective(state);
   const frontier = getFrontierStatus(state);
   const logistics = state.metrics?.logistics ?? {};
   const logisticsSummary = getLogisticsInsight(state);
@@ -206,8 +201,8 @@ export function getCausalDigest(state) {
   const pressuredFarms = Number(ecology.pressuredFarms ?? 0);
 
   let severity = "info";
-  let headline = objective?.title ?? "Hold the colony together";
-  let action = objective?.description ?? objective?.title ?? "Observe the current pressure and keep the colony stable.";
+  let headline = "Hold the colony together";
+  let action = "Observe the current pressure and keep the colony stable.";
   let warning = "";
 
   if (isolatedWorksites > 0) {
@@ -254,7 +249,6 @@ export function getCausalDigest(state) {
   }
 
   const evidence = [
-    objective ? `Objective: ${objective.title} (${roundMetric(objective.progress ?? 0, 1).toFixed(1)}%)` : null,
     `Frontier: ${frontier.summary}`,
     logisticsSummary && logisticsSummary !== "Logistics: unavailable" ? logisticsSummary : null,
     traffic.hasPressure ? traffic.summary : null,

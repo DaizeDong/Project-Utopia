@@ -123,7 +123,7 @@ Node discovery is tied to a permanent-reveal fog layer. Essence of "exploration"
 
 **Visibility grid**
 - `state.world.visibility: Uint8Array(96 * 72)`, values `{ FOG = 0, SEEN_ONCE = 1, REVEALED = 2 }`
-- Initial state: 9×9 square around spawn is `REVEALED`; all else `FOG`
+- Initial state: `(2r+1)²` square around spawn is `REVEALED` (r = `fogInitialRevealRadius`, currently 6 → 13×13); all else `FOG`
 - Per tick: every actor in `{workers, visitors, herbivores, predators}` marks tiles within `VISION_RADIUS = 4` as `REVEALED` (Chebyshev)
 - Reveal is **permanent** — once `REVEALED`, never reverts
 
@@ -538,7 +538,7 @@ Audit of `src/config/balance.js` revealed **166 exposed** + **72 inline** parame
 | `stoneNodeYieldPool` | `400` | M1a Nodes | stone per quarry node (permanent) |
 | `herbNodeYieldPool` | `180` | M1a Nodes | herbs per herb node |
 | `demoStoneRecovery` | `0.35` | M1c Recycling | stone refund fraction on demolish |
-| `initialRevealRadius` | `4` | M1b Fog | 9×9 square around spawn |
+| `initialRevealRadius` | `6` | M1b Fog | 13×13 square around spawn (Phase 7.A bumped from 4/9×9; shipped as `fogInitialRevealRadius`) |
 | `actorVisionRadius` | `4` | M1b Fog | per-tick reveal radius (Chebyshev) |
 | `fogOpacityUnseen` | `0.15` | M1b Fog | render alpha for FOG tiles |
 | `exploreFogIntentPriority` | `0.25` | M1b Fog | lowest-priority idle intent |

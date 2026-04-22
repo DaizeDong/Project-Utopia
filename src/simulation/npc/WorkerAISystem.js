@@ -655,7 +655,18 @@ export function handleHarvest(worker, state, services, dt) {
         // (silent-failure H3). setTileField handles the create-if-missing.
         let tileState = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
         if (!tileState) {
-          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "fertility", 0.85);
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "fertility", 0.9);
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "yieldPool", Number(BALANCE.farmYieldPoolInitial ?? 120));
+          tileState = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+        } else if (
+          Number(tileState.yieldPool ?? 0) <= 0
+          && Number(tileState.fertility ?? 0) > 0
+          && Number(tileState.fallowUntil ?? 0) === 0
+        ) {
+          // Stale entry post-fallow before TileStateSystem reseeds: if fertility
+          // has recovered and we're no longer fallowing, restore the yieldPool
+          // so this harvest isn't silently voided (R1-HIGH1).
+          setTileField(state.grid, worker.targetTile.ix, worker.targetTile.iz, "yieldPool", Number(BALANCE.farmYieldPoolInitial ?? 120));
           tileState = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
         }
         if (tileState) {

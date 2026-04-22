@@ -626,7 +626,6 @@ export function createInitialGameState(options = {}) {
       scenario: scenarioBundle.scenario,
       wildlifeRuntime: createDefaultWildlifeRuntime(),
       objectives: scenarioBundle.objectives,
-      objectiveHoldSec: 0,
       recovery: {
         charges: 1,
         activeBoostSec: 0,
