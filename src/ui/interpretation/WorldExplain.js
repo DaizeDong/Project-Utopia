@@ -112,6 +112,55 @@ export function getFrontierStatus(state) {
   };
 }
 
+// v0.8.2 Round-0 02c-speedrunner (Step 1) — Score-delta breakdown surfaced on
+// the HUD scoreboard ribbon. Pure selector: reads BALANCE constants and the
+// running metrics counters, returns per-rule rates and running subtotals so the
+// HUD can render "+1/s · +5/birth · -10/death (lived 312 · births 5 · deaths -20)".
+// Zero side effects, safe to call every render.
+export function getSurvivalScoreBreakdown(state) {
+  const metrics = state?.metrics ?? {};
+  const perSec = Number(BALANCE.survivalScorePerSecond ?? 0);
+  const perBirth = Number(BALANCE.survivalScorePerBirth ?? 0);
+  const perDeath = Number(BALANCE.survivalScorePenaltyPerDeath ?? 0);
+  const livedSec = Math.max(0, Math.floor(Number(metrics.timeSec ?? 0)));
+  const births = Math.max(0, Math.floor(Number(metrics.birthsTotal ?? 0)));
+  const deaths = Math.max(0, Math.floor(Number(metrics.deathsTotal ?? 0)));
+  return {
+    perSec,
+    perBirth,
+    perDeath,
+    livedSec,
+    births,
+    deaths,
+    subtotalSec: perSec * livedSec,
+    subtotalBirths: perBirth * births,
+    subtotalDeaths: perDeath * deaths,
+  };
+}
+
+// v0.8.2 Round-0 02c-speedrunner (Step 2) — Compact scenario-progress ribbon.
+// Consumes the same runtime view that `getFrontierStatus()` already materialises
+// (single grid traversal) and returns a single-line string suitable for a HUD
+// micro-badge. Survival-mode / scenarios with no active anchors return a
+// friendly "endless · no active objectives" so the ribbon never collapses to
+// a stray `" · "` token.
+export function getScenarioProgressCompact(state) {
+  const runtime = getScenarioRuntime(state);
+  const routesTotal = runtime.routes.length;
+  const depotsTotal = runtime.depots.length;
+  const targets = runtime.logisticsTargets ?? {};
+  const counts = runtime.counts ?? {};
+  const parts = [];
+  if (routesTotal > 0) parts.push(`routes ${runtime.connectedRoutes}/${routesTotal}`);
+  if (depotsTotal > 0) parts.push(`depots ${runtime.readyDepots}/${depotsTotal}`);
+  if (Number(targets.warehouses ?? 0) > 0) parts.push(`wh ${counts.warehouses ?? 0}/${targets.warehouses}`);
+  if (Number(targets.farms ?? 0) > 0) parts.push(`farms ${counts.farms ?? 0}/${targets.farms}`);
+  if (Number(targets.lumbers ?? 0) > 0) parts.push(`lumbers ${counts.lumbers ?? 0}/${targets.lumbers}`);
+  if (Number(targets.walls ?? 0) > 0) parts.push(`walls ${counts.walls ?? 0}/${targets.walls}`);
+  if (parts.length === 0) return "endless · no active objectives";
+  return parts.join(" · ");
+}
+
 export function getWeatherInsight(state) {
   const current = state.weather.current ?? WEATHER.CLEAR;
   const hazardCount = Array.isArray(state.weather.hazardTiles) ? state.weather.hazardTiles.length : 0;

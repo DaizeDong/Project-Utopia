@@ -866,7 +866,17 @@
              procedural briefing text stays in the player's field of view. HUDController
              hides the node when no scenario is active (e.g. Quick Start Guide). -->
         <span id="statusScenarioHeadline" class="hud-scenario" title="Current scenario briefing" hidden></span>
-        <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
+        <!-- v0.8.2 Round-0 02c-speedrunner — Scoreboard ribbon. Groups the
+             survival objective/score line with a scenario-progress micro-badge
+             and a per-rule score breakdown so speedrunners can see the causal
+             chain between "what I build" and "what Score rewards". HUDController
+             populates these spans each render. Kept flex-wrap for narrow
+             viewports; the breakdown span degrades gracefully via tooltip. -->
+        <div id="statusScoreboard" class="hud-scoreboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;">
+          <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
+          <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
+          <span id="statusScoreBreak" class="hud-score-break" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
+        </div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
@@ -884,7 +894,7 @@
       <div id="speedControls">
         <button id="speedPauseBtn" type="button" title="Pause (Space)" aria-label="Pause simulation">&#9208;</button>
         <button id="speedPlayBtn" type="button" title="Normal speed (1x)" aria-label="Normal speed" class="active">&#9654;</button>
-        <button id="speedFastBtn" type="button" title="Fast forward (2x)" aria-label="Fast forward">&#9193;</button>
+        <button id="speedFastBtn" type="button" title="Fast forward (4x)" aria-label="Fast forward 4x">&#9193;</button>
         <span id="gameTimer" class="game-timer" title="Elapsed game time">0:00</span>
       </div>
 

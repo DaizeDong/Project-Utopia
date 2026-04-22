@@ -1,4 +1,4 @@
-import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -79,6 +79,14 @@ export class HUDController {
     // the HUD status bar (previously only visible on the pre-game menu).
     this.statusScenarioHeadline = document.getElementById("statusScenarioHeadline");
     this._lastScenarioHeadlineText = null;
+    // v0.8.2 Round-0 02c-speedrunner — scoreboard ribbon DOM refs. Sits
+    // alongside #statusScenarioHeadline (02e) and #statusObjective (existing).
+    // #statusScenario shows the compact scenario-progress ribbon; #statusScoreBreak
+    // carries the per-rule score rules (survival/birth/death) in both the
+    // visible span and the `title` tooltip so hover still works on narrow
+    // viewports where the text is hidden by CSS.
+    this.statusScenario = document.getElementById("statusScenario");
+    this.statusScoreBreak = document.getElementById("statusScoreBreak");
     this.statusAction = document.getElementById("statusAction");
     this.statusFoodBar = document.getElementById("statusFoodBar");
     this.statusWoodBar = document.getElementById("statusWoodBar");
@@ -125,7 +133,12 @@ export class HUDController {
     });
     this.speedFastBtn?.addEventListener("click", () => {
       this.state.controls.isPaused = false;
-      this.state.controls.timeScale = 2.0;
+      // v0.8.2 Round-0 02c-speedrunner — FF target 2.0 → 4.0 (x4). Coordinated
+      // with simStepper's clamp widening from 3 → 4 so the button actually
+      // reaches the requested rate. Ceiling held at 4 per orchestrator
+      // arbitration (Phase 10 determinism: accumulatorSec 0.5s + capSteps still
+      // protect against spiral-of-death).
+      this.state.controls.timeScale = 4.0;
     });
   }
 
@@ -347,6 +360,41 @@ export class HUDController {
       const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
       const devSuffix = inActive && devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
       this.statusObjective.textContent = `Survived ${timeText}  Score ${score}${devSuffix}`;
+      // v0.8.2 Round-0 02c-speedrunner (Step 6) — DevIndex 6-dim attribution as
+      // hover tooltip on #statusObjective. Speedrunner feedback: "Dev only went
+      // down when I built things" — exposing which dim dragged the composite
+      // gives the player a faster causal loop than the Debug panel. Prefixed
+      // with "Dev breakdown:" so we don't overwrite the pre-existing semantic
+      // title ("Survival time and running score…").
+      const dims = state.gameplay?.devIndexDims ?? {};
+      const dimEntries = Object.entries(dims)
+        .filter(([, v]) => Number.isFinite(Number(v)))
+        .map(([k, v]) => `${k} ${Math.round(Number(v))}`);
+      const devTooltip = dimEntries.length > 0
+        ? `Dev breakdown: ${dimEntries.join(" · ")}`
+        : "Survival time and running score (Phase 4 endless mode)";
+      this.statusObjective.setAttribute?.("title", devTooltip);
+    }
+    // v0.8.2 Round-0 02c-speedrunner (Step 5) — Compact scenario-progress
+    // ribbon. Surfaces the `scenario.targets` counts (routes/depots/wh/farms/
+    // lumbers/walls) that were previously only visible in the Debug panel so
+    // the HUD shows the causal chain between "what the scenario wants" and
+    // "what Score rewards". Survival-mode returns "endless · no active
+    // objectives"; see WorldExplain.getScenarioProgressCompact.
+    if (this.statusScenario) {
+      this.statusScenario.textContent = getScenarioProgressCompact(state);
+    }
+    // v0.8.2 Round-0 02c-speedrunner (Step 5b) — Per-rule score breakdown.
+    // Renders BALANCE.survivalScorePerSecond/perBirth/perDeath alongside
+    // running subtotals from metrics.timeSec/birthsTotal/deathsTotal so the
+    // player can map HUD actions → score deltas without opening Debug.
+    if (this.statusScoreBreak) {
+      const br = getSurvivalScoreBreakdown(state);
+      const rules = `+${br.perSec}/s · +${br.perBirth}/birth · -${br.perDeath}/death`;
+      const subtotals = `lived ${br.subtotalSec} · births ${br.subtotalBirths} · deaths -${br.subtotalDeaths}`;
+      const text = `${rules} (${subtotals})`;
+      this.statusScoreBreak.textContent = text;
+      this.statusScoreBreak.setAttribute?.("title", text);
     }
     // v0.8.2 Round-0 02e-indie-critic — render scenario headline in statusBar.
     // Pulls `scenario.title` + `scenario.summary` (same copy reviewer praised
