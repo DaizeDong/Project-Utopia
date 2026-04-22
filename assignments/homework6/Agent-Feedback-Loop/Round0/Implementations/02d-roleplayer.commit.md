@@ -4,7 +4,7 @@ plan_source: Round0/Plans/02d-roleplayer.md
 round: 0
 date: 2026-04-22
 parent_commit: 6bdcd80
-head_commit: <filled after commit>
+head_commit: 383144c
 status: DONE
 steps_done: 8/8
 tests_passed: 970/972 (2 pre-existing skips)
