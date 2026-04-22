@@ -1,4 +1,4 @@
-import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 import { computeStorytellerStripText } from "./storytellerStrip.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
@@ -496,7 +496,14 @@ export class HUDController {
     // "what Score rewards". Survival-mode returns "endless · no active
     // objectives"; see WorldExplain.getScenarioProgressCompact.
     if (this.statusScenario) {
-      this.statusScenario.textContent = getScenarioProgressCompact(state);
+      // v0.8.2 Round-1 02b-casual (Step 6) — Casual profile shows the
+      // human-readable "2 of 5 supply routes open" variant. Dev profile keeps
+      // the original terse "routes 2/5 · wh 5/2 · ..." tokens that downstream
+      // debug tools and tests depend on.
+      const uiProfile = this.state.controls?.uiProfile ?? "casual";
+      this.statusScenario.textContent = uiProfile === "casual"
+        ? getScenarioProgressCompactCasual(state)
+        : getScenarioProgressCompact(state);
     }
     // v0.8.2 Round-0 02c-speedrunner (Step 5b) — Per-rule score breakdown.
     // Renders BALANCE.survivalScorePerSecond/perBirth/perDeath alongside
