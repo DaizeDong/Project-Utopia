@@ -62,13 +62,18 @@ export function createServices(seed = 1337, options = {}) {
   const llmClient = options.offlineAiFallback
     ? createOfflineFallbackClient(new LLMClient({ baseUrl: options.baseUrl ?? "" }))
     : new LLMClient({ baseUrl: options.baseUrl ?? "" });
+  // Phase 10: `deterministic: true` disables the wall-clock path budget so
+  // long-horizon benchmarks produce reproducible results. Production paths
+  // still use the 3ms budget (real FPS matters on slow devices); bench
+  // harnesses pay the wall-clock cost but get bit-identical outcomes.
+  const pathBudgetMaxMs = options.deterministic ? Infinity : 3;
   return {
     pathCache: new PathCache(700),
     pathBudget: {
       tick: -1,
       usedMs: 0,
       skipped: 0,
-      maxMs: 3,
+      maxMs: pathBudgetMaxMs,
     },
     llmClient,
     fallbackEnvironment: buildEnvironmentFallback,

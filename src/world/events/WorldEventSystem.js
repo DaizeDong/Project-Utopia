@@ -720,6 +720,14 @@ export class WorldEventSystem {
         }
         applyActiveEvent(event, 0, state);
       }
+      // Phase 10: monotonic raid-repelled counter. A BANDIT_RAID that reaches
+      // `resolve` has exhausted its active window with the colony still running,
+      // so we credit one repel. Long-horizon-helpers reads this instead of the
+      // legacy ring-buffer scan that looked for never-emitted event types.
+      if (changed && prevStatus === "active" && event.status === "resolve"
+        && event.type === EVENT_TYPE.BANDIT_RAID) {
+        state.metrics.raidsRepelled = Number(state.metrics.raidsRepelled ?? 0) + 1;
+      }
       if (changed && state.debug?.eventTrace) {
         const impact = event.payload?.impactTile
           ? ` impact=(${event.payload.impactTile.ix},${event.payload.impactTile.iz})`

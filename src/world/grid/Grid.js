@@ -2382,14 +2382,17 @@ export function createInitialGrid(options = {}) {
   const lumberPoolInit = Number(BALANCE.nodeYieldPoolForest ?? 80);
   const herbPoolInit = Number(BALANCE.nodeYieldPoolHerb ?? 60);
   const tileState = new Map();
+  // Seeded fertility init — previously Math.random() created run-to-run
+  // divergence for identical seeds, polluting long-horizon benchmarks.
+  const fertilityRng = createRng(seed + 9973);
   for (let i = 0; i < generated.tiles.length; i++) {
     const type = generated.tiles[i];
     if (type === TILE.FARM) {
-      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: farmPoolInit }));
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + fertilityRng() * 0.2, yieldPool: farmPoolInit }));
     } else if (type === TILE.LUMBER) {
-      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: lumberPoolInit }));
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + fertilityRng() * 0.2, yieldPool: lumberPoolInit }));
     } else if (type === TILE.HERB_GARDEN) {
-      tileState.set(i, createTileStateEntry({ fertility: 0.8 + Math.random() * 0.2, yieldPool: herbPoolInit }));
+      tileState.set(i, createTileStateEntry({ fertility: 0.8 + fertilityRng() * 0.2, yieldPool: herbPoolInit }));
     } else if (type === TILE.ROAD || type === TILE.BRIDGE || type === TILE.WALL) {
       tileState.set(i, createTileStateEntry());
     }

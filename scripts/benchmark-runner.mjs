@@ -132,14 +132,17 @@ async function runSingle(scenario, condition, seed, durationSec, sampleIntervalS
   state.ai.enabled = Boolean(condition.aiEnabled);
   state.ai.coverageTarget = "fallback";
   state.ai.runtimeProfile = "long_run";
-  if (preset) applyPreset(state, preset);
-
   const memoryStore = new MemoryStore();
   const memoryObserver = new MemoryObserver(memoryStore);
   const services = createServices(state.world.mapSeed, {
     offlineAiFallback: !condition.aiEnabled,
     baseUrl: condition.aiEnabled ? (process.env.AI_PROXY_BASE ?? "http://localhost:8787") : "",
+    deterministic: true,
   });
+  // applyPreset after services exist so preset jitter draws from the
+  // seeded RNG (determinism contract). Order swap is safe — presets do
+  // not depend on systems.
+  if (preset) applyPreset(state, preset, services);
   services.memoryStore = memoryStore;
   const systems = buildSystems(memoryStore);
 

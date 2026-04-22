@@ -177,18 +177,16 @@ async function runSimulation(config) {
   state.ai.enabled = true;
   state.ai.coverageTarget = "fallback";
 
-  if (presetId) {
-    const preset = BENCHMARK_PRESETS.find((p) => p.id === presetId);
-    if (preset) applyPreset(state, preset);
-  }
-
   const preset = presetId ? BENCHMARK_PRESETS.find((p) => p.id === presetId) : null;
   const memoryStore = new MemoryStore();
   const memoryObserver = new MemoryObserver(memoryStore);
   const services = createServices(state.world.mapSeed, {
     offlineAiFallback: true,
     baseUrl: "",
+    deterministic: true,
   });
+  // applyPreset after services so preset jitter uses the seeded RNG.
+  if (preset) applyPreset(state, preset, services);
   services.memoryStore = memoryStore;
   const systems = buildSystems(memoryStore, { disableDirector: preset?.disableDirector });
 

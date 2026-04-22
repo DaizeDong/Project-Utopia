@@ -321,7 +321,7 @@ function runWander(visitor, state, dt, services) {
   const shouldRetarget = !hasActivePath(visitor, state) || isPathStuck(visitor, state, 2.2);
   if (shouldRetarget && nowSec >= nextWanderRefreshSec && canAttemptPath(visitor, state)) {
     clearPath(visitor);
-    if (setTargetAndPath(visitor, randomPassableTile(state.grid), state, services)) {
+    if (setTargetAndPath(visitor, randomPassableTile(state.grid, () => services.rng.next()), state, services)) {
       blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
     }
   }
@@ -428,7 +428,7 @@ function runScoutBehavior(visitor, state, dt, services) {
   const nextScoutMoveSec = Number(bb.nextScoutMoveSec ?? -Infinity);
   if ((!hasActivePath(visitor, state) || isPathStuck(visitor, state, 2.4)) && nowSec >= nextScoutMoveSec && canAttemptPath(visitor, state)) {
     clearPath(visitor);
-    if (setTargetAndPath(visitor, randomPassableTile(state.grid), state, services)) {
+    if (setTargetAndPath(visitor, randomPassableTile(state.grid, () => services.rng.next()), state, services)) {
       bb.nextScoutMoveSec = nowSec + 3.2 + services.rng.next() * 1.6;
     } else {
       bb.nextScoutMoveSec = nowSec + 1.8;

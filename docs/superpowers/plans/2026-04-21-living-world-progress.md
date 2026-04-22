@@ -421,3 +421,72 @@ _Iteration commit:_ 2809303 (`fix(v0.8.0 phase-7 iter): review-sweep fixes`).
 
 Tag: `v0.8.0-living-world`.
 
+---
+
+## Phase 10 — Long-Horizon Determinism Hardening (2026-04-21)
+
+### Goal
+Make `bootHeadlessSim` bit-identical across repeated boots with the same
+seed + preset. Without this, balance-tuning deltas on the long-horizon
+bench get lost in `Math.random` noise and cross-run comparison becomes
+meaningless.
+
+### Determinism contract (verified)
+- 3 fresh boots × 5000 ticks on seed 42 / temperate_plains produce
+  identical hash digests of `state.metrics / resources / agents /
+  animals / buildings / gameplay`.
+- 2 cross-process invocations of `scripts/long-horizon-bench.mjs
+  --max-days 90 --seed 42 --preset temperate_plains` produce
+  byte-identical `eval-report.json`.
+- 2000-tick seed 7 / rugged_highlands also verified identical.
+
+### Nondeterminism sources removed
+- **WildlifePopulationSystem** — rng promoted from `services?.rng?.next
+  ?? Math.random` inline fallback to an explicit `rng()` function
+  contract threaded from `system.update()`. `createAnimal` takes the
+  function directly; no silent-failure branch remains.
+- **BenchmarkPresets.applyPreset** — signature extended with
+  `services`; all internal `Math.random()` calls (cluster jitter, worker
+  scatter, cloneWorker offsets) now route through
+  `services.rng.next()` with `Math.random` only as a last-resort
+  fallback when services are absent.
+- **Bench entrypoints** — `scripts/benchmark-runner.mjs`,
+  `scripts/comprehensive-eval.mjs`, and `SimHarness` reordered to
+  `createServices()` first, then `applyPreset(state, preset, services)`.
+  The `deterministic: true` flag on `createServices` pins
+  `pathBudget.maxMs = Infinity` so the 3 ms production budget cannot
+  truncate pathfinding under bench load.
+- **randomPassableTile callers** — `VisitorAISystem` (2 sites),
+  `AnimalAISystem` (3 sites), `WorkerAISystem` (1 site) now pass
+  `() => services.rng.next()` instead of defaulting to `Math.random`.
+- **BuildSystem services threading** — `ColonyDirectorSystem`,
+  `PlanExecutor`, `SkillLibrary`, `AgentDirectorSystem` audited for
+  missing `services` propagation; deferred-build callers confirmed
+  wired.
+- **Grid fertility + WeatherSystem** — initialization already used
+  `services.rng`; verified no accidental `Math.random` leak on reset.
+
+### Regression coverage
+- New test: `test/long-horizon-determinism.test.js` — 3 cases locking
+  the contract (seed=42 × 500 ticks, seed=42 vs seed=43 diverges,
+  seed=7 × 2000 ticks on rugged_highlands).
+- All 865 pre-existing tests still pass after the refactor.
+
+### Scope note — balance gap deferred
+The determinism harness now makes future tuning work measurable, but
+the underlying balance gap (day-365 DevIndex ~37 vs target ≥ 70 on
+seed 42 / temperate_plains) is **not** closed this session. It matches
+Phase 7.A's prior conclusion that starvation-spiral recovery is a
+structural issue — BuildAdvisor priority, `INITIAL_RESOURCES`, and the
+carry-eat bypass — not a parameter tune. Phase 10 delivers the
+measurement infrastructure; balance tuning remains a follow-up.
+
+### Files touched
+- `src/simulation/ecology/WildlifePopulationSystem.js`
+- `src/simulation/npc/{VisitorAISystem,AnimalAISystem,WorkerAISystem}.js`
+- `src/benchmark/BenchmarkPresets.js`
+- `src/benchmark/framework/SimHarness.js`
+- `scripts/{benchmark-runner,comprehensive-eval}.mjs`
+- `test/long-horizon-determinism.test.js` (new)
+- `CHANGELOG.md` (Unreleased — Phase 10 section)
+

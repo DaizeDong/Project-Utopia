@@ -161,7 +161,7 @@ export function bootHeadlessSim({ seed, preset = "temperate_plains", tickRate = 
 
   const memoryStore = new MemoryStore();
   const memoryObserver = new MemoryObserver(memoryStore);
-  const services = createServices(seedNum, { offlineAiFallback: true });
+  const services = createServices(seedNum, { offlineAiFallback: true, deterministic: true });
   services.memoryStore = memoryStore;
 
   const systems = buildSystems(memoryStore);

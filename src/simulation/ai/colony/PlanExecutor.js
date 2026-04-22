@@ -325,12 +325,12 @@ const ENHANCED_PLACEMENT_TYPES = new Set([
   "warehouse", "farm", "quarry", "herb_garden", "kitchen", "smithy", "clinic",
 ]);
 
-export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map()) {
+export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map(), services = null) {
   const action = step.action;
 
   // Skill expansion
   if (action.skill) {
-    return _groundSkillStep(step, state, buildSystem, groundedSteps);
+    return _groundSkillStep(step, state, buildSystem, groundedSteps, services);
   }
 
   // Single build action
@@ -339,7 +339,7 @@ export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map
 
   const candidates = resolveLocationHint(action.hint, state, groundedSteps);
   const feasibleTiles = candidates.filter(tile => {
-    const preview = buildSystem.previewToolAt(state, action.type, tile.ix, tile.iz);
+    const preview = buildSystem.previewToolAt(state, action.type, tile.ix, tile.iz, services);
     return preview.ok;
   });
 
@@ -378,7 +378,7 @@ export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map
 }
 
 /** Ground a skill step — find best anchor, expand into sub-steps. */
-function _groundSkillStep(step, state, buildSystem, groundedSteps) {
+function _groundSkillStep(step, state, buildSystem, groundedSteps, services = null) {
   const skillId = step.action.skill;
   const skill = SKILL_LIBRARY[skillId];
   if (!skill) {
@@ -397,7 +397,7 @@ function _groundSkillStep(step, state, buildSystem, groundedSteps) {
   for (let i = 0; i < evalLimit; i++) {
     const anchor = candidates[i];
     const terrainScore = scoreSkillTerrain(skillId, anchor, state.grid);
-    const feasibility = assessSkillFeasibility(skillId, anchor, state.grid, buildSystem, state);
+    const feasibility = assessSkillFeasibility(skillId, anchor, state.grid, buildSystem, state, services);
     const combinedScore = terrainScore * 0.3 + feasibility.ratio * 0.7;
 
     if (combinedScore > bestScore) {
@@ -448,7 +448,7 @@ function _skillTotalCost(skillId) {
  * @param {object} buildSystem
  * @returns {object} — plan with grounded steps
  */
-export function groundPlan(plan, state, buildSystem) {
+export function groundPlan(plan, state, buildSystem, services = null) {
   const groundedSteps = new Map();
   const grounded = [];
 
@@ -456,7 +456,7 @@ export function groundPlan(plan, state, buildSystem) {
   const ordered = _topologicalSort(plan.steps);
 
   for (const step of ordered) {
-    const g = groundPlanStep(step, state, buildSystem, groundedSteps);
+    const g = groundPlanStep(step, state, buildSystem, groundedSteps, services);
     if (g.groundedTile) {
       groundedSteps.set(step.id, g.groundedTile);
     }
@@ -474,7 +474,7 @@ export function groundPlan(plan, state, buildSystem) {
  * @param {object} buildSystem
  * @returns {Array<object>} — executed steps
  */
-export function executeNextSteps(plan, state, buildSystem) {
+export function executeNextSteps(plan, state, buildSystem, services = null) {
   const executed = [];
 
   for (const step of plan.steps) {
@@ -498,14 +498,14 @@ export function executeNextSteps(plan, state, buildSystem) {
 
     // Execute
     if (step.action.skill && step.skillSubSteps) {
-      const result = _executeSkillSubSteps(step, state, buildSystem);
+      const result = _executeSkillSubSteps(step, state, buildSystem, services);
       step.status = result.placed > 0 ? "completed" : "failed";
       step.placedCount = result.placed;
       step.failedCount = result.failed;
     } else if (step.groundedTile) {
       const tile = step.groundedTile;
       const result = buildSystem.placeToolAt(
-        state, step.action.type, tile.ix, tile.iz, { recordHistory: false }
+        state, step.action.type, tile.ix, tile.iz, { recordHistory: false, services }
       );
       step.status = result.ok ? "completed" : "failed";
       step.actualTile = result.ok ? tile : null;
@@ -523,7 +523,7 @@ export function executeNextSteps(plan, state, buildSystem) {
 }
 
 /** Execute a skill's sub-steps sequentially. */
-function _executeSkillSubSteps(step, state, buildSystem) {
+function _executeSkillSubSteps(step, state, buildSystem, services = null) {
   let placed = 0;
   let failed = 0;
 
@@ -535,7 +535,7 @@ function _executeSkillSubSteps(step, state, buildSystem) {
     }
 
     const result = buildSystem.placeToolAt(
-      state, subStep.type, subStep.ix, subStep.iz, { recordHistory: false }
+      state, subStep.type, subStep.ix, subStep.iz, { recordHistory: false, services }
     );
     if (result.ok) {
       state.buildings = rebuildBuildingStats(state.grid);

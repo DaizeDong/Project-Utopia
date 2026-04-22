@@ -325,7 +325,7 @@ function choosePredatorPatrolTile(animal, state, ecology, services, policy, pred
   }
 
   animal.debug.lastPatrolLabel = "open frontier";
-  return randomPassableTile(state.grid);
+  return randomPassableTile(state.grid, () => services.rng.next());
 }
 
 function choosePredatorPrey(animal, herbivores, state, policy) {
@@ -404,7 +404,7 @@ function chooseSpreadTarget(animal, state, groupAnimals, services) {
     }
   }
   if (!best && zoneAnchor) return zoneAnchor;
-  return best ?? randomPassableTile(state.grid);
+  return best ?? randomPassableTile(state.grid, () => services.rng.next());
 }
 
 function shouldForceSpread(animal, groupAnimals, state, tuning, dt, excludedStates = new Set()) {
@@ -636,7 +636,7 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.homeTile ?? null;
   const wanderTarget = zoneAnchor && tileDistance(worldToTile(animal.x, animal.z, state.grid), zoneAnchor) > 6
     ? zoneAnchor
-    : randomPassableTile(state.grid);
+    : randomPassableTile(state.grid, () => services.rng.next());
   const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
   if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
     clearPath(animal);
