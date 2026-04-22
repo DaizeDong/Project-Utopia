@@ -126,6 +126,12 @@ export class HUDController {
     this.mealsRateVal = document.getElementById("mealsRateVal");
     this.toolsRateVal = document.getElementById("toolsRateVal");
     this.medicineRateVal = document.getElementById("medicineRateVal");
+    // v0.8.2 Round-1 01d-mechanics-content (Step 4) — DOM refs for the new
+    // "Last: ... died (...)" scoreboard row and the food-rate breakdown span
+    // that sits next to #foodRateVal. Both may be absent in minimal test DOMs
+    // so all writes below guard with `if (this.x)`.
+    this.latestDeathVal = document.getElementById("latestDeathVal");
+    this.foodRateBreakdown = document.getElementById("foodRateBreakdown");
     this._lastResourceSnapshot = null;
     this._lastSnapshotSimSec = 0;
     this._lastComputedRates = null; // cached between windows so UI shows continuous values
@@ -217,6 +223,26 @@ export class HUDController {
         : `▼ ${rate.toFixed(1)}/min`;
     };
     const rates = this._lastComputedRates;
+    // v0.8.2 Round-1 01d-mechanics-content (Step 5) — Food-rate breakdown.
+    // Reviewer saw "Food -149.6/min" swing without knowing whether it was
+    // production dropping, consumption spiking, or spoilage. If the backend
+    // (ColonyPerceiver / ResourceSystem) has populated per-minute counters
+    // on state.metrics we surface them as `(prod +X / cons -Y / spoil -Z)`
+    // alongside the net rate. When the counters are missing we render an
+    // empty string so the UI never shows stale "—" noise.
+    if (this.foodRateBreakdown) {
+      const m = state.metrics ?? {};
+      const prod = Number(m.foodProducedPerMin ?? m.foodProduced ?? 0);
+      const cons = Number(m.foodConsumedPerMin ?? m.foodConsumed ?? 0);
+      const spoil = Number(m.foodSpoiledPerMin ?? m.foodSpoiled ?? 0);
+      const parts = [];
+      if (prod > 0.05) parts.push(`prod +${prod.toFixed(0)}`);
+      if (cons > 0.05) parts.push(`cons -${cons.toFixed(0)}`);
+      if (spoil > 0.05) parts.push(`spoil -${spoil.toFixed(0)}`);
+      this.foodRateBreakdown.textContent = parts.length > 0
+        ? `(${parts.join(" / ")})`
+        : "";
+    }
     if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food);
     if (this.woodRateVal) this.woodRateVal.textContent = formatRate(rates?.wood);
     if (this.stoneRateVal) this.stoneRateVal.textContent = formatRate(rates?.stone);
@@ -343,6 +369,25 @@ export class HUDController {
         this.deathVal.setAttribute?.("title", "Deaths by cause (starvation / predation)");
         this._obituaryText = "";
       }
+    }
+
+    // v0.8.2 Round-1 01d-mechanics-content (Step 6) — Latest death quick-row.
+    // MortalitySystem already unshifts "[t] Name died (reason) near (x,y)" lines
+    // into state.gameplay.objectiveLog (newest-first). We surface the newest
+    // such line to #latestDeathVal on the HUD top bar so the player never has
+    // to open the Events panel to see who just died. Non-death log lines
+    // (recovery, emergency relief, storyteller beats) are skipped via the
+    // `/died\s*\(/` filter that matches MortalitySystem's format exactly.
+    if (this.latestDeathVal) {
+      const log = Array.isArray(state.gameplay?.objectiveLog)
+        ? state.gameplay.objectiveLog
+        : [];
+      const latestDeathLine = log.find((ln) => /died\s*\(/.test(String(ln ?? "")));
+      this.latestDeathVal.textContent = latestDeathLine
+        ? String(latestDeathLine).slice(0, 80)
+        : "No deaths yet";
+      this.latestDeathVal.setAttribute?.("title",
+        latestDeathLine ?? "No deaths this run");
     }
 
     // v0.8.2 Round-0 01e-innovation (Step 4) — Storyteller strip render.
