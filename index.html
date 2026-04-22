@@ -904,6 +904,17 @@
           <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
+          <!-- v0.8.2 Round-1 01d-mechanics-content (Step 3) — most-recent-death
+               shortcut row. Pulls the newest "... died (...)" entry from
+               state.gameplay.objectiveLog so the player sees the last fatal
+               event on the HUD top bar instead of having to open the Events
+               panel. HUDController.render() populates #latestDeathVal each
+               tick; we keep this in the scoreboard flex so the row wraps on
+               narrow viewports. -->
+          <div class="hud-row" id="latestDeathRow" title="Most recent colonist death — click any worker to inspect their intent/path" style="display:flex;gap:4px;align-items:baseline;font-size:11px;opacity:0.85;">
+            <span class="muted small">Last:</span>
+            <span id="latestDeathVal" class="small">—</span>
+          </div>
         </div>
         <!-- v0.8.2 Round-0 01e-innovation — Storyteller strip. Single-line
              ribbon that surfaces the active workers-group policy focus +
@@ -1049,7 +1060,7 @@
         <details class="card" data-panel-key="resources" open>
           <summary>Resources</summary>
           <div class="panel-body">
-            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span></div></div>
+            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span><span id="foodRateBreakdown" class="small muted" style="margin-left:4px;">—</span></div></div>
             <div class="bar"><div id="foodBar"></div></div>
             <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span></div></div>
             <div class="bar"><div id="woodBar"></div></div>
