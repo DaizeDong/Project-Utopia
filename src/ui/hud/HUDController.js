@@ -1,6 +1,6 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 import { explainTerm } from "./glossary.js";
-import { computeStorytellerStripText } from "./storytellerStrip.js";
+import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -444,15 +444,54 @@ export class HUDController {
     }
 
     // v0.8.2 Round-0 01e-innovation (Step 4) — Storyteller strip render.
-    // Keeps the computation side-effect-free (computeStorytellerStripText)
-    // and just writes the result into the DOM ref captured in the
-    // constructor. The text communicates fallback-as-feature rather than
-    // going silent when no LLM is connected.
+    // Keeps the computation side-effect-free (computeStorytellerStripModel +
+    // computeStorytellerStripText) and just writes the result into the DOM
+    // refs. The text communicates fallback-as-feature rather than going
+    // silent when no LLM is connected.
+    //
+    // v0.8.2 Round-1 01e-innovation — switched to the structured model so the
+    // player sees a colour-coded WHISPER / DIRECTOR / DRIFT badge (D3
+    // arbitration). We purposely use textContent + per-span writes (no
+    // innerHTML) because focus/summary may originate from LLM output.
+    // When the expected children are missing (older DOM / test rig), we
+    // fall back to the legacy single-line renderer for back-compat.
     if (this.storytellerStrip) {
-      const text = computeStorytellerStripText(state);
-      if (this.storytellerStrip.textContent !== text) {
-        this.storytellerStrip.textContent = text;
-        this.storytellerStrip.setAttribute?.("title", text);
+      const getBadgeEl = typeof document !== "undefined"
+        ? document.getElementById("storytellerBadge")
+        : null;
+      const getFocusEl = typeof document !== "undefined"
+        ? document.getElementById("storytellerFocus")
+        : null;
+      const getSummaryEl = typeof document !== "undefined"
+        ? document.getElementById("storytellerSummary")
+        : null;
+      if (getBadgeEl && getFocusEl && getSummaryEl) {
+        const model = computeStorytellerStripModel(state);
+        if (getBadgeEl.textContent !== model.prefix) {
+          getBadgeEl.textContent = model.prefix;
+        }
+        if (getBadgeEl.dataset) {
+          if (getBadgeEl.dataset.mode !== model.mode) {
+            getBadgeEl.dataset.mode = model.mode;
+          }
+        } else {
+          getBadgeEl.setAttribute?.("data-mode", model.mode);
+        }
+        if (getFocusEl.textContent !== model.focusText) {
+          getFocusEl.textContent = model.focusText;
+        }
+        const summaryWithSeparator = `: ${model.summaryText}`;
+        if (getSummaryEl.textContent !== summaryWithSeparator) {
+          getSummaryEl.textContent = summaryWithSeparator;
+        }
+        const tooltipText = `[${model.prefix}] ${model.focusText}${summaryWithSeparator}`;
+        this.storytellerStrip.setAttribute?.("title", tooltipText);
+      } else {
+        const text = computeStorytellerStripText(state);
+        if (this.storytellerStrip.textContent !== text) {
+          this.storytellerStrip.textContent = text;
+          this.storytellerStrip.setAttribute?.("title", text);
+        }
       }
     }
     this.eventVal.textContent = getEventInsight(state);
