@@ -1,7 +1,95 @@
 import { getAiInsight, getCausalDigest } from "../interpretation/WorldExplain.js";
+import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 
 const DEV_DOCK_PANELS_STORAGE_KEY = "utopiaDevDockPanels:v1";
 const DEV_DOCK_DEFAULT_OPEN = Object.freeze(["global", "ai-trace"]);
+const COLONY_LOG_MAX_LINES = 12;
+
+/**
+ * Format a single GameEventBus event into a human-readable log line for the
+ * "Objective / Event Log" dock panel. Returns null for types that are too
+ * noisy to render (e.g. BUILDING_PLACED fires once per placement).
+ *
+ * Kept as an exported pure function so test/event-log-rendering.test.js can
+ * assert formatting behavior without spinning up a DOM.
+ *
+ * @param {object} event - Shape: { type, t, entityId, entityName, detail }.
+ * @returns {string|null}
+ */
+export function formatGameEventForLog(event) {
+  if (!event || typeof event !== "object") return null;
+  const tSec = Number(event.t ?? 0);
+  const tsPrefix = `[${tSec.toFixed(1)}s]`;
+  const detail = event.detail ?? {};
+  const name = event.entityName ?? event.entityId ?? "worker";
+  switch (event.type) {
+    case EVENT_TYPES.WORKER_STARVED:
+      return `${tsPrefix} [HUNGER] ${name} starved`;
+    case EVENT_TYPES.WORKER_DIED: {
+      const reason = detail.reason ? ` (${detail.reason})` : "";
+      return `${tsPrefix} [DEATH] ${name} died${reason}`;
+    }
+    case EVENT_TYPES.PREDATOR_ATTACK: {
+      const attacker = detail.attackerName ?? detail.attackerId ?? "predator";
+      const target = detail.targetName ?? detail.targetId ?? "worker";
+      const dmg = Number(detail.damage ?? 0);
+      return `${tsPrefix} [RAID] ${attacker} attacked ${target} for ${dmg.toFixed(1)} dmg`;
+    }
+    case EVENT_TYPES.WAREHOUSE_FIRE: {
+      const ix = Number(detail.ix ?? 0);
+      const iz = Number(detail.iz ?? 0);
+      const foodLoss = Number(detail.foodLoss ?? detail.foodLost ?? 0);
+      return `${tsPrefix} [FIRE] Warehouse fire at (${ix},${iz}) food=-${foodLoss.toFixed(0)}`;
+    }
+    case EVENT_TYPES.VERMIN_SWARM: {
+      const ix = Number(detail.ix ?? 0);
+      const iz = Number(detail.iz ?? 0);
+      const foodLoss = Number(detail.foodLoss ?? detail.foodLost ?? 0);
+      return `${tsPrefix} [VERMIN] Vermin swarm at (${ix},${iz}) food=-${foodLoss.toFixed(0)}`;
+    }
+    case EVENT_TYPES.TRADE_COMPLETED: {
+      const goods = Number(detail.goods ?? detail.amount ?? 0);
+      return `${tsPrefix} [TRADE] Trade completed (+${goods.toFixed(0)})`;
+    }
+    case EVENT_TYPES.WEATHER_CHANGED: {
+      const from = detail.from ?? "?";
+      const to = detail.to ?? "?";
+      const duration = Number(detail.duration ?? 0);
+      return `${tsPrefix} [WEATHER] ${from} -> ${to} (${duration.toFixed(0)}s)`;
+    }
+    case EVENT_TYPES.FOOD_SHORTAGE: {
+      const resource = detail.resource ?? "food";
+      return `${tsPrefix} [SHORTAGE] ${resource} low (threshold=${Number(detail.threshold ?? 0).toFixed(0)})`;
+    }
+    case EVENT_TYPES.SABOTAGE_OCCURRED:
+      return `${tsPrefix} [SABOTAGE] ${name} sabotaged colony`;
+    case EVENT_TYPES.VISITOR_ARRIVED:
+      return `${tsPrefix} [VISITOR] ${name} arrived`;
+    case EVENT_TYPES.WAREHOUSE_QUEUE_TIMEOUT:
+      return `${tsPrefix} [QUEUE] warehouse queue timeout`;
+    case EVENT_TYPES.DEMOLITION_RECYCLED: {
+      const wood = Number(detail.woodRefund ?? detail.wood ?? 0);
+      return `${tsPrefix} [RECYCLE] demolition refund (+${wood.toFixed(0)} wood)`;
+    }
+    case EVENT_TYPES.COLONY_MILESTONE:
+      return `${tsPrefix} [MILESTONE] ${detail.label ?? detail.name ?? "milestone"}`;
+    // Too noisy to render in a 12-line tail: skip.
+    case EVENT_TYPES.BUILDING_PLACED:
+    case EVENT_TYPES.BUILDING_DESTROYED:
+    case EVENT_TYPES.WORKER_RESTING:
+    case EVENT_TYPES.WORKER_SOCIALIZED:
+    case EVENT_TYPES.WORKER_MOOD_LOW:
+    case EVENT_TYPES.NIGHT_BEGAN:
+    case EVENT_TYPES.DAY_BEGAN:
+    case EVENT_TYPES.HERBIVORE_FLED:
+    case EVENT_TYPES.ANIMAL_MIGRATION:
+    case EVENT_TYPES.RESOURCE_DEPLETED:
+    case EVENT_TYPES.RESOURCE_SURPLUS:
+      return null;
+    default:
+      return `${tsPrefix} * ${event.type}`;
+  }
+}
 
 export class DeveloperPanel {
   constructor(state) {
@@ -327,6 +415,7 @@ export class DeveloperPanel {
     const eventTrace = this.state.debug.eventTrace ?? [];
     const warnings = this.state.metrics.warnings ?? [];
     const presetComparison = this.state.debug.presetComparison ?? [];
+    const gameEventLog = this.state.events?.log ?? [];
     const lines = [];
 
     if (objectiveLog.length > 0) {
@@ -335,7 +424,27 @@ export class DeveloperPanel {
       lines.push("");
     }
 
-    const events = this.state.events.active ?? [];
+    // Colony Log — pull the tail of state.events.log (GameEventBus ring
+    // buffer, MAX_EVENTS=200) and format each event into a human-readable
+    // line. Newest events appear first so the freshest info is at the top.
+    if (gameEventLog.length > 0) {
+      const tail = gameEventLog.slice(-COLONY_LOG_MAX_LINES * 2);
+      const formatted = [];
+      for (let i = tail.length - 1; i >= 0; i -= 1) {
+        const line = formatGameEventForLog(tail[i]);
+        if (line) formatted.push(line);
+        if (formatted.length >= COLONY_LOG_MAX_LINES) break;
+      }
+      if (formatted.length > 0) {
+        lines.push(
+          `Colony Log (${gameEventLog.length} total, showing last ${formatted.length}):`,
+        );
+        lines.push(...formatted);
+        lines.push("");
+      }
+    }
+
+    const events = this.state.events?.active ?? [];
     if (events.length > 0) {
       lines.push("Active Events:");
       for (const event of events.slice(0, 8)) {
@@ -369,7 +478,9 @@ export class DeveloperPanel {
     this.#setPanelText(
       this.eventVal,
       "events",
-      lines.length > 0 ? lines.join("\n") : "No event/diagnostic logs yet.",
+      lines.length > 0
+        ? lines.join("\n")
+        : "Colony log is quiet. Events appear here when workers die, fires break out, traders arrive, or weather shifts.",
     );
   }
 
