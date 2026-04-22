@@ -241,8 +241,13 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
   recovery.lastTriggerSec = nowSec;
   recovery.lastReason = criticalResources ? "resource collapse" : "threat spiral";
 
-  logObjective(state, `Emergency relief arrived: +${foodBoost} food, +${woodBoost} wood, threat -${threatRelief.toFixed(0)}.`);
-  state.controls.actionMessage = "Emergency relief stabilized the colony. Use the window to rebuild routes and depots.";
+  // v0.8.2 Round-1 02e-indie-critic — narrativize the emergency relief toast.
+  // Previous copy ("Emergency relief stabilized the colony. Use the window to
+  // rebuild routes and depots.") read as a commit-log entry; replaced with a
+  // scene-setting sentence so the event feels diegetic. Mechanics unchanged —
+  // same resources applied, same actionKind, same recovery charge consumed.
+  logObjective(state, `A relief caravan crested the ridge as the last grain ran out — +${foodBoost} food, +${woodBoost} wood, threat eased by ${threatRelief.toFixed(0)}.`);
+  state.controls.actionMessage = "The colony breathes again. Rebuild your routes before the next wave.";
   state.controls.actionKind = "success";
   return recovery;
 }
