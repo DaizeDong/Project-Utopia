@@ -761,9 +761,16 @@ export class BuildToolbar {
     if (this.redoBuildBtn) this.redoBuildBtn.disabled = !this.state.controls.canRedo;
 
     const buildPanel = getBuildToolPanelState(this.state);
+    // v0.8.2 Round0 02b-casual — swap compact cost ("5w") for expanded
+    // cost ("5 wood") when the casual UI profile is active. Reviewer
+    // player-02-casual reported reading "5w" as "5 food" multiple times.
+    const profile = this.state.controls?.uiProfile ?? "casual";
+    const costLabelDisplay = profile === "casual"
+      ? (buildPanel.costLabelExpanded ?? buildPanel.costLabel)
+      : buildPanel.costLabel;
     if (this.buildToolLabelVal) this.buildToolLabelVal.textContent = buildPanel.label;
     if (this.buildToolSummaryVal) this.buildToolSummaryVal.textContent = buildPanel.summary;
-    if (this.buildToolCostVal) this.buildToolCostVal.textContent = `Cost: ${buildPanel.costLabel}`;
+    if (this.buildToolCostVal) this.buildToolCostVal.textContent = `Cost: ${costLabelDisplay}`;
     if (this.buildToolRulesVal) this.buildToolRulesVal.textContent = `Rules: ${buildPanel.rules}`;
     if (this.buildPreviewVal) {
       // v0.8.2 Round-0 01b — tint the hover-preview row when the current tool
@@ -785,6 +792,13 @@ export class BuildToolbar {
         this.buildPreviewVal.textContent = buildPanel.previewSummary;
         this.buildPreviewVal.setAttribute("data-kind", "");
         this.buildPreviewVal.setAttribute("data-tooltip", "");
+      }
+      // v0.8.2 Round0 02b-casual — bold the validity row in casual profile.
+      // CSS selector body.casual-mode #buildPreviewVal[data-ui-casual-accent].
+      if (profile === "casual") {
+        this.buildPreviewVal.setAttribute("data-ui-casual-accent", "1");
+      } else {
+        this.buildPreviewVal.removeAttribute("data-ui-casual-accent");
       }
     }
 

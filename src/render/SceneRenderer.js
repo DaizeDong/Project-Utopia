@@ -18,6 +18,28 @@ const TILE_LABEL = Object.freeze(
   }, {}),
 );
 
+// v0.8.2 Round0 02b-casual — Build validity accent helper.
+// Given a BuildSystem preview result and the active UI profile, compute a
+// small description of how the hover preview should be accentuated:
+//   { color: "#4ade80" | "#ef4444" | null, scale: 1.0 | 1.08,
+//     reasonText: string, legal: boolean }
+// The renderer calls this and forwards `scale` to the preview-mesh scale +
+// `color` to the material tint. Extracted as a pure function so the
+// casual-profile accent can be unit-tested without standing up Three.js
+// (plan Step 9). `null` color signals "no hover / no preview available".
+export function describeBuildValidityAccent(preview, uiProfile = "casual") {
+  if (!preview || typeof preview !== "object") {
+    return { color: null, scale: 1.0, reasonText: "", legal: false };
+  }
+  const legal = Boolean(preview.ok);
+  const color = legal ? "#4ade80" : "#ef4444";
+  const scale = uiProfile === "casual" ? 1.08 : 1.0;
+  const reasonText = legal
+    ? String(preview.summary ?? "")
+    : String(preview.reasonText ?? explainBuildReason(preview.reason, preview) ?? "");
+  return { color, scale, reasonText, legal };
+}
+
 // v0.8.2 Round-0 01b — Build click feedback layer.
 // Pure helper: render a short floating-toast string from a BuildSystem result.
 // Separated from DOM/THREE so unit tests can assert text shape without a
@@ -2045,6 +2067,17 @@ export class SceneRenderer {
       this.previewMesh.position.set(p.x, 0.2, p.z);
       const color = preview.ok ? 0x6eeb83 : 0xff6b6b;
       this.previewMesh.material.color.setHex(color);
+    }
+
+    // v0.8.2 Round0 02b-casual — in casual profile, scale the preview mesh
+    // up slightly so the legal (green) / illegal (red) cue is easier to
+    // read at standard zoom. Reviewer player-02-casual missed the existing
+    // mesh at first glance — plan Step 6 calls it a "canvas overlay" but
+    // the mesh already serves that role; accent it rather than duplicating.
+    const profile = this.state.controls?.uiProfile ?? "casual";
+    if (this.hoverTile && this.previewMesh?.visible) {
+      const accent = profile === "casual" ? 1.08 : 1.0;
+      this.previewMesh.scale.set(accent, accent, accent);
     }
 
     const selectedTile = this.state.controls.selectedTile;

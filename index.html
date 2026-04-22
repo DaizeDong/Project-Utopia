@@ -607,6 +607,20 @@
 
     /* Dev mode gate (v0.8.2 Round0 01c-ui) — hide developer-only UI for first-time players. */
     body:not(.dev-mode) .dev-only { display: none !important; }
+
+    /* v0.8.2 Round0 02b-casual — Casual profile gate. Orthogonal to dev-mode:
+       casual hides "advanced" HUD tiers and engineering regions for first-time
+       players. body.casual-mode is driven by readInitialUiProfile() (?ui=casual
+       default) wired through GameApp.#initUiProfileGate. */
+    body.casual-mode [data-resource-tier="secondary"] { display: none !important; }
+    body.casual-mode #buildPreviewVal[data-ui-casual-accent] {
+      /* Bolder validity accent so first-timers notice the legal/illegal cue. */
+      font-weight: 700;
+    }
+    /* In casual profile, engineering regions of the EntityFocusPanel are
+       suppressed. The panel toggles `.casual-hidden` on its FSM/Policy/Path
+       detail blocks when state.controls.uiProfile === "casual". */
+    body.casual-mode .casual-hidden { display: none !important; }
     /* Responsive status bar wrap — prevent 800x600 button clipping. */
     @media (max-width: 1024px) {
       #statusBar { flex-wrap: wrap; height: auto; padding: 4px 6px; }
@@ -719,28 +733,28 @@
             <span class="hud-label" id="statusWorkers">0</span>
           </div>
         </div>
-        <div class="hud-divider"></div>
-        <div class="hud-resource" id="hudMeals" title="Meals — cooked in kitchens from food, boosts prosperity">
+        <div class="hud-divider" data-resource-tier="secondary"></div>
+        <div class="hud-resource" id="hudMeals" data-resource-tier="secondary" title="Meals — cooked in kitchens from food, boosts prosperity">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="Meals" class="hud-icon" />
           <div class="hud-meter"><span class="hud-label" id="statusMeals">0</span></div>
         </div>
-        <div class="hud-resource" id="hudTools" title="Tools — forged in smithies from stone+wood, boosts production">
+        <div class="hud-resource" id="hudTools" data-resource-tier="secondary" title="Tools — forged in smithies from stone+wood, boosts production">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="Tools" class="hud-icon" />
           <div class="hud-meter"><span class="hud-label" id="statusTools">0</span></div>
         </div>
-        <div class="hud-resource" id="hudMedicine" title="Medicine — produced in clinics from herbs, heals injured workers">
+        <div class="hud-resource" id="hudMedicine" data-resource-tier="secondary" title="Medicine — produced in clinics from herbs, heals injured workers">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="Medicine" class="hud-icon" />
           <div class="hud-meter"><span class="hud-label" id="statusMedicine">0</span></div>
         </div>
-        <div class="hud-divider"></div>
-        <div class="hud-resource" id="hudProsperity" title="Prosperity — colony well-being score, reach targets to win">
+        <div class="hud-divider" data-resource-tier="secondary"></div>
+        <div class="hud-resource" id="hudProsperity" data-resource-tier="secondary" title="Prosperity — colony well-being score, reach targets to win">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Golden Coin.png" alt="Prosperity" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusProsperity">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-prosperity" id="statusProsperityBar"></div></div>
           </div>
         </div>
-        <div class="hud-resource" id="hudThreat" title="Threat — danger level, high threat causes colony losses">
+        <div class="hud-resource" id="hudThreat" data-resource-tier="secondary" title="Threat — danger level, high threat causes colony losses">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Monster Part/Skull.png" alt="Threat" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-label" id="statusThreat">0</span>

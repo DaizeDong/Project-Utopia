@@ -306,38 +306,55 @@ export class EntityFocusPanel {
     const policyExchange = policyExchangeByGroup ?? policyExchangeLatest;
     const environmentExchange = this.state.ai.lastEnvironmentExchange ?? null;
 
+    // v0.8.2 Round0 02b-casual — engineering block (FSM dump, policy
+    // influence weights, decision-time clock, velocity/path debug, AI
+    // exchange panels) is semantically "developer telemetry". Casual
+    // players surveyed the EntityFocusPanel and reported "NPC click gives
+    // me a brain MRI" — we wrap all of these in `.casual-hidden` spans
+    // so that body.casual-mode CSS suppresses them without breaking DOM
+    // ids (existing tests still query the elements). Power users see them
+    // via `?ui=full`. Keep the concise "Role / State / Vitals / Carry"
+    // rows above the hr divider always visible — that is the friendly
+    // "Needs / Task" summary Suggestion A promised.
+    const casualHiddenOpen = `<span class="casual-hidden">`;
+    const casualHiddenClose = `</span>`;
+
     const html = `
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}</div>
+      ${casualHiddenOpen}
       <div class="small"><b>FSM:</b> current=${escapeHtml(fsmState)} prev=${escapeHtml(fsmPrev)} | nextPath=${escapeHtml(fsmPath || "-")}</div>
       <div class="small"><b>AI Target:</b> ${escapeHtml(aiTargetState)} | <b>TTL:</b> ${fmtSec(aiTargetTtl)} | <b>Priority:</b> ${fmtNum(aiTargetMeta?.priority ?? 0, 2)} | <b>Source:</b> ${escapeHtml(aiTargetMeta?.source ?? "-")}</div>
       <div class="small"><b>Policy Influence:</b> applied=${String(Boolean(entity.debug?.policyApplied))} | topIntent=${escapeHtml(entity.debug?.policyTopIntent ?? "-")} | topWeight=${fmtNum(entity.debug?.policyTopWeight ?? 0, 2)} | policyDesired=${escapeHtml(entity.debug?.policyDesiredState ?? "-")}</div>
       <div class="small"><b>Decision Time:</b> sim=${simSec} | policyAt=${policySec} | envAt=${envSec}</div>
+      ${casualHiddenClose}
       <div class="small"><b>Position:</b> world=${vecFmt(entity.x, entity.z)} tile=(${posTile.ix}, ${posTile.iz})</div>
+      ${casualHiddenOpen}
       <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx, entity.vz)} speed=${fmtNum(speed, 3)} | <b>Desired:</b> ${vecFmt(entity.desiredVel?.x, entity.desiredVel?.z)}</div>
       <div class="small"><b>Path:</b> idx=${entity.pathIndex ?? 0}/${pathLen} | next=${nextNode} | target=${target}</div>
       <div class="small"><b>Path Recalc:</b> ${fmtSec(entity.debug?.lastPathRecalcSec)} | <b>Path Grid:</b> ${entity.pathGridVersion ?? "-"} | <b>Path Traffic:</b> ${entity.pathTrafficVersion ?? 0}</div>
+      ${casualHiddenClose}
       <div class="small"><b>Vitals:</b> hp=${fmtNum(hp, 1)}/${fmtNum(maxHp, 1)} | hunger=${fmtNum(entity.hunger, 3)} | alive=${String(Boolean(entity.alive ?? true))}</div>
       <div class="small"><b>Carry:</b> food=${fmtNum(entity.carry?.food, 2)} wood=${fmtNum(entity.carry?.wood, 2)} | <b>Attack CD:</b> ${fmtNum(entity.attackCooldownSec ?? 0, 2)}</div>
-      <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" />
-      <div class="small"><b>AI Agent Effect</b></div>
-      <div class="small"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
-      <div class="small"><b>Global Headline:</b> ${escapeHtml(digest.headline)}</div>
-      <div class="small"><b>Global Warning:</b> ${escapeHtml(digest.warning)}</div>
-      <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
-      <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
-      <div class="small"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
-      <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
-      <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
-      <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
-      <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
-      <div class="small"><b>Target Selection:</b> score=${fmtNum(entity.debug?.policyTargetScore ?? 0, 2)} | frontier=${fmtNum(entity.debug?.policyTargetFrontier ?? 0, 2)} | depot=${fmtNum(entity.debug?.policyTargetDepot ?? 0, 2)} | load=${fmtNum(entity.debug?.policyTargetWarehouseLoad ?? 0, 2)} | ecology=${fmtNum(entity.debug?.policyTargetEcology ?? 0, 2)}</div>
-      <details data-focus-key="focus:path-nodes" style="margin-top:8px;">
+      <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" class="casual-hidden" />
+      <div class="small casual-hidden"><b>AI Agent Effect</b></div>
+      <div class="small casual-hidden"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
+      <div class="small casual-hidden"><b>Global Headline:</b> ${escapeHtml(digest.headline)}</div>
+      <div class="small casual-hidden"><b>Global Warning:</b> ${escapeHtml(digest.warning)}</div>
+      <div class="small casual-hidden"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
+      <div class="small casual-hidden"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
+      <div class="small casual-hidden"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
+      <div class="small casual-hidden"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
+      <div class="small casual-hidden"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
+      <div class="small casual-hidden" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
+      <div class="small casual-hidden" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
+      <div class="small casual-hidden"><b>Target Selection:</b> score=${fmtNum(entity.debug?.policyTargetScore ?? 0, 2)} | frontier=${fmtNum(entity.debug?.policyTargetFrontier ?? 0, 2)} | depot=${fmtNum(entity.debug?.policyTargetDepot ?? 0, 2)} | load=${fmtNum(entity.debug?.policyTargetWarehouseLoad ?? 0, 2)} | ecology=${fmtNum(entity.debug?.policyTargetEcology ?? 0, 2)}</div>
+      <details data-focus-key="focus:path-nodes" class="casual-hidden" style="margin-top:8px;">
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>
       </details>
-      <details data-focus-key="focus:last-ai-exchange" style="margin-top:8px;" open>
+      <details data-focus-key="focus:last-ai-exchange" class="casual-hidden" style="margin-top:8px;" open>
         <summary class="small"><b>Last AI Exchange (Full)</b></summary>
         ${renderExchange(`Policy Exchange for ${entity.groupId ?? "unknown"}`, policyExchange, "No policy exchange for this group yet.", "focus:policy")}
         ${renderExchange("Environment Exchange (Global)", environmentExchange, "No environment exchange yet.", "focus:environment")}

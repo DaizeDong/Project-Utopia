@@ -13,6 +13,20 @@
 export const DEV_MODE_STORAGE_KEY = "utopia:devMode";
 export const DEV_MODE_BODY_CLASS = "dev-mode";
 
+// v0.8.2 Round0 02b-casual — UI profile gate (orthogonal to dev-mode).
+//
+// "casual" (default, first-time friendly) hides the long-tail engineering
+// stats that overwhelm first-impression players (reviewer "02b-casual"
+// surveyed 3/10 on v0.8.1). "full" restores the v0.8.1 HUD. Toggled via
+// URL query `?ui=casual|full` or `localStorage.utopia:uiProfile`.
+//
+// body.casual-mode is asserted orthogonally to body.dev-mode so power
+// users can run `?dev=1&ui=casual` (debug dock visible, casual focus
+// panel) without either class fighting the other in CSS.
+export const UI_PROFILE_STORAGE_KEY = "utopia:uiProfile";
+export const CASUAL_MODE_BODY_CLASS = "casual-mode";
+export const UI_PROFILE_VALUES = Object.freeze(["casual", "full"]);
+
 /**
  * Read initial dev-mode signal from URL + storage.
  * Pure function — safe to unit-test with stubs.
@@ -80,4 +94,62 @@ export function toggleDevMode(body, storage) {
 export function applyInitialDevMode(body, initial) {
   if (!body?.classList) return;
   if (initial) body.classList.add(DEV_MODE_BODY_CLASS);
+}
+
+/**
+ * Read the initial UI profile (casual | full) from URL + storage.
+ * Casual is the default for first-time players. Pure function — safe to
+ * unit-test with stubs. Unknown values collapse to "casual".
+ *
+ * @param {object} opts
+ * @param {string} [opts.locationHref]
+ * @param {Storage} [opts.storage]
+ * @returns {"casual"|"full"}
+ */
+export function readInitialUiProfile({ locationHref, storage } = {}) {
+  const normalize = (raw) => {
+    const v = String(raw ?? "").trim().toLowerCase();
+    return UI_PROFILE_VALUES.includes(v) ? v : null;
+  };
+
+  if (locationHref) {
+    try {
+      const url = new URL(locationHref);
+      const fromQuery = normalize(url.searchParams.get("ui"));
+      if (fromQuery) return fromQuery;
+    } catch {
+      /* ignore malformed URL */
+    }
+  }
+  if (storage) {
+    try {
+      const fromStore = normalize(storage.getItem(UI_PROFILE_STORAGE_KEY));
+      if (fromStore) return fromStore;
+    } catch {
+      /* storage may throw in privacy mode */
+    }
+  }
+  return "casual";
+}
+
+/**
+ * Apply the UI profile to `body` + `documentElement`. Sets/removes the
+ * `casual-mode` body class and writes `data-ui-profile="casual|full"` on
+ * the html element (for CSS attribute selectors). Idempotent.
+ *
+ * @param {HTMLElement|object} body   document.body (or mock)
+ * @param {HTMLElement|object} [docEl] document.documentElement (or mock);
+ *                                      if omitted the data attribute is
+ *                                      skipped (body class still set).
+ * @param {"casual"|"full"} profile
+ */
+export function applyUiProfile(body, docEl, profile) {
+  const effective = UI_PROFILE_VALUES.includes(profile) ? profile : "casual";
+  if (body?.classList) {
+    body.classList.toggle(CASUAL_MODE_BODY_CLASS, effective === "casual");
+  }
+  if (docEl && typeof docEl.setAttribute === "function") {
+    docEl.setAttribute("data-ui-profile", effective);
+  }
+  return effective;
 }

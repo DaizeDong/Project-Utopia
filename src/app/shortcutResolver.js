@@ -38,11 +38,21 @@ export function resolveGlobalShortcut(event, context = {}) {
 
   if (alt) return null;
 
+  // v0.8.2 Round0 02b-casual — defensive gating for phase != "active".
+  // Reviewer player-02-casual reported "pressing L returned me to the
+  // main menu" (UNREPRODUCIBLE after trace). Regardless of whether the
+  // root cause is a shortcut bug, menu/end phases have no simulation
+  // running and no canvas-level renderer to consume L / 0 / 1-6; swallowing
+  // these keys removes a class of noise-induced reset complaints.
+  const isActivePhase = context.phase === "active" || context.phase === undefined;
+
   if (code === "Digit0" || code === "Numpad0" || code === "Home" || key === "0" || key === "home") {
+    if (!isActivePhase) return null;
     return { type: "resetCamera" };
   }
   // v0.8.0 Phase 7.C — Supply-Chain Heat Lens toggle.
   if (code === "KeyL" || key === "l") {
+    if (!isActivePhase) return null;
     return { type: "toggleHeatLens" };
   }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
@@ -51,7 +61,10 @@ export function resolveGlobalShortcut(event, context = {}) {
   }
 
   const tool = TOOL_SHORTCUTS[code];
-  if (tool) return { type: "selectTool", tool };
+  if (tool) {
+    if (!isActivePhase) return null;
+    return { type: "selectTool", tool };
+  }
 
   return null;
 }

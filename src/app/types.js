@@ -385,7 +385,8 @@
  *  redoStack?: Array<Record<string, unknown>>,
  *  doctrine: string,
  *  actionMessage: string,
- *  actionKind: "info"|"success"|"error"
+ *  actionKind: "info"|"success"|"error",
+ *  uiProfile?: "casual"|"full"
  * }} ControlState
  *
  * @typedef {{
