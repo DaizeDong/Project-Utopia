@@ -19,3 +19,9 @@ output/benchmark-runs/
 output/bench-run-*.log
 docs/benchmarks/long-horizon-*
 docs/benchmarks/nightly/
+
+# Agent-Feedback-Loop reviewer screenshots (Playwright artefacts)
+assignments/homework6/Agent-Feedback-Loop/Round*/screenshots/
+/*.png
+/*.jpeg
+/*.jpg
