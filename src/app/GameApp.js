@@ -48,6 +48,8 @@ import {
   applyInitialDevMode,
   isDevModeChord,
   toggleDevMode,
+  readInitialUiProfile,
+  applyUiProfile,
 } from "./devModeGate.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
@@ -107,6 +109,11 @@ export class GameApp {
     // Reads ?dev=1 URL query and `localStorage.utopia:devMode`, and wires a
     // Ctrl+Shift+D chord to toggle `document.body.classList` in-place.
     this.#initDevModeGate();
+    // v0.8.2 Round0 02b-casual — UI profile gate. Reads `?ui=casual|full`
+    // URL query and `localStorage.utopia:uiProfile`; applies body.casual-mode
+    // and html[data-ui-profile] so CSS / panels can adapt. Orthogonal to
+    // body.dev-mode (both may be set). Default = "casual" for first-timers.
+    this.#initUiProfileGate();
     this.services = createServices(this.state.world.mapSeed);
 
     this.buildSystem = new BuildSystem({
@@ -1557,6 +1564,43 @@ export class GameApp {
       }
     };
     window.addEventListener("keydown", this.boundOnDevModeChord);
+  }
+
+  // v0.8.2 Round0 02b-casual — UI profile gate.
+  //
+  // Reads `?ui=casual|full` URL query (takes precedence) and
+  // `localStorage.utopia:uiProfile`. Applies:
+  //   - `document.body.classList` ← add/remove `casual-mode`
+  //   - `document.documentElement[data-ui-profile]` ← "casual" | "full"
+  //   - `state.controls.uiProfile` ← same value (so render-side consumers
+  //      like EntityFocusPanel can branch without DOM lookups)
+  //
+  // Orthogonal to dev-mode: both body.dev-mode AND body.casual-mode can be
+  // set simultaneously (e.g. `?dev=1&ui=casual`). Each CSS gate targets
+  // its own class/attribute without fighting the other.
+  #initUiProfileGate() {
+    const body = typeof document !== "undefined" ? document.body : null;
+    const docEl = typeof document !== "undefined" ? document.documentElement : null;
+    const storage = (() => {
+      try {
+        return typeof localStorage !== "undefined" ? localStorage : null;
+      } catch {
+        return null;
+      }
+    })();
+    const locationHref = (() => {
+      try {
+        return typeof location !== "undefined" ? location.href : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const profile = readInitialUiProfile({ locationHref, storage });
+    applyUiProfile(body, docEl, profile);
+    if (this.state?.controls) {
+      this.state.controls.uiProfile = profile;
+    }
   }
 
   dispose() {

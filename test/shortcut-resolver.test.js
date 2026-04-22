@@ -9,8 +9,15 @@ test("resolveGlobalShortcut exposes a camera reset shortcut", () => {
     resolveGlobalShortcut({ code: "Digit0", key: "0", repeat: false }, { phase: "active" }),
     { type: "resetCamera" },
   );
-  assert.deepEqual(
+  // v0.8.2 Round0 02b-casual — phase-gated resetCamera. In menu / end
+  // phase the key is swallowed (no simulation running, no camera target
+  // to reset). Active phase continues to work. Home key likewise gated.
+  assert.equal(
     resolveGlobalShortcut({ code: "Home", key: "Home", repeat: false }, { phase: "menu" }),
+    null,
+  );
+  assert.deepEqual(
+    resolveGlobalShortcut({ code: "Home", key: "Home", repeat: false }, { phase: "active" }),
     { type: "resetCamera" },
   );
   assert.equal(

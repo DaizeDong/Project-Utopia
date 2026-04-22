@@ -140,6 +140,21 @@ function formatCost(cost = {}) {
   return parts.length > 0 ? parts.join(" ") : "free";
 }
 
+// v0.8.2 Round0 02b-casual — expanded, human-friendly cost label. The
+// compact form (`5w`) carries over from the v0.7 engineering HUD; casual
+// players consistently report reading it as "5 food" ("Insufficient
+// resources" surprise) per reviewer `player-02-casual`. This formatter
+// is reachable via `describeBuildCostExpanded` / `getBuildToolPanelState`
+// so the BuildToolbar can switch on `state.controls.uiProfile`.
+export function formatCostExpanded(cost = {}) {
+  const parts = [];
+  if ((cost.food ?? 0) > 0) parts.push(`${cost.food} ${cost.food === 1 ? "food" : "food"}`);
+  if ((cost.wood ?? 0) > 0) parts.push(`${cost.wood} ${cost.wood === 1 ? "wood" : "wood"}`);
+  if ((cost.stone ?? 0) > 0) parts.push(`${cost.stone} ${cost.stone === 1 ? "stone" : "stone"}`);
+  if ((cost.herbs ?? 0) > 0) parts.push(`${cost.herbs} ${cost.herbs === 1 ? "herb" : "herbs"}`);
+  return parts.length > 0 ? parts.join(" + ") : "free";
+}
+
 function manhattan(a, b) {
   return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
 }
@@ -447,12 +462,18 @@ export function getBuildToolPanelState(state) {
   const tool = state.controls.tool;
   const info = getBuildToolInfo(tool);
   const preview = state.controls.buildPreview ?? null;
+  const cost = BUILD_COST[tool] ?? {};
+  // v0.8.2 Round0 02b-casual — the BuildToolbar renders `costLabelExpanded`
+  // when `state.controls.uiProfile === "casual"` to avoid the "5w means 5
+  // food" confusion first-timers report. The compact `costLabel` is kept
+  // for power users (full profile) + developer-facing surfaces.
   return {
     tool,
     label: info.label,
     summary: info.summary,
     rules: info.rules,
-    costLabel: formatCost(BUILD_COST[tool] ?? {}),
+    costLabel: formatCost(cost),
+    costLabelExpanded: formatCostExpanded(cost),
     previewSummary: preview ? summarizeBuildPreview(preview) : "Hover a tile to preview cost, rules, and scenario impact.",
   };
 }

@@ -710,6 +710,12 @@ export function createInitialGameState(options = {}) {
       doctrine: "balanced",
       actionMessage: "Ready",
       actionKind: "info",
+      // v0.8.2 Round0 02b-casual — UI profile gate. "casual" (default for
+      // first-time players) hides developer-only visualisations and the
+      // engineering-heavy EntityFocusPanel regions; "full" restores the
+      // debug-era HUD. Runtime is wired in GameApp.#applyUiProfile via
+      // body.casual-mode (orthogonal to body.dev-mode from 01c-ui).
+      uiProfile: "casual",
     },
   };
 }
