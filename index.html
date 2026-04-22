@@ -634,7 +634,14 @@
     body.casual-mode .casual-hidden { display: none !important; }
     /* Responsive status bar wrap — prevent 800x600 button clipping. */
     @media (max-width: 1024px) {
-      #statusBar { flex-wrap: wrap; height: auto; padding: 4px 6px; }
+      /* v0.8.2 Round-1 01c-ui — sticky + explicit z-index stops 1024×768
+         viewport bug where HUD resource icons visually escape the #statusBar
+         container and float *above* the floating Build panel. */
+      #statusBar {
+        flex-wrap: wrap; height: auto; padding: 4px 6px;
+        position: sticky; top: 0; z-index: 30;
+        background: var(--panel-bg, rgba(8,16,28,0.92));
+      }
       #panelToggles { margin-left: auto; order: -1; width: 100%;
         justify-content: flex-end; padding-bottom: 4px;
         border-bottom: 1px solid var(--divider); margin-bottom: 4px; }
@@ -779,6 +786,27 @@
       .floating-panel-right { width: 260px; }
       #devDockGrid { grid-template-columns: repeat(3, 1fr); }
     }
+    /* v0.8.2 Round-1 01c-ui — Auto-collapse side panels on ≤1200px viewports
+       (1024×768 / 800×600 laptops + tablets). Panels stay in the DOM (AT-
+       accessible) but slide off-screen via transform. The existing #panelToggles
+       buttons drive a `.panel-open` class that slides them back in. Min-width
+       601px keeps the 600px block (full-width overlay) authoritative below that. */
+    @media (max-width: 1200px) and (min-width: 601px) {
+      .floating-panel-left,
+      .floating-panel-right {
+        transition: transform 0.18s ease;
+      }
+      .floating-panel-left:not(.panel-open) {
+        transform: translateX(calc(-1 * (100% + 12px)));
+      }
+      .floating-panel-right:not(.panel-open) {
+        transform: translateX(calc(100% + 12px));
+      }
+      .floating-panel-left.panel-open,
+      .floating-panel-right.panel-open {
+        transform: translateX(0);
+      }
+    }
     @media (max-width: 600px) {
       .floating-panel { width: calc(100vw - 20px) !important; left: 10px !important; right: 10px !important; }
       .floating-panel-right { top: auto; bottom: 54px; max-height: 50vh; }
@@ -875,7 +903,7 @@
         <div id="statusScoreboard" class="hud-scoreboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;">
           <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
-          <span id="statusScoreBreak" class="hud-score-break" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
+          <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
         </div>
         <!-- v0.8.2 Round-0 01e-innovation — Storyteller strip. Single-line
              ribbon that surfaces the active workers-group policy focus +
@@ -979,7 +1007,10 @@
       </div>
 
       <!-- === BUILD PANEL (left) === -->
-      <div id="buildFloatingPanel" class="floating-panel floating-panel-left">
+      <!-- v0.8.2 Round-1 01c-ui — `panel-open` matches the default-visible
+           state so the ≤1200px auto-collapse CSS rule keeps it on-screen on
+           first paint. Toggle button flips this class off/on thereafter. -->
+      <div id="buildFloatingPanel" class="floating-panel floating-panel-left panel-open">
         <details class="card" data-panel-key="build" open>
           <summary>Build Tools</summary>
           <div class="panel-body">
@@ -1645,6 +1676,9 @@
           for (const otherId of rightPanelIds) {
             if (otherId !== targetId) {
               document.getElementById(otherId)?.setAttribute('hidden', '');
+              // v0.8.2 Round-1 01c-ui — also clear `.panel-open` so the
+              // ≤1200px CSS rule slides sibling right-side panels off-screen.
+              document.getElementById(otherId)?.classList.remove('panel-open');
               document.querySelector(`.panel-toggle[data-panel-target="${otherId}"]`)?.classList.remove('active');
             }
           }
@@ -1652,9 +1686,15 @@
 
         if (wasHidden) {
           panel.removeAttribute('hidden');
+          // v0.8.2 Round-1 01c-ui — drive the ≤1200px auto-collapse CSS rule
+          // (`.floating-panel-left/right.panel-open { transform: translateX(0); }`).
+          // On ≥1201px the class is a no-op; on ≤1200px it slides the panel
+          // into view. Pair with `hidden` attr for AT compatibility.
+          panel.classList.add('panel-open');
           btn.classList.add('active');
         } else {
           panel.setAttribute('hidden', '');
+          panel.classList.remove('panel-open');
           btn.classList.remove('active');
         }
       });
