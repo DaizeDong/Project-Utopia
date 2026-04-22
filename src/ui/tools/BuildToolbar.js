@@ -34,6 +34,20 @@ export class BuildToolbar {
     this.toolButtons = Array.from(document.querySelectorAll("button[data-tool]"));
     this.farmRatio = document.getElementById("farmRatio");
     this.farmRatioLabel = document.getElementById("farmRatioLabel");
+    // v0.8.2 Round-1 02a-rimworld-veteran — Role Quota sliders (6 specialist
+    // slots). DOM lives in index.html after #farmRatio.
+    this.roleQuotaCook = document.getElementById("roleQuotaCook");
+    this.roleQuotaCookLabel = document.getElementById("roleQuotaCookLabel");
+    this.roleQuotaSmith = document.getElementById("roleQuotaSmith");
+    this.roleQuotaSmithLabel = document.getElementById("roleQuotaSmithLabel");
+    this.roleQuotaHerbalist = document.getElementById("roleQuotaHerbalist");
+    this.roleQuotaHerbalistLabel = document.getElementById("roleQuotaHerbalistLabel");
+    this.roleQuotaHaul = document.getElementById("roleQuotaHaul");
+    this.roleQuotaHaulLabel = document.getElementById("roleQuotaHaulLabel");
+    this.roleQuotaStone = document.getElementById("roleQuotaStone");
+    this.roleQuotaStoneLabel = document.getElementById("roleQuotaStoneLabel");
+    this.roleQuotaHerbs = document.getElementById("roleQuotaHerbs");
+    this.roleQuotaHerbsLabel = document.getElementById("roleQuotaHerbsLabel");
     this.aiToggle = document.getElementById("aiToggle");
     this.compactToggle = document.getElementById("compactToggle");
     this.uiRoot = document.getElementById("ui");
@@ -145,6 +159,7 @@ export class BuildToolbar {
     this.#populateDoctrines();
     this.#populateTerrainModeOptions();
     this.#setupPopulationControls();
+    this.#setupRoleQuotaControls();
     this.#setupTerrainTuningControls();
     this.#setupAdvancedControls();
 
@@ -266,6 +281,36 @@ export class BuildToolbar {
     this.exportReplayBtn?.addEventListener("click", () => {
       this.handlers.onExportReplay?.();
     });
+  }
+
+  // v0.8.2 Round-1 02a-rimworld-veteran — Role Quota sliders surface the
+  // 6 specialist slot knobs (cook/smith/herbalist/haul/stone/herbs) that
+  // previously were hardcoded to 1 in RoleAssignmentSystem. Gating rules
+  // (required building exists, n>=10 for HAUL) stay on the sim side; the
+  // sliders only set the max cap, so accidental over-allocation still
+  // yields specialistBudget-bounded behaviour.
+  #setupRoleQuotaControls() {
+    const ensureQuotas = () => {
+      if (!this.state.controls.roleQuotas) {
+        this.state.controls.roleQuotas = { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 };
+      }
+      return this.state.controls.roleQuotas;
+    };
+    const bind = (el, key) => {
+      el?.addEventListener("input", () => {
+        const raw = Number(el.value);
+        const v = Math.max(0, Math.min(8, Number.isFinite(raw) ? Math.round(raw) : 0));
+        const quotas = ensureQuotas();
+        quotas[key] = v;
+        this.sync();
+      });
+    };
+    bind(this.roleQuotaCook, "cook");
+    bind(this.roleQuotaSmith, "smith");
+    bind(this.roleQuotaHerbalist, "herbalist");
+    bind(this.roleQuotaHaul, "haul");
+    bind(this.roleQuotaStone, "stone");
+    bind(this.roleQuotaHerbs, "herbs");
   }
 
   #setupTerrainTuningControls() {
@@ -655,6 +700,24 @@ export class BuildToolbar {
       const pct = Math.round(this.state.controls.farmRatio * 100);
       this.#setFieldValueIfIdle(this.farmRatio, pct);
       this.farmRatioLabel.textContent = `${pct}%`;
+    }
+
+    // v0.8.2 Round-1 02a-rimworld-veteran — reflect state.controls.roleQuotas
+    // back into the 6 sliders + number labels. Mirrors the farmRatio pattern.
+    const quotas = this.state.controls?.roleQuotas;
+    if (quotas) {
+      const clampQuota = (v) => Math.max(0, Math.min(8, Number.isFinite(Number(v)) ? Math.round(Number(v)) : 0));
+      const syncQuota = (input, label, key) => {
+        const value = clampQuota(quotas[key]);
+        if (input) this.#setFieldValueIfIdle(input, value);
+        if (label) label.textContent = String(value);
+      };
+      syncQuota(this.roleQuotaCook, this.roleQuotaCookLabel, "cook");
+      syncQuota(this.roleQuotaSmith, this.roleQuotaSmithLabel, "smith");
+      syncQuota(this.roleQuotaHerbalist, this.roleQuotaHerbalistLabel, "herbalist");
+      syncQuota(this.roleQuotaHaul, this.roleQuotaHaulLabel, "haul");
+      syncQuota(this.roleQuotaStone, this.roleQuotaStoneLabel, "stone");
+      syncQuota(this.roleQuotaHerbs, this.roleQuotaHerbsLabel, "herbs");
     }
 
     if (this.aiToggle) {

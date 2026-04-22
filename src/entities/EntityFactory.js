@@ -771,6 +771,11 @@ export function createInitialGameState(options = {}) {
     },
     controls: {
       farmRatio: 0.5,
+      // v0.8.2 Round-1 02a-rimworld-veteran — expose the previously hardcoded
+      // role slot counts (cook/smith/herbalist/haul/stone/herbs) so players can
+      // override fallback planner's blind spots via UI sliders. Defaults keep
+      // byte-equivalent behaviour vs. the legacy hardcoded "1 per type" scheme.
+      roleQuotas: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 },
       selectedEntityId: null,
       selectedTile: null,
       tool: "road",
