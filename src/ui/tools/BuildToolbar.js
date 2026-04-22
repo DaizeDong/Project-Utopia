@@ -765,7 +765,28 @@ export class BuildToolbar {
     if (this.buildToolSummaryVal) this.buildToolSummaryVal.textContent = buildPanel.summary;
     if (this.buildToolCostVal) this.buildToolCostVal.textContent = `Cost: ${buildPanel.costLabel}`;
     if (this.buildToolRulesVal) this.buildToolRulesVal.textContent = `Rules: ${buildPanel.rules}`;
-    if (this.buildPreviewVal) this.buildPreviewVal.textContent = buildPanel.previewSummary;
+    if (this.buildPreviewVal) {
+      // v0.8.2 Round-0 01b — tint the hover-preview row when the current tool
+      // cannot be placed on the hovered tile, and prepend a ✗ glyph so players
+      // notice the blocker BEFORE clicking (P0 fix: "silent failure" root cause).
+      const preview = this.state.controls?.buildPreview;
+      const isBlocker = preview && preview.ok === false && preview.reasonText;
+      if (isBlocker) {
+        this.buildPreviewVal.textContent = `\u2717 ${preview.reasonText}`;
+        this.buildPreviewVal.setAttribute("data-kind", "error");
+        // Bonus: expose the reason via data-tooltip for any downstream reader
+        // (reviewer 01a / 02b / 02e may hook into this). First introduction.
+        this.buildPreviewVal.setAttribute("data-tooltip", preview.reasonText);
+      } else if (preview && preview.ok === true && Array.isArray(preview.warnings) && preview.warnings.length > 0) {
+        this.buildPreviewVal.textContent = `\u26A0 ${preview.warnings[0]} | ${buildPanel.previewSummary}`;
+        this.buildPreviewVal.setAttribute("data-kind", "warn");
+        this.buildPreviewVal.setAttribute("data-tooltip", preview.warnings[0]);
+      } else {
+        this.buildPreviewVal.textContent = buildPanel.previewSummary;
+        this.buildPreviewVal.setAttribute("data-kind", "");
+        this.buildPreviewVal.setAttribute("data-tooltip", "");
+      }
+    }
 
     if (this.populationBreakdownVal) {
       const breakdown = this.state.controls.populationBreakdown ?? {

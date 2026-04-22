@@ -101,6 +101,46 @@
       font-weight: 600; letter-spacing: 0.2px;
     }
 
+    /* v0.8.2 Round-0 01b — Build click feedback layer.
+       Floating toast + pulse animation to make buildResult.reasonText visible
+       at the click location (P0 fix: "silent failure" on first build click). */
+    #floatingToastLayer {
+      position: absolute; inset: 0; z-index: 25;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .build-toast {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      font-size: 13px; font-weight: 800;
+      padding: 4px 10px; border-radius: 6px;
+      background: rgba(12, 22, 35, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      pointer-events: none;
+      opacity: 0;
+    }
+    .build-toast--ok { color: #6eeb83; border-color: rgba(110, 235, 131, 0.4); }
+    .build-toast--err { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); }
+    @keyframes toastFloat {
+      0%   { opacity: 0; transform: translate(-50%, -40%); }
+      20%  { opacity: 1; transform: translate(-50%, -60%); }
+      100% { opacity: 0; transform: translate(-50%, -120%); }
+    }
+    .hud-action.flash-action { animation: flashAction 220ms ease-out; }
+    @keyframes flashAction {
+      0%   { transform: scale(1.08); filter: brightness(1.35); }
+      100% { transform: scale(1); filter: brightness(1); }
+    }
+    /* Compact UI disables the scale pulse (risk #3 — avoid layout flash in cramped mode). */
+    #ui.compact .hud-action.flash-action { animation: none; }
+    /* Build preview tint when hover shows a blocker reason. Renders inside the
+       Build Tools sidebar panel; informs the player BEFORE they click. */
+    #buildPreviewVal[data-kind="error"] { color: #ff8a80; }
+    #buildPreviewVal[data-kind="warn"] { color: #ffca80; }
+
     /* === PANEL TOGGLE BUTTONS (in status bar) === */
     #panelToggles {
       display: flex; gap: 3px; margin-left: 8px;
@@ -730,6 +770,11 @@
 
       <!-- === CANVAS === -->
       <canvas id="c"></canvas>
+
+      <!-- v0.8.2 Round-0 01b — Build-feedback toast layer (floating text at the
+           click point). Empty at rest; SceneRenderer#spawnFloatingToast appends
+           and recycles .build-toast children with a 1.2s CSS animation. -->
+      <div id="floatingToastLayer" aria-live="polite"></div>
 
       <!-- === GAME STATE OVERLAY === -->
       <div id="gameStateOverlay" aria-live="polite">
