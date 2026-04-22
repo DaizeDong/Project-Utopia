@@ -809,7 +809,11 @@ export class BuildToolbar {
         totalWorkers: 0,
         totalEntities: this.state.agents.length + this.state.animals.length,
       };
-      this.populationBreakdownVal.textContent = `Base W:${breakdown.baseWorkers} | Stress W:${breakdown.stressWorkers} | Total W:${breakdown.totalWorkers} | Entities:${breakdown.totalEntities}`;
+      // v0.8.2 Round-0 02e-indie-critic — voice polish: strip dev-variable names
+      // ("Base W / Stress W / Total W / Entities:") from the player-facing label.
+      // Bullets (·) and an "N entities" suffix read as colony narration instead
+      // of engineer telemetry, addressing the indie-critic voice-leak feedback.
+      this.populationBreakdownVal.textContent = `Base ${breakdown.baseWorkers} \u00b7 Stress ${breakdown.stressWorkers} \u00b7 Total ${breakdown.totalWorkers} \u00b7 ${breakdown.totalEntities} entities`;
     }
 
     const tuned = sanitizeTerrainTuning(

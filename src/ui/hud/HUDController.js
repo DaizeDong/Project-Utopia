@@ -74,6 +74,11 @@ export class HUDController {
     this.statusStoneBar = document.getElementById("statusStoneBar");
     this.statusHerbsBar = document.getElementById("statusHerbsBar");
     this.statusObjective = document.getElementById("statusObjective");
+    // v0.8.2 Round-0 02e-indie-critic — scenario headline slot. Surfaces the
+    // procedurally generated scenario title/summary as a persistent line in
+    // the HUD status bar (previously only visible on the pre-game menu).
+    this.statusScenarioHeadline = document.getElementById("statusScenarioHeadline");
+    this._lastScenarioHeadlineText = null;
     this.statusAction = document.getElementById("statusAction");
     this.statusFoodBar = document.getElementById("statusFoodBar");
     this.statusWoodBar = document.getElementById("statusWoodBar");
@@ -342,6 +347,32 @@ export class HUDController {
       const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
       const devSuffix = inActive && devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
       this.statusObjective.textContent = `Survived ${timeText}  Score ${score}${devSuffix}`;
+    }
+    // v0.8.2 Round-0 02e-indie-critic — render scenario headline in statusBar.
+    // Pulls `scenario.title` + `scenario.summary` (same copy reviewer praised
+    // on the pre-game menu) and mirrors it into #statusScenarioHeadline. We
+    // only touch the DOM when the text changes to avoid layout thrash, and
+    // hide the node outright when there is no active scenario (Quick Start).
+    if (this.statusScenarioHeadline) {
+      const scenario = state?.gameplay?.scenario ?? {};
+      const title = String(scenario.title ?? "").trim();
+      const summary = String(scenario.summary ?? "").trim();
+      let headline;
+      if (title && summary) headline = `${title} — ${summary}`;
+      else if (title) headline = title;
+      else headline = "";
+      if (headline !== this._lastScenarioHeadlineText) {
+        if (headline) {
+          this.statusScenarioHeadline.textContent = headline;
+          this.statusScenarioHeadline.setAttribute("title", headline);
+          this.statusScenarioHeadline.hidden = false;
+        } else {
+          this.statusScenarioHeadline.textContent = "";
+          this.statusScenarioHeadline.setAttribute("title", "Current scenario briefing");
+          this.statusScenarioHeadline.hidden = true;
+        }
+        this._lastScenarioHeadlineText = headline;
+      }
     }
     if (this.statusAction) {
       if (state.controls.actionMessage) {
