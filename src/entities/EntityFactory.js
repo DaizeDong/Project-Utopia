@@ -34,6 +34,56 @@ function withLabel(id, fallback) {
   return `${fallback}-${seq}`;
 }
 
+// v0.8.2 Round-0 01e-innovation (Step 1) — Worker name bank. ~40 short
+// given-names used to replace the generic "Worker-N" label with personalised
+// identifiers like "Aila-10". Name selection uses the deterministic RNG
+// passed into createWorker, so replay/snapshot determinism is preserved. The
+// numeric suffix from the id is retained to avoid name collisions in the UI
+// when two workers share the same drawn name. 02d will extend a similar bank
+// to visitors/saboteurs — this first landing covers WORKERS only.
+export const WORKER_NAME_BANK = Object.freeze([
+  "Aila", "Ren", "Bram", "Ivo", "Nell", "Cato", "Mira", "Joss",
+  "Kira", "Tam", "Ora", "Vela", "Hale", "Ris", "Fen", "Luka",
+  "Sora", "Dax", "Yara", "Evan", "Pia", "Mose", "Nira", "Ody",
+  "Reva", "Talon", "Kess", "Lio", "Nori", "Vian", "Saro", "Beck",
+  "Tess", "Remy", "Juno", "Anse", "Dova", "Ilia", "Cora", "Marek",
+]);
+
+function pickWorkerName(random) {
+  const idx = Math.floor(random() * WORKER_NAME_BANK.length);
+  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < WORKER_NAME_BANK.length
+    ? idx
+    : 0;
+  return WORKER_NAME_BANK[safeIdx];
+}
+
+function seqFromId(id) {
+  const raw = String(id ?? "");
+  return raw.includes("_") ? raw.split("_")[1] : "?";
+}
+
+// v0.8.2 Round-0 01e-innovation (Step 2) — backstory builder. Uses the
+// argmax of the seeded `skills` object for `topSkill` and the first entry
+// of the seeded `traits` array for `topTrait`, giving a human-readable
+// one-liner like `"farming specialist, swift temperament"`. EntityFocusPanel
+// renders this below the displayName; HUD deathVal uses `(topSkill specialist)`
+// as a micro-obituary.
+export function buildWorkerBackstory(skills = {}, traits = []) {
+  let topSkill = "generalist";
+  let topSkillValue = -Infinity;
+  for (const key of Object.keys(skills)) {
+    const v = Number(skills[key]);
+    if (Number.isFinite(v) && v > topSkillValue) {
+      topSkillValue = v;
+      topSkill = key;
+    }
+  }
+  const topTrait = Array.isArray(traits) && traits.length > 0
+    ? String(traits[0])
+    : "steady";
+  return `${topSkill} specialist, ${topTrait} temperament`;
+}
+
 function baseAgent(id, type, x, z, displayName, random = Math.random) {
   return {
     id,
@@ -103,12 +153,20 @@ function generateSkills(random) {
 
 export function createWorker(x, z, random = Math.random) {
   const id = nextId("worker");
+  // v0.8.2 Round-0 01e-innovation (Step 1). Draw the name BEFORE the other
+  // random()-consuming constructors so the selection stays on a stable
+  // offset of the deterministic RNG stream (see Risks §Snapshot determinism
+  // in Round0/Plans/01e-innovation.md). pickTraits / generateSkills still
+  // consume the same number of random() calls they did before.
+  const workerName = pickWorkerName(random);
+  const displayName = `${workerName}-${seqFromId(id)}`;
   const hungerSeekThreshold = 0.12 + random() * 0.08;
   const eatRecoveryTarget = 0.62 + random() * 0.12;
   const traits = pickTraits(random);
   const skills = generateSkills(random);
+  const backstory = buildWorkerBackstory(skills, traits);
   const worker = {
-    ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, withLabel(id, "Worker"), random),
+    ...baseAgent(id, ENTITY_TYPE.WORKER, x, z, displayName, random),
     role: ROLE.FARM,
     groupId: GROUP_IDS.WORKERS,
     metabolism: {
@@ -125,6 +183,7 @@ export function createWorker(x, z, random = Math.random) {
     // Individual identity
     traits,
     skills,
+    backstory,
     preferences: {
       speedMultiplier: traits.includes("swift") ? 1.15 : (traits.includes("careful") ? 0.9 : 1.0),
       workDurationMultiplier: traits.includes("efficient") ? 0.8 : (traits.includes("careful") ? 1.2 : 1.0),
@@ -143,20 +202,35 @@ export function createWorker(x, z, random = Math.random) {
 export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.random) {
   const id = nextId("visitor");
   const groupId = kind === VISITOR_KIND.TRADER ? GROUP_IDS.TRADERS : GROUP_IDS.SABOTEURS;
+  // v0.8.2 Round-0 01e-innovation (Step 2). Visitor gets a terse stock
+  // backstory — 02d will upgrade to a per-visitor name bank + personalised
+  // backstory, so we keep the data field wired but intentionally minimal here.
+  const backstory = kind === VISITOR_KIND.TRADER
+    ? "wandering trader"
+    : "roaming saboteur";
   return {
     ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, withLabel(id, kind === VISITOR_KIND.TRADER ? "Trader" : "Saboteur"), random),
     kind,
     groupId,
+    backstory,
   };
 }
 
 export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.random) {
   const id = nextId("animal");
+  // v0.8.2 Round-0 01e-innovation (Step 2). Animals get a constant backstory
+  // so EntityFocusPanel has consistent content to render for every entity
+  // kind (colonist / visitor / animal). No name-bank for animals — they stay
+  // on the "Predator-N" / "Herbivore-N" label format.
+  const backstory = kind === ANIMAL_KIND.PREDATOR
+    ? "lone predator"
+    : "wild forager";
   return {
     id,
     displayName: withLabel(id, kind === ANIMAL_KIND.PREDATOR ? "Predator" : "Herbivore"),
     type: ENTITY_TYPE.ANIMAL,
     kind,
+    backstory,
     x,
     z,
     vx: (random() - 0.5) * 0.25,

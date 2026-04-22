@@ -316,6 +316,14 @@ export class EntityFocusPanel {
     // profile do not see FSM/Policy/Path/AI-Exchange unless they have
     // enabled developer mode (Ctrl+Shift+D or `?dev=1`).
     //
+    // v0.8.2 Round0 01e-innovation — Policy Focus / Policy Summary / Policy
+    // Notes (the player-readable "what the AI storyteller is telling this
+    // group to do" surface) have been **promoted** out of the gated block
+    // above the Type/Role line, so every player sees the AI's intent at the
+    // top of EntityFocusPanel regardless of casual/dev profile. The concrete
+    // raw debug data (Top Intents / Top Targets / AI Target / FSM / AI
+    // Exchange panels) stays gated behind `.casual-hidden .dev-only`.
+    //
     // Both classes coexist (OR relationship — either one hides the block).
     // Power users: `?dev=1&ui=full` to see everything. Keep the concise
     // "Role / State / Vitals / Carry" rows always visible — that is the
@@ -343,6 +351,10 @@ export class EntityFocusPanel {
 
     const html = `
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
+      <div class="small" style="margin-top:2px;"><b>Backstory:</b> ${escapeHtml(entity.backstory ?? "\u2014")}</div>
+      <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
+      <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
+      <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}</div>
       <div class="small"><b>Hunger:</b> ${escapeHtml(hungerLabel)}${hungerPct === null ? "" : ` (${hungerPct}% well-fed)`}</div>
@@ -365,11 +377,8 @@ export class EntityFocusPanel {
       <div class="small ${engClasses}"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
       <div class="small ${engClasses}"><b>Global Headline:</b> ${escapeHtml(digest.headline)}</div>
       <div class="small ${engClasses}"><b>Global Warning:</b> ${escapeHtml(digest.warning)}</div>
-      <div class="small ${engClasses}"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
-      <div class="small ${engClasses}"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small ${engClasses}"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
       <div class="small ${engClasses}"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
-      <div class="small ${engClasses}"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small ${engClasses}" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
       <div class="small ${engClasses}" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
       <div class="small ${engClasses}"><b>Target Selection:</b> score=${fmtNum(entity.debug?.policyTargetScore ?? 0, 2)} | frontier=${fmtNum(entity.debug?.policyTargetFrontier ?? 0, 2)} | depot=${fmtNum(entity.debug?.policyTargetDepot ?? 0, 2)} | load=${fmtNum(entity.debug?.policyTargetWarehouseLoad ?? 0, 2)} | ecology=${fmtNum(entity.debug?.policyTargetEcology ?? 0, 2)}</div>
