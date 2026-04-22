@@ -23,6 +23,13 @@ function makeNode() {
     setAttribute(key, value) {
       this.attrs[key] = value;
     },
+    // v0.8.2 Round-1 01a-onboarding — HUDController's glossary pass reads
+    // the existing title before appending so we preserve the prefix that
+    // other render paths wrote earlier this frame. Keep this stub mirror
+    // the real DOM contract so composite-title assertions work.
+    getAttribute(key) {
+      return Object.prototype.hasOwnProperty.call(this.attrs, key) ? this.attrs[key] : null;
+    },
   };
 }
 
