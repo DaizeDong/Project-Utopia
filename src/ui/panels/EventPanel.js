@@ -57,6 +57,31 @@ export class EventPanel {
         .join("");
     }
 
+    // v0.8.2 Round-0 02d-roleplayer (Step 5) — append a "Recent Colony Events"
+    // block pulled from state.gameplay.objectiveLog. Reviewer complaint was
+    // that death/starvation/sabotage resolves never surfaced to the player;
+    // MortalitySystem.recordDeath now pushes one narrative line per death,
+    // ProgressionSystem.maybeTriggerRecovery already pushes recovery messages.
+    // Taking the top 6 (objectiveLog already unshifts newest-first and caps
+    // at 24) and rendering below the active-event list gives a consolidated
+    // "Events & Colony Log" surface. Guarded with `?? []` because state
+    // initialisation path may race with first render on the main menu.
+    const objectiveLog = this.state.gameplay?.objectiveLog ?? [];
+    if (objectiveLog.length > 0) {
+      const recent = objectiveLog
+        .slice(0, 6)
+        .map((line) => `<div class='small muted'>${String(line ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")}</div>`)
+        .join("");
+      html += `
+        <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:6px 0;" />
+        <div class='small'><b>Recent Colony Events</b></div>
+        ${recent}
+      `;
+    }
+
     if (html === this.lastHtml) return;
     this.lastHtml = html;
     this.root.innerHTML = html;

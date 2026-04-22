@@ -349,9 +349,60 @@ export class EntityFocusPanel {
       ? Math.round(Math.max(0, Math.min(1, 1 - hungerN)) * 100)
       : null;
 
+    // v0.8.2 Round-0 02d-roleplayer (Step 4) — Character block. Surfaces
+    // data that already lived on the worker object (traits/mood/morale/
+    // social/rest, relationships map, memory.recentEvents) so reviewers get
+    // a "character sheet" instead of a debugger dump. Deliberately rendered
+    // BEFORE the engineering block (FSM/policy/path) so casual-profile users
+    // still see the narrative first; the `<details>` wrapper lets power
+    // users collapse it alongside everything else.
+    const traitsText = Array.isArray(entity.traits) && entity.traits.length > 0
+      ? entity.traits.join(", ")
+      : "(none)";
+    const moodN = Number(entity.mood);
+    const moraleN = Number(entity.morale);
+    const socialN = Number(entity.social);
+    const restN = Number(entity.rest);
+    const hasCharacterStats = Number.isFinite(moodN)
+      || Number.isFinite(moraleN)
+      || Number.isFinite(socialN)
+      || Number.isFinite(restN);
+    const relMap = entity.relationships && typeof entity.relationships === "object"
+      ? entity.relationships
+      : {};
+    const lookupDisplayNameById = (id) => {
+      const match = this.state.agents?.find?.((a) => a.id === id);
+      if (match) return match.displayName ?? match.id;
+      return id;
+    };
+    const topRelations = Object.entries(relMap)
+      .map(([otherId, op]) => [otherId, Number(op)])
+      .filter(([, v]) => Number.isFinite(v))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([otherId, v]) => `${lookupDisplayNameById(otherId)}: ${v >= 0 ? "+" : ""}${fmtNum(v, 2)}`);
+    const relationsLine = topRelations.length > 0 ? topRelations.join(" | ") : "(no relationships yet)";
+    const recentMemories = Array.isArray(entity.memory?.recentEvents)
+      ? entity.memory.recentEvents.slice(-3).reverse()
+      : [];
+    const memoryLines = recentMemories.length > 0
+      ? recentMemories.map((m) => `<div class="small muted">- ${escapeHtml(String(m?.label ?? m?.summary ?? m?.type ?? m ?? ""))}</div>`).join("")
+      : `<div class="small muted">(no recent memories)</div>`;
+    const characterBlock = `
+      <details data-focus-key="focus:character" open style="margin-top:6px;">
+        <summary class="small"><b>Character</b></summary>
+        <div class="small" style="margin-top:4px;"><b>Traits:</b> ${escapeHtml(traitsText)}</div>
+        ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
+        <div class="small"><b>Relationships:</b> ${escapeHtml(relationsLine)}</div>
+        <div class="small" style="margin-top:4px;"><b>Recent Memory:</b></div>
+        ${memoryLines}
+      </details>
+    `;
+
     const html = `
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
       <div class="small" style="margin-top:2px;"><b>Backstory:</b> ${escapeHtml(entity.backstory ?? "\u2014")}</div>
+      ${characterBlock}
       <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
       <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>

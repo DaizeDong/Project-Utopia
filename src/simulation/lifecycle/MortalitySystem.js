@@ -194,6 +194,29 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
     state.metrics.ecologyPendingDeaths[reason] = Number(state.metrics.ecologyPendingDeaths[reason] ?? 0) + 1;
   }
   deathEvents.push(`${entity.displayName ?? entity.id} died (${entity.deathReason || "event"}).`);
+
+  // v0.8.2 Round-0 02d-roleplayer (Step 3) — surface deaths to the player-
+  // visible Colony Log. Only colonists (workers/visitors) get a narrative
+  // line; animal deaths stay in state.debug.eventTrace to avoid drowning the
+  // log in herbivore/predator churn. Dedupe is guaranteed by the caller's
+  // `!entity.deathRecorded` guard plus the fact that we append BEFORE setting
+  // the flag in this function. objectiveLog uses unshift+slice(0,24) to
+  // match ProgressionSystem.logObjective's capacity policy.
+  if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
+    const reason = entity.deathReason || "event";
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const tile = entity.deathContext?.targetTile
+      ?? (entity.targetTile ? { ix: entity.targetTile.ix, iz: entity.targetTile.iz } : null);
+    const tileSuffix = tile ? ` near (${tile.ix},${tile.iz})` : "";
+    const name = entity.displayName ?? entity.id;
+    const line = `[${nowSec.toFixed(1)}s] ${name} died (${reason})${tileSuffix}`;
+    if (state.gameplay) {
+      if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+      state.gameplay.objectiveLog.unshift(line);
+      state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+    }
+  }
+
   entity.deathRecorded = true;
   const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
   emitEvent(state, eventType, {
