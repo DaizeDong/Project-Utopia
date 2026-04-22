@@ -558,6 +558,20 @@
 
     /* === HIDDEN LEGACY ELEMENTS === */
     .legacy-hidden { display: none !important; }
+
+    /* Dev mode gate (v0.8.2 Round0 01c-ui) — hide developer-only UI for first-time players. */
+    body:not(.dev-mode) .dev-only { display: none !important; }
+    /* Responsive status bar wrap — prevent 800x600 button clipping. */
+    @media (max-width: 1024px) {
+      #statusBar { flex-wrap: wrap; height: auto; padding: 4px 6px; }
+      #panelToggles { margin-left: auto; order: -1; width: 100%;
+        justify-content: flex-end; padding-bottom: 4px;
+        border-bottom: 1px solid var(--divider); margin-bottom: 4px; }
+    }
+    @media (max-width: 640px) {
+      .hud-objective { display: none; }
+      #statusBar .hud-resource { flex: 0 0 auto; }
+    }
     #ui > .small.muted:first-of-type,
     #ui > .switch:has(#compactToggle),
     #ui > .legend-bar { display: none; }
@@ -621,7 +635,7 @@
     <button id="toggleDockBtn" type="button">Debug</button>
   </div>
 
-  <div id="wrap" class="dock-collapsed">
+  <div id="wrap" class="dock-collapsed player-mode">
     <div id="viewport">
       <!-- === HUD STATUS BAR === -->
       <div id="statusBar">
@@ -693,10 +707,10 @@
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
           <button class="panel-toggle" data-panel-target="colonyFloatingPanel" title="Colony Info">Colony</button>
-          <button class="panel-toggle" data-panel-target="settingsFloatingPanel" title="Settings">Settings</button>
-          <button class="panel-toggle" data-panel-target="debugFloatingPanel" title="Debug Info">Debug</button>
+          <button class="panel-toggle dev-only" data-panel-target="settingsFloatingPanel" title="Settings">Settings</button>
+          <button class="panel-toggle dev-only" data-panel-target="debugFloatingPanel" title="Debug Info">Debug</button>
           <!-- v0.8.0 Phase 7.C — Supply-Chain Heat Lens (spec § 6). Cycles pressure → heat → off. -->
-          <button class="panel-toggle" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — red = producer piling up next to saturated warehouse, blue = processor/warehouse starved of input">Heat Lens (L)</button>
+          <button class="panel-toggle" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — click/press L to cycle: pressure (default, supply-chain pressure markers) → heat (red = producer overflow, blue = processor starved) → off">Heat Lens (L)</button>
         </div>
       </div>
 
@@ -873,7 +887,7 @@
               </div>
             </div>
 
-            <details class="subpanel" style="margin-top:8px;">
+            <details class="subpanel dev-only" style="margin-top:8px;">
               <summary>Advanced Runtime</summary>
               <div class="subpanel-body">
                 <div class="switch">
@@ -897,7 +911,7 @@
           </div>
         </details>
 
-        <details class="card" data-panel-key="terrain">
+        <details class="card dev-only" data-panel-key="terrain">
           <summary>Terrain Tuning</summary>
           <div class="panel-body">
             <div class="small muted">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
@@ -928,7 +942,7 @@
           </div>
         </details>
 
-        <details class="card" data-panel-key="pop-control">
+        <details class="card dev-only" data-panel-key="pop-control">
           <summary>Population Control</summary>
           <div class="panel-body">
             <div class="small muted" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
@@ -1052,7 +1066,7 @@
             <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
             <div class="kv"><div>Entities</div><div id="agentVal">0</div></div>
             <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
-            <div class="kv"><div>Warning</div><div id="warningVal">none</div></div>
+            <div class="kv" title="Latest critical warning. Red = error, amber = info"><div>Warning</div><div id="warningVal">none</div></div>
           </div>
         </details>
 
@@ -1139,14 +1153,14 @@
           </div>
         </details>
 
-        <div style="margin-top:6px;">
+        <div class="dev-only" style="margin-top:6px;">
           <button id="toggleDevDockBtn" type="button" style="width:100%; font-size:11px;" title="Show or hide the developer telemetry dock at the bottom">Show Dev Telemetry</button>
         </div>
       </div>
     </div>
 
     <!-- === DEV DOCK === -->
-    <section id="devDock" aria-label="Developer telemetry">
+    <section id="devDock" class="dev-only" aria-label="Developer telemetry">
       <div id="devDockHeader">
         <span>Developer Telemetry</span>
         <div id="devDockControls">

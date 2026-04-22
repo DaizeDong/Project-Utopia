@@ -43,6 +43,12 @@ import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
 import { DEFAULT_BENCHMARK_CONFIG, sanitizeBenchmarkConfig, sanitizeControlSettings } from "./controlSanitizers.js";
 import { resolveGlobalShortcut } from "./shortcutResolver.js";
+import {
+  readInitialDevMode,
+  applyInitialDevMode,
+  isDevModeChord,
+  toggleDevMode,
+} from "./devModeGate.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
@@ -97,6 +103,10 @@ export class GameApp {
   constructor(canvas) {
     this.state = createInitialGameState();
     this.#sanitizeControls(false);
+    // v0.8.2 Round0 01c-ui — Developer mode gate.
+    // Reads ?dev=1 URL query and `localStorage.utopia:devMode`, and wires a
+    // Ctrl+Shift+D chord to toggle `document.body.classList` in-place.
+    this.#initDevModeGate();
     this.services = createServices(this.state.world.mapSeed);
 
     this.buildSystem = new BuildSystem({
@@ -1500,10 +1510,59 @@ export class GameApp {
     this.loop.stop();
   }
 
+  // v0.8.2 Round0 01c-ui — Developer mode gate.
+  //
+  // Dev UI (Settings terrain sliders, Debug panel, Dev Telemetry dock) is
+  // hidden by default via the `.dev-only` CSS class, gated on
+  // `body.dev-mode`. This method enables dev mode when any of these three
+  // signals hold:
+  //   1. URL query `?dev=1`
+  //   2. `localStorage.utopia:devMode === "1"` (persistent opt-in)
+  //   3. Ctrl+Shift+D keyboard chord (runtime toggle, persists to storage)
+  //
+  // Each signal is try/catch-guarded because browser privacy modes may throw
+  // on storage access (Safari private mode → QuotaExceededError).
+  #initDevModeGate() {
+    if (typeof document === "undefined" || !document.body) return;
+    const body = document.body;
+    const storage = (() => {
+      try {
+        return typeof localStorage !== "undefined" ? localStorage : null;
+      } catch {
+        return null;
+      }
+    })();
+    const locationHref = (() => {
+      try {
+        return typeof location !== "undefined" ? location.href : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const initial = readInitialDevMode({ locationHref, storage });
+    applyInitialDevMode(body, initial);
+
+    if (typeof window === "undefined") return;
+    this.boundOnDevModeChord = (event) => {
+      if (!isDevModeChord(event)) return;
+      event.preventDefault();
+      const nowOn = toggleDevMode(body, storage);
+      if (this.state?.controls) {
+        this.state.controls.actionMessage = `Developer mode ${nowOn ? "ON" : "OFF"}.`;
+        this.state.controls.actionKind = "info";
+      }
+    };
+    window.addEventListener("keydown", this.boundOnDevModeChord);
+  }
+
   dispose() {
     this.stop();
     if (typeof window !== "undefined" && this.boundOnGlobalKeyDown) {
       window.removeEventListener("keydown", this.boundOnGlobalKeyDown);
+    }
+    if (typeof window !== "undefined" && this.boundOnDevModeChord) {
+      window.removeEventListener("keydown", this.boundOnDevModeChord);
     }
     if (this.heatLensBtn && this.boundOnHeatLensClick) {
       this.heatLensBtn.removeEventListener("click", this.boundOnHeatLensClick);
