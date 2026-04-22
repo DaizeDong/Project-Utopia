@@ -168,8 +168,9 @@ export class HUDController {
     if (this.objectiveVal) {
       // v0.8.0 Phase 4 — Survival Mode: display the running survival score and
       // elapsed time instead of objective progress. Keep the legacy headline
-      // digest as secondary context. The legacy objectives array is no longer
-      // populated by buildObjectivesForScenario; fall back to survival status.
+      // digest as secondary context. objectives[] is always empty in survival
+      // mode (the scenario objective pipeline was retired), so we unconditionally
+      // render the survival status line here.
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);

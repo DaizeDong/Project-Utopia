@@ -135,7 +135,6 @@ export const BALANCE = Object.freeze({
   warehouseSoftCapacity: 4,
   worksiteCoverageSoftRadius: 10,
   worksiteCoverageHardRadius: 16,
-  objectiveRoleBiasWeight: 0.58,
   objectiveFarmRatioMin: 0.18,
   objectiveFarmRatioMax: 0.82,
   // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
@@ -289,14 +288,17 @@ export const BALANCE = Object.freeze({
   verminSwarmLossCap: 40,
   // --- Living World v0.8.0 — Phase 3 (M1 soil + yieldPool), spec § 14 ---
   // Per-harvest accumulator increment on tileState.salinized for FARM harvests.
-  soilSalinizationPerHarvest: 0.02,
+  // v0.8.0 Phase 7.A tuning: 0.02 → 0.012. ~67 harvests before fallow (was 40)
+  // gives small colonies runway before soil exhaustion forces farm rotation.
+  soilSalinizationPerHarvest: 0.012,
   // At/above this salinized level the farm tile enters fallow (fertility→0)
   // until fallowUntil elapses.
   soilSalinizationThreshold: 0.8,
   // Ticks the farm stays fallow before auto-recovery (fertility→0.9,
   // salinized→0, yieldPool refilled to farmYieldPoolInitial).
-  // ~3 in-game minutes at the default tick cadence.
-  soilFallowRecoveryTicks: 1800,
+  // v0.8.0 Phase 7.A tuning: 1800 → 1200 (~5min → ~3.3min). Shorter starvation
+  // window when a 2-3 farm colony has one tile go fallow simultaneously.
+  soilFallowRecoveryTicks: 1200,
   // Slow passive per-tick decay of tileState.salinized.
   soilSalinizationDecayPerTick: 0.00002,
   // Fresh-farm yieldPool initial value, idle regen per tick, and cap.
@@ -317,8 +319,12 @@ export const BALANCE = Object.freeze({
   // Manhattan reveal radius around every live actor per tick. Tiles within this
   // Chebyshev/Manhattan square become VISIBLE; HIDDEN tiles upgrade to VISIBLE.
   fogRevealRadius: 5,
-  // Initial reveal radius centred on the colony spawn. 4 ⇒ 9×9 area.
-  fogInitialRevealRadius: 4,
+  // Initial reveal radius centred on the colony spawn. 6 ⇒ 13×13 area (169 tiles).
+  // v0.8.0 Phase 7.A tuning: 4 → 6. Previous 9×9 (81 tiles) forced the planner to
+  // cram all early buildings into a tiny footprint, accelerating soil salinization
+  // via co-located farm clusters. 6 keeps fog gameplay intact while giving the AI
+  // enough initial buildable area to spread farms and depots across soil zones.
+  fogInitialRevealRadius: 6,
   // Master toggle. Disable for benchmark presets that need full vision.
   fogEnabled: true,
   // --- Living World v0.8.0 — Phase 3 (M1a resource nodes), spec § 14 ---

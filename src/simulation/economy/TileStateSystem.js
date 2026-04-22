@@ -153,7 +153,7 @@ export class TileStateSystem {
       }
 
       // Slow passive salinization decay (applied unconditionally — it's tiny
-      // and self-limiting vs. per-harvest increments of 0.02).
+      // and self-limiting vs. the per-harvest increment).
       if ((entry.salinized ?? 0) > 0 && decay > 0) {
         entry.salinized = Math.max(0, Number(entry.salinized) - decay);
       }

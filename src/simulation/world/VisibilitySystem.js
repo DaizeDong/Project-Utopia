@@ -116,8 +116,8 @@ export class VisibilitySystem {
     const maxX = Math.min(width - 1, center.ix + radius);
     for (let z = minZ; z <= maxZ; z += 1) {
       for (let x = minX; x <= maxX; x += 1) {
-        // 9×9 box reveal — use Chebyshev (square) so the result is exactly
-        // (2r+1)² tiles as the spec describes.
+        // Box reveal — use Chebyshev (square) so the result is exactly
+        // (2r+1)² tiles with r=fogInitialRevealRadius, as the spec describes.
         if (Math.max(Math.abs(x - center.ix), Math.abs(z - center.iz)) > radius) continue;
         vis[x + z * width] = FOG_STATE.EXPLORED;
       }

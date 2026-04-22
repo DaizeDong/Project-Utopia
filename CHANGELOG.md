@@ -1,5 +1,153 @@
 # Changelog
 
+## [0.8.1] - 2026-04-21 — Phase 8 Survival Hardening
+
+**Bench delta (seed 42 / temperate_plains / 365 days):**
+- Pre-Phase 8: DevIndex 39.03, pop 5, deaths 512, food 0, wood 0.67
+- Post-Phase 8: DevIndex 43.69, pop 5, deaths 454, food 0, wood 1861.65
+- **+4.66 DevIndex (+12%), -58 deaths (-11%), wood production up 2780×**
+
+**Known remaining gap (punted to Phase 9):** `state.resources.food` still
+reads 0 throughout the run even though farms produce and yieldPool stays
+near max. Root cause traced by diagnostic agent to a deliver/carry policy:
+workers eat from `carry.food` directly (via `workerHungerEatRecoveryPerFoodUnit
+= 0.11`) before depositing to warehouse, so `state.resources.food` never
+accumulates. This is a structural change in worker carry/deposit priority
+and is out of scope for Phase 8's balance-tuning sweep. DevIndex target of
+70 stays aspirational; 44 is the current best-effort ceiling on seed 42 /
+temperate_plains without addressing the carry-eat bypass.
+
+### Phase 8.C — Demand-side growth throttle (2026-04-21)
+
+The Phase 8.A fixes improved day-365 DevIndex from 39 → 44 but food stayed
+at 0 throughout the run. Diagnostic trace revealed the real bottleneck
+was demand-side runaway, not supply-side shortfall: 4 starter farms
+combined with a generous pop-cap (farms × 0.8 + warehouses × 4) plus cheap
+6-food births spawned 24 workers in 100 seconds, overwhelming food
+production. Kitchen built correctly (Phase 8.A.2) but then drained the
+scarce food buffer, accelerating collapse.
+
+**Iteration 1** raised `FOOD_COST_PER_COLONIST` 6 → 15, `MIN_FOOD_FOR_GROWTH`
+25 → 40, added a `food >= 2 * FOOD_COST` buffer, added an
+infrastructure-balance penalty `max(0, workers - warehouses * 3)`, and
+pushed kitchen food threshold to 30. Bench regressed from DevIndex 44
+(day 365) to **collapse at day 26** (pop 5 → 2): birth rate fell below
+death rate because the combined throttles froze regeneration.
+
+**Iteration 2** (shipped) softened all five knobs to the midpoint between
+the v0.8.0 baseline and iteration 1:
+
+- **`FOOD_COST_PER_COLONIST`** 6 → **10** — births carry real cost but
+  don't starve the birth rate.
+- **`MIN_FOOD_FOR_GROWTH`** 25 → **30** — modest buffer over the old
+  threshold.
+- **Food-reserve buffer check removed** — `MIN_FOOD_FOR_GROWTH = 30 =
+  3 * FOOD_COST` already provides the buffer.
+- **Pop-cap tightened** in `PopulationGrowthSystem` — warehouse
+  coefficient 4 → 3, farm coefficient 0.8 → 0.5. **Infrastructure
+  penalty removed** (the `max(0, workers - warehouses * 3)` term from
+  iteration 1 created a doom spiral after death events).
+- **Kitchen tier food threshold** in `ColonyPlanner` Priority 3.5
+  raised `food >= 8` → `food >= 20` — kitchen waits for a real buffer
+  without being impossible to trigger.
+
+### Phase 8.A — Starvation-loop root-cause fixes (2026-04-21)
+
+Four-factor root-cause analysis of the day-365 DevIndex shortfall (39.03 vs
+target ≥ 70) identified a compound failure mode: `yieldPool` lazy-init race
+in farm harvest, missing kitchen tier in the fallback planner (food→meal
+conversion chain never opened), aggressive salinization parameters, and fog
+restriction forcing over-concentration on 81 spawn tiles. Each factor
+alone was survivable; combined they guaranteed 365-day starvation.
+
+- **`yieldPool` lazy-init fix** — `src/simulation/npc/WorkerAISystem.js`
+  farm-harvest block: when `getTileState` returns `null` the code now seeds
+  both `fertility: 0.9` (matching `setTile`/`_updateSoil`) AND
+  `yieldPool: BALANCE.farmYieldPoolInitial` before rereading. Pre-fix the
+  entry was born with `yieldPool = 0`, so `Math.min(farmAmount, pool) = 0`
+  and the worker's freshly-harvested food was instantly refunded. Added a
+  second guard: if the tileState exists with `fertility > 0 &&
+  fallowUntil === 0 && yieldPool <= 0` (stale post-fallow window), reseed
+  yieldPool to match `TileStateSystem._updateSoil` semantics.
+  Regression test: `test/farm-yield-pool-lazy-init.test.js`.
+- **Kitchen tier in fallback planner** — `ColonyPlanner.generateFallbackPlan`
+  now has a new Priority 3.5 "Food processing" tier between wood (Pr 3) and
+  quarry/smithy (Pr 4). Trigger: `kitchens === 0 && farms >= 2 &&
+  workerCount >= 2 && food >= 8 && wood >= 8 && stone >= 3 &&
+  clusters.length > 0`. Urgency `"high"`; hint `near_cluster:c0`. Without
+  this tier the LLM-only kitchen plan meant fallback-mode colonies never
+  unlocked meal conversion, effectively doubling food burn rate. Thresholds
+  raised from initial `farms >= 1` to `farms >= 2 && food >= 8` per
+  review feedback — single-farm kitchens starved immediately.
+- **Fog initial radius 4 → 6** — `src/config/balance.js`
+  `fogInitialRevealRadius: 4 → 6`, revealing 169 initial tiles (13×13)
+  instead of 81 (9×9). `BuildAdvisor.isTileHidden()` already blocked only
+  `FOG_STATE.HIDDEN`, so EXPLORED tiles were already buildable — the real
+  constraint was the tiny spawn window. Chose +2 over +4 to preserve fog
+  gameplay feel. Updated stale "9×9" comments in
+  `VisibilitySystem.js`, `test/fog-visibility.test.js`, and the balance
+  design spec reference table.
+- **Salinization ease** — `src/config/balance.js`:
+  `soilSalinizationPerHarvest: 0.02 → 0.012` (40 → ~67 harvests to
+  fallow), `soilFallowRecoveryTicks: 1800 → 1200` (450s → 300s recovery
+  window at 4 Hz). Threshold and initial yieldPool unchanged. Roughly
+  doubles harvest-to-fallow runway and cuts the starvation window by
+  one-third without trivializing soil rotation.
+
+### Phase 8.B — Dead objective-code cleanup (2026-04-21)
+
+The v0.8.0 endless-survival pivot retired the objectives system but left
+residue scattered across the codebase. Removed ~259 LOC of dead code while
+preserving all paths with live consumers (HUD, DeveloperPanel, longRunTelemetry
+tests, StrategicDirector gates, DecisionScheduler branch, MemoryObserver test,
+ColonyPerceiver/PromptPayload pipe, WorldSummary summary field, SceneRenderer
+pressure-lens signature hash — all verified via grep before any removal).
+
+- **`src/world/scenarios/ScenarioFactory.js`** — deleted
+  `buildObjectivesForScenario` stub; inlined `objectives: []`.
+- **`src/simulation/meta/ProgressionSystem.js`** — removed
+  `updateObjectiveProgress` (~124 LOC), `applyObjectiveReward`,
+  `applyPacingHint`, `getRecoveryHint`, `getSpatialPressureHint`,
+  `addRecoveryCharge`, and the `update()` call site. Subsequently
+  deleted `getDoctrineAdjustedTargets` + `ceilScaled` (exposed as
+  orphans by the cleanup — only caller was the deleted
+  `getObjectiveFarmRatio` path). Pruned unused imports.
+- **`src/app/types.js`** — removed `objectiveHoldSec` / `objectiveLog`
+  from `GameplayState` typedef.
+- **`src/entities/EntityFactory.js`** — removed `objectiveHoldSec: 0`
+  init. Kept `objectiveIndex` / `objectives` / `objectiveHint` /
+  `objectiveLog` (all still have live readers).
+- **`src/simulation/population/RoleAssignmentSystem.js`** — removed
+  `getObjectiveFarmRatio`, `ratioFromDemand`, the blend block in
+  `update()`, and unused imports.
+- **`src/ui/interpretation/WorldExplain.js`** — removed
+  `getCurrentObjective` helper and its 3 usages in `getCausalDigest`.
+- **`src/config/balance.js`** — removed orphaned
+  `objectiveRoleBiasWeight: 0.58` constant (only consumer was the
+  deleted role-bias branch).
+- **`src/ui/hud/HUDController.js:172`** — rewrote stale comment that
+  referenced the removed `buildObjectivesForScenario`.
+
+### Phase 8 review-sweep iteration (2026-04-21)
+
+Three parallel code-review agents surfaced HIGH/MED findings across the
+modifications. All HIGH findings and most MED findings were addressed
+inline before commit:
+
+- `yieldPool` lazy-init fix extended with the post-fallow-window guard.
+- `fertility` lazy-init seed aligned to canonical 0.9.
+- Kitchen tier thresholds raised (`farms >= 1` → `farms >= 2 && food >= 8`
+  + `clusters.length > 0` guard).
+- Orphaned `getDoctrineAdjustedTargets` / `ceilScaled` / `objectiveRoleBiasWeight`
+  deleted (surfaced by Phase 8.B cleanup).
+- Stale comments in `VisibilitySystem`, `TileStateSystem`,
+  `HUDController`, `test/fog-visibility.test.js`, and the balance design
+  spec all brought in sync with current values.
+
+**Files changed (Phase 8):** 9 source files + 1 new test + 1 spec doc
+update. Net line change: +39 / -274 (~259 LOC removed). Tests: 865 pass /
+2 skipped / 0 fail across 867 tests — identical to v0.8.0 baseline.
+
 ## [0.8.0] - 2026-04-21 — Living World Balance Overhaul
 
 > Phase-by-phase implementation of the v3 spec

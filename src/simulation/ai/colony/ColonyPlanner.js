@@ -494,6 +494,8 @@ export function generateFallbackPlan(observation, state) {
   const farms = buildings.farms ?? 0;
   const lumbers = buildings.lumbers ?? 0;
   const walls = buildings.walls ?? 0;
+  const kitchens = buildings.kitchens ?? 0;
+  const workerCount = observation.workforce?.total ?? 0;
   const threat = observation.defense?.threat ?? 0;
 
   // Priority 1: Food crisis — add farms FIRST if food rate is negative
@@ -574,7 +576,32 @@ export function generateFallbackPlan(observation, state) {
       { wood_rate_delta: "+0.5/s" }));
   }
 
-  // Priority 4: Processing chain ��� quarry + smithy if not started
+  // Priority 3.5: Food processing - kitchen converts raw food to meals (2x
+  // hunger efficiency). Without a kitchen, raw food spoils and effective
+  // food burn rate is doubled. Gate on: >=2 farms (single farm barely
+  // sustains conversion rate), food >= 20 (kitchen drains ~0.67/sec; firing
+  // at food >= 8 drained the tiny buffer immediately, 30 was too strict and
+  // kitchen never built — Phase 8.C iteration 2 settled at 20 as the
+  // balance point), >=2 workers (one can cook while others harvest),
+  // 0 kitchens (don't duplicate), affordability (8 wood + 3 stone), and an
+  // existing cluster (hint references c0). Inserted before quarry/smithy
+  // and rapid_farms so the food chain is closed before investing in the
+  // tool chain or scaling up raw food output that would otherwise wasted.
+  if (
+    kitchens === 0
+    && farms >= 2
+    && food >= 20
+    && workerCount >= 2
+    && wood >= 8
+    && stone >= 3
+    && clusters.length > 0
+  ) {
+    steps.push(_step(nextId++, "kitchen", "near_cluster:c0", "high",
+      "No kitchen - raw food spoils without conversion, meals double hunger efficiency",
+      { meals_rate: "+1/cycle", food_efficiency: "2x" }));
+  }
+
+  // Priority 4: Processing chain - quarry + smithy if not started
   if ((buildings.quarries ?? 0) === 0 && wood >= 6 && farms >= 3) {
     steps.push(_step(nextId++, "quarry", "near_cluster:c0", "medium",
       "No quarries, need stone for advanced buildings",
