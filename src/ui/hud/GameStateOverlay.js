@@ -28,6 +28,11 @@ function formatOutcomeMeta(state) {
 }
 
 export class GameStateOverlay {
+  // v0.8.2 Round-0 01a-onboarding — private fields for end-panel read gate.
+  // Declared here (rather than inside #lastPhase lazy assignment) so class
+  // instantiation does not throw on property access in Node strict mode.
+  #lastPhase = null;
+
   constructor(state, handlers = {}) {
     this.state = state;
     this.handlers = handlers;
@@ -60,6 +65,20 @@ export class GameStateOverlay {
     const restartBtn = document.getElementById("overlayRestartBtn");
     const resetBtn = document.getElementById("overlayResetBtn");
 
+    // v0.8.2 Round-0 01a-onboarding — end-panel read gate.
+    //
+    // Reviewer 01-onboarding reported "game ended and I clicked New Map
+    // before seeing the stats". The stats block exists (see render() /
+    // this.endStats) but players click through instantly. To give every
+    // player a chance to read the run summary we briefly disable the
+    // end-panel buttons when the end phase first appears; the timer
+    // restarts any time the phase re-enters `end`.
+    this.endGateDisabledUntilMs = 0;
+    this.endGateReadMs = 2500;
+    this.restartBtn = restartBtn;
+    this.resetBtn = resetBtn;
+    this.#refreshEndGateButtons();
+
     startBtn?.addEventListener("click", () => this.handlers.onStart?.());
     resetFromMenuBtn?.addEventListener("click", () => {
       if (resetFromMenuBtn) {
@@ -77,8 +96,38 @@ export class GameStateOverlay {
         }, 300);
       }
     });
-    restartBtn?.addEventListener("click", () => this.handlers.onRestart?.());
-    resetBtn?.addEventListener("click", () => this.handlers.onReset?.());
+    restartBtn?.addEventListener("click", () => {
+      if (this.#isEndGateActive()) return;
+      this.handlers.onRestart?.();
+    });
+    resetBtn?.addEventListener("click", () => {
+      if (this.#isEndGateActive()) return;
+      this.handlers.onReset?.();
+    });
+  }
+
+  #now() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  #isEndGateActive() {
+    return this.#now() < (this.endGateDisabledUntilMs || 0);
+  }
+
+  #refreshEndGateButtons() {
+    const gated = this.#isEndGateActive();
+    const ttl = Math.max(0, Math.ceil(((this.endGateDisabledUntilMs || 0) - this.#now()) / 1000));
+    const suffix = gated && ttl > 0 ? ` (${ttl})` : "";
+    if (this.restartBtn) {
+      this.restartBtn.disabled = gated;
+      this.restartBtn.textContent = gated ? `Try Again${suffix}` : "Try Again";
+    }
+    if (this.resetBtn) {
+      this.resetBtn.disabled = gated;
+      this.resetBtn.textContent = gated ? `New Map${suffix}` : "New Map";
+    }
   }
 
   #readMapWidth() {
@@ -97,6 +146,16 @@ export class GameStateOverlay {
     const isMenu = phase === "menu";
     const isEnd = phase === "end";
     const isInteractive = isMenu || isEnd;
+    // v0.8.2 Round-0 01a-onboarding — when we first enter the end phase
+    // start the read-gate timer; the next few ticks (~2.5s) disable the
+    // restart/new-map buttons so players actually see the stats. Also
+    // refresh the button labels every tick so the countdown visibly
+    // decrements.
+    if (isEnd && this.#lastPhase !== "end") {
+      this.endGateDisabledUntilMs = this.#now() + this.endGateReadMs;
+    }
+    this.#lastPhase = phase;
+    if (isEnd) this.#refreshEndGateButtons();
     this.root.hidden = !isInteractive;
     this.root.setAttribute("data-phase", phase);
     this.root.setAttribute("aria-hidden", isInteractive ? "false" : "true");
@@ -156,7 +215,17 @@ export class GameStateOverlay {
       const w = this.state.grid?.width ?? 96;
       const h = this.state.grid?.height ?? 72;
       const base = formatOverlayMeta(this.state);
-      this.menuMeta.textContent = seed ? `${base} · ${w}×${h} · seed ${seed}` : base;
+      // v0.8.2 Round-0 01a-onboarding — seed is a developer identifier.
+      // Only show it when body.dev-mode is asserted (01c gate). Casual /
+      // first-time players see just the template + dimensions so the menu
+      // panel no longer leads with "SEED 1337".
+      const isDevMode = typeof document !== "undefined"
+        && document.body?.classList?.contains("dev-mode");
+      if (seed && isDevMode) {
+        this.menuMeta.textContent = `${base} · ${w}×${h} · seed ${seed}`;
+      } else {
+        this.menuMeta.textContent = `${base} · ${w}×${h} tiles`;
+      }
     }
 
 
