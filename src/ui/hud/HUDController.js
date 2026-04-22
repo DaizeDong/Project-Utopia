@@ -457,13 +457,25 @@ export class HUDController {
     // Renders BALANCE.survivalScorePerSecond/perBirth/perDeath alongside
     // running subtotals from metrics.timeSec/birthsTotal/deathsTotal so the
     // player can map HUD actions → score deltas without opening Debug.
+    // v0.8.2 Round-1 01c-ui — JS gate mirrors the CSS `.dev-only` gate on
+     // #statusScoreBreak. In casual profile we clear textContent/title so AT
+     // tools (screen readers, devtools Accessibility tree) never expose the
+     // dev-debug "+1/s · +5/birth · -10/death (lived X · births Y · deaths -Z)"
+     // copy that CSS hides visually. Dev profile still renders full breakdown.
     if (this.statusScoreBreak) {
-      const br = getSurvivalScoreBreakdown(state);
-      const rules = `+${br.perSec}/s · +${br.perBirth}/birth · -${br.perDeath}/death`;
-      const subtotals = `lived ${br.subtotalSec} · births ${br.subtotalBirths} · deaths -${br.subtotalDeaths}`;
-      const text = `${rules} (${subtotals})`;
-      this.statusScoreBreak.textContent = text;
-      this.statusScoreBreak.setAttribute?.("title", text);
+      const bodyClassList = globalThis.document?.body?.classList;
+      const casualMode = bodyClassList?.contains?.("casual-mode") ?? false;
+      if (casualMode) {
+        this.statusScoreBreak.textContent = "";
+        this.statusScoreBreak.setAttribute?.("title", "");
+      } else {
+        const br = getSurvivalScoreBreakdown(state);
+        const rules = `+${br.perSec}/s · +${br.perBirth}/birth · -${br.perDeath}/death`;
+        const subtotals = `lived ${br.subtotalSec} · births ${br.subtotalBirths} · deaths -${br.subtotalDeaths}`;
+        const text = `${rules} (${subtotals})`;
+        this.statusScoreBreak.textContent = text;
+        this.statusScoreBreak.setAttribute?.("title", text);
+      }
     }
     // v0.8.2 Round-0 02e-indie-critic — render scenario headline in statusBar.
     // Pulls `scenario.title` + `scenario.summary` (same copy reviewer praised
