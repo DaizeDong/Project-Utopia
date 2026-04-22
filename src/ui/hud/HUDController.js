@@ -88,6 +88,21 @@ export class HUDController {
     this.speedFastBtn = document.getElementById("speedFastBtn");
     this.gameTimer = document.getElementById("gameTimer");
 
+    // v0.8.2 Round-0 01d — Resource rate badges. Snapshot every RATE_WINDOW_SEC
+    // sim-seconds and compute (delta / window) * 60 → per-minute rate. Kept at 3s
+    // to avoid jittery signs on stable supply. /min unit is chosen because
+    // production/consumption events on the colony-chain are O(1 per few sec).
+    this.foodRateVal = document.getElementById("foodRateVal");
+    this.woodRateVal = document.getElementById("woodRateVal");
+    this.stoneRateVal = document.getElementById("stoneRateVal");
+    this.herbsRateVal = document.getElementById("herbsRateVal");
+    this.mealsRateVal = document.getElementById("mealsRateVal");
+    this.toolsRateVal = document.getElementById("toolsRateVal");
+    this.medicineRateVal = document.getElementById("medicineRateVal");
+    this._lastResourceSnapshot = null;
+    this._lastSnapshotSimSec = 0;
+    this._lastComputedRates = null; // cached between windows so UI shows continuous values
+
     this.setupSpeedControls();
   }
 
@@ -126,6 +141,53 @@ export class HUDController {
     if (this.mealsVal) this.mealsVal.textContent = Math.floor(state.resources.meals);
     if (this.toolsVal) this.toolsVal.textContent = Math.floor(state.resources.tools);
     if (this.medicineVal) this.medicineVal.textContent = Math.floor(state.resources.medicine);
+
+    // --- v0.8.2 Round-0 01d: Resource rate badges (/min) ---
+    const RATE_WINDOW_SEC = 3;
+    const simSec = Number(state.metrics?.timeSec ?? 0);
+    const snap = {
+      food: Number(state.resources.food ?? 0),
+      wood: Number(state.resources.wood ?? 0),
+      stone: Number(state.resources.stone ?? 0),
+      herbs: Number(state.resources.herbs ?? 0),
+      meals: Number(state.resources.meals ?? 0),
+      tools: Number(state.resources.tools ?? 0),
+      medicine: Number(state.resources.medicine ?? 0),
+      t: simSec,
+    };
+    if (this._lastResourceSnapshot == null) {
+      this._lastResourceSnapshot = snap;
+      this._lastSnapshotSimSec = simSec;
+    } else if (simSec - this._lastSnapshotSimSec >= RATE_WINDOW_SEC) {
+      const prev = this._lastResourceSnapshot;
+      const dt = Math.max(0.0001, simSec - prev.t);
+      this._lastComputedRates = {
+        food: ((snap.food - prev.food) / dt) * 60,
+        wood: ((snap.wood - prev.wood) / dt) * 60,
+        stone: ((snap.stone - prev.stone) / dt) * 60,
+        herbs: ((snap.herbs - prev.herbs) / dt) * 60,
+        meals: ((snap.meals - prev.meals) / dt) * 60,
+        tools: ((snap.tools - prev.tools) / dt) * 60,
+        medicine: ((snap.medicine - prev.medicine) / dt) * 60,
+      };
+      this._lastResourceSnapshot = snap;
+      this._lastSnapshotSimSec = simSec;
+    }
+    const formatRate = (rate) => {
+      if (rate == null || !Number.isFinite(rate)) return "—";
+      if (Math.abs(rate) < 0.05) return "= 0.0/min";
+      return rate >= 0
+        ? `▲ +${rate.toFixed(1)}/min`
+        : `▼ ${rate.toFixed(1)}/min`;
+    };
+    const rates = this._lastComputedRates;
+    if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food);
+    if (this.woodRateVal) this.woodRateVal.textContent = formatRate(rates?.wood);
+    if (this.stoneRateVal) this.stoneRateVal.textContent = formatRate(rates?.stone);
+    if (this.herbsRateVal) this.herbsRateVal.textContent = formatRate(rates?.herbs);
+    if (this.mealsRateVal) this.mealsRateVal.textContent = formatRate(rates?.meals);
+    if (this.toolsRateVal) this.toolsRateVal.textContent = formatRate(rates?.tools);
+    if (this.medicineRateVal) this.medicineRateVal.textContent = formatRate(rates?.medicine);
 
     this.foodBar.style.width = `${Math.min(100, (state.resources.food / 180) * 100)}%`;
     this.woodBar.style.width = `${Math.min(100, (state.resources.wood / 180) * 100)}%`;
@@ -268,10 +330,15 @@ export class HUDController {
     if (this.statusAction) {
       if (state.controls.actionMessage) {
         this.statusAction.textContent = state.controls.actionMessage;
+        // v0.8.2 Round-0 01d — mirror textContent into the native `title`
+        // attribute so the browser tooltip shows the full message even when
+        // ellipsis truncates the visible text (40-char cap at max-width 420px).
+        this.statusAction.setAttribute("title", state.controls.actionMessage);
         this.statusAction.style.opacity = "1";
         this.statusAction.style.background = state.controls.actionKind === "error" ? "rgba(244,67,54,0.3)" : "rgba(76,175,80,0.3)";
         this.statusAction.style.color = state.controls.actionKind === "error" ? "#ff8a80" : "#a5d6a7";
       } else {
+        this.statusAction.setAttribute("title", "");
         this.statusAction.style.opacity = "0";
       }
     }

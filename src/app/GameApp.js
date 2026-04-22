@@ -376,10 +376,13 @@ export class GameApp {
         this.#safeRenderPanel("EntityFocusPanel", () => this.entityFocusPanel.render());
         this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());
         this.#safeRenderPanel("PerformancePanel", () => this.performancePanel.render());
-        const wrapRoot = document.getElementById("wrap");
-        if (!wrapRoot?.classList.contains("dock-collapsed")) {
-          this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
-        }
+        // v0.8.2 Round-0 01d: decouple DeveloperPanel rendering from the dock-collapsed
+        // class. The `#wrap.dock-collapsed` gate used to skip renders entirely, which
+        // trapped the initial `Initializing telemetry…` placeholder inside <pre> nodes
+        // whenever a user later expanded the dock — they would see "loading…" frozen
+        // until the next uiRefreshAccumulator tick. Render unconditionally now; the
+        // collapsed-state throttle above (uiRefreshIntervalSec ≥ 1/3s) already caps cost.
+        this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
         this.#safeRenderPanel("BuildToolbar", () => this.toolbar.sync());
       }
       this.uiRefreshAccumulator = 0;

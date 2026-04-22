@@ -91,8 +91,14 @@
     .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hud-action {
       padding: 2px 6px; border-radius: 6px; font-size: 10px;
-      max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       transition: opacity 0.3s;
+    }
+
+    /* v0.8.2 Round-0 01d — resource rate badges inside Colony Resources panel. */
+    .hud-rate {
+      font-size: 9px; opacity: 0.7; margin-left: 6px;
+      font-weight: 600; letter-spacing: 0.2px;
     }
 
     /* === PANEL TOGGLE BUTTONS (in status bar) === */
@@ -635,7 +641,7 @@
     <button id="toggleDockBtn" type="button">Debug</button>
   </div>
 
-  <div id="wrap" class="dock-collapsed player-mode">
+  <div id="wrap" class="player-mode">
     <div id="viewport">
       <!-- === HUD STATUS BAR === -->
       <div id="statusBar">
@@ -822,20 +828,20 @@
         <details class="card" data-panel-key="resources" open>
           <summary>Resources</summary>
           <div class="panel-body">
-            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div id="foodVal">0</div></div>
+            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span></div></div>
             <div class="bar"><div id="foodBar"></div></div>
-            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div id="woodVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span></div></div>
             <div class="bar"><div id="woodBar"></div></div>
-            <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div id="stoneVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div><span id="stoneVal">0</span><span id="stoneRateVal" class="hud-rate">—</span></div></div>
             <div class="bar"><div id="stoneBar" style="background:linear-gradient(90deg,#a0896e,#8b7d6b)"></div></div>
-            <div class="kv" style="margin-top:6px" title="Gathered from herb gardens, refined into medicine"><div>Herbs</div><div id="herbsVal">0</div></div>
+            <div class="kv" style="margin-top:6px" title="Gathered from herb gardens, refined into medicine"><div>Herbs</div><div><span id="herbsVal">0</span><span id="herbsRateVal" class="hud-rate">—</span></div></div>
             <div class="bar"><div id="herbsBar" style="background:linear-gradient(90deg,#7bb86a,#5a9a4a)"></div></div>
             <div style="margin-top:8px; border-top:1px solid var(--divider); padding-top:6px">
-              <div class="kv" title="Cooked in kitchens from food, provides 2x hunger recovery"><div>Meals</div><div id="mealsVal">0</div></div>
+              <div class="kv" title="Cooked in kitchens from food, provides 2x hunger recovery"><div>Meals</div><div><span id="mealsVal">0</span><span id="mealsRateVal" class="hud-rate">—</span></div></div>
               <div class="bar"><div id="mealsBar" style="background:linear-gradient(90deg,#d4a65a,#c89040)"></div></div>
-              <div class="kv" style="margin-top:6px" title="Forged in smithies from stone+wood, boosts harvest speed by 15%"><div>Tools</div><div id="toolsVal">0</div></div>
+              <div class="kv" style="margin-top:6px" title="Forged in smithies from stone+wood, boosts harvest speed by 15%"><div>Tools</div><div><span id="toolsVal">0</span><span id="toolsRateVal" class="hud-rate">—</span></div></div>
               <div class="bar"><div id="toolsBar" style="background:linear-gradient(90deg,#8c7a6b,#706050)"></div></div>
-              <div class="kv" style="margin-top:6px" title="Produced in clinics from herbs, heals injured workers"><div>Medicine</div><div id="medicineVal">0</div></div>
+              <div class="kv" style="margin-top:6px" title="Produced in clinics from herbs, heals injured workers"><div>Medicine</div><div><span id="medicineVal">0</span><span id="medicineRateVal" class="hud-rate">—</span></div></div>
               <div class="bar"><div id="medicineBar" style="background:linear-gradient(90deg,#c4d8c0,#90b88a)"></div></div>
             </div>
           </div>
@@ -1154,7 +1160,7 @@
         </details>
 
         <div class="dev-only" style="margin-top:6px;">
-          <button id="toggleDevDockBtn" type="button" style="width:100%; font-size:11px;" title="Show or hide the developer telemetry dock at the bottom">Show Dev Telemetry</button>
+          <button id="toggleDevDockBtn" type="button" style="width:100%; font-size:11px;" title="Show or hide the developer telemetry dock at the bottom">Hide Dev Telemetry</button>
         </div>
       </div>
     </div>
@@ -1172,27 +1178,27 @@
       <div id="devDockGrid">
         <details class="dock-card" data-dock-key="global" open>
           <summary class="dock-title">Global &amp; Gameplay</summary>
-          <pre id="devGlobalVal" class="dock-body">loading...</pre>
+          <pre id="devGlobalVal" class="dock-body">Initializing telemetry…</pre>
         </details>
         <details class="dock-card" data-dock-key="algo">
           <summary class="dock-title">A* + Boids</summary>
-          <pre id="devAlgoVal" class="dock-body">loading...</pre>
+          <pre id="devAlgoVal" class="dock-body">Initializing telemetry…</pre>
         </details>
         <details class="dock-card" data-dock-key="ai-trace" open>
           <summary class="dock-title">AI Trace</summary>
-          <pre id="devAiTraceVal" class="dock-body">loading...</pre>
+          <pre id="devAiTraceVal" class="dock-body">Initializing telemetry…</pre>
         </details>
         <details class="dock-card" data-dock-key="logic">
           <summary class="dock-title">Logic Consistency</summary>
-          <pre id="devLogicVal" class="dock-body">loading...</pre>
+          <pre id="devLogicVal" class="dock-body">Initializing telemetry…</pre>
         </details>
         <details class="dock-card" data-dock-key="timings">
           <summary class="dock-title">System Timings</summary>
-          <pre id="devSystemVal" class="dock-body">loading...</pre>
+          <pre id="devSystemVal" class="dock-body">Initializing telemetry…</pre>
         </details>
         <details class="dock-card" data-dock-key="events">
           <summary class="dock-title">Objective / Event Log</summary>
-          <pre id="devEventTraceVal" class="dock-body">loading...</pre>
+          <pre id="devEventTraceVal" class="dock-body">Initializing telemetry…</pre>
         </details>
       </div>
     </section>
