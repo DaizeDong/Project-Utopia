@@ -161,6 +161,32 @@ export function getScenarioProgressCompact(state) {
   return parts.join(" · ");
 }
 
+// v0.8.2 Round-1 02b-casual (Step 5) — Casual-profile variant of the compact
+// scenario-progress ribbon. Same single-pass `getScenarioRuntime()` consumer
+// as the dev-profile version above, but every token is written in full words
+// ("3 of 5 supply routes open", "2 warehouses built (goal 4)") so a first-time
+// player can tell the "built" count from the "goal" count without a glossary.
+// The dev-profile `getScenarioProgressCompact` string is preserved as-is to
+// avoid invalidating tests/debug paths that depend on the `"wh 5/2"` literal.
+// Tokens are joined with a two-space separator (not `" · "`) so browsers can
+// break the line inside the 2-line clamp added in Step 1-3.
+export function getScenarioProgressCompactCasual(state) {
+  const runtime = getScenarioRuntime(state);
+  const routesTotal = runtime.routes.length;
+  const depotsTotal = runtime.depots.length;
+  const targets = runtime.logisticsTargets ?? {};
+  const counts = runtime.counts ?? {};
+  const parts = [];
+  if (routesTotal > 0) parts.push(`${runtime.connectedRoutes} of ${routesTotal} supply routes open`);
+  if (depotsTotal > 0) parts.push(`${runtime.readyDepots} of ${depotsTotal} depots reclaimed`);
+  if (Number(targets.warehouses ?? 0) > 0) parts.push(`${counts.warehouses ?? 0} warehouses built (goal ${targets.warehouses})`);
+  if (Number(targets.farms ?? 0) > 0) parts.push(`${counts.farms ?? 0} farms built (goal ${targets.farms})`);
+  if (Number(targets.lumbers ?? 0) > 0) parts.push(`${counts.lumbers ?? 0} lumber camps (goal ${targets.lumbers})`);
+  if (Number(targets.walls ?? 0) > 0) parts.push(`${counts.walls ?? 0} walls placed (goal ${targets.walls})`);
+  if (parts.length === 0) return "Endless mode — no pending goals";
+  return parts.join("  ");
+}
+
 export function getWeatherInsight(state) {
   const current = state.weather.current ?? WEATHER.CLEAR;
   const hazardCount = Array.isArray(state.weather.hazardTiles) ? state.weather.hazardTiles.length : 0;

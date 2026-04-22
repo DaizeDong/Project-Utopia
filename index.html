@@ -88,7 +88,7 @@
     .hud-resource[data-urgency="low"] .hud-label { color: #ff8a80; }
     .hud-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 1px; flex-shrink: 0; }
     .hud-spacer { flex: 1; }
-    .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 240px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
     /* v0.8.2 Round-0 02e-indie-critic — scenario headline slot in statusBar.
        Italic muted line that lives to the left of #statusObjective and carries
        the generated scenario title/summary during play. Ellipsis on overflow;
@@ -96,13 +96,17 @@
     .hud-scenario {
       font-size: 10px; font-style: italic; font-weight: 500;
       color: var(--text-muted);
-      max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 420px; overflow: hidden; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      line-height: 1.25; word-break: break-word;
       margin-right: 12px; flex-shrink: 1;
     }
     .hud-scenario[hidden] { display: none; }
     .hud-action {
       padding: 2px 6px; border-radius: 6px; font-size: 10px;
-      max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 520px; overflow: hidden; display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      line-height: 1.3; word-break: break-word;
       transition: opacity 0.3s;
     }
 
@@ -147,6 +151,17 @@
     }
     /* Compact UI disables the scale pulse (risk #3 — avoid layout flash in cramped mode). */
     #ui.compact .hud-action.flash-action { animation: none; }
+    /* v0.8.2 Round-1 02b-casual (Step 4) — Compact-mode fallback keeps the
+       three HUD chips (objective / scenario / action) on a single line with
+       ellipsis so the denser layout is not disturbed. Non-compact mode uses
+       the 2-line clamp above so long red warnings and scenario progress
+       strings stay fully visible. */
+    #ui.compact .hud-objective,
+    #ui.compact .hud-scenario,
+    #ui.compact .hud-action {
+      -webkit-line-clamp: 1; white-space: nowrap;
+      text-overflow: ellipsis;
+    }
     /* Build preview tint when hover shows a blocker reason. Renders inside the
        Build Tools sidebar panel; informs the player BEFORE they click. */
     #buildPreviewVal[data-kind="error"] { color: #ff8a80; }
