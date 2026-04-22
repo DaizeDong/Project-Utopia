@@ -1383,11 +1383,15 @@ export class GameApp {
   toggleHeatLens() {
     if (!this.renderer?.toggleHeatLens) return "pressure";
     const mode = this.renderer.toggleHeatLens();
+    // v0.8.2 Round-0 02e-indie-critic — voice polish: unify the toggle-toast
+    // wording with the HUD button label ("Heat Lens (L)"). Previously the
+    // button said "Heat Lens" but the toast said "Pressure lens ...", which
+    // the indie-critic reviewer flagged as split-personality naming.
     const label = mode === "heat"
-      ? "Supply-chain heat lens ON — red = surplus, blue = starved."
+      ? "Heat lens ON — red = surplus, blue = starved."
       : mode === "off"
-        ? "Pressure lens hidden."
-        : "Pressure lens restored.";
+        ? "Heat lens hidden."
+        : "Heat lens restored.";
     this.state.controls.actionMessage = label;
     this.state.controls.actionKind = "info";
     // Sync the HUD button's active-state indicator if it exists.

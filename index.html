@@ -89,6 +89,17 @@
     .hud-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 1px; flex-shrink: 0; }
     .hud-spacer { flex: 1; }
     .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* v0.8.2 Round-0 02e-indie-critic — scenario headline slot in statusBar.
+       Italic muted line that lives to the left of #statusObjective and carries
+       the generated scenario title/summary during play. Ellipsis on overflow;
+       full text is still available via the native `title` tooltip. */
+    .hud-scenario {
+      font-size: 10px; font-style: italic; font-weight: 500;
+      color: var(--text-muted);
+      max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      margin-right: 12px; flex-shrink: 1;
+    }
+    .hud-scenario[hidden] { display: none; }
     .hud-action {
       padding: 2px 6px; border-radius: 6px; font-size: 10px;
       max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -849,6 +860,12 @@
           </div>
         </div>
         <div class="hud-spacer"></div>
+        <!-- v0.8.2 Round-0 02e-indie-critic — scenario headline slot. Surfaces the
+             generated scenario title/summary (previously visible only on the pre-game
+             menu overlay) as a persistent italic line in the HUD during play, so the
+             procedural briefing text stays in the player's field of view. HUDController
+             hides the node when no scenario is active (e.g. Quick Start Guide). -->
+        <span id="statusScenarioHeadline" class="hud-scenario" title="Current scenario briefing" hidden></span>
         <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
@@ -1105,7 +1122,7 @@
         <details class="card dev-only" data-panel-key="pop-control">
           <summary>Population Control</summary>
           <div class="panel-body">
-            <div class="small muted" id="populationBreakdownVal">Base W:0 | Stress W:0 | Total W:0 | Entities:0</div>
+            <div class="small muted" id="populationBreakdownVal">Base 0 &middot; Stress 0 &middot; Total 0 &middot; 0 entities</div>
             <div class="small muted" style="margin-top:3px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
 
             <div class="population-control">
@@ -1332,27 +1349,27 @@
       <div id="devDockGrid">
         <details class="dock-card" data-dock-key="global" open>
           <summary class="dock-title">Global &amp; Gameplay</summary>
-          <pre id="devGlobalVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devGlobalVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
         <details class="dock-card" data-dock-key="algo">
           <summary class="dock-title">A* + Boids</summary>
-          <pre id="devAlgoVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devAlgoVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
         <details class="dock-card" data-dock-key="ai-trace" open>
           <summary class="dock-title">AI Trace</summary>
-          <pre id="devAiTraceVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devAiTraceVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
         <details class="dock-card" data-dock-key="logic">
           <summary class="dock-title">Logic Consistency</summary>
-          <pre id="devLogicVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devLogicVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
         <details class="dock-card" data-dock-key="timings">
           <summary class="dock-title">System Timings</summary>
-          <pre id="devSystemVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devSystemVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
         <details class="dock-card" data-dock-key="events">
           <summary class="dock-title">Objective / Event Log</summary>
-          <pre id="devEventTraceVal" class="dock-body">Initializing telemetry…</pre>
+          <pre id="devEventTraceVal" class="dock-body">Awaiting first simulation tick…</pre>
         </details>
       </div>
     </section>
