@@ -87,6 +87,73 @@ const MAT_S = new THREE.Vector3();
 const COLOR_TMP = new THREE.Color();
 const VEC_TMP = new THREE.Vector3();
 
+// v0.8.2 Round1 01b-playability — proximity fallback + build-guard.
+// The worker InstancedMesh geometry has radius ~0.35 world units, which at
+// typical camera zoom translates to roughly 8–12 screen pixels. That means
+// the default THREE.Raycaster pick on the InstancedMesh almost never hits
+// when the user clicks near (but not exactly on) a worker sprite, and the
+// Entity Focus panel stays stuck on "No entity selected" — the bug that
+// the reviewer described as the biggest UX break in Round 1. These two
+// constants define the screen-space fallback radius used by
+// `findProximityEntity` / `#proximityNearestEntity`:
+//   - ENTITY_PICK_FALLBACK_PX (16): select the nearest entity when exact
+//     raycast returns no hit. 16 px ≈ 1 tile at default zoom, low enough
+//     to avoid mis-selecting neighbours.
+//   - ENTITY_PICK_GUARD_PX (24): when a build tool is active, suppress the
+//     build placement if the click landed within this radius of a worker
+//     but outside the fallback radius, so the user isn't surprised by a
+//     Farm appearing "next to the worker they thought they clicked".
+const ENTITY_PICK_FALLBACK_PX = 16;
+const ENTITY_PICK_GUARD_PX = 24;
+
+// v0.8.2 Round1 01b-playability — pure helper for screen-space proximity
+// pick. Extracted from SceneRenderer.#pickEntity so it can be unit-tested
+// without standing up Three.js renderers / canvases.
+//
+//   entities: iterable of { id, x, z, alive? }. Dead entities (alive===false)
+//     are filtered out.
+//   projectWorldToNdc(x, z): ({ ndcX, ndcY }) — caller-provided projection,
+//     normally `new THREE.Vector3(x, 0, z).project(camera)` mapped to NDC
+//     {-1..+1, -1..+1}.
+//   mouseNdc: { x, y } — the pointer position in the same NDC space.
+//   viewport: { width, height } — canvas pixel size; used to convert NDC
+//     deltas back to pixel distances (NDC uses half-extents, so
+//     dx_px = (ndc.x - mouse.x) * 0.5 * width).
+//   thresholdPx: max allowed screen-pixel distance; entities outside this
+//     radius are skipped.
+//
+// Returns: { entity, pixelDistance } | null. Stable tie-break: first match
+// in iteration order wins on exact tie (should be impossible with floats).
+export function findProximityEntity({ entities, projectWorldToNdc, mouseNdc, viewport, thresholdPx }) {
+  if (!entities || typeof projectWorldToNdc !== "function") return null;
+  if (!mouseNdc || !viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) return null;
+  if (!Number.isFinite(thresholdPx) || thresholdPx <= 0) return null;
+
+  const halfW = viewport.width * 0.5;
+  const halfH = viewport.height * 0.5;
+  let best = null;
+  for (const entity of entities) {
+    if (!entity) continue;
+    if (entity.alive === false) continue;
+    const wx = Number(entity.x);
+    const wz = Number(entity.z);
+    if (!Number.isFinite(wx) || !Number.isFinite(wz)) continue;
+    const ndc = projectWorldToNdc(wx, wz);
+    if (!ndc || !Number.isFinite(ndc.ndcX) || !Number.isFinite(ndc.ndcY)) continue;
+    // Skip entities behind the camera (beyond far plane) if caller signalled
+    // with ndcZ > 1. Optional — callers may omit ndcZ.
+    if (Number.isFinite(ndc.ndcZ) && ndc.ndcZ > 1) continue;
+    const dxPx = (ndc.ndcX - mouseNdc.x) * halfW;
+    const dyPx = (ndc.ndcY - mouseNdc.y) * halfH;
+    const pixelDistance = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+    if (pixelDistance > thresholdPx) continue;
+    if (!best || pixelDistance < best.pixelDistance) {
+      best = { entity, pixelDistance };
+    }
+  }
+  return best;
+}
+
 function setInstancedMatrix(mesh, index, x, y, z, sx = 1, sy = 1, sz = 1) {
   MAT_P.set(x, y, z);
   MAT_S.set(sx, sy, sz);
@@ -1896,9 +1963,51 @@ export class SceneRenderer {
       }
     }
 
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      // v0.8.2 Round1 01b-playability — screen-space proximity fallback.
+      // When exact raycast missed (typical for small instanced workers at
+      // moderate zoom), project alive entities to NDC and pick the nearest
+      // one within ENTITY_PICK_FALLBACK_PX. Mirrors the behaviour of the
+      // inspector panel's cursor-nearest heuristic but runs on the main
+      // click path so Entity Focus wakes up on the first click.
+      const proximity = this.#proximityNearestEntity(mouse, ENTITY_PICK_FALLBACK_PX);
+      if (proximity) return proximity.entity;
+      return null;
+    }
     candidates.sort((a, b) => a.distance - b.distance);
     return candidates[0].entity;
+  }
+
+  // v0.8.2 Round1 01b-playability — proximity fallback entry point.
+  // Wraps `findProximityEntity` with the renderer's camera + canvas so the
+  // caller (#pickEntity or #onPointerDown build-guard) can keep using NDC
+  // `mouse` coords. Returns { entity, pixelDistance } or null.
+  #proximityNearestEntity(mouse, thresholdPx) {
+    if (!this.camera || !this.canvas || !this.state) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = rect.width || this.canvas.width || 0;
+    const height = rect.height || this.canvas.height || 0;
+    if (width <= 0 || height <= 0) return null;
+    const camera = this.camera;
+    const projectWorldToNdc = (x, z) => {
+      VEC_TMP.set(x, 0, z);
+      VEC_TMP.project(camera);
+      return { ndcX: VEC_TMP.x, ndcY: VEC_TMP.y, ndcZ: VEC_TMP.z };
+    };
+    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+    const animals = Array.isArray(this.state.animals) ? this.state.animals : [];
+    // Concatenate via a lightweight generator to keep allocation low.
+    function* iterEntities() {
+      for (const a of agents) yield a;
+      for (const a of animals) yield a;
+    }
+    return findProximityEntity({
+      entities: iterEntities(),
+      projectWorldToNdc,
+      mouseNdc: { x: mouse.x, y: mouse.y },
+      viewport: { width, height },
+      thresholdPx,
+    });
   }
 
   #pickTile(mouse) {
@@ -1934,11 +2043,44 @@ export class SceneRenderer {
     if (selected) {
       this.state.controls.selectedEntityId = selected.id;
       this.state.controls.selectedTile = null;
+      // v0.8.2 Round1 01b-playability — when a click lands on a worker via
+      // the proximity fallback, clear any stale hover build preview so the
+      // preview mesh stops flashing on the tile underneath.
+      this.state.controls.buildPreview = null;
       if (this.state.debug) this.state.debug.selectedTile = null;
       this.state.controls.actionMessage = `Selected ${selected.displayName ?? selected.id}`;
       this.state.controls.actionKind = "info";
+      // v0.8.2 Round1 01b-playability — surface a tiny confirmation toast
+      // over the selected entity so the player gets the same "you did
+      // something" feedback loop as a successful build. Uses tile coords
+      // (-1,-1) to bypass the per-tile dedupe window.
+      try {
+        const selName = selected.displayName ?? selected.id;
+        this.#spawnFloatingToast(selected.x ?? 0, selected.z ?? 0, `Selected ${selName}`, "info", -1, -1);
+      } catch (err) {
+        // Spawning a toast is a non-essential UI sugar — never fail the
+        // click path if the DOM layer is absent (tests / headless).
+      }
       this.onSelectEntity?.(selected.id);
       return;
+    }
+
+    // v0.8.2 Round1 01b-playability — build-tool 24 px guard. If the user
+    // was clearly aiming at a worker (within ENTITY_PICK_GUARD_PX but
+    // outside ENTITY_PICK_FALLBACK_PX, so #pickEntity didn't select it) and
+    // a build tool is active, suppress the placement to avoid the surprise
+    // "I clicked a worker and got a failed Farm" outcome described by the
+    // reviewer. The 16 px inner radius already handles the "close enough"
+    // case; this guard catches the 16–24 px annulus with a hint instead of
+    // a build attempt.
+    const activeTool = this.state.controls?.tool;
+    if (activeTool && activeTool !== "select" && activeTool !== "inspect") {
+      const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
+      if (nearWorker) {
+        this.state.controls.actionMessage = "Click a bit closer to the worker (hitbox is small)";
+        this.state.controls.actionKind = "info";
+        return;
+      }
     }
 
     const picked = this.#pickTile(this.mouse);
