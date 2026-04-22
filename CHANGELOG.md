@@ -1,5 +1,151 @@
 # Changelog
 
+## [Unreleased] — v0.8.x iter-0 UX Polish (Agent-Feedback-Loop Round 0)
+
+**Scope:** 10 independent enhancer plans executed in 4 waves across commits
+`bf24945..eca024f`. Feature freeze — no new mechanics, buildings, resources,
+roles, or tile types. Pure UX, voice, onboarding, and content-surfacing
+polish on top of the v0.8.1 survival-hardening base.
+
+**Test surface:** full suite 865 → 970 pass / 0 fail / 2 skip (pre-existing)
+across 18 new test files. Long-horizon benchmark (`seed=42 /
+temperate_plains / 90 days`) verified against the v0.8.1 DevIndex baseline
+of 44 with a -5% regression floor at 41.8.
+
+### UX Improvements
+
+- **Dev-mode gate** (01c-ui) — Settings, Debug, Advanced Runtime, Terrain
+  Tuning, Population Control, and `#devDock` now hidden behind
+  `body.dev-mode`; unlock via `?dev=1` URL param, localStorage flag, or
+  `Ctrl+Shift+D` chord. `#initDevModeGate()` in `GameApp.js`; helpers
+  extracted to new `src/app/devModeGate.js`.
+- **Casual profile** (02b-casual) — `uiProfile: "casual"` default stored in
+  `state.controls.uiProfile` and mirrored to `body.casual-mode`. Secondary
+  HUD cells (meals / tools / medicine / prosperity / threat) tagged
+  `data-resource-tier="secondary"` and hidden in casual mode. Profile
+  toggled via `?profile=full` URL param + `Alt+Shift+U` chord.
+- **Data-tooltip pipeline** (01a-onboarding) — `title` attributes migrated
+  to styled `data-tip` tooltips via existing `#customTooltip` migration
+  script. Added Prosperity / Threat descriptive tooltips.
+- **Floating toast layer** (01b-playability) — `#floatingToastLayer` in
+  `#viewport` renders per-click `-N wood` (success) or `Need N more wood,
+  M more stone` (failure) flyouts at the clicked tile. 100ms throttle, 6-
+  node pool. `formatToastText` exported for unit tests.
+- **Storyteller strip** (01e-innovation) — `#storytellerStrip` ribbon
+  (max 24px, ellipsis) after `#statusScoreboard` shows a one-line colony
+  narrative tick sampled from worker mood + recent events.
+- **Scoreboard ribbon** (02c-speedrunner) — `#statusScoreboard` wraps
+  `#statusObjective` alongside `#statusScenario` (compact progress) and
+  `#statusScoreBreak` (`+1/s · +5/birth · -10/death` decomposition).
+  DevIndex dim breakdown exposed via `#statusObjective` title tooltip.
+- **Help modal** (01a-onboarding) — `#helpBtn` in `#panelToggles` plus
+  `#overlayHelpBtn` in main menu; `F1` / `?` / `ESC` keybindings;
+  first-run auto-open gated by `localStorage.utopia:helpSeen`. Three
+  tabs: Controls / Resource Chain / Threat & Prosperity.
+- **End-panel gate** (01a-onboarding) — `EntityFocusPanel` FSM / path /
+  weight dumps now wrapped in BOTH `casual-hidden` AND `dev-only`
+  classes; human-readable Hunger label ("Well-fed" / "Peckish" /
+  "Hungry" / "Starving") added for casual mode.
+- **Responsive statusBar** (01c-ui) — `@media (max-width: 1024px)` wrap +
+  `@media (max-width: 640px)` hide/stack rules on `#panelToggles` region.
+- **Scenario headline persistence** (02e-indie-critic) —
+  `#statusScenarioHeadline` italic muted span wired to
+  `state.gameplay.scenario` with value-diff render cache.
+
+### Bug Fixes
+
+- **Dev-telemetry `loading…` race** (01d-mechanics-content) — removed
+  `dock-collapsed` guard around `DeveloperPanel.render()` so panel renders
+  unconditionally; six `<pre>loading...</pre>` placeholders replaced with
+  `Initializing telemetry…` then `Awaiting first simulation tick…` (02e
+  voice-cleanup pass).
+- **Toast max-width truncation** (01d-mechanics-content) — `.hud-action`
+  `max-width: 140px → 420px`; `setAttribute("title", ...)` mirror clears
+  on empty-frame transitions so stale tooltips don't stick.
+- **Heat Lens toast terminology** (02e-indie-critic) — `toggleHeatLens()`
+  toasts unified: `"Heat lens ON — red = surplus, blue = starved."` /
+  `"Heat lens hidden."` / `"Heat lens restored."`. Legacy
+  "Pressure lens" copy removed.
+- **Worker phase-gated shortcuts** (02b-casual, via 01c gate) — L / 0 /
+  1-6 hotkeys no longer fire in menu phase when build tools are
+  inactive.
+- **Menu-phase HUD timer guard** (01b-playability) — both sidebar
+  `objectiveVal` and statusBar `statusObjective` blocks now guard on
+  `state.session?.phase === "active" && totalSec > 0`; pre-active frames
+  render `Survived --:--:--  Score —` and suppress `· Dev N/100`.
+
+### Content Surfacing
+
+- **GameEventBus → DeveloperPanel** (02a-rimworld-veteran) — `Colony Log`
+  block between Objective Log and Active Events reads
+  `state.events?.log` tail, formats via new
+  `formatGameEventForLog(event)` module export (ASCII tags per CLAUDE.md
+  no-emoji rule: `[HUNGER]`, `[DEATH]`, `[RAID]`, `[FIRE]`, `[VERMIN]`,
+  `[TRADE]`, `[WEATHER]`, `[SHORTAGE]`, `[SABOTAGE]`, `[VISITOR]`,
+  `[QUEUE]`, `[RECYCLE]`, `[MILESTONE]`); noisy types suppressed. New
+  empty-state string teaches what the panel surfaces.
+- **Death narratives → objectiveLog** (02d-roleplayer) —
+  `MortalitySystem.recordDeath` now pushes
+  `"[Xs] Aila-12 died (starvation) near (45,33)"` into
+  `state.gameplay.objectiveLog` (capped at 24 entries via `unshift` +
+  `slice`). Animal deaths excluded to avoid spam.
+- **Worker / Visitor names** (01e + 02d R1 merge) —
+  `WORKER_NAME_BANK` (40 frozen given-names, 01e) +
+  `TRADER_NAME_BANK`/`SABOTEUR_NAME_BANK` (22 each, 02d); seeded
+  `pickWorkerName` / `pickVisitorName` with `seqFromId` suffix produces
+  stable displayNames like `Aila-10` / `Mercer-217`. Name draws happen
+  before other `random()` consumers to preserve replay determinism. Also
+  added `buildWorkerBackstory(skills, traits)` → `"<topSkill>
+  specialist, <topTrait> temperament"` and stock visitor/animal
+  backstrings.
+- **Character block in EntityFocusPanel** (02d-roleplayer) —
+  `<details data-focus-key="focus:character" open>` block showing
+  Traits / Mood / Morale / Social / Rest / top-3 Relationships (with
+  displayName reverse-lookup) / last 3 `memory.recentEvents`. Placed
+  above Policy Focus (01e) and above the `.casual-hidden` + `.dev-only`
+  engineering block (01a).
+- **HUD resource rates** (01d-mechanics-content) — 7 resources
+  (food/wood/stone/herbs/meals/tools/medicine) now carry trailing
+  `▲ +x.x/min` / `▼ -x.x/min` / `= 0.0/min` rate badges, computed from a
+  3-sim-second window snapshot cache.
+- **FF timeScale clamp 3 → 4** (02c-speedrunner) — `#speedFastBtn`
+  target 2.0 → 4.0; `simStepper.js` clamp `Math.min(3, timeScale || 1)`
+  → `Math.min(4, ...)`. Accumulator 0.5s cap unchanged, so Phase 10
+  determinism guarantees preserved.
+- **EventPanel "Recent Colony Events"** (02d-roleplayer) — after active
+  events list, appends top 6 `state.gameplay.objectiveLog` entries;
+  `<summary>Events &amp; Colony Log</summary>` summary label updated.
+
+### Files Changed
+
+- **Touched:** ~18 unique files (with dedup) across `src/app/`,
+  `src/entities/`, `src/render/`, `src/ui/hud/`, `src/ui/panels/`,
+  `src/ui/tools/`, `src/ui/interpretation/`, `src/simulation/lifecycle/`,
+  and `index.html`.
+- **New helpers:** `src/app/devModeGate.js` (dev + casual profile
+  gates), `WORKER_NAME_BANK` / `TRADER_NAME_BANK` / `SABOTEUR_NAME_BANK`
+  + `pickWorkerName` / `pickVisitorName` / `buildWorkerBackstory` /
+  `seqFromId` / `formatToastText` / `formatGameEventForLog` /
+  `getScenarioProgressCompact` / `getSurvivalScoreBreakdown` /
+  `computeStorytellerStripText` exports.
+- **New tests (18 files):** `test/dev-mode-gate.test.js`,
+  `test/responsive-status-bar.test.js`, `test/hud-resource-rate.test.js`,
+  `test/toast-title-sync.test.js`, `test/build-toast-feedback.test.js`,
+  `test/hud-menu-phase.test.js`, `test/ui-profile.test.js`,
+  `test/build-validity-overlay.test.js`, `test/help-modal.test.js`,
+  `test/entity-focus-player-view.test.js`, `test/event-log-rendering.test.js`,
+  `test/ui-voice-consistency.test.js`, `test/world-explain-scoreboard.test.js`,
+  `test/sim-stepper-timescale.test.js`, `test/entity-factory.test.js`,
+  `test/hud-storyteller.test.js`, `test/entity-names.test.js`,
+  `test/death-narrative-log.test.js`.
+
+### Deferred to next round
+
+- Playwright smoke automation (6/10 plans marked UNREPRODUCIBLE or time-
+  budget skipped).
+- Balance tuning (day-365 DevIndex ≥ 70) — this iter was UX-only; see
+  Phase 10 scope note.
+
 ## [Unreleased] — Phase 10 Long-Horizon Determinism Hardening
 
 **Goal:** make `bootHeadlessSim`'s 365-day benchmark trajectory bit-identical
