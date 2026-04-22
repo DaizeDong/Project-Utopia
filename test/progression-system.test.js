@@ -124,7 +124,11 @@ test("ProgressionSystem only triggers emergency recovery after meaningful fronti
   assert.equal(state.gameplay.recovery.charges, 0, "recovery charge should be consumed");
   assert.ok(state.resources.food > 1);
   assert.ok(state.resources.wood > 2);
-  assert.match(state.controls.actionMessage, /Emergency relief/i);
+  // v0.8.2 Round-1 02e-indie-critic: emergency-relief actionMessage narrativized
+  // from "Emergency relief stabilized the colony..." to "The colony breathes
+  // again. Rebuild your routes before the next wave." Matches the new copy,
+  // keeps the regression intent: confirming the recovery path wrote a message.
+  assert.match(state.controls.actionMessage, /colony breathes again|rebuild your routes/i);
 });
 
 test("ProgressionSystem surfaces a reroute hint under concentrated spatial pressure", () => {
