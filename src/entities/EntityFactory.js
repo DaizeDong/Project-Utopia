@@ -57,6 +57,35 @@ function pickWorkerName(random) {
   return WORKER_NAME_BANK[safeIdx];
 }
 
+// v0.8.2 Round-0 02d-roleplayer (Step 1) — Visitor name banks. 01e introduced
+// WORKER_NAME_BANK; we extend the same pattern to visitors so traders and
+// saboteurs stop reading as "Trader-217" / "Saboteur-218" in EntityFocusPanel
+// and the narrative event log. Two small banks (rather than reusing workers)
+// so the cadence of a trader name ("Mercer") reads differently from a
+// colonist ("Aila"), which reinforces the "other faction" tell when players
+// see a visitor die in the Colony Log. Animals intentionally keep the
+// "Predator-N" / "Herbivore-N" label per 01e's decision.
+export const TRADER_NAME_BANK = Object.freeze([
+  "Mercer", "Halden", "Orrin", "Thal", "Brandt", "Voss",
+  "Corvo", "Sable", "Rook", "Dagan", "Wylde", "Brinn",
+  "Sten", "Myre", "Orla", "Kade", "Breck", "Jory",
+  "Nash", "Tove", "Quill", "Reeve",
+]);
+
+export const SABOTEUR_NAME_BANK = Object.freeze([
+  "Vex", "Creed", "Draven", "Mire", "Sloan", "Thorne",
+  "Kade", "Ren", "Garrick", "Ash", "Crow", "Vail",
+  "Harrow", "Shade", "Nox", "Salt", "Grue", "Rook",
+  "Snare", "Hex", "Barr", "Kal",
+]);
+
+function pickVisitorName(random, kind) {
+  const bank = kind === "TRADER" ? TRADER_NAME_BANK : SABOTEUR_NAME_BANK;
+  const idx = Math.floor(random() * bank.length);
+  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < bank.length ? idx : 0;
+  return bank[safeIdx];
+}
+
 function seqFromId(id) {
   const raw = String(id ?? "");
   return raw.includes("_") ? raw.split("_")[1] : "?";
@@ -202,14 +231,19 @@ export function createWorker(x, z, random = Math.random) {
 export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.random) {
   const id = nextId("visitor");
   const groupId = kind === VISITOR_KIND.TRADER ? GROUP_IDS.TRADERS : GROUP_IDS.SABOTEURS;
-  // v0.8.2 Round-0 01e-innovation (Step 2). Visitor gets a terse stock
-  // backstory — 02d will upgrade to a per-visitor name bank + personalised
-  // backstory, so we keep the data field wired but intentionally minimal here.
+  // v0.8.2 Round-0 02d-roleplayer (Step 2). Pull the personalised name BEFORE
+  // baseAgent() starts consuming random() for velocity/cooldown jitter — same
+  // ordering convention as createWorker to keep snapshot determinism stable.
+  // Backstory still uses the terse stock string 01e shipped so existing
+  // entity-factory.test.js assertions (`"wandering trader"` / `"roaming
+  // saboteur"`) continue to pass.
+  const visitorName = pickVisitorName(random, kind);
+  const displayName = `${visitorName}-${seqFromId(id)}`;
   const backstory = kind === VISITOR_KIND.TRADER
     ? "wandering trader"
     : "roaming saboteur";
   return {
-    ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, withLabel(id, kind === VISITOR_KIND.TRADER ? "Trader" : "Saboteur"), random),
+    ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, displayName, random),
     kind,
     groupId,
     backstory,
