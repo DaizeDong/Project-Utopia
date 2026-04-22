@@ -1399,6 +1399,14 @@ export class GameApp {
       ? document.getElementById("heatLensBtn")
       : null;
     if (btn) btn.classList.toggle("active", mode === "heat");
+    // v0.8.2 Round-1 01e-innovation — also sync the always-on Heat Lens
+    // legend (red = supply surplus, blue = processor starved). The legend
+    // is only meaningful while the heat overlay is active; keep it hidden
+    // otherwise so it doesn't pollute the default pressure-lens HUD.
+    const legend = typeof document !== "undefined"
+      ? document.getElementById("heatLensLegend")
+      : null;
+    if (legend) legend.hidden = (mode !== "heat");
     return mode;
   }
 
