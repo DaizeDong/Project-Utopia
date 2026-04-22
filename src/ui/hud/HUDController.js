@@ -1,4 +1,5 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { computeStorytellerStripText } from "./storytellerStrip.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -49,6 +50,19 @@ export class HUDController {
     this.aiEnvVal = document.getElementById("aiEnvVal");
     this.aiPolicyVal = document.getElementById("aiPolicyVal");
     this.aiDecisionVal = document.getElementById("aiDecisionVal");
+    // v0.8.2 Round-0 01e-innovation (Step 4) — Storyteller strip DOM ref.
+    // Populated every render() via renderStorytellerStrip; hidden element
+    // is fine, HUDController simply no-ops when the node is missing.
+    this.storytellerStrip = document.getElementById("storytellerStrip");
+    // v0.8.2 Round-0 01e-innovation (Step 5) — Death obituary flash. When a
+    // new worker dies, replace the aggregate "N (starve X / pred Y)" line
+    // with a personalised micro-obituary for OBITUARY_FLASH_MS ms before
+    // falling back. `_lastDeathsSeen` is used to detect new deaths relative
+    // to the previous render; _obituaryUntilMs is the wall-clock deadline
+    // after which the HUD reverts to the aggregate count.
+    this._lastDeathsSeen = 0;
+    this._obituaryText = "";
+    this._obituaryUntilMs = 0;
     this.deathVal = document.getElementById("deathVal");
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
@@ -286,7 +300,62 @@ export class HUDController {
       const deathsTotal = Number(state.metrics.deathsTotal ?? 0);
       const starvation = Number(state.metrics.deathsByReason?.starvation ?? 0);
       const predation = Number(state.metrics.deathsByReason?.predation ?? 0);
-      this.deathVal.textContent = `${deathsTotal} (starve ${starvation} / pred ${predation})`;
+      const aggregate = `${deathsTotal} (starve ${starvation} / pred ${predation})`;
+
+      // v0.8.2 Round-0 01e-innovation (Step 5) — personalised obituary flash.
+      // When deathsTotal advances between renders, search `state.agents` for
+      // the most recently-died worker (highest `deathSec`) and build a short
+      // narrative using their displayName + backstory + deathReason. Show it
+      // for OBITUARY_FLASH_MS milliseconds, then revert to the aggregate.
+      const OBITUARY_FLASH_MS = 8000;
+      const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+        ? performance.now()
+        : Date.now();
+      if (deathsTotal > this._lastDeathsSeen) {
+        const candidates = Array.isArray(state.agents) ? state.agents : [];
+        let latestDead = null;
+        let latestDeathSec = -Infinity;
+        for (const agent of candidates) {
+          if (!agent || agent.alive) continue;
+          const sec = Number(agent.deathSec ?? -1);
+          if (sec > latestDeathSec) {
+            latestDeathSec = sec;
+            latestDead = agent;
+          }
+        }
+        if (latestDead) {
+          const name = String(latestDead.displayName ?? latestDead.id ?? "Unknown");
+          const backstory = String(latestDead.backstory ?? "").trim();
+          const reason = String(latestDead.deathReason ?? "unknown cause").trim() || "unknown cause";
+          const tx = Math.floor(Number(latestDead.x ?? 0));
+          const tz = Math.floor(Number(latestDead.z ?? 0));
+          const bio = backstory ? ` (${backstory})` : "";
+          this._obituaryText = `${name}${bio} died of ${reason} at (${tx},${tz})`;
+          this._obituaryUntilMs = now + OBITUARY_FLASH_MS;
+        }
+        this._lastDeathsSeen = deathsTotal;
+      }
+      if (this._obituaryText && now < this._obituaryUntilMs) {
+        this.deathVal.textContent = this._obituaryText;
+        this.deathVal.setAttribute?.("title", `${this._obituaryText} · total ${aggregate}`);
+      } else {
+        this.deathVal.textContent = aggregate;
+        this.deathVal.setAttribute?.("title", "Deaths by cause (starvation / predation)");
+        this._obituaryText = "";
+      }
+    }
+
+    // v0.8.2 Round-0 01e-innovation (Step 4) — Storyteller strip render.
+    // Keeps the computation side-effect-free (computeStorytellerStripText)
+    // and just writes the result into the DOM ref captured in the
+    // constructor. The text communicates fallback-as-feature rather than
+    // going silent when no LLM is connected.
+    if (this.storytellerStrip) {
+      const text = computeStorytellerStripText(state);
+      if (this.storytellerStrip.textContent !== text) {
+        this.storytellerStrip.textContent = text;
+        this.storytellerStrip.setAttribute?.("title", text);
+      }
     }
     this.eventVal.textContent = getEventInsight(state);
     this.timeVal.textContent = `${state.metrics.timeSec.toFixed(1)}s`;

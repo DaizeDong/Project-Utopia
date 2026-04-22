@@ -877,6 +877,15 @@
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
           <span id="statusScoreBreak" class="hud-score-break" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
         </div>
+        <!-- v0.8.2 Round-0 01e-innovation — Storyteller strip. Single-line
+             ribbon that surfaces the active workers-group policy focus +
+             summary (LLM or rule-based fallback) so the "AI-driven colony"
+             value prop is visible on the first HUD screen instead of being
+             buried in the Debug panel. HUDController.renderStorytellerStrip
+             populates this element; fallback text reads
+             "Rule-based storyteller idle — colony on autopilot" when no
+             groupPolicies entry is available. -->
+        <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 260px;min-width:180px;">Rule-based storyteller idle — colony on autopilot</div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
