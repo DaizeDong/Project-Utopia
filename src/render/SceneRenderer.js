@@ -18,6 +18,46 @@ const TILE_LABEL = Object.freeze(
   }, {}),
 );
 
+// v0.8.2 Round-0 01b — Build click feedback layer.
+// Pure helper: render a short floating-toast string from a BuildSystem result.
+// Separated from DOM/THREE so unit tests can assert text shape without a
+// rendering context. Shapes expected:
+//   success: { ok: true, cost: { food, wood, stone, herbs } }
+//     → "-N wood", joined by commas if multiple resources had non-zero cost
+//     → "+built" when all cost entries are zero (e.g. erase tool with no refund)
+//   failure, insufficient: { ok: false, reason: "insufficientResource",
+//                             cost: {...}, resources: {...} }
+//     → "Need N more wood, M more stone" (only resources that fell short)
+//   failure, other reasons: { ok: false, reasonText: "<text>" } → that text
+// The `resources` input is optional; when missing or the reason is not
+// insufficientResource, we fall back to reasonText.
+export function formatToastText(buildResult, resources = null) {
+  if (!buildResult || typeof buildResult !== "object") return "blocked";
+  const RESOURCE_KEYS = ["food", "wood", "stone", "herbs"];
+  if (buildResult.ok) {
+    const cost = buildResult.cost ?? {};
+    const parts = [];
+    for (const k of RESOURCE_KEYS) {
+      const v = Number(cost[k] ?? 0);
+      if (v > 0) parts.push(`-${v} ${k}`);
+    }
+    if (parts.length === 0) return "+built";
+    return parts.join(", ");
+  }
+  if (buildResult.reason === "insufficientResource" && resources) {
+    const cost = buildResult.cost ?? {};
+    const shortfalls = [];
+    for (const k of RESOURCE_KEYS) {
+      const need = Number(cost[k] ?? 0);
+      const have = Number(resources[k] ?? 0);
+      const gap = need - have;
+      if (gap > 0) shortfalls.push(`${gap} more ${k}`);
+    }
+    if (shortfalls.length > 0) return `Need ${shortfalls.join(", ")}`;
+  }
+  return String(buildResult.reasonText ?? "blocked");
+}
+
 const MAT_TMP = new THREE.Matrix4();
 const MAT_Q = new THREE.Quaternion();
 const MAT_P = new THREE.Vector3();
@@ -399,6 +439,17 @@ export class SceneRenderer {
       this.hoverTile = null;
     };
     this.boundOnPointerDown = (e) => this.#onPointerDown(e);
+
+    // v0.8.2 Round-0 01b — Build-feedback toast pool. Pre-allocate 6 reusable
+    // DOM nodes so rapid-fire clicks at 2x speed don't churn the heap. We look
+    // up #floatingToastLayer lazily because SceneRenderer may be instantiated
+    // in test environments without that node present.
+    this.toastLayer = typeof document !== "undefined"
+      ? document.getElementById("floatingToastLayer")
+      : null;
+    this.toastPool = [];
+    this.lastToastTileKey = "";
+    this.lastToastTimeMs = 0;
     this.boundOnContextMenu = (e) => e.preventDefault();
     this.boundOnControlsStart = () => {
       this.isCameraInteracting = true;
@@ -1887,10 +1938,77 @@ export class SceneRenderer {
       this.#updateSelectedTile(tile.ix, tile.iz);
       this.state.controls.actionMessage = buildResult.message ?? `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
       this.state.controls.actionKind = "success";
+      // v0.8.2 Round-0 01b — success toast at the click tile (green).
+      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
     } else {
       this.state.controls.actionMessage = buildResult.reasonText ?? explainBuildReason(buildResult.reason, buildResult);
       this.state.controls.actionKind = "error";
+      // v0.8.2 Round-0 01b — failure toast. Prefer a concrete "Need N more X"
+      // shortfall string when the cause is insufficient resources; otherwise
+      // fall back to reasonText (already the canonical human-readable blurb).
+      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      const text = formatToastText(buildResult, this.state.resources);
+      this.#spawnFloatingToast(worldPos.x, worldPos.z, text, "error", tile.ix, tile.iz);
     }
+  }
+
+  // v0.8.2 Round-0 01b — Build-feedback layer. Project a world-space point to
+  // screen coordinates, then animate a short text label upward from that spot
+  // as a non-blocking visual ack. DOM nodes are recycled from `this.toastPool`
+  // so rapid clicks at 2x speed don't thrash the heap (risk #1).
+  #spawnFloatingToast(worldX, worldZ, text, kind, tileIx = -1, tileIz = -1) {
+    if (!this.toastLayer || !this.camera) return;
+    // Re-query once if the layer wasn't in the DOM at construction time (tests).
+    if (!this.toastLayer && typeof document !== "undefined") {
+      this.toastLayer = document.getElementById("floatingToastLayer");
+      if (!this.toastLayer) return;
+    }
+    // Throttle: ignore duplicate clicks on the same tile within 100ms.
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const key = `${tileIx},${tileIz}`;
+    if (key === this.lastToastTileKey && (now - this.lastToastTimeMs) < 100) return;
+    this.lastToastTileKey = key;
+    this.lastToastTimeMs = now;
+
+    // Project world coords to NDC, then to CSS pixels inside the viewport rect.
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const layerRect = this.toastLayer.getBoundingClientRect();
+    VEC_TMP.set(Number(worldX) || 0, 0, Number(worldZ) || 0);
+    VEC_TMP.project(this.camera);
+    const px = canvasRect.left - layerRect.left + (VEC_TMP.x * 0.5 + 0.5) * canvasRect.width;
+    const py = canvasRect.top - layerRect.top + (-VEC_TMP.y * 0.5 + 0.5) * canvasRect.height;
+
+    // Acquire a div from the pool or create one on demand (cap at 6 reused nodes).
+    let node = this.toastPool.find((n) => n.dataset.busy !== "1");
+    if (!node) {
+      if (this.toastPool.length >= 6) {
+        node = this.toastPool[0]; // oldest — evict and reuse
+      } else {
+        node = document.createElement("div");
+        this.toastLayer.appendChild(node);
+        this.toastPool.push(node);
+      }
+    }
+
+    node.dataset.busy = "1";
+    node.className = `build-toast build-toast--${kind === "success" ? "ok" : "err"}`;
+    node.textContent = String(text ?? "");
+    node.style.left = `${px}px`;
+    node.style.top = `${py}px`;
+    // Reset the keyframe animation so repeat spawns on the same node re-trigger.
+    node.style.animation = "none";
+    // Force reflow so the reset takes effect before the new animation is applied.
+    void node.offsetWidth;
+    node.style.animation = "toastFloat 1.2s ease-out forwards";
+
+    // Free the slot shortly after the animation ends.
+    if (node._utopiaToastTimer) clearTimeout(node._utopiaToastTimer);
+    node._utopiaToastTimer = setTimeout(() => {
+      node.dataset.busy = "0";
+      node.style.animation = "none";
+      node.style.opacity = "0";
+    }, 1250);
   }
 
   #updateSelectedTile(ix, iz) {

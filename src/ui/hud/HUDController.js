@@ -103,6 +103,10 @@ export class HUDController {
     this._lastSnapshotSimSec = 0;
     this._lastComputedRates = null; // cached between windows so UI shows continuous values
 
+    // v0.8.2 Round-0 01b — track last shown action message so we only re-fire
+    // the flash-action pulse when the text actually changes (not every render).
+    this.lastActionMessage = "";
+
     this.setupSpeedControls();
   }
 
@@ -233,12 +237,19 @@ export class HUDController {
       // digest as secondary context. objectives[] is always empty in survival
       // mode (the scenario objective pipeline was retired), so we unconditionally
       // render the survival status line here.
+      // v0.8.2 Round-0 01b (P1): when the run is not active (menu / end overlay
+      // is up), the simulation is paused, so we must also FREEZE the rendered
+      // timer/score. Otherwise the HUD creates a "game is running behind the
+      // menu" visual illusion (reviewer feedback 02, P1 root cause).
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
+      const inActive = state.session?.phase === "active" && totalSec > 0;
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
       const s = totalSec % 60;
-      const formatted = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-      const score = Math.floor(Number(state.metrics?.survivalScore ?? 0));
+      const formatted = inActive
+        ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        : "--:--:--";
+      const score = inActive ? Math.floor(Number(state.metrics?.survivalScore ?? 0)) : "\u2014";
       this.objectiveVal.textContent = `Survived ${formatted} · Score ${score} | ${digest.headline}`;
     }
     const proxyModel = state.metrics.proxyModel || "-";
@@ -314,18 +325,23 @@ export class HUDController {
     if (this.statusObjective) {
       // v0.8.0 Phase 4 — Survival Mode badge. Shows
       // "Survived HH:MM:SS  Score N · Dev D/100" once DevIndex is live.
+      // v0.8.2 Round-0 01b (P1): freeze the visible ticker when the session is
+      // not active so the menu/end overlays don't create the illusion that the
+      // simulation is still running behind them.
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
+      const inActive = state.session?.phase === "active" && totalSec > 0;
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
       const s = totalSec % 60;
       const hh = String(h).padStart(2, "0");
       const mm = String(m).padStart(2, "0");
       const ss = String(s).padStart(2, "0");
-      const score = Math.floor(Number(state.metrics?.survivalScore ?? 0));
+      const timeText = inActive ? `${hh}:${mm}:${ss}` : "--:--:--";
+      const score = inActive ? Math.floor(Number(state.metrics?.survivalScore ?? 0)) : "\u2014";
       const devTicks = Number(state.gameplay?.devIndexTicksComputed ?? 0);
       const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
-      const devSuffix = devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
-      this.statusObjective.textContent = `Survived ${hh}:${mm}:${ss}  Score ${score}${devSuffix}`;
+      const devSuffix = inActive && devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
+      this.statusObjective.textContent = `Survived ${timeText}  Score ${score}${devSuffix}`;
     }
     if (this.statusAction) {
       if (state.controls.actionMessage) {
@@ -337,9 +353,26 @@ export class HUDController {
         this.statusAction.style.opacity = "1";
         this.statusAction.style.background = state.controls.actionKind === "error" ? "rgba(244,67,54,0.3)" : "rgba(76,175,80,0.3)";
         this.statusAction.style.color = state.controls.actionKind === "error" ? "#ff8a80" : "#a5d6a7";
+        // v0.8.2 Round-0 01b — pulse the status-bar action chip whenever the
+        // message text changes, so eye-gazes anchored on the canvas still
+        // register the feedback channel. Only triggered on value transitions
+        // (not every render); compact-mode CSS neutralises the scale pulse.
+        if (this.lastActionMessage !== state.controls.actionMessage) {
+          try {
+            // Classic "retrigger animation" trick: remove, force reflow, re-add.
+            this.statusAction.classList?.remove("flash-action");
+            // Reading offsetWidth forces a reflow so the keyframe restarts.
+            void this.statusAction.offsetWidth;
+            this.statusAction.classList?.add("flash-action");
+          } catch (_err) {
+            // Headless test nodes may not implement classList; ignore.
+          }
+          this.lastActionMessage = state.controls.actionMessage;
+        }
       } else {
         this.statusAction.setAttribute("title", "");
         this.statusAction.style.opacity = "0";
+        this.lastActionMessage = "";
       }
     }
 
