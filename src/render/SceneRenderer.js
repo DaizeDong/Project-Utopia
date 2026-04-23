@@ -2122,12 +2122,12 @@ export class SceneRenderer {
   // as a non-blocking visual ack. DOM nodes are recycled from `this.toastPool`
   // so rapid clicks at 2x speed don't thrash the heap (risk #1).
   #spawnFloatingToast(worldX, worldZ, text, kind, tileIx = -1, tileIz = -1) {
-    if (!this.toastLayer || !this.camera) return;
     // Re-query once if the layer wasn't in the DOM at construction time (tests).
     if (!this.toastLayer && typeof document !== "undefined") {
       this.toastLayer = document.getElementById("floatingToastLayer");
       if (!this.toastLayer) return;
     }
+    if (!this.toastLayer || !this.camera) return;
     // Throttle: ignore duplicate clicks on the same tile within 100ms.
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const key = `${tileIx},${tileIz}`;
@@ -2156,7 +2156,8 @@ export class SceneRenderer {
     }
 
     node.dataset.busy = "1";
-    node.className = `build-toast build-toast--${kind === "success" ? "ok" : "err"}`;
+    const classKind = kind === "success" ? "ok" : kind === "death" ? "death" : "err";
+    node.className = `build-toast build-toast--${classKind}`;
     node.textContent = String(text ?? "");
     node.style.left = `${px}px`;
     node.style.top = `${py}px`;
@@ -2164,7 +2165,9 @@ export class SceneRenderer {
     node.style.animation = "none";
     // Force reflow so the reset takes effect before the new animation is applied.
     void node.offsetWidth;
-    node.style.animation = "toastFloat 1.2s ease-out forwards";
+    const animationName = kind === "death" ? "toastDeath" : "toastFloat";
+    const durationMs = kind === "death" ? 1800 : 1200;
+    node.style.animation = `${animationName} ${durationMs / 1000}s ease-out forwards`;
 
     // Free the slot shortly after the animation ends.
     if (node._utopiaToastTimer) clearTimeout(node._utopiaToastTimer);
@@ -2172,7 +2175,20 @@ export class SceneRenderer {
       node.dataset.busy = "0";
       node.style.animation = "none";
       node.style.opacity = "0";
-    }, 1250);
+    }, durationMs + 50);
+  }
+
+  spawnDeathToast(worldX, worldZ, name, reason, tileIx = -1, tileIz = -1) {
+    const safeName = String(name ?? "Worker").trim() || "Worker";
+    const safeReason = String(reason ?? "unknown cause").trim() || "unknown cause";
+    this.#spawnFloatingToast(
+      worldX,
+      worldZ,
+      `${safeName} died - ${safeReason}`,
+      "death",
+      tileIx,
+      tileIz,
+    );
   }
 
   #updateSelectedTile(ix, iz) {

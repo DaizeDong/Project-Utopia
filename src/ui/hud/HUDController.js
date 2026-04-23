@@ -1,4 +1,6 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { tileToWorld } from "../../world/grid/Grid.js";
+import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { explainTerm } from "./glossary.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
 
@@ -8,6 +10,35 @@ function shouldSuppressUserWarning(warningEvent, warningText = "") {
   if (source === "npcbrainsystem" && text.includes("dropped infeasible state target")) return true;
   if (text.includes("dropped infeasible state target")) return true;
   return false;
+}
+
+function finiteCount(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function scenarioGoalChips(state) {
+  const runtime = getScenarioRuntime(state);
+  const targets = runtime.logisticsTargets ?? {};
+  const counts = runtime.counts ?? {};
+  const chips = [];
+  const add = (label, current, target) => {
+    const safeTarget = finiteCount(target);
+    if (safeTarget <= 0) return;
+    const safeCurrent = finiteCount(current);
+    chips.push({
+      label: `${label} ${safeCurrent}/${safeTarget}`,
+      done: safeCurrent >= safeTarget,
+    });
+  };
+
+  add("routes", runtime.connectedRoutes, runtime.routes?.length ?? 0);
+  add("depots", runtime.readyDepots, runtime.depots?.length ?? 0);
+  add("warehouses", counts.warehouses, targets.warehouses);
+  add("farms", counts.farms, targets.farms);
+  add("lumber", counts.lumbers, targets.lumbers);
+  add("walls", counts.walls, targets.walls);
+  return chips;
 }
 
 export class HUDController {
@@ -139,6 +170,7 @@ export class HUDController {
     // that sits next to #foodRateVal. Both may be absent in minimal test DOMs
     // so all writes below guard with `if (this.x)`.
     this.latestDeathVal = document.getElementById("latestDeathVal");
+    this.alertStack = document.getElementById("alertStack");
     this.foodRateBreakdown = document.getElementById("foodRateBreakdown");
     this._lastResourceSnapshot = null;
     this._lastSnapshotSimSec = 0;
@@ -201,6 +233,101 @@ export class HUDController {
       node.setAttribute("title", composite);
     }
     this._glossaryApplied = true;
+  }
+
+  #rendererForDeathToast() {
+    return this.state.services?.renderer
+      ?? globalThis.window?.__utopia?.renderer
+      ?? globalThis.__utopia?.renderer
+      ?? null;
+  }
+
+  #pushDeathAlert(name, reason, tx, tz) {
+    const stack = this.alertStack;
+    const doc = stack?.ownerDocument ?? globalThis.document;
+    if (!stack || !doc?.createElement || typeof stack.appendChild !== "function") return;
+    const node = doc.createElement("div");
+    node.className = "hud-death-toast";
+    node.textContent = `${name} died - ${reason} at (${tx},${tz})`;
+    stack.appendChild(node);
+
+    const children = stack.children ?? stack.childNodes ?? [];
+    while (children.length > 5) {
+      const first = stack.firstElementChild ?? children[0];
+      if (!first) break;
+      if (typeof first.remove === "function") first.remove();
+      else if (typeof stack.removeChild === "function") stack.removeChild(first);
+      else break;
+    }
+
+    const timer = setTimeout(() => {
+      if (typeof node.remove === "function") node.remove();
+      else if (typeof stack.removeChild === "function") {
+        try { stack.removeChild(node); } catch (_err) {}
+      }
+    }, 3500);
+    timer?.unref?.();
+  }
+
+  #setDeathSeverity(active) {
+    if (!this.deathVal) return;
+    if (this.deathVal.style) {
+      this.deathVal.style.color = active ? "#ff8a80" : "";
+    }
+    if (active) {
+      this.deathVal.setAttribute?.("data-severity", "critical");
+    } else if (typeof this.deathVal.removeAttribute === "function") {
+      this.deathVal.removeAttribute("data-severity");
+    } else {
+      this.deathVal.setAttribute?.("data-severity", "");
+    }
+  }
+
+  #notifyDeath(latestDead, name, reason, tx, tz) {
+    const tile = latestDead?.deathContext?.targetTile ?? latestDead?.targetTile ?? null;
+    const hasTile = Number.isFinite(Number(tile?.ix)) && Number.isFinite(Number(tile?.iz));
+    const world = hasTile && this.state.grid
+      ? tileToWorld(Number(tile.ix), Number(tile.iz), this.state.grid)
+      : {
+          x: Number(latestDead?.x ?? tx) || 0,
+          z: Number(latestDead?.z ?? tz) || 0,
+        };
+    this.#rendererForDeathToast()?.spawnDeathToast?.(
+      world.x,
+      world.z,
+      name,
+      reason,
+      tx,
+      tz,
+    );
+    this.#pushDeathAlert(name, reason, tx, tz);
+  }
+
+  #renderGoalChips(chips, fallbackText) {
+    const node = this.statusScenario;
+    if (!node) return;
+    const doc = node.ownerDocument ?? globalThis.document;
+    node.classList?.add("hud-goal-list");
+    node.setAttribute?.("title", fallbackText);
+    if (!doc?.createElement || chips.length === 0) {
+      node.textContent = fallbackText;
+      return;
+    }
+
+    const chipNodes = chips.map((chip) => {
+      const el = doc.createElement("span");
+      el.className = `hud-goal-chip hud-goal-chip--${chip.done ? "done" : "pending"}`;
+      el.textContent = chip.label;
+      el.setAttribute?.("data-status", chip.done ? "done" : "pending");
+      return el;
+    });
+    if (typeof node.replaceChildren === "function") {
+      node.replaceChildren(...chipNodes);
+    } else {
+      node.textContent = "";
+      if (Array.isArray(node.children)) node.children.length = 0;
+      for (const chipNode of chipNodes) node.appendChild?.(chipNode);
+    }
   }
 
   setupSpeedControls() {
@@ -418,14 +545,17 @@ export class HUDController {
           const bio = backstory ? ` (${backstory})` : "";
           this._obituaryText = `${name}${bio} died of ${reason} at (${tx},${tz})`;
           this._obituaryUntilMs = now + OBITUARY_FLASH_MS;
+          this.#notifyDeath(latestDead, name, reason, tx, tz);
         }
         this._lastDeathsSeen = deathsTotal;
       }
       if (this._obituaryText && now < this._obituaryUntilMs) {
         this.deathVal.textContent = this._obituaryText;
+        this.#setDeathSeverity(true);
         this.deathVal.setAttribute?.("title", `${this._obituaryText} · total ${aggregate}`);
       } else {
         this.deathVal.textContent = aggregate;
+        this.#setDeathSeverity(false);
         this.deathVal.setAttribute?.("title", "Deaths by cause (starvation / predation)");
         this._obituaryText = "";
       }
@@ -649,9 +779,17 @@ export class HUDController {
       // the original terse "routes 2/5 · wh 5/2 · ..." tokens that downstream
       // debug tools and tests depend on.
       const uiProfile = this.state.controls?.uiProfile ?? "casual";
-      this.statusScenario.textContent = uiProfile === "casual"
-        ? getScenarioProgressCompactCasual(state)
-        : getScenarioProgressCompact(state);
+      if (uiProfile === "casual") {
+        this.#renderGoalChips(
+          scenarioGoalChips(state),
+          getScenarioProgressCompactCasual(state),
+        );
+      } else {
+        this.statusScenario.classList?.remove("hud-goal-list");
+        const text = getScenarioProgressCompact(state);
+        this.statusScenario.textContent = text;
+        this.statusScenario.setAttribute?.("title", text);
+      }
     }
     // v0.8.2 Round-0 02c-speedrunner (Step 5b) — Per-rule score breakdown.
     // Renders BALANCE.survivalScorePerSecond/perBirth/perDeath alongside

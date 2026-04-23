@@ -88,7 +88,38 @@
     .hud-resource[data-urgency="low"] .hud-label { color: #ff8a80; }
     .hud-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 1px; flex-shrink: 0; }
     .hud-spacer { flex: 1; }
-    .hud-objective { font-size: 10px; opacity: 0.7; text-align: right; max-width: 240px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+    .hud-objective {
+      font-size: 10px; opacity: 0.74; text-align: right;
+      line-height: 1.25; overflow: hidden; white-space: nowrap;
+      text-overflow: ellipsis; max-width: min(360px, 28vw);
+      flex: 0 1 auto;
+    }
+    .hud-scenario-progress { font-size: 11px; opacity: 0.85; min-width: 0; }
+    .hud-goal-list {
+      display: flex; flex-wrap: wrap; justify-content: flex-end;
+      gap: 4px; max-width: min(480px, 34vw); line-height: 1.15;
+    }
+    .hud-goal-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      min-height: 18px; padding: 2px 6px; border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.06);
+      color: rgba(208,232,255,0.9);
+      font-size: 10px; font-weight: 800; white-space: nowrap;
+    }
+    .hud-goal-chip::before { font-size: 9px; line-height: 1; opacity: 0.9; }
+    .hud-goal-chip--done {
+      background: rgba(76,175,80,0.18);
+      border-color: rgba(76,175,80,0.32);
+      color: #a5d6a7;
+    }
+    .hud-goal-chip--done::before { content: "\2713"; }
+    .hud-goal-chip--pending {
+      background: rgba(255,193,7,0.12);
+      border-color: rgba(255,193,7,0.28);
+      color: #ffdf8a;
+    }
+    .hud-goal-chip--pending::before { content: "\25CB"; }
     /* v0.8.2 Round-0 02e-indie-critic — scenario headline slot in statusBar.
        Italic muted line that lives to the left of #statusObjective and carries
        the generated scenario title/summary during play. Ellipsis on overflow;
@@ -96,7 +127,7 @@
     .hud-scenario {
       font-size: 10px; font-style: italic; font-weight: 500;
       color: var(--text-muted);
-      max-width: 420px; overflow: hidden; display: -webkit-box;
+      max-width: min(420px, 32vw); overflow: hidden; display: -webkit-box;
       -webkit-line-clamp: 2; -webkit-box-orient: vertical;
       line-height: 1.25; word-break: break-word;
       margin-right: 12px; flex-shrink: 1;
@@ -160,9 +191,32 @@
     .heat-lens-legend .legend-red { background: #e95c4d; }
     .heat-lens-legend .legend-blue { background: #4da8e9; }
 
+    #alertStack {
+      position: absolute; top: 44px; right: 12px;
+      display: flex; flex-direction: column; align-items: flex-end;
+      gap: 4px; z-index: 40; pointer-events: none; max-width: 320px;
+    }
+    .hud-death-toast {
+      pointer-events: none; font-weight: 800; font-size: 13px;
+      line-height: 1.25; color: #ff8a80;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+      background: rgba(40,8,8,0.9);
+      border: 1px solid rgba(255,107,107,0.5);
+      border-radius: 6px; padding: 5px 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.45);
+      max-width: 320px; overflow-wrap: anywhere;
+      animation: deathFlash 1.8s ease-out forwards;
+    }
+    @keyframes deathFlash {
+      0%   { opacity: 0; transform: scale(0.96); filter: brightness(1); }
+      15%  { opacity: 1; transform: scale(1.15); filter: brightness(1.5); }
+      65%  { opacity: 1; transform: scale(1); filter: brightness(1.05); }
+      100% { opacity: 0; transform: scale(0.98); filter: brightness(1); }
+    }
+
     .hud-action {
       padding: 2px 6px; border-radius: 6px; font-size: 10px;
-      max-width: 520px; overflow: hidden; display: -webkit-box;
+      max-width: min(520px, 40vw); overflow: hidden; display: -webkit-box;
       -webkit-line-clamp: 2; -webkit-box-orient: vertical;
       line-height: 1.3; word-break: break-word;
       transition: opacity 0.3s;
@@ -197,10 +251,22 @@
     }
     .build-toast--ok { color: #6eeb83; border-color: rgba(110, 235, 131, 0.4); }
     .build-toast--err { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); }
+    .build-toast--death {
+      color: #ff8a80;
+      background: rgba(40, 8, 8, 0.9);
+      border-color: rgba(255, 107, 107, 0.58);
+      box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.16), 0 2px 14px rgba(0, 0, 0, 0.5);
+    }
     @keyframes toastFloat {
       0%   { opacity: 0; transform: translate(-50%, -40%); }
       20%  { opacity: 1; transform: translate(-50%, -60%); }
       100% { opacity: 0; transform: translate(-50%, -120%); }
+    }
+    @keyframes toastDeath {
+      0%   { opacity: 0; transform: translate(-50%, -35%) scale(0.9); }
+      18%  { opacity: 1; transform: translate(-50%, -55%) scale(1.15); }
+      70%  { opacity: 1; transform: translate(-50%, -80%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -130%) scale(0.96); }
     }
     .hud-action.flash-action { animation: flashAction 220ms ease-out; }
     @keyframes flashAction {
@@ -718,6 +784,18 @@
       #panelToggles { margin-left: auto; order: -1; width: 100%;
         justify-content: flex-end; padding-bottom: 4px;
         border-bottom: 1px solid var(--divider); margin-bottom: 4px; }
+      #statusScenario,
+      #statusScoreBreak { display: none; }
+      #statusScoreboard { flex: 1 1 100%; justify-content: flex-end; }
+      #latestDeathRow { flex-basis: 100%; justify-content: flex-end; }
+      #alertStack { top: 84px; right: 8px; max-width: min(320px, calc(100vw - 16px)); }
+    }
+    @media (min-width: 1025px) and (max-width: 1200px) {
+      .hud-scenario { max-width: 220px; }
+      .hud-action { max-width: min(360px, 30vw); }
+      .hud-goal-list { max-width: 300px; }
+      #statusScoreBreak { display: none; }
+      #panelToggles .panel-toggle { padding: 3px 6px; font-size: 10px; }
     }
     @media (max-width: 640px) {
       .hud-objective { display: none; }
@@ -998,6 +1076,7 @@
              "Rule-based storyteller idle — colony on autopilot" when no
              groupPolicies entry is available. -->
         <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 260px;min-width:180px;"><span id="storytellerBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerFocus" class="hud-storyteller-focus">autopilot</span><span id="storytellerSummary" class="hud-storyteller-summary">: colony holding steady — awaiting the next directive</span><span id="storytellerBeat" class="hud-storyteller-beat" hidden></span></div>
+        <div id="alertStack" aria-live="assertive"></div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <div id="panelToggles">
           <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
