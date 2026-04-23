@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { HUDController } from "../../src/ui/hud/HUDController.js";
-import { createInitialGameState } from "../../src/entities/EntityFactory.js";
+import { createInitialGameState } from "../src/entities/EntityFactory.js";
+import { getAutopilotStatus } from "../src/ui/hud/autopilotStatus.js";
+import { HUDController } from "../src/ui/hud/HUDController.js";
 
 function makeClassList(initial = []) {
   const tokens = new Set(initial);
@@ -26,8 +27,10 @@ function makeElement(tagName = "div") {
     attrs: {},
     children: [],
     childNodes: [],
+    checked: false,
     className: "",
     hidden: false,
+    classList: makeClassList(),
     setAttribute(key, value) {
       this.attrs[key] = String(value);
     },
@@ -63,7 +66,6 @@ function makeElement(tagName = "div") {
       this._textContent = String(value ?? "");
     },
   });
-  node.classList = makeClassList();
   return node;
 }
 
@@ -85,43 +87,67 @@ function withHudDom(fn) {
   };
   globalThis.document = doc;
   try {
-    return fn(nodes, doc);
+    return fn(nodes);
   } finally {
     globalThis.document = prevDocument;
   }
 }
 
-test("HUDController renders Autopilot OFF chip as player-controlled", () => {
-  withHudDom((nodes) => {
-    const state = createInitialGameState({ seed: 11 });
-    state.ai.enabled = false;
-
-    const hud = new HUDController(state);
-    hud.render();
-
-    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot OFF - manual - coverage fallback");
-    assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], "off");
-    assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], "fallback");
-    assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], "fallback");
-    assert.match(nodes.aiAutopilotChip.attrs.title, /Autopilot OFF/);
+test("getAutopilotStatus reports enabled mode, coverage, and countdown", () => {
+  const status = getAutopilotStatus({
+    ai: {
+      enabled: true,
+      mode: "fallback",
+      coverageTarget: "llm",
+      lastPolicyResultSec: 4,
+    },
+    metrics: { timeSec: 7 },
   });
+
+  assert.equal(status.enabled, true);
+  assert.equal(status.dataMode, "on");
+  assert.equal(status.aiMode, "fallback");
+  assert.equal(status.coverageTarget, "llm");
+  assert.equal(status.remainingSec, 7);
+  assert.equal(status.text, "Autopilot ON - fallback/llm - next policy in 7.0s");
 });
 
-test("HUDController renders Autopilot ON chip with next policy countdown", () => {
+test("getAutopilotStatus reports manual control when disabled", () => {
+  const status = getAutopilotStatus({
+    ai: {
+      enabled: false,
+      mode: "fallback",
+      coverageTarget: "fallback",
+      lastPolicyResultSec: 1,
+    },
+    metrics: { timeSec: 4 },
+  });
+
+  assert.equal(status.enabled, false);
+  assert.equal(status.dataMode, "off");
+  assert.equal(status.text, "Autopilot OFF - manual - coverage fallback");
+  assert.match(status.title, /manual control/);
+});
+
+test("HUDController autopilot chip and toggles mirror getAutopilotStatus", () => {
   withHudDom((nodes) => {
-    const state = createInitialGameState({ seed: 12 });
+    const state = createInitialGameState({ seed: 22 });
     state.ai.enabled = true;
+    state.ai.mode = "llm";
+    state.ai.coverageTarget = "llm";
     state.ai.lastPolicyResultSec = 1.0;
     state.metrics.timeSec = 2.3;
+    const expected = getAutopilotStatus(state);
 
     const hud = new HUDController(state);
     hud.render();
 
-    assert.match(nodes.aiAutopilotChip.textContent, /^Autopilot ON - fallback\/fallback - next policy in \d+\.\ds$/);
-    assert.match(nodes.aiAutopilotChip.textContent, /8\.7s$/);
-    assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], "on");
-    assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], "fallback");
-    assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], "fallback");
-    assert.match(nodes.aiAutopilotChip.attrs.title, /Autopilot ON/);
+    assert.equal(nodes.aiAutopilotChip.textContent, expected.text);
+    assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], expected.dataMode);
+    assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], expected.aiMode);
+    assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], expected.coverageTarget);
+    assert.match(nodes.aiAutopilotChip.attrs.title, /mode=llm, coverage=llm/);
+    assert.equal(nodes.aiToggleTop.checked, true);
+    assert.equal(nodes.aiToggle.checked, true);
   });
 });
