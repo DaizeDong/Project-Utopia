@@ -65,6 +65,7 @@ test("explainTerm returns the dictionary value for known keys", () => {
   assert.equal(explainTerm("dev"), HUD_GLOSSARY.dev);
   assert.equal(explainTerm("haul"), HUD_GLOSSARY.haul);
   assert.equal(explainTerm("heatLens"), HUD_GLOSSARY.heatLens);
+  assert.equal(explainTerm("autopilotOff"), HUD_GLOSSARY.autopilotOff);
 });
 
 test("explainTerm returns empty string for unknown / null keys (no throw)", () => {
@@ -89,6 +90,8 @@ test("HUD_GLOSSARY key set is locked (snapshot-style guard)", () => {
   // Sorted-key snapshot — if you add/remove a term intentionally, update
   // EXPECTED below. This guards against unintentional drift.
   const EXPECTED = [
+    "autopilotOff",
+    "autopilotOn",
     "cook",
     "dev",
     "devIndex",

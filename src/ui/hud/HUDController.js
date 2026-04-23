@@ -1,4 +1,5 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { explainTerm } from "./glossary.js";
@@ -16,6 +17,41 @@ function shouldSuppressUserWarning(warningEvent, warningText = "") {
 function finiteCount(value) {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function isCasualMode() {
+  return globalThis.document?.body?.classList?.contains?.("casual-mode") ?? false;
+}
+
+function buildSurvivalScoreTooltip(state, casualMode) {
+  if (casualMode) return explainTerm("survivedScore");
+  const br = getSurvivalScoreBreakdown(state);
+  return `Survival Score: +${br.perSec}/s survived, +${br.perBirth}/birth, -${br.perDeath}/death | lived ${br.livedSec} | births +${br.subtotalBirths} | deaths -${br.subtotalDeaths}`;
+}
+
+function formatDevDimLabel(key) {
+  if (key === "infrastructure") return "infra";
+  return String(key);
+}
+
+function buildDevIndexTooltip(state, casualMode) {
+  if (casualMode) return explainTerm("dev");
+  const dims = state.gameplay?.devIndexDims ?? {};
+  const dimEntries = Object.entries(dims)
+    .filter(([, v]) => Number.isFinite(Number(v)))
+    .map(([k, v]) => `${formatDevDimLabel(k)} ${Math.round(Number(v))}`);
+  const base = "Dev Index: 0-100 composite";
+  return dimEntries.length > 0
+    ? `${base}; breakdown ${dimEntries.join(" | ")}`
+    : explainTerm("dev");
+}
+
+function getAutopilotRemainingSec(state) {
+  const intervalSec = Math.max(1, Number(BALANCE.policyDecisionIntervalSec ?? 10));
+  const now = Number(state.metrics?.timeSec ?? 0);
+  const last = Number(state.ai?.lastPolicyResultSec ?? NaN);
+  if (!Number.isFinite(last) || last < 0) return intervalSec;
+  return Math.max(0, intervalSec - Math.max(0, now - last));
 }
 
 function scenarioGoalChips(state) {
@@ -152,6 +188,10 @@ export class HUDController {
     this.hudFood = document.getElementById("hudFood");
     this.hudWood = document.getElementById("hudWood");
     this.hudWorkers = document.getElementById("hudWorkers");
+    this.statusObjectiveTime = document.getElementById("statusObjectiveTime");
+    this.statusObjectiveScore = document.getElementById("statusObjectiveScore");
+    this.statusObjectiveDev = document.getElementById("statusObjectiveDev");
+    this.aiAutopilotChip = document.getElementById("aiAutopilotChip");
 
     this.speedPauseBtn = document.getElementById("speedPauseBtn");
     this.speedPlayBtn = document.getElementById("speedPlayBtn");
@@ -212,7 +252,6 @@ export class HUDController {
     // "perDeath" glossary keys for future targeted tooltips on standalone
     // rule nodes if they're ever surfaced separately.
     const pairs = [
-      [this.statusObjective, "dev"],
       [this.statusScenario, "routes"],
       [this.prosperityVal, "prosperity"],
       [this.threatVal, "threat"],
@@ -792,6 +831,17 @@ export class HUDController {
     if (this.hudWood) this.hudWood.setAttribute("data-urgency", state.resources.wood < 15 ? "low" : "");
     if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
 
+    if (this.aiAutopilotChip) {
+      const enabled = Boolean(state.ai?.enabled);
+      const mode = enabled ? "on" : "off";
+      const text = enabled
+        ? `Autopilot ON - next tick in ${getAutopilotRemainingSec(state).toFixed(1)}s`
+        : "Autopilot OFF - you are in control";
+      this.aiAutopilotChip.textContent = text;
+      this.aiAutopilotChip.setAttribute?.("data-mode", mode);
+      this.aiAutopilotChip.setAttribute?.("title", explainTerm(enabled ? "autopilotOn" : "autopilotOff"));
+    }
+
     if (this.statusObjective) {
       // v0.8.0 Phase 4 — Survival Mode badge. Shows
       // "Survived HH:MM:SS  Score N · Dev D/100" once DevIndex is live.
@@ -811,21 +861,22 @@ export class HUDController {
       const devTicks = Number(state.gameplay?.devIndexTicksComputed ?? 0);
       const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
       const devSuffix = inActive && devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
-      this.statusObjective.textContent = `Survived ${timeText}  Score ${score}${devSuffix}`;
-      // v0.8.2 Round-0 02c-speedrunner (Step 6) — DevIndex 6-dim attribution as
-      // hover tooltip on #statusObjective. Speedrunner feedback: "Dev only went
-      // down when I built things" — exposing which dim dragged the composite
-      // gives the player a faster causal loop than the Debug panel. Prefixed
-      // with "Dev breakdown:" so we don't overwrite the pre-existing semantic
-      // title ("Survival time and running score…").
-      const dims = state.gameplay?.devIndexDims ?? {};
-      const dimEntries = Object.entries(dims)
-        .filter(([, v]) => Number.isFinite(Number(v)))
-        .map(([k, v]) => `${k} ${Math.round(Number(v))}`);
-      const devTooltip = dimEntries.length > 0
-        ? `Dev breakdown: ${dimEntries.join(" · ")}`
-        : "Survival time and running score (Phase 4 endless mode)";
-      this.statusObjective.setAttribute?.("title", devTooltip);
+      const objectiveText = `Survived ${timeText}  Score ${score}${devSuffix}`;
+      const casualMode = isCasualMode();
+      const scoreTitle = buildSurvivalScoreTooltip(state, casualMode);
+      const devTitle = buildDevIndexTooltip(state, casualMode);
+      if (this.statusObjectiveTime && this.statusObjectiveScore && this.statusObjectiveDev) {
+        this.statusObjectiveTime.textContent = `Survived ${timeText}`;
+        this.statusObjectiveScore.textContent = `Score ${score}`;
+        this.statusObjectiveScore.setAttribute?.("title", scoreTitle);
+        this.statusObjectiveDev.textContent = inActive && devTicks > 0 ? `Dev ${devScore}/100` : "Dev --/100";
+        this.statusObjectiveDev.setAttribute?.("title", devTitle);
+      } else {
+        this.statusObjective.textContent = objectiveText;
+      }
+      // Round 2 01b: keep Score and Dev as separate hover targets while the
+      // wrapper carries the combined title for legacy tests and narrow DOMs.
+      this.statusObjective.setAttribute?.("title", `${scoreTitle} | ${devTitle}`);
     }
     // v0.8.2 Round-0 02c-speedrunner (Step 5) — Compact scenario-progress
     // ribbon. Surfaces the `scenario.targets` counts (routes/depots/wh/farms/

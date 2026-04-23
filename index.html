@@ -96,6 +96,23 @@
       text-overflow: ellipsis; max-width: min(360px, 28vw);
       flex: 0 1 auto;
     }
+    .hud-objective span { margin-right: 7px; }
+    .hud-objective span:last-child { margin-right: 0; }
+    .hud-chip {
+      display: inline-flex; align-items: center; min-height: 18px;
+      padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+      font-size: 10px; font-weight: 800; line-height: 1.15;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(110,235,131,0.12); color: #a5f2b2;
+    }
+    .hud-chip[data-mode="on"] {
+      background: rgba(255,184,76,0.14); color: #ffd08a;
+      border-color: rgba(255,184,76,0.36);
+    }
+    .hud-chip[data-mode="off"] {
+      background: rgba(110,235,131,0.12); color: #a5f2b2;
+      border-color: rgba(110,235,131,0.3);
+    }
     .hud-scenario-progress { font-size: 11px; opacity: 0.85; min-width: 0; }
     .hud-goal-list {
       display: flex; flex-wrap: wrap; justify-content: flex-end;
@@ -1075,7 +1092,12 @@
              populates these spans each render. Kept flex-wrap for narrow
              viewports; the breakdown span degrades gracefully via tooltip. -->
         <div id="statusScoreboard" class="hud-scoreboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;">
-          <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">-</span>
+          <span id="statusObjective" class="hud-objective" title="Survival time and running score (Phase 4 endless mode)">
+            <span id="statusObjectiveTime">Survived --:--:--</span>
+            <span id="statusObjectiveScore">Score -</span>
+            <span id="statusObjectiveDev">Dev --/100</span>
+          </span>
+          <span id="aiAutopilotChip" class="hud-chip" data-mode="off" title="">Autopilot OFF</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
           <!-- v0.8.2 Round-1 01d-mechanics-content (Step 3) — most-recent-death
@@ -1320,8 +1342,9 @@
 
               <div class="switch">
                 <input id="aiToggle" type="checkbox" />
-                <label for="aiToggle">Enable LLM Agent</label>
+                <label for="aiToggle">Autopilot (AI Director)</label>
               </div>
+              <div class="small muted">Off by default - you drive the colony. Flip on to let the AI schedule workers.</div>
             </div>
 
             <details class="subpanel dev-only" style="margin-top:8px;">
