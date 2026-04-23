@@ -218,18 +218,26 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
   }
 
   entity.deathRecorded = true;
-  const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
-  emitEvent(state, eventType, {
-    entityId: entity.id,
-    entityName: entity.displayName ?? entity.id,
-    reason: entity.deathReason || "event",
-    groupId: entity.groupId ?? entity.kind ?? "unknown",
-  });
-  state.metrics.deathTimestamps ??= [];
-  state.metrics.deathTimestamps.push(Number(state.metrics.timeSec ?? 0));
   if (!entity.deathContext) {
     entity.deathContext = buildDeathContext(entity, state, entity.deathReason || "event", reachableFood, nutritionSourceType);
   }
+  const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
+  const fallbackTile = worldToTile(Number(entity.x ?? 0), Number(entity.z ?? 0), state.grid);
+  const tile = entity.deathContext?.targetTile
+    ?? { ix: fallbackTile.ix, iz: fallbackTile.iz };
+  emitEvent(state, eventType, {
+    entityId: entity.id,
+    entityName: entity.displayName ?? entity.id,
+    displayName: entity.displayName ?? entity.id,
+    reason: entity.deathReason || "event",
+    groupId: entity.groupId ?? entity.kind ?? "unknown",
+    tile,
+    worldX: Number(entity.x ?? 0),
+    worldZ: Number(entity.z ?? 0),
+    foodEmptySec: Number(state.metrics.resourceEmptySec?.food ?? 0),
+  });
+  state.metrics.deathTimestamps ??= [];
+  state.metrics.deathTimestamps.push(Number(state.metrics.timeSec ?? 0));
 }
 
 export class MortalitySystem {

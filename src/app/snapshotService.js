@@ -173,6 +173,9 @@ export function restoreSnapshotState(serialized) {
   migrateLegacySessionState(snapshot);
   ensureAiRuntimeDefaults(snapshot);
   snapshot.metrics.warningLog ??= [];
+  snapshot.metrics.resourceEmptySec ??= { food: 0, wood: 0 };
+  snapshot.metrics.resourceEmptySec.food = Number(snapshot.metrics.resourceEmptySec.food ?? 0);
+  snapshot.metrics.resourceEmptySec.wood = Number(snapshot.metrics.resourceEmptySec.wood ?? 0);
   snapshot.metrics.invalidTransitionCount ??= 0;
   snapshot.metrics.idleWithoutReasonSec ??= {};
   snapshot.metrics.pathRecalcPerEntityPerMin ??= 0;

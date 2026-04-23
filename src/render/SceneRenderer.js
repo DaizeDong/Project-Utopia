@@ -5,6 +5,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
+import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
@@ -543,6 +544,11 @@ export class SceneRenderer {
     this.toastPool = [];
     this.lastToastTileKey = "";
     this.lastToastTimeMs = 0;
+    this.boundDeathToastEvent = (event) => this.#handleDeathToastEvent(event);
+    this.boundMilestoneToastEvent = (event) => this.#handleMilestoneToastEvent(event);
+    onEvent(this.state, EVENT_TYPES.WORKER_STARVED, this.boundDeathToastEvent);
+    onEvent(this.state, EVENT_TYPES.WORKER_DIED, this.boundDeathToastEvent);
+    onEvent(this.state, EVENT_TYPES.COLONY_MILESTONE, this.boundMilestoneToastEvent);
     this.boundOnContextMenu = (e) => e.preventDefault();
     this.boundOnControlsStart = () => {
       this.isCameraInteracting = true;
@@ -2265,6 +2271,53 @@ export class SceneRenderer {
   // screen coordinates, then animate a short text label upward from that spot
   // as a non-blocking visual ack. DOM nodes are recycled from `this.toastPool`
   // so rapid clicks at 2x speed don't thrash the heap (risk #1).
+  #handleDeathToastEvent(event) {
+    const detail = event?.detail ?? {};
+    const worldX = Number(detail.worldX);
+    const worldZ = Number(detail.worldZ);
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) return;
+    const name = String(detail.entityName ?? detail.displayName ?? "Worker").trim() || "Worker";
+    const reason = String(detail.reason ?? "event").trim() || "event";
+    const foodEmptySec = Number(detail.foodEmptySec ?? 0);
+    const secText = foodEmptySec >= 5 ? ` - food empty ${Math.floor(foodEmptySec)}s` : "";
+    const text = event?.type === EVENT_TYPES.WORKER_STARVED || reason === "starvation"
+      ? `${name} starved${secText}`
+      : `${name} died - ${reason}`;
+    const tile = detail.tile ?? {};
+    this.#spawnFloatingToast(
+      worldX,
+      worldZ,
+      text,
+      "death",
+      Number.isFinite(Number(tile.ix)) ? Number(tile.ix) : -1,
+      Number.isFinite(Number(tile.iz)) ? Number(tile.iz) : -1,
+    );
+    const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+    this.state.ui ??= {};
+    this.state.ui.deathToastShownUntil = now + 3500;
+  }
+
+  #handleMilestoneToastEvent(event) {
+    const detail = event?.detail ?? {};
+    const anchor = detail.tile
+      ?? this.state.gameplay?.scenario?.anchors?.coreWarehouse
+      ?? { ix: Math.floor(Number(this.state.grid?.width ?? 0) / 2), iz: Math.floor(Number(this.state.grid?.height ?? 0) / 2) };
+    const world = Number.isFinite(Number(detail.worldX)) && Number.isFinite(Number(detail.worldZ))
+      ? { x: Number(detail.worldX), z: Number(detail.worldZ) }
+      : tileToWorld(Number(anchor.ix ?? 0), Number(anchor.iz ?? 0), this.state.grid);
+    const text = String(detail.label ?? "Milestone reached").trim() || "Milestone reached";
+    this.#spawnFloatingToast(
+      world.x,
+      world.z,
+      text,
+      "milestone",
+      Number.isFinite(Number(anchor.ix)) ? Number(anchor.ix) : -1,
+      Number.isFinite(Number(anchor.iz)) ? Number(anchor.iz) : -1,
+    );
+  }
+
   #spawnFloatingToast(worldX, worldZ, text, kind, tileIx = -1, tileIz = -1) {
     // Re-query once if the layer wasn't in the DOM at construction time (tests).
     if (!this.toastLayer && typeof document !== "undefined") {
@@ -2300,7 +2353,13 @@ export class SceneRenderer {
     }
 
     node.dataset.busy = "1";
-    const classKind = kind === "success" ? "ok" : kind === "death" ? "death" : "err";
+    const classKind = kind === "success"
+      ? "ok"
+      : kind === "death"
+        ? "death"
+        : kind === "milestone"
+          ? "milestone"
+          : "err";
     node.className = `build-toast build-toast--${classKind}`;
     node.textContent = String(text ?? "");
     node.style.left = `${px}px`;
@@ -2309,8 +2368,8 @@ export class SceneRenderer {
     node.style.animation = "none";
     // Force reflow so the reset takes effect before the new animation is applied.
     void node.offsetWidth;
-    const animationName = kind === "death" ? "toastDeath" : "toastFloat";
-    const durationMs = kind === "death" ? 1800 : 1200;
+    const animationName = kind === "death" ? "toastDeath" : kind === "milestone" ? "toastMilestone" : "toastFloat";
+    const durationMs = kind === "death" ? 4000 : kind === "milestone" ? 3200 : 1200;
     node.style.animation = `${animationName} ${durationMs / 1000}s ease-out forwards`;
 
     // Free the slot shortly after the animation ends.

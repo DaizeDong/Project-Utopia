@@ -76,6 +76,7 @@
     .hud-icon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 16px; }
     .hud-meter { display: flex; flex-direction: column; gap: 1px; min-width: 28px; }
     .hud-label { font-size: 11px; font-weight: 800; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+    .hud-sublabel { font-size: 9px; font-weight: 700; line-height: 1; opacity: 0.68; color: var(--text-muted, #9cb3c9); margin-bottom: 1px; }
     .hud-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
     .hud-bar-fill { height: 100%; width: 0; border-radius: 2px; transition: width 0.3s ease; }
     .hud-bar-food { background: linear-gradient(90deg, #4caf50, #8bc34a); }
@@ -86,6 +87,7 @@
     .hud-bar-threat { background: linear-gradient(90deg, #f44336, #ff7043); }
     .hud-resource[data-urgency="low"] { background: rgba(244,67,54,0.2); }
     .hud-resource[data-urgency="low"] .hud-label { color: #ff8a80; }
+    #ui.compact .hud-sublabel { display: none; }
     .hud-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.12); margin: 0 1px; flex-shrink: 0; }
     .hud-spacer { flex: 1; }
     .hud-objective {
@@ -252,10 +254,19 @@
     .build-toast--ok { color: #6eeb83; border-color: rgba(110, 235, 131, 0.4); }
     .build-toast--err { color: #ff6b6b; border-color: rgba(255, 107, 107, 0.4); }
     .build-toast--death {
-      color: #ff8a80;
-      background: rgba(40, 8, 8, 0.9);
+      color: #ffdcdc;
+      background: rgba(198, 40, 40, 0.92);
       border-color: rgba(255, 107, 107, 0.58);
-      box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.16), 0 2px 14px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 20px rgba(244, 67, 54, 0.45), 0 2px 14px rgba(0, 0, 0, 0.5);
+      font-size: 14px;
+    }
+    .build-toast--milestone {
+      color: #fff4b3;
+      background: rgba(87, 65, 12, 0.92);
+      border-color: rgba(255, 235, 59, 0.58);
+      box-shadow: 0 0 24px rgba(255, 193, 7, 0.42), 0 2px 14px rgba(0, 0, 0, 0.45);
+      font-size: 14px;
+      font-weight: 900;
     }
     @keyframes toastFloat {
       0%   { opacity: 0; transform: translate(-50%, -40%); }
@@ -263,10 +274,17 @@
       100% { opacity: 0; transform: translate(-50%, -120%); }
     }
     @keyframes toastDeath {
-      0%   { opacity: 0; transform: translate(-50%, -35%) scale(0.9); }
-      18%  { opacity: 1; transform: translate(-50%, -55%) scale(1.15); }
-      70%  { opacity: 1; transform: translate(-50%, -80%) scale(1); }
-      100% { opacity: 0; transform: translate(-50%, -130%) scale(0.96); }
+      0%   { opacity: 0; transform: translate(-50%, -30%) scale(0.9); }
+      8%   { opacity: 1; transform: translate(-50%, -55%) scale(1.08); }
+      16%  { opacity: 1; transform: translate(-50%, -55%) scale(1); }
+      80%  { opacity: 1; transform: translate(-50%, -60%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -80%) scale(0.96); }
+    }
+    @keyframes toastMilestone {
+      0%   { opacity: 0; transform: translate(-50%, -30%) scale(0.7); }
+      15%  { opacity: 1; transform: translate(-50%, -55%) scale(1.2); }
+      30%  { opacity: 1; transform: translate(-50%, -55%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -110%) scale(1); }
     }
     .hud-action.flash-action { animation: flashAction 220ms ease-out; }
     @keyframes flashAction {
@@ -979,6 +997,7 @@
         <div class="hud-resource" id="hudFood" title="Food — raw food from farms, feeds workers">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Apple.png" alt="Food" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-sublabel">Food</span>
             <span class="hud-label" id="statusFood">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-food" id="statusFoodBar"></div></div>
           </div>
@@ -986,6 +1005,7 @@
         <div class="hud-resource" id="hudWood" title="Wood — harvested from lumber mills, used for building">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wood Log.png" alt="Wood" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-sublabel">Wood</span>
             <span class="hud-label" id="statusWood">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-wood" id="statusWoodBar"></div></div>
           </div>
@@ -993,6 +1013,7 @@
         <div class="hud-resource" id="hudStone" title="Stone — mined from quarries, used for advanced buildings">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Rune Stone.png" alt="Stone" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-sublabel">Stone</span>
             <span class="hud-label" id="statusStone">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-stone" id="statusStoneBar"></div></div>
           </div>
@@ -1000,6 +1021,7 @@
         <div class="hud-resource" id="hudHerbs" title="Herbs — gathered from herb gardens, refined into medicine">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="Herbs" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-sublabel">Herbs</span>
             <span class="hud-label" id="statusHerbs">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-herbs" id="statusHerbsBar"></div></div>
           </div>
@@ -1007,6 +1029,7 @@
         <div class="hud-resource" id="hudWorkers" title="Workers — colony population count">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Gear.png" alt="Workers" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-sublabel">Workers</span>
             <span class="hud-label" id="statusWorkers">0</span>
           </div>
         </div>
