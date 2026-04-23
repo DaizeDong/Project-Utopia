@@ -16,6 +16,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+import { getBuildToolInfo } from "../src/simulation/construction/BuildAdvisor.js";
+
 test("ui voice: populationBreakdown template has no dev-variable jargon", () => {
   const src = fs.readFileSync("src/ui/tools/BuildToolbar.js", "utf8");
   // Locate the `populationBreakdownVal.textContent = …` assignment.
@@ -106,4 +108,32 @@ test("ui voice: statusBar owns a scenario headline slot", () => {
     /scenario\?\.title|scenario\.title/.test(hud) && /scenario\?\.summary|scenario\.summary/.test(hud),
     "HUDController.js scenario headline block should read both scenario.title and scenario.summary",
   );
+});
+
+test("ui voice: BuildAdvisor summaries carry voice-family diction", () => {
+  const summaries = {
+    road: getBuildToolInfo("road").summary,
+    warehouse: getBuildToolInfo("warehouse").summary,
+    kitchen: getBuildToolInfo("kitchen").summary,
+    smithy: getBuildToolInfo("smithy").summary,
+    clinic: getBuildToolInfo("clinic").summary,
+  };
+
+  assert.match(summaries.road, /broken|stitch/i);
+  assert.match(summaries.warehouse, /anchor|rots/i);
+  assert.match(summaries.kitchen, /starving|beside/i);
+  assert.match(summaries.smithy, /hammers|hands/i);
+  assert.match(summaries.clinic, /bitten|obituary/i);
+
+  for (const [tool, summary] of Object.entries(summaries)) {
+    assert.ok(summary.length <= 140, `${tool} summary is too long: ${summary.length}`);
+    assert.ok(!/Extends the logistics network|Processes raw food|Forges stone|Uses herbs/i.test(summary));
+  }
+});
+
+test("ui voice: main.js gates window.__utopia behind devModeGate but keeps __utopiaLongRun public", () => {
+  const src = fs.readFileSync("src/main.js", "utf8");
+  assert.ok(src.includes('import { readInitialDevMode } from "./app/devModeGate.js";'));
+  assert.match(src, /const\s+devOn\s*=\s*readInitialDevMode\s*\(/);
+  assert.match(src, /if\s*\(\s*devOn\s*\)\s*\{\s*window\.__utopia\s*=\s*app;\s*\}\s*window\.__utopiaLongRun\s*=/s);
 });

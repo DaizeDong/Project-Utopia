@@ -30,7 +30,7 @@ export const HUD_GLOSSARY = Object.freeze({
   // Headline gameplay stats
   prosperity: "Prosperity: morale / growth driver (0-100); high prosperity boosts births and visitors.",
   threat: "Threat: external pressure (0-100) set by storyteller; drives raid chance and wildlife aggression.",
-  storyteller: "AI Storyteller: adaptive director that shifts threat & events based on colony state.",
+  storyteller: "AI Storyteller: turns colony numbers into weather; every directive guesses what you need next.",
 
   // Role labels used in Colony panel / role-quota sliders
   haul: "Hauler: moves goods between warehouses (requires >=10 workers and a warehouse).",
@@ -39,7 +39,7 @@ export const HUD_GLOSSARY = Object.freeze({
   herbalist: "Herbalist: staffs Clinic to brew Herbs into Medicine (requires a built Clinic).",
 
   // Lens / mode toggles
-  heatLens: "Heat Lens: red = surplus producers, blue = starved processors or idle storage; tile color shows where to fix flow.",
+  heatLens: "Heat Lens: red = producers drowning beside full storage, blue = processors starved for input; bottleneck at a glance.",
 
   // Score breakdown decomposition
   scenarioGap: "Gap between current scenario progress and target; zero means this objective is complete.",

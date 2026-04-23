@@ -16,7 +16,7 @@ export const NODE_GATED_TOOLS = Object.freeze({
 const TOOL_INFO = Object.freeze({
   road: {
     label: "Road",
-    summary: "Extends the logistics network and closes authored route gaps.",
+    summary: "Stitches the broken supply line; every road tile is a haul that never has to happen.",
     rules: "Place on grass or ruins. Roads must extend from existing infrastructure or repair a scenario gap.",
     allowedOldTypes: [TILE.GRASS, TILE.RUINS],
   },
@@ -34,7 +34,7 @@ const TOOL_INFO = Object.freeze({
   },
   warehouse: {
     label: "Warehouse",
-    summary: "Creates a logistics anchor, unlocks depot reclaim objectives, and shortens worker delivery loops.",
+    summary: "Anchors the colony stockpile; without it, grain rots in the field while the kitchen sits empty.",
     rules: "Place on grass, roads, or ruins. Warehouses need road access and should be spread apart.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },
@@ -58,19 +58,19 @@ const TOOL_INFO = Object.freeze({
   },
   kitchen: {
     label: "Kitchen",
-    summary: "Processes raw food into meals, boosting food efficiency for the colony.",
+    summary: "Turns raw grain into meals; the difference between a stocked warehouse and workers starving beside it.",
     rules: "Place on grass, roads, or ruins. Kitchens need nearby logistics access.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },
   smithy: {
     label: "Smithy",
-    summary: "Forges stone into tools and equipment, improving worker productivity.",
+    summary: "Hammers stone and wood into tools; one Smithy late and the lumber camp saws with its hands.",
     rules: "Place on grass, roads, or ruins. Smithies need nearby logistics access.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },
   clinic: {
     label: "Clinic",
-    summary: "Uses herbs to treat injuries and illness, reducing population loss.",
+    summary: "Brews herbs into medicine; the last room between a bitten hauler and a name on the obituary strip.",
     rules: "Place on grass, roads, or ruins. Clinics need nearby logistics access.",
     allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
   },

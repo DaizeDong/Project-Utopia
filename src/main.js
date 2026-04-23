@@ -1,4 +1,5 @@
 import { GameApp } from "./app/GameApp.js";
+import { readInitialDevMode } from "./app/devModeGate.js";
 
 /**
  * Whitelist of valid `tool` names for the `__utopiaLongRun.placeToolAt` shim.
@@ -176,7 +177,13 @@ if (canvas) {
   try {
     app = new GameApp(canvas);
     app.start();
-    window.__utopia = app;
+    const devOn = readInitialDevMode({
+      locationHref: typeof window !== "undefined" ? window.location?.href : undefined,
+      storage: typeof window !== "undefined" ? window.localStorage : undefined,
+    });
+    if (devOn) {
+      window.__utopia = app;
+    }
     window.__utopiaLongRun = {
       getTelemetry: () => app?.getLongRunTelemetry?.() ?? null,
       configure: (options) => app?.configureLongRunMode?.(options),
