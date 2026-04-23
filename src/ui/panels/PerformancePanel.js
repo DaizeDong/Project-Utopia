@@ -141,7 +141,7 @@ export class PerformancePanel {
 
   #syncTimeScaleLabel() {
     if (!this.timeScaleInput || !this.timeScaleLabel) return;
-    const value = Math.max(0.25, Math.min(2, this.state.controls.timeScale || 1));
+    const value = Math.max(0.25, Math.min(4, this.state.controls.timeScale || 1));
     this.#setFieldValueIfIdle(this.timeScaleInput, Math.round(value * 100));
     this.timeScaleLabel.textContent = `${value.toFixed(2)}x`;
   }
