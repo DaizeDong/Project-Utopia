@@ -399,6 +399,8 @@ export const BALANCE = Object.freeze({
   raidIntervalMinTicks: 600,
   raidIntervalReductionPerTier: 300,
   raidIntensityPerTier: 0.3,
+  // Round 2 01d: Heat Lens should warn before a processor is completely empty.
+  heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
 });
 
 // --- Terrain depth constants ---

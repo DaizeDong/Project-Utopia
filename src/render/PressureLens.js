@@ -1,6 +1,7 @@
-import { EVENT_TYPE, TILE } from "../config/constants.js";
+import { EVENT_TYPE, NODE_FLAGS, TILE } from "../config/constants.js";
 import { BALANCE } from "../config/balance.js";
 import { getScenarioRuntime } from "../world/scenarios/ScenarioFactory.js";
+import { inBounds } from "../world/grid/Grid.js";
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -223,15 +224,26 @@ const HEAT_PRODUCER_TILES = Object.freeze([
   TILE.HERB_GARDEN,
 ]);
 
+const NODE_GATED_TOOL_FLAGS = Object.freeze({
+  lumber: NODE_FLAGS.FOREST,
+  quarry: NODE_FLAGS.STONE,
+  herb_garden: NODE_FLAGS.HERB,
+});
+
+function resourceBelowHeatThreshold(resources, key) {
+  const thresholds = BALANCE.heatLensStarveThreshold ?? {};
+  return Number(resources?.[key] ?? 0) < Number(thresholds[key] ?? 0);
+}
+
 const HEAT_PROCESSOR_INPUT_CHECK = Object.freeze({
-  // Kitchen consumes raw food (crafts meals). Blue when food == 0.
-  [TILE.KITCHEN]: (resources) => Number(resources?.food ?? 0) <= 0,
-  // Smithy consumes wood + stone (crafts tools). Blue when either is exhausted.
+  // Kitchen consumes raw food (crafts meals). Blue before food fully bottoms out.
+  [TILE.KITCHEN]: (resources) => resourceBelowHeatThreshold(resources, "food"),
+  // Smithy consumes wood + stone (crafts tools). Blue when either input is scarce.
   [TILE.SMITHY]: (resources) => (
-    Number(resources?.wood ?? 0) <= 0 || Number(resources?.stone ?? 0) <= 0
+    resourceBelowHeatThreshold(resources, "wood") || resourceBelowHeatThreshold(resources, "stone")
   ),
-  // Clinic consumes herbs (crafts medicine). Blue when herbs == 0.
-  [TILE.CLINIC]: (resources) => Number(resources?.herbs ?? 0) <= 0,
+  // Clinic consumes herbs (crafts medicine). Blue before herbs fully bottom out.
+  [TILE.CLINIC]: (resources) => resourceBelowHeatThreshold(resources, "herbs"),
 });
 
 function isHotWarehouseKey(state, key) {
@@ -279,6 +291,8 @@ export function buildHeatLens(state) {
   const resources = state.resources ?? {};
   const markers = [];
   const seen = new Set();
+  let firstSmithy = null;
+  let hasQuarry = false;
   // Spec § 6: blue warehouses are "< 20% capacity" analogue — we treat an empty
   // density score (< 0.2 of the risk threshold) as the idle/starving state.
   const STARVATION_FRACTION = 0.2;
@@ -290,6 +304,8 @@ export function buildHeatLens(state) {
     for (let ix = 0; ix < width && markers.length < MAX_HEAT_MARKERS; ix += 1) {
       const tileType = tiles[ix + iz * width];
       const key = tileKey(ix, iz);
+      if (tileType === TILE.SMITHY && !firstSmithy) firstSmithy = { ix, iz, key };
+      if (tileType === TILE.QUARRY) hasQuarry = true;
 
       // RED — raw producer beside a saturated warehouse.
       if (HEAT_PRODUCER_TILES.includes(tileType)) {
@@ -350,6 +366,25 @@ export function buildHeatLens(state) {
     }
   }
 
+  if (
+    markers.every((marker) => marker.kind !== "heat_starved")
+    && hasQuarry
+    && firstSmithy
+    && Number(resources.stone ?? 0) <= 0
+    && markers.length < MAX_HEAT_MARKERS
+  ) {
+    pushUniqueMarker(markers, {
+      id: `heat-blue:${firstSmithy.key}:stone-empty`,
+      kind: "heat_starved",
+      ix: firstSmithy.ix,
+      iz: firstSmithy.iz,
+      radius: 0.95,
+      weight: 0.82,
+      priority: 116,
+      label: "stone input empty",
+    }, seen);
+  }
+
   return markers.sort((a, b) => {
     const priorityDelta = Number(b.priority ?? 0) - Number(a.priority ?? 0);
     if (priorityDelta !== 0) return priorityDelta;
@@ -357,6 +392,31 @@ export function buildHeatLens(state) {
     if (Math.abs(weightDelta) > 0.0001) return weightDelta;
     return String(a.id).localeCompare(String(b.id));
   });
+}
+
+export function classifyPlacementTiles(state, tool) {
+  const requiredFlag = NODE_GATED_TOOL_FLAGS[tool];
+  const grid = state?.grid;
+  const width = Number(grid?.width ?? 0);
+  const height = Number(grid?.height ?? 0);
+  const tileState = grid?.tileState;
+  if (!requiredFlag || !tileState || width <= 0 || height <= 0) {
+    return { legal: [], illegal: [], requiredFlag: requiredFlag ?? 0 };
+  }
+
+  const legal = [];
+  const illegal = [];
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      if (!inBounds(ix, iz, grid)) continue;
+      const idx = ix + iz * width;
+      const flags = Number(tileState.get(idx)?.nodeFlags ?? 0);
+      const row = { ix, iz, flags };
+      if ((flags & requiredFlag) !== 0) legal.push(row);
+      else illegal.push(row);
+    }
+  }
+  return { legal, illegal, requiredFlag };
 }
 
 // Heat-mode signature: cheap string the renderer can diff per frame to know

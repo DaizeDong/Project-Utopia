@@ -8,7 +8,7 @@ import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
-import { buildPressureLens, buildHeatLens, heatLensSignature } from "./PressureLens.js";
+import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 import { FogOverlay } from "./FogOverlay.js";
 
@@ -457,6 +457,7 @@ export class SceneRenderer {
     // red/blue/grey channels), "off" (hide all lens markers entirely).
     this.lensMode = "pressure";
     this.lastHeatLensSignature = "";
+    this.lastPlacementLensSignature = "";
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -1180,6 +1181,47 @@ export class SceneRenderer {
     this.pressureRingGeometry = new THREE.RingGeometry(0.82, 1, 40);
     this.pressureMarkerPool = [];
     this.scene.add(this.pressureLensRoot);
+
+    this.heatTileOverlayRoot = new THREE.Group();
+    this.heatTileOverlayGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.98, this.state.grid.tileSize * 0.98);
+    this.heatTileOverlayPool = [];
+    this.scene.add(this.heatTileOverlayRoot);
+
+    this.placementLensRoot = new THREE.Group();
+    const placementCapacity = Math.max(1, Number(this.state.grid.width ?? 0) * Number(this.state.grid.height ?? 0));
+    this.placementLensGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.92, this.state.grid.tileSize * 0.92);
+    this.placementLensGeometry.rotateX(-Math.PI / 2);
+    this.placementLegalMesh = new THREE.InstancedMesh(
+      this.placementLensGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x4ade80,
+        transparent: true,
+        opacity: 0.32,
+        depthTest: false,
+        depthWrite: false,
+      }),
+      placementCapacity,
+    );
+    this.placementIllegalMesh = new THREE.InstancedMesh(
+      this.placementLensGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xef4444,
+        transparent: true,
+        opacity: 0.08,
+        depthTest: false,
+        depthWrite: false,
+      }),
+      placementCapacity,
+    );
+    this.placementLegalMesh.count = 0;
+    this.placementIllegalMesh.count = 0;
+    this.placementLegalMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 1;
+    this.placementIllegalMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY;
+    this.placementLegalMesh.frustumCulled = false;
+    this.placementIllegalMesh.frustumCulled = false;
+    this.placementLensRoot.visible = false;
+    this.placementLensRoot.add(this.placementIllegalMesh, this.placementLegalMesh);
+    this.scene.add(this.placementLensRoot);
   }
 
   #createPressureMarkerEntry() {
@@ -1223,6 +1265,100 @@ export class SceneRenderer {
     while (this.pressureMarkerPool.length < count) {
       this.pressureMarkerPool.push(this.#createPressureMarkerEntry());
     }
+  }
+
+  #createHeatTileOverlayEntry() {
+    const mesh = new THREE.Mesh(this.heatTileOverlayGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 1;
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    this.heatTileOverlayRoot.add(mesh);
+    return mesh;
+  }
+
+  #ensureHeatTileOverlayPool(count) {
+    while (this.heatTileOverlayPool.length < count) {
+      this.heatTileOverlayPool.push(this.#createHeatTileOverlayEntry());
+    }
+  }
+
+  #hideHeatTileOverlay() {
+    for (const mesh of this.heatTileOverlayPool) mesh.visible = false;
+  }
+
+  #hidePressureMarkers() {
+    for (const entry of this.pressureMarkerPool) entry.group.visible = false;
+  }
+
+  #updateHeatTileOverlay(markers) {
+    this.#ensureHeatTileOverlayPool(markers.length);
+    for (let i = 0; i < this.heatTileOverlayPool.length; i += 1) {
+      const mesh = this.heatTileOverlayPool[i];
+      const marker = markers[i];
+      if (!marker) {
+        mesh.visible = false;
+        continue;
+      }
+      const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.heat_idle;
+      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      mesh.visible = true;
+      mesh.position.set(p.x, 0.175 + (Number(marker.weight ?? 0) * 0.015), p.z);
+      mesh.material.color.setHex(style.fill);
+      mesh.material.opacity = marker.kind === "heat_surplus" ? 0.46 : 0.42;
+    }
+  }
+
+  #setPlacementMesh(mesh, tiles) {
+    let count = 0;
+    const capacity = mesh.instanceMatrix.count ?? tiles.length;
+    for (const tile of tiles) {
+      if (count >= capacity) break;
+      const p = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      setInstancedMatrix(mesh, count, p.x, 0.19, p.z);
+      count += 1;
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  #updatePlacementLens() {
+    const tool = this.state.controls?.tool;
+    if (this.lensMode === "off") {
+      this.placementLensRoot.visible = false;
+      this.placementLegalMesh.count = 0;
+      this.placementIllegalMesh.count = 0;
+      return;
+    }
+
+    const classified = classifyPlacementTiles(this.state, tool);
+    if (!classified.requiredFlag) {
+      this.placementLensRoot.visible = false;
+      this.placementLegalMesh.count = 0;
+      this.placementIllegalMesh.count = 0;
+      this.lastPlacementLensSignature = "";
+      return;
+    }
+
+    const signature = [
+      tool,
+      this.state.grid?.version ?? 0,
+      this.state.grid?.tileStateVersion ?? 0,
+      classified.legal.length,
+      classified.illegal.length,
+    ].join("|");
+    this.placementLensRoot.visible = true;
+    if (signature === this.lastPlacementLensSignature) return;
+    this.lastPlacementLensSignature = signature;
+    this.#setPlacementMesh(this.placementLegalMesh, classified.legal);
+    this.#setPlacementMesh(this.placementIllegalMesh, classified.illegal);
   }
 
   #lerpColor(targetColor, hex, t) {
@@ -1280,7 +1416,8 @@ export class SceneRenderer {
   #updatePressureLens() {
     // v0.8.0 Phase 7.C — heat mode swaps the marker source + signature diff.
     if (this.lensMode === "off") {
-      for (const entry of this.pressureMarkerPool) entry.group.visible = false;
+      this.#hidePressureMarkers();
+      this.#hideHeatTileOverlay();
       this.pressureLensMarkers = [];
       return;
     }
@@ -1291,7 +1428,11 @@ export class SceneRenderer {
         this.lastHeatLensSignature = signature;
         this.pressureLensMarkers = buildHeatLens(this.state);
       }
+      this.#hidePressureMarkers();
+      this.#updateHeatTileOverlay(this.pressureLensMarkers);
+      return;
     } else {
+      this.#hideHeatTileOverlay();
       const signature = this.#pressureLensSignature();
       if (signature !== this.lastPressureLensSignature) {
         this.lastPressureLensSignature = signature;
@@ -2409,6 +2550,7 @@ export class SceneRenderer {
     this.#updatePathLine();
     this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
+    this.#updatePlacementLens();
     this.#updateOverlayMeshes();
 
     const pixelRatio = this.renderer.getPixelRatio();
