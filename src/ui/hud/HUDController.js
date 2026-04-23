@@ -3,6 +3,7 @@ import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { explainTerm } from "./glossary.js";
+import { getNextActionAdvice } from "./nextActionAdvisor.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
 import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 
@@ -180,6 +181,7 @@ export class HUDController {
     // viewports where the text is hidden by CSS.
     this.statusScenario = document.getElementById("statusScenario");
     this.statusScoreBreak = document.getElementById("statusScoreBreak");
+    this.statusNextAction = document.getElementById("statusNextAction");
     this.statusAction = document.getElementById("statusAction");
     this.statusFoodBar = document.getElementById("statusFoodBar");
     this.statusWoodBar = document.getElementById("statusWoodBar");
@@ -411,6 +413,24 @@ export class HUDController {
       node.textContent = "";
       if (Array.isArray(node.children)) node.children.length = 0;
       for (const chipNode of chipNodes) node.appendChild?.(chipNode);
+    }
+  }
+
+  #renderNextAction(state) {
+    const node = this.statusNextAction;
+    if (!node) return;
+    const next = getNextActionAdvice(state);
+    const label = next.label ? `Next: ${next.label}` : "Next: hold";
+    node.textContent = label;
+    node.setAttribute?.("title", next.detail || label);
+    node.setAttribute?.("data-priority", next.priority ?? "normal");
+    node.setAttribute?.("data-tool", next.tool ?? "select");
+    node.setAttribute?.("data-reason", next.reason ?? "");
+    const target = next.target;
+    if (target && Number.isFinite(Number(target.ix)) && Number.isFinite(Number(target.iz))) {
+      node.setAttribute?.("data-target", `${target.ix},${target.iz}`);
+    } else {
+      node.setAttribute?.("data-target", "");
     }
   }
 
@@ -971,6 +991,7 @@ export class HUDController {
     // on the pre-game menu) and mirrors it into #statusScenarioHeadline. We
     // only touch the DOM when the text changes to avoid layout thrash, and
     // hide the node outright when there is no active scenario (Quick Start).
+    this.#renderNextAction(state);
     if (this.statusScenarioHeadline) {
       const scenario = state?.gameplay?.scenario ?? {};
       const title = String(scenario.title ?? "").trim();
