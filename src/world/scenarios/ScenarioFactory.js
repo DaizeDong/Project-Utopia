@@ -245,8 +245,8 @@ function buildFrontierRepairScenario(grid) {
   setTileDirect(grid, eastDepot.ix + 1, eastDepot.iz, TILE.RUINS);
   setTileDirect(grid, eastDepot.ix + 2, eastDepot.iz, TILE.RUINS);
 
-  stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }], TILE.WALL);
-  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }], TILE.WALL);
+  stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }, { x: 1, z: -1 }], TILE.WALL);
+  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: -1, z: 3 }, { x: 1, z: 3 }], TILE.WALL);
   grid.version = Number(grid.version ?? 0) + 1;
 
   return {
