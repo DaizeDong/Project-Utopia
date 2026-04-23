@@ -206,7 +206,7 @@ export class GameApp {
       },
     );
     this.accumulatorSec = 0;
-    this.maxSimulationStepsPerFrame = 5;
+    this.maxSimulationStepsPerFrame = 6;
     this.uiRefreshIntervalSec = 1 / 8;
     this.uiRefreshAccumulator = this.uiRefreshIntervalSec;
     this.systemProfileInterval = 4;
@@ -695,7 +695,7 @@ export class GameApp {
   }
 
   setTimeScale(scale) {
-    const clamped = Math.max(0.25, Math.min(2.0, Number(scale) || 1));
+    const clamped = Math.max(0.25, Math.min(4.0, Number(scale) || 1));
     this.state.controls.timeScale = clamped;
     this.state.controls.actionMessage = `Time scale ${clamped.toFixed(2)}x`;
     this.state.controls.actionKind = "info";
@@ -1411,6 +1411,16 @@ export class GameApp {
   }
 
   startSession() {
+    // Apply the menu's pending template selection before entering active play.
+    const selectedId = this.state?.controls?.mapTemplateId;
+    const loadedId = this.state?.world?.mapTemplateId;
+    if (selectedId && loadedId && selectedId !== loadedId) {
+      this.regenerateWorld({
+        templateId: selectedId,
+        seed: this.state.world.mapSeed,
+        terrainTuning: this.state.controls.terrainTuning,
+      }, { phase: "menu" });
+    }
     this.#setRunPhase("active", {
       actionMessage: "Simulation started. Build the starter network first, then push stockpile and stability.",
       actionKind: "success",

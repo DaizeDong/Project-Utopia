@@ -79,7 +79,13 @@ export class GameStateOverlay {
     this.resetBtn = resetBtn;
     this.#refreshEndGateButtons();
 
-    startBtn?.addEventListener("click", () => this.handlers.onStart?.());
+    startBtn?.addEventListener("click", () => {
+      const templateId = this.mapTemplateSelect?.value;
+      if (templateId && this.state?.controls) {
+        this.state.controls.mapTemplateId = templateId;
+      }
+      this.handlers.onStart?.();
+    });
     resetFromMenuBtn?.addEventListener("click", () => {
       if (resetFromMenuBtn) {
         resetFromMenuBtn.textContent = "Generating...";

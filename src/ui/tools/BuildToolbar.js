@@ -32,6 +32,9 @@ export class BuildToolbar {
     this.state = state;
     this.handlers = handlers;
 
+    // Add the neutral tool before collecting data-tool buttons so it joins
+    // the existing click handlers and active-state sync.
+    this.#injectSelectToolButton();
     this.toolButtons = Array.from(document.querySelectorAll("button[data-tool]"));
     this.farmRatio = document.getElementById("farmRatio");
     this.farmRatioLabel = document.getElementById("farmRatioLabel");
@@ -148,11 +151,40 @@ export class BuildToolbar {
         const tool = btn.dataset.tool;
         if (!tool) return;
         this.state.controls.tool = tool;
-        this.state.controls.actionMessage = `Selected tool: ${tool}`;
+        if (tool === "select") {
+          this.state.controls.buildPreview = null;
+          this.state.controls.actionMessage = "Select tool - click a worker or tile without building.";
+        } else {
+          this.state.controls.actionMessage = `Selected tool: ${tool}`;
+        }
         this.state.controls.actionKind = "info";
         this.sync();
       });
     });
+  }
+
+  #injectSelectToolButton() {
+    if (typeof document === "undefined") return;
+    if (document.querySelector('button[data-tool="select"]')) return;
+
+    // Look for any existing data-tool button so we can target its parent
+    // (the tool-grid container). Falls back to null on headless DOM.
+    const anchor = document.querySelector("button[data-tool]");
+    const grid = anchor?.parentElement;
+    if (!grid) return;
+
+    const selectBtn = document.createElement("button");
+    selectBtn.setAttribute("data-tool", "select");
+    selectBtn.setAttribute(
+      "title",
+      "Select / Inspect (Esc) - neutral mode, click a worker or tile without building",
+    );
+    selectBtn.textContent = "Select";
+    grid.insertBefore(selectBtn, anchor);
+
+    if (this.state?.controls && this.state.controls.tool === "road") {
+      this.state.controls.tool = "select";
+    }
   }
 
   #setupManagementControls() {
