@@ -34,6 +34,8 @@
 // (sabotage / shortage / visitor arrival / weather shift / death / fire).
 // Anything else (routine event lifecycle transitions, raid cooldown drops,
 // spawn/drop bookkeeping) stays buried in the DeveloperPanel.
+import { describeMapTemplate } from "../../world/grid/Grid.js";
+
 const SALIENT_BEAT_PATTERNS = Object.freeze([
   /\[SABOTAGE\]/i,
   /\[SHORTAGE\]/i,
@@ -171,6 +173,15 @@ function humaniseSummary(raw) {
   return out;
 }
 
+function buildTemplateTag(state) {
+  const title = String(state?.gameplay?.scenario?.title ?? "").trim();
+  const templateId = String(state?.world?.mapTemplateId ?? "").trim();
+  if (!title || !templateId) return "";
+  const templateName = String(describeMapTemplate(templateId)?.name ?? "").trim();
+  if (!templateName) return "";
+  return `${title} - ${templateName}`;
+}
+
 /**
  * @param {object} state GameState or minimal shape with `ai.groupPolicies`
  *   (a Map keyed by group id) and `ai.lastPolicySource` (string).
@@ -221,7 +232,7 @@ export function computeStorytellerStripText(state) {
  *   mode "idle"     → prefix "DRIFT"
  *
  * @param {object} state GameState or minimal shape.
- * @returns {{mode: "llm"|"fallback"|"idle", focusText: string, summaryText: string, prefix: string, beatText: string | null}}
+ * @returns {{mode: "llm"|"fallback"|"idle", focusText: string, summaryText: string, prefix: string, beatText: string | null, templateTag: string}}
  */
 export function computeStorytellerStripModel(state) {
   const source = String(state?.ai?.lastPolicySource ?? "").toLowerCase();
@@ -275,6 +286,7 @@ export function computeStorytellerStripModel(state) {
   // without splicing into the main summary textContent (D4 arbitration).
   const beat = extractLatestNarrativeBeat(state);
   const beatText = formatBeatText(beat);
+  const templateTag = buildTemplateTag(state);
 
-  return { mode, focusText, summaryText, prefix, beatText };
+  return { mode, focusText, summaryText, prefix, beatText, templateTag };
 }

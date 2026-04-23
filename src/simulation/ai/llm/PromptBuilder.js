@@ -82,12 +82,53 @@ function buildEnvironmentDirective(payload, summary, focus) {
   };
 }
 
+function formatTileCoordinate(tile) {
+  const ix = Number(tile?.ix);
+  const iz = Number(tile?.iz);
+  if (!Number.isFinite(ix) || !Number.isFinite(iz)) return "";
+  return `(${Math.round(ix)},${Math.round(iz)})`;
+}
+
+function findFirstRouteGap(frontier) {
+  const routes = frontier?.brokenRoutes ?? [];
+  for (const route of routes) {
+    const gapTiles = Array.isArray(route?.gapTiles) ? route.gapTiles : [];
+    for (const tile of gapTiles) {
+      const coord = formatTileCoordinate(tile);
+      if (coord) return coord;
+    }
+  }
+  return "";
+}
+
+function findFirstDepotAnchor(frontier) {
+  const depots = frontier?.unreadyDepots ?? [];
+  for (const depot of depots) {
+    const anchor = depot?.anchor ?? depot?.tile ?? depot?.position ?? null;
+    const coord = formatTileCoordinate(anchor);
+    if (!coord) continue;
+    const label = String(depot?.label ?? depot?.id ?? coord).trim();
+    return label ? `depot ${label}` : `depot ${coord}`;
+  }
+  return "";
+}
+
+function buildActionableFocusSuffix(frontier) {
+  const routeCoord = findFirstRouteGap(frontier);
+  if (routeCoord) return ` at ${routeCoord} - place Road here`;
+
+  const depotAnchor = findFirstDepotAnchor(frontier);
+  if (depotAnchor) return ` at ${depotAnchor} - place Warehouse here`;
+
+  return "";
+}
+
 function describeWorkerFocus(summary, notes) {
   const objective = getObjective(summary);
   const frontier = getFrontier(summary);
   const logistics = getLogistics(summary);
   if ((frontier.brokenRoutes ?? []).length > 0 || (frontier.unreadyDepots ?? []).length > 0) {
-    return "rebuild the broken supply lane";
+    return `rebuild the broken supply lane${buildActionableFocusSuffix(frontier)}`;
   }
   if (Number(logistics.overloadedWarehouses ?? 0) > 0 || Number(logistics.strandedCarryWorkers ?? 0) > 0) {
     return "clear the stalled cargo";
@@ -278,7 +319,9 @@ function adjustWorkerPolicy(policy, context, summary) {
   }
 
   policy.focus = describeWorkerFocus(summary, notes);
-  policy.summary = `Workers should sustain ${policy.focus} while keeping hunger and carried cargo from overriding the map's intended reroute pressure.`;
+  policy.summary = /(?: at \(| at depot |place (?:Road|Warehouse) here)/i.test(policy.focus)
+    ? `Crew attention needed: ${policy.focus}. Other workers keep hunger and carry in check.`
+    : `Workers should sustain ${policy.focus} while keeping hunger and carried cargo from overriding the map's intended reroute pressure.`;
   policy.steeringNotes = notes.slice(0, 4);
 }
 
@@ -681,7 +724,7 @@ function applyStrategyToPolicy(policy, strategy) {
   }
 }
 
-export { adjustWorkerPolicy as adjustWorkerPolicyExported };
+export { describeWorkerFocus, adjustWorkerPolicy as adjustWorkerPolicyExported };
 
 export function buildPolicyFallback(summary) {
   const basePolicies = clonePolicies();

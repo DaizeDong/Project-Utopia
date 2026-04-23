@@ -711,6 +711,9 @@ export class HUDController {
       const getBeatEl = typeof document !== "undefined"
         ? document.getElementById("storytellerBeat")
         : null;
+      const getTemplateTagEl = typeof document !== "undefined"
+        ? document.getElementById("storytellerTemplateTag")
+        : null;
       const milestoneFlash = this.#currentMilestoneFlash(state);
       if (getBadgeEl && getFocusEl && getSummaryEl) {
         if (milestoneFlash) {
@@ -724,9 +727,24 @@ export class HUDController {
             if (getBeatEl.textContent !== "") getBeatEl.textContent = "";
             if (!getBeatEl.hasAttribute?.("hidden")) getBeatEl.setAttribute?.("hidden", "");
           }
+          if (getTemplateTagEl) {
+            if (getTemplateTagEl.textContent !== "") getTemplateTagEl.textContent = "";
+            if (!getTemplateTagEl.hasAttribute?.("hidden")) getTemplateTagEl.setAttribute?.("hidden", "");
+          }
           this.storytellerStrip.setAttribute?.("title", `[MILESTONE] ${milestoneFlash.text}`);
         } else {
         const model = computeStorytellerStripModel(state);
+        if (getTemplateTagEl) {
+          const templateTag = String(model.templateTag ?? "");
+          if (getTemplateTagEl.textContent !== templateTag) {
+            getTemplateTagEl.textContent = templateTag;
+          }
+          if (templateTag) {
+            if (getTemplateTagEl.hasAttribute?.("hidden")) getTemplateTagEl.removeAttribute?.("hidden");
+          } else if (!getTemplateTagEl.hasAttribute?.("hidden")) {
+            getTemplateTagEl.setAttribute?.("hidden", "");
+          }
+        }
         if (getBadgeEl.textContent !== model.prefix) {
           getBadgeEl.textContent = model.prefix;
         }
@@ -787,7 +805,8 @@ export class HUDController {
         }
 
         const beatFrag = (getBeatEl && getBeatEl.textContent) ? ` · ${getBeatEl.textContent}` : "";
-        const tooltipText = `[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
+        const tagFrag = model.templateTag ? `${model.templateTag} | ` : "";
+        const tooltipText = `${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
         }
       } else {

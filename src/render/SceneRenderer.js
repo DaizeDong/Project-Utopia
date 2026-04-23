@@ -336,7 +336,7 @@ const DEFAULT_CAMERA_VIEW = Object.freeze({
   targetZ: 0,
   zoom: 1.12,
 });
-const PRESSURE_MARKER_STYLE = Object.freeze({
+export const PRESSURE_MARKER_STYLE = Object.freeze({
   route: Object.freeze({ ring: 0xffa75a, fill: 0xffe0b8, ringOpacity: 0.58, fillOpacity: 0.16 }),
   depot: Object.freeze({ ring: 0x71d9ff, fill: 0xc8f4ff, ringOpacity: 0.54, fillOpacity: 0.14 }),
   weather: Object.freeze({ ring: 0x72b9ff, fill: 0xd0e8ff, ringOpacity: 0.5, fillOpacity: 0.13 }),
@@ -350,6 +350,12 @@ const PRESSURE_MARKER_STYLE = Object.freeze({
   heat_surplus: Object.freeze({ ring: 0xff5a48, fill: 0xff9180, ringOpacity: 0.72, fillOpacity: 0.22 }),
   heat_starved: Object.freeze({ ring: 0x4aa8ff, fill: 0x9fd0ff, ringOpacity: 0.7, fillOpacity: 0.22 }),
   heat_idle: Object.freeze({ ring: 0x8a94a2, fill: 0xb6bdc6, ringOpacity: 0.34, fillOpacity: 0.08 }),
+});
+export const HEAT_TILE_OVERLAY_VISUAL = Object.freeze({
+  heat_surplus: Object.freeze({ opacity: 0.46 }),
+  heat_starved: Object.freeze({ opacity: 0.42 }),
+  heat_idle: Object.freeze({ opacity: 0.32 }),
+  pulseAmplitude: 0.22,
 });
 
 export class SceneRenderer {
@@ -1306,6 +1312,7 @@ export class SceneRenderer {
 
   #updateHeatTileOverlay(markers) {
     this.#ensureHeatTileOverlayPool(markers.length);
+    const timeSec = Number(this.state.metrics?.timeSec ?? 0);
     for (let i = 0; i < this.heatTileOverlayPool.length; i += 1) {
       const mesh = this.heatTileOverlayPool[i];
       const marker = markers[i];
@@ -1315,10 +1322,14 @@ export class SceneRenderer {
       }
       const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.heat_idle;
       const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      const visual = HEAT_TILE_OVERLAY_VISUAL[marker.kind] ?? HEAT_TILE_OVERLAY_VISUAL.heat_idle;
+      const wave = Math.sin(timeSec * (1.5 + Number(marker.weight ?? 0) * 0.45) + i * 0.73);
+      const pulse = 1 + (wave * HEAT_TILE_OVERLAY_VISUAL.pulseAmplitude);
       mesh.visible = true;
       mesh.position.set(p.x, 0.175 + (Number(marker.weight ?? 0) * 0.015), p.z);
+      mesh.scale.set(pulse, pulse, 1);
       mesh.material.color.setHex(style.fill);
-      mesh.material.opacity = marker.kind === "heat_surplus" ? 0.46 : 0.42;
+      mesh.material.opacity = visual.opacity * (0.92 + ((wave + 1) * 0.08));
     }
   }
 
@@ -1458,8 +1469,11 @@ export class SceneRenderer {
       }
 
       const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.event;
-      const pulse = 1 + Math.sin(timeSec * (1.9 + Number(marker.weight ?? 0) * 0.9) + entry.phase) * 0.08;
-      const ringPulse = 1 + Math.cos(timeSec * (1.4 + Number(marker.weight ?? 0) * 0.7) + entry.phase) * 0.12;
+      const isHeatMarker = String(marker.kind ?? "").startsWith("heat_");
+      const pulseAmount = isHeatMarker ? HEAT_TILE_OVERLAY_VISUAL.pulseAmplitude : 0.08;
+      const ringPulseAmount = isHeatMarker ? 0.28 : 0.12;
+      const pulse = 1 + Math.sin(timeSec * (1.9 + Number(marker.weight ?? 0) * 0.9) + entry.phase) * pulseAmount;
+      const ringPulse = 1 + Math.cos(timeSec * (1.4 + Number(marker.weight ?? 0) * 0.7) + entry.phase) * ringPulseAmount;
       const worldRadius = this.state.grid.tileSize * (Number(marker.radius ?? 1) * 0.7 + 0.28);
       const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
 
