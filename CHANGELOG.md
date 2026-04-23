@@ -1,5 +1,50 @@
 # Changelog
 
+## [Unreleased] - v0.8.x iter-3 Structural Control Pass (Agent-Feedback-Loop Round 3)
+
+**Scope:** 10 reviewer feedbacks, 10 enhancer plans, 4 accepted P0 plans, 6
+subsumed/deferred plans, implemented in 2 waves plus a Stage D benchmark
+calibration fix. Feature freeze held: no new buildings, tiles, tools, assets,
+audio, victory conditions, score systems, mood/grief/relationship mechanics, or
+tutorial levels.
+
+**Why this round changed direction:** Rounds 0-2 improved readability,
+onboarding, HUD feedback, copy, and visual discoverability, but those gains did
+not materially change player agency or long-run outcomes. Round 3 accepted only
+plans that made decisions more executable or made the control surface more
+truthful.
+
+### Round 3 Highlights
+
+- **Next-action contract** (01a): added `getNextActionAdvice` and a
+  `#statusNextAction` HUD chip that chooses one live action from food risk,
+  broken routes, missing depots, and unmet logistics targets.
+- **Build consequence preview** (01b): extended BuildAdvisor preview text with
+  warehouse distance, depot coverage, road connection, and isolated-producer
+  warnings before resources are spent.
+- **Worker recovery tuning** (01d): moved hunger and delivery thresholds ahead
+  of Round 2 while Stage D calibrated them back from an over-aggressive first
+  pass that caused a day-21 benchmark loss.
+- **Autopilot truth contract** (02c): centralized autopilot chip text/title/data
+  attributes in `getAutopilotStatus`, including mode, coverage target, and
+  policy countdown.
+
+### Validation
+
+- Full suite: `1069/1071` pass, `0` fail, `2` pre-existing skips.
+- Benchmark (`seed=42 / temperate_plains / 90 days`): final run reached max
+  days, DevIndex `37.8`, survival score `20450`, `passed=true`.
+- Browser smoke: active run showed `Next: Build Farm 4/6`, autopilot OFF
+  fallback chip, canvas present, status bar visible, and no console/page errors.
+
+### Structural Limit
+
+Round 3 is greener than Rounds 0-2 because it touches agency and recovery
+contracts, not only presentation. It is still not a fundamental breakthrough:
+the 90-day DevIndex remains in the same band as Rounds 1-2, so the deeper
+economy/logistics/autopilot loop remains future work outside this feature
+freeze.
+
 ## [Unreleased] - v0.8.x iter-2 UX / Readability Polish (Agent-Feedback-Loop Round 2)
 
 **Scope:** 10 accepted enhancer plans executed in 3 waves across commits

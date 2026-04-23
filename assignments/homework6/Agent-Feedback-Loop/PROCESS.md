@@ -724,3 +724,84 @@ Benchmark note: the strict long-run spec floor remains below target, as in Round
 - Check status-bar width at 1024-1200 px with template tag, storyteller beat, top autopilot mirror, resource sublabels, and goal chips all visible.
 - Audio remains deferred by HW06 feature freeze.
 - Long-run economy/population gaps remain structural and outside this UX-focused round.
+
+---
+
+## 12. Round 3 execution log (historical)
+
+### 12.1 Timeline
+
+```text
+T+0:00   Round 3 structural reflection written.
+         Core conclusion: Rounds 0-2 improved readability and feedback, but did
+         not materially change agency, recovery, or benchmark outcomes.
+T+0:20   Stage A completed: 10 reviewer feedbacks + summary.
+         Average score: 5.18/10. Verdict: STRUCTURAL_WORK_REQUIRED.
+T+0:45   Stage B completed: 10 enhancer plans + summary.
+         plans_total=10, accepted=4, deferred/subsumed=6, waves=2.
+T+1:00   Wave 1 implemented:
+         01d mechanics recovery tuning -> 01b build consequence preview.
+T+3:30   Wave 2 implemented:
+         01a next-action contract -> 02c autopilot truth contract.
+T+5:20   Stage D initial benchmark failed:
+         outcome=loss at day 21, DevIndex 41.32, score 4906.
+T+5:45   Stage D debugger calibrated 01d thresholds.
+         Final benchmark reached 90 days, DevIndex 37.8, score 20450.
+T+6:30   Final validation:
+         full tests 1069/1071 pass, benchmark passed, browser smoke passed.
+T+6:45   Round 3 archival:
+         CHANGELOG + PROCESS.md + Round3 artefacts committed.
+```
+
+### 12.2 Stage C / D commit chain
+
+| commit | plan | purpose |
+|--------|------|---------|
+| `fda15d0` | 01d-mechanics-content | Earlier worker hunger seek/recover and smaller delivery thresholds |
+| `b9c09cf` | 01b-playability | BuildAdvisor logistics consequence preview |
+| `9de5d26` | 01a-onboarding | Current next-action HUD contract |
+| `f85b638` | 02c-speedrunner | Centralized autopilot status truth contract |
+| `2629fcf` | Stage D debugger | Calibrate 01d thresholds after benchmark day-21 loss |
+
+### 12.3 Final validation
+
+| check | result | verdict |
+|------|--------|---------|
+| `node --test test/*.test.js` | 1069/1071 pass, 0 fail, 2 skip | GREEN |
+| Benchmark seed=42 / temperate_plains / 90 days | max_days_reached, DevIndex 37.8, score 20450 | GREEN |
+| Browser smoke | active HUD shows next-action + autopilot chips, canvas present, no console/page errors | GREEN |
+| Redline audit | no new building/tile/tool/assets/audio/victory/score/mood/grief/tutorial systems | GREEN |
+
+### 12.4 Accepted vs deferred
+
+Accepted in Round 3:
+
+- 01a: current next-action contract.
+- 01b: build consequence preview.
+- 01d: worker recovery/logistics threshold tuning.
+- 02c: autopilot/timeScale truth contract.
+
+Deferred or subsumed:
+
+- 01c, 01e, 02a, 02b, 02e were subsumed by the accepted P0 plans.
+- 02d was deferred as D5 because relationship-aware decision systems would be a
+  new mechanic under HW06 feature freeze.
+
+### 12.5 Why Rounds 0-2 were not essential improvements
+
+Rounds 0-2 mostly changed how the game explains itself: HUD chips, copy,
+tooltips, heat/placement/storyteller surfaces, death alerts, and responsive
+layout. Those were useful, but they did not create a stronger decision loop.
+The player could see more information and receive more feedback, yet still did
+not have a trustworthy answer to "what should I do next, where, and why will it
+fix the colony?"
+
+The benchmark told the same story. After Round 2 stabilization, the 90-day seed
+42 result returned to the old band: DevIndex 37.77, deaths 157, score 20070.
+That means the polish was not load-bearing for economy, logistics, or survival.
+
+Round 3 is a partial correction: it makes the current action explicit, predicts
+build consequences, improves worker recovery timing, and makes autopilot state
+truthful. But it is still bounded by feature freeze. Final DevIndex 37.8 is not
+a product-level breakthrough. The next non-freeze round should change the core
+economy/logistics/autopilot loop rather than adding more explanatory surfaces.
