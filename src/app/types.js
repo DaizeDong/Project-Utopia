@@ -219,8 +219,8 @@
  * }} MetricsState
  *
  * @typedef {{
- *  enabled: boolean,
- *  coverageTarget?: "fallback"|"llm",
+ *  enabled: boolean, // false until the player explicitly turns on Autopilot.
+ *  coverageTarget?: "fallback"|"llm", // defaults to "fallback"; proxy health never flips this to "llm" by itself.
  *  runtimeProfile?: string,
  *  manualModeLocked?: boolean,
  *  mode: "fallback"|"llm",

@@ -16,6 +16,8 @@ export const HUD_GLOSSARY = Object.freeze({
   dev: "Dev Index: 0-100 composite of production, infra, safety, morale — higher = healthier colony.",
   devIndex: "Dev Index: 0-100 composite of production, infra, safety, morale — higher = healthier colony.",
   survivedScore: "Survival Score: accumulates +1/sec survived, +5 per birth, -10 per death in endless mode.",
+  autopilotOff: "Autopilot OFF: workers wait for your clicks; AI director stays paused until you turn it on.",
+  autopilotOn: "Autopilot ON: AI director schedules workers automatically. Toggle off to retake control.",
 
   // Scenario-progress ribbon tokens
   routes: "Supply routes completed vs. scenario target (warehouses linked by roads).",

@@ -1206,11 +1206,10 @@ export class GameApp {
 
         const hasApiKey = Boolean(payload.hasApiKey);
         if (hasApiKey && !manualModeLocked && !this.state.ai.enabled && !this.aiHealthMonitor.autoEnabledOnce) {
-          this.state.ai.enabled = true;
           this.aiHealthMonitor.autoEnabledOnce = true;
-          this.state.ai.coverageTarget = "llm";
-          this.state.controls.actionMessage = `AI auto-enabled (model: ${payload.model ?? "unknown"}).`;
-          this.state.controls.actionKind = "success";
+          this.state.ai.coverageTarget = "fallback";
+          this.state.controls.actionMessage = `AI proxy available (model: ${payload.model ?? "unknown"}). Enable Autopilot manually to let it drive.`;
+          this.state.controls.actionKind = "info";
         } else if (!hasApiKey && !manualModeLocked && (reason === "startup" || this.state.ai.enabled)) {
           this.state.ai.enabled = false;
           this.state.ai.coverageTarget = "fallback";
