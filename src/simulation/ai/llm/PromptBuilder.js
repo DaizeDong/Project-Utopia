@@ -87,33 +87,33 @@ function describeWorkerFocus(summary, notes) {
   const frontier = getFrontier(summary);
   const logistics = getLogistics(summary);
   if ((frontier.brokenRoutes ?? []).length > 0 || (frontier.unreadyDepots ?? []).length > 0) {
-    return "route repair and depot relief";
+    return "rebuild the broken supply lane";
   }
   if (Number(logistics.overloadedWarehouses ?? 0) > 0 || Number(logistics.strandedCarryWorkers ?? 0) > 0) {
-    return "cargo relief";
+    return "clear the stalled cargo";
   }
   if (objective.id === "stockpile-1") {
-    return "stockpile throughput";
+    return "keep the larder filling";
   }
   if (notes.some((note) => /weather|bandit|pressure/i.test(note))) {
-    return "safe frontier throughput";
+    return "work the safe edge of the frontier";
   }
-  return "frontier buildout";
+  return "push the frontier outward";
 }
 
 function describeTraderFocus(summary) {
   const frontier = getFrontier(summary);
   const gameplay = getGameplay(summary);
-  if ((frontier.readyDepots ?? []).length > 0 && Number(gameplay.threat ?? 0) < 52) return "forward depot trade";
-  if ((frontier.unreadyDepots ?? []).length > 0) return "defended warehouse lanes";
-  return "warehouse circulation";
+  if ((frontier.readyDepots ?? []).length > 0 && Number(gameplay.threat ?? 0) < 52) return "run trade to the forward depot";
+  if ((frontier.unreadyDepots ?? []).length > 0) return "hug the warehouse lanes";
+  return "keep goods moving between warehouses";
 }
 
 function describeSaboteurFocus(summary) {
   const frontier = getFrontier(summary);
-  if ((frontier.brokenRoutes ?? []).length > 0) return "soft frontier corridor hits";
-  if ((frontier.unreadyDepots ?? []).length > 0) return "depot disruption";
-  return "economic harassment";
+  if ((frontier.brokenRoutes ?? []).length > 0) return "strike a soft frontier corridor";
+  if ((frontier.unreadyDepots ?? []).length > 0) return "disrupt a frontier depot";
+  return "harass the supply chain";
 }
 
 function describeHerbivoreFocus(summary) {
@@ -615,7 +615,7 @@ export function buildEnvironmentFallback(summary) {
       durationSec: 22,
       factionTension: 0.35,
       eventSpawns: [],
-    }, summary, "stabilization");
+    }, summary, "let the colony breathe");
   }
 
   // 2b. High predator count: clear weather, calm conditions to reduce death rate

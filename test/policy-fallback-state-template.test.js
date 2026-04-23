@@ -54,7 +54,7 @@ test("buildPolicyFallback adapts worker/trader intents from state transition con
   assert.ok(traders.intentWeights.eat > DEFAULT_GROUP_POLICIES.traders.intentWeights.eat);
   assert.ok(Number(workers.targetPriorities.road ?? 0) > Number(DEFAULT_GROUP_POLICIES.workers.targetPriorities.road ?? 0));
   assert.ok(Number(workers.targetPriorities.depot ?? 0) > Number(DEFAULT_GROUP_POLICIES.workers.targetPriorities.depot ?? 0));
-  assert.match(String(workers.focus ?? ""), /route|depot|cargo/i);
+  assert.match(String(workers.focus ?? ""), /supply lane|cargo|larder/i);
   assert.ok(String(workers.summary ?? "").length > 10);
   assert.ok(Array.isArray(workers.steeringNotes) && workers.steeringNotes.length > 0);
 });
