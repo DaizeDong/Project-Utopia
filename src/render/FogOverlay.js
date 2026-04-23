@@ -1,64 +1,101 @@
-import { FOG_STATE } from "../config/constants.js";
+import * as THREE from "three";
 
-/**
- * FogOverlay — Phase 3 / M1b shader-based fog-of-war layer.
- *
- * Reads `state.fog.visibility` once per frame and tints the tile plane:
- *   VISIBLE  → 0.00 opacity (transparent, full color)
- *   EXPLORED → 0.45 opacity (dimmed, remembered)
- *   HIDDEN   → 0.90 opacity (near-black)
- *
- * NOTE: The full shader pipeline (data-texture upload + custom material with
- * a tile-indexed fragment sampler) is deferred to Phase 7. For now this class
- * is a wiring stub that downstream code can call without crashing. The minimap
- * already renders the player-facing fog tint in the 2D UI layer.
- *
- * TODO (Phase 7): replace the stub with:
- *   1. A THREE.DataTexture backed by a Uint8Array sized grid.width × grid.height.
- *   2. A ShaderMaterial that samples the data texture per fragment and blends
- *      a dark overlay over the base scene using the three FOG_STATE values.
- *   3. Dirty-flag driven `needsUpdate` using `state.fog.version`.
- */
 export class FogOverlay {
-  constructor() {
-    this.name = "FogOverlay";
+  constructor(grid) {
+    this.grid = grid;
     this.mesh = null;
+    this.material = null;
+    this.texture = null;
+    this.scene = null;
+    this.visibilityData = null;
     this.lastFogVersion = -1;
     this.lastVisibilityLength = 0;
   }
 
-  /**
-   * Attach the fog mesh to the scene. Stub — creates no Three.js objects yet
-   * so it is safe to call from headless / test contexts.
-   * @param {object} _scene Three.js Scene (ignored in stub)
-   */
-  attach(_scene) {
-    // TODO (Phase 7): construct PlaneGeometry + ShaderMaterial, add to scene.
+  attach(scene) {
+    if (!scene || !this.grid || this.mesh) return;
+    this.scene = scene;
+    const width = Math.max(1, Number(this.grid.width) || 1);
+    const height = Math.max(1, Number(this.grid.height) || 1);
+    const tileSize = Math.max(0.01, Number(this.grid.tileSize) || 1);
+    this.visibilityData = new Uint8Array(width * height);
+    this.texture = new THREE.DataTexture(
+      this.visibilityData,
+      width,
+      height,
+      THREE.RedFormat,
+      THREE.UnsignedByteType,
+    );
+    this.texture.needsUpdate = true;
+    this.texture.magFilter = THREE.NearestFilter;
+    this.texture.minFilter = THREE.NearestFilter;
+    this.texture.wrapS = THREE.ClampToEdgeWrapping;
+    this.texture.wrapT = THREE.ClampToEdgeWrapping;
+
+    this.material = new THREE.ShaderMaterial({
+      uniforms: {
+        tVisibility: { value: this.texture },
+        fogColor: { value: new THREE.Color(0x0b141c) },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tVisibility;
+        uniform vec3 fogColor;
+        varying vec2 vUv;
+        void main() {
+          float visibility = texture2D(tVisibility, vUv).r * 255.0;
+          if (visibility > 1.5) discard;
+          float alpha = visibility > 0.5 ? 0.35 : 0.75;
+          gl_FragColor = vec4(fogColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    });
+
+    const geometry = new THREE.PlaneGeometry(width * tileSize, height * tileSize);
+    this.mesh = new THREE.Mesh(geometry, this.material);
+    this.mesh.rotation.x = -Math.PI / 2;
+    this.mesh.position.y = 0.045;
+    this.mesh.renderOrder = 3;
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
   }
 
-  /**
-   * Called once per render frame. Reads the fog array from state and marks
-   * the overlay for a GPU upload when the version changes.
-   * @param {object} state GameState with optional state.fog.visibility.
-   */
   update(state) {
     const fog = state?.fog;
-    if (!fog || !(fog.visibility instanceof Uint8Array)) return;
+    const visibility = fog?.visibility;
+    if (!this.texture || !this.visibilityData || !(visibility instanceof Uint8Array)) return;
     const version = Number(fog.version ?? 0);
-    if (version === this.lastFogVersion && fog.visibility.length === this.lastVisibilityLength) {
-      return;
-    }
+    if (version === this.lastFogVersion && visibility.length === this.lastVisibilityLength) return;
+
+    const copyLength = Math.min(this.visibilityData.length, visibility.length);
+    this.visibilityData.fill(0);
+    this.visibilityData.set(visibility.subarray(0, copyLength));
+    this.texture.needsUpdate = true;
     this.lastFogVersion = version;
-    this.lastVisibilityLength = fog.visibility.length;
-    // TODO (Phase 7): upload `fog.visibility` into the data texture here.
-    // A single fragment check vs FOG_STATE yields the three opacity bands.
-    void FOG_STATE;
+    this.lastVisibilityLength = visibility.length;
   }
 
-  /**
-   * Detach and release GPU resources. Stub.
-   */
   dispose() {
+    if (this.scene && this.mesh) {
+      this.scene.remove(this.mesh);
+    }
+    this.mesh?.geometry?.dispose?.();
+    this.material?.dispose?.();
+    this.texture?.dispose?.();
     this.mesh = null;
+    this.material = null;
+    this.texture = null;
+    this.visibilityData = null;
+    this.scene = null;
   }
 }

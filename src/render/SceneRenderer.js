@@ -10,6 +10,7 @@ import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
 import { buildPressureLens, buildHeatLens, heatLensSignature } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
+import { FogOverlay } from "./FogOverlay.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -492,6 +493,8 @@ export class SceneRenderer {
     this.entitySpriteRoot = new THREE.Group();
     this.entityModelRoot = new THREE.Group();
     this.scene.add(this.tileModelRoot, this.entitySpriteRoot, this.entityModelRoot);
+    this.fogOverlay = new FogOverlay(this.state.grid);
+    this.fogOverlay.attach(this.scene);
 
     this.lastGridVersion = -1;
     this.pathDoneVerts = [];
@@ -2373,6 +2376,9 @@ export class SceneRenderer {
         this.tileBorderLines.material.dispose();
       }
       this.#setupTileBorders();
+      this.fogOverlay?.dispose?.();
+      this.fogOverlay = new FogOverlay(this.state.grid);
+      this.fogOverlay.attach(this.scene);
     }
     this.#updateOrthoProjection();
     this.applyViewState(DEFAULT_CAMERA_VIEW);
@@ -2401,6 +2407,7 @@ export class SceneRenderer {
       this.#updateEntityMeshes();
     }
     this.#updatePathLine();
+    this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
     this.#updateOverlayMeshes();
 
@@ -2445,6 +2452,7 @@ export class SceneRenderer {
     this.controls.removeEventListener("end", this.boundOnControlsEnd);
 
     this.controls?.dispose?.();
+    this.fogOverlay?.dispose?.();
     this.#clearEntitySpriteInstances();
     for (const texture of this.unitSpriteTextures.values()) {
       texture.dispose?.();

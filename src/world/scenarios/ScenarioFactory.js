@@ -245,8 +245,8 @@ function buildFrontierRepairScenario(grid) {
   setTileDirect(grid, eastDepot.ix + 1, eastDepot.iz, TILE.RUINS);
   setTileDirect(grid, eastDepot.ix + 2, eastDepot.iz, TILE.RUINS);
 
-  stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }, { x: 1, z: -1 }], TILE.WALL);
-  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: -1, z: 3 }, { x: 1, z: 3 }], TILE.WALL);
+  stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }], TILE.WALL);
+  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }], TILE.WALL);
   grid.version = Number(grid.version ?? 0) + 1;
 
   return {
@@ -314,13 +314,13 @@ function buildFrontierRepairScenario(grid) {
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "west-wilds" }],
     },
     targets: {
-      logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 4 },
+      logistics: { warehouses: 2, farms: 6, lumbers: 3, roads: 20, walls: 8 },
       stockpile: { food: 95, wood: 90 },
       stability: { walls: 12, prosperity: 58, threat: 44, holdSec: 30 },
     },
     objectiveCopy: {
       logisticsTitle: "Reconnect the Frontier",
-      logisticsDescription: "Reconnect the west lumber outpost, reclaim the east depot with a warehouse, then reach 4 farms, 3 lumbers, and 20 roads.",
+      logisticsDescription: "Reconnect the west lumber outpost, reclaim the east depot with a warehouse, then reach 6 farms, 3 lumbers, 8 walls, and 20 roads.",
       stockpileTitle: "Refill the Stockpile",
       stockpileDescription: "Reach 95 food and 90 wood once the repaired frontier route is running.",
       stabilityTitle: "Fortify and Stabilize",
@@ -375,22 +375,18 @@ function buildGateChokepointScenario(grid) {
   setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
 
   stampCluster(grid, center, [{ x: 1, z: 2 }], TILE.FARM);
-  stampCluster(grid, southGranary, [{ x: 0, z: 0 }, { x: -1, z: 0 }], TILE.FARM);
+  stampCluster(grid, southGranary, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
   stampCluster(grid, center, [
-    { x: -3, z: -2 }, { x: -3, z: -1 }, { x: -3, z: 0 },
-    { x: 3, z: -2 }, { x: 3, z: -1 }, { x: 3, z: 0 },
     { x: -2, z: 3 }, { x: -1, z: 3 }, { x: 0, z: 3 },
   ], TILE.WALL);
   stampCluster(grid, northGate, [
-    { x: -1, z: -1 }, { x: -1, z: 0 }, { x: -1, z: 1 },
-    { x: 1, z: -1 }, { x: 1, z: 0 }, { x: 1, z: 1 },
+    { x: -1, z: 0 }, { x: 1, z: 0 },
   ], TILE.WALL);
   stampCluster(grid, southGate, [
-    { x: -1, z: -1 }, { x: -1, z: 0 }, { x: -1, z: 1 },
-    { x: 1, z: -1 }, { x: 1, z: 0 }, { x: 1, z: 1 },
+    { x: -1, z: 0 }, { x: 1, z: 0 },
   ], TILE.WALL);
 
   setTileDirect(grid, northGate.ix, northGate.iz, TILE.RUINS);
@@ -524,7 +520,7 @@ function buildIslandRelayScenario(grid) {
   setTileDirect(grid, relayDepot.ix, relayDepot.iz, TILE.ROAD);
   setTileDirect(grid, harbor.ix, harbor.iz, TILE.WAREHOUSE);
 
-  stampCluster(grid, eastFields, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.FARM);
+  stampCluster(grid, eastFields, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, northIslet, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
