@@ -51,9 +51,9 @@ export const BALANCE = Object.freeze({
   hungerEatRatePerSecond: 5.0,
   hungerEatRecoveryPerFoodUnit: 0.04,
   workerHungerDecayPerSecond: 0.0055,
-  workerHungerSeekThreshold: 0.22,
-  workerHungerRecoverThreshold: 0.52,
-  workerEatRecoveryTarget: 0.74,
+  workerHungerSeekThreshold: 0.18,
+  workerHungerRecoverThreshold: 0.42,
+  workerEatRecoveryTarget: 0.70,
   workerHungerEatRecoveryPerFoodUnit: 0.11,
   resourceCollapseCarryGrace: 0.5,
   visitorHungerDecayPerSecond: 0.0085,
@@ -122,13 +122,13 @@ export const BALANCE = Object.freeze({
   // reducing AI panic flips when food momentarily dips.
   foodEmergencyThreshold: 18,
   productionCooldownSec: 0.9,
-  workerDeliverThreshold: 1.35,
-  workerDeliverLowThreshold: 0.65,
+  workerDeliverThreshold: 1.6,
+  workerDeliverLowThreshold: 0.85,
   // Phase 7.A § 14.2: 1.5 → 2.2. Damps worker intent flapping so food gathers
   // and deliveries are less likely to be interrupted by shallow priority noise.
   workerIntentCooldownSec: 2.2,
-  workerCarryPressureSec: 3.0,
-  workerFarDepotDistance: 10,
+  workerCarryPressureSec: 3.8,
+  workerFarDepotDistance: 12,
   workerUnloadRatePerSecond: 4.2,
   warehouseQueuePenalty: 0.32,
   // Phase 7.A § 14.2: 3 → 4. Small colonies no longer queue after M2 intake cap.
