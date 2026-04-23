@@ -113,6 +113,28 @@
       background: rgba(110,235,131,0.12); color: #a5f2b2;
       border-color: rgba(110,235,131,0.3);
     }
+    .hud-next-action {
+      display: inline-flex; align-items: center; min-height: 18px;
+      max-width: min(260px, 24vw); min-width: 0;
+      padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+      font-size: 10px; font-weight: 800; line-height: 1.15;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(61,155,233,0.14); color: #a9d8ff;
+      flex: 0 1 auto;
+    }
+    .hud-next-action[data-priority="critical"] {
+      background: rgba(244,67,54,0.2); color: #ffb0a8;
+      border-color: rgba(244,67,54,0.38);
+    }
+    .hud-next-action[data-priority="high"] {
+      background: rgba(255,193,7,0.15); color: #ffdf8a;
+      border-color: rgba(255,193,7,0.34);
+    }
+    .hud-next-action[data-priority="done"] {
+      background: rgba(76,175,80,0.16); color: #a5d6a7;
+      border-color: rgba(76,175,80,0.32);
+    }
     .hud-scenario-progress { font-size: 11px; opacity: 0.85; min-width: 0; }
     .hud-goal-list {
       display: flex; flex-wrap: wrap; justify-content: flex-end;
@@ -832,6 +854,7 @@
       #statusScenario,
       #statusScoreBreak { display: none; }
       #statusScoreboard { flex: 1 1 100%; justify-content: flex-end; }
+      #statusNextAction { max-width: min(260px, 70vw); }
       #latestDeathRow { flex-basis: 100%; justify-content: flex-end; }
       #alertStack { top: 84px; right: 8px; max-width: min(320px, calc(100vw - 16px)); }
     }
@@ -839,6 +862,7 @@
       .hud-scenario { max-width: 220px; }
       .hud-action { max-width: min(360px, 30vw); }
       .hud-goal-list { max-width: 300px; }
+      #statusNextAction { max-width: 210px; }
       #statusScoreBreak { display: none; }
       #panelToggles .panel-toggle { padding: 3px 6px; font-size: 10px; }
     }
@@ -1109,6 +1133,7 @@
           </span>
           <span id="aiAutopilotChip" class="hud-chip" data-mode="off" title="">Autopilot OFF</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
+          <span id="statusNextAction" class="hud-next-action" data-priority="idle" title="Current next action">Next: start</span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
           <!-- v0.8.2 Round-1 01d-mechanics-content (Step 3) — most-recent-death
                shortcut row. Pulls the newest "... died (...)" entry from

@@ -79,6 +79,7 @@ test("UI layout contains required control ids", () => {
     "dockCollapseAllBtn",
     "dockExpandAllBtn",
     "dockResetLayoutBtn",
+    "statusNextAction",
   ];
 
   for (const id of requiredIds) {
