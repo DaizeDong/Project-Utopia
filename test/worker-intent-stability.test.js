@@ -38,12 +38,16 @@ function makeWorker(overrides = {}) {
 
 // --- Deliver hysteresis tests ---
 
-test("BALANCE has workerDeliverLowThreshold of 1.0", () => {
-  assert.equal(BALANCE.workerDeliverLowThreshold, 1.0);
+test("BALANCE has workerDeliverLowThreshold of 0.65", () => {
+  assert.equal(BALANCE.workerDeliverLowThreshold, 0.65);
 });
 
-test("BALANCE has workerHungerRecoverThreshold of 0.35", () => {
-  assert.equal(BALANCE.workerHungerRecoverThreshold, 0.35);
+test("BALANCE has workerHungerRecoverThreshold of 0.52", () => {
+  assert.equal(BALANCE.workerHungerRecoverThreshold, 0.52);
+});
+
+test("BALANCE has workerHungerSeekThreshold of 0.22", () => {
+  assert.equal(BALANCE.workerHungerSeekThreshold, 0.22);
 });
 
 test("BALANCE has workerIntentCooldownSec within stability band", () => {
@@ -56,12 +60,12 @@ test("BALANCE has workerIntentCooldownSec within stability band", () => {
   );
 });
 
-test("Worker in 'deliver' state with carry=2.3 (below 2.4 entry threshold) stays in deliver", () => {
-  // carry=2.3 is below the normal 2.4 threshold but above the hysteresis 1.2 threshold
+test("Worker in 'deliver' state with carry=1.0 (below entry threshold) stays in deliver", () => {
+  // carry=1.0 is below the normal 1.35 threshold but above the hysteresis 0.65 threshold
   // If the worker is already in deliver state, they should stay there
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 2.3, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 1.0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "deliver" } },
   });
   const state = makeState();
@@ -71,11 +75,11 @@ test("Worker in 'deliver' state with carry=2.3 (below 2.4 entry threshold) stays
     `Expected deliver but got ${result.desiredState} (reason: ${result.reason})`);
 });
 
-test("Worker NOT in 'deliver' state with carry=1.7 seeks task (no hysteresis)", () => {
-  // Without being in deliver state, carry=1.7 is below the 1.8 threshold, so no deliver
+test("Worker NOT in 'deliver' state with carry=1.2 seeks task (no hysteresis)", () => {
+  // Without being in deliver state, carry=1.2 is below the 1.35 threshold, so no deliver
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 1.7, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 1.2, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "seek_task" } },
   });
   const state = makeState();
@@ -85,10 +89,10 @@ test("Worker NOT in 'deliver' state with carry=1.7 seeks task (no hysteresis)", 
     `Expected NOT deliver but got deliver (reason: ${result.reason})`);
 });
 
-test("Worker in 'deliver' state with carry=1.1 (above low threshold 1.0) stays in deliver", () => {
+test("Worker in 'deliver' state with carry=0.7 (above low threshold 0.65) stays in deliver", () => {
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 1.1, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 0.7, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "deliver" } },
   });
   const state = makeState();
@@ -98,11 +102,11 @@ test("Worker in 'deliver' state with carry=1.1 (above low threshold 1.0) stays i
     `Expected deliver but got ${result.desiredState} (reason: ${result.reason})`);
 });
 
-test("Worker in 'deliver' state with carry=0.9 (below low threshold 1.0) leaves deliver", () => {
-  // carry=0.9 is below even the hysteresis threshold, so worker should leave deliver
+test("Worker in 'deliver' state with carry=0.6 (below low threshold 0.65) leaves deliver", () => {
+  // carry=0.6 is below even the hysteresis threshold, so worker should leave deliver
   const worker = makeWorker({
     hunger: 0.8,
-    carry: { food: 0.9, wood: 0, stone: 0, herbs: 0 },
+    carry: { food: 0.6, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "deliver" } },
   });
   const state = makeState();
@@ -114,11 +118,11 @@ test("Worker in 'deliver' state with carry=0.9 (below low threshold 1.0) leaves 
 
 // --- Eat hysteresis tests ---
 
-test("Worker in 'eat' state with hunger=0.15 (just above 0.14 entry) stays in eat", () => {
-  // hunger=0.15 is above the entry threshold (0.14), so normal check wouldn't trigger eat
-  // But since we're already in eat and hunger < recover threshold (0.35), hysteresis keeps us eating
+test("Worker in 'eat' state with hunger=0.24 (just above 0.22 entry) stays in eat", () => {
+  // hunger=0.24 is above the entry threshold, so normal check would not trigger eat.
+  // Since we're already eating and hunger < recover threshold, hysteresis keeps eating.
   const worker = makeWorker({
-    hunger: 0.15,
+    hunger: 0.24,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "eat" } },
   });
@@ -131,9 +135,9 @@ test("Worker in 'eat' state with hunger=0.15 (just above 0.14 entry) stays in ea
   );
 });
 
-test("Worker in 'seek_food' state with hunger=0.15 (just above 0.14 entry) stays in seek_food/eat", () => {
+test("Worker in 'seek_food' state with hunger=0.24 (just above 0.22 entry) stays in seek_food/eat", () => {
   const worker = makeWorker({
-    hunger: 0.15,
+    hunger: 0.24,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "seek_food" } },
   });
@@ -146,10 +150,10 @@ test("Worker in 'seek_food' state with hunger=0.15 (just above 0.14 entry) stays
   );
 });
 
-test("Worker in 'eat' state with hunger=0.36 (above recover threshold 0.35) leaves eat state", () => {
-  // hunger=0.36 is above both entry threshold AND recover threshold, so hysteresis does not apply
+test("Worker in 'eat' state with hunger=0.54 (above recover threshold 0.52) leaves eat state", () => {
+  // hunger=0.54 is above both entry threshold and recover threshold, so hysteresis does not apply.
   const worker = makeWorker({
-    hunger: 0.36,
+    hunger: 0.54,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "eat" } },
   });
@@ -162,22 +166,35 @@ test("Worker in 'eat' state with hunger=0.36 (above recover threshold 0.35) leav
     `Expected NOT seek_food but got seek_food (reason: ${result.reason})`);
 });
 
-test("Worker NOT in eat/seek_food state with hunger=0.15 does NOT trigger eat (no hysteresis)", () => {
-  // hunger=0.15 is just above 0.14 threshold; without hysteresis a fresh worker would NOT eat
-  // Since 0.15 > 0.14 (threshold), the normal rule does NOT trigger
+test("Worker NOT in eat/seek_food state with hunger=0.24 does NOT trigger eat (no hysteresis)", () => {
+  // hunger=0.24 is just above the 0.22 threshold; without hysteresis a fresh worker does not eat.
   const worker = makeWorker({
-    hunger: 0.15,
+    hunger: 0.24,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "seek_task" } },
   });
   const state = makeState();
 
   const result = deriveWorkerDesiredStateExported(worker, state);
-  // 0.15 > 0.14 so no hunger trigger without hysteresis
   assert.notEqual(result.desiredState, "eat",
-    `Expected NOT eat for worker not in eat state with hunger 0.15`);
+    `Expected NOT eat for worker not in eat state with hunger 0.24`);
   assert.notEqual(result.desiredState, "seek_food",
-    `Expected NOT seek_food for worker not in eat state with hunger 0.15`);
+    `Expected NOT seek_food for worker not in eat state with hunger 0.24`);
+});
+
+test("Worker with hunger below 0.22 starts seeking food before crisis threshold", () => {
+  const worker = makeWorker({
+    hunger: 0.21,
+    carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
+    blackboard: { fsm: { state: "seek_task" } },
+  });
+  const state = makeState();
+
+  const result = deriveWorkerDesiredStateExported(worker, state);
+  assert.ok(
+    result.desiredState === "eat" || result.desiredState === "seek_food",
+    `Expected early eat/seek_food but got ${result.desiredState} (reason: ${result.reason})`,
+  );
 });
 
 test("Worker in deliver state with carry=0 should NOT stay in deliver", () => {
@@ -206,7 +223,7 @@ test("TASK_LOCK_STATES includes seek_task, harvest, deliver, eat, process", asyn
 test("Worker in eat state with no food available does not stay in eat via hysteresis", () => {
   // If there's no food, hysteresis should not force eat state
   const worker = makeWorker({
-    hunger: 0.15,
+    hunger: 0.24,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "eat" } },
   });

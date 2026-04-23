@@ -36,7 +36,7 @@ test("Worker keeps working with small carry until threshold", () => {
   const state = baseState();
   const worker = {
     hunger: 0.7,
-    carry: { food: 1.2, wood: 0.4 },
+    carry: { food: 0.7, wood: 0.4 },
     role: "FARM",
     stateLabel: "Work (Farm)",
   };
@@ -57,6 +57,18 @@ test("Worker carry pressure forces delivery even below the raw threshold", () =>
   };
 
   assert.equal(chooseWorkerIntent(worker, state), "deliver");
+});
+
+test("Worker hunger below Round 3 threshold seeks food before severe starvation", () => {
+  const state = baseState();
+  const worker = {
+    hunger: 0.21,
+    carry: { food: 0, wood: 0 },
+    role: "WOOD",
+    stateLabel: "Work (Lumber)",
+  };
+
+  assert.equal(chooseWorkerIntent(worker, state), "eat");
 });
 
 test("Worker does not enter eat intent when only warehouse exists but food is zero", () => {
