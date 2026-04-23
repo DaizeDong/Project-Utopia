@@ -654,3 +654,73 @@ date。这条原则下 reviewer 的打分自然持平于 Round 0（3.1/10），�
 ### 10.6 Round 1 会话 ID
 
 `945ccbad-5fdd-453e-b64f-c3950c3b89cc`（与 Round 0 同会话，连续推进）
+
+---
+
+## 11. Round 2 执行日志（historical）
+
+### 11.1 时间线
+
+```text
+T+0:00   Round 2 Stage A 完成：10 个 reviewer feedback + summary
+T+0:20   Stage B 完成：10 个 enhancer plan + Plans/summary.md
+         plans_total=10, accepted=10, deferred=0, waves=3
+T+0:30   Stage C Wave 1:
+         02a -> 01c -> 01a wave1 -> 01d
+T+2:30   Stage C Wave 2:
+         01a wave2 -> 02b -> 01b -> 02c
+T+5:30   Stage C Wave 3:
+         02d -> 01e -> 02e
+T+7:40   Stage D:
+         full tests green, benchmark initially regressed to DevIndex 32.69
+         debugger fix restored Temperate Plains starter wall floor
+T+8:10   Stage D final:
+         full tests 1055/1057 pass, benchmark DevIndex 37.77, Playwright smoke OK
+T+8:20   Round 2 archival:
+         CHANGELOG + PROCESS.md + Round2 artefacts committed
+```
+
+### 11.2 Stage C commit 链
+
+| commit | plan | 目的 |
+|--------|------|------|
+| `7065647` | 02a-rimworld-veteran | Select tool, Start template application, x4 clamp alignment |
+| `ed8d1de` | 01c-ui | Death alerts, goal chips, mid-width HUD fixes |
+| `aeb6543` | 01a-onboarding wave1 | Scenario footprint + FogOverlay |
+| `d912248` | 01d-mechanics-content | Heat tile overlay + placement lens + tile insight |
+| `4edd744` | 01a-onboarding wave2 | Milestone detector + HUD flash |
+| `2dff83d` | 02b-casual | Death/resource/milestone feedback toasts |
+| `91729ff` | 01b-playability | Autopilot default-off chip + score/dev tooltips |
+| `16d5b74` | 02c-speedrunner | 1-12 shortcuts + top autopilot mirror |
+| `40ba609` | 02d-roleplayer | Worker memories + relationship labels + narrative voice |
+| `02ec616` | 01e-innovation | Actionable DIRECTOR coordinates + template tag + Heat Lens pulse |
+| `76d7393` | 02e-indie-critic | Storyteller truncation fix + voice diffusion + `__utopia` dev gate |
+| `d0bf672` | Stage D fix | Restore benchmark defense floor without pre-completing wall objective |
+
+### 11.3 Stage D 验证结果
+
+| 指标 | 结果 | 判定 |
+|------|------|------|
+| `node --test test/*.test.js` | 1055/1057 pass, 0 fail, 2 pre-existing skip | GREEN |
+| Benchmark seed=42 / temperate_plains / 90 days | DevIndex 37.77, deaths 157, score 20070 | GREEN vs Round 1 baseline |
+| Browser smoke | `/` hides `window.__utopia`, keeps `__utopiaLongRun`; `/?dev=1` exposes both; 0 console errors | GREEN |
+| Redline audit | no new tile/building/tool constants, no new audio/assets, no new score/mood/grief/win mechanics | GREEN |
+
+Benchmark note: the strict long-run spec floor remains below target, as in Round 1. The relevant Round 2 regression check is relative to the Round 1 baseline; after `d0bf672`, DevIndex and deaths returned to the same baseline.
+
+### 11.4 Artefacts
+
+| 类别 | 文件数 | 备注 |
+|------|-------:|------|
+| Feedbacks | 10 + summary | Stage A raw reviewer output |
+| Plans | 10 + summary | Stage B conflict matrix + 3-wave schedule |
+| Implementations | 11 | 10 accepted plans; `01a-onboarding` split into wave1/wave2 logs |
+| Validation | 1 | `Validation/test-report.md`, verdict GREEN |
+| Code commits | 12 | 11 Stage C implementation commits + 1 Stage D stabilization fix |
+
+### 11.5 Round 2 -> Round 3 Handoff
+
+- Re-review whether restored starter walls still feel sparse enough for onboarding.
+- Check status-bar width at 1024-1200 px with template tag, storyteller beat, top autopilot mirror, resource sublabels, and goal chips all visible.
+- Audio remains deferred by HW06 feature freeze.
+- Long-run economy/population gaps remain structural and outside this UX-focused round.

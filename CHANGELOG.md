@@ -1,5 +1,52 @@
 # Changelog
 
+## [Unreleased] - v0.8.x iter-2 UX / Readability Polish (Agent-Feedback-Loop Round 2)
+
+**Scope:** 10 accepted enhancer plans executed in 3 waves across commits
+`7065647..76d7393`, plus Stage D stabilization commit `d0bf672`. Feature
+freeze held: no new tile/building/tool constants, no new audio/assets, no new
+win, score, mood, or grief mechanics.
+
+**Test surface:** full suite `1055/1057` pass, `0` fail, `2` pre-existing
+skips. Long-horizon benchmark (`seed=42 / temperate_plains / 90 days`) ended
+at DevIndex `37.77`, deaths `157`, survival score `20070`, matching the Round
+1 baseline after the Stage D starter-wall stabilization.
+
+### Round 2 Highlights
+
+- **Select/start/template/x4 fixes** (02a): added Select toolbar support,
+  made Start honor the selected map template, and aligned x4 simulation clamp.
+- **Death alerts and goal chips** (01c): added death-alert surfaces, goal chip
+  rendering, and tighter mid-width HUD behavior.
+- **Scenario/fog/milestone onboarding** (01a): slimmed scenario footprints
+  without pre-completing objectives, implemented FogOverlay, and emitted
+  milestone flashes through the existing event path.
+- **Heat and placement lenses** (01d): surfaced Heat Lens as tile overlays,
+  added placement-lens feedback, and expanded tile insight text.
+- **Casual feedback toasts** (02b): connected death/milestone/resource
+  feedback to the HUD and event stream.
+- **Playability/autopilot polish** (01b): defaulted autopilot off for manual
+  starts, exposed an autopilot chip, and split score/dev tooltips.
+- **Speedrunner controls** (02c): completed 1-12 shortcut coverage, top-bar
+  autopilot mirroring, and x4 UI label/slider alignment.
+- **Roleplayer memory** (02d): recorded worker memories for deaths and world
+  events, humanized relationship labels, and softened fallback director voice.
+- **Innovation signals** (01e): added actionable DIRECTOR coordinates,
+  scenario/template storyteller tags, and stronger Heat Lens pulse coverage.
+- **Indie critic polish** (02e): fixed storyteller strip flex truncation,
+  diffused stronger voice into BuildAdvisor/glossary copy, and gated
+  `window.__utopia` behind dev mode while keeping `__utopiaLongRun` public.
+
+### Validation
+
+- Stage D fix `d0bf672` restored the Temperate Plains starter-wall floor so
+  the 90-day benchmark returned from DevIndex `32.69` to the Round 1 baseline
+  `37.77` while starter walls still remain below the new logistics target.
+- Vite + Playwright smoke: no console errors; `/` hides `window.__utopia` and
+  keeps `window.__utopiaLongRun`; `/?dev=1` exposes both.
+- Round 2 artifacts archived under
+  `assignments/homework6/Agent-Feedback-Loop/Round2/`.
+
 ## [Unreleased] — v0.8.x iter-0 UX Polish (Agent-Feedback-Loop Round 0)
 
 **Scope:** 10 independent enhancer plans executed in 4 waves across commits
