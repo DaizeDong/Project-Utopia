@@ -2,6 +2,7 @@ import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getL
 import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
+import { getAutopilotStatus } from "./autopilotStatus.js";
 import { explainTerm } from "./glossary.js";
 import { getNextActionAdvice } from "./nextActionAdvisor.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
@@ -45,14 +46,6 @@ function buildDevIndexTooltip(state, casualMode) {
   return dimEntries.length > 0
     ? `${base}; breakdown ${dimEntries.join(" | ")}`
     : explainTerm("dev");
-}
-
-function getAutopilotRemainingSec(state) {
-  const intervalSec = Math.max(1, Number(BALANCE.policyDecisionIntervalSec ?? 10));
-  const now = Number(state.metrics?.timeSec ?? 0);
-  const last = Number(state.ai?.lastPolicyResultSec ?? NaN);
-  if (!Number.isFinite(last) || last < 0) return intervalSec;
-  return Math.max(0, intervalSec - Math.max(0, now - last));
 }
 
 function scenarioGoalChips(state) {
@@ -890,14 +883,12 @@ export class HUDController {
     if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
 
     if (this.aiAutopilotChip) {
-      const enabled = Boolean(state.ai?.enabled);
-      const mode = enabled ? "on" : "off";
-      const text = enabled
-        ? `Autopilot ON - next tick in ${getAutopilotRemainingSec(state).toFixed(1)}s`
-        : "Autopilot OFF - you are in control";
-      this.aiAutopilotChip.textContent = text;
-      this.aiAutopilotChip.setAttribute?.("data-mode", mode);
-      this.aiAutopilotChip.setAttribute?.("title", explainTerm(enabled ? "autopilotOn" : "autopilotOff"));
+      const status = getAutopilotStatus(state);
+      this.aiAutopilotChip.textContent = status.text;
+      this.aiAutopilotChip.setAttribute?.("data-mode", status.dataMode);
+      this.aiAutopilotChip.setAttribute?.("data-ai-mode", status.aiMode);
+      this.aiAutopilotChip.setAttribute?.("data-coverage", status.coverageTarget);
+      this.aiAutopilotChip.setAttribute?.("title", `${explainTerm(status.enabled ? "autopilotOn" : "autopilotOff")} ${status.title}`);
     }
     if (this.aiToggleTop) this.aiToggleTop.checked = Boolean(state.ai?.enabled);
     if (this.aiToggleMirror) this.aiToggleMirror.checked = Boolean(state.ai?.enabled);
