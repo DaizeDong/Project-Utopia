@@ -166,7 +166,7 @@ export class ResourceSystem {
     this.nextLogisticsSampleSec = -Infinity;
   }
 
-  update(_dt, state) {
+  update(dt, state) {
     state.resources.food = Number.isFinite(state.resources.food) ? Math.max(0, state.resources.food) : 0;
     state.resources.wood = Number.isFinite(state.resources.wood) ? Math.max(0, state.resources.wood) : 0;
     state.resources.stone = Number.isFinite(state.resources.stone) ? Math.max(0, state.resources.stone) : 0;
@@ -174,6 +174,14 @@ export class ResourceSystem {
     state.resources.meals = Number.isFinite(state.resources.meals) ? Math.max(0, state.resources.meals) : 0;
     state.resources.medicine = Number.isFinite(state.resources.medicine) ? Math.max(0, state.resources.medicine) : 0;
     state.resources.tools = Number.isFinite(state.resources.tools) ? Math.max(0, state.resources.tools) : 0;
+    const stepSec = Math.max(0, Number(dt) || 0);
+    state.metrics.resourceEmptySec ??= { food: 0, wood: 0 };
+    state.metrics.resourceEmptySec.food = state.resources.food <= 0
+      ? Number(state.metrics.resourceEmptySec.food ?? 0) + stepSec
+      : 0;
+    state.metrics.resourceEmptySec.wood = state.resources.wood <= 0
+      ? Number(state.metrics.resourceEmptySec.wood ?? 0) + stepSec
+      : 0;
 
     // Food shortage event
     const foodThreshold = Number(BALANCE.foodEmergencyThreshold ?? 14);

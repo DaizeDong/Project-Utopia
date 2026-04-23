@@ -567,6 +567,7 @@ export class HUDController {
       const now = (typeof performance !== "undefined" && typeof performance.now === "function")
         ? performance.now()
         : Date.now();
+      const suppressDeathToast = Number(state.ui?.deathToastShownUntil ?? 0) > now;
       if (deathsTotal > this._lastDeathsSeen) {
         const candidates = Array.isArray(state.agents) ? state.agents : [];
         let latestDead = null;
@@ -588,11 +589,12 @@ export class HUDController {
           const bio = backstory ? ` (${backstory})` : "";
           this._obituaryText = `${name}${bio} died of ${reason} at (${tx},${tz})`;
           this._obituaryUntilMs = now + OBITUARY_FLASH_MS;
-          this.#notifyDeath(latestDead, name, reason, tx, tz);
+          if (!suppressDeathToast) this.#notifyDeath(latestDead, name, reason, tx, tz);
         }
         this._lastDeathsSeen = deathsTotal;
       }
-      if (this._obituaryText && now < this._obituaryUntilMs) {
+      if (suppressDeathToast) this._obituaryText = "";
+      if (this._obituaryText && now < this._obituaryUntilMs && !suppressDeathToast) {
         this.deathVal.textContent = this._obituaryText;
         this.#setDeathSeverity(true);
         this.deathVal.setAttribute?.("title", `${this._obituaryText} · total ${aggregate}`);

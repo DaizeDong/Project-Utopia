@@ -214,6 +214,10 @@ function detectMilestones(state) {
       current,
       baseline: start,
     });
+    if (state.controls) {
+      state.controls.actionMessage = `${rule.label}: ${rule.message}`;
+      state.controls.actionKind = "milestone";
+    }
   }
 }
 

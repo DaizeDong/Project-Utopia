@@ -528,6 +528,10 @@ export function createInitialGameState(options = {}) {
       isDebugStepping: false,
       warnings: [],
       warningLog: [],
+      resourceEmptySec: {
+        food: 0,
+        wood: 0,
+      },
       memoryMb: 0,
       cpuBudgetMs: 0,
       uiCpuMs: 0,
