@@ -1,5 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, WEATHER } from "../../config/constants.js";
+import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, WEATHER } from "../../config/constants.js";
 import { worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
@@ -11,6 +11,21 @@ function tileKey(ix, iz) {
 
 function roundMetric(value, digits = 2) {
   return Number(Number(value ?? 0).toFixed(digits));
+}
+
+function describeNodeFlags(flags) {
+  const labels = [];
+  if ((flags & NODE_FLAGS.FOREST) !== 0) labels.push("forest");
+  if ((flags & NODE_FLAGS.STONE) !== 0) labels.push("stone");
+  if ((flags & NODE_FLAGS.HERB) !== 0) labels.push("herb");
+  return labels;
+}
+
+function describeVisibility(value) {
+  if (value === FOG_STATE.VISIBLE) return "visible";
+  if (value === FOG_STATE.EXPLORED) return "explored";
+  if (value === FOG_STATE.HIDDEN) return "hidden";
+  return "unknown";
 }
 
 function findActiveEventZones(state, ix, iz) {
@@ -363,6 +378,23 @@ export function getTileInsight(state, tile) {
   const weatherPenalty = Math.max(1, Number(state.weather?.hazardPenaltyByKey?.[key] ?? state.weather?.hazardPenaltyMultiplier ?? 1));
   const hazardLabels = Array.isArray(state.weather?.hazardLabelByKey?.[key]) ? state.weather.hazardLabelByKey[key] : [];
   const hotspotKeys = new Set((traffic?.hotspotTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
+  const idx = tile.ix + tile.iz * Number(state.grid?.width ?? 0);
+  const tileState = state.grid?.tileState?.get?.(idx) ?? null;
+  const elevation = Number(state.grid?.elevation?.[idx]);
+  const moisture = Number(state.grid?.moisture?.[idx]);
+  const nodeLabels = describeNodeFlags(Number(tileState?.nodeFlags ?? 0));
+  const visibility = describeVisibility(Number(state.fog?.visibility?.[idx] ?? FOG_STATE.VISIBLE));
+
+  if (Number.isFinite(elevation) || Number.isFinite(moisture)) {
+    insights.push(`Terrain: elevation ${Number.isFinite(elevation) ? elevation.toFixed(2) : "n/a"}, moisture ${Number.isFinite(moisture) ? moisture.toFixed(2) : "n/a"}.`);
+  }
+  if (tileState) {
+    insights.push(`Soil: fertility ${Number(tileState.fertility ?? 0).toFixed(2)}, salinity ${Number(tileState.salinized ?? 0).toFixed(2)}, yield pool ${Number(tileState.yieldPool ?? 0).toFixed(0)}.`);
+  }
+  if (nodeLabels.length > 0) {
+    insights.push(`Node: ${nodeLabels.join(", ")} deposit supports matching gather tools.`);
+  }
+  insights.push(`Visibility: ${visibility}.`);
 
   for (const route of scenario.routeLinks ?? []) {
     if ((route.gapTiles ?? []).some((gap) => gap.ix === tile.ix && gap.iz === tile.iz)) {

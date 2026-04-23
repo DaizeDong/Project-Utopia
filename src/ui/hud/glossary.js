@@ -37,7 +37,7 @@ export const HUD_GLOSSARY = Object.freeze({
   herbalist: "Herbalist: staffs Clinic to brew Herbs into Medicine (requires a built Clinic).",
 
   // Lens / mode toggles
-  heatLens: "Heat Lens: red = food surplus tiles, blue = starved tiles — shows where meals are needed.",
+  heatLens: "Heat Lens: red = surplus producers, blue = starved processors or idle storage; tile color shows where to fix flow.",
 
   // Score breakdown decomposition
   scenarioGap: "Gap between current scenario progress and target; zero means this objective is complete.",

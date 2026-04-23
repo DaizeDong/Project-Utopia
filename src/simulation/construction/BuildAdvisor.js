@@ -7,7 +7,7 @@ import { toolToTile } from "../../world/grid/TileTypes.js";
 
 // v0.8.0 Phase 3 M1a: node-gated tools. Tool must match a node flag on the
 // target tileState to be placeable.
-const NODE_GATED_TOOLS = Object.freeze({
+export const NODE_GATED_TOOLS = Object.freeze({
   lumber: NODE_FLAGS.FOREST,
   quarry: NODE_FLAGS.STONE,
   herb_garden: NODE_FLAGS.HERB,
