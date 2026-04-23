@@ -743,6 +743,15 @@ export function createInitialGameState(options = {}) {
       },
       objectiveHint: scenarioBundle.objectiveHint,
       objectiveLog: [],
+      milestonesSeen: [],
+      milestoneBaseline: {
+        warehouses,
+        farms,
+        lumbers,
+        kitchens: 0,
+        meals: 0,
+        tools: 0,
+      },
       // v0.8.0 Phase 4 — DevIndex system fields. Initialised to zero so tests
       // that skip DevIndexSystem.update() can still safely read these fields.
       // See `src/simulation/meta/DevIndexSystem.js` for the live contract.

@@ -234,6 +234,17 @@ export function restoreSnapshotState(serialized) {
   snapshot.weather.hazardFocusSummary ??= "";
   snapshot.weather.pressureScore ??= 0;
   snapshot.gameplay.wildlifeRuntime ??= createDefaultWildlifeRuntime();
+  snapshot.gameplay.milestonesSeen = Array.isArray(snapshot.gameplay.milestonesSeen)
+    ? snapshot.gameplay.milestonesSeen
+    : [];
+  snapshot.gameplay.milestoneBaseline ??= {
+    warehouses: Number(snapshot.buildings?.warehouses ?? 0),
+    farms: Number(snapshot.buildings?.farms ?? 0),
+    lumbers: Number(snapshot.buildings?.lumbers ?? 0),
+    kitchens: Number(snapshot.buildings?.kitchens ?? 0),
+    meals: Number(snapshot.resources?.meals ?? 0),
+    tools: Number(snapshot.resources?.tools ?? 0),
+  };
   snapshot.debug.logic ??= {
     invalidTransitions: 0,
     goalFlipCount: 0,

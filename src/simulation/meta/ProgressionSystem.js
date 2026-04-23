@@ -1,6 +1,7 @@
 import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
+import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 
 const DOCTRINE_PRESETS = Object.freeze({
   balanced: {
@@ -75,6 +76,57 @@ const DOCTRINE_PRESETS = Object.freeze({
   },
 });
 
+const MILESTONE_RULES = Object.freeze([
+  {
+    kind: "first_farm",
+    key: "firstFarm",
+    label: "First Farm raised",
+    message: "Your colony has a food foothold.",
+    baselineKey: "farms",
+    current: (state) => Number(state.buildings?.farms ?? 0),
+  },
+  {
+    kind: "first_lumber",
+    key: "firstLumber",
+    label: "First Lumber camp raised",
+    message: "Wood supply is online.",
+    baselineKey: "lumbers",
+    current: (state) => Number(state.buildings?.lumbers ?? 0),
+  },
+  {
+    kind: "first_warehouse",
+    key: "firstWarehouse",
+    label: "First extra Warehouse raised",
+    message: "The logistics net has a second anchor.",
+    baselineKey: "warehouses",
+    current: (state) => Number(state.buildings?.warehouses ?? 0),
+  },
+  {
+    kind: "first_kitchen",
+    key: "firstKitchen",
+    label: "First Kitchen raised",
+    message: "Meals can now turn raw food into stamina.",
+    baselineKey: "kitchens",
+    current: (state) => Number(state.buildings?.kitchens ?? 0),
+  },
+  {
+    kind: "first_meal",
+    key: "firstMeal",
+    label: "First Meal served",
+    message: "Prepared food is reaching the colony.",
+    baselineKey: "meals",
+    current: (state) => Number(state.resources?.meals ?? 0),
+  },
+  {
+    kind: "first_tool",
+    key: "firstTool",
+    label: "First Tool forged",
+    message: "Advanced production has started.",
+    baselineKey: "tools",
+    current: (state) => Number(state.resources?.tools ?? 0),
+  },
+]);
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -129,7 +181,40 @@ function getDoctrinePreset(state) {
 function ensureProgressionState(state) {
   state.gameplay.doctrineMastery = getDoctrineMastery(state);
   if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+  if (!Array.isArray(state.gameplay.milestonesSeen)) {
+    state.gameplay.milestonesSeen = state.gameplay.milestonesSeen instanceof Set
+      ? Array.from(state.gameplay.milestonesSeen)
+      : [];
+  }
+  state.gameplay.milestoneBaseline ??= {
+    warehouses: Number(state.buildings?.warehouses ?? 0),
+    farms: Number(state.buildings?.farms ?? 0),
+    lumbers: Number(state.buildings?.lumbers ?? 0),
+    kitchens: Number(state.buildings?.kitchens ?? 0),
+    meals: Number(state.resources?.meals ?? 0),
+    tools: Number(state.resources?.tools ?? 0),
+  };
   return ensureRecoveryState(state);
+}
+
+function detectMilestones(state) {
+  const seen = state.gameplay.milestonesSeen;
+  const baseline = state.gameplay.milestoneBaseline ?? {};
+  for (const rule of MILESTONE_RULES) {
+    if (seen.includes(rule.kind)) continue;
+    const current = Number(rule.current(state));
+    const start = Number(baseline[rule.baselineKey] ?? 0);
+    if (!Number.isFinite(current) || current <= Math.max(start, 0)) continue;
+    seen.push(rule.kind);
+    emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, {
+      kind: rule.kind,
+      key: rule.key,
+      label: rule.label,
+      message: rule.message,
+      current,
+      baseline: start,
+    });
+  }
 }
 
 function buildCoverageStatus(state) {
@@ -418,6 +503,7 @@ export class ProgressionSystem {
     // scoring path; the legacy per-objective progression pipeline has been
     // retired (objectives no longer drive win outcomes).
     updateSurvivalScore(state, dt);
+    detectMilestones(state);
   }
 }
 
