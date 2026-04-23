@@ -3,6 +3,7 @@ import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { explainTerm } from "./glossary.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
+import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -102,6 +103,9 @@ export class HUDController {
     // before accepting a new one. Mirrors the `_obituary*` pattern above.
     this._stripBeatText = "";
     this._stripBeatUntilMs = 0;
+    this._milestoneFlashText = "";
+    this._milestoneFlashEventKey = "";
+    this._milestoneFlashUntilMs = 0;
     this.deathVal = document.getElementById("deathVal");
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
@@ -301,6 +305,45 @@ export class HUDController {
       tz,
     );
     this.#pushDeathAlert(name, reason, tx, tz);
+  }
+
+  #currentMilestoneFlash(state) {
+    const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const log = Array.isArray(state.events?.log) ? state.events.log : [];
+    const latest = log
+      .slice()
+      .reverse()
+      .find((event) => (
+        event?.type === EVENT_TYPES.COLONY_MILESTONE
+        && nowSec - Number(event.t ?? nowSec) <= 3
+      ));
+
+    if (latest) {
+      const eventKey = `${latest.t}:${latest.detail?.kind ?? latest.detail?.key ?? "milestone"}`;
+      if (eventKey !== this._milestoneFlashEventKey) {
+        const label = String(latest.detail?.label ?? "Milestone reached");
+        const message = String(latest.detail?.message ?? "The colony made visible progress.");
+        this._milestoneFlashEventKey = eventKey;
+        this._milestoneFlashText = `${label}: ${message}`;
+        this._milestoneFlashUntilMs = nowMs + 2500;
+        this.storytellerStrip?.classList?.remove?.("flash-action");
+        void this.storytellerStrip?.offsetWidth;
+        this.storytellerStrip?.classList?.add?.("flash-action");
+      }
+    }
+
+    if (this._milestoneFlashText && nowMs < this._milestoneFlashUntilMs) {
+      const [label, ...rest] = this._milestoneFlashText.split(": ");
+      return {
+        label: label || "Milestone reached",
+        message: rest.join(": ") || "The colony made visible progress.",
+        text: this._milestoneFlashText,
+      };
+    }
+    return null;
   }
 
   #renderGoalChips(chips, fallbackText) {
@@ -608,7 +651,21 @@ export class HUDController {
       const getBeatEl = typeof document !== "undefined"
         ? document.getElementById("storytellerBeat")
         : null;
+      const milestoneFlash = this.#currentMilestoneFlash(state);
       if (getBadgeEl && getFocusEl && getSummaryEl) {
+        if (milestoneFlash) {
+          if (getBadgeEl.textContent !== "MILESTONE") getBadgeEl.textContent = "MILESTONE";
+          if (getBadgeEl.dataset) getBadgeEl.dataset.mode = "milestone";
+          else getBadgeEl.setAttribute?.("data-mode", "milestone");
+          if (getFocusEl.textContent !== milestoneFlash.label) getFocusEl.textContent = milestoneFlash.label;
+          const summaryWithSeparator = `: ${milestoneFlash.message}`;
+          if (getSummaryEl.textContent !== summaryWithSeparator) getSummaryEl.textContent = summaryWithSeparator;
+          if (getBeatEl) {
+            if (getBeatEl.textContent !== "") getBeatEl.textContent = "";
+            if (!getBeatEl.hasAttribute?.("hidden")) getBeatEl.setAttribute?.("hidden", "");
+          }
+          this.storytellerStrip.setAttribute?.("title", `[MILESTONE] ${milestoneFlash.text}`);
+        } else {
         const model = computeStorytellerStripModel(state);
         if (getBadgeEl.textContent !== model.prefix) {
           getBadgeEl.textContent = model.prefix;
@@ -672,8 +729,9 @@ export class HUDController {
         const beatFrag = (getBeatEl && getBeatEl.textContent) ? ` · ${getBeatEl.textContent}` : "";
         const tooltipText = `[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
+        }
       } else {
-        const text = computeStorytellerStripText(state);
+        const text = milestoneFlash?.text ?? computeStorytellerStripText(state);
         if (this.storytellerStrip.textContent !== text) {
           this.storytellerStrip.textContent = text;
           this.storytellerStrip.setAttribute?.("title", text);
