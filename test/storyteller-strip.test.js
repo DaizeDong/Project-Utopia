@@ -49,6 +49,8 @@ test("computeStorytellerStripModel: llm source → WHISPER prefix with humanised
 
 test("computeStorytellerStripModel: fallback source + policy → DIRECTOR prefix", () => {
   const state = {
+    gameplay: { scenario: { title: "Broken Frontier" } },
+    world: { mapTemplateId: "temperate_plains" },
     ai: {
       lastPolicySource: "fallback",
       groupPolicies: new Map([
@@ -67,6 +69,7 @@ test("computeStorytellerStripModel: fallback source + policy → DIRECTOR prefix
   const model = computeStorytellerStripModel(state);
   assert.equal(model.mode, "fallback");
   assert.equal(model.prefix, "DIRECTOR");
+  assert.equal(model.templateTag, "Broken Frontier - Temperate Plains");
   assert.equal(model.focusText, "push the frontier outward while keeping the rear supplied");
   // humaniseSummary rewrites both the buildout phrase and the "workers should"
   // opener into slightly more natural prose. The original phrase becomes
