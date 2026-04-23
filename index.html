@@ -546,6 +546,16 @@
       border-color: rgba(61,155,233,0.5);
       color: #fff;
     }
+    #speedControls .speed-toggle {
+      display: inline-flex; align-items: center; gap: 4px;
+      min-height: 26px; padding: 0 7px;
+      border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: rgba(208,232,255,0.78);
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+      pointer-events: auto;
+    }
+    #speedControls .speed-toggle input { margin: 0; }
     .game-timer {
       color: rgba(208,232,255,0.7);
       font-size: 12px; font-weight: 700;
@@ -1146,6 +1156,10 @@
         <button id="speedPauseBtn" type="button" title="Pause (Space)" aria-label="Pause simulation">&#9208;</button>
         <button id="speedPlayBtn" type="button" title="Normal speed (1x)" aria-label="Normal speed" class="active">&#9654;</button>
         <button id="speedFastBtn" type="button" title="Fast forward (4x)" aria-label="Fast forward 4x">&#9193;</button>
+        <label class="speed-toggle" title="Toggle AI autopilot">
+          <input id="aiToggleTop" type="checkbox" aria-label="Toggle AI autopilot" />
+          Autopilot
+        </label>
         <span id="gameTimer" class="game-timer" title="Elapsed game time">0:00</span>
       </div>
 
@@ -1578,7 +1592,7 @@
               <summary>Time Controls</summary>
               <div class="subpanel-body">
                 <div class="small muted">Time Scale: <span id="timeScaleLabel">1.00x</span></div>
-                <input id="timeScale" type="range" min="25" max="200" value="100" />
+                <input id="timeScale" type="range" min="25" max="400" value="100" />
                 <div class="time-grid">
                   <button id="pauseBtn" title="Pause or resume the simulation">Pause</button>
                   <button id="step1Btn" title="Advance simulation by 1 tick while paused">Step x1</button>

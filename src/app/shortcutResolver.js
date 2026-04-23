@@ -4,11 +4,17 @@ export const TOOL_SHORTCUTS = Object.freeze({
   Digit3: "lumber",
   Digit4: "warehouse",
   Digit5: "wall",
-  Digit6: "erase",
+  Digit6: "bridge",
+  Digit7: "erase",
+  Digit8: "quarry",
+  Digit9: "herb_garden",
+  Digit0: "kitchen",
+  Minus: "smithy",
+  Equal: "clinic",
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-6 tools | 0 reset camera | L heat lens | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | Home reset camera | L heat lens | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -46,7 +52,7 @@ export function resolveGlobalShortcut(event, context = {}) {
   // these keys removes a class of noise-induced reset complaints.
   const isActivePhase = context.phase === "active" || context.phase === undefined;
 
-  if (code === "Digit0" || code === "Numpad0" || code === "Home" || key === "0" || key === "home") {
+  if (code === "Home" || key === "home") {
     if (!isActivePhase) return null;
     return { type: "resetCamera" };
   }
@@ -60,7 +66,7 @@ export function resolveGlobalShortcut(event, context = {}) {
     return context.phase === "active" ? { type: "togglePause" } : null;
   }
 
-  const tool = TOOL_SHORTCUTS[code];
+  const tool = shift ? null : TOOL_SHORTCUTS[code];
   if (tool) {
     if (!isActivePhase) return null;
     return { type: "selectTool", tool };

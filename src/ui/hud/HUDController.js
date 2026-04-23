@@ -196,6 +196,8 @@ export class HUDController {
     this.speedPauseBtn = document.getElementById("speedPauseBtn");
     this.speedPlayBtn = document.getElementById("speedPlayBtn");
     this.speedFastBtn = document.getElementById("speedFastBtn");
+    this.aiToggleTop = document.getElementById("aiToggleTop");
+    this.aiToggleMirror = document.getElementById("aiToggle");
     this.gameTimer = document.getElementById("gameTimer");
 
     // v0.8.2 Round-0 01d — Resource rate badges. Snapshot every RATE_WINDOW_SEC
@@ -428,6 +430,23 @@ export class HUDController {
       // arbitration (Phase 10 determinism: accumulatorSec 0.5s + capSteps still
       // protect against spiral-of-death).
       this.state.controls.timeScale = 4.0;
+    });
+    const syncAutopilot = (enabled) => {
+      const active = Boolean(enabled);
+      this.state.ai.enabled = active;
+      if (!active) this.state.ai.mode = "fallback";
+      this.state.controls.actionMessage = active
+        ? "AI enabled. Waiting for next decision cycle."
+        : "AI disabled. Using fallback.";
+      this.state.controls.actionKind = "info";
+      if (this.aiToggleTop) this.aiToggleTop.checked = active;
+      if (this.aiToggleMirror) this.aiToggleMirror.checked = active;
+    };
+    this.aiToggleTop?.addEventListener("change", () => {
+      syncAutopilot(Boolean(this.aiToggleTop.checked));
+    });
+    this.aiToggleMirror?.addEventListener("change", () => {
+      syncAutopilot(Boolean(this.aiToggleMirror.checked));
     });
   }
 
@@ -841,6 +860,8 @@ export class HUDController {
       this.aiAutopilotChip.setAttribute?.("data-mode", mode);
       this.aiAutopilotChip.setAttribute?.("title", explainTerm(enabled ? "autopilotOn" : "autopilotOff"));
     }
+    if (this.aiToggleTop) this.aiToggleTop.checked = Boolean(state.ai?.enabled);
+    if (this.aiToggleMirror) this.aiToggleMirror.checked = Boolean(state.ai?.enabled);
 
     if (this.statusObjective) {
       // v0.8.0 Phase 4 — Survival Mode badge. Shows
