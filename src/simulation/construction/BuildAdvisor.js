@@ -109,6 +109,16 @@ const TILE_TO_TOOL = Object.freeze({
   [TILE.BRIDGE]: "bridge",
 });
 
+const LOGISTICS_PRODUCER_TOOLS = new Set([
+  "farm",
+  "lumber",
+  "quarry",
+  "herb_garden",
+  "kitchen",
+  "smithy",
+  "clinic",
+]);
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
@@ -185,6 +195,50 @@ function findNearestDistance(grid, tile, targetTypes, maxRadius = 12) {
     if (best <= 0) break;
   }
   return best;
+}
+
+function formatTileDistance(distance) {
+  return Number.isFinite(distance) ? `${distance} ${distance === 1 ? "tile" : "tiles"}` : "no known depot";
+}
+
+function addLogisticsPreview({ tool, warehouseDistance, hasRoadAccess, hasRoadTouch, effects, warnings }) {
+  const hasWarehouse = Number.isFinite(warehouseDistance);
+  if (LOGISTICS_PRODUCER_TOOLS.has(tool)) {
+    if (!hasWarehouse) {
+      warnings.push("No warehouse exists yet; production will stall until storage is built.");
+      return;
+    }
+    if (hasRoadAccess) {
+      effects.push(`Short haul to nearest warehouse (${formatTileDistance(warehouseDistance)}).`);
+      return;
+    }
+    if (warehouseDistance <= BALANCE.worksiteCoverageSoftRadius) {
+      warnings.push(`Nearest warehouse is ${formatTileDistance(warehouseDistance)} away but no road touches this worksite.`);
+      return;
+    }
+    warnings.push(`Nearest warehouse is ${formatTileDistance(warehouseDistance)} away; build a road or depot first.`);
+    return;
+  }
+
+  if (tool === "warehouse") {
+    if (hasWarehouse) {
+      effects.push(`Extends depot coverage; nearest warehouse is ${formatTileDistance(warehouseDistance)} away.`);
+    } else {
+      effects.push("Creates the first delivery anchor for the colony.");
+    }
+    if (!hasRoadTouch) {
+      warnings.push("No road touches this depot yet; connect a road to shorten worker delivery trips.");
+    }
+    return;
+  }
+
+  if (tool === "road") {
+    if (hasRoadTouch) {
+      effects.push("Connects directly into the current road and warehouse network.");
+    } else if (hasWarehouse) {
+      effects.push(`Starts a connector toward the nearest warehouse (${formatTileDistance(warehouseDistance)}).`);
+    }
+  }
 }
 
 function getScenarioTileTags(state, tile) {
@@ -403,12 +457,7 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
   if (tags.chokePoints.length > 0 && tool === "wall") {
     effects.push(`Fortifies ${tags.chokePoints[0].label}.`);
   }
-  if ((tool === "farm" || tool === "lumber" || tool === "quarry" || tool === "herb_garden" || tool === "kitchen" || tool === "smithy" || tool === "clinic") && hasRoadAccess) {
-    effects.push("Within haul range of the current logistics network.");
-  }
-  if (tool === "warehouse" && hasRoadTouch) {
-    effects.push("Creates a shorter delivery anchor for nearby workers.");
-  }
+  addLogisticsPreview({ tool, warehouseDistance, hasRoadAccess, hasRoadTouch, effects, warnings });
   if (tool === "erase" && (activeRefund.food > 0 || activeRefund.wood > 0 || activeRefund.stone > 0 || activeRefund.herbs > 0)) {
     effects.push(`Returns ${formatCost(activeRefund)} in salvage.`);
   }
@@ -453,8 +502,8 @@ export function summarizeBuildPreview(preview) {
   if (!preview) return "";
   if (!preview.ok) return preview.reasonText || explainBuildReason(preview.reason, preview);
   const parts = [preview.summary];
-  if (preview.effects?.length > 1) parts.push(preview.effects.slice(1).join(" "));
-  if (preview.warnings?.length > 0) parts.push(`Warning: ${preview.warnings.join(" ")}`);
+  if (preview.effects?.length > 1) parts.push(preview.effects[1]);
+  if (preview.warnings?.length > 0) parts.push(`Warning: ${preview.warnings[0]}`);
   return parts.join(" ");
 }
 
