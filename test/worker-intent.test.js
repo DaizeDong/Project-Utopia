@@ -62,7 +62,7 @@ test("Worker carry pressure forces delivery even below the raw threshold", () =>
 test("Worker hunger below Round 3 threshold seeks food before severe starvation", () => {
   const state = baseState();
   const worker = {
-    hunger: 0.21,
+    hunger: 0.17,
     carry: { food: 0, wood: 0 },
     role: "WOOD",
     stateLabel: "Work (Lumber)",
