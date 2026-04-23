@@ -15,6 +15,22 @@ function vecFmt(x = 0, z = 0) {
   return `(${fmtNum(x, 2)}, ${fmtNum(z, 2)})`;
 }
 
+export function relationLabel(opinion) {
+  const n = Number(opinion);
+  if (!Number.isFinite(n)) return "Acquaintance";
+  if (n >= 0.45) return "Close friend";
+  if (n >= 0.15) return "Friend";
+  if (n >= -0.15) return "Acquaintance";
+  if (n > -0.45) return "Strained";
+  return "Rival";
+}
+
+export function formatRelationOpinion(opinion) {
+  const n = Number(opinion);
+  const value = Number.isFinite(n) ? n : 0;
+  return `${relationLabel(value)} (${value >= 0 ? "+" : ""}${fmtNum(value, 2)})`;
+}
+
 function escapeHtml(input) {
   return String(input ?? "")
     .replaceAll("&", "&amp;")
@@ -380,10 +396,10 @@ export class EntityFocusPanel {
       .filter(([, v]) => Number.isFinite(v))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([otherId, v]) => `${lookupDisplayNameById(otherId)}: ${v >= 0 ? "+" : ""}${fmtNum(v, 2)}`);
+      .map(([otherId, v]) => `${lookupDisplayNameById(otherId)}: ${formatRelationOpinion(v)}`);
     const relationsLine = topRelations.length > 0 ? topRelations.join(" | ") : "(no relationships yet)";
     const recentMemories = Array.isArray(entity.memory?.recentEvents)
-      ? entity.memory.recentEvents.slice(-3).reverse()
+      ? entity.memory.recentEvents.slice(0, 3)
       : [];
     const memoryLines = recentMemories.length > 0
       ? recentMemories.map((m) => `<div class="small muted">- ${escapeHtml(String(m?.label ?? m?.summary ?? m?.type ?? m ?? ""))}</div>`).join("")

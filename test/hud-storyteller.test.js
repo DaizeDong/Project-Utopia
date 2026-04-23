@@ -52,7 +52,7 @@ test("fallback-source + populated workers policy renders Rule-based Storyteller 
   };
   const text = computeStorytellerStripText(state);
   assert.match(text, /Rule-based Storyteller/);
-  assert.match(text, /frontier buildout/);
+  assert.match(text, /push the frontier outward/);
   assert.match(text, /Stone is low/);
   // Only the first sentence of summary must appear, so the second clause is
   // clipped off.
@@ -97,7 +97,7 @@ test("missing summary still produces a readable strip by falling back to 'colony
   };
   const text = computeStorytellerStripText(state);
   assert.match(text, /Rule-based Storyteller/);
-  assert.match(text, /frontier buildout/);
+  assert.match(text, /push the frontier outward/);
   assert.match(text, /colony on autopilot/);
 });
 
@@ -128,7 +128,7 @@ test("computeStorytellerStripModel: salient SABOTAGE beat surfaces with age (s a
   // 121.2 - 120.5 = 0.7 → rounds to 1 → "1s ago".
   assert.match(model.beatText, /Last:\s*\[SABOTAGE\] visitor_16 sabotaged colony \(1s ago\)/);
   // Focus/summary channels remain intact.
-  assert.equal(model.focusText, "frontier buildout");
+  assert.equal(model.focusText, "push the frontier outward while keeping the rear supplied");
   assert.match(model.summaryText, /Stone is low/);
 });
 

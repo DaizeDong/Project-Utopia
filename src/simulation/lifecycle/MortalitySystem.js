@@ -6,12 +6,75 @@ import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
+const WORKER_MEMORY_LIMIT = 6;
+const WITNESS_NEARBY_DISTANCE = 12;
 
 function deathThresholdFor(entity) {
   if (entity.type === ENTITY_TYPE.WORKER) return { hunger: 0.045, holdSec: 34 };
   if (entity.type === ENTITY_TYPE.VISITOR) return { hunger: 0.04, holdSec: 40 };
   if (entity.kind === ANIMAL_KIND.HERBIVORE) return { hunger: 0.035, holdSec: 20 };
   return { hunger: 0.03, holdSec: 28 };
+}
+
+function relationLabelForMemory(opinion) {
+  const n = Number(opinion);
+  if (!Number.isFinite(n)) return "Colleague";
+  if (n >= 0.45) return "Close friend";
+  if (n >= 0.15) return "Friend";
+  if (n >= -0.15) return "Acquaintance";
+  if (n > -0.45) return "Strained";
+  return "Rival";
+}
+
+function pushWorkerMemory(worker, label) {
+  worker.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
+  worker.memory.recentEvents.unshift(label);
+  worker.memory.recentEvents = worker.memory.recentEvents.slice(0, WORKER_MEMORY_LIMIT);
+}
+
+function readRelationshipOpinion(deceased, witness) {
+  const fromDeceased = Number(deceased.relationships?.[witness.id]);
+  if (Number.isFinite(fromDeceased)) return fromDeceased;
+  const fromWitness = Number(witness.relationships?.[deceased.id]);
+  if (Number.isFinite(fromWitness)) return fromWitness;
+  return NaN;
+}
+
+function manhattanWorldDistance(a, b) {
+  return Math.abs(Number(a.x ?? 0) - Number(b.x ?? 0))
+    + Math.abs(Number(a.z ?? 0) - Number(b.z ?? 0));
+}
+
+function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
+  if (deceased.type !== ENTITY_TYPE.WORKER && deceased.type !== ENTITY_TYPE.VISITOR) return;
+  const workers = (state.agents ?? [])
+    .filter((agent) => agent.id !== deceased.id
+      && agent.type === ENTITY_TYPE.WORKER
+      && agent.alive !== false);
+  if (workers.length === 0) return;
+
+  const related = workers
+    .map((worker) => ({ worker, opinion: readRelationshipOpinion(deceased, worker) }))
+    .filter(({ opinion }) => Number.isFinite(opinion) && Math.abs(opinion) > 0)
+    .sort((a, b) => Math.abs(b.opinion) - Math.abs(a.opinion))
+    .slice(0, 3);
+
+  const witnesses = related.length > 0
+    ? related
+    : workers
+      .map((worker) => ({ worker, opinion: NaN, distance: manhattanWorldDistance(worker, deceased) }))
+      .filter(({ distance }) => distance <= WITNESS_NEARBY_DISTANCE)
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3);
+
+  const reason = String(deceased.deathReason || "event");
+  const deceasedName = deceased.displayName ?? deceased.id;
+  const time = Math.max(0, Number(nowSec ?? 0)).toFixed(0);
+  for (const { worker, opinion } of witnesses) {
+    const label = Number.isFinite(opinion) ? relationLabelForMemory(opinion) : "Colleague";
+    pushWorkerMemory(worker, `[${time}s] ${label} ${deceasedName} died (${reason})`);
+  }
 }
 
 function ensureLogicBucket(state) {
@@ -215,6 +278,7 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
       state.gameplay.objectiveLog.unshift(line);
       state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
     }
+    recordDeathIntoWitnessMemory(state, entity, nowSec);
   }
 
   entity.deathRecorded = true;

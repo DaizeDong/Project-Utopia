@@ -134,7 +134,7 @@ function formatBeatText(beat) {
  * Normalise a raw LLM/rule focus+summary pair into slightly more
  * human-readable prose. Keeps the function pure and side-effect free
  * (no DOM, no i/o) — just a small lookup table swap used by the model
- * builder below. We deliberately keep the table tiny (<=6 rules) so a
+ * builder below. We deliberately keep the table compact so a
  * future LLM output expansion doesn't silently bit-rot: anything
  * unrecognised falls through as-is.
  *
@@ -145,7 +145,22 @@ function humaniseSummary(raw) {
   if (!raw) return raw;
   let out = raw;
   const rules = [
-    [/sustain frontier buildout/gi, "sustain buildout across the frontier"],
+    [/route repair and depot relief/gi, "rebuild the broken supply lane"],
+    [/rebuild the broken supply lane/gi, "reconnect the broken supply lane"],
+    [/cargo relief/gi, "clear the stalled cargo"],
+    [/stockpile throughput/gi, "keep the larder filling"],
+    [/safe frontier throughput/gi, "work the safe edge of the frontier"],
+    [/sustain frontier buildout/gi, "sustain the frontier push"],
+    [/frontier buildout/gi, "push the frontier outward"],
+    [/push the frontier outward/gi, "push the frontier outward while keeping the rear supplied"],
+    [/forward depot trade/gi, "run trade to the forward depot"],
+    [/defended warehouse lanes/gi, "hug the warehouse lanes"],
+    [/warehouse circulation/gi, "keep goods moving between warehouses"],
+    [/soft frontier corridor hits/gi, "strike a soft frontier corridor"],
+    [/depot disruption/gi, "disrupt a frontier depot"],
+    [/economic harassment/gi, "harass the supply chain"],
+    [/stabilization/gi, "let the colony breathe"],
+    [/hunger and carried cargo/gi, "empty bellies and full backpacks"],
     [/keep hunger (under control|low)/gi, "keep hunger in check"],
     [/workers should /gi, "the colony should "],
     [/depot throughput/gi, "warehouse throughput"],
@@ -191,8 +206,8 @@ export function computeStorytellerStripText(state) {
   if (!focus && !summary) {
     return "Rule-based storyteller idle — colony on autopilot";
   }
-  const focusText = focus || "current directives";
-  const summaryText = summary || "colony on autopilot";
+  const focusText = humaniseSummary(focus || "current directives");
+  const summaryText = humaniseSummary(summary || "colony on autopilot");
   return `[${prefix}] ${focusText}: ${summaryText}`;
 }
 
@@ -249,7 +264,7 @@ export function computeStorytellerStripModel(state) {
   // Idle copy communicates fallback-as-feature rather than going silent.
   // Keep the texts fully human-readable — no raw LLM debug tokens.
   const focusText = hasPolicy
-    ? (focus || "current directives")
+    ? humaniseSummary(focus || "current directives")
     : "autopilot";
   const summaryText = hasPolicy
     ? humaniseSummary(summary || "colony on autopilot")

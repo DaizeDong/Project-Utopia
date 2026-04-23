@@ -67,12 +67,11 @@ test("computeStorytellerStripModel: fallback source + policy → DIRECTOR prefix
   const model = computeStorytellerStripModel(state);
   assert.equal(model.mode, "fallback");
   assert.equal(model.prefix, "DIRECTOR");
-  assert.equal(model.focusText, "frontier buildout");
+  assert.equal(model.focusText, "push the frontier outward while keeping the rear supplied");
   // humaniseSummary rewrites both the buildout phrase and the "workers should"
-  // opener into slightly more natural prose. The original "workers should
-  // sustain frontier buildout" becomes "the colony should sustain buildout
-  // across the frontier".
-  assert.match(model.summaryText, /the colony should sustain buildout across the frontier/i);
+  // opener into slightly more natural prose. The original phrase becomes
+  // "the colony should sustain the frontier push".
+  assert.match(model.summaryText, /the colony should sustain the frontier push/i);
   // Raw LLM debug fragments must not leak through verbatim.
   assert.ok(!/sustain frontier buildout/.test(model.summaryText),
     `debug phrase leaked: ${model.summaryText}`);

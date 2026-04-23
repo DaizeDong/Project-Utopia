@@ -1,5 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
+import { ENTITY_TYPE, EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { getLongRunEventTuning } from "../../config/longRunProfile.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../scenarios/ScenarioFactory.js";
 import { emitEvent, EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
@@ -57,6 +57,21 @@ function clamp(v, min, max) {
 
 function roundMetric(value, digits = 2) {
   return Number(Number(value ?? 0).toFixed(digits));
+}
+
+function pushWorkerMemory(worker, label) {
+  worker.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
+  worker.memory.recentEvents.unshift(label);
+  worker.memory.recentEvents = worker.memory.recentEvents.slice(0, 6);
+}
+
+function recordWorkerEventMemory(state, label) {
+  const nowSec = Math.max(0, Number(state.metrics?.timeSec ?? 0)).toFixed(0);
+  for (const agent of state.agents ?? []) {
+    if (agent.type !== ENTITY_TYPE.WORKER || agent.alive === false) continue;
+    pushWorkerMemory(agent, `[${nowSec}s] ${label}`);
+  }
 }
 
 function severityLabel(pressure) {
@@ -627,6 +642,7 @@ function applyWarehouseDensityRisk(dt, state, services) {
         densityScore,
         loss: { food: lossFood, wood: lossWood, stone: lossStone, herbs: lossHerbs },
       });
+      recordWorkerEventMemory(state, `Warehouse fire at (${loc.ix},${loc.iz})`);
       pushWarning(state, `Warehouse fire at (${loc.ix},${loc.iz}) — stored goods damaged`, "warning", "WorldEventSystem");
       continue; // at most one density-risk event per warehouse per tick
     }
@@ -642,6 +658,7 @@ function applyWarehouseDensityRisk(dt, state, services) {
         densityScore,
         loss: { food: lossFood },
       });
+      recordWorkerEventMemory(state, "Vermin swarm gnawed the stores");
       pushWarning(state, `Vermin swarm at warehouse (${loc.ix},${loc.iz}) — food stores gnawed`, "warning", "WorldEventSystem");
     }
   }
