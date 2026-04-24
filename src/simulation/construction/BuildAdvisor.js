@@ -1,4 +1,13 @@
-import { BALANCE, BUILD_COST, CONSTRUCTION_BALANCE, RUIN_SALVAGE, TERRAIN_MECHANICS } from "../../config/balance.js";
+import {
+  BALANCE,
+  BUILD_COST,
+  BUILD_COST_ESCALATOR,
+  CONSTRUCTION_BALANCE,
+  RUIN_SALVAGE,
+  TERRAIN_MECHANICS,
+  computeEscalatedBuildCost,
+  pluralBuildingKey,
+} from "../../config/balance.js";
 // v0.8.0 Phase 3 M1c post-review — thread services.rng through salvage rolls
 // for seeded reproducibility (silent-failure C2, reviewer #5).
 import { FOG_STATE, NODE_FLAGS, TILE } from "../../config/constants.js";
@@ -407,7 +416,15 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
   // Erasing a bridge restores water, not grass
   const newType = (tool === "erase" && oldType === TILE.BRIDGE) ? TILE.WATER : toolToTile(tool);
   const tile = { ix, iz };
-  const baseCost = BUILD_COST[tool] ?? { wood: 0, food: 0 };
+  // v0.8.2 Round-5 Wave-3 (02c Step 3) — soft-cost escalator. For tools in
+  // BUILD_COST_ESCALATOR, the base cost scales with the current building
+  // count; road/bridge/erase fall through to flat cost. The post-terrain
+  // step (applyTerrainCostModifiers) then layers moisture/elevation on top,
+  // so escalator × terrain multipliers compose as the player expects.
+  const existingCount = Number(state?.buildings?.[pluralBuildingKey(tool)] ?? 0);
+  const baseCost = BUILD_COST_ESCALATOR[tool]
+    ? computeEscalatedBuildCost(tool, existingCount)
+    : (BUILD_COST[tool] ?? { wood: 0, food: 0 });
   const cost = applyTerrainCostModifiers(baseCost, state.grid, ix, iz, oldType, tool);
   const rngFn = resolveRng(services);
   const salvage = getTileRefund(oldType, rngFn);
@@ -547,7 +564,27 @@ export function getBuildToolPanelState(state) {
   const tool = state.controls.tool;
   const info = getBuildToolInfo(tool);
   const preview = state.controls.buildPreview ?? null;
-  const cost = BUILD_COST[tool] ?? {};
+  // v0.8.2 Round-5 Wave-3 (02c Step 4) — show the escalated cost in the
+  // price label so speedrunners see exactly what the Nth copy will consume
+  // before they click. When the tool is in BUILD_COST_ESCALATOR and the
+  // colony has already built more than softTarget copies, append the
+  // multiplier (×1.2, ×2.5cap, etc.) so the label reads e.g. "16w (×1.6)".
+  const existingCount = Number(state?.buildings?.[pluralBuildingKey(tool)] ?? 0);
+  const baseCost = BUILD_COST[tool] ?? {};
+  const esc = BUILD_COST_ESCALATOR[tool];
+  const escalatedCost = esc ? computeEscalatedBuildCost(tool, existingCount) : baseCost;
+  let multiplierSuffix = "";
+  if (esc) {
+    const over = Math.max(0, existingCount - Number(esc.softTarget ?? 0));
+    if (over > 0) {
+      const rawMultiplier = 1 + Number(esc.perExtra ?? 0) * over;
+      const multiplier = Math.min(Number(esc.cap ?? rawMultiplier), rawMultiplier);
+      const atCap = rawMultiplier >= Number(esc.cap ?? Infinity);
+      multiplierSuffix = atCap
+        ? ` (\u00D7${multiplier.toFixed(2)} cap)`
+        : ` (\u00D7${multiplier.toFixed(2)})`;
+    }
+  }
   // v0.8.2 Round0 02b-casual — the BuildToolbar renders `costLabelExpanded`
   // when `state.controls.uiProfile === "casual"` to avoid the "5w means 5
   // food" confusion first-timers report. The compact `costLabel` is kept
@@ -557,8 +594,8 @@ export function getBuildToolPanelState(state) {
     label: info.label,
     summary: info.summary,
     rules: info.rules,
-    costLabel: formatCost(cost),
-    costLabelExpanded: formatCostExpanded(cost),
+    costLabel: `${formatCost(escalatedCost)}${multiplierSuffix}`,
+    costLabelExpanded: `${formatCostExpanded(escalatedCost)}${multiplierSuffix}`,
     previewSummary: preview ? summarizeBuildPreview(preview) : "Hover a tile to preview cost, rules, and scenario impact.",
   };
 }
