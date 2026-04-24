@@ -25,7 +25,7 @@ date: 2026-04-22
 `ToolSearch(query="select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_type,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_evaluate,mcp__plugin_playwright_playwright__browser_press_key,mcp__plugin_playwright_playwright__browser_hover,mcp__plugin_playwright_playwright__browser_resize,mcp__plugin_playwright_playwright__browser_close", max_results=12)`
 
 ## 游戏入口
-http://127.0.0.1:5173/
+运行时注入的 `build_url`
 
 ## 探索要求
 - **机制呈现**：玩家能不能感知系统运作？（资源流、AI 决策、事件、天气、生产链）数值可见吗？因果关系清楚吗？
@@ -34,7 +34,7 @@ http://127.0.0.1:5173/
 至少 30 次交互，让游戏跑几个游戏日观察事件多样性。
 
 ## 输出（必须完成）
-`c:\Users\dzdon\CodesOther\Project Utopia\reviews\external-playtest-2026-04-22\04-mechanics-content.md`
+`assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md`
 
 - 中文 markdown，至少 2000 字（两个维度）
 - 两个维度分别打分（默认不超 4/10）
@@ -44,3 +44,14 @@ http://127.0.0.1:5173/
 如感觉 context 快到极限或已有足够观察，**立即停止探索、立刻 Write**。宁可报告简短也要完成写入。
 
 完成后告诉我：文件路径 + 两个维度评分 + 一句话总结。
+
+## Runtime Context（orchestrator 注入）
+
+```
+- build_url: <http://127.0.0.1:PORT/>
+- output_path: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md
+- screenshot_dir: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/screenshots/<reviewer-id>/
+- date: <yyyy-mm-dd>
+```
+
+收到 Runtime Context 后，以其中的 `build_url` 与 `output_path` 为准。

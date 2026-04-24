@@ -24,7 +24,7 @@ date: 2026-04-22
 `ToolSearch(query="select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_type,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_evaluate,mcp__plugin_playwright_playwright__browser_press_key,mcp__plugin_playwright_playwright__browser_hover,mcp__plugin_playwright_playwright__browser_resize,mcp__plugin_playwright_playwright__browser_close", max_results=13)`
 
 ## 游戏入口
-http://127.0.0.1:5173/
+运行时注入的 `build_url`
 
 ## 游玩建议（用于"引导性"维度）
 - 第一次打开时：有没有欢迎/教学？标题菜单？
@@ -42,7 +42,7 @@ http://127.0.0.1:5173/
 
 ## 输出
 评测写入文件：
-`c:\Users\dzdon\CodesOther\Project Utopia\reviews\external-playtest-2026-04-22\01-onboarding.md`
+`assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md`
 
 格式要求：
 - 中文，markdown
@@ -52,3 +52,14 @@ http://127.0.0.1:5173/
 - 篇幅：至少 1500 字
 
 完成后在你的最终回复里告诉我：评测文件路径 + 10 分制评分 + 一句话总结。
+
+## Runtime Context（orchestrator 注入）
+
+```
+- build_url: <http://127.0.0.1:PORT/>
+- output_path: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md
+- screenshot_dir: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/screenshots/<reviewer-id>/
+- date: <yyyy-mm-dd>
+```
+
+收到 Runtime Context 后，以其中的 `build_url` 与 `output_path` 为准。

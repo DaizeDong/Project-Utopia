@@ -28,7 +28,7 @@ date: 2026-04-22
 `ToolSearch(query="select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_type,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_evaluate,mcp__plugin_playwright_playwright__browser_press_key,mcp__plugin_playwright_playwright__browser_hover,mcp__plugin_playwright_playwright__browser_resize,mcp__plugin_playwright_playwright__browser_close", max_results=12)`
 
 ## 游戏入口
-http://127.0.0.1:5173/
+运行时注入的 `build_url`
 
 ## 深度体验要求
 - 至少 **40 次交互**，长时间等事件发生
@@ -44,7 +44,7 @@ http://127.0.0.1:5173/
 **必须在结束前完成 Write**。
 
 ## 输出
-`c:\Users\dzdon\CodesOther\Project Utopia\reviews\external-playtest-2026-04-22\player-04-roleplayer.md`
+`assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md`
 
 要求：
 - 中文 markdown，至少 1800 字
@@ -53,3 +53,14 @@ http://127.0.0.1:5173/
 - 10 分制
 
 完成后告诉我：文件路径 + 评分 + 一句话总结。
+
+## Runtime Context（orchestrator 注入）
+
+```
+- build_url: <http://127.0.0.1:PORT/>
+- output_path: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/<reviewer-id>.md
+- screenshot_dir: assignments/homework6/Agent-Feedback-Loop/Round<N>/Feedbacks/screenshots/<reviewer-id>/
+- date: <yyyy-mm-dd>
+```
+
+收到 Runtime Context 后，以其中的 `build_url` 与 `output_path` 为准。
