@@ -170,9 +170,9 @@ const MAX_GOAL_LEN = 60;
 const LLM_TIMEOUT_MS = 30000;
 
 const VALID_PRIORITIES = new Set(["critical", "high", "medium", "low"]);
-// v0.8.2 Round-5 Wave-1 (01b Step 5) — `reassign_role` is a pseudo-action: it
-// doesn't build anything and bypasses BUILD_COST. PlanExecutor reads it as a
-// noop and writes `state.ai.fallbackHints.pendingRoleBoost = step.role` so
+// `reassign_role` is a pseudo-action: it doesn't build anything and bypasses
+// BUILD_COST. PlanExecutor reads it as a noop and writes
+// `state.ai.fallbackHints.pendingRoleBoost = step.role` so
 // RoleAssignmentSystem can consume the signal next tick.
 const VALID_BUILD_TYPES = new Set([...Object.keys(BUILD_COST), "reassign_role"]);
 const VALID_SKILL_NAMES = new Set(Object.keys(SKILL_LIBRARY));
@@ -457,9 +457,8 @@ function _validateStep(raw, seenIds) {
     ? raw.predicted_effect
     : {};
 
-  // v0.8.2 Round-5 Wave-1 (01b Step 5) — preserve the `role` field for the
-  // `reassign_role` pseudo-action so PlanExecutor can write the correct
-  // pending hint. All other action types drop unknown payload fields.
+  // Preserve the `role` field for `reassign_role` so PlanExecutor can write
+  // the correct pending hint. All other action types drop unknown payload fields.
   const reassignRole = (action.type === "reassign_role" && typeof action.role === "string")
     ? action.role
     : null;
@@ -516,13 +515,10 @@ export function generateFallbackPlan(observation, state) {
   const workerCount = observation.workforce?.total ?? 0;
   const threat = observation.defense?.threat ?? 0;
 
-  // v0.8.2 Round-5 Wave-3 (02c Step 5) — escalator-aware affordability. The
-  // Nth farm/kitchen costs more than the flat BUILD_COST[kind] value once
-  // the colony is over BUILD_COST_ESCALATOR[kind].softTarget. Using the
-  // escalated cost here stops the fallback from emitting a "build farm"
-  // step that the ConstructionSystem will immediately bounce with
-  // "insufficientResource" — which was producing ghost retry loops at
-  // Feedbacks/02c run-1 (warehouse×15 spam).
+  // Escalator-aware affordability: the Nth farm/kitchen costs more than the
+  // flat BUILD_COST value once over BUILD_COST_ESCALATOR[kind].softTarget.
+  // Using escalated cost here stops the fallback from emitting build steps
+  // that ConstructionSystem would immediately bounce with "insufficientResource".
   const farmCost = computeEscalatedBuildCost("farm", farms);
   const kitchenCost = computeEscalatedBuildCost("kitchen", kitchens);
 
@@ -532,11 +528,10 @@ export function generateFallbackPlan(observation, state) {
       steps.push(_step(nextId++, "farm", "near_cluster:c0", "critical",
         "Food declining, need immediate food production",
         { food_rate_delta: "+0.4/s" }));
-      // v0.8.2 Round-5 Wave-1 (02a Step 5) — when population has outgrown the
-      // meal pipeline (>=12 workers, zero kitchens, stone+wood affordable),
-      // replace the second farm with a kitchen. Stacking farms on a population
-      // that can't eat raw food at the production rate just leaves food to
-      // rot; a kitchen converts food→meals at 2× hunger efficiency.
+      // When population has outgrown the meal pipeline (>=12 workers, zero
+      // kitchens), prioritize a kitchen over a second farm — stacking farms
+      // when workers can't eat raw food fast enough just leaves food to rot;
+      // a kitchen converts food→meals at 2× hunger efficiency.
       if (workerCount >= 12 && kitchens === 0
           && wood >= (kitchenCost.wood ?? 8)
           && stone >= (kitchenCost.stone ?? 2)) {
@@ -628,10 +623,9 @@ export function generateFallbackPlan(observation, state) {
   // proves the chain works with any sustained harvest and unlocks the
   // meal-powered growth loop (DevIndex 44 → 72+ at day 90).
   //
-  // v0.8.2 Round-5 Wave-1 (02a Step 4): stone gate 3 → 2. Plains/Archipelago
-  // starts sit at stone 3-4 and wall-building drains stone faster than
-  // quarries refill; the 3-threshold pushed Kitchen into late-game limbo. A
-  // pop>=12 branch upgrades priority to "critical" so the planner can't get
+  // Stone gate is 2 (not 3) because early stone drains faster than quarries
+  // refill; a higher threshold pushes Kitchen into late-game limbo. The
+  // pop>=12 branch upgrades priority to "critical" so the planner can't be
   // crowded out by farm/warehouse stacking when the meal pipeline is the
   // actual bottleneck.
   if (
@@ -652,22 +646,18 @@ export function generateFallbackPlan(observation, state) {
       { meals_rate: "+1/cycle", food_efficiency: "2x" }));
   }
 
-  // v0.8.2 Round-5 Wave-1 (01b Step 5) — Priority 3.75 "idle processing
-  // chain". When the building exists but no worker is assigned to run it
-  // (classic fallback-AI failure mode: Kitchen built, COOK=0, Meals stay at
-  // 0), emit a `reassign_role` pseudo-step. PlanExecutor reads this as a
-  // noop and writes `state.ai.fallbackHints.pendingRoleBoost = role`;
-  // RoleAssignmentSystem consumes the hint next tick (see
-  // RoleAssignmentSystem.update) to force a single slot.
+  // Priority 3.75 "idle processing chain": when a processing building exists
+  // but no worker is assigned (e.g. Kitchen built, COOK=0, Meals stay at 0),
+  // emit a `reassign_role` pseudo-step. PlanExecutor writes
+  // `state.ai.fallbackHints.pendingRoleBoost = role` and RoleAssignmentSystem
+  // consumes it next tick to force a single slot.
   //
-  // Mirror the ingredients guard from the pipeline-idle boost — we don't
-  // want the planner asking for a cook when food stockpile is too low for
-  // the kitchen to even start cycling.
-  // v0.8.2 Round-5b Wave-1 (01b Step 5) — band-aware idle-chain threshold.
-  // Low-pop colonies (workerCount < lowPopBand, default 6) never clear
-  // food>=15 because food is drained faster than it is produced, so the
-  // reassign_role hint never emits and the pipeline stays idle. Drop the
-  // threshold to 6 below the low-pop band to close the feedback loop.
+  // The food guard mirrors the ingredients check — don't ask for a cook when
+  // the stockpile is too low for the kitchen to even start cycling.
+  //
+  // Low-pop colonies (workerCount < lowPopBand) use a lower food threshold
+  // because food is drained faster than produced at small pop sizes, so the
+  // normal threshold is never cleared and the pipeline stays permanently idle.
   const idleChainThresholdBase = Number(BALANCE.fallbackIdleChainThreshold ?? 15);
   const idleChainLowPopBand = Number(BALANCE.fallbackIdleChainLowPopBand ?? 6);
   const idleChainLowPopThreshold = Number(BALANCE.fallbackIdleChainThresholdLowPop ?? 6);
@@ -734,6 +724,24 @@ export function generateFallbackPlan(observation, state) {
       { threat_reduction: "-3" }));
     steps.push(_step(nextId++, "wall", `near_step:${nextId - 2}`, "low",
       "Extend wall line", { threat_reduction: "-2" }, [nextId - 2]));
+  }
+
+  // Priority 5.5: Bridge utility — suggest bridge if any production tile is
+  // water-isolated (adjacent to WATER with no warehouse reachable via passable
+  // tiles). Uses the existing candidateHasReachableWarehouse probe.
+  if (wood >= 3 && stone >= 1 && steps.length < PLAN_MAX_STEPS) {
+    const bridgeSuggestion = _detectWaterIsolation(state);
+    if (bridgeSuggestion) {
+      steps.push({
+        id: nextId++,
+        thought: `${bridgeSuggestion.producer} at (${bridgeSuggestion.ix},${bridgeSuggestion.iz}) isolated by water — bridge needed`,
+        action: { type: "bridge", hint: `coords:${bridgeSuggestion.waterIx},${bridgeSuggestion.waterIz}` },
+        predicted_effect: { connectivity: "+1 isolated site", logistics: "restored" },
+        priority: "medium",
+        depends_on: [],
+        status: "pending",
+      });
+    }
   }
 
   // Priority 6: Road network expansion
@@ -832,6 +840,58 @@ export function generateFallbackPlan(observation, state) {
     steps: steps.slice(0, PLAN_MAX_STEPS),
     source: "fallback",
   };
+}
+
+/**
+ * Water-isolation detection for bridge suggestions.
+ * For each production tile (FARM, LUMBER, QUARRY, HERB_GARDEN), checks if:
+ *   1. The tile has a WATER neighbor (water is adjacent), AND
+ *   2. The tile has no reachable warehouse via the existing BFS probe.
+ * Returns the first such isolated tile plus the water neighbor coordinate
+ * to build the bridge at, or null if all worksites are passably connected.
+ *
+ * @param {object} state — game state
+ * @returns {{ producer:string, ix:number, iz:number, waterIx:number, waterIz:number }|null}
+ */
+function _detectWaterIsolation(state) {
+  const grid = state?.grid;
+  if (!grid || !grid.tiles) return null;
+  const { width, height } = grid;
+  const PRODUCER_TYPES = new Map([
+    [TILE.FARM, "farm"],
+    [TILE.LUMBER, "lumber"],
+    [TILE.QUARRY, "quarry"],
+    [TILE.HERB_GARDEN, "herb_garden"],
+  ]);
+
+  for (let iz = 0; iz < height; iz++) {
+    for (let ix = 0; ix < width; ix++) {
+      const tileType = grid.tiles[toIndex(ix, iz, width)];
+      if (!PRODUCER_TYPES.has(tileType)) continue;
+
+      // Check if the BFS probe finds no reachable warehouse
+      const probe = candidateHasReachableWarehouse(grid, ix, iz, 1);
+      if (probe.skipped || probe.reachable) continue;
+
+      // Production tile has no warehouse connection — look for adjacent water
+      for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (!inBounds(nx, nz, grid)) continue;
+        const nType = grid.tiles[toIndex(nx, nz, width)];
+        if (nType === TILE.WATER) {
+          return {
+            producer: PRODUCER_TYPES.get(tileType),
+            ix,
+            iz,
+            waterIx: nx,
+            waterIz: nz,
+          };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function _step(id, type, hint, priority, thought, predicted_effect, depends_on = []) {

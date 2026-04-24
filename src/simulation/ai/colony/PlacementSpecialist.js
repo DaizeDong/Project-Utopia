@@ -100,25 +100,29 @@ export function analyzeCandidateTiles(candidates, buildType, grid, state) {
       if (dist < minWorkerDist) minWorkerDist = dist;
     }
 
-    // Adjacent building analysis
+    // Adjacent building analysis + water neighbor count
     const adjacentBuildings = [];
+    let waterNeighborCount = 0;
     for (const { dx, dz } of MOVE_DIRECTIONS_4) {
       const nx = ix + dx;
       const nz = iz + dz;
       if (!inBounds(nx, nz, grid)) continue;
       const nTile = grid.tiles[toIndex(nx, nz, grid.width)];
-      if (nTile !== TILE.GRASS && nTile !== TILE.WATER) {
+      if (nTile === TILE.WATER) {
+        waterNeighborCount++;
+      } else if (nTile !== TILE.GRASS) {
         const tileName = _tileIdToName(nTile);
         if (tileName) adjacentBuildings.push(tileName);
       }
     }
 
     // Compute composite score (used for pre-ranking)
-    const score = _scoreTile(buildType, moisture, elevation, minWhDist, minWorkerDist, adjacentBuildings);
+    const score = _scoreTile(buildType, moisture, elevation, minWhDist, minWorkerDist, adjacentBuildings, waterNeighborCount);
 
     // Notes (warnings/bonuses)
     const notes = [];
     if (!withinCoverage) notes.push("outside warehouse coverage!");
+    if (waterNeighborCount > 1) notes.push(`water-edge penalty (${waterNeighborCount} water neighbors)`);
     if (moisture < TERRAIN_MECHANICS.fireMoistureThreshold && (buildType === "farm" || buildType === "lumber")) {
       notes.push("fire risk (low moisture)");
     }
@@ -280,8 +284,15 @@ export class PlacementSpecialist {
 
 // ── Private Helpers ─────────────────────────────────────────────────
 
-function _scoreTile(buildType, moisture, elevation, whDist, workerDist, adjacentBuildings) {
+function _scoreTile(buildType, moisture, elevation, whDist, workerDist, adjacentBuildings, waterNeighborCount = 0) {
   let score = 0.5;
+
+  // Terrain-aware scoring:
+  // FARM: prefer high moisture (fertile land), slight penalty for high elevation
+  // QUARRY: prefer high elevation, slight penalty for high moisture
+  // LUMBER: prefer moderate moisture (forest-friendly), slight elevation penalty
+  // WAREHOUSE/KITCHEN: neutral terrain, prefer center-accessible positions
+  // CLINIC/SMITHY: no strong terrain preference
 
   // Moisture preference by type
   const moistureWeights = { farm: 1.0, herb_garden: 0.8, clinic: 0.4, kitchen: 0.3, lumber: 0.3, warehouse: 0.2, quarry: -0.1, wall: 0, smithy: 0 };
@@ -309,6 +320,17 @@ function _scoreTile(buildType, moisture, elevation, whDist, workerDist, adjacent
     if (buildType === "herb_garden" && adj === "farm") score += 0.25;
     if (buildType === "kitchen" && adj === "farm") score += 0.15;
     if ((buildType === "farm" || buildType === "herb_garden") && adj === "quarry") score -= 0.3;
+    if (buildType === "farm" && adj === "warehouse") score += 0.1;
+    if (buildType === "kitchen" && adj === "warehouse") score += 0.2;
+    if (buildType === "smithy" && (adj === "quarry" || adj === "warehouse")) score += 0.15;
+    if (buildType === "clinic" && adj === "herb_garden") score += 0.2;
+    // Defense: keep clinic/smithy away from map edge — rewarded below via whDist
+  }
+
+  // Water edge penalty: buildings adjacent to >1 water tiles face logistics
+  // issues (e.g. warehouse on a narrow peninsula).
+  if (waterNeighborCount > 1) {
+    score -= 5.0;
   }
 
   return Math.max(0, score);

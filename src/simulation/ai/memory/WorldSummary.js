@@ -7,6 +7,12 @@ import {
 } from "../../npc/state/StateGraph.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
 import { MIN_FOOD_FOR_GROWTH } from "../../population/PopulationGrowthSystem.js";
+import {
+  sampleTerrainAggregates,
+  sampleSoilAggregates,
+  sampleNodeDepletionCounts,
+  sampleWaterConnectivity,
+} from "../colony/ColonyPerceiver.js";
 
 const POLICY_GROUP_ORDER = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -215,6 +221,12 @@ export function buildWorldSummary(state) {
       activeEventCount: Number(state.metrics.spatialPressure?.activeEventCount ?? 0),
     },
     aiMode: state.ai.mode,
+
+    // v0.8.2: terrain, soil, node depletion counts, water connectivity
+    terrain: sampleTerrainAggregates(state.grid),
+    soil: sampleSoilAggregates(state.grid),
+    nodes: sampleNodeDepletionCounts(state.grid),
+    connectivity: sampleWaterConnectivity(state),
   };
 
   summary.operations = buildOperationsSummary(summary);

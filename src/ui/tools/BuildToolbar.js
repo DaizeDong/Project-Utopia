@@ -768,6 +768,11 @@ export class BuildToolbar {
       btn.classList.toggle("active", btn.dataset.tool === effectiveTool);
     });
 
+    // Update canvas cursor: default arrow in select mode, crosshair for build tools.
+    if (typeof document !== "undefined") {
+      document.body.style.cursor = effectiveTool === "select" ? "default" : "crosshair";
+    }
+
     if (this.farmRatio && this.farmRatioLabel) {
       const pct = Math.round(this.state.controls.farmRatio * 100);
       this.#setFieldValueIfIdle(this.farmRatio, pct);

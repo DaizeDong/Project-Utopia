@@ -52,20 +52,68 @@
 
     /* === HUD STATUS BAR === */
     #statusBar {
-      position: absolute; top: 0; left: 0; right: 0; z-index: 15;
+      position: absolute; top: 0; left: 0; right: 36px; z-index: 15;
       display: flex; align-items: center; gap: 3px;
-      padding: 4px 8px 4px 8px;
-      background: linear-gradient(180deg, rgba(12, 22, 35, 0.95), rgba(8, 16, 28, 0.9));
+      height: 32px; max-height: 32px;
+      padding: 0 8px;
+      background: linear-gradient(180deg, rgba(12, 22, 35, 0.97), rgba(8, 16, 28, 0.93));
       border-bottom: 1px solid var(--panel-border);
       font-size: 11px; font-weight: 700; color: #d0e8ff;
       pointer-events: none;
       box-shadow: 0 2px 12px rgba(0,0,0,0.4);
       flex-wrap: nowrap;
-      overflow-x: auto;
-      overflow-y: hidden;
-      scrollbar-width: none;
+      overflow: hidden;
     }
-    #statusBar::-webkit-scrollbar { display: none; }
+    /* Keep right edge clear for sidebar tab strip */
+    #wrap.sidebar-open #statusBar { right: 280px; }
+
+    /* Hide secondary resources from status bar — they live in Colony panel */
+    #statusBar [data-resource-tier="secondary"] { display: none !important; }
+
+    /* Constrain scoreboard to single-line in the slim status bar */
+    #statusScoreboard {
+      display: flex !important; flex-wrap: nowrap !important;
+      align-items: center !important; gap: 4px !important;
+      overflow: hidden !important; max-height: 28px;
+      flex: 1 1 auto; min-width: 0;
+    }
+    #statusScoreboard > * {
+      flex-shrink: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Scenario headline — keep single line */
+    .hud-scenario {
+      -webkit-line-clamp: unset;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: min(280px, 22vw);
+    }
+    /* Hide verbose scoreboard items in the slim status bar */
+    #statusScoreboard #statusNextAction,
+    #statusScoreboard #statusScenario,
+    #statusScoreboard #statusBuildHint,
+    #statusScoreboard #statusAutopilotCrisis,
+    #statusScoreboard #latestDeathRow,
+    #statusScoreboard #statusScoreBreak { display: none !important; }
+    /* Autopilot chip — keep, slim it */
+    #aiAutopilotChip { flex-shrink: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+    /* Objective — one line only */
+    #statusObjective {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      display: inline-flex; flex-wrap: nowrap; gap: 4px;
+      max-width: min(320px, 26vw);
+    }
+    #statusObjective span { white-space: nowrap; }
+    /* Status action — always single line */
+    #statusAction {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-height: 20px; -webkit-line-clamp: 1; display: inline-block;
+      flex-shrink: 1; max-width: min(300px, 25vw);
+    }
+    /* Storyteller strip — compact in bar */
+    #storytellerStrip {
+      max-height: 18px !important; overflow: hidden !important;
+      flex-shrink: 1; min-width: 0; max-width: min(200px, 15vw);
+    }
 
     .hud-resource {
       display: flex; align-items: center; gap: 2px;
@@ -74,9 +122,11 @@
       flex-shrink: 0;
     }
     .hud-icon { width: 16px; height: 16px; image-rendering: pixelated; flex: 0 0 16px; }
-    .hud-meter { display: flex; flex-direction: column; gap: 1px; min-width: 28px; }
-    .hud-label { font-size: 11px; font-weight: 800; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
-    .hud-sublabel { font-size: 9px; font-weight: 700; line-height: 1; opacity: 0.68; color: var(--text-muted, #9cb3c9); margin-bottom: 1px; }
+    .hud-meter { display: flex; flex-direction: column; gap: 0; min-width: 26px; }
+    .hud-label { font-size: 11px; font-weight: 800; line-height: 1.1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+    .hud-sublabel { font-size: 8px; font-weight: 700; line-height: 1; opacity: 0.65; color: var(--text-muted, #9cb3c9); }
+    /* Hide progress bars in status bar — too tall for 32px bar */
+    #statusBar .hud-bar { display: none; }
     .hud-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
     .hud-bar-fill { height: 100%; width: 0; border-radius: 2px; transition: width 0.3s ease; }
     .hud-bar-food { background: linear-gradient(90deg, #4caf50, #8bc34a); }
@@ -161,9 +211,8 @@
       color: #ffdf8a;
     }
     .hud-goal-chip--pending::before { content: "\25CB"; }
-    /* v0.8.2 Round-0 02e-indie-critic — scenario headline slot in statusBar.
-       Italic muted line that lives to the left of #statusObjective and carries
-       the generated scenario title/summary during play. Ellipsis on overflow;
+    /* Scenario headline slot in statusBar: italic muted line carrying the
+       generated scenario title/summary during play. Ellipsis on overflow;
        full text is still available via the native `title` tooltip. */
     .hud-scenario {
       font-size: 10px; font-style: italic; font-weight: 500;
@@ -175,13 +224,10 @@
     }
     .hud-scenario[hidden] { display: none; }
 
-    /* v0.8.2 Round-1 01e-innovation — Storyteller badge + legend styling.
-       Badge is a tiny pill next to the strip text. The colour tells the player
-       which storyteller voice is driving the colony: WHISPER = live LLM,
-       DIRECTOR = deterministic rule-based fallback, DRIFT = idle / no
-       directive yet. Legend below the Heat Lens button exposes the red=surplus
-       / blue=starved semantics that would otherwise require hovering the
-       overlay markers to discover. */
+    /* Storyteller badge + legend styling. Badge is a tiny pill next to the
+       strip text; colour indicates voice: WHISPER = live LLM, DIRECTOR =
+       rule-based fallback, DRIFT = idle. Legend below the Heat Lens button
+       exposes the red=surplus / blue=starved semantics. */
     .hud-storyteller-badge {
       display: inline-block;
       font-size: 9px; line-height: 1;
@@ -206,16 +252,114 @@
     }
     .hud-storyteller-focus { font-weight: 600; }
     .hud-storyteller-summary { opacity: 0.85; }
-    /* v0.8.2 Round-1 02d-roleplayer — salient event-trace beat appended to
-       the storyteller strip so the "hidden director" is audible (sabotage /
-       shortage / visitor / weather / death / fire). The span is hidden by
-       default and revealed only when a matching beat is within 15s. */
+    /* Salient event-trace beat appended to the storyteller strip so the
+       "hidden director" is audible (sabotage / shortage / visitor / weather /
+       death / fire). Hidden by default; revealed when a matching beat is
+       within 15s. */
     .hud-storyteller-beat {
       margin-left: 8px;
       padding-left: 8px;
       border-left: 1px solid rgba(255, 255, 255, 0.12);
       opacity: 0.78;
       font-style: italic;
+    }
+
+    /* Muted hotkey hint — now lives in Build panel footer, not status bar */
+    .hud-hint {
+      font-size: 9px; opacity: 0.5; color: var(--text-muted, #9cb3c9);
+      white-space: nowrap; flex-shrink: 0; cursor: pointer;
+      padding: 0 6px; line-height: 1.1;
+    }
+    .hud-hint:hover { opacity: 0.75; }
+
+    /* === HOTKEY GRID (Build panel footer) === */
+    .hotkey-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px 8px;
+      margin-top: 8px;
+      padding: 7px 8px;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      background: rgba(0,0,0,0.18);
+      font-size: 10px;
+      font-family: "Cascadia Code","Consolas",monospace;
+    }
+    .hotkey-grid .hk-row {
+      display: flex; align-items: baseline; gap: 4px;
+      line-height: 1.3; color: rgba(200,224,248,0.7);
+    }
+    .hotkey-grid .hk-key {
+      display: inline-block;
+      padding: 1px 5px; border-radius: 3px;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #c4dcf6; font-size: 9px; font-weight: 700;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .hotkey-grid .hk-desc {
+      color: rgba(200,224,248,0.55); font-size: 9px;
+    }
+    .hotkey-grid-divider {
+      grid-column: 1 / -1;
+      height: 1px; background: rgba(255,255,255,0.07);
+      margin: 2px 0;
+    }
+
+    /* === COLONY HEALTH CARD === */
+    .colony-health-card {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border-left: 3px solid var(--success, #4caf50);
+      background: rgba(255,255,255,0.03);
+      border-top: 1px solid var(--panel-border);
+      border-right: 1px solid var(--panel-border);
+      border-bottom: 1px solid var(--panel-border);
+      margin-bottom: 6px;
+    }
+    .colony-health-card[data-status="thriving"] { border-left-color: #4caf50; }
+    .colony-health-card[data-status="stable"]   { border-left-color: #8bc34a; }
+    .colony-health-card[data-status="struggling"]{ border-left-color: #ffc107; }
+    .colony-health-card[data-status="crisis"]   { border-left-color: #f44336; }
+    .health-status-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 4px;
+    }
+    .health-badge {
+      font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
+      padding: 2px 7px; border-radius: 4px;
+      background: rgba(76,175,80,0.18); color: #a5f2b2;
+    }
+    .colony-health-card[data-status="thriving"] .health-badge { background:rgba(76,175,80,0.18); color:#a5f2b2; }
+    .colony-health-card[data-status="stable"] .health-badge   { background:rgba(139,195,74,0.18); color:#c5e1a5; }
+    .colony-health-card[data-status="struggling"] .health-badge { background:rgba(255,193,7,0.18); color:#ffdf8a; }
+    .colony-health-card[data-status="crisis"] .health-badge   { background:rgba(244,67,54,0.18); color:#ff8a80; }
+    .health-day { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+    .health-metrics {
+      display: flex; gap: 8px; flex-wrap: wrap;
+    }
+    .health-metric { font-size: 10px; color: rgba(200,224,248,0.65); }
+
+    /* === SIDEBAR TAB DIVIDER === */
+    .sidebar-tab-divider {
+      width: 22px; height: 1px;
+      background: rgba(255,255,255,0.12);
+      margin: 2px 0;
+      flex-shrink: 0;
+      align-self: center;
+    }
+
+    /* Lens + help buttons get a slightly different tint to distinguish
+       from panel nav buttons */
+    .sidebar-tab-btn.lens-btn {
+      font-size: 10px; min-height: 48px;
+      background: rgba(255,255,255,0.03);
+      border-color: rgba(255,255,255,0.05);
+      color: rgba(200,224,248,0.45);
+    }
+    .sidebar-tab-btn.lens-btn:hover {
+      background: rgba(255,255,255,0.08);
+      color: #d0e8ff;
     }
 
     .heat-lens-legend {
@@ -233,9 +377,9 @@
     .heat-lens-legend .legend-blue { background: #4da8e9; }
 
     #alertStack {
-      position: absolute; top: 44px; right: 12px;
+      position: absolute; top: 36px; right: 44px;
       display: flex; flex-direction: column; align-items: flex-end;
-      gap: 4px; z-index: 40; pointer-events: none; max-width: 320px;
+      gap: 4px; z-index: 40; pointer-events: none; max-width: 280px;
     }
     .hud-death-toast {
       pointer-events: none; font-weight: 800; font-size: 13px;
@@ -263,15 +407,14 @@
       transition: opacity 0.3s;
     }
 
-    /* v0.8.2 Round-0 01d — resource rate badges inside Colony Resources panel. */
+    /* Resource rate badges inside Colony Resources panel. */
     .hud-rate {
       font-size: 9px; opacity: 0.7; margin-left: 6px;
       font-weight: 600; letter-spacing: 0.2px;
     }
 
-    /* v0.8.2 Round-0 01b — Build click feedback layer.
-       Floating toast + pulse animation to make buildResult.reasonText visible
-       at the click location (P0 fix: "silent failure" on first build click). */
+    /* Build click feedback layer. Floating toast + pulse animation to make
+       buildResult.reasonText visible at the click location. */
     #floatingToastLayer {
       position: absolute; inset: 0; z-index: 25;
       pointer-events: none;
@@ -332,11 +475,9 @@
     }
     /* Compact UI disables the scale pulse (risk #3 — avoid layout flash in cramped mode). */
     #ui.compact .hud-action.flash-action { animation: none; }
-    /* v0.8.2 Round-1 02b-casual (Step 4) — Compact-mode fallback keeps the
-       three HUD chips (objective / scenario / action) on a single line with
-       ellipsis so the denser layout is not disturbed. Non-compact mode uses
-       the 2-line clamp above so long red warnings and scenario progress
-       strings stay fully visible. */
+    /* Compact-mode fallback: keeps the three HUD chips (objective / scenario /
+       action) on a single line with ellipsis so the denser layout is not
+       disturbed. Non-compact mode uses the 2-line clamp above. */
     #ui.compact .hud-objective,
     #ui.compact .hud-scenario,
     #ui.compact .hud-action {
@@ -348,10 +489,9 @@
     #buildPreviewVal[data-kind="error"] { color: #ff8a80; }
     #buildPreviewVal[data-kind="warn"] { color: #ffca80; }
 
-    /* === PANEL TOGGLE BUTTONS (in status bar) === */
+    /* === PANEL TOGGLE BUTTONS — moved into sidebar; hidden in status bar === */
     #panelToggles {
-      display: flex; gap: 3px; margin-left: 8px;
-      pointer-events: auto;
+      display: none; /* hidden — panel tabs are now in #sidebarTabBar */
     }
     .panel-toggle {
       padding: 4px 10px; border-radius: 6px;
@@ -372,27 +512,148 @@
       color: #fff;
     }
 
-    /* === FLOATING PANELS === */
-    .floating-panel {
-      position: absolute;
-      top: 40px;
-      width: 280px;
-      max-height: calc(100vh - 94px);
-      overflow-y: auto;
-      overflow-x: hidden;
+    /* === RIGHT SIDEBAR === */
+    #sidebar {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: 280px; z-index: 20;
+      display: flex; flex-direction: row;
+      pointer-events: none;
+      transition: transform 0.22s ease;
+      overflow: hidden;
+    }
+    /* Collapsed: sidebar slides right, but tab strip (first in flex) stays visible.
+       Tab strip is 36px wide and is the FIRST child, so translateX(244px) moves
+       the whole sidebar 244px right, keeping 36px of tab strip in viewport. */
+    #wrap:not(.sidebar-open) #sidebar {
+      transform: translateX(244px);
+    }
+    /* Ensure sidebar-collapsed from legacy JS doesn't interfere when sidebar-open is set */
+    #wrap.sidebar-open #sidebar {
+      transform: translateX(0) !important;
+    }
+
+    /* Tab strip — the 36px right edge always visible */
+    /* Use order:-1 to make it appear FIRST (left) in the flex row,
+       even though it's last in the DOM. This way translateX(244px)
+       keeps the tab strip (left, 36px) visible while sliding the
+       panel area (right, 244px) off-screen. */
+    #sidebarTabStrip {
+      order: -1;
+      width: 36px; flex-shrink: 0;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 4px 0 8px;
+      background: rgba(10, 18, 30, 0.97);
+      border-right: 1px solid var(--panel-border);
+      border-left: none;
+      gap: 4px;
       pointer-events: auto;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    #sidebarTabStrip::-webkit-scrollbar { display: none; }
+    .sidebar-tab-btn {
+      writing-mode: vertical-lr;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+      width: 30px; min-height: 56px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px 4px; border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.07);
+      color: rgba(208,232,255,0.55);
+      font-size: 11px; font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .sidebar-tab-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #d0e8ff;
+    }
+    .sidebar-tab-btn.active {
+      background: var(--accent-dim);
+      border-color: rgba(61,155,233,0.4);
+      color: #fff;
+    }
+    /* Terrain/heat lens active state uses a green/amber tint so players can
+       visually distinguish "overlay is ON" from a selected panel tab. */
+    #terrainLensBtn.active {
+      background: rgba(76, 175, 80, 0.22);
+      border-color: rgba(76, 175, 80, 0.55);
+      color: #a5f2b2;
+    }
+    #heatLensBtn.active {
+      background: rgba(255, 152, 0, 0.22);
+      border-color: rgba(255, 152, 0, 0.55);
+      color: #ffd08a;
+    }
+    #sidebarToggleBtn {
+      width: 30px; height: 28px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      color: rgba(208,232,255,0.7);
+      font-size: 14px; line-height: 1;
+      cursor: pointer; pointer-events: auto;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+    #sidebarToggleBtn:hover { background: rgba(255,255,255,0.14); color: #fff; }
+
+    /* Sidebar panel area */
+    #sidebarPanelArea {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
       background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      box-shadow: var(--panel-shadow);
-      backdrop-filter: blur(12px);
+      border-left: none;
+      pointer-events: auto;
+      overflow: hidden;
+    }
+    #sidebarPanelArea .sidebar-panel {
+      display: none; flex: 1; min-height: 0;
+      flex-direction: column; overflow: hidden;
+    }
+    #sidebarPanelArea .sidebar-panel.active {
+      display: flex;
+    }
+    .sidebar-panel-header {
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--divider);
+      font-size: 11px; font-weight: 700;
+      color: var(--text-muted);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .sidebar-panel-body {
+      flex: 1; min-height: 0;
+      overflow-y: auto; overflow-x: hidden;
       padding: 6px;
       scrollbar-width: thin;
       scrollbar-color: rgba(255,255,255,0.1) transparent;
     }
+    .sidebar-panel-body::-webkit-scrollbar { width: 4px; }
+    .sidebar-panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+    .sidebar-panel-body::-webkit-scrollbar-track { background: transparent; }
+
+    /* === FLOATING PANELS — now embedded in sidebar panel body === */
+    .floating-panel {
+      /* When inside sidebar: no absolute positioning, flow normally */
+      position: relative;
+      top: auto; left: auto; right: auto;
+      width: 100%; max-height: none;
+      overflow-y: visible;
+      overflow-x: hidden;
+      pointer-events: auto;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      backdrop-filter: none;
+      padding: 0;
+    }
     .floating-panel[hidden] { display: none; }
-    .floating-panel-left { left: 10px; width: 260px; }
-    .floating-panel-right { right: 10px; width: 300px; }
+    .floating-panel-left { left: auto; width: 100%; }
+    .floating-panel-right { right: auto; width: 100%; }
 
     /* === CARD COMPONENTS (dark theme) === */
     .card {
@@ -543,7 +804,7 @@
 
     /* === SPEED CONTROLS === */
     #speedControls {
-      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      position: absolute; bottom: 10px; left: calc(50% - 18px); transform: translateX(-50%);
       z-index: 10;
       display: flex; align-items: center; gap: 4px;
       padding: 4px 8px;
@@ -741,10 +1002,13 @@
     }
 
     /* === ENTITY FOCUS === */
+    /* Positioned at bottom-left to avoid blocking the center game canvas.
+       When the sidebar is open, the right edge is pushed left of the
+       sidebar; when closed, it uses its own max-width. */
     #entityFocusOverlay {
-      position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
-      width: min(340px, calc(100% - 580px));
-      max-height: 240px;
+      position: absolute; bottom: 50px; left: 8px;
+      width: min(300px, calc(50vw - 20px));
+      max-height: 230px;
       z-index: 12;
       border: 1px solid var(--panel-border);
       border-radius: 10px;
@@ -753,6 +1017,8 @@
       backdrop-filter: blur(8px);
       overflow: hidden; color: var(--text);
     }
+    /* When game is not active (pregame), keep entity focus hidden */
+    #wrap:not(.game-active) #entityFocusOverlay { display: none; }
     #entityFocusOverlay > summary {
       list-style: none; cursor: pointer;
       padding: 7px 10px; font-size: 11px; font-weight: 700;
@@ -767,8 +1033,8 @@
       padding: 8px 10px; font-size: 11px;
       line-height: 1.35; color: rgba(208,232,255,0.85);
     }
-    /* v0.8.2 Round-5 Wave-2 (01d Step 4): worker-list strip above the
-       detail pane — cycles through all alive workers for casual players. */
+    /* Worker-list strip above the detail pane — cycles through all alive
+       workers for casual players. */
     .entity-worker-list {
       max-height: 140px;
       overflow-y: auto;
@@ -807,8 +1073,8 @@
       color: var(--text-muted);
       padding: 2px 4px;
     }
-    /* v0.8.2 Round-5 Wave-2 (02b-casual Step 5): soft amber left border
-       on resource rate badges that are stalled (rate ≈ 0 + bottleneck). */
+    /* Soft amber left border on resource rate badges that are stalled
+       (rate ≈ 0 + bottleneck). */
     [data-stall="1"] {
       border-left: 2px solid rgba(220, 150, 60, 0.7);
       padding-left: 4px;
@@ -887,13 +1153,13 @@
     /* === HIDDEN LEGACY ELEMENTS === */
     .legacy-hidden { display: none !important; }
 
-    /* Dev mode gate (v0.8.2 Round0 01c-ui) — hide developer-only UI for first-time players. */
+    /* Dev mode gate — hide developer-only UI for first-time players. */
     body:not(.dev-mode) .dev-only { display: none !important; }
 
-    /* v0.8.2 Round0 02b-casual — Casual profile gate. Orthogonal to dev-mode:
-       casual hides "advanced" HUD tiers and engineering regions for first-time
-       players. body.casual-mode is driven by readInitialUiProfile() (?ui=casual
-       default) wired through GameApp.#initUiProfileGate. */
+    /* Casual profile gate. Orthogonal to dev-mode: casual hides "advanced" HUD
+       tiers and engineering regions for first-time players. body.casual-mode is
+       driven by readInitialUiProfile() (?ui=casual default) wired through
+       GameApp.#initUiProfileGate. */
     body.casual-mode [data-resource-tier="secondary"] { display: none !important; }
     body.casual-mode #buildPreviewVal[data-ui-casual-accent] {
       /* Bolder validity accent so first-timers notice the legal/illegal cue. */
@@ -903,62 +1169,56 @@
        suppressed. The panel toggles `.casual-hidden` on its FSM/Policy/Path
        detail blocks when state.controls.uiProfile === "casual". */
     body.casual-mode .casual-hidden { display: none !important; }
-    /* Responsive status bar wrap — prevent 800x600 button clipping. */
+    /* Responsive status bar */
     @media (max-width: 1024px) {
-      /* v0.8.2 Round-1 01c-ui — sticky + explicit z-index stops 1024×768
-         viewport bug where HUD resource icons visually escape the #statusBar
-         container and float *above* the floating Build panel. */
       #statusBar {
-        flex-wrap: wrap; height: auto; padding: 4px 6px;
-        position: sticky; top: 0; z-index: 30;
-        background: var(--panel-bg, rgba(8,16,28,0.92));
+        height: auto; max-height: none; flex-wrap: wrap;
+        overflow: hidden;
       }
-      #panelToggles { margin-left: auto; order: -1; width: 100%;
-        justify-content: flex-end; padding-bottom: 4px;
-        border-bottom: 1px solid var(--divider); margin-bottom: 4px; }
+      #panelToggles {
+        order: -1; width: 100%; display: flex; flex-wrap: wrap; gap: 2px;
+      }
       #statusScenario,
       #statusScoreBreak { display: none; }
-      #statusScoreboard { flex: 1 1 100%; justify-content: flex-end; }
-      #statusNextAction { max-width: min(260px, 70vw); }
-      #latestDeathRow { flex-basis: 100%; justify-content: flex-end; }
-      #alertStack { top: 84px; right: 8px; max-width: min(320px, calc(100vw - 16px)); }
+      #alertStack { top: 38px; right: 44px; max-width: min(280px, calc(100vw - 52px)); }
     }
     @media (min-width: 1025px) and (max-width: 1200px) {
-      .hud-scenario { max-width: 220px; }
-      .hud-action { max-width: min(360px, 30vw); }
-      .hud-goal-list { max-width: 300px; }
-      #statusNextAction { max-width: 210px; }
+      .hud-scenario { max-width: 160px; }
+      #statusNextAction { max-width: 180px; }
       #statusScoreBreak { display: none; }
-      #panelToggles .panel-toggle { padding: 3px 6px; font-size: 10px; }
     }
     @media (max-width: 640px) {
       .hud-objective { display: none; }
-      #statusBar .hud-resource { flex: 0 0 auto; }
+      #storytellerStrip { display: none; }
     }
     #ui > .small.muted:first-of-type,
     #ui > .switch:has(#compactToggle),
     #ui > .legend-bar { display: none; }
 
-    /* Hide sidebar-collapsed styles (no sidebar in new UI) */
-    #wrap.sidebar-collapsed #ui { /* no-op in new UI */ }
+    /* Sidebar-open state hides the alert stack from overlapping sidebar */
+    #wrap.sidebar-open #alertStack { right: 296px; }
 
     /* === SCROLLBAR STYLING === */
-    .floating-panel::-webkit-scrollbar,
     .panel-body-scroll::-webkit-scrollbar,
     #entityFocusBody::-webkit-scrollbar,
     .dock-body::-webkit-scrollbar { width: 4px; }
-    .floating-panel::-webkit-scrollbar-thumb,
     .panel-body-scroll::-webkit-scrollbar-thumb,
     #entityFocusBody::-webkit-scrollbar-thumb,
     .dock-body::-webkit-scrollbar-thumb {
       background: rgba(255,255,255,0.1); border-radius: 2px;
     }
-    .floating-panel::-webkit-scrollbar-track,
     .panel-body-scroll::-webkit-scrollbar-track,
     #entityFocusBody::-webkit-scrollbar-track,
     .dock-body::-webkit-scrollbar-track { background: transparent; }
 
-    /* === HELP MODAL (v0.8.2 Round-0 01a-onboarding) ===
+    @media (max-width: 900px) {
+      #devDockGrid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 600px) {
+      #devDockGrid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* === HELP MODAL ===
        First-run & on-demand Quick Start Guide. Opened via #helpBtn,
        #overlayHelpBtn, F1, or `?`. Dismissed via ESC or the close button.
        z-index sits above #devDock (z≈11) and below native browser dialogs. */
@@ -1065,38 +1325,6 @@
     }
     #customTooltip.visible { opacity: 1; }
 
-    /* === RESPONSIVE === */
-    @media (max-width: 900px) {
-      .floating-panel-left { width: 220px; }
-      .floating-panel-right { width: 260px; }
-      #devDockGrid { grid-template-columns: repeat(3, 1fr); }
-    }
-    /* v0.8.2 Round-1 01c-ui — Auto-collapse side panels on ≤1200px viewports
-       (1024×768 / 800×600 laptops + tablets). Panels stay in the DOM (AT-
-       accessible) but slide off-screen via transform. The existing #panelToggles
-       buttons drive a `.panel-open` class that slides them back in. Min-width
-       601px keeps the 600px block (full-width overlay) authoritative below that. */
-    @media (max-width: 1200px) and (min-width: 601px) {
-      .floating-panel-left,
-      .floating-panel-right {
-        transition: transform 0.18s ease;
-      }
-      .floating-panel-left:not(.panel-open) {
-        transform: translateX(calc(-1 * (100% + 12px)));
-      }
-      .floating-panel-right:not(.panel-open) {
-        transform: translateX(calc(100% + 12px));
-      }
-      .floating-panel-left.panel-open,
-      .floating-panel-right.panel-open {
-        transform: translateX(0);
-      }
-    }
-    @media (max-width: 600px) {
-      .floating-panel { width: calc(100vw - 20px) !important; left: 10px !important; right: 10px !important; }
-      .floating-panel-right { top: auto; bottom: 54px; max-height: 50vh; }
-      #devDockGrid { grid-template-columns: repeat(2, 1fr); }
-    }
   </style>
 </head>
 <body>
@@ -1178,16 +1406,13 @@
           </div>
         </div>
         <div class="hud-spacer"></div>
-        <!-- v0.8.2 Round-0 02e-indie-critic — scenario headline slot. Surfaces the
-             generated scenario title/summary (previously visible only on the pre-game
-             menu overlay) as a persistent italic line in the HUD during play, so the
-             procedural briefing text stays in the player's field of view. HUDController
+        <!-- Scenario headline slot. Surfaces the generated scenario title/summary
+             as a persistent italic line in the HUD during play. HUDController
              hides the node when no scenario is active (e.g. Quick Start Guide). -->
         <span id="statusScenarioHeadline" class="hud-scenario" title="Current scenario briefing" hidden></span>
-        <!-- v0.8.2 Round-0 02c-speedrunner — Scoreboard ribbon. Groups the
-             survival objective/score line with a scenario-progress micro-badge
-             and a per-rule score breakdown so speedrunners can see the causal
-             chain between "what I build" and "what Score rewards". HUDController
+        <!-- Scoreboard ribbon. Groups the survival objective/score line with a
+             scenario-progress micro-badge and a per-rule score breakdown.
+             HUDController
              populates these spans each render. Kept flex-wrap for narrow
              viewports; the breakdown span degrades gracefully via tooltip. -->
         <div id="statusScoreboard" class="hud-scoreboard" style="display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;">
@@ -1199,52 +1424,34 @@
           <span id="aiAutopilotChip" class="hud-chip" data-mode="off" title="">Autopilot OFF</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
           <span id="statusNextAction" class="hud-next-action" data-priority="idle" title="Current next action">Next: start</span>
-          <!-- v0.8.2 Round-5b Wave-1 (01a Step 7) — #statusBuildHint surfaces
-               BuildSystem.previewToolAt reasonText on invalid hover tiles so
-               players stop seeing silent red meshes. #statusAutopilotCrisis
-               is the teaching-style banner raised when FOOD_CRISIS_DETECTED
-               auto-pauses the colony. -->
+          <!-- #statusBuildHint surfaces BuildSystem.previewToolAt reasonText on
+               invalid hover tiles. #statusAutopilotCrisis is the banner raised
+               when FOOD_CRISIS_DETECTED auto-pauses the colony. -->
           <span id="statusBuildHint" class="hud-build-hint" hidden style="color:#ffa35c;font-size:11px;padding:2px 6px;max-width:380px;overflow:hidden;text-overflow:ellipsis;"></span>
           <span id="statusAutopilotCrisis" class="hud-autopilot-crisis" role="alert" hidden style="background:#5a1c1c;color:#ffc8c8;padding:4px 8px;font-size:12px;border-radius:4px;"></span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
-          <!-- v0.8.2 Round-1 01d-mechanics-content (Step 3) — most-recent-death
-               shortcut row. Pulls the newest "... died (...)" entry from
-               state.gameplay.objectiveLog so the player sees the last fatal
-               event on the HUD top bar instead of having to open the Events
-               panel. HUDController.render() populates #latestDeathVal each
-               tick; we keep this in the scoreboard flex so the row wraps on
-               narrow viewports. -->
+          <!-- Most-recent-death row. HUDController.render() populates
+               #latestDeathVal each tick from objectiveLog so the player sees
+               the last fatal event on the HUD bar without opening the Events
+               panel. Kept in the scoreboard flex so it wraps on narrow viewports. -->
           <div class="hud-row" id="latestDeathRow" title="Most recent colonist death — click any worker to inspect their intent/path" style="display:flex;gap:4px;align-items:baseline;font-size:11px;opacity:0.85;">
             <span class="muted small">Last:</span>
             <span id="latestDeathVal" class="small">—</span>
           </div>
         </div>
-        <!-- v0.8.2 Round-0 01e-innovation — Storyteller strip. Single-line
-             ribbon that surfaces the active workers-group policy focus +
-             summary (LLM or rule-based fallback) so the "AI-driven colony"
-             value prop is visible on the first HUD screen instead of being
-             buried in the Debug panel. HUDController.renderStorytellerStrip
-             populates this element; fallback text reads
-             "Rule-based storyteller idle — colony on autopilot" when no
-             groupPolicies entry is available. -->
+        <!-- Storyteller strip. Single-line ribbon surfacing the active worker-group
+             policy focus (LLM or rule-based fallback). HUDController.renderStorytellerStrip
+             populates this element. -->
         <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 auto;min-width:0;max-width:none;"><span id="storytellerTemplateTag" class="storyteller-template-tag" style="display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-size:0.85em;opacity:0.75;margin-right:8px;" hidden></span><span id="storytellerBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerFocus" class="hud-storyteller-focus">autopilot</span><span id="storytellerSummary" class="hud-storyteller-summary">: colony holding steady — awaiting the next directive</span><span id="storytellerBeat" class="hud-storyteller-beat" hidden></span></div>
         <div id="alertStack" aria-live="assertive"></div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
-        <div id="panelToggles">
-          <button class="panel-toggle active" data-panel-target="buildFloatingPanel" title="Build Tools">Build</button>
-          <button class="panel-toggle" data-panel-target="colonyFloatingPanel" title="Colony Info">Colony</button>
-          <button class="panel-toggle dev-only" data-panel-target="settingsFloatingPanel" title="Settings">Settings</button>
-          <button class="panel-toggle dev-only" data-panel-target="debugFloatingPanel" title="Debug Info">Debug</button>
-          <!-- v0.8.0 Phase 7.C — Supply-Chain Heat Lens (spec § 6). Cycles pressure → heat → off. -->
-          <button class="panel-toggle" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — click/press L to cycle: pressure (default, supply-chain pressure markers) → heat (red = producer overflow, blue = processor starved) → off">Heat Lens (L)</button>
-          <!-- v0.8.2 Round-1 01e-innovation — always-on legend for Heat Lens.
-               Only visible in heat mode (GameApp.toggleHeatLens toggles the
-               `hidden` attribute) so the colour semantics (red = supply
-               surplus, blue = processor starved) are discoverable without a
-               tooltip scavenger hunt. -->
-          <div id="heatLensLegend" class="heat-lens-legend" hidden title="Heat Lens legend — red = producer warehouse full / overflowing, blue = processor starved for input"><span class="legend-dot legend-red"></span>surplus<span class="legend-dot legend-blue"></span>starved</div>
-          <!-- v0.8.2 Round-0 01a-onboarding — Help Modal entry (F1 or ?). Always visible to every player; the Help Modal explains controls, resource chain, and threat/prosperity. -->
-          <button class="panel-toggle" id="helpBtn" type="button" title="Open the strategic briefing on demand - template differences, heat lens, survival score.">? Help</button>
+        <!-- panelToggles kept for JS compatibility and test contracts.
+             Actual visible buttons are in #sidebarTabStrip. -->
+        <!-- hotkey-hint kept for JS compatibility; visually moved to Build panel -->
+        <span id="hotkey-hint" class="hud-hint" style="display:none;"></span>
+        <div id="panelToggles" style="display:none;">
+          <button class="panel-toggle dev-only" data-panel-target="settingsFloatingPanel" type="button">Settings</button>
+          <button class="panel-toggle dev-only" data-panel-target="debugFloatingPanel" type="button">Debug</button>
         </div>
       </div>
 
@@ -1263,10 +1470,28 @@
       <!-- === CANVAS === -->
       <canvas id="c"></canvas>
 
-      <!-- v0.8.2 Round-0 01b — Build-feedback toast layer (floating text at the
-           click point). Empty at rest; SceneRenderer#spawnFloatingToast appends
-           and recycles .build-toast children with a 1.2s CSS animation. -->
+      <!-- Build-feedback toast layer (floating text at the click point).
+           Empty at rest; SceneRenderer#spawnFloatingToast appends and recycles
+           .build-toast children with a 1.2s CSS animation. -->
       <div id="floatingToastLayer" aria-live="polite"></div>
+
+      <!-- Tile info tooltip: shown when hovering in select-tool mode. -->
+      <div id="tileInfoTooltip" style="
+        position:fixed;
+        z-index:9000;
+        max-width:220px;
+        padding:6px 10px;
+        background:rgba(8,16,28,0.95);
+        color:#d0e8ff;
+        font-size:11px;
+        line-height:1.5;
+        border:1px solid rgba(80,160,220,0.35);
+        border-radius:6px;
+        box-shadow:0 4px 16px rgba(0,0,0,0.5);
+        pointer-events:none;
+        white-space:normal;
+        display:none;
+      "></div>
 
       <!-- === GAME STATE OVERLAY === -->
       <div id="gameStateOverlay" aria-live="polite">
@@ -1295,8 +1520,8 @@
           <div class="overlay-controls-hint">
             <span>RMB</span> drag to preview &nbsp; <span>Scroll</span> zoom &nbsp; <span>1-12</span> tools &nbsp; <span>Space</span> pause &nbsp; <span>L</span> heat lens
           </div>
-          <!-- v0.8.2 Round-0 01a-onboarding — supplementary tips row. Highlights the
-               three most under-discovered interactions (LMB build, RMB pan, ? Help). -->
+          <!-- Supplementary tips row highlighting the most under-discovered
+               interactions (LMB build, RMB pan, ? Help). -->
           <div class="overlay-controls-hint" style="margin-top:4px;">
             <span>LMB</span> build &middot; <span>RMB</span> drag-pan &middot; click a worker to inspect &middot; <span>?</span> or <span>F1</span> open Help
           </div>
@@ -1319,8 +1544,7 @@
       </div>
 
       <!-- === ENTITY FOCUS === -->
-      <!-- v0.8.2 Round-5 Wave-2 (01a-onboarding Step 4 + 01d Step 4):
-           defaults to `open` so the inspector is visible on first load;
+      <!-- Defaults to `open` so the inspector is visible on first load;
            worker-list container appears above the body so casual users can
            cycle through workers without relying on canvas pick accuracy. -->
       <details id="entityFocusOverlay" open title="Click a worker, visitor, or animal on the map to inspect it here">
@@ -1342,10 +1566,19 @@
         <button id="sidebarExpandAllBtn" type="button">Expand All</button>
       </div>
 
-      <!-- === BUILD PANEL (left) === -->
-      <!-- v0.8.2 Round-1 01c-ui — `panel-open` matches the default-visible
-           state so the ≤1200px auto-collapse CSS rule keeps it on-screen on
-           first paint. Toggle button flips this class off/on thereafter. -->
+      <!-- === RIGHT SIDEBAR (new) === -->
+      <!-- The sidebar has a 36px always-visible tab strip on the right edge,
+           and a 244px panel area that slides in/out. All four panels live here. -->
+      <div id="sidebar">
+        <div id="sidebarPanelArea">
+          <!-- Build panel wrapped in sidebar panel -->
+          <div class="sidebar-panel active" data-sidebar-panel="build">
+            <div class="sidebar-panel-header">
+              <span>Build Tools</span>
+            </div>
+            <div class="sidebar-panel-body">
+
+      <!-- === BUILD PANEL === -->
       <div id="buildFloatingPanel" class="floating-panel floating-panel-left panel-open">
         <details class="card" data-panel-key="build" open>
           <summary>Build Tools</summary>
@@ -1364,7 +1597,24 @@
               <button data-tool="smithy" title="Smithy (11) — forge stone+wood into tools, cost: 6 wood + 4 stone"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="" class="tool-icon" />Smithy</button>
               <button data-tool="clinic" title="Clinic (12) — refine herbs into medicine, cost: 4 wood + 2 herbs"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
             </div>
-            <div class="hint">LMB build &middot; RMB pan &middot; 1-12 tools &middot; Space pause &middot; Ctrl+Z undo</div>
+            <div class="hint" style="font-size:10px; line-height:1.6; color:var(--text-muted);">
+              <span>1–12: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>
+              <span>T: fertility</span> · <span>L: heat lens</span> · <span>F1: help</span>
+            </div>
+            <!-- Keyboard shortcut reference grid -->
+            <div class="hotkey-grid">
+              <div class="hk-row"><span class="hk-key">1–12</span><span class="hk-desc">select build tool</span></div>
+              <div class="hk-row"><span class="hk-key">Space</span><span class="hk-desc">pause / resume</span></div>
+              <div class="hk-row"><span class="hk-key">Esc</span><span class="hk-desc">cancel / deselect</span></div>
+              <div class="hk-row"><span class="hk-key">T</span><span class="hk-desc">terrain fertility</span></div>
+              <div class="hk-row"><span class="hk-key">L</span><span class="hk-desc">supply-chain heat lens</span></div>
+              <div class="hk-row"><span class="hk-key">F1 / ?</span><span class="hk-desc">open help</span></div>
+              <div class="hotkey-grid-divider"></div>
+              <div class="hk-row"><span class="hk-key">Ctrl+Z</span><span class="hk-desc">undo build</span></div>
+              <div class="hk-row"><span class="hk-key">Ctrl+Y</span><span class="hk-desc">redo build</span></div>
+              <div class="hk-row"><span class="hk-key">0</span><span class="hk-desc">reset camera</span></div>
+              <div class="hk-row"><span class="hk-key">Alt+Click</span><span class="hk-desc">inspect tile</span></div>
+            </div>
           </div>
         </details>
 
@@ -1379,9 +1629,30 @@
           </div>
         </details>
       </div>
+            </div><!-- end sidebar-panel-body (build) -->
+          </div><!-- end sidebar-panel (build) -->
+
+          <!-- Colony panel in sidebar -->
+          <div class="sidebar-panel" data-sidebar-panel="colony">
+            <div class="sidebar-panel-header"><span>Colony</span></div>
+            <div class="sidebar-panel-body">
 
       <!-- === COLONY PANEL (right) === -->
-      <div id="colonyFloatingPanel" class="floating-panel floating-panel-right" hidden>
+      <div id="colonyFloatingPanel" class="floating-panel floating-panel-right">
+
+        <!-- Colony Health Overview Card — live status at a glance -->
+        <div id="colonyHealthCard" class="colony-health-card" data-status="stable">
+          <div class="health-status-row">
+            <span class="health-badge" id="colonyHealthBadge">STABLE</span>
+            <span class="health-day" id="colonyHealthDay">Day 1</span>
+          </div>
+          <div class="health-metrics">
+            <span class="health-metric" id="healthFoodRate">Food: —/min</span>
+            <span class="health-metric" id="healthWorkerIdle">0 idle</span>
+            <span class="health-metric" id="healthThreatLevel">Threat: 0%</span>
+          </div>
+        </div>
+
         <details class="card" data-panel-key="resources" open>
           <summary>Resources</summary>
           <div class="panel-body">
@@ -1424,9 +1695,16 @@
           </div>
         </details>
       </div>
+            </div><!-- end sidebar-panel-body (colony) -->
+          </div><!-- end sidebar-panel (colony) -->
 
-      <!-- === SETTINGS PANEL (right) === -->
-      <div id="settingsFloatingPanel" class="floating-panel floating-panel-right" hidden>
+          <!-- Settings panel in sidebar -->
+          <div class="sidebar-panel" data-sidebar-panel="settings">
+            <div class="sidebar-panel-header"><span>Settings</span></div>
+            <div class="sidebar-panel-body">
+
+      <!-- === SETTINGS PANEL (player-facing only) === -->
+      <div id="settingsFloatingPanel" class="floating-panel floating-panel-right">
         <details class="card" data-panel-key="management" open>
           <summary>Map &amp; Doctrine</summary>
           <div class="panel-body">
@@ -1468,145 +1746,10 @@
               </div>
               <div class="small muted">Off by default - you drive the colony. Flip on to let the AI schedule workers.</div>
             </div>
-
-            <details class="subpanel dev-only" style="margin-top:8px;">
-              <summary>Advanced Runtime</summary>
-              <div class="subpanel-body">
-                <div class="switch">
-                  <input id="showTileIconsToggle" type="checkbox" />
-                  <label for="showTileIconsToggle">Tile Icons</label>
-                </div>
-                <div class="switch">
-                  <input id="showUnitSpritesToggle" type="checkbox" />
-                  <label for="showUnitSpritesToggle">Unit Sprites</label>
-                </div>
-                <div class="small muted" style="margin-top:6px;">Sim Tick: <span id="fixedStepHzLabel">30.0 Hz</span></div>
-                <input id="fixedStepHz" type="range" min="5" max="120" value="30" />
-                <div class="small muted" style="margin-top:4px;">Min Zoom: <span id="cameraMinZoomLabel">0.55</span></div>
-                <input id="cameraMinZoom" type="range" min="30" max="500" value="55" />
-                <div class="small muted" style="margin-top:4px;">Max Zoom: <span id="cameraMaxZoomLabel">3.20</span></div>
-                <input id="cameraMaxZoom" type="range" min="40" max="600" value="320" />
-                <div class="small muted" style="margin-top:4px;">Detail Threshold: <span id="renderDetailThresholdLabel">260</span></div>
-                <input id="renderDetailThreshold" type="range" min="80" max="2000" value="260" />
-              </div>
-            </details>
           </div>
         </details>
 
-        <details class="card dev-only" data-panel-key="terrain">
-          <summary>Terrain Tuning</summary>
-          <div class="panel-body">
-            <div class="small muted">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
-            <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
-            <div class="small muted" style="margin-top:3px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
-            <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
-            <div class="small muted" style="margin-top:3px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
-            <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
-            <div class="small muted" style="margin-top:3px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
-            <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
-            <div class="small muted" style="margin-top:3px;">Mountain: <span id="terrainMountainStrengthLabel">0.08</span></div>
-            <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
-            <div class="small muted" style="margin-top:3px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
-            <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
-            <div class="small muted" style="margin-top:3px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
-            <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
-            <div class="small muted" style="margin-top:3px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
-            <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
-            <div class="small muted" style="margin-top:3px;">Settlement: <span id="terrainSettlementDensityLabel">78%</span></div>
-            <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
-            <div class="small muted" style="margin-top:6px;">Wall Mode</div>
-            <select id="terrainWallModeSelect"></select>
-            <div class="small muted" style="margin-top:6px;">Ocean Side</div>
-            <select id="terrainOceanSideSelect"></select>
-            <div class="management-grid" style="margin-top:6px;">
-              <button id="resetTerrainTuningBtn" title="Reset all terrain sliders to default values">Reset Tuning</button>
-            </div>
-          </div>
-        </details>
-
-        <details class="card dev-only" data-panel-key="pop-control">
-          <summary>Population Control</summary>
-          <div class="panel-body">
-            <div class="small muted" id="populationBreakdownVal">Base 0 &middot; Stress 0 &middot; Total 0 &middot; 0 entities</div>
-            <div class="small muted" style="margin-top:3px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
-
-            <div class="population-control">
-              <div class="small muted">Workers: <span id="workerTargetLabel">0</span></div>
-              <div class="population-slider-row">
-                <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
-                <input id="workerTargetNumber" class="population-number" type="number" min="0" max="500" value="0" />
-              </div>
-              <div class="population-step-grid">
-                <button data-pop-adjust="workers:-10" title="Remove 10 workers">-10</button>
-                <button data-pop-adjust="workers:-1" title="Remove 1 worker">-1</button>
-                <button data-pop-adjust="workers:1" title="Add 1 worker">+1</button>
-                <button data-pop-adjust="workers:10" title="Add 10 workers">+10</button>
-              </div>
-            </div>
-
-            <div class="population-control">
-              <div class="small muted">Traders: <span id="traderTargetLabel">0</span></div>
-              <div class="population-slider-row">
-                <input id="traderTargetInput" type="range" min="0" max="300" value="0" />
-                <input id="traderTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
-              </div>
-              <div class="population-step-grid">
-                <button data-pop-adjust="traders:-10" title="Remove 10 traders">-10</button>
-                <button data-pop-adjust="traders:-1" title="Remove 1 trader">-1</button>
-                <button data-pop-adjust="traders:1" title="Add 1 trader">+1</button>
-                <button data-pop-adjust="traders:10" title="Add 10 traders">+10</button>
-              </div>
-            </div>
-
-            <div class="population-control">
-              <div class="small muted">Saboteurs: <span id="saboteurTargetLabel">0</span></div>
-              <div class="population-slider-row">
-                <input id="saboteurTargetInput" type="range" min="0" max="300" value="0" />
-                <input id="saboteurTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
-              </div>
-              <div class="population-step-grid">
-                <button data-pop-adjust="saboteurs:-10" title="Remove 10 saboteurs">-10</button>
-                <button data-pop-adjust="saboteurs:-1" title="Remove 1 saboteur">-1</button>
-                <button data-pop-adjust="saboteurs:1" title="Add 1 saboteur">+1</button>
-                <button data-pop-adjust="saboteurs:10" title="Add 10 saboteurs">+10</button>
-              </div>
-            </div>
-
-            <div class="population-control">
-              <div class="small muted">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
-              <div class="population-slider-row">
-                <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
-                <input id="herbivoreTargetNumber" class="population-number" type="number" min="0" max="400" value="0" />
-              </div>
-              <div class="population-step-grid">
-                <button data-pop-adjust="herbivores:-10" title="Remove 10 herbivores">-10</button>
-                <button data-pop-adjust="herbivores:-1" title="Remove 1 herbivore">-1</button>
-                <button data-pop-adjust="herbivores:1" title="Add 1 herbivore">+1</button>
-                <button data-pop-adjust="herbivores:10" title="Add 10 herbivores">+10</button>
-              </div>
-            </div>
-
-            <div class="population-control">
-              <div class="small muted">Predators: <span id="predatorTargetLabel">0</span></div>
-              <div class="population-slider-row">
-                <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
-                <input id="predatorTargetNumber" class="population-number" type="number" min="0" max="200" value="0" />
-              </div>
-              <div class="population-step-grid">
-                <button data-pop-adjust="predators:-10" title="Remove 10 predators">-10</button>
-                <button data-pop-adjust="predators:-1" title="Remove 1 predator">-1</button>
-                <button data-pop-adjust="predators:1" title="Add 1 predator">+1</button>
-                <button data-pop-adjust="predators:10" title="Add 10 predators">+10</button>
-              </div>
-            </div>
-
-            <div class="management-grid" style="margin-top:6px;">
-              <button id="syncPopulationTargetsBtn" title="Set sliders to match current population counts">Sync Current</button>
-              <button id="applyPopulationBtn" title="Spawn or despawn entities to match target counts">Apply Population</button>
-            </div>
-          </div>
-        </details>
-
+        <!-- Save/Replay is player-accessible (undo/redo/save/load) -->
         <details class="card" data-panel-key="save-replay">
           <summary>Save / Replay</summary>
           <div class="panel-body">
@@ -1616,15 +1759,22 @@
               <input id="saveSlotInput" type="text" value="default" placeholder="snapshot slot" title="Name for the save slot" />
               <button id="saveSnapshotBtn" title="Save current game state to the named slot">Save Snapshot</button>
               <button id="loadSnapshotBtn" title="Load game state from the named slot">Load Snapshot</button>
-              <button id="comparePresetsBtn" title="Compare benchmark results across presets">Compare Presets</button>
-              <button id="exportReplayBtn" title="Export simulation replay data as JSON">Export Replay</button>
+              <button id="comparePresetsBtn" title="Compare benchmark results across presets" class="dev-only">Compare Presets</button>
+              <button id="exportReplayBtn" title="Export simulation replay data as JSON" class="dev-only">Export Replay</button>
             </div>
           </div>
         </details>
       </div>
+            </div><!-- end sidebar-panel-body (settings) -->
+          </div><!-- end sidebar-panel (settings) -->
+
+          <!-- Debug panel in sidebar — dev-only -->
+          <div class="sidebar-panel dev-only" data-sidebar-panel="debug">
+            <div class="sidebar-panel-header"><span>Debug</span></div>
+            <div class="sidebar-panel-body">
 
       <!-- === DEBUG PANEL (right) === -->
-      <div id="debugFloatingPanel" class="floating-panel floating-panel-right" hidden>
+      <div id="debugFloatingPanel" class="floating-panel floating-panel-right">
         <details class="card" data-panel-key="world" open>
           <summary>World State</summary>
           <div class="panel-body">
@@ -1735,11 +1885,174 @@
           </div>
         </details>
 
+        <!-- === DEV TOOLS SECTION (moved from Settings) === -->
+        <details class="card dev-only" data-panel-key="dev-tools" style="margin-top:6px;">
+          <summary>Dev Tools</summary>
+          <div class="panel-body">
+
+            <details class="subpanel" open>
+              <summary>Advanced Runtime</summary>
+              <div class="subpanel-body">
+                <div class="switch">
+                  <input id="showTileIconsToggle" type="checkbox" />
+                  <label for="showTileIconsToggle">Tile Icons</label>
+                </div>
+                <div class="switch">
+                  <input id="showUnitSpritesToggle" type="checkbox" />
+                  <label for="showUnitSpritesToggle">Unit Sprites</label>
+                </div>
+                <div class="small muted" style="margin-top:6px;">Sim Tick: <span id="fixedStepHzLabel">30.0 Hz</span></div>
+                <input id="fixedStepHz" type="range" min="5" max="120" value="30" />
+                <div class="small muted" style="margin-top:4px;">Min Zoom: <span id="cameraMinZoomLabel">0.55</span></div>
+                <input id="cameraMinZoom" type="range" min="30" max="500" value="55" />
+                <div class="small muted" style="margin-top:4px;">Max Zoom: <span id="cameraMaxZoomLabel">3.20</span></div>
+                <input id="cameraMaxZoom" type="range" min="40" max="600" value="320" />
+                <div class="small muted" style="margin-top:4px;">Detail Threshold: <span id="renderDetailThresholdLabel">260</span></div>
+                <input id="renderDetailThreshold" type="range" min="80" max="2000" value="260" />
+              </div>
+            </details>
+
+            <details class="subpanel" style="margin-top:6px;">
+              <summary>Terrain Tuning</summary>
+              <div class="subpanel-body">
+                <div class="small muted">Water Level: <span id="terrainWaterLevelLabel">0.20</span></div>
+                <input id="terrainWaterLevel" type="range" min="2" max="58" value="20" />
+                <div class="small muted" style="margin-top:3px;">River Count: <span id="terrainRiverCountLabel">1</span></div>
+                <input id="terrainRiverCount" type="range" min="0" max="4" value="1" />
+                <div class="small muted" style="margin-top:3px;">River Width: <span id="terrainRiverWidthLabel">2.2</span></div>
+                <input id="terrainRiverWidth" type="range" min="8" max="65" value="22" />
+                <div class="small muted" style="margin-top:3px;">River Meander: <span id="terrainRiverAmpLabel">0.12</span></div>
+                <input id="terrainRiverAmp" type="range" min="0" max="45" value="12" />
+                <div class="small muted" style="margin-top:3px;">Mountain: <span id="terrainMountainStrengthLabel">0.08</span></div>
+                <input id="terrainMountainStrength" type="range" min="0" max="85" value="8" />
+                <div class="small muted" style="margin-top:3px;">Island Bias: <span id="terrainIslandBiasLabel">0.05</span></div>
+                <input id="terrainIslandBias" type="range" min="0" max="85" value="5" />
+                <div class="small muted" style="margin-top:3px;">Ocean Bias: <span id="terrainOceanBiasLabel">0.00</span></div>
+                <input id="terrainOceanBias" type="range" min="0" max="85" value="0" />
+                <div class="small muted" style="margin-top:3px;">Road Density: <span id="terrainRoadDensityLabel">72%</span></div>
+                <input id="terrainRoadDensity" type="range" min="0" max="100" value="72" />
+                <div class="small muted" style="margin-top:3px;">Settlement: <span id="terrainSettlementDensityLabel">78%</span></div>
+                <input id="terrainSettlementDensity" type="range" min="0" max="100" value="78" />
+                <div class="small muted" style="margin-top:6px;">Wall Mode</div>
+                <select id="terrainWallModeSelect"></select>
+                <div class="small muted" style="margin-top:6px;">Ocean Side</div>
+                <select id="terrainOceanSideSelect"></select>
+                <div class="management-grid" style="margin-top:6px;">
+                  <button id="resetTerrainTuningBtn" title="Reset all terrain sliders to default values">Reset Tuning</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="subpanel" style="margin-top:6px;">
+              <summary>Population Control</summary>
+              <div class="subpanel-body">
+                <div class="small muted" id="populationBreakdownVal">Base 0 &middot; Stress 0 &middot; Total 0 &middot; 0 entities</div>
+                <div class="small muted" style="margin-top:3px;" id="visitorTargetLabel">Visitors Total: 0 (Traders 0 / Saboteurs 0)</div>
+
+                <div class="population-control">
+                  <div class="small muted">Workers: <span id="workerTargetLabel">0</span></div>
+                  <div class="population-slider-row">
+                    <input id="workerTargetInput" type="range" min="0" max="500" value="0" />
+                    <input id="workerTargetNumber" class="population-number" type="number" min="0" max="500" value="0" />
+                  </div>
+                  <div class="population-step-grid">
+                    <button data-pop-adjust="workers:-10" title="Remove 10 workers">-10</button>
+                    <button data-pop-adjust="workers:-1" title="Remove 1 worker">-1</button>
+                    <button data-pop-adjust="workers:1" title="Add 1 worker">+1</button>
+                    <button data-pop-adjust="workers:10" title="Add 10 workers">+10</button>
+                  </div>
+                </div>
+
+                <div class="population-control">
+                  <div class="small muted">Traders: <span id="traderTargetLabel">0</span></div>
+                  <div class="population-slider-row">
+                    <input id="traderTargetInput" type="range" min="0" max="300" value="0" />
+                    <input id="traderTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+                  </div>
+                  <div class="population-step-grid">
+                    <button data-pop-adjust="traders:-10" title="Remove 10 traders">-10</button>
+                    <button data-pop-adjust="traders:-1" title="Remove 1 trader">-1</button>
+                    <button data-pop-adjust="traders:1" title="Add 1 trader">+1</button>
+                    <button data-pop-adjust="traders:10" title="Add 10 traders">+10</button>
+                  </div>
+                </div>
+
+                <div class="population-control">
+                  <div class="small muted">Saboteurs: <span id="saboteurTargetLabel">0</span></div>
+                  <div class="population-slider-row">
+                    <input id="saboteurTargetInput" type="range" min="0" max="300" value="0" />
+                    <input id="saboteurTargetNumber" class="population-number" type="number" min="0" max="300" value="0" />
+                  </div>
+                  <div class="population-step-grid">
+                    <button data-pop-adjust="saboteurs:-10" title="Remove 10 saboteurs">-10</button>
+                    <button data-pop-adjust="saboteurs:-1" title="Remove 1 saboteur">-1</button>
+                    <button data-pop-adjust="saboteurs:1" title="Add 1 saboteur">+1</button>
+                    <button data-pop-adjust="saboteurs:10" title="Add 10 saboteurs">+10</button>
+                  </div>
+                </div>
+
+                <div class="population-control">
+                  <div class="small muted">Herbivores: <span id="herbivoreTargetLabel">0</span></div>
+                  <div class="population-slider-row">
+                    <input id="herbivoreTargetInput" type="range" min="0" max="400" value="0" />
+                    <input id="herbivoreTargetNumber" class="population-number" type="number" min="0" max="400" value="0" />
+                  </div>
+                  <div class="population-step-grid">
+                    <button data-pop-adjust="herbivores:-10" title="Remove 10 herbivores">-10</button>
+                    <button data-pop-adjust="herbivores:-1" title="Remove 1 herbivore">-1</button>
+                    <button data-pop-adjust="herbivores:1" title="Add 1 herbivore">+1</button>
+                    <button data-pop-adjust="herbivores:10" title="Add 10 herbivores">+10</button>
+                  </div>
+                </div>
+
+                <div class="population-control">
+                  <div class="small muted">Predators: <span id="predatorTargetLabel">0</span></div>
+                  <div class="population-slider-row">
+                    <input id="predatorTargetInput" type="range" min="0" max="200" value="0" />
+                    <input id="predatorTargetNumber" class="population-number" type="number" min="0" max="200" value="0" />
+                  </div>
+                  <div class="population-step-grid">
+                    <button data-pop-adjust="predators:-10" title="Remove 10 predators">-10</button>
+                    <button data-pop-adjust="predators:-1" title="Remove 1 predator">-1</button>
+                    <button data-pop-adjust="predators:1" title="Add 1 predator">+1</button>
+                    <button data-pop-adjust="predators:10" title="Add 10 predators">+10</button>
+                  </div>
+                </div>
+
+                <div class="management-grid" style="margin-top:6px;">
+                  <button id="syncPopulationTargetsBtn" title="Set sliders to match current population counts">Sync Current</button>
+                  <button id="applyPopulationBtn" title="Spawn or despawn entities to match target counts">Apply Population</button>
+                </div>
+              </div>
+            </details>
+
+          </div>
+        </details>
+
         <div class="dev-only" style="margin-top:6px;">
           <button id="toggleDevDockBtn" type="button" style="width:100%; font-size:11px;" title="Show or hide the developer telemetry dock at the bottom">Hide Dev Telemetry</button>
         </div>
       </div>
-    </div>
+            </div><!-- end sidebar-panel-body (debug) -->
+          </div><!-- end sidebar-panel (debug) -->
+
+        </div><!-- end sidebarPanelArea -->
+
+        <div id="sidebarTabStrip">
+          <button id="sidebarToggleBtn" type="button" title="Toggle sidebar (show/hide)">☰</button>
+          <!-- Sidebar tab buttons — vertical, right edge -->
+          <button class="sidebar-tab-btn active" data-sidebar-target="build" title="Build Tools">Build</button>
+          <button class="sidebar-tab-btn" data-sidebar-target="colony" title="Colony Info">Colony</button>
+          <button class="sidebar-tab-btn" data-sidebar-target="settings" title="Settings">Settings</button>
+          <button class="sidebar-tab-btn dev-only" data-sidebar-target="debug" title="Debug Info">Debug</button>
+          <div class="sidebar-tab-divider"></div>
+          <button class="sidebar-tab-btn lens-btn" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — cycles: Pressure (red=surplus/blue=starved), Heat (production density), Off">Heat (L)</button>
+          <button class="sidebar-tab-btn lens-btn" id="terrainLensBtn" type="button" title="Terrain Fertility Overlay (T)">Terrain (T)</button>
+          <div id="heatLensLegend" class="heat-lens-legend" hidden title="Heat Lens legend — red = producer warehouse full / overflowing, blue = processor starved for input"><span class="legend-dot legend-red"></span>surplus<span class="legend-dot legend-blue"></span>starved</div>
+          <button class="sidebar-tab-btn lens-btn" id="helpBtn" type="button" title="Open the strategic briefing on demand - template differences, heat lens, survival score.">? Help</button>
+        </div><!-- end sidebarTabStrip -->
+      </div><!-- end sidebar -->
+    </div><!-- end #ui -->
 
     <!-- === DEV DOCK === -->
     <section id="devDock" class="dev-only" aria-label="Developer telemetry">
@@ -1780,10 +2093,9 @@
     </section>
   </div>
 
-  <!-- v0.8.2 Round-0 01a-onboarding — Help Modal (Quick Start Guide).
-       Shown on demand via #helpBtn, #overlayHelpBtn, F1, or the `?` key.
-       Pure static HTML — no runtime state; closing does NOT pause the sim
-       (Help can be opened mid-game). -->
+  <!-- Help Modal (Quick Start Guide). Shown on demand via #helpBtn,
+       #overlayHelpBtn, F1, or the `?` key. Pure static HTML — no runtime state;
+       closing does NOT pause the sim (Help can be opened mid-game). -->
   <div id="helpModal" role="dialog" aria-modal="true" aria-labelledby="helpModalTitle" hidden>
     <div class="help-panel">
       <div class="help-header">
@@ -1794,9 +2106,7 @@
         <button class="help-tab active" type="button" data-help-tab="controls" role="tab">Controls</button>
         <button class="help-tab" type="button" data-help-tab="chain" role="tab">Resource Chain</button>
         <button class="help-tab" type="button" data-help-tab="threat" role="tab">Threat &amp; Prosperity</button>
-        <!-- v0.8.2 Round-1 01e-innovation — differentiation tab surfacing the
-             three hooks reviewer-01e flagged as invisible: LLM AI Director,
-             Heat Lens, and the six map templates. -->
+        <!-- Differentiation tab: LLM AI Director, Heat Lens, and map templates. -->
         <button class="help-tab" type="button" data-help-tab="different" role="tab">What makes Utopia different</button>
       </div>
       <div class="help-body">
@@ -1806,7 +2116,6 @@
             <li><b>Left click</b> — build the selected tool on a tile, or select a worker/visitor/animal.</li>
             <li><b>Right-click drag</b> — pan the map.</li>
             <li><b>Mouse wheel</b> — zoom in/out. <code>0</code> resets camera.</li>
-            <!-- v0.8.2 Round-5b Wave-1 (01a Step 7) — hotkey doc updated from 1-6 to 1-12 to match the actual 12-tool Build toolbar and the Welcome banner copy (P2-2 onboarding consistency). -->
             <li><code>1</code>–<code>12</code> — quick-pick build tool (12 tools in the Build toolbar; hover any button for name + hotkey).</li>
             <li><code>Space</code> — pause/resume. <code>Esc</code> — clear selection.</li>
             <li><code>L</code> — toggle the Supply-Chain Heat Lens.</li>
@@ -2006,59 +2315,122 @@
     })();
   </script>
 
-  <!-- Panel toggle logic -->
+  <!-- Sidebar tab + panel toggle logic -->
   <script>
     (function() {
-      const rightPanelIds = ['colonyFloatingPanel', 'settingsFloatingPanel', 'debugFloatingPanel'];
-      const allPanelIds = ['buildFloatingPanel', ...rightPanelIds];
+      const wrap = document.getElementById('wrap');
+      const sidebar = document.getElementById('sidebar');
 
+      // === Sidebar tab system ===
+      // Maps sidebar panel key -> floating panel ID (for JS compatibility)
+      const panelIdMap = {
+        'build': 'buildFloatingPanel',
+        'colony': 'colonyFloatingPanel',
+        'settings': 'settingsFloatingPanel',
+        'debug': 'debugFloatingPanel',
+      };
+
+      function showSidebarPanel(key) {
+        // Update .sidebar-panel active state
+        document.querySelectorAll('.sidebar-panel').forEach((sp) => {
+          sp.classList.toggle('active', sp.dataset.sidebarPanel === key);
+        });
+        // Update tab button active state
+        document.querySelectorAll('.sidebar-tab-btn[data-sidebar-target]').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.sidebarTarget === key);
+        });
+        // Also show the matching floating panel (for JS compat), hide others
+        Object.entries(panelIdMap).forEach(([k, id]) => {
+          const panel = document.getElementById(id);
+          if (!panel) return;
+          if (k === key) {
+            panel.removeAttribute('hidden');
+            panel.classList.add('panel-open');
+          } else {
+            // Don't add hidden — panels are always in the DOM for JS access;
+            // sidebar CSS controls which sidebar-panel is visible.
+            panel.classList.remove('panel-open');
+          }
+        });
+        // Also sync the legacy panelToggles active state (for JS that checks it)
+        document.querySelectorAll('#panelToggles .panel-toggle').forEach((btn) => {
+          const target = btn.dataset.panelTarget;
+          btn.classList.toggle('active', target === panelIdMap[key]);
+        });
+      }
+
+      // Sidebar open/close
+      function setSidebarOpen(open) {
+        wrap?.classList.toggle('sidebar-open', open);
+        // When opening, clear legacy sidebar-collapsed so there's no conflict
+        if (open) wrap?.classList.remove('sidebar-collapsed');
+        const btn = document.getElementById('sidebarToggleBtn');
+        if (btn) btn.textContent = open ? '\u2190' : '\u2630';
+        try { localStorage.setItem('utopiaSidebarOpen', open ? '1' : '0'); } catch {}
+      }
+
+      function toggleSidebar() {
+        setSidebarOpen(!wrap?.classList.contains('sidebar-open'));
+      }
+
+      // Tab button clicks
+      document.querySelectorAll('.sidebar-tab-btn[data-sidebar-target]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.sidebarTarget;
+          const alreadyActive = btn.classList.contains('active');
+          const sidebarOpen = wrap?.classList.contains('sidebar-open');
+          if (!sidebarOpen) {
+            // Open sidebar and show panel
+            setSidebarOpen(true);
+            showSidebarPanel(key);
+          } else if (alreadyActive) {
+            // Click active tab again = close sidebar
+            setSidebarOpen(false);
+          } else {
+            // Switch to different panel
+            showSidebarPanel(key);
+          }
+        });
+      });
+
+      // Sidebar toggle button (hamburger)
+      document.getElementById('sidebarToggleBtn')?.addEventListener('click', toggleSidebar);
+
+      // Restore sidebar state — run immediately and again after module load
+      // to override BuildToolbar's #restoreLayoutPreference that adds sidebar-collapsed
+      const savedOpen = localStorage.getItem('utopiaSidebarOpen');
+      // Default: sidebar open on first visit so player sees Build panel
+      const initOpen = savedOpen === null ? true : savedOpen === '1';
+      setSidebarOpen(initOpen);
+
+      // Default panel: Build
+      showSidebarPanel('build');
+
+      // Re-apply after module scripts run (BuildToolbar restores sidebar-collapsed)
+      window.addEventListener('load', () => {
+        setSidebarOpen(initOpen);
+      });
+
+      // Dev Dock toggle
+      document.getElementById('toggleDevDockBtn')?.addEventListener('click', () => {
+        const btn = document.getElementById('toggleDevDockBtn');
+        const collapsed = wrap?.classList.contains('dock-collapsed');
+        wrap?.classList.toggle('dock-collapsed', !collapsed);
+        if (btn) btn.textContent = collapsed ? 'Hide Dev Telemetry' : 'Show Dev Telemetry';
+      });
+
+      // Legacy panelToggles click handler (kept for any JS that programmatically
+      // triggers it; routes through the new sidebar system)
       document.getElementById('panelToggles')?.addEventListener('click', (e) => {
         const btn = e.target.closest('.panel-toggle');
         if (!btn) return;
         const targetId = btn.dataset.panelTarget;
         if (!targetId) return;
-
-        const panel = document.getElementById(targetId);
-        if (!panel) return;
-
-        const isRight = rightPanelIds.includes(targetId);
-        const wasHidden = panel.hasAttribute('hidden');
-
-        if (isRight) {
-          // Close other right panels
-          for (const otherId of rightPanelIds) {
-            if (otherId !== targetId) {
-              document.getElementById(otherId)?.setAttribute('hidden', '');
-              // v0.8.2 Round-1 01c-ui — also clear `.panel-open` so the
-              // ≤1200px CSS rule slides sibling right-side panels off-screen.
-              document.getElementById(otherId)?.classList.remove('panel-open');
-              document.querySelector(`.panel-toggle[data-panel-target="${otherId}"]`)?.classList.remove('active');
-            }
-          }
+        const key = Object.keys(panelIdMap).find((k) => panelIdMap[k] === targetId);
+        if (key) {
+          setSidebarOpen(true);
+          showSidebarPanel(key);
         }
-
-        if (wasHidden) {
-          panel.removeAttribute('hidden');
-          // v0.8.2 Round-1 01c-ui — drive the ≤1200px auto-collapse CSS rule
-          // (`.floating-panel-left/right.panel-open { transform: translateX(0); }`).
-          // On ≥1201px the class is a no-op; on ≤1200px it slides the panel
-          // into view. Pair with `hidden` attr for AT compatibility.
-          panel.classList.add('panel-open');
-          btn.classList.add('active');
-        } else {
-          panel.setAttribute('hidden', '');
-          panel.classList.remove('panel-open');
-          btn.classList.remove('active');
-        }
-      });
-
-      // Dev Dock toggle
-      document.getElementById('toggleDevDockBtn')?.addEventListener('click', () => {
-        const wrap = document.getElementById('wrap');
-        const btn = document.getElementById('toggleDevDockBtn');
-        const collapsed = wrap?.classList.contains('dock-collapsed');
-        wrap?.classList.toggle('dock-collapsed', !collapsed);
-        if (btn) btn.textContent = collapsed ? 'Hide Dev Telemetry' : 'Show Dev Telemetry';
       });
     })();
   </script>

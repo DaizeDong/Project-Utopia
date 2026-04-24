@@ -14,7 +14,7 @@ export const TOOL_SHORTCUTS = Object.freeze({
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | Home reset camera | L heat lens | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | Home reset camera | L heat lens | T terrain overlay | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -60,6 +60,11 @@ export function resolveGlobalShortcut(event, context = {}) {
   if (code === "KeyL" || key === "l") {
     if (!isActivePhase) return null;
     return { type: "toggleHeatLens" };
+  }
+  // Terrain Fertility Overlay toggle.
+  if (code === "KeyT" || key === "t") {
+    if (!isActivePhase) return null;
+    return { type: "toggleTerrainLens" };
   }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
   if (code === "Space" || key === " ") {

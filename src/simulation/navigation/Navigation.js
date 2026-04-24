@@ -262,6 +262,16 @@ export function followPath(entity, state, dt) {
   updateRoadStep(entity, state);
 
   if (!entity.path || entity.pathIndex >= entity.path.length) {
+    // Gentle center pull when near map edge to prevent boids forces trapping entity at boundary
+    if (state?.grid) {
+      const boundsX = (state.grid.width * state.grid.tileSize) / 2 - 0.5;
+      const boundsZ = (state.grid.height * state.grid.tileSize) / 2 - 0.5;
+      const nearEdgeX = Math.abs(entity.x) > boundsX * 0.92;
+      const nearEdgeZ = Math.abs(entity.z) > boundsZ * 0.92;
+      if (nearEdgeX || nearEdgeZ) {
+        return { done: true, desired: { x: -entity.x * 0.08, z: -entity.z * 0.08 } };
+      }
+    }
     return { done: true, desired: { x: 0, z: 0 } };
   }
 

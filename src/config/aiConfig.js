@@ -50,7 +50,7 @@ export function canonicalizeAiGroupId(raw) {
 export const GROUP_POLICY_CONTRACTS = Object.freeze({
   [GROUP_IDS.WORKERS]: Object.freeze({
     allowedIntents: Object.freeze(["farm", "wood", "deliver", "eat", "wander", "quarry", "gather_herbs", "cook", "smith", "heal"]),
-    allowedTargets: Object.freeze(["warehouse", "farm", "lumber", "road", "depot", "frontier", "safety", "quarry", "herb_garden", "kitchen", "smithy", "clinic"]),
+    allowedTargets: Object.freeze(["warehouse", "farm", "lumber", "road", "depot", "frontier", "safety", "quarry", "herb_garden", "kitchen", "smithy", "clinic", "bridge"]),
     focusHint: "keep depots connected, push delivery before cargo stalls, and protect hunger-safe throughput",
   }),
   [GROUP_IDS.TRADERS]: Object.freeze({
@@ -104,7 +104,7 @@ export const DEFAULT_GROUP_POLICIES = Object.freeze({
     groupId: GROUP_IDS.WORKERS,
     intentWeights: { farm: 1.0, wood: 1.0, deliver: 1.2, eat: 1.4, wander: 0.2, quarry: 0.8, gather_herbs: 0.8, cook: 0.8, smith: 0.8, heal: 0.8 },
     riskTolerance: 0.35,
-    targetPriorities: { warehouse: 1.5, farm: 1.0, lumber: 1.0, road: 1.05, depot: 1.2, frontier: 0.9, safety: 1.2, quarry: 0.9, herb_garden: 0.9, kitchen: 0.9, smithy: 0.9, clinic: 0.9 },
+    targetPriorities: { warehouse: 1.5, farm: 1.0, lumber: 1.0, road: 1.05, depot: 1.2, frontier: 0.9, safety: 1.2, quarry: 0.9, herb_garden: 0.9, kitchen: 0.9, smithy: 0.9, clinic: 0.9, bridge: 0.7 },
     ttlSec: 24,
     focus: "depot throughput",
     summary: "Keep workers fed, reconnect routes, and unload cargo before harvest loops stall.",
