@@ -37,6 +37,24 @@ export function getAutopilotStatus(state) {
   const remainingSec = getAutopilotRemainingSec(state);
   const modeLabel = enabled ? "ON" : "OFF";
   const dataMode = enabled ? "on" : "off";
+  // v0.8.2 Round-5b Wave-1 (01a Step 6) — pausedByCrisis short-circuit.
+  // When ResourceSystem emits FOOD_CRISIS_DETECTED and GameApp.js clamps
+  // the colony, return a hard-stop teaching string instead of the
+  // optimistic "Autopilot ON · rule-based" banner.
+  const pausedByCrisis = Boolean(state?.ai?.pausedByCrisis);
+  if (pausedByCrisis) {
+    return {
+      enabled,
+      modeLabel: "PAUSED",
+      dataMode: "paused-crisis",
+      aiMode,
+      coverageTarget,
+      remainingSec,
+      pausedByCrisis: true,
+      text: "Autopilot PAUSED \u00b7 food crisis \u2014 press Space or toggle to resume",
+      title: "Autopilot paused: food crisis. Check Farm/Warehouse connectivity and resume when food is steady.",
+    };
+  }
   // v0.8.2 Round-5 Wave-3 (01e Step 4) — render "fallback/fallback" as the
   // player-facing phrase "rule-based". This is not a mode rename — internally
   // the state still carries the literal "fallback" strings; only the HUD
@@ -74,6 +92,7 @@ export function getAutopilotStatus(state) {
     aiMode,
     coverageTarget,
     remainingSec,
+    pausedByCrisis: false,
     text,
     title,
   };
