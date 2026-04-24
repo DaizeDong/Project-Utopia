@@ -4,7 +4,7 @@ plan_source: Round4/Plans/01b-playability.md
 round: 4
 date: 2026-04-23
 parent_commit: 645c65c
-head_commit: PENDING
+head_commit: 253f86d
 status: DONE
 steps_done: 10/10
 tests_passed: 1078/1080

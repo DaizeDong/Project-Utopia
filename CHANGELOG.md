@@ -1,5 +1,29 @@
 # Changelog
 
+## [Unreleased] - v0.8.x iter-4 Blind Review / System Trust Pass (Agent-Feedback-Loop Round 4)
+
+**Scope:** 10 blind reviewer feedbacks, 10 enhancer plans, 3 accepted structural plans, and 7 deferred/subsumed plans executed in 3 waves. Feature freeze held: no new buildings, tiles, tools, assets, audio, victory conditions, score systems, or character-sim mechanics.
+
+**Why this round stayed narrow:** the user explicitly required blind review and rejected any process that improved reviewer scores by leaking repo history or prior-round context. Round 4 therefore filtered aggressively for plans that made the current system easier to trust, rather than plans that merely made it easier to talk about.
+
+### Round 4 Highlights
+
+- **Run-entry stability** (02c): removed first-load help takeover, made the run-start transition immediate, and clarified the start/retry/reroll contract.
+- **Menu truth contract** (02a): the menu briefing now tracks the currently selected template and map size, and `Start Colony` consumes exactly that visible choice.
+- **Causal HUD loop** (01b): `statusNextAction` now renders bottleneck -> action -> outcome guidance instead of raw target-counter phrasing.
+- **Build consequence preview** (01b): BuildAdvisor summaries now lead with concrete route/depot/throughput consequences and tile coordinates.
+- **Autopilot truth demotion** (01b): OFF-state autopilot copy now states that manual control is active, and the chip tooltip no longer leaks extra implementation framing.
+
+### Validation
+
+- Full suite: `1078/1080` pass, `0` fail, `2` pre-existing skips.
+- Benchmark (`seed=42 / temperate_plains / 90 days`): reached max days, DevIndex `37.8`, survival score `20450`, `passed=true`.
+- Browser smoke: menu and active-run screenshots captured; active run showed the new causal next-action string, truthful autopilot OFF copy, visible canvas, hidden overlay after start, and no console/page errors.
+
+### Structural Limit
+
+Round 4 is cleaner than earlier rounds both procedurally and product-wise: it preserved blind review and improved the truthfulness of the playable control surface. But it still did not move the long-horizon ceiling. The 90-day benchmark stayed flat versus Round 3, which means the deeper economy/logistics/director/autopilot loop is still the limiting factor rather than the wording wrapped around it.
+
 ## [Unreleased] - v0.8.x iter-3 Structural Control Pass (Agent-Feedback-Loop Round 3)
 
 **Scope:** 10 reviewer feedbacks, 10 enhancer plans, 4 accepted P0 plans, 6
