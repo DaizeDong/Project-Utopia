@@ -2195,6 +2195,35 @@ export class SceneRenderer {
 
     const picked = this.#pickTile(this.mouse);
     this.hoverTile = picked?.tile ?? null;
+
+    // v0.8.2 Round-5b Wave-1 (01a Step 4) — pipe BuildSystem.previewToolAt
+    // reasonText into state.controls.buildHint for HUD surfacing. When the
+    // hovered tile is invalid for the current tool, the player sees the
+    // textual reason (e.g. "Farm requires grass tile") instead of a red
+    // mesh without explanation. Appends Ctrl+Z hint when there's an undo
+    // stack so the Undo shortcut is discoverable at the point of error.
+    const state = this.state;
+    try {
+      if (this.hoverTile && state?.controls?.tool && state.controls.tool !== "select") {
+        const preview = this.buildSystem.previewToolAt(
+          state, state.controls.tool, this.hoverTile.ix, this.hoverTile.iz,
+        );
+        if (preview && preview.ok === false) {
+          const tip = String(preview.reasonText || "");
+          const undoHint = Array.isArray(state.controls?.undoStack) && state.controls.undoStack.length > 0
+            ? " (Ctrl+Z to undo last build.)"
+            : "";
+          state.controls.buildHint = tip + undoHint;
+        } else {
+          state.controls.buildHint = "";
+        }
+      } else if (state?.controls) {
+        state.controls.buildHint = "";
+      }
+    } catch {
+      // buildHint is UI sugar — never fail the hover path on a preview error.
+      if (state?.controls) state.controls.buildHint = "";
+    }
   }
 
   #onPointerDown(event) {

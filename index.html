@@ -1199,6 +1199,13 @@
           <span id="aiAutopilotChip" class="hud-chip" data-mode="off" title="">Autopilot OFF</span>
           <span id="statusScenario" class="hud-scenario-progress" title="Scenario progress vs. current targets" style="font-size:11px;opacity:0.85;">endless</span>
           <span id="statusNextAction" class="hud-next-action" data-priority="idle" title="Current next action">Next: start</span>
+          <!-- v0.8.2 Round-5b Wave-1 (01a Step 7) — #statusBuildHint surfaces
+               BuildSystem.previewToolAt reasonText on invalid hover tiles so
+               players stop seeing silent red meshes. #statusAutopilotCrisis
+               is the teaching-style banner raised when FOOD_CRISIS_DETECTED
+               auto-pauses the colony. -->
+          <span id="statusBuildHint" class="hud-build-hint" hidden style="color:#ffa35c;font-size:11px;padding:2px 6px;max-width:380px;overflow:hidden;text-overflow:ellipsis;"></span>
+          <span id="statusAutopilotCrisis" class="hud-autopilot-crisis" role="alert" hidden style="background:#5a1c1c;color:#ffc8c8;padding:4px 8px;font-size:12px;border-radius:4px;"></span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
           <!-- v0.8.2 Round-1 01d-mechanics-content (Step 3) — most-recent-death
                shortcut row. Pulls the newest "... died (...)" entry from
@@ -1799,7 +1806,8 @@
             <li><b>Left click</b> — build the selected tool on a tile, or select a worker/visitor/animal.</li>
             <li><b>Right-click drag</b> — pan the map.</li>
             <li><b>Mouse wheel</b> — zoom in/out. <code>0</code> resets camera.</li>
-            <li><code>1</code>–<code>6</code> — quick-pick build tool (Road, Farm, Lumber, Warehouse, Wall, Erase).</li>
+            <!-- v0.8.2 Round-5b Wave-1 (01a Step 7) — hotkey doc updated from 1-6 to 1-12 to match the actual 12-tool Build toolbar and the Welcome banner copy (P2-2 onboarding consistency). -->
+            <li><code>1</code>–<code>12</code> — quick-pick build tool (12 tools in the Build toolbar; hover any button for name + hotkey).</li>
             <li><code>Space</code> — pause/resume. <code>Esc</code> — clear selection.</li>
             <li><code>L</code> — toggle the Supply-Chain Heat Lens.</li>
             <li><code>Ctrl+Z</code> / <code>Ctrl+Y</code> — undo / redo your last build action.</li>
