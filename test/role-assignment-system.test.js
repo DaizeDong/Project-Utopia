@@ -42,11 +42,5 @@ test("RoleAssignmentSystem keeps an industry doctrine wood-heavy during the logi
 
   roles.update(2, state);
   const counts = countRoles(state);
-  // v0.8.2 Round-5b Wave-1 (01b Step 3) — dynamic farmMin = floor(ratio*n)
-  // means industry doctrine (farmBias=-0.14 → ratio≈0.36 @ n=12) now keeps
-  // farmMin≈4 instead of the old hardcoded min(2,n)=2. With specialists
-  // consuming more of the budget, the industry bias still drives wood ≥ farm
-  // (never farm > wood), which is the invariant that matters for the
-  // reviewer-facing doctrine signal.
-  assert.ok(counts.wood >= counts.farm, `industry logistics pressure should bias workers toward lumber (farm=${counts.farm}, wood=${counts.wood})`);
+  assert.ok(counts.wood > counts.farm, "industry logistics pressure should bias workers toward lumber");
 });

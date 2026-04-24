@@ -256,9 +256,19 @@ export const BALANCE = Object.freeze({
     // what kills the allocation-loss at pop=4). n>=8 falls through to the
     // Wave-1 perWorker formula below (no regression risk for seed=7/42).
     bandTable: [
-      { minPop: 0, maxPop: 3, allow: { cook: 0, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
-      { minPop: 4, maxPop: 5, allow: { cook: 1, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
-      { minPop: 6, maxPop: 7, allow: { cook: 1, smith: 0, herbalist: 0, haul: 1, stone: 1, herbs: 0 } },
+      // Round 5b Wave-1 post-benchmark-tune: bandTable's role is to make
+      // allocation-loss at pop=4 EXPLICIT and auditable, not to reduce
+      // specialist activation. We keep Wave-1 minFloor=1 semantics for
+      // every band and rely on the kitchen/smithy/clinic BUILDING gates
+      // (in RoleAssignmentSystem.update) + haulMinPopulation to cap
+      // specialists that weren't deserved. The structural fix remains:
+      // bandTable overrides can be used in future tuning; the cannibalise
+      // valve + low-pop idle-chain threshold are the hot-path changes.
+      // pop<=3: keep all at 1 (Wave-1 minFloor) — specialistBudget + gate
+      // naturally zero them out.
+      { minPop: 0, maxPop: 3, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
+      { minPop: 4, maxPop: 5, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
+      { minPop: 6, maxPop: 7, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
       // minPop: 8+ → fall-through to perWorker path (Wave-1 behaviour retained).
     ],
     bandHysteresisPop: 1,
