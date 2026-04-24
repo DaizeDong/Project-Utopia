@@ -56,10 +56,15 @@ test("RoleAssignmentSystem honours quotas.haul = 3 when gate + warehouse are sat
   const state = createInitialGameState();
   setWorkerCount(state, 12);
   state.buildings.warehouses = 2;
+  // v0.8.2 Round-5 Wave-1 (01b/02a): player slider is now an upper bound on
+  // top of the pop-scaled formula. With n=12 + haulPerWorker=1/6 the scaled
+  // cap is floor(12/6)=2; the player's cap of 3 is the looser of the two,
+  // so the effective min(scaled, playerMax) is 2. Test updated to reflect
+  // the new semantics — two haulers, no longer three.
   state.controls.roleQuotas = { cook: 0, smith: 0, herbalist: 0, haul: 3, stone: 0, herbs: 0 };
   const roles = new RoleAssignmentSystem();
   roles.update(2, state);
-  assert.equal(countRole(state, ROLE.HAUL), 3, "quota.haul=3 should yield 3 haulers");
+  assert.equal(countRole(state, ROLE.HAUL), 2, "pop-scaled haulPerWorker=1/6 at n=12 should yield 2 haulers");
 });
 
 test("RoleAssignmentSystem respects kitchen gate even when quotas.cook is large", () => {

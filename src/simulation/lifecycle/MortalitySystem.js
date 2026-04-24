@@ -26,9 +26,36 @@ function relationLabelForMemory(opinion) {
   return "Rival";
 }
 
-function pushWorkerMemory(worker, label) {
+/**
+ * v0.8.2 Round-5 Wave-1 (02d Step 2) — push a narrative line into a worker's
+ * memory.recentEvents, with optional same-event dedup. `dedupKey` + `nowSec`
+ * + `windowSec` form a (key, last-push-time, window) tuple stored in
+ * `worker.memory.recentKeys` (Map lazily initialised — see 02d Step 3 Risk
+ * note re: snapshot roundtrip). If the same key fired within `windowSec`,
+ * the new label is dropped. Death events pass a large windowSec (9999) as
+ * a defensive measure — a worker only dies once, but the dedup keeps stray
+ * double-recording (e.g. re-enter loop from a snapshot replay) safe.
+ * @param {object} worker
+ * @param {string} label
+ * @param {string|null} [dedupKey]
+ * @param {number} [windowSec]
+ * @param {number} [nowSec]
+ */
+function pushWorkerMemory(worker, label, dedupKey = null, windowSec = 30, nowSec = 0) {
   worker.memory ??= { recentEvents: [], dangerTiles: [] };
   if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
+  if (dedupKey) {
+    // Lazy-init so snapshot reload (which shallow-clones `memory` and drops
+    // Map instances) always recovers to a usable state without schema
+    // migration.
+    if (!(worker.memory.recentKeys instanceof Map)) worker.memory.recentKeys = new Map();
+    const recentKeys = worker.memory.recentKeys;
+    const last = Number(recentKeys.get(dedupKey) ?? -Infinity);
+    if (Number.isFinite(last) && Number(nowSec) - last < Number(windowSec)) {
+      return; // within window — skip push
+    }
+    recentKeys.set(dedupKey, Number(nowSec));
+  }
   worker.memory.recentEvents.unshift(label);
   worker.memory.recentEvents = worker.memory.recentEvents.slice(0, WORKER_MEMORY_LIMIT);
 }
@@ -54,26 +81,50 @@ function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
       && agent.alive !== false);
   if (workers.length === 0) return;
 
+  // v0.8.2 Round-5 Wave-1 (02d Step 1) — union of `related` ∪ `nearby` rather
+  // than the previous "related OR nearby" fallback. Previously any deceased
+  // with at least one opinion≠0 relationship made the fallback branch dead
+  // code, so near-field witnesses without a relationship never got the
+  // memory. Now we always collect top-3 related (by |opinion|) AND top-3
+  // nearby (distance <= WITNESS_NEARBY_DISTANCE), dedupe by agent id, and
+  // label each witness by its strongest tag.
   const related = workers
     .map((worker) => ({ worker, opinion: readRelationshipOpinion(deceased, worker) }))
     .filter(({ opinion }) => Number.isFinite(opinion) && Math.abs(opinion) > 0)
     .sort((a, b) => Math.abs(b.opinion) - Math.abs(a.opinion))
     .slice(0, 3);
 
-  const witnesses = related.length > 0
-    ? related
-    : workers
-      .map((worker) => ({ worker, opinion: NaN, distance: manhattanWorldDistance(worker, deceased) }))
-      .filter(({ distance }) => distance <= WITNESS_NEARBY_DISTANCE)
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 3);
+  const nearby = workers
+    .map((worker) => ({ worker, opinion: NaN, distance: manhattanWorldDistance(worker, deceased) }))
+    .filter(({ distance }) => distance <= WITNESS_NEARBY_DISTANCE)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3);
+
+  // Combine using Set<agentId>: related wins the opinion tag (Friend/Close
+  // friend/Strained/Rival), nearby-only witnesses are labelled "Colleague".
+  const witnessesById = new Map();
+  for (const entry of related) {
+    witnessesById.set(entry.worker.id, entry);
+  }
+  for (const entry of nearby) {
+    if (!witnessesById.has(entry.worker.id)) {
+      witnessesById.set(entry.worker.id, entry);
+    }
+  }
 
   const reason = String(deceased.deathReason || "event");
   const deceasedName = deceased.displayName ?? deceased.id;
   const time = Math.max(0, Number(nowSec ?? 0)).toFixed(0);
-  for (const { worker, opinion } of witnesses) {
+  const deathKey = `death:${deceased.id}`;
+  for (const { worker, opinion } of witnessesById.values()) {
     const label = Number.isFinite(opinion) ? relationLabelForMemory(opinion) : "Colleague";
-    pushWorkerMemory(worker, `[${time}s] ${label} ${deceasedName} died (${reason})`);
+    pushWorkerMemory(
+      worker,
+      `[${time}s] ${label} ${deceasedName} died (${reason})`,
+      deathKey,
+      9999,
+      Number(nowSec ?? 0),
+    );
   }
 }
 

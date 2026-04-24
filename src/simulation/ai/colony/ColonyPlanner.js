@@ -165,7 +165,11 @@ const MAX_GOAL_LEN = 60;
 const LLM_TIMEOUT_MS = 30000;
 
 const VALID_PRIORITIES = new Set(["critical", "high", "medium", "low"]);
-const VALID_BUILD_TYPES = new Set(Object.keys(BUILD_COST));
+// v0.8.2 Round-5 Wave-1 (01b Step 5) — `reassign_role` is a pseudo-action: it
+// doesn't build anything and bypasses BUILD_COST. PlanExecutor reads it as a
+// noop and writes `state.ai.fallbackHints.pendingRoleBoost = step.role` so
+// RoleAssignmentSystem can consume the signal next tick.
+const VALID_BUILD_TYPES = new Set([...Object.keys(BUILD_COST), "reassign_role"]);
 const VALID_SKILL_NAMES = new Set(Object.keys(SKILL_LIBRARY));
 
 // ── System Prompt (inlined from npc-colony-planner.md for bundled use) ──
@@ -448,6 +452,13 @@ function _validateStep(raw, seenIds) {
     ? raw.predicted_effect
     : {};
 
+  // v0.8.2 Round-5 Wave-1 (01b Step 5) — preserve the `role` field for the
+  // `reassign_role` pseudo-action so PlanExecutor can write the correct
+  // pending hint. All other action types drop unknown payload fields.
+  const reassignRole = (action.type === "reassign_role" && typeof action.role === "string")
+    ? action.role
+    : null;
+
   return {
     error: null,
     value: {
@@ -455,7 +466,9 @@ function _validateStep(raw, seenIds) {
       thought,
       action: isSkill
         ? { type: "skill", skill: action.skill, hint }
-        : { type: action.type, hint },
+        : (reassignRole
+          ? { type: "reassign_role", role: reassignRole, hint }
+          : { type: action.type, hint }),
       predicted_effect,
       priority,
       depends_on,
@@ -504,7 +517,16 @@ export function generateFallbackPlan(observation, state) {
       steps.push(_step(nextId++, "farm", "near_cluster:c0", "critical",
         "Food declining, need immediate food production",
         { food_rate_delta: "+0.4/s" }));
-      if (wood >= 10) {
+      // v0.8.2 Round-5 Wave-1 (02a Step 5) — when population has outgrown the
+      // meal pipeline (>=12 workers, zero kitchens, stone+wood affordable),
+      // replace the second farm with a kitchen. Stacking farms on a population
+      // that can't eat raw food at the production rate just leaves food to
+      // rot; a kitchen converts food→meals at 2× hunger efficiency.
+      if (workerCount >= 12 && kitchens === 0 && wood >= 8 && stone >= 2) {
+        steps.push(_step(nextId++, "kitchen", "near_cluster:c0", "critical",
+          "Pop exceeds meal throughput — forcing kitchen before more farms",
+          { meals_rate: "+1/cycle", food_efficiency: "2x" }, [nextId - 2]));
+      } else if (wood >= 10) {
         steps.push(_step(nextId++, "farm", `near_step:${nextId - 2}`, "high",
           "Double down on food to reverse decline",
           { food_rate_delta: "+0.4/s" }, [nextId - 2]));
@@ -583,18 +605,79 @@ export function generateFallbackPlan(observation, state) {
   // colony stuck at the DevIndex-44 starvation equilibrium. Firing at 5
   // proves the chain works with any sustained harvest and unlocks the
   // meal-powered growth loop (DevIndex 44 → 72+ at day 90).
+  //
+  // v0.8.2 Round-5 Wave-1 (02a Step 4): stone gate 3 → 2. Plains/Archipelago
+  // starts sit at stone 3-4 and wall-building drains stone faster than
+  // quarries refill; the 3-threshold pushed Kitchen into late-game limbo. A
+  // pop>=12 branch upgrades priority to "critical" so the planner can't get
+  // crowded out by farm/warehouse stacking when the meal pipeline is the
+  // actual bottleneck.
   if (
     kitchens === 0
     && farms >= 2
     && food >= 5
     && workerCount >= 2
     && wood >= 8
-    && stone >= 3
+    && stone >= 2
     && clusters.length > 0
   ) {
-    steps.push(_step(nextId++, "kitchen", "near_cluster:c0", "high",
-      "No kitchen - raw food spoils without conversion, meals double hunger efficiency",
+    const forceCritical = workerCount >= 12;
+    steps.push(_step(nextId++, "kitchen", "near_cluster:c0",
+      forceCritical ? "critical" : "high",
+      forceCritical
+        ? "Pop exceeds meal throughput — forcing kitchen before more farms"
+        : "No kitchen - raw food spoils without conversion, meals double hunger efficiency",
       { meals_rate: "+1/cycle", food_efficiency: "2x" }));
+  }
+
+  // v0.8.2 Round-5 Wave-1 (01b Step 5) — Priority 3.75 "idle processing
+  // chain". When the building exists but no worker is assigned to run it
+  // (classic fallback-AI failure mode: Kitchen built, COOK=0, Meals stay at
+  // 0), emit a `reassign_role` pseudo-step. PlanExecutor reads this as a
+  // noop and writes `state.ai.fallbackHints.pendingRoleBoost = role`;
+  // RoleAssignmentSystem consumes the hint next tick (see
+  // RoleAssignmentSystem.update) to force a single slot.
+  //
+  // Mirror the ingredients guard from the pipeline-idle boost — we don't
+  // want the planner asking for a cook when food stockpile is too low for
+  // the kitchen to even start cycling.
+  const idleChainThreshold = Number(BALANCE.fallbackIdleChainThreshold ?? 15);
+  const roleCounts = state.metrics?.roleCounts ?? null;
+  const cookWorkers = Number(roleCounts?.COOK ?? roleCounts?.cook ?? 0);
+  const smithWorkers = Number(roleCounts?.SMITH ?? roleCounts?.smith ?? 0);
+  const herbalistWorkers = Number(roleCounts?.HERBALIST ?? roleCounts?.herbalist ?? 0);
+  if (kitchens >= 1 && cookWorkers === 0 && food >= idleChainThreshold) {
+    steps.push({
+      id: nextId++,
+      thought: "Kitchen exists but no cook — pipeline idle",
+      action: { type: "reassign_role", role: "COOK", hint: null },
+      predicted_effect: { cook_slot_delta: "+1", meals_rate: "+1/cycle" },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+  if ((buildings.smithies ?? 0) >= 1 && smithWorkers === 0 && stone >= 5) {
+    steps.push({
+      id: nextId++,
+      thought: "Smithy exists but no smith — pipeline idle",
+      action: { type: "reassign_role", role: "SMITH", hint: null },
+      predicted_effect: { smith_slot_delta: "+1", tools_rate: "+0.2/s" },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
+  }
+  if ((buildings.clinics ?? 0) >= 1 && herbalistWorkers === 0 && herbs >= 3) {
+    steps.push({
+      id: nextId++,
+      thought: "Clinic exists but no herbalist — pipeline idle",
+      action: { type: "reassign_role", role: "HERBALIST", hint: null },
+      predicted_effect: { herbalist_slot_delta: "+1", medicine_rate: "+0.15/s" },
+      priority: "high",
+      depends_on: [],
+      status: "pending",
+    });
   }
 
   // Priority 4: Processing chain - quarry + smithy if not started
