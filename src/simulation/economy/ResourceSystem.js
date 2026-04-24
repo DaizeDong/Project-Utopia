@@ -4,6 +4,61 @@ import { pushWarning } from "../../app/warnings.js";
 import { BALANCE } from "../../config/balance.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
+// v0.8.2 Round-5 Wave-2 (01c-ui + 01d-mechanics-content): sliding-window
+// resource-flow snapshot. Systems (ProcessingSystem kitchen/farm/spoilage,
+// MortalitySystem medicine heal) call `recordResourceFlow(state, resource,
+// kind, amount)` as true-source emitters. ResourceSystem then folds in a
+// net-delta fallback for `food` consumption (worker eating happens in
+// WorkerAISystem which is freeze-locked) and flushes per-min metrics every
+// RESOURCE_FLOW_WINDOW_SEC seconds so HUDController's #foodRateBreakdown
+// can display "(prod +X / cons -Y / spoil -Z)".
+export const RESOURCE_FLOW_WINDOW_SEC = 3;
+
+const TRACKED_FLOW_RESOURCES = ["food", "wood", "stone", "herbs", "meals", "medicine", "tools"];
+
+function ensureResourceFlowState(state) {
+  if (!state.metrics) state.metrics = {};
+  if (!state._resourceFlowAccum) {
+    const accum = {};
+    for (const r of TRACKED_FLOW_RESOURCES) {
+      accum[r] = { produced: 0, consumed: 0, spoiled: 0 };
+    }
+    state._resourceFlowAccum = accum;
+  }
+  if (!Number.isFinite(state._resourceFlowWindowSec)) state._resourceFlowWindowSec = 0;
+  if (!state._resourceFlowLastSnapshot) {
+    state._resourceFlowLastSnapshot = {
+      food: Number(state.resources?.food ?? 0),
+      wood: Number(state.resources?.wood ?? 0),
+      stone: Number(state.resources?.stone ?? 0),
+      herbs: Number(state.resources?.herbs ?? 0),
+      meals: Number(state.resources?.meals ?? 0),
+      medicine: Number(state.resources?.medicine ?? 0),
+      tools: Number(state.resources?.tools ?? 0),
+    };
+  }
+  return state._resourceFlowAccum;
+}
+
+/**
+ * True-source resource flow emitter. Called by ProcessingSystem (farm
+ * harvest, kitchen consumption, spoilage) and MortalitySystem (medicine
+ * heal) so HUDController can render a breakdown. Safe to call with 0 or
+ * negative amounts (clamped to 0).
+ * @param {object} state - Game state root.
+ * @param {"food"|"wood"|"stone"|"herbs"|"meals"|"medicine"|"tools"} resource
+ * @param {"produced"|"consumed"|"spoiled"} kind
+ * @param {number} amount - Non-negative quantity to record.
+ */
+export function recordResourceFlow(state, resource, kind, amount) {
+  const qty = Math.max(0, Number(amount) || 0);
+  if (qty <= 0) return;
+  if (!TRACKED_FLOW_RESOURCES.includes(resource)) return;
+  if (kind !== "produced" && kind !== "consumed" && kind !== "spoiled") return;
+  const accum = ensureResourceFlowState(state);
+  accum[resource][kind] = Number(accum[resource][kind] ?? 0) + qty;
+}
+
 function manhattan(a, b) {
   return Math.abs(a.ix - b.ix) + Math.abs(a.iz - b.iz);
 }
@@ -167,6 +222,12 @@ export class ResourceSystem {
   }
 
   update(dt, state) {
+    // v0.8.2 Round-5 Wave-2 (01c+01d): initialize the resource-flow accum
+    // BEFORE any guards so producers (ProcessingSystem) and MortalitySystem
+    // medicine-heal can write their emits in the same tick even when the
+    // ResourceSystem sits late in SYSTEM_ORDER.
+    ensureResourceFlowState(state);
+
     state.resources.food = Number.isFinite(state.resources.food) ? Math.max(0, state.resources.food) : 0;
     state.resources.wood = Number.isFinite(state.resources.wood) ? Math.max(0, state.resources.wood) : 0;
     state.resources.stone = Number.isFinite(state.resources.stone) ? Math.max(0, state.resources.stone) : 0;
@@ -272,6 +333,63 @@ export class ResourceSystem {
       state.resources.meals = Math.max(0, state.resources.meals || 0);
       state.resources.medicine = Math.max(0, state.resources.medicine || 0);
       state.resources.tools = Math.max(0, state.resources.tools || 0);
+    }
+
+    // v0.8.2 Round-5 Wave-2 (01c-ui + 01d-mechanics-content): flush the
+    // resource-flow accumulator every RESOURCE_FLOW_WINDOW_SEC (3s) and
+    // project per-min metrics for HUD consumption. Worker food eating
+    // lives in WorkerAISystem (freeze-locked), so we fold any residual
+    // net-negative food delta (not explained by recorded consumption +
+    // spoilage) into consumption — this is the "delta fallback" from
+    // plan 01c Step 1.
+    state._resourceFlowWindowSec = Number(state._resourceFlowWindowSec ?? 0) + stepSec;
+    const windowSec = Number(state._resourceFlowWindowSec ?? 0);
+    if (windowSec >= RESOURCE_FLOW_WINDOW_SEC) {
+      const accum = state._resourceFlowAccum;
+      const prev = state._resourceFlowLastSnapshot;
+      const cur = state.resources;
+      // Food net-delta fallback: emitted sources (farm produced, kitchen
+      // consumed, spoilage) may not fully account for worker eating.
+      const explainedFood = Number(accum.food.produced ?? 0)
+        - Number(accum.food.consumed ?? 0)
+        - Number(accum.food.spoiled ?? 0);
+      const actualFoodDelta = Number(cur.food ?? 0) - Number(prev.food ?? 0);
+      const unexplained = actualFoodDelta - explainedFood;
+      if (unexplained < 0) {
+        accum.food.consumed = Number(accum.food.consumed ?? 0) + Math.abs(unexplained);
+      }
+      // Flush per-min metrics (× 60/windowSec). Guard against division
+      // by zero even though we gate on >= RESOURCE_FLOW_WINDOW_SEC.
+      const scale = windowSec > 0 ? 60 / windowSec : 0;
+      state.metrics.foodProducedPerMin = Number((Number(accum.food.produced ?? 0) * scale).toFixed(2));
+      state.metrics.foodConsumedPerMin = Number((Number(accum.food.consumed ?? 0) * scale).toFixed(2));
+      state.metrics.foodSpoiledPerMin = Number((Number(accum.food.spoiled ?? 0) * scale).toFixed(2));
+      // Wood / stone / herbs / meals / medicine / tools: future hooks. We
+      // project net-delta in /min terms so HUDController's existing rate
+      // badges receive a consistent signal (keeps the breakdown format
+      // ready for downstream extensions without changing this wave's UI).
+      for (const r of ["wood", "stone", "herbs", "meals", "medicine", "tools"]) {
+        const prod = Number(accum[r]?.produced ?? 0);
+        const cons = Number(accum[r]?.consumed ?? 0);
+        state.metrics[`${r}ProducedPerMin`] = Number((prod * scale).toFixed(2));
+        state.metrics[`${r}ConsumedPerMin`] = Number((cons * scale).toFixed(2));
+      }
+      // Reset accumulators + snapshot for the next window.
+      for (const r of TRACKED_FLOW_RESOURCES) {
+        accum[r].produced = 0;
+        accum[r].consumed = 0;
+        accum[r].spoiled = 0;
+      }
+      state._resourceFlowLastSnapshot = {
+        food: Number(cur.food ?? 0),
+        wood: Number(cur.wood ?? 0),
+        stone: Number(cur.stone ?? 0),
+        herbs: Number(cur.herbs ?? 0),
+        meals: Number(cur.meals ?? 0),
+        medicine: Number(cur.medicine ?? 0),
+        tools: Number(cur.tools ?? 0),
+      };
+      state._resourceFlowWindowSec = 0;
     }
   }
 }

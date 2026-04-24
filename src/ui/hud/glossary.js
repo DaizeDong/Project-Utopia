@@ -46,6 +46,9 @@ export const HUD_GLOSSARY = Object.freeze({
   perSec: "+1 survival score per in-game second you stay alive.",
   perBirth: "+5 survival score each time a new colonist is born.",
   perDeath: "-10 survival score each time a colonist dies (starvation, predation, raid).",
+
+  // v0.8.2 Round-5 Wave-2 (01c-ui Step 7) — Food rate cause breakdown.
+  foodRateBreakdown: "Net per-minute food change, sampled every 3 sec: prod (farms) vs cons (workers + kitchen) vs spoil (warehouse decay).",
 });
 
 /**

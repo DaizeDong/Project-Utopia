@@ -257,6 +257,9 @@ export class HUDController {
       [this.haulersVal, "haul"],
       [this.herbalistsVal, "herbalist"],
       [this.storytellerStrip, "storyteller"],
+      // v0.8.2 Round-5 Wave-2 (01c-ui Step 7): explain the new "(prod / cons
+      // / spoil)" suffix so a first-time hover reveals the 3-second window.
+      [this.foodRateBreakdown, "foodRateBreakdown"],
     ];
     for (const [node, key] of pairs) {
       if (!node || typeof node.setAttribute !== "function") continue;
@@ -551,9 +554,13 @@ export class HUDController {
       if (prod > 0.05) parts.push(`prod +${prod.toFixed(0)}`);
       if (cons > 0.05) parts.push(`cons -${cons.toFixed(0)}`);
       if (spoil > 0.05) parts.push(`spoil -${spoil.toFixed(0)}`);
+      // v0.8.2 Round-5 Wave-2 (01c-ui Step 3): when no channel crosses the
+      // visible threshold the backend is still warming up its 3-second
+      // sampling window. Render "(sampling…)" so players don't think the
+      // UI is broken.
       this.foodRateBreakdown.textContent = parts.length > 0
         ? `(${parts.join(" / ")})`
-        : "";
+        : "(sampling…)";
     }
     if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food);
     if (this.woodRateVal) this.woodRateVal.textContent = formatRate(rates?.wood);
@@ -931,7 +938,29 @@ export class HUDController {
         this.statusObjectiveTime.textContent = `Survived ${timeText}`;
         this.statusObjectiveScore.textContent = `Score ${score}`;
         this.statusObjectiveScore.setAttribute?.("title", scoreTitle);
-        this.statusObjectiveDev.textContent = inActive && devTicks > 0 ? `Dev ${devScore}/100` : "Dev --/100";
+        // v0.8.2 Round-5 Wave-2 (01c-ui Step 4): append a `weakest: <dim>
+        // <value>` suffix when Dev < 50 and one dimension lags > 8 points
+        // below the overall score. Surfaces the "what do I fix next" signal
+        // that was previously only visible in the tooltip. Casual-mode UI
+        // falls back to pure `Dev N/100`.
+        let devText = inActive && devTicks > 0 ? `Dev ${devScore}/100` : "Dev --/100";
+        if (!casualMode && inActive && devTicks > 0) {
+          const dims = state.gameplay?.devIndexDims ?? {};
+          let weakestKey = null;
+          let weakestValue = Number.POSITIVE_INFINITY;
+          for (const [key, rawValue] of Object.entries(dims)) {
+            const v = Number(rawValue);
+            if (!Number.isFinite(v)) continue;
+            if (v < weakestValue) {
+              weakestValue = v;
+              weakestKey = key;
+            }
+          }
+          if (weakestKey && Number.isFinite(weakestValue) && weakestValue < devScore - 8) {
+            devText = `Dev ${devScore}/100 · weakest: ${weakestKey} ${Math.round(weakestValue)}`;
+          }
+        }
+        this.statusObjectiveDev.textContent = devText;
         this.statusObjectiveDev.setAttribute?.("title", devTitle);
       } else {
         this.statusObjective.textContent = objectiveText;
