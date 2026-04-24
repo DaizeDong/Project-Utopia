@@ -7,6 +7,10 @@ import { explainTerm } from "./glossary.js";
 import { getNextActionAdvice } from "./nextActionAdvisor.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
 import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
+// v0.8.2 Round-5 Wave-2 (02b-casual Step 2): resource-chain stall summary
+// for 7-row rate badges. Cached per-RATE_WINDOW_SEC in render() to avoid
+// hitting ColonyPerceiver every frame.
+import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -569,6 +573,50 @@ export class HUDController {
     if (this.mealsRateVal) this.mealsRateVal.textContent = formatRate(rates?.meals);
     if (this.toolsRateVal) this.toolsRateVal.textContent = formatRate(rates?.tools);
     if (this.medicineRateVal) this.medicineRateVal.textContent = formatRate(rates?.medicine);
+
+    // v0.8.2 Round-5 Wave-2 (02b-casual Steps 2-3): per-resource stall
+    // tooltip + data-stall marker. Throttled to the same RATE_WINDOW_SEC
+    // (3s) the rate badges use so we don't hit ColonyPerceiver every
+    // frame. Tooltip text: "<bottleneck> — <nextAction>"; marker:
+    // `data-stall="1"` when rate is ~0 and the chain has a bottleneck,
+    // otherwise `data-stall=""` to let the CSS left-border fade.
+    try {
+      if (this._lastChainStallSec == null || simSec - this._lastChainStallSec >= RATE_WINDOW_SEC) {
+        this._lastChainStall = getResourceChainStall(state);
+        this._lastChainStallSec = simSec;
+      }
+      const stall = this._lastChainStall ?? {};
+      const stallPairs = [
+        ["food", this.foodRateVal, rates?.food],
+        ["wood", this.woodRateVal, rates?.wood],
+        ["stone", this.stoneRateVal, rates?.stone],
+        ["herbs", this.herbsRateVal, rates?.herbs],
+        ["meals", this.mealsRateVal, rates?.meals],
+        ["tools", this.toolsRateVal, rates?.tools],
+        ["medicine", this.medicineRateVal, rates?.medicine],
+      ];
+      for (const [key, node, rate] of stallPairs) {
+        if (!node || typeof node.setAttribute !== "function") continue;
+        const info = stall[key];
+        const rateAbs = Math.abs(Number(rate ?? 0));
+        const isStalled = info && info.bottleneck && rateAbs < 0.05;
+        if (isStalled) {
+          const tip = info.nextAction
+            ? `${info.bottleneck} — ${info.nextAction}`
+            : String(info.bottleneck);
+          node.setAttribute("title", tip);
+          node.setAttribute("data-stall", "1");
+        } else {
+          node.setAttribute(
+            "title",
+            `${key}: ${formatRate(rate)} over last ${RATE_WINDOW_SEC}s`,
+          );
+          node.setAttribute("data-stall", "");
+        }
+      }
+    } catch {
+      // Never let tooltip logic break rate rendering.
+    }
 
     this.foodBar.style.width = `${Math.min(100, (state.resources.food / 180) * 100)}%`;
     this.woodBar.style.width = `${Math.min(100, (state.resources.wood / 180) * 100)}%`;

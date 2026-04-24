@@ -8,6 +8,30 @@ import {
 import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
 import { explainTerm } from "../hud/glossary.js";
+import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
+
+// v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when a build preview reports
+// "insufficientResource", pick the first limiting raw resource that still
+// has a production-chain bottleneck and return the chain's nextAction so
+// the build-preview tooltip can say "need wood — no lumber mill yet;
+// build lumber (5w)" instead of a bare "Insufficient resources."
+function getBuildDeficitHint(state, preview) {
+  if (!preview || preview.reason !== "insufficientResource") return null;
+  const deficits = preview.deficits ?? preview.shortfalls ?? preview.missing ?? null;
+  const stall = getResourceChainStall(state) ?? {};
+  const orderedKeys = deficits && typeof deficits === "object"
+    ? Object.keys(deficits).filter((k) => Number(deficits[k]) > 0)
+    : ["wood", "stone", "herbs", "food"];
+  for (const key of orderedKeys) {
+    const info = stall[key];
+    if (info && info.bottleneck) {
+      return info.nextAction
+        ? `${key} stalled: ${info.bottleneck} — ${info.nextAction}`
+        : `${key} stalled: ${info.bottleneck}`;
+    }
+  }
+  return null;
+}
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v2";
 const CORE_PANEL_KEYS = Object.freeze(["build", "costs", "resources", "population", "management", "world"]);
@@ -921,7 +945,20 @@ export class BuildToolbar {
         this.buildPreviewVal.setAttribute("data-kind", "error");
         // Bonus: expose the reason via data-tooltip for any downstream reader
         // (reviewer 01a / 02b / 02e may hook into this). First introduction.
-        this.buildPreviewVal.setAttribute("data-tooltip", preview.reasonText);
+        let tooltip = preview.reasonText;
+        // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when the blocker is
+        // "insufficientResource", reach into the resource-chain stall
+        // report and append the production chain's bottleneck so casual
+        // players see "why can't I afford 8 wood?" at a glance.
+        if (preview.reason === "insufficientResource") {
+          try {
+            const stall = getBuildDeficitHint(this.state, preview);
+            if (stall) tooltip = `${tooltip} — ${stall}`;
+          } catch {
+            // Never let tooltip augmentation break the blocker line.
+          }
+        }
+        this.buildPreviewVal.setAttribute("data-tooltip", tooltip);
       } else if (preview && preview.ok === true && Array.isArray(preview.warnings) && preview.warnings.length > 0) {
         this.buildPreviewVal.textContent = `\u26A0 ${preview.warnings[0]} | ${buildPanel.previewSummary}`;
         this.buildPreviewVal.setAttribute("data-kind", "warn");
