@@ -1172,7 +1172,7 @@
                tooltip scavenger hunt. -->
           <div id="heatLensLegend" class="heat-lens-legend" hidden title="Heat Lens legend — red = producer warehouse full / overflowing, blue = processor starved for input"><span class="legend-dot legend-red"></span>surplus<span class="legend-dot legend-blue"></span>starved</div>
           <!-- v0.8.2 Round-0 01a-onboarding — Help Modal entry (F1 or ?). Always visible to every player; the Help Modal explains controls, resource chain, and threat/prosperity. -->
-          <button class="panel-toggle" id="helpBtn" type="button" title="Help (F1 or ?) — controls, resource chain, threat basics">? Help</button>
+          <button class="panel-toggle" id="helpBtn" type="button" title="Open Help on demand (F1 or ?) - controls, resource chain, threat basics">? Help</button>
         </div>
       </div>
 
@@ -1224,7 +1224,7 @@
           </div>
           <div class="overlay-actions">
             <button id="overlayStartBtn" class="primary" type="button" title="Begin the simulation with this map">Start Colony</button>
-            <button id="overlayHelpBtn" type="button" title="Read the Quick Start Guide — controls, resources, threats">How to Play</button>
+            <button id="overlayHelpBtn" type="button" title="Open the Quick Start Guide on demand - controls, resources, threats">How to Play</button>
             <button id="overlayResetFromMenuBtn" type="button" title="Generate a new random map with different terrain">New Map</button>
           </div>
         </section>
@@ -1770,7 +1770,7 @@
           <p>The six map templates are not just cosmetic: <i>Archipelago Isles</i> forces naval logistics, <i>Fortified Basin</i> gives you natural chokepoints, <i>Fertile Riverlands</i> trades defense for yield, and each of the others re-weights terrain, resources, and raid lanes.</p>
         </section>
       </div>
-      <div class="help-footer">Close with <code>ESC</code> · Reopen with <code>F1</code> or <code>?</code></div>
+      <div class="help-footer">Close with <code>ESC</code> &middot; Open any time with <code>F1</code> or <code>?</code></div>
     </div>
   </div>
 
@@ -1845,14 +1845,11 @@
         }
       }, true);
 
-      // First-run: automatically open Help on first page load ever. Skips
-      // subsequent loads (localStorage flag) and gracefully no-ops when
-      // storage is unavailable (privacy mode → always closed by default).
+      // Keep the discovery flag readable for future sessions without
+      // stealing focus on a fresh load.
       try {
-        if (localStorage.getItem('utopia:helpSeen') !== '1') {
-          openHelp();
-        }
-      } catch { /* storage unavailable — leave closed */ }
+        localStorage.getItem('utopia:helpSeen');
+      } catch { /* storage unavailable - leave closed */ }
     })();
   </script>
 
