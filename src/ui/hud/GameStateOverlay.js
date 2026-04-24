@@ -1,19 +1,33 @@
 
-import { MAP_TEMPLATES } from "../../world/grid/Grid.js";
+import { MAP_TEMPLATES, describeMapTemplate } from "../../world/grid/Grid.js";
+import { getScenarioVoiceForTemplate } from "../../world/scenarios/ScenarioFactory.js";
 
 function formatOverlayMeta(state) {
-  const templateName = String(state?.world?.mapTemplateName ?? "").trim();
-  const scenarioTitle = String(state?.gameplay?.scenario?.title ?? "").trim();
-  const width = Number(state?.grid?.width ?? 0);
-  const height = Number(state?.grid?.height ?? 0);
+  const templateId = String(state?.controls?.mapTemplateId ?? state?.world?.mapTemplateId ?? "").trim();
+  const template = describeMapTemplate(templateId);
+  const voice = getScenarioVoiceForTemplate(templateId);
+  const templateName = String(template?.name ?? state?.world?.mapTemplateName ?? "").trim();
+  const width = Number(state?.controls?.mapWidth ?? state?.grid?.width ?? 0);
+  const height = Number(state?.controls?.mapHeight ?? state?.grid?.height ?? 0);
   const parts = [];
 
   if (templateName) parts.push(templateName);
   if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
     parts.push(`${Math.floor(width)}x${Math.floor(height)} tiles`);
   }
-  if (scenarioTitle && scenarioTitle !== templateName) {
-    parts.push(scenarioTitle);
+  const voiceTitle = String(voice?.title ?? "").trim();
+  if (voiceTitle && voiceTitle !== templateName) {
+    parts.push(voiceTitle);
+  }
+  const area = Math.floor(width) * Math.floor(height);
+  if (Number.isFinite(area) && area > 0) {
+    if (area >= 110 * 84) {
+      parts.push("larger map, longer haul lines");
+    } else if (area <= 80 * 60) {
+      parts.push("compact map, faster pressure");
+    } else {
+      parts.push("balanced map, steady opening");
+    }
   }
 
   const isDevMode = typeof document !== "undefined"
@@ -24,6 +38,30 @@ function formatOverlayMeta(state) {
   }
 
   return parts.length > 0 ? parts.join(" | ") : "Quick Start Guide";
+}
+
+function formatTemplateLead(templateId) {
+  const template = describeMapTemplate(templateId);
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return String(voice?.summary ?? template?.description ?? "Build and manage a colony.").trim();
+}
+
+function formatTemplatePressure(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return String(voice?.openingPressure ?? voice?.hintInitial ?? "Open with a plan and keep the first route alive.").trim();
+}
+
+function formatTemplatePriority(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return String(voice?.hintInitial ?? "Open with the first build that keeps food and wood moving.").trim();
+}
+
+function formatHeatLensUseCase(templateId) {
+  const template = describeMapTemplate(templateId);
+  const tagLine = Array.isArray(template?.tags) && template.tags.length > 0
+    ? template.tags.slice(0, 3).join(" / ")
+    : "routes / warehouses / processors";
+  return `Heat Lens: red means surplus is trapped and blue means the first bottleneck is starving input (${tagLine}).`;
 }
 
 // v0.8.0 Phase 4 — Survival Mode. The outcome meta now surfaces survival time
@@ -60,6 +98,11 @@ export class GameStateOverlay {
     this.menuTitle = document.getElementById("overlayMenuTitle");
     this.menuLead = document.getElementById("overlayMenuLead");
     this.menuMeta = document.getElementById("overlayMenuMeta");
+    this.menuBriefing = document.getElementById("overlayMenuBriefing");
+    this.menuPressure = document.getElementById("overlayMenuPressure");
+    this.menuPriority = document.getElementById("overlayMenuPriority");
+    this.menuLens = document.getElementById("overlayMenuLens");
+    this.menuSizeHint = document.getElementById("overlayMenuSizeHint");
     this.objectiveCards = document.getElementById("overlayObjectiveCards");
     this.endMeta = document.getElementById("overlayEndMeta");
     this.endTitle = document.getElementById("overlayEndTitle");
@@ -72,10 +115,12 @@ export class GameStateOverlay {
     // Populate map template dropdown
     if (this.mapTemplateSelect) {
       this.mapTemplateSelect.innerHTML = MAP_TEMPLATES.map((t) =>
-        `<option value="${t.id}">${t.name}</option>`
+        `<option value="${t.id}" title="${t.description}">${t.name}</option>`
       ).join("");
-      this.mapTemplateSelect.value = state.world?.mapTemplateId ?? MAP_TEMPLATES[0].id;
     }
+
+    this.#syncMenuInputsFromState();
+    this.#renderMenuCopy();
 
     const startBtn = document.getElementById("overlayStartBtn");
     const resetFromMenuBtn = document.getElementById("overlayResetFromMenuBtn");
@@ -97,10 +142,7 @@ export class GameStateOverlay {
     this.#refreshEndGateButtons();
 
     startBtn?.addEventListener("click", () => {
-      const templateId = this.mapTemplateSelect?.value;
-      if (templateId && this.state?.controls) {
-        this.state.controls.mapTemplateId = templateId;
-      }
+      this.#syncMenuSelectionFromInputs();
       this.handlers.onStart?.();
     });
     resetFromMenuBtn?.addEventListener("click", () => {
@@ -108,9 +150,7 @@ export class GameStateOverlay {
         resetFromMenuBtn.textContent = "Generating...";
         resetFromMenuBtn.disabled = true;
       }
-      const width = this.#readMapWidth();
-      const height = this.#readMapHeight();
-      const templateId = this.mapTemplateSelect?.value || undefined;
+      const { width, height, templateId } = this.#syncMenuSelectionFromInputs();
       this.handlers.onReset?.({ width, height, templateId });
       if (resetFromMenuBtn) {
         setTimeout(() => {
@@ -127,6 +167,16 @@ export class GameStateOverlay {
       if (this.#isEndGateActive()) return;
       this.handlers.onReset?.();
     });
+
+    const updateMenuPreview = () => {
+      this.#syncMenuSelectionFromInputs();
+      this.#renderMenuCopy();
+    };
+    this.mapTemplateSelect?.addEventListener("change", updateMenuPreview);
+    this.mapWidthInput?.addEventListener("input", updateMenuPreview);
+    this.mapWidthInput?.addEventListener("change", updateMenuPreview);
+    this.mapHeightInput?.addEventListener("input", updateMenuPreview);
+    this.mapHeightInput?.addEventListener("change", updateMenuPreview);
   }
 
   #now() {
@@ -154,13 +204,100 @@ export class GameStateOverlay {
   }
 
   #readMapWidth() {
-    const val = Number(this.mapWidthInput?.value);
-    return Number.isFinite(val) && val >= 24 ? val : null;
+    const fallback = Number(this.state?.controls?.mapWidth ?? this.state?.grid?.width ?? 0);
+    const val = Number(this.mapWidthInput?.value ?? fallback);
+    return Number.isFinite(val) && val >= 24 ? Math.floor(val) : null;
   }
 
   #readMapHeight() {
-    const val = Number(this.mapHeightInput?.value);
-    return Number.isFinite(val) && val >= 24 ? val : null;
+    const fallback = Number(this.state?.controls?.mapHeight ?? this.state?.grid?.height ?? 0);
+    const val = Number(this.mapHeightInput?.value ?? fallback);
+    return Number.isFinite(val) && val >= 24 ? Math.floor(val) : null;
+  }
+
+  #syncMenuInputsFromState() {
+    if (!this.state?.controls) return;
+    const templateId = String(this.state.controls.mapTemplateId ?? this.state.world?.mapTemplateId ?? MAP_TEMPLATES[0].id);
+    const width = Number(this.state.controls.mapWidth ?? this.state.grid?.width ?? 96);
+    const height = Number(this.state.controls.mapHeight ?? this.state.grid?.height ?? 72);
+
+    this.state.controls.mapTemplateId = templateId;
+    this.state.controls.mapWidth = Number.isFinite(width) && width >= 24 ? Math.floor(width) : 96;
+    this.state.controls.mapHeight = Number.isFinite(height) && height >= 24 ? Math.floor(height) : 72;
+
+    if (this.mapTemplateSelect) this.mapTemplateSelect.value = templateId;
+    if (this.mapWidthInput) this.mapWidthInput.value = String(this.state.controls.mapWidth);
+    if (this.mapHeightInput) this.mapHeightInput.value = String(this.state.controls.mapHeight);
+  }
+
+  #syncMenuSelectionFromInputs() {
+    if (!this.state?.controls) {
+      return { templateId: undefined, width: null, height: null };
+    }
+    const templateId = this.mapTemplateSelect?.value || this.state.controls.mapTemplateId || this.state.world?.mapTemplateId || MAP_TEMPLATES[0].id;
+    const width = this.#readMapWidth() ?? Number(this.state.controls.mapWidth ?? this.state.grid?.width ?? 96);
+    const height = this.#readMapHeight() ?? Number(this.state.controls.mapHeight ?? this.state.grid?.height ?? 72);
+
+    this.state.controls.mapTemplateId = templateId;
+    this.state.controls.mapWidth = width;
+    this.state.controls.mapHeight = height;
+
+    if (this.mapTemplateSelect) this.mapTemplateSelect.value = templateId;
+    if (this.mapWidthInput) this.mapWidthInput.value = String(width);
+    if (this.mapHeightInput) this.mapHeightInput.value = String(height);
+
+    return { templateId, width, height };
+  }
+
+  #renderMenuCopy() {
+    if (!this.menuTitle && !this.menuLead && !this.menuMeta && !this.menuPressure && !this.menuPriority && !this.menuLens && !this.menuSizeHint) {
+      return;
+    }
+    const templateId = String(this.state?.controls?.mapTemplateId ?? this.state?.world?.mapTemplateId ?? MAP_TEMPLATES[0].id);
+    const width = Number(this.state?.controls?.mapWidth ?? this.state?.grid?.width ?? 0);
+    const height = Number(this.state?.controls?.mapHeight ?? this.state?.grid?.height ?? 0);
+    const metaState = {
+      ...this.state,
+      controls: {
+        ...(this.state?.controls ?? {}),
+        mapTemplateId: templateId,
+        mapWidth: width,
+        mapHeight: height,
+      },
+    };
+
+    if (this.menuTitle) {
+      this.menuTitle.textContent = "Project Utopia";
+    }
+    if (this.menuLead) {
+      this.menuLead.textContent = formatTemplateLead(templateId);
+    }
+    if (this.menuMeta) {
+      this.menuMeta.textContent = formatOverlayMeta(metaState);
+    }
+    if (this.menuPressure) {
+      this.menuPressure.textContent = `First pressure: ${formatTemplatePressure(templateId)}`;
+    }
+    if (this.menuPriority) {
+      this.menuPriority.textContent = `First build: ${formatTemplatePriority(templateId)}`;
+    }
+    if (this.menuLens) {
+      this.menuLens.textContent = formatHeatLensUseCase(templateId);
+    }
+    if (this.menuSizeHint) {
+      const area = Math.floor(width) * Math.floor(height);
+      let sizeLine = "Map size: steady opening pace.";
+      if (Number.isFinite(area) && area > 0) {
+        if (area >= 110 * 84) {
+          sizeLine = "Map size: larger maps buy space, but the first haul line runs longer.";
+        } else if (area <= 80 * 60) {
+          sizeLine = "Map size: compact maps close pressure faster and demand earlier routing.";
+        } else {
+          sizeLine = "Map size: balanced maps keep the opening pace even.";
+        }
+      }
+      this.menuSizeHint.textContent = sizeLine;
+    }
   }
 
   render(session) {
@@ -226,17 +363,10 @@ export class GameStateOverlay {
     </div>`;
       }
     }
-    if (this.menuTitle) {
-      this.menuTitle.textContent = "Project Utopia";
+    if (isMenu) {
+      this.#syncMenuInputsFromState();
+      this.#renderMenuCopy();
     }
-    if (this.menuLead) {
-      this.menuLead.textContent = this.state.gameplay?.scenario?.summary
-        ?? "Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them.";
-    }
-    if (this.menuMeta) {
-      this.menuMeta.textContent = formatOverlayMeta(this.state);
-    }
-
 
     if (isEnd) {
       // v0.8.0 Phase 4 — Survival Mode only produces "loss" (or "none" before

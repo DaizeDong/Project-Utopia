@@ -24,14 +24,16 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   temperate_plains: Object.freeze({
     title: "Broken Frontier",
     summary: "Reconnect the west lumber line, reclaim the east depot, then scale the colony.",
+    openingPressure: "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
     hintInitial: "Reconnect the west lumber route and reclaim the east depot before scaling up.",
-    hintAfterLogistics: "Starter logistics online. Refill the stockpile.",
+    hintAfterLogistics: "Starter logistics are online. Refill the stockpile before the first pressure wave.",
     hintAfterStockpile: "Fortify the colony and hold stability under pressure.",
     hintCompleted: "All objectives completed.",
   }),
   fertile_riverlands: Object.freeze({
     title: "Silted Hearth",
     summary: "Last year's flood buried the west road under silt — rebuild the lumber line before the river runs dry.",
+    openingPressure: "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
     hintInitial: "Dig the silted lumber road free and reclaim the flood-wrecked east granary.",
     hintAfterLogistics: "The hearth fires are lit again. Stockpile grain before the next rain-fed crest.",
     hintAfterStockpile: "Shore up the banks and hold the hearth through the autumn floods.",
@@ -40,6 +42,7 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   rugged_highlands: Object.freeze({
     title: "Gate Bastion",
     summary: "Reopen the north timber gate, reclaim the south granary, and stabilize two chokepoints.",
+    openingPressure: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
     hintInitial: "Repair the north gate, then reclaim the south granary before scaling up the bastion.",
     hintAfterLogistics: "The gates are open. Stock food and wood before the next pressure wave.",
     hintAfterStockpile: "Close the defense loop and hold both chokepoints.",
@@ -48,6 +51,7 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   fortified_basin: Object.freeze({
     title: "Hollow Keep",
     summary: "The old keep's gates hang open — hold north and south before raiders find the breach.",
+    openingPressure: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
     hintInitial: "Wall off the north and south gates before the raiders learn the keep is hollow.",
     hintAfterLogistics: "The gates hold. Pack the larders before the siege tightens.",
     hintAfterStockpile: "Man the walls — the keep is only as strong as who watches the ramparts.",
@@ -56,6 +60,7 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   archipelago_isles: Object.freeze({
     title: "Island Relay",
     summary: "Bridge two causeways, claim the relay depot, and connect the harbor to the outer fields.",
+    openingPressure: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
     hintInitial: "Bridge the harbor and east causeways, then claim the relay depot with a warehouse.",
     hintAfterLogistics: "The relay is online. Push enough food and wood across the split map.",
     hintAfterStockpile: "Secure the crossings and hold the outer shoreline.",
@@ -64,6 +69,7 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   coastal_ocean: Object.freeze({
     title: "Driftwood Harbor",
     summary: "A gale scattered the fleet — rebuild the harbor causeways before the autumn caravan arrives.",
+    openingPressure: "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
     hintInitial: "Lash the harbor causeways back together and raise a depot on the relay spit.",
     hintAfterLogistics: "The harbor is re-strung. Lay in food and wood before the caravan tide turns.",
     hintAfterStockpile: "Brace the crossings — autumn storms will test every rope and plank.",
@@ -76,6 +82,10 @@ const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
 const DEFAULT_VOICE_FOR_FRONTIER_REPAIR = SCENARIO_VOICE_BY_TEMPLATE.temperate_plains;
 const DEFAULT_VOICE_FOR_GATE_CHOKEPOINTS = SCENARIO_VOICE_BY_TEMPLATE.rugged_highlands;
 const DEFAULT_VOICE_FOR_ISLAND_RELAY = SCENARIO_VOICE_BY_TEMPLATE.archipelago_isles;
+
+export function getScenarioVoiceForTemplate(templateId) {
+  return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
+}
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -254,6 +264,7 @@ function buildFrontierRepairScenario(grid) {
     family: "frontier_repair",
     title: voice.title,
     summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: center.ix, iz: center.iz },
       westLumberOutpost: { ix: westOutpost.ix, iz: westOutpost.iz },
@@ -400,6 +411,7 @@ function buildGateChokepointScenario(grid) {
     family: "gate_chokepoints",
     title: voice.title,
     summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: center.ix, iz: center.iz },
       northTimber: { ix: northTimber.ix, iz: northTimber.iz },
@@ -536,6 +548,7 @@ function buildIslandRelayScenario(grid) {
     family: "island_relay",
     title: voice.title,
     summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: harbor.ix, iz: harbor.iz },
       relayDepot: { ix: relayDepot.ix, iz: relayDepot.iz },

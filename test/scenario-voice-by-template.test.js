@@ -66,6 +66,21 @@ test("every template's scenario exposes a non-empty opening hint", () => {
   }
 });
 
+test("every template's scenario exposes a distinct opening pressure line", () => {
+  const openings = new Set();
+  for (const tpl of TEMPLATE_IDS) {
+    const scenario = getScenarioFor(tpl);
+    const opening = scenario?.openingPressure;
+    assert.ok(typeof opening === "string" && opening.length >= 30,
+      `${tpl}: openingPressure must be >= 30 chars, got ${JSON.stringify(opening)}`);
+    assert.ok(!/TODO|FIXME|undefined/i.test(opening),
+      `${tpl}: openingPressure looks like a placeholder: ${JSON.stringify(opening)}`);
+    openings.add(opening);
+  }
+  assert.equal(openings.size, TEMPLATE_IDS.length,
+    `expected ${TEMPLATE_IDS.length} unique openingPressure strings, got ${openings.size}`);
+});
+
 test("sibling templates inside the same family still get separate voices", () => {
   // frontier_repair: temperate_plains + fertile_riverlands
   const plains = getScenarioFor("temperate_plains");
