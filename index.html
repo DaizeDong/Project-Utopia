@@ -634,6 +634,25 @@
       margin-bottom: 12px;
     }
 
+    .overlay-menu-briefing {
+      display: grid;
+      gap: 5px;
+      margin: 0 0 14px 0;
+      padding: 10px 12px;
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+    }
+    .overlay-menu-briefing-line {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--text-muted);
+    }
+    .overlay-menu-briefing-line:first-child {
+      color: var(--text);
+      font-weight: 700;
+    }
+
     .overlay-objectives { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
     .overlay-obj-card {
       display: flex; align-items: center; gap: 10px;
@@ -1172,7 +1191,7 @@
                tooltip scavenger hunt. -->
           <div id="heatLensLegend" class="heat-lens-legend" hidden title="Heat Lens legend — red = producer warehouse full / overflowing, blue = processor starved for input"><span class="legend-dot legend-red"></span>surplus<span class="legend-dot legend-blue"></span>starved</div>
           <!-- v0.8.2 Round-0 01a-onboarding — Help Modal entry (F1 or ?). Always visible to every player; the Help Modal explains controls, resource chain, and threat/prosperity. -->
-          <button class="panel-toggle" id="helpBtn" type="button" title="Open Help on demand (F1 or ?) - controls, resource chain, threat basics">? Help</button>
+          <button class="panel-toggle" id="helpBtn" type="button" title="Open the strategic briefing on demand - template differences, heat lens, survival score.">? Help</button>
         </div>
       </div>
 
@@ -1202,16 +1221,22 @@
           <h2 id="overlayMenuTitle" class="overlay-game-title">Project Utopia</h2>
           <p id="overlayMenuLead" class="overlay-lead">Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
           <div id="overlayMenuMeta" class="overlay-scenario-badge">Quick Start Guide</div>
+          <div id="overlayMenuBriefing" class="overlay-menu-briefing" aria-label="Opening briefing">
+            <div id="overlayMenuPressure" class="overlay-menu-briefing-line"></div>
+            <div id="overlayMenuPriority" class="overlay-menu-briefing-line"></div>
+            <div id="overlayMenuLens" class="overlay-menu-briefing-line"></div>
+            <div id="overlayMenuSizeHint" class="overlay-menu-briefing-line"></div>
+          </div>
           <div id="overlayObjectiveCards" class="overlay-objectives"></div>
           <div class="overlay-map-settings" style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
             <label class="small" style="font-weight:700; color:var(--text-muted);">Template:</label>
-            <select id="overlayMapTemplate" title="Choose terrain template" style="flex:1; min-width:140px; padding:4px 6px; font-size:12px;"></select>
+            <select id="overlayMapTemplate" title="Choose the opening template. The briefing updates immediately." style="flex:1; min-width:140px; padding:4px 6px; font-size:12px;"></select>
           </div>
           <div class="overlay-map-size" style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
             <label class="small" style="font-weight:700; color:var(--text-muted);">Map Size:</label>
-            <input id="overlayMapWidth" type="number" min="24" max="256" value="96" step="8" title="Map width in tiles (24-256)" style="width:70px; padding:4px 6px; font-size:12px;" />
+            <input id="overlayMapWidth" type="number" min="24" max="256" value="96" step="8" title="Set the map width before starting. Wider maps stretch the opening haul." style="width:70px; padding:4px 6px; font-size:12px;" />
             <span class="small muted">&times;</span>
-            <input id="overlayMapHeight" type="number" min="24" max="256" value="72" step="8" title="Map height in tiles (24-256)" style="width:70px; padding:4px 6px; font-size:12px;" />
+            <input id="overlayMapHeight" type="number" min="24" max="256" value="72" step="8" title="Set the map height before starting. Taller maps lengthen the opening routes." style="width:70px; padding:4px 6px; font-size:12px;" />
             <span class="small muted">tiles</span>
           </div>
           <div class="overlay-controls-hint">
@@ -1223,9 +1248,9 @@
             <span>LMB</span> build &middot; <span>RMB</span> drag-pan &middot; click a worker to inspect &middot; <span>?</span> or <span>F1</span> open Help
           </div>
           <div class="overlay-actions">
-            <button id="overlayStartBtn" class="primary" type="button" title="Begin the simulation with this map">Start Colony</button>
-            <button id="overlayHelpBtn" type="button" title="Open the Quick Start Guide on demand - controls, resources, threats">How to Play</button>
-            <button id="overlayResetFromMenuBtn" type="button" title="Generate a new random map with different terrain">New Map</button>
+            <button id="overlayStartBtn" class="primary" type="button" title="Start the colony with the visible template and size.">Start Colony</button>
+            <button id="overlayHelpBtn" type="button" title="Open the menu briefing on demand - template differences, size consequences, first failure path.">How to Play</button>
+            <button id="overlayResetFromMenuBtn" type="button" title="Reroll the visible template and size into a fresh map seed.">New Map</button>
           </div>
         </section>
         <section id="overlayEndPanel" class="overlay-panel" hidden>
@@ -1749,12 +1774,12 @@
           <p>Meals, tools, and medicine are <i>colony-wide</i> — they stay in the warehouse, not in worker packs. Build kitchens/smithies/clinics as soon as you have a surplus of raw goods.</p>
         </section>
         <section class="help-page" data-help-page="threat">
-          <h3>Prosperity <span class="muted">(higher is better)</span></h3>
-          <p>Prosperity is your colony well-being score: well-fed workers, processed goods, and steady growth push it up. High prosperity attracts new settlers and traders.</p>
-          <h3>Threat <span class="muted">(lower is safer)</span></h3>
-          <p>Threat rises with hunger, injuries, raids, and environmental pressure. High threat triggers raids and worker losses. Walls, medicine, and a stocked warehouse all reduce it.</p>
+          <h3>First Failure Path</h3>
+          <p>Most runs do not fail from one event. They fail when food, wood, and hauling stop reinforcing each other, then threat rises faster than the colony can recover. Survival score is the time you keep the colony alive, with prosperity and DevIndex as the main multipliers.</p>
+          <h3>Threat &amp; Prosperity</h3>
+          <p>Threat is the cost of being late. Hungry workers, blocked routes, injuries, and raids all pull it up; connected roads, food, medicine, and a stocked warehouse pull it down.</p>
           <h3>Survival Mode</h3>
-          <p>This is an endless simulation — your score is the time you keep the colony alive, with bonuses for prosperity and DevIndex. When the colony collapses, the end-of-run panel shows your stats. Press <b>Try Again</b> to replay the same seed.</p>
+          <p>This is an endless simulation — the run ends when the colony cannot recover. Press <b>Try Again</b> to replay the same seed.</p>
         </section>
         <section class="help-page" data-help-page="different">
           <h3>An AI director drives the colony</h3>
@@ -1765,9 +1790,10 @@
             <li><b>DRIFT</b> — the colony is idle, between directives (menu phase, or right after load).</li>
           </ul>
           <h3>Supply-Chain Heat Lens</h3>
-          <p>Press <code>L</code> to cycle <b>pressure → heat → off</b>. In <i>heat</i> mode, the map paints <span style="color:#e95c4d;">red</span> over producers drowning beside a full warehouse and <span style="color:#4da8e9;">blue</span> over processors that are starving for input — a one-glance bottleneck map. A small legend appears next to the Heat Lens button while the lens is active.</p>
+          <p>Press <code>L</code> to show the first bottleneck. In <i>heat</i> mode, the map paints <span style="color:#e95c4d;">red</span> over surplus trapped behind storage and <span style="color:#4da8e9;">blue</span> over processors or routes that are starving for input.</p>
           <h3>Templates change the whole run</h3>
-          <p>The six map templates are not just cosmetic: <i>Archipelago Isles</i> forces naval logistics, <i>Fortified Basin</i> gives you natural chokepoints, <i>Fertile Riverlands</i> trades defense for yield, and each of the others re-weights terrain, resources, and raid lanes.</p>
+          <p>Each template rewrites the first minutes. Plains reward quick expansion, highlands force chokepoints, basins force gate control, islands force bridges, and riverlands force throughput. Pick the template before <b>Start Colony</b> and the opening pressure changes immediately.</p>
+          <p>The briefing tells you what to fix first, what will fail if you delay, and why a bigger or smaller map changes the opening pace.</p>
         </section>
       </div>
       <div class="help-footer">Close with <code>ESC</code> &middot; Open any time with <code>F1</code> or <code>?</code></div>

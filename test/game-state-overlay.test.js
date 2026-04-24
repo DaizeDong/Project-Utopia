@@ -15,7 +15,17 @@ function makeElement() {
     innerHTML: "",
     disabled: false,
     value: "",
-    addEventListener() {},
+    listeners: {},
+    addEventListener(type, handler) {
+      (this.listeners[type] ??= []).push(handler);
+    },
+    dispatchEvent(event) {
+      const handlers = this.listeners[event?.type] ?? [];
+      for (const handler of handlers) {
+        handler.call(this, event);
+      }
+      return true;
+    },
     setAttribute(key, value) {
       this.attrs[key] = value;
     },
@@ -37,6 +47,11 @@ function makeNodes() {
     overlayMenuLead: makeElement(),
     overlayMenuMeta: makeElement(),
     overlayObjectiveCards: makeElement(),
+    overlayMenuBriefing: makeElement(),
+    overlayMenuPressure: makeElement(),
+    overlayMenuPriority: makeElement(),
+    overlayMenuLens: makeElement(),
+    overlayMenuSizeHint: makeElement(),
     overlayEndMeta: makeElement(),
     overlayEndTitle: makeElement(),
     overlayEndReason: makeElement(),
@@ -79,6 +94,11 @@ function renderOverlay({ devMode = false } = {}) {
         objectives: [{ title: "Build Network", completed: false, progress: 25 }],
       },
       grid: { width: 96, height: 72 },
+      controls: {
+        mapTemplateId: "temperate_plains",
+        mapWidth: 96,
+        mapHeight: 72,
+      },
       world: {
         mapSeed: 1337,
         mapTemplateId: "temperate_plains",
@@ -96,7 +116,7 @@ function renderOverlay({ devMode = false } = {}) {
     };
     overlay.render({ phase: "menu" });
 
-    return { nodes, activeSnapshot };
+    return { nodes, activeSnapshot, overlay };
   } finally {
     globalThis.document = prevDocument;
   }
@@ -147,6 +167,30 @@ test("GameStateOverlay only exposes the seed in dev mode", () => {
   assert.match(nodes.overlayMenuMeta.textContent, /seed 1337/i);
 });
 
+test("template and size changes refresh the menu briefing immediately", () => {
+  const { nodes, overlay } = renderOverlay();
+
+  nodes.overlayMapTemplate.value = "fortified_basin";
+  nodes.overlayMapTemplate.dispatchEvent({ type: "change" });
+  nodes.overlayMapWidth.value = "128";
+  nodes.overlayMapWidth.dispatchEvent({ type: "input" });
+  nodes.overlayMapHeight.value = "96";
+  nodes.overlayMapHeight.dispatchEvent({ type: "input" });
+
+  assert.equal(overlay.state.controls.mapTemplateId, "fortified_basin");
+  assert.equal(overlay.state.controls.mapWidth, 128);
+  assert.equal(overlay.state.controls.mapHeight, 96);
+  assert.match(nodes.overlayMenuMeta.textContent, /Fortified Basin/);
+  assert.match(nodes.overlayMenuMeta.textContent, /128x96 tiles/);
+  assert.match(nodes.overlayMenuMeta.textContent, /Hollow Keep/);
+  assert.match(nodes.overlayMenuLead.textContent, /gates hang open/i);
+  assert.match(nodes.overlayMenuPressure.textContent, /First pressure:/i);
+  assert.match(nodes.overlayMenuPressure.textContent, /pressure/i);
+  assert.match(nodes.overlayMenuPriority.textContent, /First build:/i);
+  assert.match(nodes.overlayMenuLens.textContent, /Heat Lens:/i);
+  assert.match(nodes.overlayMenuSizeHint.textContent, /larger maps|compact maps|balanced maps/i);
+});
+
 test("menu to active transition clears pause and syncs overlay plus HUD immediately", () => {
   const calls = [];
   const harness = {
@@ -178,7 +222,7 @@ test("menu to active transition clears pause and syncs overlay plus HUD immediat
   };
 
   applyActivePhase(harness, "active", {
-    actionMessage: "Run started: Temperate Plains. Build the starter network now. Try Again replays this layout; New Map rerolls.",
+    actionMessage: "Run started: Temperate Plains (96x72 tiles). Build the starter network now. Try Again replays this layout; New Map rerolls.",
     actionKind: "success",
   });
 
@@ -186,7 +230,7 @@ test("menu to active transition clears pause and syncs overlay plus HUD immediat
   assert.equal(harness.state.controls.isPaused, false);
   assert.equal(harness.state.controls.stepFramesPending, 0);
   assert.equal(harness.state.metrics.benchmarkStatus, "idle");
-  assert.match(harness.state.controls.actionMessage, /^Run started: Temperate Plains\./);
+  assert.match(harness.state.controls.actionMessage, /^Run started: Temperate Plains \(\d+x\d+ tiles\)\./);
   assert.deepEqual(
     calls,
     ["panel:GameStateOverlay", "overlay:active", "panel:HUD", "hud"],
@@ -197,7 +241,7 @@ test("menu to active transition clears pause and syncs overlay plus HUD immediat
 test("GameApp source advertises run start and includes the immediate sync hook", () => {
   assert.match(
     GAME_APP_SOURCE,
-    /Run started: \$\{mapLabel\}\. Build the starter network now\. Try Again replays this layout; New Map rerolls\./,
+    /Run started: \$\{mapLabel\} \(\$\{mapSize\} tiles\)\. Build the starter network now\. Try Again replays this layout; New Map rerolls\./,
   );
   assert.match(
     GAME_APP_SOURCE,

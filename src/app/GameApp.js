@@ -929,6 +929,14 @@ export class GameApp {
 
   regenerateWorld({ templateId, seed, terrainTuning, width, height }, options = {}) {
     const next = createInitialGameState({ templateId, seed, terrainTuning, width, height });
+    const currentWidth = Number(this.state.grid?.width ?? next.grid?.width ?? 96);
+    const currentHeight = Number(this.state.grid?.height ?? next.grid?.height ?? 72);
+    const chosenWidth = Number.isFinite(Number(width)) && Number(width) >= 24
+      ? Math.floor(Number(width))
+      : currentWidth;
+    const chosenHeight = Number.isFinite(Number(height)) && Number(height) >= 24
+      ? Math.floor(Number(height))
+      : currentHeight;
 
     next.ai.enabled = this.state.ai.enabled;
     next.ai.coverageTarget = this.state.ai.coverageTarget;
@@ -948,6 +956,9 @@ export class GameApp {
     next.controls.benchmarkConfig = { ...this.state.controls.benchmarkConfig };
     next.controls.populationTargets = { ...this.state.controls.populationTargets };
     next.controls.terrainTuning = { ...(terrainTuning ?? next.controls.terrainTuning ?? this.state.controls.terrainTuning) };
+    next.controls.mapTemplateId = next.world.mapTemplateId;
+    next.controls.mapWidth = chosenWidth;
+    next.controls.mapHeight = chosenHeight;
     next.controls.saveSlotId = this.state.controls.saveSlotId ?? "default";
     next.metrics.aiRuntime = { ...(this.state.metrics.aiRuntime ?? next.metrics.aiRuntime ?? {}) };
 
@@ -1412,17 +1423,27 @@ export class GameApp {
   startSession() {
     // Apply the menu's pending template selection before entering active play.
     const selectedId = this.state?.controls?.mapTemplateId;
+    const selectedWidth = Number(this.state?.controls?.mapWidth);
+    const selectedHeight = Number(this.state?.controls?.mapHeight);
     const loadedId = this.state?.world?.mapTemplateId;
-    if (selectedId && loadedId && selectedId !== loadedId) {
+    const loadedWidth = Number(this.state?.grid?.width ?? 0);
+    const loadedHeight = Number(this.state?.grid?.height ?? 0);
+    const needsTemplateChange = Boolean(selectedId && loadedId && selectedId !== loadedId);
+    const needsWidthChange = Number.isFinite(selectedWidth) && selectedWidth >= 24 && selectedWidth !== loadedWidth;
+    const needsHeightChange = Number.isFinite(selectedHeight) && selectedHeight >= 24 && selectedHeight !== loadedHeight;
+    if (needsTemplateChange || needsWidthChange || needsHeightChange) {
       this.regenerateWorld({
-        templateId: selectedId,
+        templateId: selectedId ?? loadedId,
         seed: this.state.world.mapSeed,
         terrainTuning: this.state.controls.terrainTuning,
+        width: Number.isFinite(selectedWidth) && selectedWidth >= 24 ? Math.floor(selectedWidth) : loadedWidth,
+        height: Number.isFinite(selectedHeight) && selectedHeight >= 24 ? Math.floor(selectedHeight) : loadedHeight,
       }, { phase: "menu" });
     }
     const mapLabel = this.state?.world?.mapTemplateName ?? "Current map";
+    const mapSize = `${Math.floor(Number(this.state?.grid?.width ?? selectedWidth ?? 0))}x${Math.floor(Number(this.state?.grid?.height ?? selectedHeight ?? 0))}`;
     this.#setRunPhase("active", {
-      actionMessage: `Run started: ${mapLabel}. Build the starter network now. Try Again replays this layout; New Map rerolls.`,
+      actionMessage: `Run started: ${mapLabel} (${mapSize} tiles). Build the starter network now. Try Again replays this layout; New Map rerolls.`,
       actionKind: "success",
     });
   }

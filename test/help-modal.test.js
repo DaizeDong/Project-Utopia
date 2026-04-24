@@ -37,8 +37,8 @@ test("index.html exposes helpBtn and overlayHelpBtn entry points", () => {
     /document\.getElementById\('overlayHelpBtn'\)\?\.addEventListener\('click', openHelp\)/,
     "overlay How-to-Play button should open the modal",
   );
-  assert.match(HTML, /Open Help on demand \(F1 or \?\) - controls, resource chain, threat basics/);
-  assert.match(HTML, /Open the Quick Start Guide on demand - controls, resources, threats/);
+  assert.match(HTML, /Open the strategic briefing on demand - template differences, heat lens, survival score\./);
+  assert.match(HTML, /Open the menu briefing on demand - template differences, size consequences, first failure path\./);
   assert.match(HTML, /Open any time with <code>F1<\/code> or <code>\?<\/code>/);
 });
 
@@ -85,4 +85,18 @@ test("Help modal CSS positions the dialog above devDock (z-index >= 1500)", () =
   const zIndexMatch = block[0].match(/z-index:\s*(\d+)/);
   assert.ok(zIndexMatch, "#helpModal should declare z-index");
   assert.ok(Number(zIndexMatch[1]) >= 1000, `expected z-index >= 1000, got ${zIndexMatch[1]}`);
+});
+
+test("Help modal decision pages mention the opening contract, heat lens, and survival score", () => {
+  const threatPage = HTML.match(/<section class="help-page" data-help-page="threat">[\s\S]*?<\/section>/);
+  assert.ok(threatPage, "threat help page missing");
+  assert.match(threatPage[0], /First Failure Path/);
+  assert.match(threatPage[0], /survival score/i);
+  assert.match(threatPage[0], /Threat &amp; Prosperity/);
+
+  const differentPage = HTML.match(/<section class="help-page" data-help-page="different">[\s\S]*?<\/section>/);
+  assert.ok(differentPage, "different help page missing");
+  assert.match(differentPage[0], /Supply-Chain Heat Lens/);
+  assert.match(differentPage[0], /Templates change the whole run/);
+  assert.match(differentPage[0], /opening pressure changes immediately/i);
 });
