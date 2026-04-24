@@ -130,6 +130,12 @@ export class EntityFocusPanel {
     this.state = state;
     this.root = document.getElementById("entityFocusBody");
     this.wrapper = document.getElementById("entityFocusOverlay");
+    // v0.8.2 Round-5 Wave-2 (01d Step 4-5): persistent worker list so casual
+    // users can select any worker without relying on canvas picking.
+    this.workerListRoot = typeof document !== "undefined"
+      ? document.getElementById("entityFocusWorkerList")
+      : null;
+    this.workerListSignature = "";
     this.lastHtml = "";
     this.lastSelectedId = null;
     this.openStateByKey = new Map();
@@ -138,6 +144,70 @@ export class EntityFocusPanel {
     this.interactionUntilMs = 0;
     this.pointerActive = false;
     this.#bindInteractionGuards();
+    this.#bindWorkerListDelegate();
+  }
+
+  #bindWorkerListDelegate() {
+    if (!this.workerListRoot) return;
+    this.workerListRoot.addEventListener("click", (event) => {
+      const target = event?.target;
+      if (!target || typeof target.closest !== "function") return;
+      const btn = target.closest("button[data-entity-id]");
+      if (!btn) return;
+      const entityId = btn.dataset.entityId;
+      if (!entityId) return;
+      event.preventDefault();
+      this.state.controls.selectedEntityId = entityId;
+      this.state.controls.selectedTile = null;
+      if (this.state.debug) this.state.debug.selectedTile = null;
+    });
+  }
+
+  #renderWorkerList() {
+    if (!this.workerListRoot) return;
+    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+    const workers = agents.filter((a) => a && a.type === "WORKER" && a.alive !== false);
+    const selectedId = this.state.controls.selectedEntityId ?? "";
+    const PAGE_SIZE = 20;
+    const shown = workers.slice(0, PAGE_SIZE);
+    const overflow = Math.max(0, workers.length - PAGE_SIZE);
+    // Signature-based dirty-check: rebuild only when identity / role / state
+    // / selection changes (plan "Risks: 50+ workers O(N) rebuild every tick").
+    const signature = [
+      selectedId,
+      workers.length,
+      overflow,
+      shown.map((w) => `${w.id}|${w.role ?? "-"}|${w.stateLabel ?? "-"}|${Number(w.hunger ?? 0).toFixed(2)}`).join(";"),
+    ].join("::");
+    if (signature === this.workerListSignature) return;
+    this.workerListSignature = signature;
+
+    if (workers.length === 0) {
+      this.workerListRoot.innerHTML = `<div class="entity-worker-list-footer">(no workers in colony yet)</div>`;
+      return;
+    }
+
+    const rows = shown.map((w) => {
+      const name = String(w.displayName ?? w.id);
+      const role = String(w.role ?? "-");
+      const stateLabel = String(w.stateLabel ?? "-");
+      const hungerN = Number(w.hunger);
+      const hungerLabel = !Number.isFinite(hungerN)
+        ? "?"
+        : hungerN < 0.2
+          ? "well-fed"
+          : hungerN < 0.5
+            ? "peckish"
+            : hungerN < 0.8
+              ? "hungry"
+              : "starving";
+      const selectedClass = w.id === selectedId ? " selected" : "";
+      return `<button type="button" class="entity-worker-row${selectedClass}" data-entity-id="${escapeHtml(w.id)}">${escapeHtml(name)} · ${escapeHtml(role)} · ${escapeHtml(stateLabel)} · ${escapeHtml(hungerLabel)}</button>`;
+    }).join("");
+    const footer = overflow > 0
+      ? `<div class="entity-worker-list-footer">+${overflow} more…</div>`
+      : "";
+    this.workerListRoot.innerHTML = rows + footer;
   }
 
   #nowMs() {
@@ -261,6 +331,9 @@ export class EntityFocusPanel {
 
   render() {
     if (!this.root || !this.wrapper) return;
+    // v0.8.2 Round-5 Wave-2 (01d Step 5): render the worker-list strip above
+    // the detail pane regardless of whether an entity is selected.
+    this.#renderWorkerList();
     this.#captureOpenStates();
     this.#captureScrollStates();
     const selectedId = this.state.controls.selectedEntityId;
@@ -415,10 +488,28 @@ export class EntityFocusPanel {
       </details>
     `;
 
+    // v0.8.2 Round-5 Wave-2 (01d Step 6): promote "Top Intents / Top Targets /
+    // AI Agent Effect / Decision Context" OUT of the casual-hidden/dev-only
+    // gate into a single casual-visible `<details open>` wrapper. This is the
+    // core "Why is this worker doing this?" surface that casual profiles
+    // previously could not see. FSM / Policy Influence / Decision Time /
+    // Velocity / Path / Target Selection / Path Nodes / AI Exchange remain
+    // dev-only.
+    const whyBlock = `
+      <details data-focus-key="focus:why" open style="margin-top:6px;">
+        <summary class="small"><b>Why is this worker doing this?</b></summary>
+        <div class="small" style="margin-top:4px;"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
+        <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
+        <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
+        <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
+      </details>
+    `;
+
     const html = `
       <div class="small"><b>${escapeHtml(entity.displayName ?? entity.id)}</b> <span class="muted">(${escapeHtml(entity.id)})</span></div>
       <div class="small" style="margin-top:2px;"><b>Backstory:</b> ${escapeHtml(entity.backstory ?? "\u2014")}</div>
       ${characterBlock}
+      ${whyBlock}
       <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
       <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
@@ -440,14 +531,9 @@ export class EntityFocusPanel {
       <div class="small"><b>Vitals:</b> hp=${fmtNum(hp, 1)}/${fmtNum(maxHp, 1)} | hunger=${fmtNum(entity.hunger, 3)} | alive=${String(Boolean(entity.alive ?? true))}</div>
       <div class="small"><b>Carry:</b> food=${fmtNum(entity.carry?.food, 2)} wood=${fmtNum(entity.carry?.wood, 2)} | <b>Attack CD:</b> ${fmtNum(entity.attackCooldownSec ?? 0, 2)}</div>
       <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" class="${engClasses}" />
-      <div class="small ${engClasses}"><b>AI Agent Effect</b></div>
       <div class="small ${engClasses}"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>
       <div class="small ${engClasses}"><b>Global Headline:</b> ${escapeHtml(digest.headline)}</div>
       <div class="small ${engClasses}"><b>Global Warning:</b> ${escapeHtml(digest.warning)}</div>
-      <div class="small ${engClasses}"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
-      <div class="small ${engClasses}"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
-      <div class="small ${engClasses}" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
-      <div class="small ${engClasses}" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
       <div class="small ${engClasses}"><b>Target Selection:</b> score=${fmtNum(entity.debug?.policyTargetScore ?? 0, 2)} | frontier=${fmtNum(entity.debug?.policyTargetFrontier ?? 0, 2)} | depot=${fmtNum(entity.debug?.policyTargetDepot ?? 0, 2)} | load=${fmtNum(entity.debug?.policyTargetWarehouseLoad ?? 0, 2)} | ecology=${fmtNum(entity.debug?.policyTargetEcology ?? 0, 2)}</div>
       <details data-focus-key="focus:path-nodes" class="${engClasses}" style="margin-top:8px;">
         <summary class="small"><b>Path Nodes</b></summary>

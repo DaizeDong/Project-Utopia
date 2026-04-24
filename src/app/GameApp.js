@@ -1348,6 +1348,18 @@ export class GameApp {
 
   #onGlobalKeyDown(event) {
     if (this.#shouldIgnoreGlobalShortcut(event)) return;
+
+    // v0.8.2 Round-5 Wave-2 (01d Step 7): Tab / Shift+Tab cycles through
+    // alive workers and updates state.controls.selectedEntityId so casual
+    // users have a keyboard-only path to the observation loop.
+    // Only active during the live session phase; text-input focus is
+    // already filtered by #shouldIgnoreGlobalShortcut.
+    if (event && event.key === "Tab" && this.state.session.phase === "active") {
+      event.preventDefault();
+      this.#cycleSelectedWorker(event.shiftKey ? -1 : 1);
+      return;
+    }
+
     const action = resolveGlobalShortcut(event, { phase: this.state.session.phase });
     if (!action) return;
 
@@ -1385,6 +1397,30 @@ export class GameApp {
     if (action.type === "toggleHeatLens") {
       this.toggleHeatLens();
     }
+  }
+
+  // v0.8.2 Round-5 Wave-2 (01d Step 7): cycle selectedEntityId through the
+  // alive worker list. `direction` is +1 (Tab) or -1 (Shift+Tab). Wraps.
+  #cycleSelectedWorker(direction = 1) {
+    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+    const workers = agents.filter((a) => a && a.type === "WORKER" && a.alive !== false);
+    if (workers.length === 0) return;
+    const currentId = this.state.controls.selectedEntityId;
+    const currentIdx = workers.findIndex((w) => w.id === currentId);
+    const step = direction < 0 ? -1 : 1;
+    let nextIdx;
+    if (currentIdx < 0) {
+      nextIdx = step > 0 ? 0 : workers.length - 1;
+    } else {
+      nextIdx = (currentIdx + step + workers.length) % workers.length;
+    }
+    const next = workers[nextIdx];
+    if (!next) return;
+    this.state.controls.selectedEntityId = next.id;
+    this.state.controls.selectedTile = null;
+    if (this.state.debug) this.state.debug.selectedTile = null;
+    this.state.controls.actionMessage = `Selected ${next.displayName ?? next.id}`;
+    this.state.controls.actionKind = "info";
   }
 
   // v0.8.0 Phase 7.C — Supply-Chain Heat Lens handler.

@@ -798,7 +798,12 @@ export function createInitialGameState(options = {}) {
       roleQuotas: { cook: 99, smith: 99, herbalist: 99, haul: 99, stone: 99, herbs: 99 },
       selectedEntityId: null,
       selectedTile: null,
-      tool: "road",
+      // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 1): default tool is now
+      // "select" so the first canvas click on a worker inspects instead of
+      // dropping a road tile under the worker. Restores the P0-2 observation
+      // loop contract ("Click any worker/visitor/animal to inspect it").
+      // Road / other build tools are still one keystroke away (number keys).
+      tool: "select",
       stressExtraWorkers: 0,
       populationTargets: {
         workers: agents.filter((a) => a.type === ENTITY_TYPE.WORKER).length,
