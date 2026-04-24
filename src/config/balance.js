@@ -247,6 +247,30 @@ export const BALANCE = Object.freeze({
   // cookSlots=1 on the next tick. Same threshold guards smithy/clinic
   // pipeline-idle boosts.
   roleQuotaScaling: Object.freeze({
+    // v0.8.2 Round-5b Wave-1 (01b Step 1) — discrete population-band table.
+    // Replaces the pop<8 perWorker×floor path that produced a 6-specialist
+    // contention for 1 slot at n=4 (allocation loss → fallback planner
+    // cooked for <30s and Dev index froze). bandTable explicitly enumerates
+    // which specialists may activate per pop band. A band-hit SKIPS the
+    // minFloor=1 promotion, so band entries with value 0 stay 0 (which is
+    // what kills the allocation-loss at pop=4). n>=8 falls through to the
+    // Wave-1 perWorker formula below (no regression risk for seed=7/42).
+    bandTable: [
+      { minPop: 0, maxPop: 3, allow: { cook: 0, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
+      { minPop: 4, maxPop: 5, allow: { cook: 1, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
+      { minPop: 6, maxPop: 7, allow: { cook: 1, smith: 0, herbalist: 0, haul: 1, stone: 1, herbs: 0 } },
+      // minPop: 8+ → fall-through to perWorker path (Wave-1 behaviour retained).
+    ],
+    bandHysteresisPop: 1,
+    // FARM cannibalise safety valve: when specialistBudget === 0, kitchen
+    // already built, and food is comfortably above emergency threshold, the
+    // cook may "borrow" a single FARM reserve slot to unblock the meal
+    // pipeline at pop=4 (where the band allows cook=1 but reserved=3 takes
+    // 75% of labour). Cooldown + food multiplier + (farmMin - cannibalised) > 1
+    // hard floor keep seed=7 FARM throughput safe.
+    farmCannibaliseEnabled: true,
+    farmCannibaliseFoodMult: 1.5,
+    farmCannibaliseCooldownTicks: 3,
     cookPerWorker: 1 / 8,
     haulPerWorker: 1 / 6,
     herbalistPerWorker: 1 / 12,
@@ -258,6 +282,13 @@ export const BALANCE = Object.freeze({
     emergencyOverrideCooks: 1,
   }),
   fallbackIdleChainThreshold: 15,
+  // v0.8.2 Round-5b Wave-1 (01b Step 5) — band-aware idle-chain threshold.
+  // Low-pop fallback planners need a LOWER food bar for the kitchen-idle
+  // reassign_role hint because food is consumed fast and rarely reaches 15
+  // at pop=4 (chicken-and-egg: no cook → no meals → no food buffer → no
+  // threshold trigger → no cook emit). Drop to 6 below workerCount 6.
+  fallbackIdleChainThresholdLowPop: 6,
+  fallbackIdleChainLowPopBand: 6,
   // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
   // its chosen objective longer, so long-range plans stop thrashing.
   objectiveHoldDecayPerSecond: 0.4,
