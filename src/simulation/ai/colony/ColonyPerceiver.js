@@ -491,6 +491,129 @@ export function analyzeResourceChains(state) {
   return chains;
 }
 
+// v0.8.2 Round-5 Wave-2 (02b-casual Step 1): HUD-facing adapter that
+// flattens `analyzeResourceChains` plus the raw-input chains (wood,
+// stone, herbs) into a per-resource `{ bottleneck, nextAction, severity }`
+// shape. Consumed by HUDController's 7 resource rate badges so a
+// `0.0/min` value gains a tooltip such as "no lumber mill yet — build
+// lumber (5w)" instead of being an opaque number.
+//
+// Uses `state.metrics.populationStats` (cooks/smiths/herbalists/loggers/
+// miners/farmers/haulers) where available; guards all reads with `?? 0`
+// so headless test fixtures and pre-first-tick states render cleanly.
+
+/**
+ * Produce a per-resource stall report for casual-profile HUD tooltips.
+ * @param {object} state - Game state.
+ * @returns {{
+ *   food: {bottleneck: string|null, nextAction: string|null, severity: "stalled"|"slow"|"ok"},
+ *   wood: {bottleneck: string|null, nextAction: string|null, severity: string},
+ *   stone: {bottleneck: string|null, nextAction: string|null, severity: string},
+ *   herbs: {bottleneck: string|null, nextAction: string|null, severity: string},
+ *   meals: {bottleneck: string|null, nextAction: string|null, severity: string},
+ *   tools: {bottleneck: string|null, nextAction: string|null, severity: string},
+ *   medicine: {bottleneck: string|null, nextAction: string|null, severity: string},
+ * }}
+ */
+export function getResourceChainStall(state) {
+  const buildings = state?.buildings ?? {};
+  const pop = state?.metrics?.populationStats ?? {};
+  const rates = state?.metrics?.resourceRates ?? state?.metrics?.perMinRates ?? {};
+
+  const loggerCount = Number(pop.loggers ?? 0);
+  const minerCount = Number(pop.stoneMiners ?? pop.miners ?? 0);
+  const gathererCount = Number(pop.herbGatherers ?? pop.herbalistsRaw ?? 0);
+  const farmerCount = Number(pop.farmers ?? 0);
+  const cookCount = Number(pop.cooks ?? 0);
+  const smithCount = Number(pop.smiths ?? 0);
+  const herbalistCount = Number(pop.herbalists ?? 0);
+
+  const lumbers = Number(buildings.lumbers ?? 0);
+  const quarries = Number(buildings.quarries ?? 0);
+  const herbGardens = Number(buildings.herbGardens ?? 0);
+  const farms = Number(buildings.farms ?? 0);
+  const kitchens = Number(buildings.kitchens ?? 0);
+  const smithies = Number(buildings.smithies ?? 0);
+  const clinics = Number(buildings.clinics ?? 0);
+
+  // Build per-chain records. Severity defaults to "ok" when a positive
+  // rate is observed; otherwise we classify "stalled" (source missing)
+  // or "slow" (source exists but no assigned worker).
+  const makeEntry = (bottleneck, nextAction, severity = "ok") => ({
+    bottleneck: bottleneck ?? null,
+    nextAction: nextAction ?? null,
+    severity,
+  });
+
+  // FOOD — delegate to analyzeResourceChains for farm/kitchen staging.
+  const chains = analyzeResourceChains(state);
+  const foodChain = chains.find((c) => c.name === "food") ?? {};
+  let foodEntry = makeEntry(null, null, "ok");
+  if (foodChain.bottleneck) {
+    foodEntry = makeEntry(foodChain.bottleneck, foodChain.nextAction, "stalled");
+  } else if (farms > 0 && farmerCount === 0) {
+    foodEntry = makeEntry("no farmers assigned", "raise worker count or farmRatio slider", "slow");
+  }
+
+  // WOOD — lumber mill → loggers → warehouse.
+  let woodEntry = makeEntry(null, null, "ok");
+  if (lumbers === 0) {
+    woodEntry = makeEntry("no lumber mill yet", "build lumber (5w)", "stalled");
+  } else if (loggerCount === 0) {
+    woodEntry = makeEntry("no loggers assigned", "raise wood quota in Management", "slow");
+  }
+
+  // STONE — quarry → stone miners → warehouse.
+  let stoneEntry = makeEntry(null, null, "ok");
+  if (quarries === 0) {
+    stoneEntry = makeEntry("no quarry yet", "build quarry (6w)", "stalled");
+  } else if (minerCount === 0) {
+    stoneEntry = makeEntry("no stone miners assigned", "raise stone quota in Management", "slow");
+  }
+
+  // HERBS — herb_garden → herb gatherers → warehouse.
+  let herbsEntry = makeEntry(null, null, "ok");
+  if (herbGardens === 0) {
+    herbsEntry = makeEntry("no herb garden yet", "build herb_garden (4w)", "stalled");
+  } else if (gathererCount === 0) {
+    herbsEntry = makeEntry("no herb gatherers assigned", "raise herbs quota in Management", "slow");
+  }
+
+  // MEALS — kitchen + cook produce from food.
+  let mealsEntry = makeEntry(null, null, "ok");
+  if (kitchens === 0) {
+    mealsEntry = makeEntry("no kitchen yet", "build kitchen (8w+3s)", "stalled");
+  } else if (cookCount === 0) {
+    mealsEntry = makeEntry("no cooks assigned", "raise cook quota in Management", "slow");
+  }
+
+  // TOOLS — smithy + smith produce from wood+stone.
+  let toolsEntry = makeEntry(null, null, "ok");
+  if (smithies === 0) {
+    toolsEntry = makeEntry("no smithy yet", "build smithy (6w+5s)", "stalled");
+  } else if (smithCount === 0) {
+    toolsEntry = makeEntry("no smiths assigned", "raise smith quota in Management", "slow");
+  }
+
+  // MEDICINE — clinic + herbalist produce from herbs.
+  let medicineEntry = makeEntry(null, null, "ok");
+  if (clinics === 0) {
+    medicineEntry = makeEntry("no clinic yet", "build clinic (6w+4h)", "stalled");
+  } else if (herbalistCount === 0) {
+    medicineEntry = makeEntry("no herbalists assigned", "raise herbalist quota in Management", "slow");
+  }
+
+  return {
+    food: foodEntry,
+    wood: woodEntry,
+    stone: stoneEntry,
+    herbs: herbsEntry,
+    meals: mealsEntry,
+    tools: toolsEntry,
+    medicine: medicineEntry,
+  };
+}
+
 /**
  * Forecast the impact of current and upcoming seasons.
  * @param {object} weather — state.weather
