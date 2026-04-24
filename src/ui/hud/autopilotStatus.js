@@ -37,12 +37,35 @@ export function getAutopilotStatus(state) {
   const remainingSec = getAutopilotRemainingSec(state);
   const modeLabel = enabled ? "ON" : "OFF";
   const dataMode = enabled ? "on" : "off";
-  const text = enabled
-    ? `Autopilot ON - ${aiMode}/${coverageTarget} - next policy in ${remainingSec.toFixed(1)}s`
+  // v0.8.2 Round-5 Wave-3 (01e Step 4) — render "fallback/fallback" as the
+  // player-facing phrase "rule-based". This is not a mode rename — internally
+  // the state still carries the literal "fallback" strings; only the HUD
+  // banner surface collapses the double-word. Mixed cases like fallback/llm
+  // keep the compact "fallback/llm" form so developers can still diagnose.
+  const combinedModeLabel = (aiMode === "fallback" && coverageTarget === "fallback")
+    ? "rule-based"
+    : `${aiMode}/${coverageTarget}`;
+  // v0.8.2 Round-5 Wave-3 (01e Step 4) — degraded-state suffix: when the
+  // runtime is actively routed through the fallback path AND the most
+  // recent LLM attempt errored (or never got wired), the HUD spells it out
+  // so the player can answer "why isn't WHISPER on right now?" at a glance.
+  const lastPolicySource = String(state?.ai?.lastPolicySource ?? "").toLowerCase();
+  const lastError = String(state?.ai?.lastError ?? "").trim();
+  const proxyHealth = String(state?.metrics?.proxyHealth ?? "").toLowerCase();
+  const llmOffline = lastPolicySource === "fallback"
+    && (lastError.length > 0 || proxyHealth === "error");
+  const baseText = enabled
+    ? `Autopilot ON - ${combinedModeLabel} - next policy in ${remainingSec.toFixed(1)}s`
     : "Autopilot off. Manual control is active; fallback is ready.";
-  const title = enabled
+  const baseTitle = enabled
     ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
     : "Autopilot off. Manual control is active and fallback is ready.";
+  const text = enabled && llmOffline
+    ? `${baseText} | LLM offline \u2014 DIRECTOR steering`
+    : baseText;
+  const title = enabled && llmOffline
+    ? `${baseTitle} \u2014 LLM unavailable, rule-based DIRECTOR in charge.`
+    : baseTitle;
 
   return {
     enabled,

@@ -52,6 +52,9 @@ test("fallback-source + populated workers policy renders Rule-based Storyteller 
   };
   const text = computeStorytellerStripText(state);
   assert.match(text, /Rule-based Storyteller/);
+  // Round-5 Wave-3: humaniseSummary no longer appends "…while keeping the
+  // rear supplied" (02e Step 1). The core phrase "push the frontier outward"
+  // still surfaces since that rule is retained.
   assert.match(text, /push the frontier outward/);
   assert.match(text, /Stone is low/);
   // Only the first sentence of summary must appear, so the second clause is
@@ -97,6 +100,10 @@ test("missing summary still produces a readable strip by falling back to 'colony
   };
   const text = computeStorytellerStripText(state);
   assert.match(text, /Rule-based Storyteller/);
+  // Round-5 Wave-3 note: the computeStorytellerStripText legacy path does
+  // NOT apply AUTHOR_VOICE_PACK (it is structurally simpler than the model
+  // function and preserves existing behaviour). So the fallback-summary
+  // path here still produces the humanised template text.
   assert.match(text, /push the frontier outward/);
   assert.match(text, /colony on autopilot/);
 });
@@ -127,9 +134,14 @@ test("computeStorytellerStripModel: salient SABOTAGE beat surfaces with age (s a
   assert.ok(model.beatText, `expected a beatText but got ${model.beatText}`);
   // 121.2 - 120.5 = 0.7 → rounds to 1 → "1s ago".
   assert.match(model.beatText, /Last:\s*\[SABOTAGE\] visitor_16 sabotaged colony \(1s ago\)/);
-  // Focus/summary channels remain intact.
-  assert.equal(model.focusText, "push the frontier outward while keeping the rear supplied");
-  assert.match(model.summaryText, /Stone is low/);
+  // Round-5 Wave-3 golden update: focusText now carries the "DIRECTOR picks "
+  // prefix in fallback mode (01e Step 3); the rear-supplied tail was removed
+  // from humaniseSummary (02e Step 1). The summary is filled from the `*`
+  // voice-pack default bucket (no mapTemplateId set), so `Stone is low` is
+  // not expected to leak through — we assert the voice-pack marker instead.
+  assert.match(model.focusText, /^DIRECTOR picks /);
+  assert.match(model.focusText, /push the frontier outward/);
+  assert.equal(model.voicePackHit, true);
 });
 
 test("computeStorytellerStripModel: non-salient trace line (weather steady) does not produce a beat", () => {

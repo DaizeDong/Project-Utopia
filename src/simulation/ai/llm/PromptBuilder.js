@@ -319,9 +319,19 @@ function adjustWorkerPolicy(policy, context, summary) {
   }
 
   policy.focus = describeWorkerFocus(summary, notes);
-  policy.summary = /(?: at \(| at depot |place (?:Road|Warehouse) here)/i.test(policy.focus)
-    ? `Crew attention needed: ${policy.focus}. Other workers keep hunger and carry in check.`
-    : `Workers should sustain ${policy.focus} while keeping hunger and carried cargo from overriding the map's intended reroute pressure.`;
+  // v0.8.2 Round-5 Wave-3 (01e Step 1 + 02e Step 6) — split the summary into
+  // "Focus: <focus>." + notes[0] form. Kills the "Workers should sustain
+  // <verb-phrase>" grammar trap (e.g. "sustain reconnect the broken supply
+  // lane") that previously leaked into the HUD storyteller strip.
+  if (/(?: at \(| at depot |place (?:Road|Warehouse) here)/i.test(policy.focus)) {
+    policy.summary = `Crew attention needed: ${policy.focus}. Other workers keep hunger and carry in check.`;
+  } else {
+    const focusSentence = `Focus: ${policy.focus}.`;
+    const firstNote = notes.length > 0 ? String(notes[0]).trim() : "";
+    policy.summary = firstNote
+      ? `${focusSentence} ${firstNote}${/[.!?]$/.test(firstNote) ? "" : "."}`
+      : focusSentence;
+  }
   policy.steeringNotes = notes.slice(0, 4);
 }
 
@@ -360,7 +370,16 @@ function adjustTraderPolicy(policy, context, summary) {
   }
 
   policy.focus = describeTraderFocus(summary);
-  policy.summary = `Traders should circulate through ${policy.focus} so route support and warehouse defense matter to the economy.`;
+  // v0.8.2 Round-5 Wave-3 (02e Step 6 secondary) — mirror the worker policy
+  // split: "Focus: <focus>." + optional first note. Avoids the "should
+  // sustain/circulate <verb-phrase>" grammar trap on humanise pass-through.
+  {
+    const focusSentence = `Focus: ${policy.focus}.`;
+    const firstNote = notes.length > 0 ? String(notes[0]).trim() : "";
+    policy.summary = firstNote
+      ? `${focusSentence} ${firstNote}${/[.!?]$/.test(firstNote) ? "" : "."}`
+      : focusSentence;
+  }
   policy.steeringNotes = notes.slice(0, 4);
 }
 
@@ -399,7 +418,15 @@ function adjustSaboteurPolicy(policy, context, summary) {
   }
 
   policy.focus = describeSaboteurFocus(summary);
-  policy.summary = `Saboteurs should create ${policy.focus} so frontier layout and depot defense remain strategically meaningful.`;
+  // v0.8.2 Round-5 Wave-3 (02e Step 6 secondary) — mirror the worker policy
+  // split: "Focus: <focus>." + optional first note.
+  {
+    const focusSentence = `Focus: ${policy.focus}.`;
+    const firstNote = notes.length > 0 ? String(notes[0]).trim() : "";
+    policy.summary = firstNote
+      ? `${focusSentence} ${firstNote}${/[.!?]$/.test(firstNote) ? "" : "."}`
+      : focusSentence;
+  }
   policy.steeringNotes = notes.slice(0, 4);
 }
 
