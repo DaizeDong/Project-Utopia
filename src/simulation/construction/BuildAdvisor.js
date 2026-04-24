@@ -201,6 +201,10 @@ function formatTileDistance(distance) {
   return Number.isFinite(distance) ? `${distance} ${distance === 1 ? "tile" : "tiles"}` : "no known depot";
 }
 
+function formatTilePoint(ix, iz) {
+  return `(${ix},${iz})`;
+}
+
 function addLogisticsPreview({ tool, warehouseDistance, hasRoadAccess, hasRoadTouch, effects, warnings }) {
   const hasWarehouse = Number.isFinite(warehouseDistance);
   if (LOGISTICS_PRODUCER_TOOLS.has(tool)) {
@@ -473,11 +477,43 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
     warnings.push(`This tile sits inside the ${state.weather.hazardLabel ?? state.weather.current} hazard zone.`);
   }
 
-  const summary = tool === "erase"
-    ? activeRefund.food > 0 || activeRefund.wood > 0 || activeRefund.stone > 0 || activeRefund.herbs > 0
-      ? `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} for ${formatCost(activeRefund)} salvage.`
-      : `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} back to grass.`
-    : `Build ${info.label.toLowerCase()}. ${effects[0] ?? info.summary}`;
+  const tilePoint = formatTilePoint(ix, iz);
+  const hasWarehouse = Number.isFinite(warehouseDistance);
+  let summary;
+  if (tool === "erase") {
+    summary = activeRefund.food > 0 || activeRefund.wood > 0 || activeRefund.stone > 0 || activeRefund.herbs > 0
+      ? `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} at ${tilePoint} for ${formatCost(activeRefund)} salvage.`
+      : `Clear ${BUILDABLE_TILE_LABEL[oldType] ?? "tile"} at ${tilePoint} back to grass.`;
+  } else if (tags.routeLinks.length > 0 && tool === "road") {
+    summary = `Road at ${tilePoint} reconnects ${tags.routeLinks[0].label}.`;
+  } else if (tags.depotZones.length > 0 && tool === "warehouse") {
+    summary = `Warehouse at ${tilePoint} reopens ${tags.depotZones[0].label}.`;
+  } else if (LOGISTICS_PRODUCER_TOOLS.has(tool)) {
+    if (!hasWarehouse) {
+      summary = `${info.label} at ${tilePoint}; no warehouse exists yet, so production will stall.`;
+    } else if (hasRoadAccess) {
+      summary = `${info.label} at ${tilePoint}; Short haul to nearest warehouse (${formatTileDistance(warehouseDistance)}).`;
+    } else if (warehouseDistance <= BALANCE.worksiteCoverageSoftRadius) {
+      summary = `${info.label} at ${tilePoint}; nearest warehouse is ${formatTileDistance(warehouseDistance)} away but no road touches this worksite.`;
+    } else {
+      summary = `${info.label} at ${tilePoint}; nearest warehouse is ${formatTileDistance(warehouseDistance)} away, so build a road or depot first.`;
+    }
+  } else if (tool === "warehouse") {
+    summary = `Warehouse at ${tilePoint} creates the first delivery anchor for the colony.`;
+  } else if (tool === "road") {
+    if (hasRoadTouch) {
+      summary = `Road at ${tilePoint} connects directly into the current network.`;
+    } else if (hasWarehouse) {
+      summary = `Road at ${tilePoint} starts a connector toward the nearest warehouse (${formatTileDistance(warehouseDistance)}).`;
+    } else {
+      summary = `Road at ${tilePoint} extends the first network line.`;
+    }
+  } else {
+    summary = `Build ${info.label.toLowerCase()} at ${tilePoint}. ${effects[0] ?? info.summary}`;
+  }
+  if (effects[0] && !summary.includes(effects[0])) {
+    summary = `${summary} ${effects[0]}`;
+  }
 
   return {
     ok: true,

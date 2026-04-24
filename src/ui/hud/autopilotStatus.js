@@ -5,6 +5,23 @@ function normalizeMode(value, fallback = "fallback") {
   return text || fallback;
 }
 
+function buildAutopilotToggleCopy(enabled) {
+  if (enabled) {
+    return {
+      actionMessage: "AI enabled. Waiting for next decision cycle.",
+      title: "Autopilot is on and will keep steering until you turn it off.",
+    };
+  }
+  return {
+    actionMessage: "Autopilot off. You are steering manually; fallback is ready.",
+    title: "Autopilot is off. Manual control is active and fallback is ready.",
+  };
+}
+
+export function describeAutopilotToggle(enabled) {
+  return buildAutopilotToggleCopy(Boolean(enabled));
+}
+
 export function getAutopilotRemainingSec(state) {
   const intervalSec = Math.max(1, Number(BALANCE.policyDecisionIntervalSec ?? 10));
   const now = Number(state?.metrics?.timeSec ?? 0);
@@ -22,10 +39,10 @@ export function getAutopilotStatus(state) {
   const dataMode = enabled ? "on" : "off";
   const text = enabled
     ? `Autopilot ON - ${aiMode}/${coverageTarget} - next policy in ${remainingSec.toFixed(1)}s`
-    : `Autopilot OFF - manual - coverage ${coverageTarget}`;
+    : "Autopilot off. Manual control is active; fallback is ready.";
   const title = enabled
     ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
-    : `Autopilot OFF: manual control, coverage=${coverageTarget}.`;
+    : "Autopilot off. Manual control is active and fallback is ready.";
 
   return {
     enabled,
