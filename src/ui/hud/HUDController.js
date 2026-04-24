@@ -2,7 +2,7 @@ import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getL
 import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
-import { getAutopilotStatus } from "./autopilotStatus.js";
+import { describeAutopilotToggle, getAutopilotStatus } from "./autopilotStatus.js";
 import { explainTerm } from "./glossary.js";
 import { getNextActionAdvice } from "./nextActionAdvisor.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
@@ -413,12 +413,25 @@ export class HUDController {
     const node = this.statusNextAction;
     if (!node) return;
     const next = getNextActionAdvice(state);
-    const label = next.label ? `Next: ${next.label}` : "Next: hold";
-    node.textContent = label;
-    node.setAttribute?.("title", next.detail || label);
+    const isIdle = next.priority === "idle";
+    const headline = String(next.headline ?? next.whyNow ?? next.bottleneck ?? "").trim();
+    const action = String(next.label ?? "Hold").trim();
+    const outcome = String(next.expectedOutcome ?? next.detail ?? "").trim();
+    const loopText = isIdle
+      ? (next.label ? `Next: ${next.label}` : "Next: hold")
+      : [headline || "Next", action, outcome].filter(Boolean).join(" -> ");
+    const titleParts = [next.whyNow, next.detail, next.expectedOutcome]
+      .map((part) => String(part ?? "").trim())
+      .filter(Boolean);
+    const title = titleParts.length > 0 ? titleParts.join(" ") : loopText;
+    node.textContent = loopText;
+    node.setAttribute?.("title", title);
     node.setAttribute?.("data-priority", next.priority ?? "normal");
     node.setAttribute?.("data-tool", next.tool ?? "select");
     node.setAttribute?.("data-reason", next.reason ?? "");
+    node.setAttribute?.("data-headline", headline);
+    node.setAttribute?.("data-outcome", outcome);
+    node.setAttribute?.("data-why-now", String(next.whyNow ?? "").trim());
     const target = next.target;
     if (target && Number.isFinite(Number(target.ix)) && Number.isFinite(Number(target.iz))) {
       node.setAttribute?.("data-target", `${target.ix},${target.iz}`);
@@ -448,9 +461,7 @@ export class HUDController {
       const active = Boolean(enabled);
       this.state.ai.enabled = active;
       if (!active) this.state.ai.mode = "fallback";
-      this.state.controls.actionMessage = active
-        ? "AI enabled. Waiting for next decision cycle."
-        : "AI disabled. Using fallback.";
+      this.state.controls.actionMessage = describeAutopilotToggle(active).actionMessage;
       this.state.controls.actionKind = "info";
       if (this.aiToggleTop) this.aiToggleTop.checked = active;
       if (this.aiToggleMirror) this.aiToggleMirror.checked = active;
@@ -888,7 +899,7 @@ export class HUDController {
       this.aiAutopilotChip.setAttribute?.("data-mode", status.dataMode);
       this.aiAutopilotChip.setAttribute?.("data-ai-mode", status.aiMode);
       this.aiAutopilotChip.setAttribute?.("data-coverage", status.coverageTarget);
-      this.aiAutopilotChip.setAttribute?.("title", `${explainTerm(status.enabled ? "autopilotOn" : "autopilotOff")} ${status.title}`);
+      this.aiAutopilotChip.setAttribute?.("title", status.title);
     }
     if (this.aiToggleTop) this.aiToggleTop.checked = Boolean(state.ai?.enabled);
     if (this.aiToggleMirror) this.aiToggleMirror.checked = Boolean(state.ai?.enabled);

@@ -41,6 +41,7 @@ test("build preview tells producer players the short-haul warehouse distance", (
     preview.effects.some((line) => /Short haul to nearest warehouse \(2 tiles\)/.test(line)),
     `expected short-haul effect, got ${preview.effects.join(" | ")}`,
   );
+  assert.match(summarizeBuildPreview(preview), /\(7,5\)/);
   assert.match(summarizeBuildPreview(preview), /Short haul to nearest warehouse \(2 tiles\)/);
 });
 
@@ -54,6 +55,7 @@ test("build preview warns before placing an isolated producer", () => {
     preview.warnings.some((line) => /Nearest warehouse is 38 tiles away; build a road or depot first\./.test(line)),
     `expected isolated warning, got ${preview.warnings.join(" | ")}`,
   );
+  assert.match(summarizeBuildPreview(preview), /\(21,21\)/);
   assert.match(summarizeBuildPreview(preview), /Warning: Nearest warehouse is 38 tiles away/);
 });
 
@@ -61,6 +63,15 @@ test("build preview explains that warehouses extend depot coverage", () => {
   const state = makeState();
   setTile(state, 5, 6, TILE.WAREHOUSE);
   setTile(state, 12, 5, TILE.ROAD);
+  state.gameplay.scenario.anchors = {
+    eastDepot: { ix: 12, iz: 6 },
+  };
+  state.gameplay.scenario.depotZones = [{
+    id: "east-depot",
+    label: "east ruined depot",
+    anchor: "eastDepot",
+    radius: 1,
+  }];
 
   const preview = evaluateBuildPreview(state, "warehouse", 12, 6);
   assert.equal(preview.ok, true);
@@ -68,5 +79,6 @@ test("build preview explains that warehouses extend depot coverage", () => {
     preview.effects.some((line) => /Extends depot coverage; nearest warehouse is 7 tiles away\./.test(line)),
     `expected depot coverage effect, got ${preview.effects.join(" | ")}`,
   );
+  assert.match(summarizeBuildPreview(preview), /Warehouse at \(12,6\) reopens east ruined depot/);
   assert.match(summarizeBuildPreview(preview), /Extends depot coverage; nearest warehouse is 7 tiles away\./);
 });

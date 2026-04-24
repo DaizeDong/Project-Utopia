@@ -69,7 +69,7 @@ export class EventPanel {
     const objectiveLog = this.state.gameplay?.objectiveLog ?? [];
     if (objectiveLog.length > 0) {
       const recent = objectiveLog
-        .slice(0, 6)
+        .slice(0, 3)
         .map((line) => `<div class='small muted'>${String(line ?? "")
           .replaceAll("&", "&amp;")
           .replaceAll("<", "&lt;")
@@ -77,7 +77,7 @@ export class EventPanel {
         .join("");
       html += `
         <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:6px 0;" />
-        <div class='small'><b>Recent Colony Events</b></div>
+        <div class='small'><b>Recent log</b></div>
         ${recent}
       `;
     }

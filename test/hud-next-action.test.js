@@ -79,8 +79,11 @@ test("HUDController renders next-action advice with priority attributes", () => 
     assert.equal(nodes.statusNextAction.attrs["data-priority"], "critical");
     assert.equal(nodes.statusNextAction.attrs["data-tool"], "farm");
     assert.equal(nodes.statusNextAction.attrs["data-reason"], "food_crisis");
-    assert.match(nodes.statusNextAction.textContent, /^Next: Recover food now/);
-    assert.match(nodes.statusNextAction.attrs.title, /Build or reconnect farms/);
+    assert.match(nodes.statusNextAction.textContent, /^Food bottleneck -> Recover food now -> /);
+    assert.match(nodes.statusNextAction.attrs["data-headline"], /Food bottleneck/);
+    assert.match(nodes.statusNextAction.attrs["data-outcome"], /Reconnecting farms keeps workers fed/);
+    assert.match(nodes.statusNextAction.attrs["data-why-now"], /Food is below the emergency line/);
+    assert.match(nodes.statusNextAction.attrs.title, /Reconnect farms before workers enter starvation recovery/);
   } finally {
     globalThis.document = prevDocument;
   }

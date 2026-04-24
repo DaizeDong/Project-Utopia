@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
-import { getAutopilotStatus } from "../src/ui/hud/autopilotStatus.js";
+import { describeAutopilotToggle, getAutopilotStatus } from "../src/ui/hud/autopilotStatus.js";
 import { HUDController } from "../src/ui/hud/HUDController.js";
 
 function makeClassList(initial = []) {
@@ -125,8 +125,18 @@ test("getAutopilotStatus reports manual control when disabled", () => {
 
   assert.equal(status.enabled, false);
   assert.equal(status.dataMode, "off");
-  assert.equal(status.text, "Autopilot OFF - manual - coverage fallback");
-  assert.match(status.title, /manual control/);
+  assert.equal(status.text, "Autopilot off. Manual control is active; fallback is ready.");
+  assert.equal(status.title, "Autopilot off. Manual control is active and fallback is ready.");
+});
+
+test("describeAutopilotToggle reports the toggle action copy", () => {
+  const enabled = describeAutopilotToggle(true);
+  const disabled = describeAutopilotToggle(false);
+
+  assert.equal(enabled.actionMessage, "AI enabled. Waiting for next decision cycle.");
+  assert.equal(enabled.title, "Autopilot is on and will keep steering until you turn it off.");
+  assert.equal(disabled.actionMessage, "Autopilot off. You are steering manually; fallback is ready.");
+  assert.equal(disabled.title, "Autopilot is off. Manual control is active and fallback is ready.");
 });
 
 test("HUDController autopilot chip and toggles mirror getAutopilotStatus", () => {
