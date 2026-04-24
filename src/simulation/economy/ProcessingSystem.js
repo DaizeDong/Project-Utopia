@@ -1,6 +1,7 @@
 import { TILE, ROLE } from "../../config/constants.js";
 import { BALANCE } from "../../config/balance.js";
 import { listTilesByType, worldToTile } from "../../world/grid/Grid.js";
+import { recordResourceFlow } from "./ResourceSystem.js";
 
 export class ProcessingSystem {
   constructor() {
@@ -68,10 +69,19 @@ export class ProcessingSystem {
 
     for (const tile of kitchens) {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.COOK)) continue;
+      // v0.8.2 Round-5 Wave-2 (01d Step 3): true-source emits — kitchen
+      // consumes food and produces meals per cycle. Fires inside the
+      // tryProcess callbacks only when a full cycle actually completes.
       this.#tryProcess(state, nowSec, tile.ix, tile.iz, cycleSec,
         (res) => res.food >= foodCost,
-        (res) => { res.food -= foodCost; },
-        (res) => { res.meals = (res.meals ?? 0) + mealOutput; },
+        (res) => {
+          res.food -= foodCost;
+          recordResourceFlow(state, "food", "consumed", foodCost);
+        },
+        (res) => {
+          res.meals = (res.meals ?? 0) + mealOutput;
+          recordResourceFlow(state, "meals", "produced", mealOutput);
+        },
         weatherMult,
       );
     }
@@ -91,8 +101,16 @@ export class ProcessingSystem {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.SMITH)) continue;
       this.#tryProcess(state, nowSec, tile.ix, tile.iz, cycleSec,
         (res) => res.stone >= stoneCost && res.wood >= woodCost,
-        (res) => { res.stone -= stoneCost; res.wood -= woodCost; },
-        (res) => { res.tools = (res.tools ?? 0) + toolOutput; },
+        (res) => {
+          res.stone -= stoneCost;
+          res.wood -= woodCost;
+          recordResourceFlow(state, "stone", "consumed", stoneCost);
+          recordResourceFlow(state, "wood", "consumed", woodCost);
+        },
+        (res) => {
+          res.tools = (res.tools ?? 0) + toolOutput;
+          recordResourceFlow(state, "tools", "produced", toolOutput);
+        },
         weatherMult,
       );
     }
@@ -111,8 +129,14 @@ export class ProcessingSystem {
       if (!this.#hasWorkerAtTile(state, tile.ix, tile.iz, ROLE.HERBALIST)) continue;
       this.#tryProcess(state, nowSec, tile.ix, tile.iz, cycleSec,
         (res) => res.herbs >= herbsCost,
-        (res) => { res.herbs -= herbsCost; },
-        (res) => { res.medicine = (res.medicine ?? 0) + medicineOutput; },
+        (res) => {
+          res.herbs -= herbsCost;
+          recordResourceFlow(state, "herbs", "consumed", herbsCost);
+        },
+        (res) => {
+          res.medicine = (res.medicine ?? 0) + medicineOutput;
+          recordResourceFlow(state, "medicine", "produced", medicineOutput);
+        },
         weatherMult,
       );
     }
