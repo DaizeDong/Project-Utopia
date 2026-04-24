@@ -663,7 +663,20 @@ export function generateFallbackPlan(observation, state) {
   // Mirror the ingredients guard from the pipeline-idle boost — we don't
   // want the planner asking for a cook when food stockpile is too low for
   // the kitchen to even start cycling.
-  const idleChainThreshold = Number(BALANCE.fallbackIdleChainThreshold ?? 15);
+  // v0.8.2 Round-5b Wave-1 (01b Step 5) — band-aware idle-chain threshold.
+  // Low-pop colonies (workerCount < lowPopBand, default 6) never clear
+  // food>=15 because food is drained faster than it is produced, so the
+  // reassign_role hint never emits and the pipeline stays idle. Drop the
+  // threshold to 6 below the low-pop band to close the feedback loop.
+  const idleChainThresholdBase = Number(BALANCE.fallbackIdleChainThreshold ?? 15);
+  const idleChainLowPopBand = Number(BALANCE.fallbackIdleChainLowPopBand ?? 6);
+  const idleChainLowPopThreshold = Number(BALANCE.fallbackIdleChainThresholdLowPop ?? 6);
+  const liveWorkerCount = Array.isArray(state.agents)
+    ? state.agents.filter((a) => a && a.type === "WORKER").length
+    : 0;
+  const idleChainThreshold = (liveWorkerCount > 0 && liveWorkerCount < idleChainLowPopBand)
+    ? idleChainLowPopThreshold
+    : idleChainThresholdBase;
   const roleCounts = state.metrics?.roleCounts ?? null;
   const cookWorkers = Number(roleCounts?.COOK ?? roleCounts?.cook ?? 0);
   const smithWorkers = Number(roleCounts?.SMITH ?? roleCounts?.smith ?? 0);
