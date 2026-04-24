@@ -333,6 +333,23 @@ export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map
     return _groundSkillStep(step, state, buildSystem, groundedSteps, services);
   }
 
+  // v0.8.2 Round-5 Wave-1 (01b Step 5 + summary §5) — `reassign_role` is a
+  // pseudo-action that carries no tile and no cost. Mark it trivially
+  // feasible and let executeNextSteps detect the type and write the
+  // fallbackHints.pendingRoleBoost signal.
+  if (action.type === "reassign_role") {
+    return {
+      ...step,
+      groundedTile: null,
+      affordanceScore: 1,
+      feasible: true,
+      candidateCount: 0,
+      feasibleCount: 0,
+      placementDetails: null,
+      status: "pending",
+    };
+  }
+
   // Single build action
   const cost = BUILD_COST[action.type] ?? {};
   const affordanceScore = computeAffordanceScore(state.resources, cost);
@@ -486,6 +503,22 @@ export function executeNextSteps(plan, state, buildSystem, services = null) {
       plan.steps.find(s => s.id === depId)?.status === "completed"
     );
     if (!depsComplete) continue;
+
+    // v0.8.2 Round-5 Wave-1 (01b Step 5) — `reassign_role` is a noop at the
+    // construction layer. Emit the hint and mark the step completed so
+    // progress accounting isn't blocked on a pseudo-step. We do NOT charge
+    // resources and do NOT rebuild building stats.
+    if (step.action.type === "reassign_role") {
+      const role = typeof step.action.role === "string" ? step.action.role.toUpperCase() : null;
+      if (role) {
+        state.ai ??= {};
+        state.ai.fallbackHints ??= {};
+        state.ai.fallbackHints.pendingRoleBoost = role;
+      }
+      step.status = "completed";
+      executed.push(step);
+      continue;
+    }
 
     // Check affordability
     const cost = step.action.skill

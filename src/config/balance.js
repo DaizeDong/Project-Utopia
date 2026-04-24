@@ -137,6 +137,36 @@ export const BALANCE = Object.freeze({
   worksiteCoverageHardRadius: 16,
   objectiveFarmRatioMin: 0.18,
   objectiveFarmRatioMax: 0.82,
+  // --- v0.8.2 Round-5 Wave-1 "w1-fallback-loop-merged" — fallback AI quota
+  // feedback loop (01b-playability + 02a-rimworld-veteran). ---
+  //
+  // `roleQuotaScaling` turns the previously hardcoded "1 per specialist role"
+  // default into a population-aware formula. RoleAssignmentSystem multiplies
+  // `n * <role>PerWorker` and floors to the nearest integer (with a minimum of
+  // 1 when the gate is satisfied) to derive the scaled quota. The player's
+  // `state.controls.roleQuotas` slider still acts as an upper bound — so the
+  // effective slot count is `min(scaled, playerMax)`. `haulMinPopulation: 8`
+  // activates HAUL earlier than the old n>=10 threshold, matching the
+  // population at which single-hauler logistics starts to visibly choke.
+  //
+  // `fallbackIdleChainThreshold: 15` gates ColonyPlanner's Priority 3.75
+  // "idle processing chain" reassign_role hint and RoleAssignmentSystem's
+  // pipeline-idle boost: if kitchen exists but COOK=0 and food stockpile >=
+  // 15, the planner emits a reassign_role step and the role assigner forces
+  // cookSlots=1 on the next tick. Same threshold guards smithy/clinic
+  // pipeline-idle boosts.
+  roleQuotaScaling: Object.freeze({
+    cookPerWorker: 1 / 8,
+    haulPerWorker: 1 / 6,
+    herbalistPerWorker: 1 / 12,
+    smithPerWorker: 1 / 10,
+    stonePerWorker: 1 / 8,
+    herbsPerWorker: 1 / 10,
+    haulMinPopulation: 8,
+    minFloor: 1,
+    emergencyOverrideCooks: 1,
+  }),
+  fallbackIdleChainThreshold: 15,
   // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
   // its chosen objective longer, so long-range plans stop thrashing.
   objectiveHoldDecayPerSecond: 0.4,

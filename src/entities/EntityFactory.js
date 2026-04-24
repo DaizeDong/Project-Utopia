@@ -786,9 +786,16 @@ export function createInitialGameState(options = {}) {
       farmRatio: 0.5,
       // v0.8.2 Round-1 02a-rimworld-veteran — expose the previously hardcoded
       // role slot counts (cook/smith/herbalist/haul/stone/herbs) so players can
-      // override fallback planner's blind spots via UI sliders. Defaults keep
-      // byte-equivalent behaviour vs. the legacy hardcoded "1 per type" scheme.
-      roleQuotas: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 },
+      // override fallback planner's blind spots via UI sliders.
+      //
+      // v0.8.2 Round-5 Wave-1 (02a Step 6): the default "1 per type" acted as
+      // a hard upper bound and starved meal/haul pipelines in populations > 8.
+      // Sentinel 99 = "unlimited"; the pop-scaled formula in
+      // RoleAssignmentSystem (via BALANCE.roleQuotaScaling) dominates and
+      // BuildToolbar sliders still let players compress the cap back to 1-5.
+      // Snapshot migration (old cook:1 → 99) lives in loadSnapshot — see
+      // src/simulation/meta/SnapshotSystem.js.
+      roleQuotas: { cook: 99, smith: 99, herbalist: 99, haul: 99, stone: 99, herbs: 99 },
       selectedEntityId: null,
       selectedTile: null,
       tool: "road",

@@ -74,14 +74,37 @@ test("WorldEventSystem writes warehouse fire memories and caps recentEvents at s
   const state = prepareWarehouseRiskState(() => 0);
   const system = new WorldEventSystem();
 
+  // v0.8.2 Round-5 Wave-1 (02d Step 3) — same-tile fire events within 30s
+  // are now deduped (dedupKey=`fire:${ix},${iz}`, window=30s). To fill the
+  // 6-entry buffer we need 6 fires spaced ≥30s apart, rather than 7
+  // consecutive second-ticks. Advance sim time by 40s per iteration.
   for (let i = 0; i < 7; i += 1) {
-    state.metrics.timeSec = 12 + i;
+    state.metrics.timeSec = 12 + i * 40;
     system.update(1, state, {});
   }
 
   for (const worker of state.agents) {
     assert.equal(worker.memory.recentEvents.length, 6);
     assert.match(worker.memory.recentEvents[0], /Warehouse fire at \(0,0\)/);
+  }
+});
+
+test("WorldEventSystem dedups same-tile fire memories within 30s window (02d)", () => {
+  const state = prepareWarehouseRiskState(() => 0);
+  const system = new WorldEventSystem();
+
+  // Two fires at the same tile spaced 5s apart — dedup should collapse to 1.
+  state.metrics.timeSec = 100;
+  system.update(1, state, {});
+  state.metrics.timeSec = 105;
+  system.update(1, state, {});
+
+  for (const worker of state.agents) {
+    assert.equal(
+      worker.memory.recentEvents.length,
+      1,
+      "same-tile fire within 30s should dedup to a single entry",
+    );
   }
 });
 
