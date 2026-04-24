@@ -325,7 +325,11 @@ export class BuildToolbar {
   #setupRoleQuotaControls() {
     const ensureQuotas = () => {
       if (!this.state.controls.roleQuotas) {
-        this.state.controls.roleQuotas = { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 };
+        // v0.8.2 Round-5 Wave-1 (02a Step 9): 99 = "unlimited" sentinel,
+        // aligned with EntityFactory.createInitialGameState. Pop-scaled
+        // formula in RoleAssignmentSystem dominates; player sliders still
+        // clamp the cap back into 1-5 when they want to compress.
+        this.state.controls.roleQuotas = { cook: 99, smith: 99, herbalist: 99, haul: 99, stone: 99, herbs: 99 };
       }
       return this.state.controls.roleQuotas;
     };

@@ -59,18 +59,36 @@ function roundMetric(value, digits = 2) {
   return Number(Number(value ?? 0).toFixed(digits));
 }
 
-function pushWorkerMemory(worker, label) {
+/**
+ * v0.8.2 Round-5 Wave-1 (02d Step 2/3) — mirror of MortalitySystem's
+ * pushWorkerMemory with optional (dedupKey, windowSec) dedup. Keeps the
+ * existing 6-entry ring-buffer invariant; new pushes drop when the same
+ * event key fired within windowSec at the same tile. `recentKeys` is
+ * lazily initialised as a Map so snapshot roundtrips (which shallow-clone
+ * `memory` and lose Map instances) never explode.
+ */
+function pushWorkerMemory(worker, label, dedupKey = null, windowSec = 30, nowSec = 0) {
   worker.memory ??= { recentEvents: [], dangerTiles: [] };
   if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
+  if (dedupKey) {
+    if (!(worker.memory.recentKeys instanceof Map)) worker.memory.recentKeys = new Map();
+    const recentKeys = worker.memory.recentKeys;
+    const last = Number(recentKeys.get(dedupKey) ?? -Infinity);
+    if (Number.isFinite(last) && Number(nowSec) - last < Number(windowSec)) {
+      return;
+    }
+    recentKeys.set(dedupKey, Number(nowSec));
+  }
   worker.memory.recentEvents.unshift(label);
   worker.memory.recentEvents = worker.memory.recentEvents.slice(0, 6);
 }
 
-function recordWorkerEventMemory(state, label) {
-  const nowSec = Math.max(0, Number(state.metrics?.timeSec ?? 0)).toFixed(0);
+function recordWorkerEventMemory(state, label, dedupKey = null, windowSec = 30) {
+  const nowSecNum = Math.max(0, Number(state.metrics?.timeSec ?? 0));
+  const nowSecText = nowSecNum.toFixed(0);
   for (const agent of state.agents ?? []) {
     if (agent.type !== ENTITY_TYPE.WORKER || agent.alive === false) continue;
-    pushWorkerMemory(agent, `[${nowSec}s] ${label}`);
+    pushWorkerMemory(agent, `[${nowSecText}s] ${label}`, dedupKey, windowSec, nowSecNum);
   }
 }
 
@@ -642,7 +660,15 @@ function applyWarehouseDensityRisk(dt, state, services) {
         densityScore,
         loss: { food: lossFood, wood: lossWood, stone: lossStone, herbs: lossHerbs },
       });
-      recordWorkerEventMemory(state, `Warehouse fire at (${loc.ix},${loc.iz})`);
+      // v0.8.2 Round-5 Wave-1 (02d Step 3) — dedup same-tile fire events
+      // within a 30s window so recentEvents isn't drowned by successive
+      // hot-warehouse rolls.
+      recordWorkerEventMemory(
+        state,
+        `Warehouse fire at (${loc.ix},${loc.iz})`,
+        `fire:${loc.ix},${loc.iz}`,
+        30,
+      );
       pushWarning(state, `Warehouse fire at (${loc.ix},${loc.iz}) — stored goods damaged`, "warning", "WorldEventSystem");
       continue; // at most one density-risk event per warehouse per tick
     }
@@ -658,7 +684,12 @@ function applyWarehouseDensityRisk(dt, state, services) {
         densityScore,
         loss: { food: lossFood },
       });
-      recordWorkerEventMemory(state, "Vermin swarm gnawed the stores");
+      recordWorkerEventMemory(
+        state,
+        "Vermin swarm gnawed the stores",
+        `vermin:${loc.ix},${loc.iz}`,
+        30,
+      );
       pushWarning(state, `Vermin swarm at warehouse (${loc.ix},${loc.iz}) — food stores gnawed`, "warning", "WorldEventSystem");
     }
   }
