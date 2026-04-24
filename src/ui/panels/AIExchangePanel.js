@@ -20,6 +20,34 @@ function prettyJson(value) {
   }
 }
 
+// v0.8.2 Round-5b Wave-1 (01e Step 6) — render a collapsed log of the last
+// ≤5 errored/fallback exchanges so players (and testers) can see a history
+// of LLM failures without chasing lastPolicyError single-value churn.
+// Reads state.ai.policyExchanges + state.ai.environmentExchanges rings.
+function renderErrorLogCard(title, exchanges, keyPrefix) {
+  const safeList = Array.isArray(exchanges) ? exchanges : [];
+  const rows = [];
+  for (const ex of safeList) {
+    if (!ex) continue;
+    if (!ex.error && !ex.fallback) continue;
+    const t = fmtSec(ex.simSec);
+    const kind = ex.error ? `error: ${ex.error}` : "fallback";
+    const endpoint = ex.endpoint ? `endpoint=${escapeHtml(ex.endpoint)}` : "";
+    const model = ex.model ? `model=${escapeHtml(ex.model)}` : "";
+    rows.push(`<div class="small">[${t}] ${escapeHtml(kind)} ${endpoint} ${model}</div>`);
+    if (rows.length >= 5) break;
+  }
+  const body = rows.length === 0
+    ? `<div class="small muted">No LLM errors captured yet.</div>`
+    : rows.join("\n");
+  return `
+    <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:errorLog`)}" style="margin-top:8px;">
+      <summary class="small"><b>${escapeHtml(title)}</b></summary>
+      ${body}
+    </details>
+  `;
+}
+
 function renderExchangeCard(title, exchange, keyPrefix) {
   if (!exchange) {
     return `
@@ -183,10 +211,14 @@ export class AIExchangePanel {
     const policy = this.state.ai.lastPolicyExchange ?? null;
     const environment = this.state.ai.lastEnvironmentExchange ?? null;
 
+    const policyExchanges = this.state.ai?.policyExchanges ?? [];
+    const environmentExchanges = this.state.ai?.environmentExchanges ?? [];
     const html = `
       <div class="small muted">Shows exact prompt input and model output for demo/debug.</div>
       ${renderExchangeCard("Policy Exchange", policy, "policy")}
       ${renderExchangeCard("Environment Exchange", environment, "environment")}
+      ${renderErrorLogCard("Last LLM errors (policy)", policyExchanges, "policy")}
+      ${renderErrorLogCard("Last LLM errors (environment)", environmentExchanges, "environment")}
     `;
     if (html === this.lastHtml) return;
     if (this.#isUserInteracting()) return;
