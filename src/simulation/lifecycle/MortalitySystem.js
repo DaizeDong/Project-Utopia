@@ -4,6 +4,7 @@ import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { recordResourceFlow } from "../economy/ResourceSystem.js";
 
 const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
 const WORKER_MEMORY_LIMIT = 6;
@@ -443,8 +444,15 @@ export class MortalitySystem {
       if (mostInjured) {
         const healRate = Number(BALANCE.medicineHealPerSecond ?? 8);
         mostInjured.hp = Math.min(mostInjured.maxHp, (mostInjured.hp ?? mostInjured.maxHp) + healRate * dt);
-        state.resources.medicine -= 0.1 * dt;
+        const medicineUsed = 0.1 * dt;
+        state.resources.medicine -= medicineUsed;
         state.resources.medicine = Math.max(0, state.resources.medicine);
+        // v0.8.2 Round-5 Wave-2 (01d Step 2): MortalitySystem consumption
+        // path — medicine-heal is a true-source consumer. Worker food eating
+        // lives in WorkerAISystem (freeze-locked) and is picked up by the
+        // ResourceSystem net-delta fallback; here we add the one consumer
+        // MortalitySystem directly owns.
+        recordResourceFlow(state, "medicine", "consumed", medicineUsed);
       }
     }
 

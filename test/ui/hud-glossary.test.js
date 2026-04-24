@@ -97,6 +97,9 @@ test("HUD_GLOSSARY key set is locked (snapshot-style guard)", () => {
     "devIndex",
     "depots",
     "farms",
+    // v0.8.2 Round-5 Wave-2 (01c-ui Step 7): foodRateBreakdown glossary
+    // entry explains the "(prod +X / cons -Y / spoil -Z)" HUD suffix.
+    "foodRateBreakdown",
     "haul",
     "heatLens",
     "herbalist",
