@@ -629,6 +629,10 @@ export function createInitialGameState(options = {}) {
       lastPolicyExchangeByGroup: {},
       policyExchanges: [],
       environmentExchanges: [],
+      // v0.8.2 Round-5b Wave-1 (01e Step 2) — bounded ring of policy-change
+      // records (32 entries). Populated by NPCBrainSystem.update on
+      // focus/source flips; consumed by AIPolicyTimelinePanel (read-only).
+      policyHistory: [],
       groupStateTargets: new Map(),
       lastStateTargetBatch: [],
     },

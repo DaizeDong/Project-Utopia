@@ -452,6 +452,36 @@ export function computeStorytellerStripModel(state) {
   const beatText = formatBeatText(beat);
   const templateTag = buildTemplateTag(state);
 
+  // v0.8.2 Round-5b Wave-1 (01e Step 1) — LLM state diagnostic overlay.
+  // Surfaces "Why no WHISPER?" answer string synthesised from existing state
+  // fields (no new sim signals). HUDController pipes whisperBlockedReason
+  // into the storyteller tooltip so players stop asking "is this AI on?".
+  const policyLlmCount = Number(state?.ai?.policyLlmCount ?? 0);
+  const policyTotalCount = Number(state?.ai?.policyDecisionCount ?? 0);
+  let whisperBlockedReason;
+  if (badgeState === "llm-live") {
+    whisperBlockedReason = "LLM live \u2014 WHISPER active";
+  } else if (badgeState === "llm-stale") {
+    whisperBlockedReason = "LLM stale \u2014 last tick failed guardrail";
+  } else if (badgeState === "fallback-degraded") {
+    const errKind = proxyHealth === "error" ? "http" : (lastPolicyError ? "error" : "unknown");
+    whisperBlockedReason = `LLM errored (${errKind})`;
+  } else if (badgeState === "fallback-healthy") {
+    whisperBlockedReason = policyLlmCount === 0 ? "LLM never reached" : "LLM quiet \u2014 fallback steering";
+  } else {
+    whisperBlockedReason = "No policy yet";
+  }
+
+  const diagnostic = {
+    llmAvailable: badgeState === "llm-live" || badgeState === "llm-stale",
+    llmEverFired: policyLlmCount > 0,
+    llmLastErrorKind: lastPolicyError ? "error" : (proxyHealth === "error" ? "http" : "none"),
+    llmLastErrorMessage: String(lastPolicyError ?? "").slice(0, 80),
+    policyLlmCount,
+    policyTotalCount,
+    whisperBlockedReason,
+  };
+
   return {
     mode,
     focusText,
@@ -461,5 +491,6 @@ export function computeStorytellerStripModel(state) {
     templateTag,
     badgeState,
     voicePackHit,
+    diagnostic,
   };
 }

@@ -87,6 +87,28 @@ export function getScenarioVoiceForTemplate(templateId) {
   return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
 }
 
+/**
+ * v0.8.2 Round-5b Wave-1 (01e Step 3) — export the per-template scenario
+ * voice strings pre-packaged for HUD consumption. Returns a frozen map
+ * keyed by phase tag (`phase:logistics`, `phase:stockpile`,
+ * `phase:stability`, `phase:completed`, `phase:default`). Keeps the
+ * authored text in a single location (SCENARIO_VOICE_BY_TEMPLATE) so a
+ * future edit to `hintAfterLogistics` does not need to touch
+ * storytellerStrip.js.
+ * @param {string} templateId
+ * @returns {{[phaseTag:string]: string}}
+ */
+export function exportScenarioVoiceForHUD(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return Object.freeze({
+    "phase:logistics": String(voice.hintInitial ?? ""),
+    "phase:stockpile": String(voice.hintAfterLogistics ?? ""),
+    "phase:stability": String(voice.hintAfterStockpile ?? ""),
+    "phase:completed": String(voice.hintCompleted ?? ""),
+    "phase:default": String(voice.openingPressure ?? voice.summary ?? ""),
+  });
+}
+
 function buildScenarioNextActionContext(scenario = {}) {
   const objectiveCopy = scenario.objectiveCopy ?? {};
   const hintCopy = scenario.hintCopy ?? {};
