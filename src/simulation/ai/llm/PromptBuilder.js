@@ -753,6 +753,24 @@ function applyStrategyToPolicy(policy, strategy) {
 
 export { describeWorkerFocus, adjustWorkerPolicy as adjustWorkerPolicyExported };
 
+/**
+ * v0.8.2 Round-5b Wave-1 (01e Step 3) — derive a scenario-phase tag for
+ * storytellerStrip's AUTHOR_VOICE_PACK lookup. Reads state.gameplay.scenario.
+ * phase (one of: logistics | stockpile | stability | completed) or a
+ * fall-through "default". Pure read; does not mutate state.
+ * @param {object} _summary (unused, preserved for future wiring)
+ * @param {object} state
+ * @returns {string}
+ */
+export function deriveScenarioPhaseTag(_summary, state) {
+  const phase = String(state?.gameplay?.scenario?.phase ?? "").toLowerCase();
+  if (phase === "logistics" || phase === "stockpile"
+      || phase === "stability" || phase === "completed") {
+    return `phase:${phase}`;
+  }
+  return "phase:default";
+}
+
 export function buildPolicyFallback(summary) {
   const basePolicies = clonePolicies();
   const policies = basePolicies.map((policy) => applyStateAwareTemplate(policy, summary));

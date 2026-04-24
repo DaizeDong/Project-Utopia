@@ -953,7 +953,17 @@ export class HUDController {
         const degradedPrefix = (model.badgeState === "fallback-degraded")
           ? "[LLM offline \u2014 rule director in charge] "
           : "";
-        const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
+        // v0.8.2 Round-5b Wave-1 (01e Step 1) — append Why no WHISPER?
+        // diagnostic when the badge is anything other than llm-live. Pulls
+        // pre-computed whisperBlockedReason from model.diagnostic so the
+        // hover tooltip answers "why isn't WHISPER on?" without requiring
+        // the player to open a debug panel.
+        const diagSuffix = (model.diagnostic
+            && model.badgeState !== "llm-live"
+            && model.diagnostic.whisperBlockedReason)
+          ? ` \u2014 Why no WHISPER?: ${model.diagnostic.whisperBlockedReason}`
+          : "";
+        const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}${diagSuffix}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
         // v0.8.2 Round-5 Wave-3 (02e Step 5) — aria-label marker when the
         // summary text is sourced from AUTHOR_VOICE_PACK. Enables test /

@@ -346,6 +346,40 @@ export class NPCBrainSystem {
         };
       }
 
+      // v0.8.2 Round-5b Wave-1 (01e Step 2) — policy-change ring buffer.
+      // Pure observer write: compares the first worker policy's focus + the
+      // llm/fallback source against the previous entry; pushes a new record
+      // when either dimension flips (or at least 5 s have elapsed). Cap 32
+      // so the Timeline panel / future debug surface reads bounded history
+      // without modifying sim outputs (benchmark bit-identical).
+      const firstWorker = policies.find((p) => String(p.groupId ?? "").toLowerCase() === "workers") ?? policies[0] ?? null;
+      const focusTag = String(firstWorker?.data?.focus ?? "");
+      const errorKind = this.pendingResult.errorKind ?? (this.pendingResult.error ? "unknown" : "none");
+      state.ai.policyHistory ??= [];
+      const prev = state.ai.policyHistory[0] ?? null;
+      const focusChanged = !prev || prev.focus !== focusTag;
+      const sourceChanged = !prev || prev.source !== state.ai.lastPolicySource;
+      const elapsedGuard = !prev || ((now - Number(prev.atSec ?? 0)) >= 5);
+      if (!prev || focusChanged || sourceChanged || !elapsedGuard === false) {
+        // Only push on actual change; skip duplicates within 5 s.
+        if (!prev || focusChanged || sourceChanged || (now - Number(prev.atSec ?? 0)) >= 5) {
+          state.ai.policyHistory.unshift({
+            atSec: now,
+            source: state.ai.lastPolicySource,
+            badgeState: usedFallback
+              ? (this.pendingResult.error ? "fallback-degraded" : "fallback-healthy")
+              : "llm-live",
+            focus: focusTag,
+            errorKind,
+            errorMessage: String(this.pendingResult.error ?? "").slice(0, 120),
+            model: String(this.pendingResult.model ?? ""),
+          });
+          if (state.ai.policyHistory.length > 32) {
+            state.ai.policyHistory = state.ai.policyHistory.slice(0, 32);
+          }
+        }
+      }
+
       if (state.debug?.aiTrace) {
         const groups = policies.map((p) => p.groupId).join(", ");
         const targets = stateTargets.map((target) => `${target.groupId}:${target.targetState}`).join(" ");
