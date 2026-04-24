@@ -27,6 +27,19 @@ test("index.html exposes helpBtn and overlayHelpBtn entry points", () => {
   assert.match(HTML, /id="helpBtn"/, "top-bar Help button missing");
   assert.match(HTML, /id="overlayHelpBtn"/, "overlay How-to-Play button missing");
   assert.match(HTML, /id="helpModalCloseBtn"/, "modal close button missing");
+  assert.match(
+    HTML,
+    /document\.getElementById\('helpBtn'\)\?\.addEventListener\('click', openHelp\)/,
+    "top-bar Help button should open the modal",
+  );
+  assert.match(
+    HTML,
+    /document\.getElementById\('overlayHelpBtn'\)\?\.addEventListener\('click', openHelp\)/,
+    "overlay How-to-Play button should open the modal",
+  );
+  assert.match(HTML, /Open Help on demand \(F1 or \?\) - controls, resource chain, threat basics/);
+  assert.match(HTML, /Open the Quick Start Guide on demand - controls, resources, threats/);
+  assert.match(HTML, /Open any time with <code>F1<\/code> or <code>\?<\/code>/);
 });
 
 test("Help modal contains the three documented tabs (Controls / Resource Chain / Threat)", () => {
@@ -47,16 +60,21 @@ test("F1 and ? keybindings are wired in the Help Modal script", () => {
   assert.match(HTML, /e\.key === 'Escape' && isHelpOpen\(\)/, "ESC-to-close behavior missing");
 });
 
-test("Help modal first-run flag gates auto-open to one-time behavior", () => {
+test("Help modal stays closed on fresh load while still tracking helpSeen", () => {
   assert.match(
     HTML,
-    /localStorage\.getItem\('utopia:helpSeen'\)\s*!==\s*'1'/,
-    "utopia:helpSeen first-run gate missing",
+    /localStorage\.getItem\('utopia:helpSeen'\)/,
+    "utopia:helpSeen read is missing",
   );
   assert.match(
     HTML,
     /localStorage\.setItem\('utopia:helpSeen',\s*'1'\)/,
     "utopia:helpSeen setter missing",
+  );
+  assert.doesNotMatch(
+    HTML,
+    /localStorage\.getItem\('utopia:helpSeen'\)[\s\S]{0,120}openHelp\(\)/,
+    "fresh load should not auto-open help",
   );
 });
 

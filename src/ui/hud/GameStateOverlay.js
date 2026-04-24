@@ -2,11 +2,28 @@
 import { MAP_TEMPLATES } from "../../world/grid/Grid.js";
 
 function formatOverlayMeta(state) {
-  const scenario = state?.gameplay?.scenario ?? {};
-  const family = String(scenario.family ?? "").replaceAll("_", " ");
-  if (!scenario.title && !family) return "Quick Start Guide";
-  if (!family) return scenario.title;
-  return `${scenario.title} · ${family}`;
+  const templateName = String(state?.world?.mapTemplateName ?? "").trim();
+  const scenarioTitle = String(state?.gameplay?.scenario?.title ?? "").trim();
+  const width = Number(state?.grid?.width ?? 0);
+  const height = Number(state?.grid?.height ?? 0);
+  const parts = [];
+
+  if (templateName) parts.push(templateName);
+  if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+    parts.push(`${Math.floor(width)}x${Math.floor(height)} tiles`);
+  }
+  if (scenarioTitle && scenarioTitle !== templateName) {
+    parts.push(scenarioTitle);
+  }
+
+  const isDevMode = typeof document !== "undefined"
+    && document.body?.classList?.contains("dev-mode");
+  const seed = state?.world?.mapSeed;
+  if (seed !== "" && seed !== null && seed !== undefined && isDevMode) {
+    parts.push(`seed ${seed}`);
+  }
+
+  return parts.length > 0 ? parts.join(" | ") : "Quick Start Guide";
 }
 
 // v0.8.0 Phase 4 — Survival Mode. The outcome meta now surfaces survival time
@@ -217,21 +234,7 @@ export class GameStateOverlay {
         ?? "Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them.";
     }
     if (this.menuMeta) {
-      const seed = this.state.world?.mapSeed ?? "";
-      const w = this.state.grid?.width ?? 96;
-      const h = this.state.grid?.height ?? 72;
-      const base = formatOverlayMeta(this.state);
-      // v0.8.2 Round-0 01a-onboarding — seed is a developer identifier.
-      // Only show it when body.dev-mode is asserted (01c gate). Casual /
-      // first-time players see just the template + dimensions so the menu
-      // panel no longer leads with "SEED 1337".
-      const isDevMode = typeof document !== "undefined"
-        && document.body?.classList?.contains("dev-mode");
-      if (seed && isDevMode) {
-        this.menuMeta.textContent = `${base} · ${w}×${h} · seed ${seed}`;
-      } else {
-        this.menuMeta.textContent = `${base} · ${w}×${h} tiles`;
-      }
+      this.menuMeta.textContent = formatOverlayMeta(this.state);
     }
 
 
