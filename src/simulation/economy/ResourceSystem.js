@@ -391,5 +391,55 @@ export class ResourceSystem {
       };
       state._resourceFlowWindowSec = 0;
     }
+
+    // v0.8.2 Round-5b Wave-1 (01a Step 1) — Autopilot food-crisis detector.
+    // Emits FOOD_CRISIS_DETECTED when food=0 + autopilot enabled + at least
+    // one starvation death in the last 30 seconds. ColonyDirectorSystem
+    // listens and clamps speed to 0 so the player gets an honest "I failed"
+    // signal instead of a silent 60-second collapse. 5 s cooldown prevents
+    // repeat emits within a single crisis. benchmarkMode bypass keeps
+    // long-horizon-bench.mjs deterministic (headless harness never pauses).
+    this.#emitFoodCrisisIfNeeded(state);
+  }
+
+  #emitFoodCrisisIfNeeded(state) {
+    if (state.benchmarkMode === true) return;
+    const foodStock = Number(state.resources?.food ?? 0);
+    if (foodStock > 0) return;
+    // Autopilot flag lives under state.ai.enabled in this codebase.
+    const autopilotOn = Boolean(state.ai?.enabled);
+    if (!autopilotOn) return;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    // Cooldown stored on state.ai — keep all autopilot-crisis fields adjacent.
+    state.ai ??= {};
+    const lastEmit = Number(state.ai._lastCrisisEmitSec ?? -999);
+    if ((nowSec - lastEmit) < 5) return;
+    // Count starvation deaths in last 30 s from the event log.
+    const log = state.events?.log ?? [];
+    let deathsLast30s = 0;
+    const cutoff = nowSec - 30;
+    for (let i = log.length - 1; i >= 0; i -= 1) {
+      const ev = log[i];
+      if (!ev || typeof ev.t !== "number") continue;
+      if (ev.t < cutoff) break;
+      if (ev.type === EVENT_TYPES.WORKER_STARVED) deathsLast30s += 1;
+    }
+    if (deathsLast30s < 1) return;
+    // Count starving workers (hunger below seek threshold).
+    let workersStarving = 0;
+    const starveThreshold = Number(BALANCE.workerHungerSeekThreshold ?? 0.18);
+    for (const agent of state.agents ?? []) {
+      if (agent?.type === "WORKER" && agent.alive !== false
+          && Number(agent.hunger ?? 1) < starveThreshold) {
+        workersStarving += 1;
+      }
+    }
+    state.ai._lastCrisisEmitSec = nowSec;
+    emitEvent(state, EVENT_TYPES.FOOD_CRISIS_DETECTED, {
+      deathsLast30s,
+      foodStock: 0,
+      workersStarving,
+      ts: nowSec,
+    });
   }
 }

@@ -27,6 +27,11 @@ const EVENT_TYPES = Object.freeze({
   WAREHOUSE_QUEUE_TIMEOUT: "warehouse_queue_timeout",
   // v0.8.0 Phase 3 M1c demolition recycling.
   DEMOLITION_RECYCLED: "demolition_recycled",
+  // v0.8.2 Round-5b Wave-1 (01a Step 1) — Autopilot food-crisis auto-pause.
+  // Emitted by ResourceSystem when food=0 + autopilot on + ≥1 starvation
+  // death in the last 30s. ColonyDirectorSystem listens and clamps
+  // state.controls.speed to 0 + sets pausedByCrisis flag for HUD surfaces.
+  FOOD_CRISIS_DETECTED: "food_crisis_detected",
 });
 
 export { EVENT_TYPES };

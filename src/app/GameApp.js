@@ -302,7 +302,52 @@ export class GameApp {
     this.#refreshLogicMetrics();
     this.memoryObserver.observe(this.state);
 
+    // v0.8.2 Round-5b Wave-1 (01a Step 2) — consume FOOD_CRISIS_DETECTED
+    // events emitted by ResourceSystem. Clamps speed and sets the pausedByCrisis
+    // flag so the HUD can render a teaching-style failure contract instead of
+    // the optimistic "Autopilot ON - fallback/fallback" lie.
+    this.#maybeAutopauseOnFoodCrisis();
+
     this.updateBenchmark(simDt);
+  }
+
+  #maybeAutopauseOnFoodCrisis() {
+    const state = this.state;
+    if (state.benchmarkMode === true) return;
+    const controls = state.controls ?? {};
+    state.ai ??= {};
+    const ai = state.ai;
+    if (!ai.enabled) return;
+    const events = state.events?.log ?? [];
+    // Search recent events for FOOD_CRISIS_DETECTED (scan from tail for cheapness).
+    let crisisEvent = null;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const cutoff = nowSec - 1; // only events from the last simulation tick.
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || typeof ev.t !== "number") continue;
+      if (ev.t < cutoff) break;
+      if (ev.type === "food_crisis_detected") { crisisEvent = ev; break; }
+    }
+    if (crisisEvent && ai.pausedByCrisis !== true) {
+      controls.isPaused = true;
+      ai.pausedByCrisis = true;
+      ai.pausedByCrisisAt = nowSec;
+      const d = crisisEvent.detail ?? {};
+      const deaths = Number(d.deathsLast30s ?? 0);
+      controls.actionMessage = `Autopilot paused: food crisis — ${deaths} worker(s) starved in last 30 s. Build/restock Food, then press Space or toggle Autopilot to resume.`;
+    }
+    // Clear branch: if crisis flag is up but food has recovered (>=10) and
+    // at least 30 s elapsed, release the pause.
+    if (ai.pausedByCrisis === true) {
+      const foodStock = Number(state.resources?.food ?? 0);
+      const startedAt = Number(ai.pausedByCrisisAt ?? 0);
+      if (foodStock >= 10 && (nowSec - startedAt) > 30) {
+        ai.pausedByCrisis = false;
+        ai.pausedByCrisisAt = 0;
+        controls.actionMessage = "Autopilot resumed: food recovered.";
+      }
+    }
   }
 
   update(frameDt) {

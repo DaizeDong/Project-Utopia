@@ -179,6 +179,10 @@ export class HUDController {
     this.statusScenario = document.getElementById("statusScenario");
     this.statusScoreBreak = document.getElementById("statusScoreBreak");
     this.statusNextAction = document.getElementById("statusNextAction");
+    // v0.8.2 Round-5b Wave-1 (01a Step 5 + Step 3) — new DOM slots.
+    this.statusBuildHint = document.getElementById("statusBuildHint");
+    this.statusAutopilotCrisis = document.getElementById("statusAutopilotCrisis");
+    this._lastBuildHint = "";
     this.statusAction = document.getElementById("statusAction");
     this.statusFoodBar = document.getElementById("statusFoodBar");
     this.statusWoodBar = document.getElementById("statusWoodBar");
@@ -433,6 +437,11 @@ export class HUDController {
     const title = titleParts.length > 0 ? titleParts.join(" ") : loopText;
     node.textContent = loopText;
     node.setAttribute?.("title", title);
+    // v0.8.2 Round-5b Wave-1 (01a Step 3) — data-full mirrors the full
+    // headline so CSS ellipsis truncation never swallows instructions the
+    // player actually needs. Hover title= (set above) + data-full both
+    // expose the uncut string.
+    node.setAttribute?.("data-full", title || loopText);
     node.setAttribute?.("data-priority", next.priority ?? "normal");
     node.setAttribute?.("data-tool", next.tool ?? "select");
     node.setAttribute?.("data-reason", next.reason ?? "");
@@ -445,6 +454,47 @@ export class HUDController {
     } else {
       node.setAttribute?.("data-target", "");
     }
+  }
+
+  // v0.8.2 Round-5b Wave-1 (01a Step 5) — #statusBuildHint reflects the
+  // BuildSystem.previewToolAt(...).reasonText piped through
+  // state.controls.buildHint by SceneRenderer.#onPointerMove. Diff-guarded
+  // to avoid DOM thrash when the hover reason doesn't change.
+  #renderBuildHint(state) {
+    const node = this.statusBuildHint;
+    if (!node) return;
+    const hint = String(state?.controls?.buildHint ?? "").trim();
+    if (hint === this._lastBuildHint) return;
+    this._lastBuildHint = hint;
+    if (!hint) {
+      node.hidden = true;
+      node.textContent = "";
+      node.setAttribute?.("title", "");
+      return;
+    }
+    node.hidden = false;
+    node.textContent = hint;
+    node.setAttribute?.("title", hint);
+    node.setAttribute?.("data-reason", "invalid");
+  }
+
+  // v0.8.2 Round-5b Wave-1 (01a Step 3) — render #statusAutopilotCrisis
+  // when FOOD_CRISIS_DETECTED has auto-paused the colony. Carries the
+  // actionMessage teaching string so the player sees an honest failure
+  // contract rather than the optimistic "fallback/fallback" banner.
+  #renderAutopilotCrisis(state) {
+    const node = this.statusAutopilotCrisis;
+    if (!node) return;
+    const paused = Boolean(state?.ai?.pausedByCrisis);
+    if (!paused) {
+      node.hidden = true;
+      node.textContent = "";
+      return;
+    }
+    node.hidden = false;
+    const msg = String(state?.controls?.actionMessage ?? "Autopilot paused: food crisis.");
+    node.textContent = msg;
+    node.setAttribute?.("role", "alert");
   }
 
   setupSpeedControls() {
@@ -1099,6 +1149,9 @@ export class HUDController {
     // only touch the DOM when the text changes to avoid layout thrash, and
     // hide the node outright when there is no active scenario (Quick Start).
     this.#renderNextAction(state);
+    // v0.8.2 Round-5b Wave-1 (01a Step 3+5) — mount new status slots.
+    this.#renderBuildHint(state);
+    this.#renderAutopilotCrisis(state);
     if (this.statusScenarioHeadline) {
       const scenario = state?.gameplay?.scenario ?? {};
       const title = String(scenario.title ?? "").trim();
