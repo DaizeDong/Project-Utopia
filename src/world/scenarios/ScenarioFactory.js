@@ -87,6 +87,25 @@ export function getScenarioVoiceForTemplate(templateId) {
   return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
 }
 
+function buildScenarioNextActionContext(scenario = {}) {
+  const objectiveCopy = scenario.objectiveCopy ?? {};
+  const hintCopy = scenario.hintCopy ?? {};
+  return Object.freeze({
+    routeLabel: String(scenario.routeLinks?.[0]?.label ?? "supply route").trim(),
+    depotLabel: String(scenario.depotZones?.[0]?.label ?? "depot").trim(),
+    logisticsTitle: String(objectiveCopy.logisticsTitle ?? "Reconnect the logistics loop").trim(),
+    logisticsDescription: String(objectiveCopy.logisticsDescription ?? "").trim(),
+    stockpileTitle: String(objectiveCopy.stockpileTitle ?? "Refill the stockpile").trim(),
+    stockpileDescription: String(objectiveCopy.stockpileDescription ?? "").trim(),
+    stabilityTitle: String(objectiveCopy.stabilityTitle ?? "Fortify and stabilize").trim(),
+    stabilityDescription: String(objectiveCopy.stabilityDescription ?? "").trim(),
+    hintInitial: String(hintCopy.initial ?? "").trim(),
+    hintAfterLogistics: String(hintCopy.afterLogistics ?? "").trim(),
+    hintAfterStockpile: String(hintCopy.afterStockpile ?? "").trim(),
+    hintCompleted: String(hintCopy.completed ?? "").trim(),
+  });
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -922,6 +941,7 @@ export function buildScenarioBundle(grid) {
     : family === "island_relay"
       ? buildIslandRelayScenario(grid)
       : buildFrontierRepairScenario(grid);
+  scenario.nextActionContext = buildScenarioNextActionContext(scenario);
   // Scenario stamping uses setTileDirect, which writes grid.tiles but skips
   // tileState — so any FARM/LUMBER/HERB_GARDEN/QUARRY placed by scenario has no
   // yieldPool. Reconcile now so M1 harvest-gating sees a seeded pool from tick 0.
@@ -1019,6 +1039,7 @@ export function getScenarioEventCandidates(state, eventType) {
 
 export function getScenarioRuntime(state) {
   const scenario = state.gameplay?.scenario ?? {};
+  const nextActionContext = scenario.nextActionContext ?? buildScenarioNextActionContext(scenario);
   const anchors = scenario.anchors ?? {};
   const routes = (scenario.routeLinks ?? []).map((route) => ({
     ...route,
@@ -1043,6 +1064,7 @@ export function getScenarioRuntime(state) {
 
   return {
     scenario,
+    nextActionContext,
     routes,
     depots,
     counts,

@@ -6,11 +6,11 @@ import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 const NETWORK_TILES = new Set([TILE.ROAD, TILE.WAREHOUSE, TILE.LUMBER, TILE.BRIDGE]);
 
 const TARGETS = Object.freeze([
-  { key: "warehouses", tool: "warehouse", label: "Build Warehouse" },
-  { key: "farms", tool: "farm", label: "Build Farm" },
-  { key: "lumbers", tool: "lumber", label: "Build Lumber" },
-  { key: "roads", tool: "road", label: "Build Road" },
-  { key: "walls", tool: "wall", label: "Build Wall" },
+  { key: "warehouses", tool: "warehouse", label: "Anchor stockpile" },
+  { key: "farms", tool: "farm", label: "Grow food supply" },
+  { key: "lumbers", tool: "lumber", label: "Grow wood supply" },
+  { key: "roads", tool: "road", label: "Extend road network" },
+  { key: "walls", tool: "wall", label: "Brace defenses" },
 ]);
 
 function finiteCount(value) {
@@ -35,6 +35,34 @@ function advice({ priority = "normal", label, detail, tool = "select", target = 
   };
 }
 
+function getScenarioContext(runtime) {
+  const scenario = runtime?.scenario ?? {};
+  const context = runtime?.nextActionContext ?? scenario.nextActionContext ?? {};
+  return {
+    routeLabel: String(context.routeLabel ?? scenario.routeLinks?.[0]?.label ?? "supply route").trim(),
+    depotLabel: String(context.depotLabel ?? scenario.depotZones?.[0]?.label ?? "depot").trim(),
+    logisticsTitle: String(context.logisticsTitle ?? scenario.objectiveCopy?.logisticsTitle ?? "Reconnect the logistics loop").trim(),
+    logisticsDescription: String(context.logisticsDescription ?? scenario.objectiveCopy?.logisticsDescription ?? "").trim(),
+    stockpileTitle: String(context.stockpileTitle ?? scenario.objectiveCopy?.stockpileTitle ?? "Refill the stockpile").trim(),
+    stockpileDescription: String(context.stockpileDescription ?? scenario.objectiveCopy?.stockpileDescription ?? "").trim(),
+    stabilityTitle: String(context.stabilityTitle ?? scenario.objectiveCopy?.stabilityTitle ?? "Fortify and stabilize").trim(),
+    stabilityDescription: String(context.stabilityDescription ?? scenario.objectiveCopy?.stabilityDescription ?? "").trim(),
+    hintInitial: String(context.hintInitial ?? scenario.hintCopy?.initial ?? "").trim(),
+    hintAfterLogistics: String(context.hintAfterLogistics ?? scenario.hintCopy?.afterLogistics ?? "").trim(),
+    hintAfterStockpile: String(context.hintAfterStockpile ?? scenario.hintCopy?.afterStockpile ?? "").trim(),
+    hintCompleted: String(context.hintCompleted ?? scenario.hintCopy?.completed ?? "").trim(),
+  };
+}
+
+function withCauseFields(base, extras = {}) {
+  return {
+    ...base,
+    whyNow: extras.whyNow ?? "",
+    expectedOutcome: extras.expectedOutcome ?? "",
+    headline: extras.headline ?? "",
+  };
+}
+
 function findOpenRouteGap(state, route) {
   const gaps = Array.isArray(route?.gapTiles) ? route.gapTiles : [];
   for (const gap of gaps) {
@@ -44,68 +72,99 @@ function findOpenRouteGap(state, route) {
   return gaps[0] ? { ix: gaps[0].ix, iz: gaps[0].iz } : null;
 }
 
-function getFoodCrisisAdvice(state) {
+function getFoodCrisisAdvice(state, context) {
   const food = Number(state.resources?.food ?? 0);
   const emptySec = Number(state.metrics?.resourceEmptySec?.food ?? 0);
   const starvationRisk = finiteCount(state.metrics?.starvationRiskCount);
   const emergencyFood = Number(BALANCE.foodEmergencyThreshold ?? 18);
   if (food > emergencyFood && emptySec <= 0 && starvationRisk <= 0) return null;
-  return advice({
+  return withCauseFields(advice({
     priority: "critical",
     label: "Recover food now",
-    detail: "Build or reconnect farms before workers enter starvation recovery.",
+    detail: "Reconnect farms before workers enter starvation recovery.",
     tool: "farm",
     reason: "food_crisis",
+  }), {
+    headline: "Food bottleneck",
+    whyNow: food <= emergencyFood
+      ? `Food is below the emergency line (${food} available, target ${emergencyFood}).`
+      : "Food recovery is stalling and starvation risk is rising.",
+    expectedOutcome: "Reconnecting farms keeps workers fed and preserves haul capacity.",
   });
 }
 
-function getRouteAdvice(state, runtime) {
+function getRouteAdvice(state, runtime, context) {
   const route = (runtime.routes ?? []).find((entry) => !entry.connected);
   if (!route) return null;
   const target = findOpenRouteGap(state, route);
   const place = tileLabel(target);
-  return advice({
+  const routeLabel = String(route.label ?? context.routeLabel ?? "supply route").trim();
+  return withCauseFields(advice({
     priority: "high",
-    label: `Repair ${route.label ?? "supply route"}`,
+    label: `Repair ${routeLabel}`,
     detail: target
-      ? `Place Road at ${place} to reconnect this supply route.`
-      : `Build road segments to reconnect ${route.label ?? "this supply route"}.`,
+      ? `Road at ${place} reconnects ${routeLabel}.`
+      : `Road segments reconnect ${routeLabel}.`,
     tool: "road",
     target,
     reason: "route_gap",
+  }), {
+    headline: `${routeLabel}${place ? ` gap at ${place}` : ""}`,
+    whyNow: `The ${routeLabel} is broken${place ? ` at ${place}` : ""}.`,
+    expectedOutcome: "Restores the haul line to storage.",
   });
 }
 
-function getDepotAdvice(runtime) {
+function getDepotAdvice(runtime, context) {
   const depot = (runtime.depots ?? []).find((entry) => !entry.ready);
   if (!depot) return null;
   const target = runtime.scenario?.anchors?.[depot.anchor] ?? null;
   const place = tileLabel(target);
-  return advice({
+  const depotLabel = String(depot.label ?? context.depotLabel ?? "depot").trim();
+  return withCauseFields(advice({
     priority: "high",
-    label: `Build Warehouse: ${depot.label ?? "depot"}`,
+    label: `Reclaim ${depotLabel}`,
     detail: target
-      ? `Place Warehouse near ${place} to make this depot usable.`
-      : "Place a Warehouse inside the missing depot zone.",
+      ? `Warehouse near ${place} reopens ${depotLabel}.`
+      : `Warehouse inside the zone reopens ${depotLabel}.`,
     tool: "warehouse",
     target,
     reason: "depot_missing",
+  }), {
+    headline: `${depotLabel}${place ? ` at ${place}` : ""}`,
+    whyNow: `${depotLabel} is still offline.`,
+    expectedOutcome: "A warehouse there reopens stockpile coverage and shortens delivery trips.",
   });
 }
 
-function getTargetAdvice(runtime) {
+function getTargetAdvice(runtime, context) {
   const counts = runtime.counts ?? {};
   const targets = runtime.logisticsTargets ?? {};
   for (const entry of TARGETS) {
     const current = finiteCount(counts[entry.key]);
     const target = finiteCount(targets[entry.key]);
     if (target > 0 && current < target) {
-      return advice({
+      const missing = target - current;
+      const plural = missing === 1 ? "" : "s";
+      const narrative = entry.key === "warehouses"
+        ? `The stockpile still needs ${missing} warehouse${plural}.`
+        : entry.key === "farms"
+          ? `Food production still needs ${missing} more farm${plural}.`
+          : entry.key === "lumbers"
+            ? `Wood production still needs ${missing} more lumber site${plural}.`
+            : entry.key === "roads"
+              ? `The road network still needs ${missing} more segment${plural}.`
+              : `Defenses still need ${missing} more wall${plural}.`;
+      return withCauseFields(advice({
         priority: "normal",
-        label: `${entry.label} ${current}/${target}`,
-        detail: `Current scenario target needs ${target - current} more ${entry.key}.`,
+        label: entry.label,
+        detail: `${current}/${target} ${entry.key} built. ${narrative}`,
         tool: entry.tool,
         reason: `target_${entry.key}`,
+      }), {
+        headline: `${entry.label} target`,
+        whyNow: narrative,
+        expectedOutcome: `Completes the ${entry.key} target and unlocks the next layer of the scenario.`,
       });
     }
   }
@@ -114,33 +173,46 @@ function getTargetAdvice(runtime) {
 
 export function getNextActionAdvice(state) {
   if (!state || !state.grid) {
-    return advice({
+    return withCauseFields(advice({
       priority: "idle",
       label: "Start a run",
       detail: "Start a colony to receive a live next action.",
       reason: "missing_state",
+    }), {
+      headline: "No active colony",
+      whyNow: "There is no live colony to analyze yet.",
+      expectedOutcome: "Start a run to unlock the next action loop.",
     });
   }
 
   if ((state.session?.phase ?? "active") !== "active") {
-    return advice({
+    return withCauseFields(advice({
       priority: "idle",
       label: "Start a run",
       detail: "Start the colony to receive live next actions.",
       reason: "session_inactive",
+    }), {
+      headline: "Menu state",
+      whyNow: "The colony is not in an active simulation phase.",
+      expectedOutcome: "Start the colony to resume live guidance.",
     });
   }
 
   const runtime = getScenarioRuntime(state);
+  const context = getScenarioContext(runtime);
   return getFoodCrisisAdvice(state)
-    ?? getRouteAdvice(state, runtime)
-    ?? getDepotAdvice(runtime)
-    ?? getTargetAdvice(runtime)
-    ?? advice({
+    ?? getRouteAdvice(state, runtime, context)
+    ?? getDepotAdvice(runtime, context)
+    ?? getTargetAdvice(runtime, context)
+    ?? withCauseFields(advice({
       priority: "done",
       label: "Hold and improve",
       detail: "Scenario logistics targets are stable; use build preview to improve throughput.",
       tool: "select",
       reason: "all_clear",
+    }), {
+      headline: "Scenario stable",
+      whyNow: "All required logistics targets are currently satisfied.",
+      expectedOutcome: "Use build preview to keep throughput efficient.",
     });
 }

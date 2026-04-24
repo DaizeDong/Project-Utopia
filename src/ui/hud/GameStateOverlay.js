@@ -48,12 +48,12 @@ function formatTemplateLead(templateId) {
 
 function formatTemplatePressure(templateId) {
   const voice = getScenarioVoiceForTemplate(templateId);
-  return String(voice?.openingPressure ?? voice?.hintInitial ?? "Open with a plan and keep the first route alive.").trim();
+  return `First pressure: ${String(voice?.openingPressure ?? voice?.hintInitial ?? "Open with a plan and keep the first route alive.").trim()}`;
 }
 
 function formatTemplatePriority(templateId) {
   const voice = getScenarioVoiceForTemplate(templateId);
-  return String(voice?.hintInitial ?? "Open with the first build that keeps food and wood moving.").trim();
+  return `First build: ${String(voice?.hintInitial ?? "Open with the first build that keeps food and wood moving.").trim()}`;
 }
 
 function formatHeatLensUseCase(templateId) {
@@ -276,10 +276,10 @@ export class GameStateOverlay {
       this.menuMeta.textContent = formatOverlayMeta(metaState);
     }
     if (this.menuPressure) {
-      this.menuPressure.textContent = `First pressure: ${formatTemplatePressure(templateId)}`;
+      this.menuPressure.textContent = formatTemplatePressure(templateId);
     }
     if (this.menuPriority) {
-      this.menuPriority.textContent = `First build: ${formatTemplatePriority(templateId)}`;
+      this.menuPriority.textContent = formatTemplatePriority(templateId);
     }
     if (this.menuLens) {
       this.menuLens.textContent = formatHeatLensUseCase(templateId);
@@ -289,11 +289,11 @@ export class GameStateOverlay {
       let sizeLine = "Map size: steady opening pace.";
       if (Number.isFinite(area) && area > 0) {
         if (area >= 110 * 84) {
-          sizeLine = "Map size: larger maps buy space, but the first haul line runs longer.";
+          sizeLine = "Map size: larger maps buy space but stretch the first haul line.";
         } else if (area <= 80 * 60) {
-          sizeLine = "Map size: compact maps close pressure faster and demand earlier routing.";
+          sizeLine = "Map size: compact maps close pressure faster and demand early routing.";
         } else {
-          sizeLine = "Map size: balanced maps keep the opening pace even.";
+          sizeLine = "Map size: balanced maps keep the opening pace steady.";
         }
       }
       this.menuSizeHint.textContent = sizeLine;
