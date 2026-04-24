@@ -182,9 +182,10 @@ export class BuildToolbar {
     selectBtn.textContent = "Select";
     grid.insertBefore(selectBtn, anchor);
 
-    if (this.state?.controls && this.state.controls.tool === "road") {
-      this.state.controls.tool = "select";
-    }
+    // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 2): removed the
+    // road → select silent rebind. Since default tool is now "select"
+    // (EntityFactory.js), the rebind was dead code that also confused
+    // player expectations (pressing `1` would fight the rebind).
   }
 
   #setupManagementControls() {
@@ -729,8 +730,18 @@ export class BuildToolbar {
   }
 
   sync() {
+    // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 2): ensure the active-class
+    // contract holds even for unknown tools by falling back to the Select
+    // button when the current tool doesn't match any known button. Prevents
+    // "no button looks active" states after future tool additions.
+    const currentTool = this.state.controls.tool;
+    const knownTools = new Set();
     this.toolButtons.forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.tool === this.state.controls.tool);
+      if (btn.dataset.tool) knownTools.add(btn.dataset.tool);
+    });
+    const effectiveTool = knownTools.has(currentTool) ? currentTool : "select";
+    this.toolButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.tool === effectiveTool);
     });
 
     if (this.farmRatio && this.farmRatioLabel) {

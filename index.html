@@ -767,6 +767,52 @@
       padding: 8px 10px; font-size: 11px;
       line-height: 1.35; color: rgba(208,232,255,0.85);
     }
+    /* v0.8.2 Round-5 Wave-2 (01d Step 4): worker-list strip above the
+       detail pane — cycles through all alive workers for casual players. */
+    .entity-worker-list {
+      max-height: 140px;
+      overflow-y: auto;
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--divider);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .entity-worker-list:empty { display: none; }
+    .entity-worker-row {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 3px 6px;
+      font-size: 10px;
+      line-height: 1.2;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      color: rgba(208,232,255,0.8);
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .entity-worker-row:hover {
+      background: rgba(80,140,200,0.12);
+      border-color: rgba(80,140,200,0.28);
+    }
+    .entity-worker-row.selected {
+      background: rgba(80,140,200,0.22);
+      border-color: rgba(120,180,220,0.55);
+      color: var(--text);
+    }
+    .entity-worker-list-footer {
+      font-size: 10px;
+      color: var(--text-muted);
+      padding: 2px 4px;
+    }
+    /* v0.8.2 Round-5 Wave-2 (02b-casual Step 5): soft amber left border
+       on resource rate badges that are stalled (rate ≈ 0 + bottleneck). */
+    [data-stall="1"] {
+      border-left: 2px solid rgba(220, 150, 60, 0.7);
+      padding-left: 4px;
+    }
     .entity-exchange-pre {
       margin: 5px 0 0 0; padding: 7px;
       max-height: 160px; overflow: auto;
@@ -1266,8 +1312,13 @@
       </div>
 
       <!-- === ENTITY FOCUS === -->
-      <details id="entityFocusOverlay" title="Click a worker, visitor, or animal on the map to inspect it here">
+      <!-- v0.8.2 Round-5 Wave-2 (01a-onboarding Step 4 + 01d Step 4):
+           defaults to `open` so the inspector is visible on first load;
+           worker-list container appears above the body so casual users can
+           cycle through workers without relying on canvas pick accuracy. -->
+      <details id="entityFocusOverlay" open title="Click a worker, visitor, or animal on the map to inspect it here">
         <summary>Entity Focus</summary>
+        <div id="entityFocusWorkerList" class="entity-worker-list"></div>
         <div id="entityFocusBody" class="small">Click a worker, visitor, or animal to inspect.</div>
       </details>
     </div>

@@ -2225,6 +2225,18 @@ export class SceneRenderer {
         // Spawning a toast is a non-essential UI sugar — never fail the
         // click path if the DOM layer is absent (tests / headless).
       }
+      // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 3): auto-expand the
+      // EntityFocus overlay on first successful pick. If a power user has
+      // manually collapsed the overlay it will pop open the next time they
+      // click a unit — matches the P0-2 observation loop promise.
+      if (typeof document !== "undefined") {
+        try {
+          const overlay = document.getElementById("entityFocusOverlay");
+          if (overlay && !overlay.open) overlay.open = true;
+        } catch {
+          // headless DOM / forbidden contexts — safe no-op.
+        }
+      }
       this.onSelectEntity?.(selected.id);
       return;
     }
