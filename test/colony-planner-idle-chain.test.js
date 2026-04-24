@@ -90,3 +90,38 @@ test("Priority 3.5 Kitchen gate: stone>=2 triggers (02a Step 4)", () => {
   const kitchenStep = plan.steps.find((s) => s.action?.type === "kitchen");
   assert.ok(kitchenStep, "stone>=2 should be enough to trigger kitchen under the relaxed gate");
 });
+
+// v0.8.2 Round-5b Wave-1 (01b Step 5) — low-pop idle-chain threshold.
+// pop<6 lowers the food bar from 15 → 6 so the feedback loop fires at the
+// low population where food is drained faster than produced.
+
+test("Priority 3.75 idle-chain low-pop: pop=4 + kitchen + COOK=0 + food=6 → reassign_role (01b Step 5)", () => {
+  const state = makeTestState({
+    resources: { food: 6, wood: 30, stone: 4, herbs: 2 },
+    buildings: { kitchens: 1, warehouses: 1, farms: 3, lumbers: 1 },
+    metrics: { roleCounts: { COOK: 0, FARM: 3, WOOD: 1 } },
+  });
+  // Pad workers to exactly 4.
+  while (state.agents.filter((a) => a.type === "WORKER").length > 4) {
+    const idx = state.agents.findIndex((a) => a.type === "WORKER");
+    state.agents.splice(idx, 1);
+  }
+  const plan = generateFallbackPlan(makeObservation(state), state);
+  const reassign = plan.steps.find((s) => s.action?.type === "reassign_role" && s.action.role === "COOK");
+  assert.ok(reassign, "low-pop (n<6) should use lower food threshold (6) for idle-chain trigger");
+});
+
+test("Priority 3.75 idle-chain low-pop: pop=4 + food=5 (below lowPopThreshold=6) → NO reassign", () => {
+  const state = makeTestState({
+    resources: { food: 5, wood: 30, stone: 4, herbs: 2 },
+    buildings: { kitchens: 1, warehouses: 1, farms: 3, lumbers: 1 },
+    metrics: { roleCounts: { COOK: 0, FARM: 3, WOOD: 1 } },
+  });
+  while (state.agents.filter((a) => a.type === "WORKER").length > 4) {
+    const idx = state.agents.findIndex((a) => a.type === "WORKER");
+    state.agents.splice(idx, 1);
+  }
+  const plan = generateFallbackPlan(makeObservation(state), state);
+  const reassign = plan.steps.find((s) => s.action?.type === "reassign_role" && s.action.role === "COOK");
+  assert.ok(!reassign, "food=5 is below the low-pop threshold of 6; no reassign_role expected");
+});

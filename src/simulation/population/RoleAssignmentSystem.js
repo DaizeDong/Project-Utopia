@@ -7,17 +7,50 @@ function clamp(v, min, max) {
 }
 
 /**
- * v0.8.2 Round-5 Wave-1 (01b Step 2 + 02a Step 2) — derive the pop-aware
- * default quotas from BALANCE.roleQuotaScaling. Returns a plain object keyed
- * by role slug (cook/smith/...). Used when `state.controls.roleQuotas` is
- * absent or holds the sentinel 99 "unlimited" marker. `minFloor` (default 1)
- * guarantees a specialist always exists when the gate is satisfied.
+ * v0.8.2 Round-5b Wave-1 (01b Step 2) — find the population-band entry for
+ * worker count `n` from BALANCE.roleQuotaScaling.bandTable. Returns `null`
+ * if `n` exceeds every band (caller should fall through to perWorker path).
+ * @param {number} n
+ * @param {Array<{minPop:number,maxPop:number,allow:object}>} bandTable
+ */
+function findBand(n, bandTable) {
+  if (!Array.isArray(bandTable)) return null;
+  for (const band of bandTable) {
+    if (!band) continue;
+    const lo = Number(band.minPop ?? 0);
+    const hi = Number(band.maxPop ?? -1);
+    if (n >= lo && n <= hi) return band;
+  }
+  return null;
+}
+
+/**
+ * v0.8.2 Round-5b Wave-1 (01b Step 2) — derive the pop-aware default
+ * specialist quotas. At low pop (n<=7) consult the explicit bandTable so
+ * 0-valued entries stay 0 (no minFloor=1 promotion → no 6-way contention
+ * for a single slot). At n>=8 fall through to the Wave-1 perWorker×floor
+ * formula (retained verbatim for seed=7/42 bit-identity).
  * @param {number} n — worker count
  * @returns {{cook:number,smith:number,herbalist:number,haul:number,stone:number,herbs:number}}
  */
 function computePopulationAwareQuotas(n) {
   const s = BALANCE.roleQuotaScaling ?? {};
   const minFloor = Number(s.minFloor ?? 1);
+  const bandTable = Array.isArray(s.bandTable) ? s.bandTable : [];
+  const band = findBand(n, bandTable);
+  if (band && band.allow) {
+    // Band-hit: return the discrete allow table verbatim. 0 values stay 0,
+    // which is the whole point of this refactor (Round 5b mandate #2).
+    return {
+      cook: Number(band.allow.cook ?? 0),
+      smith: Number(band.allow.smith ?? 0),
+      herbalist: Number(band.allow.herbalist ?? 0),
+      haul: Number(band.allow.haul ?? 0),
+      stone: Number(band.allow.stone ?? 0),
+      herbs: Number(band.allow.herbs ?? 0),
+    };
+  }
+  // Fall-through (n >= 8): keep Wave-1 perWorker formula unchanged.
   const scale = (perWorker) => {
     const pw = Number(perWorker ?? 0);
     if (!(pw > 0)) return minFloor;
@@ -118,8 +151,15 @@ export class RoleAssignmentSystem {
     const clinicCount = Number(state.buildings?.clinics ?? 0);
     const lumberCount = Number(state.buildings?.lumbers ?? 0);
 
-    // Reserve minimum slots for FARM (2) and WOOD (1 if lumber tiles exist)
-    const farmMin = Math.min(2, n);
+    // Reserve minimum slots for FARM and WOOD.
+    // v0.8.2 Round-5b Wave-1 (01b Step 3) — farmMin is now dynamic: scaled
+    // to floor(targetFarmRatio × n) so larger colonies don't starve their
+    // extra labour under a hard cap of 2. Hard floor=1 so at least one
+    // worker always farms; upper bound n-1 preserves space for wood or a
+    // specialist. At n=4 this yields floor(0.6*4)=2 — identical to the
+    // Wave-1 min(2,n)=2 behaviour for low pop.
+    const farmMinScaled = Math.floor(targetFarmRatio * n);
+    const farmMin = Math.max(1, Math.min(n - 1, Math.max(farmMinScaled, 1)));
     const woodMin = (lumberCount > 0) ? Math.min(1, n - farmMin) : 0;
     const reserved = farmMin + woodMin;
 
@@ -153,12 +193,50 @@ export class RoleAssignmentSystem {
     const emergencyFloor = Math.max(0, Number(BALANCE.roleQuotaScaling?.emergencyOverrideCooks ?? 1));
     const applyEmergency = (raw) => (emergencyActive ? Math.min(raw, emergencyFloor) : raw);
 
+    // v0.8.2 Round-5b Wave-1 (01b Step 4) — FARM cannibalise safety valve.
+    // At pop=4 bandTable yields cook=1 but reserved=farmMin(2)+woodMin(1)=3,
+    // leaving specialistBudget=0 → cookSlots=min(1,0)=0. This branch detects
+    // the all-zeros specialistBudget at low pop, and if food is comfortably
+    // above emergency threshold + kitchen already exists + cooldown elapsed,
+    // borrows a single FARM reserve slot to unblock the cook. The FARM
+    // reserve is decremented via `cannibalisedFarmSlots`, which is later
+    // subtracted from the `remaining` distribution pool.
+    const cannibaliseEnabled = Boolean(BALANCE.roleQuotaScaling?.farmCannibaliseEnabled);
+    const cannibaliseMult = Number(BALANCE.roleQuotaScaling?.farmCannibaliseFoodMult ?? 1.5);
+    const cannibaliseCooldownTicks = Math.max(0, Number(BALANCE.roleQuotaScaling?.farmCannibaliseCooldownTicks ?? 3));
+    state.ai ??= {};
+    state.ai.roleAssignMemo ??= { cannibaliseLastTick: -999 };
+    const memo = state.ai.roleAssignMemo;
+    const nowTick = Number(state.tick ?? state.metrics?.tickCount ?? state.metrics?.timeSec ?? 0);
+    const foodStockForCann = Number(state.resources?.food ?? 0);
+    const foodEmergency = Number(BALANCE.foodEmergencyThreshold ?? 14);
+    const foodSafe = foodStockForCann > foodEmergency * cannibaliseMult;
+    const cannibaliseReady = (nowTick - Number(memo.cannibaliseLastTick ?? -999)) >= cannibaliseCooldownTicks;
+    let cannibalisedFarmSlots = 0;
+
     let cookSlots = (kitchenCount > 0) ? Math.min(applyEmergency(q("cook")), specialistBudget) : 0;
+
+    // If the allocation-loss pattern is present (kitchen exists + q('cook')
+    // > 0 + but specialistBudget=0), consume ONE FARM reserve slot as a
+    // conditional override. Protected by food safety, cooldown, and a hard
+    // floor of at least 1 FARM always preserved.
+    if (cannibaliseEnabled && kitchenCount > 0 && cookSlots === 0 && specialistBudget === 0
+        && foodSafe && cannibaliseReady && (farmMin - cannibalisedFarmSlots) > 1
+        && applyEmergency(q("cook")) >= 1) {
+      cannibalisedFarmSlots += 1;
+      memo.cannibaliseLastTick = nowTick;
+      cookSlots = 1;
+      // Note: do NOT decrement specialistBudget (it is already 0); FARM
+      // reserve is decremented below via `remaining - cannibalisedFarmSlots`.
+    }
     let smithSlots = 0;
     let herbalistSlots = 0;
     // Compute specialist slots sequentially; assign after the full picture so
     // the pipeline-idle boost can steal from FARM reserve when needed.
     specialistBudget -= cookSlots;
+    // If cannibalise fired we took from FARM, not from the specialistBudget
+    // that was already 0 — keep budget floor at 0.
+    if (specialistBudget < 0) specialistBudget = 0;
 
     smithSlots = (smithyCount > 0) ? Math.min(applyEmergency(q("smith")), specialistBudget) : 0;
     specialistBudget -= smithSlots;
@@ -238,7 +316,9 @@ export class RoleAssignmentSystem {
     }
 
     // Distribute remaining between FARM and WOOD using targetFarmRatio.
-    const remaining = Math.max(0, farmMin + woodMin + specialistBudget);
+    // v0.8.2 Round-5b Wave-1 (01b Step 4) — subtract cannibalisedFarmSlots
+    // so the FARM reserve actually gives up the borrowed slot to the cook.
+    const remaining = Math.max(0, farmMin + woodMin + specialistBudget - cannibalisedFarmSlots);
     const emergency = emergencyActive;
     let effectiveRatio = emergency ? Math.max(targetFarmRatio, 0.82) : targetFarmRatio;
 
@@ -255,10 +335,15 @@ export class RoleAssignmentSystem {
         effectiveRatio = clamp(effectiveRatio - imbalance, 0.25, 0.85);
       }
     }
+    // v0.8.2 Round-5b Wave-1 (01b Step 4) — effective FARM floor drops by
+    // the number of slots borrowed by cannibalise, so the redistribution
+    // math below does not immediately re-force farmMin back up and undo the
+    // borrow.
+    const farmMinEffective = Math.max(1, farmMin - cannibalisedFarmSlots);
     let totalFarm = Math.round(remaining * effectiveRatio);
-    totalFarm = Math.max(farmMin, Math.min(remaining, totalFarm));
+    totalFarm = Math.max(farmMinEffective, Math.min(remaining, totalFarm));
     if (remaining - totalFarm < woodMin) {
-      totalFarm = Math.max(farmMin, remaining - woodMin);
+      totalFarm = Math.max(farmMinEffective, remaining - woodMin);
     }
     let totalWood = remaining - totalFarm;
 
