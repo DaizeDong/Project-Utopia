@@ -27,15 +27,24 @@ export class FogOverlay {
       THREE.UnsignedByteType,
     );
     this.texture.needsUpdate = true;
-    this.texture.magFilter = THREE.NearestFilter;
-    this.texture.minFilter = THREE.NearestFilter;
+    // LinearFilter enables GPU bilinear interpolation between fog texels, smoothing
+    // hard pixelated tile-border transitions. The DataTexture stores enum values
+    // (0=HIDDEN, 1=EXPLORED, 2=VISIBLE) which are safely interpolated for display
+    // purposes only — game logic still reads the raw Uint8Array.
+    this.texture.magFilter = THREE.LinearFilter;
+    this.texture.minFilter = THREE.LinearFilter;
     this.texture.wrapS = THREE.ClampToEdgeWrapping;
     this.texture.wrapT = THREE.ClampToEdgeWrapping;
+    this.texture.flipY = true;
 
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         tVisibility: { value: this.texture },
         fogColor: { value: new THREE.Color(0x0b141c) },
+        // edgeSoftness drives a smoothstep blend between explored (0.35 alpha) and
+        // hidden (0.75 alpha) zones. 0.15 gives a ~1-tile soft border without
+        // washing out unexplored territory.
+        edgeSoftness: { value: 0.15 },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -47,11 +56,21 @@ export class FogOverlay {
       fragmentShader: `
         uniform sampler2D tVisibility;
         uniform vec3 fogColor;
+        uniform float edgeSoftness;
         varying vec2 vUv;
         void main() {
+          // LinearFilter returns interpolated values, so visibility is now a
+          // continuous float in [0, 255] rather than a hard enum integer.
           float visibility = texture2D(tVisibility, vUv).r * 255.0;
+          // VISIBLE zone (raw value ~2): fully transparent — discard fragment.
+          // Use 1.5 threshold so interpolated edge pixels between VISIBLE and
+          // EXPLORED still render rather than popping to invisible.
           if (visibility > 1.5) discard;
-          float alpha = visibility > 0.5 ? 0.35 : 0.75;
+          // Smooth transition: at visibility=0 (HIDDEN) alpha=0.75,
+          // at visibility=1 (EXPLORED boundary) alpha=0.35.
+          // smoothstep gives a gentle S-curve around the EXPLORED/HIDDEN edge.
+          float t = smoothstep(0.5 - edgeSoftness, 0.5 + edgeSoftness, visibility);
+          float alpha = mix(0.75, 0.35, t);
           gl_FragColor = vec4(fogColor, alpha);
         }
       `,
@@ -65,7 +84,10 @@ export class FogOverlay {
     this.mesh = new THREE.Mesh(geometry, this.material);
     this.mesh.rotation.x = -Math.PI / 2;
     this.mesh.position.y = 0.045;
-    this.mesh.renderOrder = 3;
+    // renderOrder must exceed the highest entity renderOrder (SELECTION_RING=38) so
+    // the fog occludes 3D entities in HIDDEN zones. depthTest:false + renderOrder=42
+    // ensures the fog quad composites on top of all scene geometry without a depth fight.
+    this.mesh.renderOrder = 42;
     this.mesh.frustumCulled = false;
     scene.add(this.mesh);
   }

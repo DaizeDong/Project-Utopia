@@ -20,15 +20,15 @@ const TILE_LABEL = Object.freeze(
   }, {}),
 );
 
-// v0.8.2 Round0 02b-casual — Build validity accent helper.
+// Build validity accent helper.
 // Given a BuildSystem preview result and the active UI profile, compute a
 // small description of how the hover preview should be accentuated:
 //   { color: "#4ade80" | "#ef4444" | null, scale: 1.0 | 1.08,
 //     reasonText: string, legal: boolean }
 // The renderer calls this and forwards `scale` to the preview-mesh scale +
 // `color` to the material tint. Extracted as a pure function so the
-// casual-profile accent can be unit-tested without standing up Three.js
-// (plan Step 9). `null` color signals "no hover / no preview available".
+// casual-profile accent can be unit-tested without standing up Three.js.
+// `null` color signals "no hover / no preview available".
 export function describeBuildValidityAccent(preview, uiProfile = "casual") {
   if (!preview || typeof preview !== "object") {
     return { color: null, scale: 1.0, reasonText: "", legal: false };
@@ -42,7 +42,7 @@ export function describeBuildValidityAccent(preview, uiProfile = "casual") {
   return { color, scale, reasonText, legal };
 }
 
-// v0.8.2 Round-0 01b — Build click feedback layer.
+// Build click feedback layer.
 // Pure helper: render a short floating-toast string from a BuildSystem result.
 // Separated from DOM/THREE so unit tests can assert text shape without a
 // rendering context. Shapes expected:
@@ -89,14 +89,13 @@ const MAT_S = new THREE.Vector3();
 const COLOR_TMP = new THREE.Color();
 const VEC_TMP = new THREE.Vector3();
 
-// v0.8.2 Round1 01b-playability — proximity fallback + build-guard.
+// Screen-space proximity fallback + build-guard.
 // The worker InstancedMesh geometry has radius ~0.35 world units, which at
 // typical camera zoom translates to roughly 8–12 screen pixels. That means
 // the default THREE.Raycaster pick on the InstancedMesh almost never hits
-// when the user clicks near (but not exactly on) a worker sprite, and the
-// Entity Focus panel stays stuck on "No entity selected" — the bug that
-// the reviewer described as the biggest UX break in Round 1. These two
-// constants define the screen-space fallback radius used by
+// when the user clicks near (but not exactly on) a worker sprite, leaving
+// the Entity Focus panel stuck on "No entity selected". These two constants
+// define the screen-space fallback radius used by
 // `findProximityEntity` / `#proximityNearestEntity`:
 //   - ENTITY_PICK_FALLBACK_PX (16): select the nearest entity when exact
 //     raycast returns no hit. 16 px ≈ 1 tile at default zoom, low enough
@@ -108,9 +107,9 @@ const VEC_TMP = new THREE.Vector3();
 const ENTITY_PICK_FALLBACK_PX = 16;
 const ENTITY_PICK_GUARD_PX = 24;
 
-// v0.8.2 Round1 01b-playability — pure helper for screen-space proximity
-// pick. Extracted from SceneRenderer.#pickEntity so it can be unit-tested
-// without standing up Three.js renderers / canvases.
+// Pure helper for screen-space proximity pick. Extracted from
+// SceneRenderer.#pickEntity so it can be unit-tested without standing up
+// Three.js renderers / canvases.
 //
 //   entities: iterable of { id, x, z, alive? }. Dead entities (alive===false)
 //     are filtered out.
@@ -465,6 +464,16 @@ export class SceneRenderer {
     this.lensMode = "pressure";
     this.lastHeatLensSignature = "";
     this.lastPlacementLensSignature = "";
+    // Terrain Fertility Overlay — toggled by T key.
+    this.terrainLensActive = false;
+    this.terrainOverlayPool = [];
+    this.lastTerrainVersion = -1;
+    // Tile info tooltip DOM element (resolved lazily).
+    this.tileInfoTooltipEl = null;
+    this.tileInfoLastTile = null;
+    // Track last pointer position for tooltip positioning.
+    this.lastPointerClientX = 0;
+    this.lastPointerClientY = 0;
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -537,13 +546,14 @@ export class SceneRenderer {
     this.boundOnPointerMove = (e) => this.#onPointerMove(e);
     this.boundOnPointerLeave = () => {
       this.hoverTile = null;
+      this.#hideTileInfoTooltip();
     };
     this.boundOnPointerDown = (e) => this.#onPointerDown(e);
 
-    // v0.8.2 Round-0 01b — Build-feedback toast pool. Pre-allocate 6 reusable
-    // DOM nodes so rapid-fire clicks at 2x speed don't churn the heap. We look
-    // up #floatingToastLayer lazily because SceneRenderer may be instantiated
-    // in test environments without that node present.
+    // Build-feedback toast pool. Pre-allocate 6 reusable DOM nodes so rapid-fire
+    // clicks at 2x speed don't churn the heap. We look up #floatingToastLayer
+    // lazily because SceneRenderer may be instantiated in test environments
+    // without that node present.
     this.toastLayer = typeof document !== "undefined"
       ? document.getElementById("floatingToastLayer")
       : null;
@@ -559,6 +569,7 @@ export class SceneRenderer {
     this.boundOnControlsStart = () => {
       this.isCameraInteracting = true;
       this.hoverTile = null;
+      this.#hideTileInfoTooltip();
     };
     this.boundOnControlsEnd = () => {
       this.isCameraInteracting = false;
@@ -1199,6 +1210,12 @@ export class SceneRenderer {
     this.heatTileOverlayPool = [];
     this.scene.add(this.heatTileOverlayRoot);
 
+    // Terrain Fertility Overlay mesh pool — same geometry as heat tiles.
+    this.terrainOverlayRoot = new THREE.Group();
+    this.terrainOverlayGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.97, this.state.grid.tileSize * 0.97);
+    this.terrainOverlayPool = [];
+    this.scene.add(this.terrainOverlayRoot);
+
     this.placementLensRoot = new THREE.Group();
     const placementCapacity = Math.max(1, Number(this.state.grid.width ?? 0) * Number(this.state.grid.height ?? 0));
     this.placementLensGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.92, this.state.grid.tileSize * 0.92);
@@ -1304,6 +1321,239 @@ export class SceneRenderer {
 
   #hideHeatTileOverlay() {
     for (const mesh of this.heatTileOverlayPool) mesh.visible = false;
+  }
+
+  // === Terrain Fertility Overlay ===
+
+  #createTerrainOverlayEntry() {
+    const mesh = new THREE.Mesh(this.terrainOverlayGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 2;
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    this.terrainOverlayRoot.add(mesh);
+    return mesh;
+  }
+
+  #ensureTerrainOverlayPool(count) {
+    while (this.terrainOverlayPool.length < count) {
+      this.terrainOverlayPool.push(this.#createTerrainOverlayEntry());
+    }
+  }
+
+  #hideTerrainOverlay() {
+    for (const mesh of this.terrainOverlayPool) mesh.visible = false;
+  }
+
+  // Build an array of { ix, iz, color (hex), opacity } for all non-water tiles
+  // based on moisture. Called when terrain lens is active.
+  #buildTerrainFertilityMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles, moisture } = grid;
+    const markers = [];
+    if (!moisture) return markers;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        const tileType = tiles[idx];
+        // Skip water — it has no farming suitability.
+        if (tileType === TILE.WATER) continue;
+        const m = Number(moisture[idx] ?? 0);
+        let color, opacity;
+        if (m > 0.65) {
+          color = 0x1a7f2a; // dark green — excellent
+          opacity = 0.50;
+        } else if (m > 0.40) {
+          color = 0x4aad3a; // medium green — good
+          opacity = 0.40;
+        } else if (m > 0.20) {
+          color = 0xb8c03a; // yellow-green — poor
+          opacity = 0.38;
+        } else {
+          color = 0x6a6a6a; // gray — barren
+          opacity = 0.28;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  #updateTerrainFertilityOverlay() {
+    if (!this.terrainLensActive) {
+      this.#hideTerrainOverlay();
+      return;
+    }
+    const gridVersion = this.state.grid?.version ?? 0;
+    if (gridVersion === this.lastTerrainVersion && this.terrainOverlayPool.length > 0) {
+      // Already up to date — just ensure visibility.
+      return;
+    }
+    this.lastTerrainVersion = gridVersion;
+    const markers = this.#buildTerrainFertilityMarkers();
+    this.#ensureTerrainOverlayPool(markers.length);
+    for (let i = 0; i < this.terrainOverlayPool.length; i++) {
+      const mesh = this.terrainOverlayPool[i];
+      const marker = markers[i];
+      if (!marker) { mesh.visible = false; continue; }
+      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      mesh.visible = true;
+      mesh.position.set(p.x, 0.18, p.z);
+      mesh.material.color.setHex(marker.color);
+      mesh.material.opacity = marker.opacity;
+    }
+  }
+
+  // === Tile Info Tooltip ===
+
+  #resolveTileInfoTooltipEl() {
+    if (this.tileInfoTooltipEl) return this.tileInfoTooltipEl;
+    if (typeof document === "undefined") return null;
+    this.tileInfoTooltipEl = document.getElementById("tileInfoTooltip");
+    return this.tileInfoTooltipEl;
+  }
+
+  #hideTileInfoTooltip() {
+    const el = this.#resolveTileInfoTooltipEl();
+    if (!el) return;
+    el.style.display = "none";
+    this.tileInfoLastTile = null;
+  }
+
+  #updateTileInfoTooltip(ix, iz, clientX, clientY) {
+    const el = this.#resolveTileInfoTooltipEl();
+    if (!el) return;
+
+    const grid = this.state.grid;
+    const idx = ix + iz * grid.width;
+    const tileType = grid.tiles[idx];
+    const info = TILE_INFO[tileType];
+    const tileName = TILE_LABEL[tileType] ?? String(tileType);
+    const passable = info?.passable ? "Passable" : "Impassable";
+    const passableColor = info?.passable ? "#a5f2b2" : "#ff8a80";
+
+    // HTML rows with bold keys for scanability.
+    // Safe: all dynamic values are numbers / enum strings — no user text injected.
+    function esc(v) { return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    const rows = [];
+    rows.push(`<b>${esc(tileName)}</b> <span style="color:${passableColor};font-size:10px">${esc(passable)}</span>`);
+
+    // Elevation
+    if (grid.elevation && idx < grid.elevation.length) {
+      const elev = Number(grid.elevation[idx]).toFixed(2);
+      rows.push(`<span style="opacity:0.6">Elev</span> ${esc(elev)}`);
+    }
+
+    // Moisture + fertility hint
+    if (grid.moisture && idx < grid.moisture.length) {
+      const moist = Number(grid.moisture[idx]);
+      rows.push(`<span style="opacity:0.6">Moisture</span> ${esc(moist.toFixed(2))}`);
+      if (tileType === TILE.FARM || tileType === TILE.GRASS) {
+        let hint;
+        let color;
+        if (moist > 0.65) { hint = "Fertile"; color = "#a5f2b2"; }
+        else if (moist > 0.40) { hint = "Moderate"; color = "#ffdf8a"; }
+        else { hint = "Poor"; color = "#ff8a80"; }
+        rows.push(`<span style="opacity:0.6">Fertility</span> <span style="color:${color}">${hint}</span>`);
+      }
+    }
+
+    // Building production stats per tile type.
+    // Descriptions are static strings keyed by tile type — no user-injected text.
+    const BUILDING_DESC = Object.freeze({
+      [TILE.FARM]:        { role: "Produces food", input: "—", output: "food" },
+      [TILE.LUMBER]:      { role: "Produces wood", input: "—", output: "wood" },
+      [TILE.QUARRY]:      { role: "Produces stone", input: "—", output: "stone" },
+      [TILE.HERB_GARDEN]: { role: "Produces herbs", input: "—", output: "herbs" },
+      [TILE.WAREHOUSE]:   { role: "Storage hub", input: "all resources", output: "all resources" },
+      [TILE.KITCHEN]:     { role: "Processing: Cook", input: "food", output: "meals" },
+      [TILE.SMITHY]:      { role: "Processing: Smith", input: "wood + stone", output: "tools" },
+      [TILE.CLINIC]:      { role: "Processing: Heal", input: "herbs", output: "medicine" },
+      [TILE.ROAD]:        { role: "Fast transit (−35% movement cost)", input: "—", output: "—" },
+      [TILE.BRIDGE]:      { role: "Water crossing (passable)", input: "—", output: "—" },
+      [TILE.WALL]:        { role: "Defensive barrier (impassable)", input: "—", output: "—" },
+      [TILE.RUINS]:       { role: "Salvageable structure", input: "—", output: "stone/wood" },
+    });
+    const bDesc = BUILDING_DESC[tileType];
+    if (bDesc) {
+      rows.push(`<span style="opacity:0.6">Role</span> ${esc(bDesc.role)}`);
+      if (bDesc.input !== "—") {
+        rows.push(`<span style="opacity:0.6">Input</span> ${esc(bDesc.input)}`);
+      }
+      if (bDesc.output !== "—") {
+        rows.push(`<span style="opacity:0.6">Output</span> ${esc(bDesc.output)}`);
+      }
+    }
+
+    // tileState info (salinization, yieldPool)
+    const ts = grid.tileState?.get?.(idx);
+    if (ts) {
+      if (Number.isFinite(ts.yieldPool) && ts.yieldPool > 0) {
+        rows.push(`<span style="opacity:0.6">Yield pool</span> ${Math.round(ts.yieldPool)}`);
+      }
+      if (Number.isFinite(ts.salinized) && ts.salinized > 0) {
+        const salPct = (ts.salinized * 100).toFixed(0);
+        const salColor = ts.salinized > 0.5 ? "#ff8a80" : "#ffdf8a";
+        rows.push(`<span style="opacity:0.6">Salinization</span> <span style="color:${salColor}">${salPct}%</span>`);
+      }
+    }
+
+    // Neighbor hints
+    let forestNeighbors = 0;
+    let hasWaterNeighbor = false;
+    let hasRuinsNeighbor = tileType === TILE.RUINS;
+    for (const [dix, diz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nx = ix + dix;
+      const nz = iz + diz;
+      if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) continue;
+      const nIdx = nx + nz * grid.width;
+      const nType = grid.tiles[nIdx];
+      const nFlags = Number(grid.tileState?.get?.(nIdx)?.nodeFlags ?? 0);
+      if (nType === TILE.WATER) hasWaterNeighbor = true;
+      if (nType === TILE.RUINS) hasRuinsNeighbor = true;
+      if (nFlags & 1 /* NODE_FLAGS.FOREST */) forestNeighbors++;
+      if (nType === TILE.LUMBER) forestNeighbors++;
+    }
+    const hints = [];
+    if (forestNeighbors > 0) hints.push("near forest");
+    if (hasWaterNeighbor) hints.push("near water");
+    if (hasRuinsNeighbor) hints.push("salvageable ruins");
+    if (hints.length > 0) {
+      rows.push(`<span style="opacity:0.55;font-style:italic">${hints.join(" · ")}</span>`);
+    }
+
+    rows.push(`<span style="opacity:0.4;font-size:10px">B = build &nbsp;·&nbsp; R = road &nbsp;·&nbsp; T = fertility</span>`);
+
+    el.innerHTML = rows.join("<br>");
+    el.style.whiteSpace = "normal";
+    // Position near cursor with a small offset; keep inside the viewport.
+    // Account for the right sidebar (280px when open) so tooltip doesn't appear
+    // under the sidebar panel. Also account for bottom bar (~50px).
+    const margin = 12;
+    let left = clientX + margin;
+    let top = clientY + margin;
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    // Estimate tooltip size (width ~220 + padding, height ~18px * rows).
+    const estW = 235;
+    const estH = rows.length * 18 + 14;
+    // Determine right clearance: sidebar takes 280px when open, 36px (tab strip) otherwise.
+    const sidebarOpen = typeof document !== "undefined" &&
+      document.getElementById("wrap")?.classList?.contains("sidebar-open");
+    const rightClearance = sidebarOpen ? 280 : 36;
+    const rightLimit = vpW - rightClearance;
+    if (left + estW > rightLimit) left = clientX - estW - margin;
+    if (top + estH > vpH - 50) top = clientY - estH - margin;
+    el.style.left = `${Math.max(4, left)}px`;
+    el.style.top = `${Math.max(4, top)}px`;
+    el.style.display = "block";
   }
 
   #hidePressureMarkers() {
@@ -2128,12 +2378,9 @@ export class SceneRenderer {
     }
 
     if (candidates.length === 0) {
-      // v0.8.2 Round1 01b-playability — screen-space proximity fallback.
-      // When exact raycast missed (typical for small instanced workers at
-      // moderate zoom), project alive entities to NDC and pick the nearest
-      // one within ENTITY_PICK_FALLBACK_PX. Mirrors the behaviour of the
-      // inspector panel's cursor-nearest heuristic but runs on the main
-      // click path so Entity Focus wakes up on the first click.
+      // Screen-space proximity fallback: when exact raycast missed (typical for
+      // small instanced workers at moderate zoom), project alive entities to NDC
+      // and pick the nearest one within ENTITY_PICK_FALLBACK_PX.
       const proximity = this.#proximityNearestEntity(mouse, ENTITY_PICK_FALLBACK_PX);
       if (proximity) return proximity.entity;
       return null;
@@ -2142,10 +2389,9 @@ export class SceneRenderer {
     return candidates[0].entity;
   }
 
-  // v0.8.2 Round1 01b-playability — proximity fallback entry point.
-  // Wraps `findProximityEntity` with the renderer's camera + canvas so the
-  // caller (#pickEntity or #onPointerDown build-guard) can keep using NDC
-  // `mouse` coords. Returns { entity, pixelDistance } or null.
+  // Proximity fallback entry point. Wraps `findProximityEntity` with the
+  // renderer's camera + canvas so callers can keep using NDC `mouse` coords.
+  // Returns { entity, pixelDistance } or null.
   #proximityNearestEntity(mouse, thresholdPx) {
     if (!this.camera || !this.canvas || !this.state) return null;
     const rect = this.canvas.getBoundingClientRect();
@@ -2192,16 +2438,17 @@ export class SceneRenderer {
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    this.lastPointerClientX = event.clientX;
+    this.lastPointerClientY = event.clientY;
 
     const picked = this.#pickTile(this.mouse);
     this.hoverTile = picked?.tile ?? null;
 
-    // v0.8.2 Round-5b Wave-1 (01a Step 4) — pipe BuildSystem.previewToolAt
-    // reasonText into state.controls.buildHint for HUD surfacing. When the
-    // hovered tile is invalid for the current tool, the player sees the
-    // textual reason (e.g. "Farm requires grass tile") instead of a red
-    // mesh without explanation. Appends Ctrl+Z hint when there's an undo
-    // stack so the Undo shortcut is discoverable at the point of error.
+    // Pipe BuildSystem.previewToolAt reasonText into state.controls.buildHint for
+    // HUD surfacing. When the hovered tile is invalid for the current tool, the
+    // player sees the textual reason (e.g. "Farm requires grass tile") instead of
+    // a silent red mesh. Appends Ctrl+Z hint when there's an undo stack so the
+    // shortcut is discoverable at the point of error.
     const state = this.state;
     try {
       if (this.hoverTile && state?.controls?.tool && state.controls.tool !== "select") {
@@ -2224,6 +2471,17 @@ export class SceneRenderer {
       // buildHint is UI sugar — never fail the hover path on a preview error.
       if (state?.controls) state.controls.buildHint = "";
     }
+
+    // Tile info tooltip in select mode.
+    try {
+      if (this.hoverTile && state?.controls?.tool === "select") {
+        this.#updateTileInfoTooltip(this.hoverTile.ix, this.hoverTile.iz, this.lastPointerClientX, this.lastPointerClientY);
+      } else {
+        this.#hideTileInfoTooltip();
+      }
+    } catch {
+      // Tooltip is UI sugar — never fail on errors.
+    }
   }
 
   #onPointerDown(event) {
@@ -2236,17 +2494,14 @@ export class SceneRenderer {
     if (selected) {
       this.state.controls.selectedEntityId = selected.id;
       this.state.controls.selectedTile = null;
-      // v0.8.2 Round1 01b-playability — when a click lands on a worker via
-      // the proximity fallback, clear any stale hover build preview so the
-      // preview mesh stops flashing on the tile underneath.
+      // Clear stale hover build preview so the mesh stops flashing on the
+      // tile underneath when a click lands on a worker via proximity fallback.
       this.state.controls.buildPreview = null;
       if (this.state.debug) this.state.debug.selectedTile = null;
       this.state.controls.actionMessage = `Selected ${selected.displayName ?? selected.id}`;
       this.state.controls.actionKind = "info";
-      // v0.8.2 Round1 01b-playability — surface a tiny confirmation toast
-      // over the selected entity so the player gets the same "you did
-      // something" feedback loop as a successful build. Uses tile coords
-      // (-1,-1) to bypass the per-tile dedupe window.
+      // Surface a confirmation toast over the selected entity for feedback.
+      // Uses tile coords (-1,-1) to bypass the per-tile dedupe window.
       try {
         const selName = selected.displayName ?? selected.id;
         this.#spawnFloatingToast(selected.x ?? 0, selected.z ?? 0, `Selected ${selName}`, "info", -1, -1);
@@ -2254,10 +2509,8 @@ export class SceneRenderer {
         // Spawning a toast is a non-essential UI sugar — never fail the
         // click path if the DOM layer is absent (tests / headless).
       }
-      // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 3): auto-expand the
-      // EntityFocus overlay on first successful pick. If a power user has
-      // manually collapsed the overlay it will pop open the next time they
-      // click a unit — matches the P0-2 observation loop promise.
+      // Auto-expand the EntityFocus overlay on first successful pick so the
+      // inspector is visible without requiring a separate click.
       if (typeof document !== "undefined") {
         try {
           const overlay = document.getElementById("entityFocusOverlay");
@@ -2270,14 +2523,12 @@ export class SceneRenderer {
       return;
     }
 
-    // v0.8.2 Round1 01b-playability — build-tool 24 px guard. If the user
-    // was clearly aiming at a worker (within ENTITY_PICK_GUARD_PX but
-    // outside ENTITY_PICK_FALLBACK_PX, so #pickEntity didn't select it) and
-    // a build tool is active, suppress the placement to avoid the surprise
-    // "I clicked a worker and got a failed Farm" outcome described by the
-    // reviewer. The 16 px inner radius already handles the "close enough"
-    // case; this guard catches the 16–24 px annulus with a hint instead of
-    // a build attempt.
+    // Build-tool 24 px guard: if the user was clearly aiming at a worker
+    // (within ENTITY_PICK_GUARD_PX but outside ENTITY_PICK_FALLBACK_PX)
+    // and a build tool is active, suppress the placement to avoid
+    // surprising the user with a building appearing "next to the worker
+    // they thought they clicked". The 16 px inner radius already handles
+    // the "close enough" case; this catches the 16–24 px annulus.
     const activeTool = this.state.controls?.tool;
     if (activeTool && activeTool !== "select" && activeTool !== "inspect") {
       const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
@@ -2307,25 +2558,17 @@ export class SceneRenderer {
       this.#updateSelectedTile(tile.ix, tile.iz);
       this.state.controls.actionMessage = buildResult.message ?? `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
       this.state.controls.actionKind = "success";
-      // v0.8.2 Round-0 01b — success toast at the click tile (green).
       const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
       this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
     } else {
       this.state.controls.actionMessage = buildResult.reasonText ?? explainBuildReason(buildResult.reason, buildResult);
       this.state.controls.actionKind = "error";
-      // v0.8.2 Round-0 01b — failure toast. Prefer a concrete "Need N more X"
-      // shortfall string when the cause is insufficient resources; otherwise
-      // fall back to reasonText (already the canonical human-readable blurb).
       const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
       const text = formatToastText(buildResult, this.state.resources);
       this.#spawnFloatingToast(worldPos.x, worldPos.z, text, "error", tile.ix, tile.iz);
     }
   }
 
-  // v0.8.2 Round-0 01b — Build-feedback layer. Project a world-space point to
-  // screen coordinates, then animate a short text label upward from that spot
-  // as a non-blocking visual ack. DOM nodes are recycled from `this.toastPool`
-  // so rapid clicks at 2x speed don't thrash the heap (risk #1).
   #handleDeathToastEvent(event) {
     const detail = event?.detail ?? {};
     const worldX = Number(detail.worldX);
@@ -2485,11 +2728,8 @@ export class SceneRenderer {
       this.previewMesh.material.color.setHex(color);
     }
 
-    // v0.8.2 Round0 02b-casual — in casual profile, scale the preview mesh
-    // up slightly so the legal (green) / illegal (red) cue is easier to
-    // read at standard zoom. Reviewer player-02-casual missed the existing
-    // mesh at first glance — plan Step 6 calls it a "canvas overlay" but
-    // the mesh already serves that role; accent it rather than duplicating.
+    // In casual profile, scale the preview mesh slightly so the legal/illegal
+    // cue is easier to read at standard zoom.
     const profile = this.state.controls?.uiProfile ?? "casual";
     if (this.hoverTile && this.previewMesh?.visible) {
       const accent = profile === "casual" ? 1.08 : 1.0;
@@ -2612,6 +2852,22 @@ export class SceneRenderer {
     return this.lensMode;
   }
 
+  // Toggle terrain fertility overlay. Returns true if now active, false if off.
+  toggleTerrainLens() {
+    this.terrainLensActive = !this.terrainLensActive;
+    if (!this.terrainLensActive) {
+      this.#hideTerrainOverlay();
+    } else {
+      // Force rebuild on next render pass.
+      this.lastTerrainVersion = -1;
+    }
+    return this.terrainLensActive;
+  }
+
+  getTerrainLensActive() {
+    return this.terrainLensActive;
+  }
+
   resetView() {
     this.orthoSize = Math.max(this.state.grid.width, this.state.grid.height) * 0.65;
     this.lastGridVersion = -1;
@@ -2665,6 +2921,7 @@ export class SceneRenderer {
     this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
     this.#updatePlacementLens();
+    this.#updateTerrainFertilityOverlay();
     this.#updateOverlayMeshes();
 
     const pixelRatio = this.renderer.getPixelRatio();

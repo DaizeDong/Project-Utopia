@@ -244,7 +244,7 @@ function adjustWorkerPolicy(policy, context, summary) {
     addNote(notes, "Threat is elevated, so prefer safer paths and work clusters.");
   }
 
-  // New resource awareness (stone, herbs, processed goods)
+  // New resource awareness (stone, herbs, processed goods, medicine, tools)
   const stoneCount = Number(world?.resources?.stone ?? 0);
   const herbsCount = Number(world?.resources?.herbs ?? 0);
   const quarryCount = Number(world?.buildings?.quarries ?? 0);
@@ -262,6 +262,49 @@ function adjustWorkerPolicy(policy, context, summary) {
   if (kitchenCount > 0 && food > 30) {
     boost(policy.intentWeights, "cook", 0.15);
     addNote(notes, "Food surplus available: allow cooking to produce meals.");
+  }
+
+  // Medicine shortage: boost herb gathering and cooking pipeline for clinic output
+  const medicine = Number(world?.resources?.medicine ?? 0);
+  const clinicCount = Number(world?.buildings?.clinics ?? 0);
+  if (medicine < 2 && clinicCount > 0) {
+    boost(policy.intentWeights, "gather_herbs", 0.5);
+    boost(policy.intentWeights, "deliver", 0.1);
+    addNote(notes, "Medicine low: boosting herb gathering and delivery to restock clinic.");
+  } else if (medicine < 2 && herbGardenCount > 0) {
+    boost(policy.intentWeights, "gather_herbs", 0.3);
+    addNote(notes, "Medicine scarce and no clinic: boosting herb gathering for future clinic.");
+  }
+
+  // Tool shortage: boost smithing
+  const tools = Number(world?.resources?.tools ?? 0);
+  const smithyCount = Number(world?.buildings?.smithies ?? 0);
+  if (tools < 2 && smithyCount > 0) {
+    boost(policy.intentWeights, "smith", 0.5);
+    addNote(notes, "Tools scarce: boosting smith to restore production bonuses.");
+  }
+
+  // Salinized farms: reduce farm pressure, prepare for new farmland
+  const soilCrisis = Number(world?.soil?.criticalSalinized ?? 0);
+  if (soilCrisis > 0) {
+    policy.intentWeights.farm = Math.max(0.2, (Number(policy.intentWeights.farm) || 1) * 0.7);
+    boost(policy.intentWeights, "wood", 0.2);
+    addNote(notes, `Soil crisis (${soilCrisis} critical farms): reducing farm pressure, preparing new farmland.`);
+  }
+
+  // Node depletion: reduce lumber worker assignments when nodes are exhausted
+  const depletedLumber = Number(world?.nodes?.depletedForestCount ?? 0);
+  if (depletedLumber > 0) {
+    policy.intentWeights.wood = Math.max(0.3, (Number(policy.intentWeights.wood) || 1) * 0.6);
+    addNote(notes, `Lumber nodes depleted (${depletedLumber} mills): reducing wood worker assignments.`);
+  }
+
+  // Water isolation: prioritize bridge construction and nearest warehouse delivery
+  if (Number(world?.connectivity?.waterIsolatedResources ?? 0) > 0) {
+    boostTarget(policy, "bridge", 0.5);
+    boostTarget(policy, "road", 0.25);
+    boostTarget(policy, "warehouse", 0.2);
+    addNote(notes, "Resources water-isolated: prioritizing bridge construction to restore connectivity.");
   }
 
   // Predator awareness
@@ -282,10 +325,10 @@ function adjustWorkerPolicy(policy, context, summary) {
     addNote(notes, "Skeleton crew: prioritize food production to sustain the colony.");
   } else if (workerCount >= 16) {
     // Large crew: diversify and build
-    boost(policy.intentWeights, "wood", 0.15);
-    boost(policy.intentWeights, "build", 0.2);
+    boost(policy.intentWeights, "wood", 0.2);
+    boost(policy.intentWeights, "quarry", 0.15);
     boost(policy.intentWeights, "deliver", 0.15);
-    addNote(notes, "Large workforce: diversify into wood and building.");
+    addNote(notes, "Large workforce: diversify into wood and quarry production.");
   }
 
   // Auto-build queue: construct buildings when resources allow

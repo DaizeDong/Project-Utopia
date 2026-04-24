@@ -1,4 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
+import { TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { inBounds, worldToTile } from "../../world/grid/Grid.js";
 import { buildSpatialHash, queryNeighbors } from "./SpatialHash.js";
@@ -274,11 +275,40 @@ export class BoidsSystem {
         e.vz *= s;
       }
 
+      const prevX = e.x;
+      const prevZ = e.z;
       e.x += e.vx * simDt;
       e.z += e.vz * simDt;
 
       e.x = clamp(e.x, -boundsX, boundsX);
       e.z = clamp(e.z, -boundsZ, boundsZ);
+
+      // Hard-block: revert position if new tile is impassable (water/wall)
+      const newTile = worldToTile(e.x, e.z, state.grid);
+      if (inBounds(newTile.ix, newTile.iz, state.grid)) {
+        const tileType = state.grid.tiles[newTile.ix + newTile.iz * state.grid.width];
+        const tileInfo = TILE_INFO[tileType];
+        if (tileInfo && !tileInfo.passable) {
+          e.x = prevX;
+          e.z = prevZ;
+          e.vx *= 0.1; // damp velocity so entity doesn't keep trying
+          e.vz *= 0.1;
+        }
+      }
+
+      // Boundary reflection: strongly damp velocity components pointing toward
+      // the map edge when within 1.5 tiles of the boundary. This prevents boids
+      // forces from pushing path-following entities into corners while they still
+      // have an active route. Applies to all entity types (workers, animals).
+      const tileSize = state.grid.tileSize;
+      const edgeMarginX = tileSize * 1.5;
+      const edgeMarginZ = tileSize * 1.5;
+      if (Math.abs(e.x) > boundsX - edgeMarginX) {
+        e.vx *= 0.3; // strong damping near X boundary
+      }
+      if (Math.abs(e.z) > boundsZ - edgeMarginZ) {
+        e.vz *= 0.3; // strong damping near Z boundary
+      }
     }
 
     const nowSec = Number(state.metrics?.timeSec ?? 0);

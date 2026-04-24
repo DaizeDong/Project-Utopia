@@ -180,6 +180,13 @@ export class GameApp {
       this.heatLensBtn?.addEventListener("click", this.boundOnHeatLensClick);
     }
 
+    // Terrain Fertility Overlay HUD button (mirrors T-key).
+    this.boundOnTerrainLensClick = () => this.toggleTerrainLens();
+    if (typeof document !== "undefined") {
+      this.terrainLensBtn = document.getElementById("terrainLensBtn");
+      this.terrainLensBtn?.addEventListener("click", this.boundOnTerrainLensClick);
+    }
+
     this.benchmark = {
       running: false,
       activeConfig: null,
@@ -1442,6 +1449,9 @@ export class GameApp {
     if (action.type === "toggleHeatLens") {
       this.toggleHeatLens();
     }
+    if (action.type === "toggleTerrainLens") {
+      this.toggleTerrainLens();
+    }
   }
 
   // v0.8.2 Round-5 Wave-2 (01d Step 7): cycle selectedEntityId through the
@@ -1499,6 +1509,21 @@ export class GameApp {
       : null;
     if (legend) legend.hidden = (mode !== "heat");
     return mode;
+  }
+
+  // Terrain Fertility Overlay toggle — mirrors T-key and the "Terrain (T)"
+  // HUD button. Delegates to SceneRenderer.toggleTerrainLens().
+  toggleTerrainLens() {
+    if (!this.renderer?.toggleTerrainLens) return false;
+    const active = this.renderer.toggleTerrainLens();
+    const label = active ? "Terrain fertility overlay ON." : "Terrain fertility overlay OFF.";
+    this.state.controls.actionMessage = label;
+    this.state.controls.actionKind = "info";
+    const btn = typeof document !== "undefined"
+      ? document.getElementById("terrainLensBtn")
+      : null;
+    if (btn) btn.classList.toggle("active", active);
+    return active;
   }
 
   startSession() {
