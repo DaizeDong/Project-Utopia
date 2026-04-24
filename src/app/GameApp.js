@@ -1420,8 +1420,9 @@ export class GameApp {
         terrainTuning: this.state.controls.terrainTuning,
       }, { phase: "menu" });
     }
+    const mapLabel = this.state?.world?.mapTemplateName ?? "Current map";
     this.#setRunPhase("active", {
-      actionMessage: "Simulation started. Build the starter network first, then push stockpile and stability.",
+      actionMessage: `Run started: ${mapLabel}. Build the starter network now. Try Again replays this layout; New Map rerolls.`,
       actionKind: "success",
     });
   }
@@ -1469,6 +1470,11 @@ export class GameApp {
     if (options.actionMessage) {
       this.state.controls.actionMessage = options.actionMessage;
       this.state.controls.actionKind = options.actionKind ?? "info";
+    }
+
+    if (next === "active") {
+      this.#safeRenderPanel("GameStateOverlay", () => this.gameStateOverlay.render(this.state.session));
+      this.#safeRenderPanel("HUD", () => this.hud.render());
     }
   }
 
