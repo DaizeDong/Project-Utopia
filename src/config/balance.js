@@ -15,6 +15,97 @@ export const BUILD_COST = Object.freeze({
   bridge: { wood: 3, stone: 1 },
 });
 
+// v0.8.2 Round-5 Wave-3 (02c-speedrunner) — Building-stacking soft-cost
+// escalator. For each repeatable building kind, once the colony has built
+// `softTarget` of them, each additional copy costs
+//   base × min(cap, 1 + perExtra × max(0, existingCount - softTarget))
+// for wood / stone / herbs. Kinds not listed here fall through to BUILD_COST
+// at face value (road, bridge, erase are always base cost).
+//
+// Tuning rationale (Feedbacks/02c run-1: warehouse×10 + wall×19 + kitchen×5
+// build-spam):
+//  - warehouse/wall: wide softTarget (scenario objective size) because the
+//    scenario already asks for 2-8 of them; beyond that each extra copy
+//    needs to hurt progressively so the reviewer cannot Dev-pump past 49.
+//  - kitchen/smithy/clinic: tight softTarget=1 with steep perExtra=0.35 —
+//    duplicate processors share no resource, so the second copy is a
+//    crutch for intent coverage rather than throughput.
+//  - farm/lumber/quarry: shallow perExtra so organic growth is not
+//    penalised; the softTarget is the minimum count for a self-sustaining
+//    chain.
+//  - herb_garden: softTarget=2 matches the scenario recipe gate for a
+//    clinic pipeline.
+export const BUILD_COST_ESCALATOR = Object.freeze({
+  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.2, cap: 2.5 }),
+  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0 }),
+  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
+  smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
+  clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
+  farm: Object.freeze({ softTarget: 6, perExtra: 0.1, cap: 1.8 }),
+  lumber: Object.freeze({ softTarget: 4, perExtra: 0.1, cap: 1.8 }),
+  quarry: Object.freeze({ softTarget: 3, perExtra: 0.15, cap: 1.8 }),
+  herb_garden: Object.freeze({ softTarget: 2, perExtra: 0.15, cap: 2.0 }),
+});
+
+/**
+ * Compute the escalated build cost for the Nth copy of `kind`. The base
+ * cost comes from BUILD_COST and is multiplied by the escalator factor
+ *   min(cap, 1 + perExtra × max(0, existingCount - softTarget))
+ * for each resource axis (wood / stone / herbs). If `kind` is not in
+ * BUILD_COST_ESCALATOR (road / bridge / erase), the base cost is returned
+ * unchanged.
+ *
+ * Results are rounded up (Math.ceil) so integer resource pools are never
+ * gated by a fractional cost. Keys absent on the base cost object stay
+ * absent on the result (no phantom "stone: 0" axes that confuse canAfford).
+ *
+ * @param {string} kind — build tool key (e.g. "warehouse")
+ * @param {number} existingCount — how many copies already exist
+ * @returns {Record<string, number>} — { wood?, stone?, herbs?, food? }
+ */
+export function computeEscalatedBuildCost(kind, existingCount) {
+  const base = BUILD_COST[kind] ?? {};
+  const esc = BUILD_COST_ESCALATOR[kind];
+  if (!esc) {
+    // Return a shallow clone so callers can't accidentally mutate the
+    // frozen base constant.
+    return { ...base };
+  }
+  const count = Math.max(0, Number(existingCount) | 0);
+  const over = Math.max(0, count - Number(esc.softTarget ?? 0));
+  const rawMultiplier = 1 + Number(esc.perExtra ?? 0) * over;
+  const cap = Number(esc.cap ?? rawMultiplier);
+  const multiplier = Math.min(cap, rawMultiplier);
+  const out = {};
+  for (const [res, amount] of Object.entries(base)) {
+    const v = Number(amount ?? 0);
+    out[res] = Math.ceil(v * multiplier);
+  }
+  return out;
+}
+
+/**
+ * Map a build tool key to the plural key used in `state.buildings` so
+ * callers can look up the current count for escalator input.
+ *
+ * @param {string} kind
+ * @returns {string}
+ */
+export function pluralBuildingKey(kind) {
+  switch (kind) {
+    case "warehouse": return "warehouses";
+    case "wall": return "walls";
+    case "kitchen": return "kitchens";
+    case "smithy": return "smithies";
+    case "clinic": return "clinics";
+    case "farm": return "farms";
+    case "lumber": return "lumbers";
+    case "quarry": return "quarries";
+    case "herb_garden": return "herbGardens";
+    default: return kind;
+  }
+}
+
 export const CONSTRUCTION_BALANCE = Object.freeze({
   salvageRefundRatio: 0.5,
   worksiteAccessRadius: 2,

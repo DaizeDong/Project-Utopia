@@ -9,7 +9,12 @@
  * 5. Manage planning cadence (trigger conditions, cooldowns)
  */
 
-import { BALANCE, BUILD_COST } from "../../../config/balance.js";
+import {
+  BALANCE,
+  BUILD_COST,
+  computeEscalatedBuildCost,
+  pluralBuildingKey,
+} from "../../../config/balance.js";
 import { TILE, MOVE_DIRECTIONS_4 } from "../../../config/constants.js";
 import { inBounds, toIndex, getTileState, listTilesByType } from "../../../world/grid/Grid.js";
 import {
@@ -511,9 +516,19 @@ export function generateFallbackPlan(observation, state) {
   const workerCount = observation.workforce?.total ?? 0;
   const threat = observation.defense?.threat ?? 0;
 
+  // v0.8.2 Round-5 Wave-3 (02c Step 5) — escalator-aware affordability. The
+  // Nth farm/kitchen costs more than the flat BUILD_COST[kind] value once
+  // the colony is over BUILD_COST_ESCALATOR[kind].softTarget. Using the
+  // escalated cost here stops the fallback from emitting a "build farm"
+  // step that the ConstructionSystem will immediately bounce with
+  // "insufficientResource" — which was producing ghost retry loops at
+  // Feedbacks/02c run-1 (warehouse×15 spam).
+  const farmCost = computeEscalatedBuildCost("farm", farms);
+  const kitchenCost = computeEscalatedBuildCost("kitchen", kitchens);
+
   // Priority 1: Food crisis — add farms FIRST if food rate is negative
   if (foodRate < 0 && food < 40) {
-    if (wood >= 5) {
+    if (wood >= (farmCost.wood ?? 5)) {
       steps.push(_step(nextId++, "farm", "near_cluster:c0", "critical",
         "Food declining, need immediate food production",
         { food_rate_delta: "+0.4/s" }));
@@ -522,14 +537,21 @@ export function generateFallbackPlan(observation, state) {
       // replace the second farm with a kitchen. Stacking farms on a population
       // that can't eat raw food at the production rate just leaves food to
       // rot; a kitchen converts food→meals at 2× hunger efficiency.
-      if (workerCount >= 12 && kitchens === 0 && wood >= 8 && stone >= 2) {
+      if (workerCount >= 12 && kitchens === 0
+          && wood >= (kitchenCost.wood ?? 8)
+          && stone >= (kitchenCost.stone ?? 2)) {
         steps.push(_step(nextId++, "kitchen", "near_cluster:c0", "critical",
           "Pop exceeds meal throughput — forcing kitchen before more farms",
           { meals_rate: "+1/cycle", food_efficiency: "2x" }, [nextId - 2]));
-      } else if (wood >= 10) {
-        steps.push(_step(nextId++, "farm", `near_step:${nextId - 2}`, "high",
-          "Double down on food to reverse decline",
-          { food_rate_delta: "+0.4/s" }, [nextId - 2]));
+      } else if (wood >= (farmCost.wood ?? 5) + 5) {
+        // Second farm: use fresh escalator since the first farm increased
+        // the count; add 5 wood headroom so logistics road is still plausible.
+        const secondFarmCost = computeEscalatedBuildCost("farm", farms + 1);
+        if (wood >= (secondFarmCost.wood ?? 5)) {
+          steps.push(_step(nextId++, "farm", `near_step:${nextId - 2}`, "high",
+            "Double down on food to reverse decline",
+            { food_rate_delta: "+0.4/s" }, [nextId - 2]));
+        }
       }
     } else if (wood >= 1) {
       // Can't afford farm, but can build road to maintain productivity
