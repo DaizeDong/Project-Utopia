@@ -145,16 +145,32 @@ function formatBeatText(beat) {
  */
 function humaniseSummary(raw) {
   if (!raw) return raw;
-  let out = raw;
+  let out = String(raw);
+  // v0.8.2 Round-5 Wave-3 (01e Step 2 + 02e Step 1) — entry forecast that
+  // swallows any leftover "(the colony should )?sustain " prefix immediately
+  // followed by another verb (rebuild/reconnect/clear/keep/run/hug/strike/push/
+  // work/disrupt/harass). This happens when upstream templates or older
+  // cached payloads still carry the deprecated "sustain <verb-phrase>"
+  // grammar trap. Kill the residue before any of the rewrite rules can
+  // amplify it (Round-0 rebuild→reconnect cascade observed in Feedback §3).
+  out = out.replace(
+    /\b(?:the colony should |workers should )?sustain (?=(?:rebuild|reconnect|clear|keep|run|hug|strike|push|work|disrupt|harass)\b)/gi,
+    "",
+  );
   const rules = [
     [/route repair and depot relief/gi, "rebuild the broken supply lane"],
-    [/rebuild the broken supply lane/gi, "reconnect the broken supply lane"],
+    // Round-5 Wave-3 (01e Step 2) — removed rebuild→reconnect double-rewrite:
+    // the upstream focus word is already "rebuild"; collapsing it here gave
+    // the HUD the "sustain reconnect …" observation in Feedbacks/01e §3.
     [/cargo relief/gi, "clear the stalled cargo"],
     [/stockpile throughput/gi, "keep the larder filling"],
     [/safe frontier throughput/gi, "work the safe edge of the frontier"],
     [/sustain frontier buildout/gi, "sustain the frontier push"],
     [/frontier buildout/gi, "push the frontier outward"],
-    [/push the frontier outward/gi, "push the frontier outward while keeping the rear supplied"],
+    // Round-5 Wave-3 (02e Step 1) — removed "push the frontier outward →
+    // push … while keeping the rear supplied": rule stacked with upstream
+    // summary template to produce the double-clause sentence the HUD
+    // clipped into the "reroute pres…" residue (Feedbacks/02e §3).
     [/forward depot trade/gi, "run trade to the forward depot"],
     [/defended warehouse lanes/gi, "hug the warehouse lanes"],
     [/warehouse circulation/gi, "keep goods moving between warehouses"],
@@ -171,6 +187,105 @@ function humaniseSummary(raw) {
   ];
   for (const [pat, repl] of rules) out = out.replace(pat, repl);
   return out;
+}
+
+// v0.8.2 Round-5 Wave-3 (02e Step 2) — Authorial voice pack.
+//
+// All strings below are direct reuses of text already written elsewhere in
+// the repository (scenario.meta openingPressure, Kitchen BuildAdvisor
+// tooltip). No new authored prose is added — this is a transport layer that
+// reinjects the author's voice into the HUD strip so players finally read
+// those sentences during play instead of only in menu/help/tooltip surfaces.
+//
+// Keyed by (mapTemplateId × focusTag). focusTag is derived from the raw
+// focus text via deriveFocusTag() below. The default bucket (*) is the
+// fallback when no mapTemplate-specific override exists.
+//
+// Sources:
+//   - temperate_plains / fertile_riverlands / rugged_highlands /
+//     fortified_basin / archipelago_isles / coastal_ocean openingPressure
+//     strings are from src/world/scenarios/ScenarioFactory.js:27-77.
+//   - Default "Kitchen" line is from src/simulation/construction/
+//     BuildAdvisor.js:61 ("the difference between a stocked warehouse and
+//     workers starving beside it").
+const AUTHOR_VOICE_PACK = Object.freeze({
+  temperate_plains: Object.freeze({
+    "broken-routes": "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+    "cargo-stall": "The difference between a stocked warehouse and workers starving beside it — clear the cargo before that gap opens.",
+    default: "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+  }),
+  fertile_riverlands: Object.freeze({
+    "broken-routes": "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+    default: "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+  }),
+  rugged_highlands: Object.freeze({
+    frontier: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+    "broken-routes": "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+    default: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+  }),
+  fortified_basin: Object.freeze({
+    "broken-routes": "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+    safety: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+    default: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+  }),
+  archipelago_isles: Object.freeze({
+    stockpile: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+    "broken-routes": "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+    default: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+  }),
+  coastal_ocean: Object.freeze({
+    "broken-routes": "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+    default: "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+  }),
+  "*": Object.freeze({
+    default: "The difference between a stocked warehouse and workers starving beside it — keep the chain reinforcing itself.",
+  }),
+});
+
+/**
+ * Derive a coarse focusTag from the focus text. Used only to index
+ * AUTHOR_VOICE_PACK — non-matching focus falls through to the template's
+ * `default` bucket, which in turn falls through to the `*` default.
+ *
+ * @param {string} focus
+ * @returns {string}
+ */
+function deriveFocusTag(focus) {
+  const f = String(focus ?? "").toLowerCase();
+  if (!f) return "default";
+  if (/(broken|supply lane|rebuild|reconnect|route repair)/.test(f)) return "broken-routes";
+  if (/(cargo|stalled cargo|cargo relief)/.test(f)) return "cargo-stall";
+  if (/(stockpile|larder|food recovery)/.test(f)) return "stockpile";
+  if (/(frontier buildout|push the frontier|safe edge of the frontier)/.test(f)) return "frontier";
+  if (/(safety|defend|hold the gates|wall)/.test(f)) return "safety";
+  return "default";
+}
+
+/**
+ * Look up an author-voice line by (mapTemplateId, focusTag). Returns
+ * `{ text, hit: true }` on success (template → focusTag match, with
+ * default-bucket + global-fallback cascades) or `{ text: "", hit: false }`
+ * when nothing in the pack is applicable.
+ *
+ * @param {string} mapTemplateId
+ * @param {string} focusTag
+ * @returns {{ text: string, hit: boolean }}
+ */
+function lookupAuthorVoice(mapTemplateId, focusTag) {
+  const tplBucket = AUTHOR_VOICE_PACK[String(mapTemplateId ?? "")] ?? null;
+  if (tplBucket && typeof tplBucket === "object") {
+    if (typeof tplBucket[focusTag] === "string" && tplBucket[focusTag]) {
+      return { text: tplBucket[focusTag], hit: true };
+    }
+    if (typeof tplBucket.default === "string" && tplBucket.default) {
+      return { text: tplBucket.default, hit: true };
+    }
+  }
+  const globalBucket = AUTHOR_VOICE_PACK["*"];
+  if (globalBucket && typeof globalBucket.default === "string" && globalBucket.default) {
+    return { text: globalBucket.default, hit: true };
+  }
+  return { text: "", hit: false };
 }
 
 function buildTemplateTag(state) {
@@ -236,6 +351,8 @@ export function computeStorytellerStripText(state) {
  */
 export function computeStorytellerStripModel(state) {
   const source = String(state?.ai?.lastPolicySource ?? "").toLowerCase();
+  const lastPolicyError = String(state?.ai?.lastPolicyError ?? "").trim();
+  const proxyHealth = String(state?.metrics?.proxyHealth ?? "").toLowerCase();
 
   let focus = "";
   let summary = "";
@@ -266,20 +383,67 @@ export function computeStorytellerStripModel(state) {
   else if (hasPolicy) mode = "fallback";
   else mode = "idle";
 
-  const prefix = mode === "llm"
+  // v0.8.2 Round-5 Wave-3 (02e Step 4) — badgeState four-way split so the
+  // HUD can differentiate a healthy live-LLM tick from a stale / degraded
+  // fallback. WHISPER only lights up when we are both sourcing from the LLM
+  // AND do NOT carry a lastPolicyError: previously any `source==="llm"` tick
+  // unconditionally showed WHISPER, making the badge a promise the runtime
+  // could not keep when the proxy flipped to error mid-session.
+  let badgeState;
+  if (mode === "llm" && !lastPolicyError) badgeState = "llm-live";
+  else if (mode === "llm" && lastPolicyError) badgeState = "llm-stale";
+  else if (mode === "fallback" && (proxyHealth === "error" || lastPolicyError)) badgeState = "fallback-degraded";
+  else if (mode === "fallback") badgeState = "fallback-healthy";
+  else badgeState = "idle";
+
+  // Prefix: WHISPER only for healthy live LLM; stale LLM falls back to
+  // DIRECTOR so players are not misled into thinking the model is driving
+  // the colony when the last tick errored. idle → DRIFT (unchanged).
+  const prefix = badgeState === "llm-live"
     ? "WHISPER"
-    : mode === "fallback"
-      ? "DIRECTOR"
-      : "DRIFT";
+    : mode === "idle"
+      ? "DRIFT"
+      : "DIRECTOR";
 
   // Idle copy communicates fallback-as-feature rather than going silent.
   // Keep the texts fully human-readable — no raw LLM debug tokens.
-  const focusText = hasPolicy
+  let focusText = hasPolicy
     ? humaniseSummary(focus || "current directives")
     : "autopilot";
-  const summaryText = hasPolicy
-    ? humaniseSummary(summary || "colony on autopilot")
-    : "colony holding steady — awaiting the next directive";
+
+  // v0.8.2 Round-5 Wave-3 (02e Step 3) — voice-pack lookup. Only applies
+  // in the fallback path (mode === "fallback"): the LLM-driven path stays
+  // verbatim so authored model output is never overwritten. Idle keeps its
+  // "holding steady" copy. See AUTHOR_VOICE_PACK comment for source origins.
+  const mapTemplateId = String(state?.world?.mapTemplateId ?? "").trim();
+  const focusTag = deriveFocusTag(focus);
+  let summaryText;
+  let voicePackHit = false;
+  if (hasPolicy) {
+    if (mode === "fallback") {
+      const vp = lookupAuthorVoice(mapTemplateId, focusTag);
+      if (vp.hit) {
+        summaryText = vp.text;
+        voicePackHit = true;
+      } else {
+        summaryText = humaniseSummary(summary || "colony on autopilot");
+      }
+    } else {
+      summaryText = humaniseSummary(summary || "colony on autopilot");
+    }
+  } else {
+    summaryText = "colony holding steady \u2014 awaiting the next directive";
+  }
+
+  // v0.8.2 Round-5 Wave-3 (01e Step 3) — in the fallback path, prefix the
+  // focusText with "DIRECTOR picks " so the HUD strip makes the decision-
+  // maker explicit. Only applies when the focus is not already "autopilot"
+  // and does not already lead with "DIRECTOR"; the llm path is untouched so
+  // WHISPER text stays coherent (R4 in the Plan Risks section).
+  if (mode === "fallback" && focusText && focusText !== "autopilot"
+      && !/^DIRECTOR\s+/i.test(focusText)) {
+    focusText = `DIRECTOR picks ${focusText}`;
+  }
 
   // v0.8.2 Round-1 02d-roleplayer — fan-out salient event-trace beats into
   // the model so HUDController can render them into `#storytellerBeat`
@@ -288,5 +452,14 @@ export function computeStorytellerStripModel(state) {
   const beatText = formatBeatText(beat);
   const templateTag = buildTemplateTag(state);
 
-  return { mode, focusText, summaryText, prefix, beatText, templateTag };
+  return {
+    mode,
+    focusText,
+    summaryText,
+    prefix,
+    beatText,
+    templateTag,
+    badgeState,
+    voicePackHit,
+  };
 }

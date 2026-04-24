@@ -831,8 +831,18 @@ export class HUDController {
           if (getBadgeEl.dataset.mode !== model.mode) {
             getBadgeEl.dataset.mode = model.mode;
           }
+          // v0.8.2 Round-5 Wave-3 (02e Step 5) — expose badgeState (four-way
+          // split: llm-live / llm-stale / fallback-degraded / fallback-healthy /
+          // idle) independently of the legacy `mode`. Downstream selectors
+          // and tests can key off `dataset.state` to tell a healthy fallback
+          // from a degraded one without inspecting other state.
+          const nextBadgeState = String(model.badgeState ?? "");
+          if (nextBadgeState && getBadgeEl.dataset.state !== nextBadgeState) {
+            getBadgeEl.dataset.state = nextBadgeState;
+          }
         } else {
           getBadgeEl.setAttribute?.("data-mode", model.mode);
+          if (model.badgeState) getBadgeEl.setAttribute?.("data-state", String(model.badgeState));
         }
         if (getFocusEl.textContent !== model.focusText) {
           getFocusEl.textContent = model.focusText;
@@ -883,10 +893,28 @@ export class HUDController {
           }
         }
 
-        const beatFrag = (getBeatEl && getBeatEl.textContent) ? ` · ${getBeatEl.textContent}` : "";
+        const beatFrag = (getBeatEl && getBeatEl.textContent) ? ` \u00B7 ${getBeatEl.textContent}` : "";
         const tagFrag = model.templateTag ? `${model.templateTag} | ` : "";
-        const tooltipText = `${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
+        // v0.8.2 Round-5 Wave-3 (02e Step 5) — fallback-degraded tooltip
+        // prefix so hover on the strip explicitly states the LLM is offline
+        // and the rule-based director is in charge. Keeps the strip's main
+        // text clean while giving the player a one-hover answer to "what
+        // happened to WHISPER?".
+        const degradedPrefix = (model.badgeState === "fallback-degraded")
+          ? "[LLM offline \u2014 rule director in charge] "
+          : "";
+        const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
+        // v0.8.2 Round-5 Wave-3 (02e Step 5) — aria-label marker when the
+        // summary text is sourced from AUTHOR_VOICE_PACK. Enables test /
+        // a11y selectors to confirm voice-pack reach-through.
+        if (getSummaryEl) {
+          if (model.voicePackHit) {
+            getSummaryEl.setAttribute?.("aria-label", "author-voice");
+          } else {
+            getSummaryEl.removeAttribute?.("aria-label");
+          }
+        }
         }
       } else {
         const text = milestoneFlash?.text ?? computeStorytellerStripText(state);
