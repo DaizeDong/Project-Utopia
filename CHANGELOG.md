@@ -1,5 +1,141 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 UI Overhaul + LLM Agent Context Expansion
+
+**Scope:** Comprehensive UI polish pass (sidebar, status bar, Colony health card, dev tools separation, hotkey display, terrain overlay, tile info tooltip, fog fix, water hard-block) plus LLM agent context expansion (terrain/soil/node/connectivity aggregates, new fallback cases, bridge utility). No new tile types.
+
+### New Features
+- **UI overhaul**: Right sidebar with collapsible panels (Build/Colony/Settings/Debug); compact status bar (icon+number, no bars); Colony health card with THRIVING/STABLE/STRUGGLING/CRISIS badge; dev tools moved from Settings to Debug panel; sidebar tab divider; improved hotkey display in Build panel
+- **Tile info system**: Hover tooltip in Select mode showing tile type, elevation, moisture, fertility, building info; T key terrain fertility overlay; lens button active-state visual
+- **Terrain fog fix**: Fog-of-war DataTexture flipY=true, LinearFilter smooth edges, renderOrder=42 above all entities; fog correctly tracks worker positions
+- **Water pathfinding**: Workers/animals hard-blocked from water tiles via BoidsSystem position revert; edge-boundary damping prevents corner-trapping
+- **Resource spread**: Radial zone bias pushes FARM/LUMBER/QUARRY/HERB placement away from colony center; minimum inter-cluster distance (12 tiles)
+- **AI building terrain-awareness**: PlacementSpecialist terrain scoring, water-edge penalty (−5.0 for >1 water neighbors), synergy bonuses (farm→warehouse, kitchen→warehouse, etc.)
+- **LLM agent context**: ColonyPerceiver now reports terrain (elevation/moisture), soil health (salinization), resource node depletion, and water connectivity to LLM and fallback planner
+- **LLM fallback cases**: PromptBuilder handles medicine shortage, tool shortage, soil crisis, node depletion, water isolation
+- **Bridge utility**: ColonyPlanner detects water-isolated resources and suggests bridge construction; `bridge` added to worker allowed targets in aiConfig.js
+
+### Validation
+
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+- Browser smoke test: game loads with no console errors; status bar compact; Colony health card live; Build panel hotkey grid visible; sidebar tab divider present; Debug panel contains dev tools.
+
+---
+
+## [Unreleased] - v0.8.x UI Overhaul — Dev/Player Separation, Colony Health Card, Hotkey Grid, Tab Divider
+
+**Scope:** Comprehensive UI polish pass. Separates dev tools from player controls, adds Colony Health Card overview, improves hotkey discoverability, adds visual sidebar tab grouping. No new game mechanics or tile types.
+
+### New Features / Improvements
+
+- **Settings panel cleaned up** (`index.html`): Settings panel now shows only player-facing controls (farm ratio, role quotas, map template/doctrine, autopilot, save/load undo/redo). Terrain Tuning, Advanced Runtime, and Population Control sections moved to a new "Dev Tools" collapsible card inside the Debug panel. All element IDs preserved.
+
+- **Colony Health Card** (`index.html`, `HUDController.js`): Added `#colonyHealthCard` at the top of the Colony panel showing live status badge (THRIVING/STABLE/STRUGGLING/CRISIS), current day, food rate per minute, idle worker count, and threat percentage. Left border color changes green/yellow/red based on threat tier. Updated via new `#updateColonyHealthCard(state)` private method called each render().
+
+- **Hotkey grid in Build panel** (`index.html`): Replaced the tiny dismissible status-bar hint with a proper 2-column keyboard shortcut grid at the bottom of the Build Tools card. Covers 10 bindings (1–12, Space, Esc, T, L, F1/?, Ctrl+Z, Ctrl+Y, 0, Alt+Click) in monospace font with key-cap styling.
+
+- **Sidebar tab divider** (`index.html`): Added `<div class="sidebar-tab-divider">` between Debug and Heat (L) buttons in the tab strip. Lens/Help buttons styled with lower-opacity tint to visually distinguish tool-toggles from panel-navigation tabs.
+
+- **Sidebar toggle arrow** (`index.html`): Toggle button now shows `←` (U+2190) when sidebar is open and `☰` when closed, making close direction explicit.
+
+- **Status bar hotkey hint hidden** (`index.html`): `#hotkey-hint` span kept in DOM for JS compatibility but hidden (display:none). Hotkey information now lives in the Build panel.
+
+### Files Changed
+
+- `index.html` — Settings panel restructure, Dev Tools section in Debug panel, Colony Health Card, hotkey grid, tab divider + lens styling, sidebar toggle arrow
+- `src/ui/hud/HUDController.js` — `#updateColonyHealthCard(state)` private method + render() call
+
+### Validation
+
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+- Browser smoke test: Colony Health Card updates live, Settings panel shows only player controls, Debug panel shows Dev Tools subsection, hotkey grid visible in Build panel, tab divider visible in sidebar strip, toggle button shows ←/☰ correctly.
+
+## [Unreleased] - v0.8.x Optimization Round 3 — Final Polish: Edge Damping, Fog Z-Order, Tooltip Bounds, HUD Hint, Bridge AI
+
+**Scope:** Five targeted hardening passes completing the Round 3 polish spec. No new tiles, buildings, or colony mechanics added.
+
+### New Features / Improvements
+
+- **Worker edge boundary damping** (`BoidsSystem.js`): After the existing impassable-tile revert, added a boundary reflection step that strongly damps (×0.3) any velocity component pointing further toward the map edge when an entity is within 1.5 tile-sizes of the boundary. Prevents boids forces from cornering path-following workers even when they have a valid active route.
+
+- **Fog renderOrder fix** (`FogOverlay.js`): Raised fog mesh `renderOrder` from 10 to 42 (above the highest scene renderOrder SELECTION_RING=38). With `depthTest:false`, the fog quad now correctly composites over all 3D entities — workers/animals in HIDDEN zones are properly occluded rather than peeking through the fog layer.
+
+- **Tooltip sidebar-aware positioning** (`SceneRenderer.js`): `#updateTileInfoTooltip` now detects whether the right sidebar is open (`#wrap.sidebar-open`) and uses a tighter right-bound limit (280px vs 36px for tab strip only), preventing tooltips from being hidden under the sidebar panel. Also adds a 50px bottom guard for the control bar.
+
+- **HUD hotkey hint** (`index.html`): Added a dismissible `#hotkey-hint` span in the status bar — "Select: hover tiles for info · T: fertility" — styled at 9px / 50% opacity so it doesn't compete with resource displays. Clicking hides it permanently for the session.
+
+- **Bridge utility AI** (`ColonyPlanner.js`): Added `_detectWaterIsolation` helper and a Priority 5.5 step in `generateFallbackPlan`. When any FARM/LUMBER/QUARRY/HERB_GARDEN tile has no reachable warehouse (BFS probe) and has an adjacent WATER tile, the fallback planner emits a medium-priority `bridge` action at the water tile coordinate. Surfaces the "resources cut off by water" signal that was previously invisible to the AI.
+
+### Files Changed
+
+- `src/simulation/movement/BoidsSystem.js` — boundary reflection velocity damping after passability revert
+- `src/render/FogOverlay.js` — renderOrder 10 → 42 to occlude entities correctly
+- `src/render/SceneRenderer.js` — sidebar-aware tooltip right bound + bottom guard
+- `index.html` — `.hud-hint` CSS + `#hotkey-hint` dismissible span in `#statusBar`
+- `src/simulation/ai/colony/ColonyPlanner.js` — `_detectWaterIsolation` helper + Priority 5.5 bridge suggestion in `generateFallbackPlan`
+
+### Validation
+
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+- Browser smoke test: game loads, fog renders correctly over entities, workers stay on land, T toggles terrain overlay, hotkey hint visible and dismissible.
+
+## [Unreleased] - v0.8.x Optimization Round 2 — Fog Polish, Tooltip Depth, Resource Spread
+
+**Scope:** Four targeted quality improvements building on Round 1 foundations. No new tiles, buildings, or game mechanics added.
+
+### New Features / Improvements
+
+- **Fog smooth edges** (`FogOverlay.js`): Changed DataTexture `magFilter`/`minFilter` from `NearestFilter` to `LinearFilter` so the GPU bilinearly interpolates between fog-state texels, eliminating the hard pixelated tile-border artifact. Added `edgeSoftness: 0.15` uniform and updated the fragment shader to use `smoothstep` for a gentle alpha blend between HIDDEN (0.75) and EXPLORED (0.35) zones.
+
+- **Tooltip building info** (`SceneRenderer.js`): `#updateTileInfoTooltip` now shows a "Role / Input / Output" row block for every building tile type (FARM, LUMBER, QUARRY, HERB_GARDEN, WAREHOUSE, KITCHEN, SMITHY, CLINIC, ROAD, BRIDGE, WALL, RUINS). Added a keyboard shortcut footer: "B = build · R = road · T = fertility" at the bottom of every tooltip.
+
+- **Resource cluster minimum distance** (`Grid.js`): `placeDistrictBlobs` now accumulates placed blob centers and skips any candidate center whose Euclidean distance to an existing center of the same type is less than `BLOB_MIN_SPREAD * 0.5` (6 tiles). `BLOB_MIN_SPREAD = 12`. Prevents farm/lumber/quarry/herb blobs from merging into one super-cluster at a single map edge.
+
+### Goals Skipped
+
+- **Goal B (spawn water check)**: All worker spawn paths (`EntityFactory.createInitialEntitiesWithRandom`, `PopulationGrowthSystem`, `GameApp.applyPopulationTargets`, `GameApp.setExtraWorkers`) already use `randomPassableTile` or `randomTileOfTypes` which filter out WATER tiles. No code change needed.
+- **Goal C (bridge utility)**: Deferred — bridge AI integration in ColonyPlanner/ColonyPerceiver requires careful connectivity analysis to avoid false positives.
+
+### Files Changed
+
+- `src/render/FogOverlay.js` — LinearFilter, edgeSoftness uniform, smoothstep fragment shader
+- `src/render/SceneRenderer.js` — building desc block + keyboard hint footer in tooltip
+- `src/world/grid/Grid.js` — BLOB_MIN_SPREAD constant + spread check in placeDistrictBlobs
+
+### Validation
+
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+
+## [Unreleased] - v0.8.x Optimization Round 1 — Fix Verification + UI Polish
+
+**Scope:** Verified 7 previously implemented fixes (fog of war, water passability, edge-stuck workers, tile tooltip, terrain overlay, resource spread, AI placement) via live browser observation. Made 3 targeted UI improvements; no new features, tiles, buildings, or game logic added.
+
+### Verified Fixes (all confirmed working)
+
+1. **Fog of war** (`FogOverlay.js`): `flipY=true` + `renderOrder=10` correctly aligns revealed area with worker positions.
+2. **Water passability** (`BoidsSystem.js`): entities revert to previous position when pushed onto impassable (WATER/WALL) tiles by boids forces.
+3. **Edge-stuck workers** (`Navigation.js`): idle workers within 8% of map edge receive a center-seeking velocity, preventing boids from trapping them at boundaries.
+4. **Tile info tooltip** (`SceneRenderer.js`): tooltip shows tile name, passable status, elevation, moisture, fertility, yield pool, salinization, and neighbor hints when Select tool is active.
+5. **Terrain overlay** (`SceneRenderer.js`): T key toggles fertility overlay; tile tab button shows active state via `classList.toggle("active", active)`.
+6. **Resource placement spread** (`Grid.js`): `radialZoneBias` function penalizes resource placement within 8 tiles of center and rewards placement beyond 25 tiles, pushing farms/lumber/quarries outward.
+7. **AI building terrain-awareness** (`PlacementSpecialist.js`): candidate tiles sorted by terrain score; water-edge penalty and synergy bonuses applied before LLM/algorithmic placement.
+
+### Improvements Made
+
+- **Entity Focus panel repositioned** (`index.html`): moved from `bottom: 50px; left: 50%` (center-screen, blocking game canvas) to `bottom: 50px; left: 8px` (bottom-left corner). Also hidden during pregame. Frees the center viewport for the game map.
+- **Tile tooltip HTML formatting** (`SceneRenderer.js`): switched from plain `textContent` with `pre-line` to `innerHTML` rows — tile name is bold, passable status is green/red, fertility label is color-coded, hints are italic. Uses a local `esc()` helper to prevent XSS from enum strings.
+- **Lens button active state** (`index.html`): `#terrainLensBtn.active` now shows green tint (`rgba(76,175,80,0.22)`) and `#heatLensBtn.active` shows amber tint, distinguishing "overlay is ON" from a selected panel tab (blue).
+
+### Files Changed
+
+- `index.html` — entity focus position, tooltip white-space, lens active styles
+- `src/render/SceneRenderer.js` — tooltip HTML formatting with bold keys and color-coded values
+
+### Validation
+
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+- Browser smoke: all 7 fixes verified via live screenshots and JS evaluation; 3 improvements confirmed visually.
+
 ## [Unreleased] - v0.8.x iter-4 Blind Review / System Trust Pass (Agent-Feedback-Loop Round 4)
 
 **Scope:** 10 blind reviewer feedbacks, 10 enhancer plans, 3 accepted structural plans, and 7 deferred/subsumed plans executed in 3 waves. Feature freeze held: no new buildings, tiles, tools, assets, audio, victory conditions, score systems, or character-sim mechanics.

@@ -1070,6 +1070,177 @@ export function sampleDevIndexDims(state) {
   };
 }
 
+// ── v0.8.2: Terrain, Soil, Node Depletion, Connectivity helpers ──────
+
+/**
+ * sampleTerrainAggregates — compute global elevation/moisture stats.
+ * Skips WATER tiles so ocean/river tiles don't dilute land averages.
+ * @param {object} grid
+ * @returns {{avgElevation:number, avgMoisture:number, highElevationRatio:number, lowMoistureRatio:number}}
+ */
+export function sampleTerrainAggregates(grid) {
+  const out = {
+    avgElevation: 0.5,
+    avgMoisture: 0.5,
+    highElevationRatio: 0,
+    lowMoistureRatio: 0,
+  };
+  if (!grid?.tiles) return out;
+
+  const width = grid.width;
+  const total = grid.tiles.length;
+  let sumElev = 0, sumMoist = 0, highCount = 0, lowMoistCount = 0, passable = 0;
+
+  for (let idx = 0; idx < total; idx++) {
+    if (grid.tiles[idx] === TILE.WATER) continue;
+    passable++;
+    const elev = (grid.elevation?.[idx] ?? 128) / 255;
+    const moist = (grid.moisture?.[idx] ?? 128) / 255;
+    sumElev += elev;
+    sumMoist += moist;
+    if (elev > 0.6) highCount++;
+    if (moist < 0.3) lowMoistCount++;
+  }
+
+  if (passable === 0) return out;
+  return {
+    avgElevation: Math.round(sumElev / passable * 100) / 100,
+    avgMoisture: Math.round(sumMoist / passable * 100) / 100,
+    highElevationRatio: Math.round(highCount / passable * 100) / 100,
+    lowMoistureRatio: Math.round(lowMoistCount / passable * 100) / 100,
+  };
+}
+
+/**
+ * sampleSoilAggregates — walk FARM tiles and aggregate salinization.
+ * @param {object} grid
+ * @returns {{salinizedFarmCount:number, criticalSalinized:number, avgFarmSalinization:number}}
+ */
+export function sampleSoilAggregates(grid) {
+  const out = { salinizedFarmCount: 0, criticalSalinized: 0, avgFarmSalinization: 0 };
+  if (!grid?.tileState || !grid?.tiles) return out;
+
+  let sumSalin = 0, farmCount = 0;
+  const width = grid.width;
+
+  for (const [idx, entry] of grid.tileState) {
+    if (!entry) continue;
+    if (grid.tiles[idx] !== TILE.FARM) continue;
+    farmCount++;
+    const salin = Number(entry.salinized ?? 0);
+    sumSalin += salin;
+    if (salin > 0.6) out.salinizedFarmCount++;
+    if (salin > 0.9) out.criticalSalinized++;
+  }
+
+  out.avgFarmSalinization = farmCount > 0 ? Math.round(sumSalin / farmCount * 100) / 100 : 0;
+  return out;
+}
+
+/**
+ * sampleNodeDepletionCounts — count depleted and at-risk resource nodes.
+ * A LUMBER tile is "depleted" if its yieldPool < 20; "at-risk" if < 60.
+ * Same thresholds for QUARRY and HERB_GARDEN.
+ * @param {object} grid
+ * @returns {{depletedForestCount:number, depletedStoneCount:number, atRiskNodeCount:number}}
+ */
+export function sampleNodeDepletionCounts(grid) {
+  const out = { depletedForestCount: 0, depletedStoneCount: 0, atRiskNodeCount: 0 };
+  if (!grid?.tileState || !grid?.tiles) return out;
+
+  const DEPLETED_THRESHOLD = 20;
+  const AT_RISK_THRESHOLD = 60;
+
+  for (const [idx, entry] of grid.tileState) {
+    if (!entry) continue;
+    const pool = Number(entry.yieldPool ?? 0);
+    const tile = grid.tiles[idx];
+
+    if (tile === TILE.LUMBER) {
+      if (pool < DEPLETED_THRESHOLD) out.depletedForestCount++;
+      else if (pool < AT_RISK_THRESHOLD) out.atRiskNodeCount++;
+    } else if (tile === TILE.QUARRY) {
+      if (pool < DEPLETED_THRESHOLD) out.depletedStoneCount++;
+      else if (pool < AT_RISK_THRESHOLD) out.atRiskNodeCount++;
+    } else if (tile === TILE.HERB_GARDEN) {
+      if (pool < AT_RISK_THRESHOLD) out.atRiskNodeCount++;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * sampleWaterConnectivity — detect production tiles isolated by water.
+ * Reuses the BFS logic from ColonyPlanner._detectWaterIsolation by scanning
+ * all production tiles for water-adjacent unreachable cases.
+ * Returns the count of isolated tiles and the first bridge coordinate.
+ * @param {object} state
+ * @returns {{waterIsolatedResources:number, bridgeRecommended:boolean, bridgeCoord:{ix:number,iz:number}|null}}
+ */
+export function sampleWaterConnectivity(state) {
+  const out = { waterIsolatedResources: 0, bridgeRecommended: false, bridgeCoord: null };
+  const grid = state?.grid;
+  if (!grid?.tiles) return out;
+
+  const { width, height } = grid;
+  const PRODUCER_TYPES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+
+  for (let iz = 0; iz < height; iz++) {
+    for (let ix = 0; ix < width; ix++) {
+      const tileType = grid.tiles[toIndex(ix, iz, width)];
+      if (!PRODUCER_TYPES.has(tileType)) continue;
+
+      // BFS connectivity check — look for warehouse reachable from this tile
+      // Uses a simple BFS over passable (non-water) tiles up to radius 14.
+      const visited = new Set();
+      const start = toIndex(ix, iz, width);
+      visited.add(start);
+      const queue = [[ix, iz, 0]];
+      let head = 0;
+      let reachable = false;
+      const BFS_RADIUS = 14;
+
+      while (head < queue.length) {
+        const [cx, cz, hops] = queue[head++];
+        if (hops > BFS_RADIUS) continue;
+        const cIdx = toIndex(cx, cz, width);
+        if (grid.tiles[cIdx] === TILE.WAREHOUSE) { reachable = true; break; }
+        for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+          const nx = cx + dx;
+          const nz = cz + dz;
+          if (!inBounds(nx, nz, grid)) continue;
+          const nIdx = toIndex(nx, nz, width);
+          if (visited.has(nIdx)) continue;
+          const nTile = grid.tiles[nIdx];
+          if (nTile === TILE.WATER) continue; // water blocks passage
+          visited.add(nIdx);
+          queue.push([nx, nz, hops + 1]);
+        }
+      }
+
+      if (!reachable) {
+        out.waterIsolatedResources++;
+        // Record the first bridge coord (water neighbor of the isolated tile)
+        if (!out.bridgeCoord) {
+          for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+            const nx = ix + dx;
+            const nz = iz + dz;
+            if (!inBounds(nx, nz, grid)) continue;
+            if (grid.tiles[toIndex(nx, nz, width)] === TILE.WATER) {
+              out.bridgeCoord = { ix: nx, iz: nz };
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  out.bridgeRecommended = out.waterIsolatedResources > 0;
+  return out;
+}
+
 // ── ColonyPerceiver Class ────────────────────────────────────────────────
 
 /**
@@ -1236,6 +1407,12 @@ export class ColonyPerceiver {
     const fog = sampleFogState(state);
     const devIdx = sampleDevIndexDims(state);
 
+    // ── v0.8.2: terrain + soil + node counts + connectivity ────────────
+    const terrainAgg = sampleTerrainAggregates(grid);
+    const soilAgg = sampleSoilAggregates(grid);
+    const nodeCountAgg = sampleNodeDepletionCounts(grid);
+    const connectivityAgg = sampleWaterConnectivity(state);
+
     const observation = {
       timeSec: Math.round(timeSec),
       observeCount: ++this._observeCount,
@@ -1345,6 +1522,12 @@ export class ColonyPerceiver {
         devIndexSmoothed: devIdx.devIndexSmoothed,
         saturationIndicator: devIdx.saturationIndicator,
       },
+
+      // ── v0.8.2: terrain, soil, node depletion counts, connectivity ──
+      terrain: terrainAgg,
+      soil: soilAgg,
+      nodeDepletion: nodeCountAgg,
+      connectivity: connectivityAgg,
 
       delta,
     };
@@ -1586,6 +1769,48 @@ export function formatObservationForLLM(obs) {
       const dimStr = Object.keys(dims).sort().map((k) => `${k}=${dims[k]}`).join(", ");
       lines.push(`- DevIndex: ${di.devIndex ?? 0}/100 (smoothed ${di.devIndexSmoothed ?? 0}, saturation=${di.saturationIndicator ?? "none"})`);
       if (dimStr) lines.push(`  dims: ${dimStr}`);
+    }
+  }
+
+  // ── v0.8.2: terrain + soil + node depletion + connectivity ──────────
+  if (obs.terrain || obs.soil || obs.nodeDepletion || obs.connectivity) {
+    lines.push("");
+    lines.push("### Terrain & Soil Health");
+    if (obs.terrain) {
+      const t = obs.terrain;
+      lines.push(`- Terrain: avgElev=${t.avgElevation}, avgMoist=${t.avgMoisture}, highElevRatio=${t.highElevationRatio}, lowMoistRatio=${t.lowMoistureRatio}`);
+      if ((t.lowMoistureRatio ?? 0) > 0.4) {
+        lines.push(`  ⚠ Dry terrain: ${Math.round(t.lowMoistureRatio * 100)}% of land is low-moisture — herb gardens and farms may underperform`);
+      }
+    }
+    if (obs.soil) {
+      const s = obs.soil;
+      if ((s.criticalSalinized ?? 0) > 0) {
+        lines.push(`  ⚠ SOIL CRISIS: ${s.criticalSalinized} farm(s) critically salinized (>90%) — need immediate fallow`);
+      }
+      if ((s.salinizedFarmCount ?? 0) > 0) {
+        lines.push(`  ⚠ Soil health: ${s.salinizedFarmCount} farm(s) above 60% salinization (avg=${s.avgFarmSalinization})`);
+      }
+    }
+    if (obs.nodeDepletion) {
+      const n = obs.nodeDepletion;
+      if ((n.depletedForestCount ?? 0) > 0) {
+        lines.push(`  ⚠ LUMBER CRISIS: ${n.depletedForestCount} lumber mill(s) on depleted nodes (pool<20)`);
+      }
+      if ((n.depletedStoneCount ?? 0) > 0) {
+        lines.push(`  ⚠ QUARRY CRISIS: ${n.depletedStoneCount} quarry/quarries on depleted nodes`);
+      }
+      if ((n.atRiskNodeCount ?? 0) > 0) {
+        lines.push(`  ⚠ Node risk: ${n.atRiskNodeCount} node(s) below 60% yield capacity`);
+      }
+    }
+    if (obs.connectivity) {
+      const c = obs.connectivity;
+      if (c.waterIsolatedResources > 0) {
+        const coord = c.bridgeCoord;
+        const loc = coord ? ` at tile (${coord.ix},${coord.iz})` : "";
+        lines.push(`  ⚠ WATER BARRIER: ${c.waterIsolatedResources} resource tile(s) cut off by water — build bridge${loc}`);
+      }
     }
   }
 

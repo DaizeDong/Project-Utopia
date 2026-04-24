@@ -813,11 +813,35 @@ function pickDistrictCenter(tiles, width, height, seed, matcher) {
   return best;
 }
 
+// Minimum-distance spread between same-type blob centers. Blobs of the same
+// tile type that land within BLOB_MIN_SPREAD tiles of an already-placed center
+// are skipped to prevent all blobs from piling up at the same map edge.
+const BLOB_MIN_SPREAD = 12;
+
 function placeDistrictBlobs(tiles, width, height, count, tileType, seed, pickCenter, minRadius = 2.4, maxRadius = 5.1) {
   const overwrite = new Set([TILE.GRASS, TILE.ROAD, TILE.RUINS, TILE.FARM, TILE.LUMBER]);
+  // Accumulate centers of already-painted blobs so subsequent picks can
+  // check distance and skip candidates that are too close.
+  const placedCenters = [];
   for (let i = 0; i < count; i += 1) {
     const center = pickCenter(i);
     if (!center) continue;
+
+    // Reject centers that are too close to an existing blob of the same type.
+    // Using 0.5x BLOB_MIN_SPREAD (6 tiles) as the hard veto threshold prevents
+    // visible overlap/merger between adjacent blobs of the same type.
+    let tooClose = false;
+    for (const pc of placedCenters) {
+      const dx = center.ix - pc.ix;
+      const dz = center.iz - pc.iz;
+      if (dx * dx + dz * dz < BLOB_MIN_SPREAD * BLOB_MIN_SPREAD * 0.25) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+
+    placedCenters.push({ ix: center.ix, iz: center.iz });
     const r0 = lerp(minRadius, maxRadius, hash2D(center.ix + i * 13, center.iz + i * 7, seed + 1409));
     const r1 = r0 * lerp(0.74, 1.28, hash2D(center.ix + i * 19, center.iz + i * 11, seed + 1423));
     paintBlob(tiles, width, height, center.ix, center.iz, r0, r1, tileType, seed + i * 17, overwrite);
@@ -2246,6 +2270,26 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   softenRoadEdges(tiles, width, height);
   placeWarehouses(tiles, width, height, hubs, rng);
 
+  // Radial zone bias for resource placement. Resources placed too close to
+  // the colony center gave players everything within arm's reach and removed
+  // exploration incentive. Zone thresholds (in tiles):
+  //   starting zone  dist < ZONE_NEAR  : heavy penalty — keep start area sparse
+  //   mid zone       ZONE_NEAR..FAR    : neutral
+  //   far zone       dist >= ZONE_FAR  : bonus — reward exploring outward
+  // Distances use Euclidean from grid center (spawn point).
+  const ZONE_NEAR = 8;
+  const ZONE_FAR = 25;
+  const cx = (width - 1) / 2;
+  const cz = (height - 1) / 2;
+  function radialZoneBias(ix, iz) {
+    const dx = ix - cx;
+    const dz = iz - cz;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < ZONE_NEAR) return -1.8 * (1 - dist / ZONE_NEAR);
+    if (dist >= ZONE_FAR) return 0.6 * Math.min(1, (dist - ZONE_FAR) / 15);
+    return 0;
+  }
+
   placeDistrictBlobs(
     tiles,
     width,
@@ -2262,7 +2306,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       });
       const moistureScore = fields.moisture[idx] * 1.4;
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return moistureScore + (nearRoad ? 0.9 : 0) + terrainPenalty;
+      return moistureScore + (nearRoad ? 0.9 : 0) + terrainPenalty + radialZoneBias(ix, iz);
     }),
     2.8,
     5.5,
@@ -2284,7 +2328,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
         return tiles[toIndex(nx, nz, width)] === TILE.ROAD;
       });
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return noise + (nearRoad ? 0.45 : 0) + terrainPenalty;
+      return noise + (nearRoad ? 0.45 : 0) + terrainPenalty + radialZoneBias(ix, iz);
     }),
     2.2,
     4.9,
@@ -2302,7 +2346,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       const distEdge = Math.min(ix, iz, width - 1 - ix, height - 1 - iz);
       const edgeBias = 1 - clamp(distEdge / Math.max(4, Math.min(width, height) * 0.28), 0, 1);
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return ridge + edgeBias * 0.5 + terrainPenalty;
+      return ridge + edgeBias * 0.5 + terrainPenalty + radialZoneBias(ix, iz);
     }),
     1.8,
     3.8,
@@ -2324,7 +2368,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
         return tiles[toIndex(nx, nz, width)] === TILE.FARM;
       });
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return moistureScore + (nearFarm ? 0.8 : 0) + terrainPenalty;
+      return moistureScore + (nearFarm ? 0.8 : 0) + terrainPenalty + radialZoneBias(ix, iz);
     }),
     2.0,
     4.2,

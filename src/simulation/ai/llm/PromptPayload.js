@@ -49,6 +49,28 @@ function pickHighlights(summary) {
   if (Number(gameplay.recovery?.collapseRisk ?? 0) >= 40) {
     highlights.push(`Recovery risk ${Number(gameplay.recovery.collapseRisk).toFixed(0)}% with ${Number(gameplay.recovery.charges ?? 0)} charges left`);
   }
+
+  // v0.8.2: soil, node depletion, water connectivity, terrain highlights
+  if (Number(world.soil?.criticalSalinized ?? 0) > 0) {
+    highlights.push(`SOIL CRISIS: ${world.soil.criticalSalinized} farm(s) critically salinized — need fallow immediately`);
+  } else if (Number(world.soil?.salinizedFarmCount ?? 0) > 0) {
+    highlights.push(`Soil health: ${world.soil.salinizedFarmCount} farm(s) above 60% salinization`);
+  }
+  if (Number(world.nodes?.depletedForestCount ?? 0) > 0) {
+    highlights.push(`LUMBER CRISIS: ${world.nodes.depletedForestCount} lumber mill(s) on depleted nodes`);
+  }
+  if (Number(world.nodes?.atRiskNodeCount ?? 0) > 0) {
+    highlights.push(`Resource nodes: ${world.nodes.atRiskNodeCount} node(s) below 60% yield capacity`);
+  }
+  if (Number(world.connectivity?.waterIsolatedResources ?? 0) > 0) {
+    const coord = world.connectivity.bridgeCoord;
+    const loc = coord ? ` at tile (${coord.ix},${coord.iz})` : "";
+    highlights.push(`WATER BARRIER: ${world.connectivity.waterIsolatedResources} resource tile(s) cut off by water — build bridge${loc}`);
+  }
+  if (Number(world.terrain?.lowMoistureRatio ?? 0) > 0.4) {
+    highlights.push(`Dry terrain: ${Math.round(world.terrain.lowMoistureRatio * 100)}% of land is low-moisture — herb gardens and farms may underperform`);
+  }
+
   if (highlights.length === 0) {
     highlights.push("World is currently stable; keep policies legible and avoid noisy steering.");
   }

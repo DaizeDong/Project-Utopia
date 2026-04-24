@@ -1256,5 +1256,73 @@ export class HUDController {
     // render() so any Round-0 title set earlier in this frame is preserved as
     // the prefix and the glossary copy is appended after " | ".
     this.#applyGlossaryTooltips();
+
+    // Colony Health Card — live status summary at top of Colony panel.
+    this.#updateColonyHealthCard(state);
+  }
+
+  /**
+   * Update the Colony Health Card at the top of the Colony panel.
+   * Shows badge (THRIVING/STABLE/STRUGGLING/CRISIS), current day,
+   * food rate, idle worker count, and threat level.
+   */
+  #updateColonyHealthCard(state) {
+    const card = typeof document !== "undefined"
+      ? document.getElementById("colonyHealthCard")
+      : null;
+    if (!card) return;
+
+    const badge = document.getElementById("colonyHealthBadge");
+    const dayEl = document.getElementById("colonyHealthDay");
+    const foodRateEl = document.getElementById("healthFoodRate");
+    const idleEl = document.getElementById("healthWorkerIdle");
+    const threatEl = document.getElementById("healthThreatLevel");
+
+    const threat = Number(state.gameplay?.threat ?? 0);
+    const timeSec = Number(state.metrics?.timeSec ?? 0);
+
+    // Determine status tier
+    let status;
+    if (threat < 20) status = "thriving";
+    else if (threat < 50) status = "stable";
+    else if (threat < 70) status = "struggling";
+    else status = "crisis";
+
+    const badgeText = status.charAt(0).toUpperCase() + status.slice(1).toUpperCase()
+      .replace("THRIVING", "THRIVING")
+      .replace("STABLE", "STABLE")
+      .replace("STRUGGLING", "STRUGGLING")
+      .replace("CRISIS", "CRISIS");
+
+    // Day calculation — approximate using 60 sim-seconds per day
+    const day = Math.max(1, Math.floor(timeSec / 60) + 1);
+
+    // Food rate from cached computed rates (set earlier in render())
+    const rates = this._lastComputedRates;
+    let foodRateText = "Food: —/min";
+    if (rates && Number.isFinite(rates.food)) {
+      const r = rates.food;
+      if (Math.abs(r) < 0.05) foodRateText = "Food: +0/min";
+      else foodRateText = r >= 0 ? `Food: +${r.toFixed(0)}/min` : `Food: ${r.toFixed(0)}/min`;
+    }
+
+    // Idle worker count — workers in IDLE state
+    let idleCount = 0;
+    if (Array.isArray(state.agents)) {
+      for (const a of state.agents) {
+        if (a && a.alive && a.type === "WORKER" && (a.state === "IDLE" || a.intent === "idle")) {
+          idleCount++;
+        }
+      }
+    }
+
+    // Apply to DOM
+    if (card.dataset) card.dataset.status = status;
+    else card.setAttribute("data-status", status);
+    if (badge) badge.textContent = status.toUpperCase();
+    if (dayEl) dayEl.textContent = `Day ${day}`;
+    if (foodRateEl) foodRateEl.textContent = foodRateText;
+    if (idleEl) idleEl.textContent = `${idleCount} idle`;
+    if (threatEl) threatEl.textContent = `Threat: ${Math.round(threat)}%`;
   }
 }
