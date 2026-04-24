@@ -151,15 +151,15 @@ export class RoleAssignmentSystem {
     const clinicCount = Number(state.buildings?.clinics ?? 0);
     const lumberCount = Number(state.buildings?.lumbers ?? 0);
 
-    // Reserve minimum slots for FARM and WOOD.
-    // v0.8.2 Round-5b Wave-1 (01b Step 3) — farmMin is now dynamic: scaled
-    // to floor(targetFarmRatio × n) so larger colonies don't starve their
-    // extra labour under a hard cap of 2. Hard floor=1 so at least one
-    // worker always farms; upper bound n-1 preserves space for wood or a
-    // specialist. At n=4 this yields floor(0.6*4)=2 — identical to the
-    // Wave-1 min(2,n)=2 behaviour for low pop.
-    const farmMinScaled = Math.floor(targetFarmRatio * n);
-    const farmMin = Math.max(1, Math.min(n - 1, Math.max(farmMinScaled, 1)));
+    // Reserve minimum slots for FARM (2) and WOOD (1 if lumber tiles exist).
+    // v0.8.2 Round-5b Wave-1 (01b Step 3) — farmMin stays at Wave-1's
+    // min(2,n) RESERVE value. Dynamic scaling was tried and reverted: at
+    // n=12 the scaled reserve consumed the specialist budget (lost haulers
+    // → logistics collapse → 4-seed LOSS). The Round 5b structural win is
+    // the bandTable for n<=5 (Step 1/2) + cannibalise valve (Step 4) +
+    // low-pop idle-chain threshold (Step 5). Step 3 is retained as a
+    // configuration knob but not currently wired into reserve math.
+    const farmMin = Math.min(2, n);
     const woodMin = (lumberCount > 0) ? Math.min(1, n - farmMin) : 0;
     const reserved = farmMin + woodMin;
 
@@ -336,9 +336,8 @@ export class RoleAssignmentSystem {
       }
     }
     // v0.8.2 Round-5b Wave-1 (01b Step 4) — effective FARM floor drops by
-    // the number of slots borrowed by cannibalise, so the redistribution
-    // math below does not immediately re-force farmMin back up and undo the
-    // borrow.
+    // cannibalise borrows so the redistribution below does not re-force
+    // farmMin back up and undo the cook borrow.
     const farmMinEffective = Math.max(1, farmMin - cannibalisedFarmSlots);
     let totalFarm = Math.round(remaining * effectiveRatio);
     totalFarm = Math.max(farmMinEffective, Math.min(remaining, totalFarm));
