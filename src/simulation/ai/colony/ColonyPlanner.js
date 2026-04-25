@@ -190,7 +190,7 @@ Return strict JSON only. No markdown fencing, no commentary.
 - herb_garden (4 wood) — herbs +0.2/s. Boosts adjacent farm fertility (+0.003/tick).
 - kitchen (8 wood + 3 stone) — food → meals. Needs food surplus. Adjacent farm gets compost bonus.
 - smithy (6 wood + 5 stone) — stone → tools +0.2/s. Tools boost all production by ~15%.
-- clinic (6 wood + 4 herbs) — herbs → medicine +0.15/s. Reduces colonist mortality.
+- clinic (6 wood + 2 herbs) — herbs → medicine +0.15/s. Reduces colonist mortality.
 - road (1 wood) — extends logistics, reduces worker travel time.
 - wall (2 wood) — defense. High elevation walls get +50% defense bonus.
 - bridge (3 wood + 1 stone) — crosses water, connects islands.

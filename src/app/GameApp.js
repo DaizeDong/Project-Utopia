@@ -448,6 +448,8 @@ export class GameApp {
     this.state.metrics.frameMs = performance.now() - frameStart;
     this.state.metrics.simDt = stepPlan.simDt;
     this.state.metrics.simStepsThisFrame = stepPlan.steps;
+    const actualScale = frameDt > 0 ? stepPlan.simDt / frameDt : 0;
+    this.state.metrics.timeScaleActual = (this.state.metrics.timeScaleActual ?? actualScale) * 0.85 + actualScale * 0.15;
     this.state.metrics.isDebugStepping = Boolean(controls.isPaused);
 
     const instantFps = 1 / Math.max(0.0001, frameDt);

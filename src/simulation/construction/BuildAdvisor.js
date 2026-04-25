@@ -6,6 +6,7 @@ import {
   RUIN_SALVAGE,
   TERRAIN_MECHANICS,
   computeEscalatedBuildCost,
+  isBuildKindHardCapped,
   pluralBuildingKey,
 } from "../../config/balance.js";
 // v0.8.0 Phase 3 M1c post-review — thread services.rng through salvage rolls
@@ -452,6 +453,12 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
     const flags = Number(entry?.nodeFlags ?? 0) | 0;
     if ((flags & requiredFlag) === 0) {
       return buildFailure("missing_resource_node", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    }
+  }
+  if (tool !== "erase") {
+    const hc = isBuildKindHardCapped(tool, existingCount);
+    if (hc.capped) {
+      return buildFailure("hardCap", oldType, newType, cost, activeRefund, tool, ix, iz, info);
     }
   }
   if (tool !== "erase" && !canAfford(state.resources, cost)) {

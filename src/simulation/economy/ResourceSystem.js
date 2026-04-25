@@ -290,6 +290,7 @@ export class ResourceSystem {
       state.buildings = rebuildBuildingStats(state.grid);
       if (prevBuildings) {
         this.#detectObjectiveRegressions(prevBuildings, state.buildings, state);
+        this.#emitBuildingDestroyedDiffs(prevBuildings, state.buildings, state);
       }
       if (state.debug) {
         const roads = countTilesByType(state.grid, [TILE.ROAD]);
@@ -445,6 +446,41 @@ export class ResourceSystem {
       workersStarving,
       ts: nowSec,
     });
+  }
+
+  // v0.8.2 Round-5b (02c-speedrunner Step 4) — Emit BUILDING_DESTROYED for each
+  // building category that lost ≥1 copy between grid rebuilds. Cause is inferred
+  // from recent active events (wildfire > flood > raid > decay fallback).
+  #emitBuildingDestroyedDiffs(prev, curr, state) {
+    const categories = [
+      ["warehouses", "warehouse"],
+      ["farms", "farm"],
+      ["lumbers", "lumber_camp"],
+      ["walls", "wall"],
+      ["kitchens", "kitchen"],
+      ["smithies", "smithy"],
+      ["clinics", "clinic"],
+      ["quarries", "quarry"],
+      ["herbGardens", "herb_garden"],
+    ];
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const recentCutoff = nowSec - 30;
+    const log = state.events?.log ?? [];
+    let cause = "decay";
+    for (let i = log.length - 1; i >= 0; i--) {
+      const ev = log[i];
+      if (!ev || Number(ev.t ?? 0) < recentCutoff) break;
+      if (ev.type === "wildfire_spread" || ev.detail?.cause === "wildfire") { cause = "wildfire"; break; }
+      if (ev.type === "flood" || ev.detail?.cause === "flood") { cause = "flood"; break; }
+      if (ev.type === "raid_attack" || ev.detail?.cause === "raid") { cause = "raid"; break; }
+    }
+    for (const [pluralKey, kind] of categories) {
+      const prevCount = Number(prev?.[pluralKey] ?? 0);
+      const newCount = Number(curr?.[pluralKey] ?? 0);
+      const delta = prevCount - newCount;
+      if (delta < 1) continue;
+      emitEvent(state, EVENT_TYPES.BUILDING_DESTROYED, { kind, prevCount, newCount, delta, cause });
+    }
   }
 
   // v0.8.2 Round-5b (02a-rimworld-veteran Step 3) — Detect when scenario-tracked

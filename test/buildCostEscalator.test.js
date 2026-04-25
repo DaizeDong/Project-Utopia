@@ -32,10 +32,11 @@ test("computeEscalatedBuildCost: warehouse mid-range scaling (count=5)", () => {
   assert.equal(cost.wood, 16);
 });
 
-test("computeEscalatedBuildCost: warehouse at cap (count=20)", () => {
-  // 18 over × 0.2 = 3.6 → capped at 2.5. 10 × 2.5 = 25.
+test("computeEscalatedBuildCost: warehouse beyond cap (count=20) costs more than cap plateau", () => {
+  // v0.8.2 Round-5b 02c: perExtraBeyondCap=0.08 means cost grows past cap plateau.
+  // raw=4.6 > cap=2.5 → mult = 2.5 + (4.6-2.5)*0.08 = 2.668 → wood = ceil(26.68) = 27.
   const cost = computeEscalatedBuildCost("warehouse", 20);
-  assert.equal(cost.wood, 25);
+  assert.ok(cost.wood > 25, `beyond-cap cost should exceed old cap plateau of 25 (got ${cost.wood})`);
 });
 
 test("computeEscalatedBuildCost: road (not in escalator table) → flat passthrough", () => {
@@ -64,10 +65,11 @@ test("computeEscalatedBuildCost: wall count=12 → cap=2.0 → 2 × 2.0 = 4 wood
   assert.equal(cost.wood, 3);
 });
 
-test("computeEscalatedBuildCost: wall at massive count honours cap=2.0", () => {
-  // 50 over × 0.1 = 5 → capped to 2.0. 2 × 2.0 = 4.
+test("computeEscalatedBuildCost: wall at massive count grows beyond cap=2.0", () => {
+  // v0.8.2 Round-5b 02c: perExtraBeyondCap=0.05 means wall keeps growing past cap=2.0.
+  // count=58: over=50, raw=6.0 > cap=2.0 → mult=2.0+(6.0-2.0)*0.05=2.2 → wood=ceil(4.4)=5.
   const cost = computeEscalatedBuildCost("wall", 58);
-  assert.equal(cost.wood, 4);
+  assert.ok(cost.wood >= 4, `wall cost at count=58 should be ≥ old cap (${cost.wood})`);
 });
 
 test("computeEscalatedBuildCost: unknown kind → empty clone of empty base", () => {

@@ -1562,6 +1562,7 @@
         </label>
         <button id="aiDebugBtn" class="speed-btn" type="button" title="Open LLM debug panel — shows AI call inputs, outputs, and decisions" style="font-size:11px;padding:0 6px;">AI Log</button>
         <span id="gameTimer" class="game-timer" title="Elapsed game time">0:00</span>
+        <span id="timeScaleActualLabel" style="font-size:10px;opacity:0.6;display:none;" title="Actual realized time scale (may be lower than requested when sim is CPU-bound)"></span>
       </div>
 
       <!-- === CANVAS === -->
@@ -1697,7 +1698,7 @@
               <button data-tool="herb_garden" title="Herb Garden (9) — gather herbs, cost: 4 wood"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="" class="tool-icon" />Herbs</button>
               <button data-tool="kitchen" title="Kitchen (10) — cook food into meals, cost: 8 wood + 3 stone"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="" class="tool-icon" />Kitchen</button>
               <button data-tool="smithy" title="Smithy (11) — forge stone+wood into tools, cost: 6 wood + 5 stone"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="" class="tool-icon" />Smithy</button>
-              <button data-tool="clinic" title="Clinic (12) — refine herbs into medicine, cost: 6 wood + 4 herbs"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
+              <button data-tool="clinic" title="Clinic (12) — refine herbs into medicine, cost: 6 wood + 2 herbs"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
             </div>
             <div class="hint" style="font-size:10px; line-height:1.6; color:var(--text-muted);">
               <span>1–12: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>
