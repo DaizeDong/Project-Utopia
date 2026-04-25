@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-5b 02e-indie-critic: LLM voice overlay + humanised names + debug gate + scenario fade + author tone labels
+
+**Scope:** Five indie-critic findings fixed across simulation/ai/llm, world/scenarios, entities, app, ui layers.
+
+### New Features
+- **LLM-live voice overlay** (`storytellerStrip.js`): `mode === "llm"` path now queries `AUTHOR_VOICE_PACK` for a `voicePrefixText` overlay when `focusTag ≠ "default"`; `voicePackOverlayHit` flag distinguishes overlay from full-replace fallback hit. `summaryText` is never overwritten.
+- **PromptBuilder authorVoiceHintTag** (`PromptBuilder.js`): `adjustWorkerPolicy` writes `policy.authorVoiceHintTag` via inline `deriveFocusHintTag()` (avoids cross-layer ui import); traders/saboteurs get `"default"`.
+- **Scenario intro fade** (`ScenarioFactory.js`, `GameApp.js`, `HUDController.js`): `getScenarioIntroPayload()` returns `{title, openingPressure, durationMs:1500}`; `regenerateWorld` writes to `state.ui.scenarioIntro` with `enteredAtMs`; HUDController shows `SCENARIO` badge + opening-pressure for 1.5 s before resuming normal strip.
+- **Humanised worker names** (`EntityFactory.js`, `uiProfileState.js`): `SURNAME_BANK` (40 ASCII surnames) + `pickSurname`; `createWorker` in casual profile produces `"Vian Hollowbrook"` instead of `"Vian-25"`; full/dev profile unchanged (preserves benchmark RNG).
+- **`__utopiaLongRun` debug gate** (`main.js`): Full API moved into `if(devOn)` block; else-branch stubs `{ getTelemetry: () => null }` only.
+- **`buildAuthorToneLabel`** (`HUDController.js`): 3-metric 4-tier author-tone tooltip appended to Dev/Score/Threat KPIs; casual mode also appends tone label to visible Dev text.
+- **Voice-prefix DOM slot** (`HUDController.js`): `<span id="storytellerVoicePrefix">` dynamically created if absent; populated from `model.voicePrefixText` when overlay hit.
+
+### New Tests
+- `test/scenario-intro-payload.test.js` — 3 tests: fortified_basin payload correct; temperate_plains non-empty; unknown template falls back gracefully.
+- `test/storyteller-strip.test.js` — cases (d)(e): LLM-live + broken-routes hits overlay; LLM-live + default focusTag no overlay.
+- `test/entity-factory.test.js` — cases (f)(g): casual profile humanised name format; full profile old format; SURNAME_BANK shape guard.
+
+### Files Changed
+- `src/ui/hud/storytellerStrip.js` — voicePrefixText + voicePackOverlayHit fields; LLM overlay branch; policyTag reads authorVoiceHintTag
+- `src/simulation/ai/llm/PromptBuilder.js` — deriveFocusHintTag() + authorVoiceHintTag on worker/trader/saboteur policies
+- `src/world/scenarios/ScenarioFactory.js` — getScenarioIntroPayload() export
+- `src/entities/EntityFactory.js` — SURNAME_BANK export; pickSurname(); casual displayName format; import getActiveUiProfile
+- `src/app/uiProfileState.js` — new module: getActiveUiProfile / setActiveUiProfile singleton
+- `src/app/GameApp.js` — imports getScenarioIntroPayload + setActiveUiProfile; regenerateWorld writes ui.scenarioIntro; #applyUiProfile calls setActiveUiProfile
+- `src/main.js` — __utopiaLongRun moved into if(devOn) gate
+- `src/ui/hud/HUDController.js` — buildAuthorToneLabel helper; scenario-intro priority branch; voice-prefix DOM slot; score variable renamed to avoid TDZ
+
 ## [Unreleased] - v0.8.2 Round-5b Wave-1 01a-onboarding: food-crisis autopause + buildHint pipe + status-text data-full
 
 **Scope:** Onboarding failure-contract closure — 3 simulation/UI/render layers. Four root-causes addressed: (R-A) Autopilot silently collapsing the colony without any HUD feedback; (R-B) build-tool reject reasons invisible (red mesh but no text); (R-B) scenario/next-action text truncated with no hover fallback; (R-B) hotkey doc `1-6`/`1-12` inconsistency.
