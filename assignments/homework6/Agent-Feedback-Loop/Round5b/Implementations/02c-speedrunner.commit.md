@@ -1,7 +1,7 @@
 ---
 plan: Round5b/Plans/02c-speedrunner.md
 plan_version: v1
-primary_commit: TBD
+primary_commit: 5f75ee0
 branch: feature/v080-living-world
 date: 2026-04-25
 author: Claude Sonnet 4.6
