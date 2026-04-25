@@ -24,7 +24,10 @@ export function computeSimulationStepPlan({
   };
 
   if (!isPaused) {
-    out.nextAccumulatorSec = Math.min(0.5, out.nextAccumulatorSec + safeFrameDt * safeScale);
+    // v0.8.2 Round-5b (02a-rimworld-veteran Step 1) — raise accumulator soft
+    // cap from 0.5 → 2.0 to survive tab-visibility throttling. maxSteps=12
+    // is the per-frame bound (Phase 10 hardening already validated this).
+    out.nextAccumulatorSec = Math.min(2.0, out.nextAccumulatorSec + safeFrameDt * safeScale);
     while (out.nextAccumulatorSec >= safeFixed && out.steps < capSteps) {
       out.steps += 1;
       out.nextAccumulatorSec -= safeFixed;
