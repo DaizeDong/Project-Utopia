@@ -44,6 +44,26 @@ export function resolveGlobalShortcut(event, context = {}) {
 
   if (alt) return null;
 
+  // v0.8.2 Round-6 Wave-1 02b-casual (Step 1) — F1 / ? open the in-game
+  // Help dialog. Casual reviewer reported "F1 reloads the page" — the
+  // browser default for F1 in some shells (legacy IE, certain Firefox /
+  // Edge dev-tools shortcuts, on-screen keyboards) is documented as
+  // "Help" but in practice triggers the page-context menu or refresh.
+  // We MUST always preventDefault() for F1 (the caller does this on any
+  // non-null action), even when phase !== "active", so the browser
+  // cannot reload mid-session and lose progress. Both F1 and Shift+/
+  // ("?") map to openHelp; the actual modal toggle lives in index.html
+  // (window.__utopiaHelp.open) and in GameApp #onGlobalKeyDown.
+  if (code === "F1" || key === "f1") {
+    return { type: "openHelp" };
+  }
+  if (code === "Slash" && shift) {
+    return { type: "openHelp" };
+  }
+  if (key === "?") {
+    return { type: "openHelp" };
+  }
+
   // v0.8.2 Round0 02b-casual — defensive gating for phase != "active".
   // Reviewer player-02-casual reported "pressing L returned me to the
   // main menu" (UNREPRODUCIBLE after trace). Regardless of whether the
