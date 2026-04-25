@@ -354,10 +354,10 @@ export const PRESSURE_MARKER_STYLE = Object.freeze({
   heat_idle: Object.freeze({ ring: 0x8a94a2, fill: 0xb6bdc6, ringOpacity: 0.34, fillOpacity: 0.08 }),
 });
 export const HEAT_TILE_OVERLAY_VISUAL = Object.freeze({
-  heat_surplus: Object.freeze({ opacity: 0.46 }),
-  heat_starved: Object.freeze({ opacity: 0.42 }),
-  heat_idle: Object.freeze({ opacity: 0.32 }),
-  pulseAmplitude: 0.22,
+  heat_surplus: Object.freeze({ opacity: 0.62 }),
+  heat_starved: Object.freeze({ opacity: 0.56 }),
+  heat_idle: Object.freeze({ opacity: 0.44 }),
+  pulseAmplitude: 0.28,
 });
 
 export class SceneRenderer {

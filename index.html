@@ -1420,9 +1420,103 @@
     }
     #customTooltip.visible { opacity: 1; }
 
+    /* ============================================================
+       Round 5b / 01c-ui — see plan §3
+       ============================================================ */
+
+    /* Step 1 — Boot splash */
+    #bootSplash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; align-items: center; justify-content: center;
+      background: #0a1320;
+      color: #a0c4e8; font-size: 18px; font-weight: 700; letter-spacing: 0.05em;
+      pointer-events: none;
+      transition: opacity 0.35s ease;
+    }
+    #bootSplash.done { opacity: 0; pointer-events: none; }
+    #bootSplash.hidden { display: none; }
+
+    /* Step 2 — --hud-height CSS var; sidebar content clears statusBar */
+    :root { --hud-height: 40px; }
+    #sidebarPanelArea { padding-top: var(--hud-height); }
+
+    /* Step 3 — Responsive breakpoints: 1440 / 1280 bands */
+    @media (max-width: 1439px) and (min-width: 1281px) {
+      .hud-goal-list { max-width: 280px; overflow: hidden; }
+      .hud-goal-chip:nth-child(n+4) { display: none !important; }
+      #statusNextAction { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+    }
+    @media (max-width: 1280px) and (min-width: 1025px) {
+      #statusScenario { display: none !important; }
+      #statusNextAction { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+      #statusScoreBreak { display: none !important; }
+      .panel-toggle { font-size: 10px; padding: 3px 6px; }
+    }
+    @media (max-width: 800px) {
+      #statusScenarioProgress { display: none !important; }
+      #statusScenario { display: none !important; }
+      #latestDeathRow { display: none !important; }
+      #statusBar { flex-wrap: wrap; height: auto; max-height: none; padding: 2px 4px; }
+    }
+
+    /* Step 5 — KPI typography */
+    #statusSurvived, #statusScore, #statusObjectiveDev {
+      font-size: 13px !important; font-weight: 900 !important;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.01em;
+    }
+    .hud-kpi-group {
+      display: inline-flex; gap: 10px; padding: 2px 8px;
+      border-left: 1px solid rgba(80,120,180,0.35);
+      border-right: 1px solid rgba(80,120,180,0.35);
+      margin-left: 6px; align-items: center;
+    }
+
+    /* Step 6 — Resource slot spacing */
+    #statusBar { gap: 6px !important; }
+    .hud-resource { padding: 2px 6px !important; }
+
+    /* Step 10 — Help modal close button + tab underline */
+    .help-close { width: 40px !important; height: 40px !important; font-size: 18px !important; }
+    .help-tab::after {
+      content: ""; display: block; height: 2px;
+      background: transparent; margin-top: 4px;
+    }
+    .help-tab.active::after { background: var(--accent, #3d9be9); }
+
+    /* Step 11 — Progress chips: SVG circles instead of Unicode glyphs */
+    .hud-goal-chip--done::before {
+      content: "" !important;
+      display: inline-block !important; width: 10px !important; height: 10px !important;
+      border-radius: 50% !important; background: #6eeb83 !important;
+      vertical-align: middle; margin-right: 3px;
+    }
+    .hud-goal-chip--pending::before {
+      content: "" !important;
+      display: inline-block !important; width: 10px !important; height: 10px !important;
+      border-radius: 50% !important; border: 1.5px solid rgba(255,193,7,0.55) !important;
+      background: transparent !important;
+      vertical-align: middle; margin-right: 3px;
+    }
+
+    /* Step 13 — Button press micro-animation */
+    @keyframes buttonPress {
+      0%   { transform: scale(1); }
+      45%  { transform: scale(0.94); }
+      100% { transform: scale(1); }
+    }
+    button:active:not(:disabled) { animation: buttonPress 140ms ease-out; }
+    @media (prefers-reduced-motion: reduce) {
+      button:active:not(:disabled) { animation: none; }
+    }
+
+    /* Step 14 — Scenario pill: remove forced uppercase */
+    .overlay-scenario-badge { text-transform: none !important; letter-spacing: normal !important; }
+
   </style>
 </head>
 <body>
+  <!-- Boot splash — fades out after first render frame (Step 1, Round 5b 01c-ui) -->
+  <div id="bootSplash">Loading Project Utopia…</div>
   <!-- Legacy layout controls (hidden, JS still references) -->
   <div id="layoutControls" aria-label="Layout Controls">
     <button id="toggleSidebarBtn" type="button">Menu</button>

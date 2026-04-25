@@ -37,7 +37,7 @@ function formatOverlayMeta(state) {
     parts.push(`seed ${seed}`);
   }
 
-  return parts.length > 0 ? parts.join(" | ") : "Quick Start Guide";
+  return parts.length > 0 ? parts.join(" \u00b7 ") : "Quick Start Guide";
 }
 
 function formatTemplateLead(templateId) {

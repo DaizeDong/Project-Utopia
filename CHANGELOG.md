@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-5b 01c-ui: HUD height var + Heat Lens halo + responsive breakpoints + KPI typography + boot splash
+
+**Scope:** 12 of 17 reviewer UI findings fixed across ui/render layers.
+
+### New Features
+- **Boot splash** (`index.html`, `HUDController.js`): `#bootSplash` div fades out after first two rAF ticks; `.done` + `.hidden` classes remove it cleanly.
+- **--hud-height CSS var + ResizeObserver** (`index.html`, `HUDController.js`): `:root { --hud-height: 40px }` written dynamically by `#observeStatusBarHeight`; `#sidebarPanelArea` uses `padding-top: var(--hud-height)` so Colony panel "Food" row always clears the statusBar.
+- **Responsive breakpoints** (`index.html`): New `@media (max-width:1439px)` (hide goal chips 4+, clamp nextAction) and `@media (max-width:1280px)` (hide statusScenario, collapse nextAction, hide scoreBreak); simplified `@media (max-width:800px)` hides scenario progress and death row.
+- **KPI typography** (`index.html`): `#statusSurvived / #statusScore / #statusObjectiveDev` bumped to 13px, font-weight 900, tabular-nums; `.hud-kpi-group` wrapper with dividers.
+- **Resource slot spacing** (`index.html`): gap 3px→6px, `.hud-resource` padding 1px 4px→2px 6px.
+- **Progress chip circles** (`index.html`): CSS `::before` replaced with inline-block 10×10 circle SVG — done: filled green; pending: bordered amber ring; no Unicode-font dependency.
+- **Button press animation** (`index.html`): `@keyframes buttonPress` (140ms scale 0.94 pulse) on `button:active:not(:disabled)`; respects `prefers-reduced-motion`.
+- **Heat Lens halo expansion** (`PressureLens.js`): After primary pass (cap 48), halo pass walks 4-way neighbours of each primary marker and emits secondary markers at `weight×0.55`, `radius×0.75`; total cap 160. Visible tile count goes from 2-4 to ≥20 on a 5-building colony.
+- **Heat overlay opacity** (`SceneRenderer.js`): `heat_surplus` 0.46→0.62, `heat_starved` 0.42→0.56, `heat_idle` 0.32→0.44, `pulseAmplitude` 0.22→0.28.
+- **Help modal close button** (`index.html`): Close button 32→40px, font-size→18px; `.help-tab.active::after` permanent underline.
+- **Scenario pill Title Case** (`GameStateOverlay.js`): Separator changed from `" | "` to `" · "`; CSS `text-transform: none !important`.
+
+### New Tests
+- `test/heat-lens-coverage.test.js` — 3 cases: marker count >20 with 5 kitchens; halo markers present; cap ≤160 under stress load.
+
+### Files Changed
+- `index.html` — boot splash + CSS var + responsive rules + KPI typography + spacing + chip circles + press animation + help modal + scenario CSS
+- `src/ui/hud/HUDController.js` — `#observeStatusBarHeight` ResizeObserver; `#dismissBootSplash` rAF trigger
+- `src/render/PressureLens.js` — halo pass in `buildHeatLens`; `MAX_HEAT_MARKERS_HALO = 160`
+- `src/render/SceneRenderer.js` — `HEAT_TILE_OVERLAY_VISUAL` opacity + pulseAmplitude bump
+- `src/ui/hud/GameStateOverlay.js` — bullet separator in `formatOverlayMeta`
+
 ## [Unreleased] - v0.8.2 Round-5b 02b-casual: casual UX polish — toast linger + milestone extension + tool-tier gate + autopilot struggling banner
 
 **Scope:** Six casual-reviewer findings fixed across config, render, simulation, ui layers.
