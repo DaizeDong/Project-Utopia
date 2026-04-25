@@ -605,6 +605,26 @@ export const BALANCE = Object.freeze({
   raidIntensityPerTier: 0.3,
   // Round 2 01d: Heat Lens should warn before a processor is completely empty.
   heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
+  // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 6) — Raid fallback
+  // scheduler floors. RaidEscalatorSystem.update self-fires BANDIT_RAID when
+  // the LLM directive path is unavailable (100% of fallback sessions). The
+  // four floors below prevent the fallback from punishing fragile colonies
+  // and protect the 4-seed bench gate (DevIndex ≥ 32 / deaths ≤ 499).
+  // Per plan §5 R1 mitigation ladder: raise graceSec to 480 if 4-seed bench
+  // tanks > 5%; or, as last resort, retreat raidEnvironmentDeathBudget.
+  raidFallbackScheduler: Object.freeze({
+    graceSec: 360,        // boot grace (~6 game-min) before the first auto-raid
+    popFloor: 18,         // skip if colony hasn't grown to a defendable size
+    foodFloor: 60,        // skip if starvation imminent
+    durationSec: 18,      // matches the default WorldEventSystem raid window
+  }),
+  // Flat aliases so callers can read BALANCE.raidFallback* directly without
+  // dereferencing the frozen sub-block (matches the `raidIntervalBaseTicks`
+  // flat-field convention this file already uses).
+  raidFallbackGraceSec: 360,
+  raidFallbackPopFloor: 18,
+  raidFallbackFoodFloor: 60,
+  raidFallbackDurationSec: 18,
   // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — soft cap on the
   // EnvironmentDirector's threat-gated saboteur spawns. Once a run accumulates
   // this many starvation/raid deaths, the new "Raiders sighted near <gate>"
