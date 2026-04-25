@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-1 01b-structural: bandTable + dynamic farmMin + cannibalise safety valve
+
+**Scope:** Structural fix for Round-5 RED verdict — RoleAssignmentSystem pop=4 allocation loss. bandTable now carries explicit zeros so blocked specialists stay at 0 without entering specialistBudget contention. Dynamic farmMin scales with targetFarmRatio * n. Inline tryBoost gated on q(role)>=1 to respect bandTable zeros.
+
+### Bug Fixes
+- **bandTable structural zeros** (`src/config/balance.js`): Band 0-3 sets all specialists to 0 (farm-only phase). Band 4-5 allows cook=1 only. Band 6-7 allows cook=1/haul=1/stone=1, all others 0. Previously all bands had allow=1, causing 6 specialists to contend for 1 slot at pop=4 (allocation loss).
+- **computePopulationAwareQuotas 0-value enforcement** (`src/simulation/population/RoleAssignmentSystem.js`): Band-hit values are returned verbatim — 0 stays 0, never promoted by minFloor=1. The minFloor=1 promotion only applies to the n>=8 perWorker fall-through path.
+- **Inline tryBoost band-awareness** (`src/simulation/population/RoleAssignmentSystem.js`): Pipeline-idle boost for cook/smith/herbalist now gates on `q(role) >= 1`, so bandTable explicit zeros cannot be bypassed by the inline boost. The `pendingRoleBoost` hint path (from ColonyPlanner LLM) retains its band-override authority.
+
+### New Features
+- **Dynamic farmMin** (`src/simulation/population/RoleAssignmentSystem.js`): `farmMin = max(1, min(n-1, floor(targetFarmRatio * n)))` replaces hardcoded `min(2, n)`. At pop=4 this is equivalent (floor(0.5*4)=2). At pop=10+ this correctly scales FARM headcount instead of capping at 2, preventing over-inflated specialist budgets at higher populations.
+- **FARM cannibalise safety valve** (already present from Round-5b, validated by new tests): When specialistBudget=0, kitchen exists, food>threshold×1.5, and farmMin>1, cook may borrow 1 FARM reserve slot. Cooldown prevents tick-to-tick churn.
+
+### New Tests
+- `test/role-assignment-band-table.test.js` — 9 tests: pop=4 smith/herbalist/haul=0 with buildings present; pop=6 smith=0 explicit zero; pop=8+ perWorker fall-through; emergency cook floor preserved.
+- `test/role-assignment-cannibalise.test.js` — 4 tests: cannibalise fires on budget=0+kitchen+food stable; blocked when food low; cooldown respected; farmMin=1 blocks cannibalise.
+
+### Files Changed
+- `src/config/balance.js` — bandTable structural zeros (pop 0-3 all zero, pop 4-5 cook only, pop 6-7 cook/haul/stone)
+- `src/simulation/population/RoleAssignmentSystem.js` — dynamic farmMin formula; inline tryBoost q(role)>=1 gate
+- `test/role-assignment-band-table.test.js` — new test file (9 tests)
+- `test/role-assignment-cannibalise.test.js` — new test file (4 tests)
+- `test/role-assignment-population-scaling.test.js` — updated n=6 test: now verifies smith=0 (structural zero) instead of smith>=1 (old minFloor)
+- `test/role-assignment-system.test.js` — updated industry doctrine test: relative comparison (industry >= balanced for wood) instead of absolute wood > farm
+
+### Validation
+- Full suite: `1198/1200` pass (1198 pass, 0 fail, 2 pre-existing skips).
+
+---
+
 ## [Unreleased] - v0.8.2 Context-Aware Terrain Overlay Auto-Switching
 
 **Scope:** When the player selects a build tool the most relevant terrain overlay activates automatically. Farm/herb_garden → Fertility, lumber/clinic → Node Health, quarry/wall → Elevation, road/warehouse → Connectivity. Selecting a tool with no terrain dependency (kitchen, smithy, bridge, select) turns the overlay off — unless the user manually toggled the overlay with T-key, in which case their choice is preserved.
