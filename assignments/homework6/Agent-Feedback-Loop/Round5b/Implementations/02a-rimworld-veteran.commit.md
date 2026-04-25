@@ -1,7 +1,7 @@
 ---
 plan: Round5b/Plans/02a-rimworld-veteran.md
 plan_version: v1
-primary_commit: TBD
+primary_commit: 1062c33
 branch: feature/v080-living-world
 date: 2026-04-25
 author: Claude Sonnet 4.6
