@@ -398,6 +398,14 @@ export function buildHeatLens(state) {
       if (hx < 0 || hz < 0 || hx >= width || hz >= height) continue;
       const htile = tiles[hx + hz * width];
       if (HEAT_PRODUCER_TILES.includes(htile) || HEAT_PROCESSOR_INPUT_CHECK[htile] || htile === TILE.WAREHOUSE) continue;
+      // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 1): halo markers no longer
+      // carry a visible "halo" label — the coloured ring already does the
+      // visual job of "this neighbouring tile is in the parent's pressure
+      // halo". An empty label string is honoured by SceneRenderer's
+      // #updatePressureLensLabels (Step 2 sets display:none when label is
+      // empty) so we keep the halo's coloured disc/ring without leaking the
+      // dev placeholder into the player's eye-line. (Per summary §2 D1,
+      // 01a/01b/02b agree on label="" as the Wave-1 floor.)
       pushUniqueMarker(markers, {
         id: `halo:${parent.id}:${dx}:${dz}`,
         kind: parent.kind,
@@ -406,7 +414,7 @@ export function buildHeatLens(state) {
         radius: Number(parent.radius ?? 0.95) * 0.75,
         weight: Number(parent.weight ?? 0.9) * 0.55,
         priority: Number(parent.priority ?? 100) - 10,
-        label: "halo",
+        label: "",
       }, seen);
     }
   }

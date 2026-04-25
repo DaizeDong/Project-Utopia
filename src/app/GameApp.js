@@ -1350,7 +1350,13 @@ export class GameApp {
           this.state.ai.enabled = false;
           this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
-          this.state.controls.actionMessage = "AI proxy has no API key. Running fallback mode.";
+          // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 3): in-fiction phrasing
+          // for proxy-no-key. The original "AI proxy has no API key" leaked
+          // dev jargon ("proxy", "API key") into the player's first 60s. The
+          // fallback director steers the colony either way; the player only
+          // needs to know the colony is running and the storyteller is the
+          // built-in one.
+          this.state.controls.actionMessage = "Story AI offline — fallback director is steering. (Game still works.)";
           this.state.controls.actionKind = "info";
         }
       })
@@ -1365,8 +1371,19 @@ export class GameApp {
           this.state.ai.enabled = false;
           this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
-          this.state.controls.actionMessage = `AI proxy unreachable (${String(err?.message ?? err)}). Running fallback mode.`;
-          this.state.controls.actionKind = "error";
+          // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 3): drop the raw
+          // err.message ("fetch failed", "AbortError: timeout", etc.) from
+          // the player-facing actionMessage and rephrase in-fiction. The
+          // original message is still captured to console.warn + a
+          // dev-targeted `pushWarning(..., "ai-health")` so the dev panel /
+          // browser console retains the diagnostic. This silences the red
+          // toast strip that reviewers consistently report as "looks like
+          // the game is broken on first launch".
+          const errText = String(err?.message ?? err ?? "unknown");
+          console.warn("[Project Utopia] AI proxy unreachable:", errText);
+          pushWarning(this.state, `AI proxy unreachable (${errText}). Fallback director engaged.`, "warn", "ai-health");
+          this.state.controls.actionMessage = "Story AI is offline — fallback director is steering. (Game still works.)";
+          this.state.controls.actionKind = "info";
         }
       })
       .finally(() => {

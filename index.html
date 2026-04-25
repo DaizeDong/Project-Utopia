@@ -2345,19 +2345,26 @@
         <button id="helpModalCloseBtn" class="help-close" type="button" title="Close (ESC)" aria-label="Close help">&times;</button>
       </div>
       <div class="help-tabs" role="tablist">
-        <button class="help-tab active" type="button" data-help-tab="controls" role="tab">Controls</button>
-        <button class="help-tab" type="button" data-help-tab="chain" role="tab">Resource Chain</button>
+        <button class="help-tab" type="button" data-help-tab="controls" role="tab">Controls</button>
+        <button class="help-tab active" type="button" data-help-tab="chain" role="tab">Resource Chain</button>
         <button class="help-tab" type="button" data-help-tab="threat" role="tab">Threat &amp; Prosperity</button>
         <!-- Differentiation tab: LLM AI Director, Heat Lens, and map templates. -->
         <button class="help-tab" type="button" data-help-tab="different" role="tab">What makes Utopia different</button>
       </div>
       <div class="help-body">
-        <section class="help-page active" data-help-page="controls">
+        <!-- v0.8.2 Round-6 Wave-1 01a-onboarding (Step 5): default open tab
+             switched from "controls" to "chain". First-time players were
+             greeted by a wall of hotkeys; the Resource Chain page is the
+             actually useful primer. Help is reopened with F1/?, so power
+             users can still reach Controls in one click. Hotkey copy below
+             also updated: "0 resets camera" was a lie (Digit0 is the
+             kitchen tool binding); reset camera is R or Home. -->
+        <section class="help-page" data-help-page="controls">
           <h3>Basic Controls</h3>
           <ul>
             <li><b>Left click</b> — build the selected tool on a tile, or select a worker/visitor/animal.</li>
             <li><b>Right-click drag</b> — pan the map.</li>
-            <li><b>Mouse wheel</b> — zoom in/out. <code>0</code> resets camera.</li>
+            <li><b>Mouse wheel</b> — zoom in/out. <code>R</code> or <code>Home</code> resets camera (number keys <code>1</code>–<code>0</code>/<code>-</code>/<code>=</code> are build tools).</li>
             <li><code>1</code>–<code>12</code> — quick-pick build tool (12 tools in the Build toolbar; hover any button for name + hotkey).</li>
             <li><code>Space</code> — pause/resume. <code>Esc</code> — clear selection.</li>
             <li><code>L</code> — toggle the Supply-Chain Heat Lens.</li>
@@ -2371,7 +2378,7 @@
             <li>Connect buildings with <b>Roads</b> — they speed hauling significantly.</li>
           </ul>
         </section>
-        <section class="help-page" data-help-page="chain">
+        <section class="help-page active" data-help-page="chain">
           <h3>Resource Chain</h3>
           <p>Raw resources become refined goods through processing buildings. Workers haul resources to warehouses; processors pull from storage.</p>
           <ul>
