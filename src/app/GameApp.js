@@ -8,6 +8,7 @@ import { GameStateOverlay } from "../ui/hud/GameStateOverlay.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
 import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
 import { AIExchangePanel } from "../ui/panels/AIExchangePanel.js";
+import { AIPolicyTimelinePanel } from "../ui/panels/AIPolicyTimelinePanel.js";
 import { EventPanel } from "../ui/panels/EventPanel.js";
 import { PerformancePanel } from "../ui/panels/PerformancePanel.js";
 import { DeveloperPanel } from "../ui/panels/DeveloperPanel.js";
@@ -167,6 +168,10 @@ export class GameApp {
     this.inspector = new InspectorPanel(this.state);
     this.aiDecisionPanel = new AIDecisionPanel(this.state);
     this.aiExchangePanel = new AIExchangePanel(this.state);
+    // v0.8.2 Round-5b Wave-1 (01e Step 4) — Director Timeline panel. Renders
+    // state.ai.policyHistory as a reverse-chronological list in the Debug
+    // sidebar (#aiPolicyTimelinePanelBody). Read-only observer; no sim impact.
+    this.aiPolicyTimelinePanel = new AIPolicyTimelinePanel(this.state);
     this.entityFocusPanel = new EntityFocusPanel(this.state);
     this.eventPanel = new EventPanel(this.state);
     this.performancePanel = new PerformancePanel(this.state, {
@@ -483,6 +488,7 @@ export class GameApp {
         this.#safeRenderPanel("HUD", () => this.hud.render());
         this.#safeRenderPanel("AIDecisionPanel", () => this.aiDecisionPanel.render());
         this.#safeRenderPanel("AIExchangePanel", () => this.aiExchangePanel.render());
+        this.#safeRenderPanel("AIPolicyTimelinePanel", () => this.aiPolicyTimelinePanel.render());
         this.#safeRenderPanel("Inspector", () => this.inspector.render());
         this.#safeRenderPanel("EntityFocusPanel", () => this.entityFocusPanel.render());
         this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());

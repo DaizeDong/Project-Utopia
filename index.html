@@ -1533,6 +1533,12 @@
              policy focus (LLM or rule-based fallback). HUDController.renderStorytellerStrip
              populates this element. -->
         <div id="storytellerStrip" class="hud-storyteller small" title="AI storyteller — current worker-group policy focus" style="max-height:24px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;opacity:0.85;flex:1 1 auto;min-width:0;max-width:none;"><span id="storytellerTemplateTag" class="storyteller-template-tag" style="display:inline-block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-size:0.85em;opacity:0.75;margin-right:8px;" hidden></span><span id="storytellerBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerFocus" class="hud-storyteller-focus">autopilot</span><span id="storytellerSummary" class="hud-storyteller-summary">: colony holding steady — awaiting the next directive</span><span id="storytellerBeat" class="hud-storyteller-beat" hidden></span></div>
+        <!-- v0.8.2 Round-5b Wave-1 (01e Step 1) — "Why no WHISPER?" diagnostic
+             shown when badgeState != llm-live. HUDController appends this
+             reason to the storytellerStrip title tooltip; this sibling span
+             makes the reason accessible to CSS selectors and automated tests.
+             Hidden by default; HUDController reveals it when applicable. -->
+        <span id="storytellerWhyNoWhisper" hidden style="font-size:10px;opacity:0.7;color:#aaa;display:block;"></span>
         <div id="alertStack" aria-live="assertive"></div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <!-- panelToggles kept for JS compatibility and test contracts.
@@ -1930,6 +1936,16 @@
           <summary>Events &amp; Colony Log</summary>
           <div class="panel-body">
             <div id="eventsPanel" class="small muted">No active events.</div>
+          </div>
+        </details>
+
+        <!-- v0.8.2 Round-5b Wave-1 (01e Step 4) — Director Timeline: shows the
+             bounded policyHistory ring (up to 12 most-recent entries, newest
+             first). AIPolicyTimelinePanel.render() writes into the body div. -->
+        <details class="card" data-panel-key="ai-timeline">
+          <summary>Director Timeline</summary>
+          <div id="aiPolicyTimelinePanelBody" class="panel-body panel-body-scroll">
+            <div class="small muted">No policy changes yet.</div>
           </div>
         </details>
 
