@@ -83,5 +83,23 @@ export class PopulationGrowthSystem {
       entityName: newWorker.displayName ?? newWorker.id,
       reason: "colony_growth",
     });
+
+    // v0.8.2 Round-5b (02d Step 2a) — Push birth memory into nearby workers so
+    // Entity Focus "Recent Memory" shows a human-readable birth event line.
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const newbornName = newWorker.displayName ?? newWorker.id;
+    for (const agent of state.agents) {
+      if (agent === newWorker || agent.type !== "WORKER" || agent.alive === false) continue;
+      const dist = Math.abs(agent.x - pos.x) + Math.abs(agent.z - pos.z);
+      if (dist > 10) continue;
+      agent.memory ??= { recentEvents: [], dangerTiles: [] };
+      if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
+      if (!(agent.memory.recentKeys instanceof Map)) agent.memory.recentKeys = new Map();
+      const key = `birth:${newWorker.id}`;
+      if (agent.memory.recentKeys.has(key)) continue;
+      agent.memory.recentKeys.set(key, nowSec);
+      agent.memory.recentEvents.unshift(`[${nowSec.toFixed(0)}s] ${newbornName} was born at the warehouse`);
+      agent.memory.recentEvents = agent.memory.recentEvents.slice(0, 6);
+    }
   }
 }
