@@ -93,7 +93,10 @@ function withHudDom(fn) {
   }
 }
 
-test("getAutopilotStatus reports enabled mode, coverage, and countdown", () => {
+test("getAutopilotStatus reports enabled mode, coverage, and countdown (dev-mode)", () => {
+  // v0.8.2 Round-6 Wave-1 (01c-ui Step 4) — verbose engineer copy is now
+  // dev-mode-only. Pass `{ devMode: true }` to retain the legacy
+  // assertion. A separate test below pins the casual default shape.
   const status = getAutopilotStatus({
     ai: {
       enabled: true,
@@ -102,7 +105,7 @@ test("getAutopilotStatus reports enabled mode, coverage, and countdown", () => {
       lastPolicyResultSec: 4,
     },
     metrics: { timeSec: 7 },
-  });
+  }, { devMode: true });
 
   assert.equal(status.enabled, true);
   assert.equal(status.dataMode, "on");

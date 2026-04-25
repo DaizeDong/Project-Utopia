@@ -97,6 +97,40 @@ export function applyInitialDevMode(body, initial) {
 }
 
 /**
+ * v0.8.2 Round-6 Wave-1 (01c-ui Step 1) — unified dev-mode gate helper.
+ *
+ * Returns true when ANY of these signals hold:
+ *   1. `state.controls.devMode === true` (in-game state flag, set by tests
+ *      / programmatic toggles)
+ *   2. `document.body.classList.contains('dev-mode')` (live DOM class, set
+ *      by the URL/storage/Ctrl+Shift+D gate via `applyInitialDevMode` /
+ *      `toggleDevMode`)
+ *
+ * Both signals are guarded so that headless / SSR runs (no document) and
+ * privacy-mode browsers (storage may throw) cannot crash the caller. This
+ * is the single source of truth used by HUDController, GameApp, and
+ * autopilotStatus to decide whether to surface engineer-facing diagnostic
+ * strings (Why no WHISPER? / proxy err.message / next-policy countdown).
+ *
+ * @param {object} [state] — game state with optional `state.controls.devMode`.
+ * @returns {boolean}
+ */
+export function isDevMode(state) {
+  if (state && state.controls && state.controls.devMode === true) return true;
+  try {
+    if (typeof document !== "undefined"
+      && document.body
+      && document.body.classList
+      && document.body.classList.contains(DEV_MODE_BODY_CLASS)) {
+      return true;
+    }
+  } catch {
+    /* DOM unavailable (jsdom edge cases / SSR) — fall through */
+  }
+  return false;
+}
+
+/**
  * Read the initial UI profile (casual | full) from URL + storage.
  * Casual is the default for first-time players. Pure function — safe to
  * unit-test with stubs. Unknown values collapse to "casual".

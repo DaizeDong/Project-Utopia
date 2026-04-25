@@ -30,7 +30,14 @@ export function getAutopilotRemainingSec(state) {
   return Math.max(0, intervalSec - Math.max(0, now - last));
 }
 
-export function getAutopilotStatus(state) {
+export function getAutopilotStatus(state, options = {}) {
+  // v0.8.2 Round-6 Wave-1 (01c-ui Step 4) — second-arg options bag with
+  // `devMode` flag. Non-dev (default) suppresses the engineer-facing
+  // "next policy in 9.8s" countdown and the "LLM offline — DIRECTOR
+  // steering" suffix from the topbar text; both stay in the tooltip
+  // (`title`) for power users who hover. Dev mode preserves the legacy
+  // verbose copy so engineers can still glance at the policy cadence.
+  const devMode = Boolean(options?.devMode);
   const enabled = Boolean(state?.ai?.enabled);
   const aiMode = normalizeMode(state?.ai?.mode);
   const coverageTarget = normalizeMode(state?.ai?.coverageTarget);
@@ -63,6 +70,12 @@ export function getAutopilotStatus(state) {
   const combinedModeLabel = (aiMode === "fallback" && coverageTarget === "fallback")
     ? "rule-based"
     : `${aiMode}/${coverageTarget}`;
+  // v0.8.2 Round-6 Wave-1 (01c-ui Step 4) — casual short label (no
+  // countdown). Used by the topbar chip in non-dev-mode. The "rules"
+  // alias swaps the engineer string "rule-based" for a friendlier
+  // single-word version ("rules") on the chip face; tooltip retains
+  // "rule-based" + dev info for hover.
+  const casualMode = (combinedModeLabel === "rule-based") ? "rules" : combinedModeLabel;
   // v0.8.2 Round-5 Wave-3 (01e Step 4) — degraded-state suffix: when the
   // runtime is actively routed through the fallback path AND the most
   // recent LLM attempt errored (or never got wired), the HUD spells it out
@@ -72,13 +85,23 @@ export function getAutopilotStatus(state) {
   const proxyHealth = String(state?.metrics?.proxyHealth ?? "").toLowerCase();
   const llmOffline = lastPolicySource === "fallback"
     && (lastError.length > 0 || proxyHealth === "error");
-  const baseText = enabled
+  // Dev banner keeps the verbose engineer copy: countdown + offline tag.
+  const devBaseText = enabled
     ? `Autopilot ON - ${combinedModeLabel} - next policy in ${remainingSec.toFixed(1)}s`
     : "Autopilot off. Manual control is active; fallback is ready.";
+  // Casual banner: short, no countdown. Strips the engineer cadence
+  // (per reviewer feedback #2 "Autopilot ON - rule-based - next policy in
+  // 9.8s ..." was visually overwhelming on the 1024×768 chip).
+  const casualBaseText = enabled
+    ? `Autopilot ON \u00b7 ${casualMode}`
+    : "Autopilot off. Manual control is active; fallback is ready.";
+  const baseText = devMode ? devBaseText : casualBaseText;
   const baseTitle = enabled
     ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
     : "Autopilot off. Manual control is active and fallback is ready.";
-  const llmText = enabled && llmOffline
+  // Dev-only: append the LLM-offline → DIRECTOR steering tag to the chip.
+  // Casual players already see the ⚠ Storyteller badge for that signal.
+  const llmText = (devMode && enabled && llmOffline)
     ? `${baseText} | LLM offline \u2014 DIRECTOR steering`
     : baseText;
   const llmTitle = enabled && llmOffline

@@ -447,16 +447,42 @@
     }
     .pressure-label {
       position: absolute;
-      transform: translate(-50%, -130%);
+      /* v0.8.2 Round-6 Wave-1 (01c-ui Step 6) — lift the label so the new
+         ::after triangle anchor doesn't clip the building beneath it. */
+      transform: translate(-50%, -160%);
       font-size: 10px; font-weight: 700;
       padding: 2px 6px; border-radius: 4px;
       background: rgba(8,16,28,0.88);
       color: #d0e8ff;
       border: 1px solid rgba(80,160,220,0.3);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+      backdrop-filter: blur(2px);
       pointer-events: none;
       white-space: nowrap;
       line-height: 1.3;
       display: none;
+    }
+    /* v0.8.2 Round-6 Wave-1 (01c-ui Step 6) — anchor triangle pointing at
+       the underlying tile/marker. Inherits the label border colour for
+       visual cohesion across heat / route / depot kinds. */
+    .pressure-label::after {
+      content: '\25BE';
+      position: absolute;
+      bottom: -10px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px; line-height: 1;
+      color: rgba(80,160,220,0.85);
+      pointer-events: none;
+    }
+    /* v0.8.2 Round-6 Wave-1 (01c-ui Step 6) — merged-count badge. When the
+       dedup helper collapses N markers onto one centroid, SceneRenderer
+       writes data-merged="1" + data-count="N"; the label text already
+       suffixes "×N" but this gives merged labels a distinct visual cue
+       (slightly brighter ring) so the player can tell the difference
+       between a single warning and a cluster. */
+    .pressure-label[data-merged="1"] {
+      border-color: rgba(255,209,102,0.7);
+      box-shadow: 0 6px 18px rgba(255,209,102,0.18), 0 6px 18px rgba(0,0,0,0.5);
     }
     .pressure-label[data-kind="heat_surplus"] { border-color: rgba(233,92,77,0.7); color: #ffb3ab; }
     .pressure-label[data-kind="heat_starved"]  { border-color: rgba(77,168,233,0.7); color: #a8d8ff; }
@@ -1264,6 +1290,27 @@
     body.casual-mode .tool-grid button[data-tool-tier="advanced"]  { display: none !important; }
     body.casual-mode[data-tool-tier-unlocked~="secondary"] .tool-grid button[data-tool-tier="secondary"] { display: inline-flex !important; }
     body.casual-mode[data-tool-tier-unlocked~="advanced"]  .tool-grid button[data-tool-tier="advanced"]  { display: inline-flex !important; }
+    /* v0.8.2 Round-6 Wave-1 (01c-ui Step 2) — dev-string quarantine.
+       The "Why no WHISPER?:" engineer line is rendered in
+       #storytellerWhyNoWhisper. Casual players (no body.dev-mode) MUST NOT
+       see the LLM/proxy/error tokens in the topbar; the badge below is
+       their substitute hover affordance. */
+    body:not(.dev-mode) #storytellerWhyNoWhisper { display: none !important; }
+    body.dev-mode #storytellerWhisperBadge { display: none !important; }
+    .hud-warn-badge {
+      display: inline-block;
+      width: 14px; height: 14px; line-height: 14px;
+      font-size: 11px; color: #ffd166;
+      background: rgba(255,209,102,0.12);
+      border: 1px solid rgba(255,209,102,0.4);
+      border-radius: 50%;
+      text-align: center;
+      cursor: help;
+      margin-left: 6px;
+      vertical-align: middle;
+      user-select: none;
+    }
+    .hud-warn-badge[hidden] { display: none !important; }
     /* Responsive status bar */
     @media (max-width: 1024px) {
       #statusBar {
@@ -1459,6 +1506,53 @@
       #statusBar { flex-wrap: wrap; height: auto; max-height: none; padding: 2px 4px; }
     }
 
+    /* v0.8.2 Round-6 Wave-1 (01c-ui Step 7) — responsive completion.
+       Three new bands close gaps reviewers reported in feedback #6/#7/#8:
+         - High-DPI (>=2200px): bump HUD typography so the topbar is
+           readable on 27" 2560×1440 monitors.
+         - Mid (1024-801): un-truncate the autopilot chip so casual UX
+           doesn't show "Manual contro…" black-on-white.
+         - Low (<=800): non-playable; replace the canvas with a portrait
+           splash asking the player to widen the window. The boundary is
+           strict <800 (799 and below) so 800×600 itself shows the splash;
+           Playwright fixtures must use >=1024 viewports. */
+    @media (min-width: 2200px) {
+      :root { --hud-height: 56px; }
+      #statusBar {
+        font-size: 14px;
+        height: var(--hud-height);
+      }
+      .hud-resource .hud-label,
+      .hud-resource .hud-value { font-size: 14px; }
+      #sidebarTabBar .sidebar-tab-btn { font-size: 13px; }
+      #statusObjectiveTime,
+      #statusObjectiveScore,
+      #statusObjectiveDev { font-size: 15px !important; }
+    }
+    @media (max-width: 1024px) and (min-width: 801px) {
+      #aiAutopilotChip {
+        max-width: none !important;
+        white-space: normal !important;
+        min-height: 32px;
+        line-height: 1.25;
+        word-break: break-word;
+      }
+    }
+    @media (max-width: 799px) {
+      #wrap::before {
+        content: 'Project Utopia is a desktop colony sim. Please widen the window to at least 1024px.';
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: #0a1320;
+        color: #c8e0f8;
+        font-size: 16px; font-weight: 700;
+        padding: 32px;
+        text-align: center;
+        z-index: 99999;
+      }
+      #ui, #viewport { display: none !important; }
+    }
+
     /* Step 5 — KPI typography */
     #statusSurvived, #statusScore, #statusObjectiveDev {
       font-size: 13px !important; font-weight: 900 !important;
@@ -1645,8 +1739,19 @@
              shown when badgeState != llm-live. HUDController appends this
              reason to the storytellerStrip title tooltip; this sibling span
              makes the reason accessible to CSS selectors and automated tests.
-             Hidden by default; HUDController reveals it when applicable. -->
+             Hidden by default; HUDController reveals it when applicable.
+             v0.8.2 Round-6 Wave-1 (01c-ui Step 2) — dev-mode-only span; CSS
+             rule below hides it for casual players who instead see the
+             #storytellerWhisperBadge ⚠ icon. -->
         <span id="storytellerWhyNoWhisper" hidden style="font-size:10px;opacity:0.7;color:#aaa;display:block;"></span>
+        <!-- v0.8.2 Round-6 Wave-1 (01c-ui Step 2) — casual-mode warn badge.
+             HUDController toggles `hidden` and rewrites `data-tooltip`/title
+             with an in-fiction "Storyteller fell back to rule-based director"
+             string. Shown only when (a) NOT body.dev-mode and (b) badgeState
+             != llm-live. Renders as a 14px ⚠ pill so casual players can hover
+             for the explanation without the engineer string occupying the
+             top bar. -->
+        <span id="storytellerWhisperBadge" class="hud-warn-badge" hidden data-tooltip="">&#9888;</span>
         <div id="alertStack" aria-live="assertive"></div>
         <span id="statusAction" class="hud-action" title="Latest game event or action result"></span>
         <!-- panelToggles kept for JS compatibility and test contracts.

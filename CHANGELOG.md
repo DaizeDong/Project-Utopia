@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-1 01c-ui: dev-string quarantine + pressure-label dedup + responsive layout
+
+**Scope:** Reviewer 01c-ui gave 3/10 citing 17 visual hardships grouped into three root causes: (i) engineer diagnostic strings (`Why no WHISPER?:`, `AI proxy unreachable (timeout)...`, `Autopilot ON - rule-based - next policy in 9.8s | LLM offline — DIRECTOR steering`) leaked to casual players in the topbar; (ii) Pressure-lens labels in `SceneRenderer.js#updatePressureLensLabels` had no screen-space dedup, so `west lumber route ×3` / `supply surplus ×4` stacked in the same pixel cluster; (iii) viewport breakpoints had gaps — 800×600 was unplayable, 1024×768 truncated the autopilot chip to "Manual contro…", 2560×1440 ran 11–13px fonts on 27" panels. This plan lands all three pillars without touching `src/simulation` (DevIndex impact ≈ 0).
+
+### UI / Polish (Round 6 — 01c-ui)
+- **Dev-string quarantine** (`HUDController.js`, `GameApp.js`, `autopilotStatus.js`, `devModeGate.js`):
+  - New `isDevMode(state)` helper (`devModeGate.js`) — single source of truth that honours BOTH `state.controls.devMode` AND the live `body.dev-mode` DOM class. Per Stage B summary §7 Risk #4, this unifies the four parallel gate mechanisms that Wave-1 plans (01a/01b/01c/02b) introduced. Wave-2/3 plans should consume this helper.
+  - `Why no WHISPER?` tooltip suffix + `#storytellerWhyNoWhisper` span now require `isDevMode(state) === true`. Casual players (default) see neither — they get a 14×14 ⚠ `#storytellerWhisperBadge` whose `data-tooltip` reads "Storyteller fell back to rule-based director — <in-fiction reason>" instead. (Step 1, Step 2)
+  - `state.controls.actionMessage` on AI-proxy-unreachable: casual = `"AI offline · using rules"` (no `(timeout)` / `(fetch failed)` token); dev mode = `"AI offline · using rules (<err.message>)"`. Original `err.message` also stashed on `state.debug.lastAiError` for dev tooling. `actionKind` flipped to `"ai-down"`. (Step 3)
+  - `getAutopilotStatus(state, { devMode })` accepts a second-arg options bag. Casual chip text drops `next policy in 9.8s` countdown and the `| LLM offline — DIRECTOR steering` suffix; tooltip (`title`) keeps the verbose engineer copy for hover. Casual mode also collapses `rule-based` → `rules` for the chip face. (Step 4)
+- **Pressure-label screen-space dedup** (`PressureLens.js`, `SceneRenderer.js`):
+  - New `dedupPressureLabels(entries, opts)` pure helper exported from `PressureLens.js`. Two-pass dedup: (1) same-text labels within `nearPx=24` collapse onto the highest-weight primary with `count=N`; (2) cross-label primaries within the same `bucketPx=32` cell keep only the heaviest. Per Stage B summary §2 D1, this is locked as the canonical helper for Wave-2 02a hover-tooltip path to reuse. (Step 5)
+  - `SceneRenderer.js#updatePressureLensLabels` refactored from one-pass project-and-write to three-pass project → dedup → write. Merged labels show `"<text> ×N"` and get `data-merged="1"` + `data-count="N"` for CSS hooks. (Step 5)
+  - `.pressure-label` CSS — added `box-shadow: 0 6px 18px rgba(0,0,0,0.55)`, `backdrop-filter: blur(2px)`, lifted `transform` to `-160%`, and a `::after` ▾ triangle anchor. Merged labels get an amber accent ring. (Step 6)
+- **Responsive layout — three new bands** (`index.html` CSS):
+  - `@media (min-width: 2200px)` — bumps `--hud-height: 56px` and topbar typography to 14–15px so 27" 2560×1440 panels are readable. (Step 7)
+  - `@media (max-width: 1024px) and (min-width: 801px)` — un-truncates `#aiAutopilotChip` (`max-width: none; white-space: normal; min-height: 32px`) so the casual UX never shows "Manual contro…". (Step 7)
+  - `@media (max-width: 799px)` — replaces canvas + UI with a portrait splash via `#wrap::before` asking the player to widen to ≥1024px. Strict `<800` so 800×600 itself triggers the splash; Playwright fixtures must use ≥1024 viewports. (Step 7)
+
+### New Tests
+- `test/hud-dev-string-quarantine.test.js` — 4 cases: (a) non-dev tooltip omits "Why no WHISPER" + badge visible + dev-only span hidden, (b) dev mode shows engineer string + badge hidden, (c) `getAutopilotStatus(devMode:false)` omits `next policy in` and `LLM offline`, (d) `getAutopilotStatus(devMode:true)` preserves both.
+- `test/pressure-lens-label-dedup.test.js` — 7 cases: (a) 4 same-label clustered → 1 visible × 4, (b) far-apart same-label both kept, (c) different-label same-bucket heaviest wins, (d) different-label far-apart both kept, (e) empty input, (f) single entry trivially kept, (g) highest-weight survives same-label dedup.
+
+### Files Changed
+- `src/app/devModeGate.js` — `isDevMode(state)` helper added (Step 1 helper extraction).
+- `src/ui/hud/HUDController.js` — switched to `isDevMode(state)` helper; added `#storytellerWhisperBadge` toggle + tooltip wiring; passes `{ devMode }` to `getAutopilotStatus` (Steps 1, 4).
+- `src/app/GameApp.js` — `state.debug.lastAiError` schema; casual vs dev `actionMessage` split on AI proxy unreachable (Step 3).
+- `src/ui/hud/autopilotStatus.js` — `getAutopilotStatus(state, options)` second-arg `{ devMode }`; casual short text without countdown / offline tag (Step 4).
+- `src/render/PressureLens.js` — `dedupPressureLabels` pure helper exported (Step 5 — testable surface).
+- `src/render/SceneRenderer.js` — `#updatePressureLensLabels` refactored to project / dedup / write three-pass (Step 5).
+- `index.html` — `#storytellerWhisperBadge` ⚠ span + `.hud-warn-badge` CSS + dev-mode-gated visibility rules (Step 2); `.pressure-label` box-shadow / triangle / merged-count badge (Step 6); three new `@media` breakpoints for ≥2200 / 1024-801 / ≤799 (Step 7).
+- `test/hud-dev-string-quarantine.test.js` — new (4 cases).
+- `test/pressure-lens-label-dedup.test.js` — new (7 cases).
+
+### Migration Notes
+- **Existing tests** `test/hud-autopilot-status-contract.test.js` and `test/autopilot-status-degraded.test.js` exercise `getAutopilotStatus(state)` (no options arg). Without `{ devMode: true }`, the new default returns the casual text. The plan §5 Risks called this out — those tests assert legacy verbose strings, so this commit's CHANGELOG flags them; they continue to pass for the OFF / pausedByCrisis branches and are updated where they previously asserted the now-dev-only countdown. See test deltas in commit log.
+
+### Notes
+- Same 4 pre-existing test failures as 01a/01b baseline (build-spam wood cap, SceneRenderer source proximity-fallback regex, formatGameEventForLog noisy-event filter, ui-voice main.js dev-mode regex) — all verified failing on parent commit `db19ef5` and not introduced by this work.
+- `freeze_policy: lifted`. No new tile / building / tool / mood / audio asset; pure UI/render-layer changes (DevIndex impact ≈ 0 per plan §5 risk #5).
+- Per Round-6 summary §2 D1, `PressureLens.js:409` halo `label=""` (Wave-1 lock from 01a/01b/02b) is untouched. The new `dedupPressureLabels` helper is a Wave-1 lock per Stage B summary — Wave-2 02a hover-tooltip reuses, does not rewrite.
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-1 01b-playability: HUD signal denoising — halo cap 64, primary-marker dedup, in-fiction WHISPER reason, threat-gated raid pulse
 
 **Scope:** Reviewer 01b-playability gave 3/10, citing three root causes: (i) Heat Lens halo overlay flooded the map with up to 160 silent markers (visual noise even after 01a silenced the labels); (ii) `Why no WHISPER?` storyteller tooltip leaked engineer phrasing (`LLM errored (http)`, `LLM never reached`) directly to casual players; (iii) the Population panel reported `Workers 0` while the HUD top bar said `Workers 13` because `BuildToolbar.#syncPopulationTargetsFromWorld` excluded stress workers. Plus Survival mode had no death threat — 4-seed bench raids fired but never visited the player early enough to feel risky. Step 10 closes that loop with a threat-gated saboteur micro-pulse, gated by `BALANCE.raidDeathBudget` so 4-seed bench (deaths ≤ 499 / DevIndex median ≥ 42) stays inside its lanes.

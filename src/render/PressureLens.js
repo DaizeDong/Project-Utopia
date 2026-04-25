@@ -7,6 +7,117 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * v0.8.2 Round-6 Wave-1 (01c-ui Step 5) — Pressure-label screen-space dedup.
+ *
+ * Pure helper used by `SceneRenderer#updatePressureLensLabels` (and the
+ * Wave-2 02a hover-tooltip path per Stage B summary §2 D1). Given a list of
+ * projected label entries `{ idx, px, py, label, weight }`, this function
+ * returns a tag list `decisions[]` of length === entries.length where each
+ * entry is either:
+ *   - { keep: true, count: N, cx, cy }            // primary; render at centroid
+ *   - { keep: false }                              // hidden; consumed by primary
+ *
+ * Two merge passes:
+ *   1. Same-text labels within `nearPx` Euclidean distance collapse into
+ *      the highest-weight primary; primary advertises `count`.
+ *   2. Different-text labels within the same `bucketPx` cell on screen
+ *      collapse onto the highest-weight primary; primary advertises
+ *      `count` so the renderer can show "labelText ×N".
+ *
+ * Exported so unit tests in `test/pressure-lens-label-dedup.test.js` can
+ * assert behaviour without standing up Three.js / a canvas context.
+ *
+ * @param {Array<{idx:number, px:number, py:number, label:string, weight?:number}>} entries
+ * @param {object} [opts]
+ * @param {number} [opts.nearPx=24]    — same-label proximity merge radius.
+ * @param {number} [opts.bucketPx=32]  — different-label screen-bucket merge cell size.
+ * @returns {Array<{keep:boolean, count?:number, cx?:number, cy?:number}>}
+ */
+export function dedupPressureLabels(entries, opts = {}) {
+  const nearPx = Number.isFinite(opts.nearPx) ? Number(opts.nearPx) : 24;
+  const bucketPx = Number.isFinite(opts.bucketPx) ? Number(opts.bucketPx) : 32;
+  const list = Array.isArray(entries) ? entries : [];
+  const decisions = list.map(() => ({ keep: true, count: 1 }));
+  if (list.length === 0) return decisions;
+
+  // Pass 1: same-label dedup. For each label-string group, keep the
+  // highest-weight entry; collapse near-neighbours into it.
+  const byLabel = new Map();
+  for (let i = 0; i < list.length; i += 1) {
+    const e = list[i];
+    if (!e) { decisions[i] = { keep: false }; continue; }
+    const key = String(e.label ?? "");
+    if (!byLabel.has(key)) byLabel.set(key, []);
+    byLabel.get(key).push(i);
+  }
+  for (const [, indices] of byLabel) {
+    if (indices.length <= 1) continue;
+    // Sort by weight desc — heaviest survives.
+    indices.sort((a, b) => Number(list[b]?.weight ?? 0) - Number(list[a]?.weight ?? 0));
+    const primaryIdx = indices[0];
+    const primary = list[primaryIdx];
+    let count = decisions[primaryIdx].count ?? 1;
+    let cx = primary.px;
+    let cy = primary.py;
+    for (let j = 1; j < indices.length; j += 1) {
+      const k = indices[j];
+      const other = list[k];
+      if (!other) continue;
+      // Same-label: merge if near OR within the same bucket (be generous).
+      const dx = other.px - primary.px;
+      const dy = other.py - primary.py;
+      const near = Math.hypot(dx, dy) < nearPx;
+      const sameBucket = Math.floor(other.px / bucketPx) === Math.floor(primary.px / bucketPx)
+        && Math.floor(other.py / bucketPx) === Math.floor(primary.py / bucketPx);
+      if (near || sameBucket) {
+        decisions[k] = { keep: false };
+        count += 1;
+        cx += other.px;
+        cy += other.py;
+      }
+    }
+    if (count > 1) {
+      const merged = decisions[primaryIdx].count === undefined ? 1 : decisions[primaryIdx].count;
+      decisions[primaryIdx] = {
+        keep: true,
+        count,
+        cx: cx / count,
+        cy: cy / count,
+        merged,
+      };
+    }
+  }
+
+  // Pass 2: cross-label screen-bucket dedup. Among surviving primaries
+  // (decisions[i].keep === true), if two primaries with DIFFERENT labels
+  // share a bucket, keep the heaviest and hide the lighter.
+  const bucketOwners = new Map();
+  for (let i = 0; i < list.length; i += 1) {
+    if (!decisions[i].keep) continue;
+    const e = list[i];
+    if (!e) { decisions[i] = { keep: false }; continue; }
+    const bx = Math.floor((decisions[i].cx ?? e.px) / bucketPx);
+    const by = Math.floor((decisions[i].cy ?? e.py) / bucketPx);
+    const bk = `${bx},${by}`;
+    if (!bucketOwners.has(bk)) {
+      bucketOwners.set(bk, i);
+      continue;
+    }
+    const ownerIdx = bucketOwners.get(bk);
+    const ownerWeight = Number(list[ownerIdx]?.weight ?? 0);
+    const myWeight = Number(e.weight ?? 0);
+    if (myWeight > ownerWeight) {
+      decisions[ownerIdx] = { keep: false };
+      bucketOwners.set(bk, i);
+    } else {
+      decisions[i] = { keep: false };
+    }
+  }
+
+  return decisions;
+}
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }

@@ -3,6 +3,7 @@ import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { describeAutopilotToggle, getAutopilotStatus } from "./autopilotStatus.js";
+import { isDevMode } from "../../app/devModeGate.js";
 import { explainTerm } from "./glossary.js";
 import { getNextActionAdvice } from "./nextActionAdvisor.js";
 import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
@@ -1040,13 +1041,21 @@ export class HUDController {
         // pondering") is fine to surface to casual players; the
         // `whisperBlockedReasonDev` ("LLM errored (http)") only appears when
         // dev mode is explicitly enabled.
-        const isDevMode = Boolean(state.controls?.devMode);
-        const diagText = isDevMode
+        //
+        // v0.8.2 Round-6 Wave-1 01c-ui (Step 1) — switched from the local
+        // `state.controls.devMode` flag to the shared `isDevMode(state)`
+        // helper which also honours the `body.dev-mode` DOM class set by
+        // GameApp's URL/storage/Ctrl+Shift+D dev gate. Casual-mode players
+        // (no body.dev-mode) drop the entire "Why no WHISPER?" suffix; the
+        // sibling badge surfaces a humanised tooltip instead.
+        const devModeOn = isDevMode(state);
+        const diagText = devModeOn
           ? (model.diagnostic?.whisperBlockedReasonDev ?? model.diagnostic?.whisperBlockedReason ?? "")
-          : (model.diagnostic?.whisperBlockedReason ?? "");
+          : "";
         const diagSuffix = (model.diagnostic
             && model.badgeState !== "llm-live"
-            && diagText)
+            && diagText
+            && devModeOn)
           ? ` \u2014 Why no WHISPER?: ${diagText}`
           : "";
         const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}${diagSuffix}`;
@@ -1064,15 +1073,45 @@ export class HUDController {
         if (typeof document !== "undefined") {
           const whySpan = document.getElementById("storytellerWhyNoWhisper");
           if (whySpan) {
-            const reasonText = isDevMode
+            // v0.8.2 Round-6 Wave-1 01c-ui (Step 1) — only populate the
+            // dev-only `#storytellerWhyNoWhisper` span when `body.dev-mode`
+            // (or `state.controls.devMode`) is on; casual players never see
+            // this engineer-facing string in the topbar. The sibling
+            // `#storytellerWhisperBadge` (Step 2) surfaces a friendly
+            // tooltip-only fallback for non-dev players.
+            const reasonText = devModeOn
               ? (model.diagnostic?.whisperBlockedReasonDev ?? model.diagnostic?.whisperBlockedReason ?? "")
-              : (model.diagnostic?.whisperBlockedReason ?? "");
-            if (model.badgeState !== "llm-live" && reasonText) {
+              : "";
+            if (devModeOn && model.badgeState !== "llm-live" && reasonText) {
               whySpan.textContent = `Why no WHISPER?: ${reasonText}`;
               if (whySpan.hasAttribute?.("hidden")) whySpan.removeAttribute?.("hidden");
             } else {
               whySpan.textContent = "";
               if (!whySpan.hasAttribute?.("hidden")) whySpan.setAttribute?.("hidden", "");
+            }
+          }
+          // v0.8.2 Round-6 Wave-1 01c-ui (Step 1 + Step 2) — casual-mode
+          // ⚠ badge: shown only when (a) NOT dev-mode and (b) the
+          // storyteller fell back from LLM. The badge's data-tooltip
+          // surfaces the in-fiction reason via the global #customTooltip
+          // hover handler (no engineer tokens like "LLM" / "proxy"). When
+          // dev-mode is on, the badge is hidden and the topbar suffix /
+          // span carries the engineer string instead.
+          const whisperBadge = document.getElementById("storytellerWhisperBadge");
+          if (whisperBadge) {
+            const casualReason = String(model.diagnostic?.whisperBlockedReason ?? "").trim();
+            const showBadge = !devModeOn
+              && model.badgeState !== "llm-live"
+              && casualReason.length > 0;
+            if (showBadge) {
+              const tooltipMsg = `Storyteller fell back to rule-based director — ${casualReason}`;
+              whisperBadge.setAttribute?.("data-tooltip", tooltipMsg);
+              whisperBadge.setAttribute?.("title", tooltipMsg);
+              if (whisperBadge.hasAttribute?.("hidden")) whisperBadge.removeAttribute?.("hidden");
+            } else {
+              whisperBadge.removeAttribute?.("data-tooltip");
+              whisperBadge.removeAttribute?.("title");
+              if (!whisperBadge.hasAttribute?.("hidden")) whisperBadge.setAttribute?.("hidden", "");
             }
           }
         }
@@ -1195,7 +1234,11 @@ export class HUDController {
     if (this.hudWorkers) this.hudWorkers.setAttribute("data-urgency", (state.metrics?.populationStats?.workers ?? 0) <= 3 ? "low" : "");
 
     if (this.aiAutopilotChip) {
-      const status = getAutopilotStatus(state);
+      // v0.8.2 Round-6 Wave-1 (01c-ui Step 4) — pass dev-mode flag so the
+      // chip text strips "next policy in 9.8s" / "LLM offline — DIRECTOR"
+      // for casual players. Tooltip (`title`) still carries the verbose
+      // copy for hover.
+      const status = getAutopilotStatus(state, { devMode: isDevMode(state) });
       this.aiAutopilotChip.textContent = status.text;
       this.aiAutopilotChip.setAttribute?.("data-mode", status.dataMode);
       this.aiAutopilotChip.setAttribute?.("data-ai-mode", status.aiMode);

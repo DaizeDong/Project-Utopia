@@ -48,6 +48,7 @@ import {
   readInitialDevMode,
   applyInitialDevMode,
   isDevModeChord,
+  isDevMode,
   toggleDevMode,
   readInitialUiProfile,
   applyUiProfile,
@@ -1379,11 +1380,29 @@ export class GameApp {
           // browser console retains the diagnostic. This silences the red
           // toast strip that reviewers consistently report as "looks like
           // the game is broken on first launch".
+          //
+          // v0.8.2 Round-6 Wave-1 01c-ui (Step 3): also stash the raw err
+          // string on `state.debug.lastAiError` so dev-mode tooling can
+          // read it (per Stage B summary §2 D1 — Wave-1 main-author of the
+          // dev-mode quarantine introduces this state field). Casual
+          // `actionMessage` keeps the in-fiction "Story AI is offline ..."
+          // phrasing pinned by 01a's onboarding-noise-reduction.test.js
+          // (do-not-rollback rule); dev-mode `actionMessage` tacks the
+          // err.message onto the toast for engineers. `actionKind` flips
+          // to `"ai-down"` so HUD can theme the toast distinctly from
+          // generic `info` events.
           const errText = String(err?.message ?? err ?? "unknown");
           console.warn("[Project Utopia] AI proxy unreachable:", errText);
           pushWarning(this.state, `AI proxy unreachable (${errText}). Fallback director engaged.`, "warn", "ai-health");
+          if (!this.state.debug || typeof this.state.debug !== "object") this.state.debug = {};
+          this.state.debug.lastAiError = errText;
+          // Casual baseline: keep the 01a in-fiction phrasing (pinned by
+          // onboarding-noise-reduction.test.js — do-not-rollback rule).
           this.state.controls.actionMessage = "Story AI is offline — fallback director is steering. (Game still works.)";
-          this.state.controls.actionKind = "info";
+          if (isDevMode(this.state)) {
+            this.state.controls.actionMessage += ` [${errText}]`;
+          }
+          this.state.controls.actionKind = "ai-down";
         }
       })
       .finally(() => {
