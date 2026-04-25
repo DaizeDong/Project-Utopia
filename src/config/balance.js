@@ -114,7 +114,7 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
 });
 
 export const INITIAL_RESOURCES = Object.freeze({
-  food: 100,
+  food: 200,
   wood: 80,
   stone: 15,
   herbs: 8,
@@ -301,6 +301,29 @@ export const BALANCE = Object.freeze({
   // threshold trigger → no cook emit). Drop to 6 below workerCount 6.
   fallbackIdleChainThresholdLowPop: 6,
   fallbackIdleChainLowPopBand: 6,
+  // v0.8.2 Round-5b (02a-rimworld-veteran Step 1) — Fast-Forward delivery.
+  // Round 5 reviewer measured 4× yielding only ~1.2× effective because
+  // maxSteps=6/frame + accumulator cap 0.5s dropped time whenever frameDt
+  // drifted above 16ms. Phase 10 long-horizon hardening already validated
+  // 12 steps/frame holds determinism, so we double the cap and raise the
+  // accumulator cap to 2.0s to survive tab-visibility throttling.
+  fastForwardScheduler: Object.freeze({
+    maxStepsPerFrame: 12,
+    accumulatorSoftCapSec: 2.0,
+    hiddenTabCatchupHz: 60,
+  }),
+  // v0.8.2 Round-5b (02a Step 5) — render hitbox tuning.
+  // Reviewer 02a reported zero successful synthetic-clicks on workers at
+  // 1440p/1920p. Constants surfaced via balance so uiProfile can diverge.
+  renderHitboxPixels: Object.freeze({
+    entityPickFallback: 24,
+    entityPickGuard: 36,
+    rpgProfileBonusPx: 6,
+  }),
+  // v0.8.2 Round-5b (02a Step 3) — scenario objective regression event window.
+  // When BUILDING_DESTROYED fires within this window, OBJECTIVE_REGRESSED is
+  // back-annotated with cause='wildfire'/'erase'. Beyond window, cause='unknown'.
+  scenarioObjectiveRegressionWindowSec: 8,
   // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
   // its chosen objective longer, so long-range plans stop thrashing.
   objectiveHoldDecayPerSecond: 0.4,
@@ -403,7 +426,7 @@ export const BALANCE = Object.freeze({
   workerMoraleRecoveryPerSecond: 0.02,
   workerNightProductivityMultiplier: 0.6,
   // Action duration constants
-  workerHarvestDurationSec: 2.5,
+  workerHarvestDurationSec: 1.5,
   workerProcessDurationSec: 3.0,
   // --- Living World v0.8.0 — Phase 1 (M3 + M4), values per spec § 14.1 ---
   // M3 carry fatigue: rest decay multiplier while carrying anything (>0 carry.total).
@@ -504,7 +527,7 @@ export const BALANCE = Object.freeze({
   nodeYieldPoolForest: 80,
   nodeYieldPoolStone: 120,
   nodeYieldPoolHerb: 60,
-  nodeRegenPerTickForest: 0.05,
+  nodeRegenPerTickForest: 0.15,
   nodeRegenPerTickStone: 0.0,
   nodeRegenPerTickHerb: 0.08,
   // --- Living World v0.8.0 — Phase 4 (Survival Mode), spec §§ 5.1-5.6 ---

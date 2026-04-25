@@ -3,6 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
+import { BALANCE } from "../config/balance.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
@@ -104,8 +105,10 @@ const VEC_TMP = new THREE.Vector3();
 //     build placement if the click landed within this radius of a worker
 //     but outside the fallback radius, so the user isn't surprised by a
 //     Farm appearing "next to the worker they thought they clicked".
-const ENTITY_PICK_FALLBACK_PX = 16;
-const ENTITY_PICK_GUARD_PX = 24;
+// v0.8.2 Round-5b (02a-rimworld-veteran Step 5) — hitbox sourced from BALANCE
+// so uiProfile can enlarge picks for non-casual (RimWorld veteran) players.
+const ENTITY_PICK_FALLBACK_PX = Number(BALANCE.renderHitboxPixels?.entityPickFallback ?? 24);
+const ENTITY_PICK_GUARD_PX = Number(BALANCE.renderHitboxPixels?.entityPickGuard ?? 36);
 
 // Pure helper for screen-space proximity pick. Extracted from
 // SceneRenderer.#pickEntity so it can be unit-tested without standing up
