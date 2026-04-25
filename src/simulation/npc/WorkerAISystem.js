@@ -213,6 +213,19 @@ function getWorkerRecoveryPerFoodUnit(worker) {
   return Math.max(1e-4, base * clamp(multiplier, 0.5, 1.5));
 }
 
+// v0.8.2 Round-5b (02d Step 2b) — memory helper mirroring MortalitySystem pattern.
+// Pushes a human-readable line with dedup guard; windowSec=9999 ensures band-crossings
+// (once-per-lifetime) are never duplicated within a session.
+function pushFriendshipMemory(agent, line, dedupKey, windowSec, nowSec) {
+  agent.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
+  if (!(agent.memory.recentKeys instanceof Map)) agent.memory.recentKeys = new Map();
+  if (agent.memory.recentKeys.has(dedupKey)) return;
+  agent.memory.recentKeys.set(dedupKey, nowSec);
+  agent.memory.recentEvents.unshift(line);
+  agent.memory.recentEvents = agent.memory.recentEvents.slice(0, 6);
+}
+
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
   const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0) > 0;
@@ -232,7 +245,13 @@ export function chooseWorkerIntent(worker, state) {
   const carryPressureSec = Number(BALANCE.workerCarryPressureSec ?? 6);
   const farDepotDistance = Number(BALANCE.workerFarDepotDistance ?? 14);
 
-  if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && Number(state.resources?.food ?? 0) > 0) return "eat";
+  worker.debug ??= {};
+  const hunger = Number(worker.hunger ?? 1);
+  const hungerThreshold = getWorkerHungerSeekThreshold(worker);
+  if (hunger < hungerThreshold && Number(state.resources?.food ?? 0) > 0) {
+    worker.debug.lastIntentReason = `hunger=${hunger.toFixed(2)} < threshold=${hungerThreshold.toFixed(2)}, food=${Math.floor(state.resources.food)}`;
+    return "eat";
+  }
   if (
     hasCarry &&
     hasWarehouse &&
@@ -244,20 +263,54 @@ export function chooseWorkerIntent(worker, state) {
       || nearestWarehouseDistance >= farDepotDistance
     )
   ) {
+    const trigReason = carryTotal >= deliverThreshold ? `carry=${carryTotal.toFixed(1)} ≥ threshold=${deliverThreshold.toFixed(1)}`
+      : alreadyDelivering ? "already delivering"
+      : noWorkSite ? `no worksite for role=${worker.role}`
+      : carryAgeSec >= carryPressureSec ? `carry age ${carryAgeSec.toFixed(0)}s ≥ ${carryPressureSec}s`
+      : `far depot dist=${nearestWarehouseDistance.toFixed(0)} ≥ ${farDepotDistance}`;
+    worker.debug.lastIntentReason = trigReason;
     return "deliver";
   }
-  if (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) > 0) return "farm";
-  if (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) > 0) return "lumber";
-  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) return "quarry";
-  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) return "gather_herbs";
-  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) return "cook";
-  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) return "smith";
-  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) return "heal";
-  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) return "haul";
+  if (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=FARM and farms=${state.buildings.farms}`;
+    return "farm";
+  }
+  if (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=WOOD and lumbers=${state.buildings.lumbers}`;
+    return "lumber";
+  }
+  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=STONE and quarries=${state.buildings.quarries}`;
+    return "quarry";
+  }
+  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=HERBS and herb_gardens=${state.buildings.herbGardens}`;
+    return "gather_herbs";
+  }
+  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=COOK and kitchens=${state.buildings.kitchens}`;
+    return "cook";
+  }
+  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=SMITH and smithies=${state.buildings.smithies}`;
+    return "smith";
+  }
+  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=HERBALIST and clinics=${state.buildings.clinics}`;
+    return "heal";
+  }
+  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) {
+    worker.debug.lastIntentReason = `role=HAUL and warehouses=${state.buildings.warehouses}`;
+    return "haul";
+  }
   // Phase 3 / M1b — low-priority fog exploration fallback. Only surfaces when
   // no role-specific work is available AND the colony still has HIDDEN tiles
   // to scout. Sits below every normal role intent, above "wander".
-  if (hasHiddenFrontier(state)) return "explore_fog";
+  if (hasHiddenFrontier(state)) {
+    worker.debug.lastIntentReason = `no role-matching worksite (role=${worker.role}); fog frontier present`;
+    return "explore_fog";
+  }
+  worker.debug.lastIntentReason = `no role-matching worksite (role=${worker.role}); fog cleared`;
   return "wander";
 }
 
@@ -986,13 +1039,30 @@ export class WorkerAISystem {
 
       // Relationship updates: proximity-based opinion drift (every ~5s)
       if (worker.relationships && (state.metrics.tick % 300 === (worker.id?.charCodeAt?.(7) ?? 0) % 300)) {
+        const relNowSec = Number(state.metrics?.timeSec ?? 0);
         for (const other of state.agents) {
           if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
           const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
           if (dist < 3) {
-            worker.relationships[other.id] = clamp(
-              (worker.relationships[other.id] ?? 0) + 0.05, -1, 1
-            );
+            const oldOp = Number(worker.relationships[other.id] ?? 0);
+            const newOp = clamp(oldOp + 0.05, -1, 1);
+            worker.relationships[other.id] = newOp;
+            // v0.8.2 Round-5b (02d Step 2b) — emit memory on Friend / Close friend band crossing.
+            const crossedClose = oldOp < 0.45 && newOp >= 0.45;
+            const crossedFriend = !crossedClose && oldOp < 0.15 && newOp >= 0.15;
+            if (crossedFriend || crossedClose) {
+              const label = crossedClose ? "Close friend" : "Friend";
+              const otherName = other.displayName ?? other.id;
+              const workerName = worker.displayName ?? worker.id;
+              const reason = `worked adjacent (${Math.round(worker.x)},${Math.round(worker.z)})`;
+              pushFriendshipMemory(worker, `[${relNowSec.toFixed(0)}s] Became ${label} with ${otherName}`, `friend:${label}:${other.id}`, 9999, relNowSec);
+              pushFriendshipMemory(other, `[${relNowSec.toFixed(0)}s] Became ${label} with ${workerName}`, `friend:${label}:${worker.id}`, 9999, relNowSec);
+              worker.relationships[`__reason__${other.id}`] = reason;
+              other.relationships[`__reason__${worker.id}`] = reason;
+              emitEvent(state, EVENT_TYPES.WORKER_SOCIALIZED, {
+                entityId: worker.id, otherId: other.id, band: label, opinion: newOp,
+              });
+            }
           }
         }
       }

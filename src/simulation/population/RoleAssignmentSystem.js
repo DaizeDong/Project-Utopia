@@ -152,16 +152,7 @@ export class RoleAssignmentSystem {
     const lumberCount = Number(state.buildings?.lumbers ?? 0);
 
     // Reserve minimum slots for FARM and WOOD.
-    // v0.8.2 Round-6 Wave-1 (01b-structural Step 3) — dynamic farmMin.
-    // Old formula min(2, n) was correct for low pop but at pop=10 still only
-    // reserved 2 slots, leaving specialist budget artificially inflated.
-    // New formula: floor(targetFarmRatio * n), hard-floor at 1, soft-ceiling
-    // at n-1 (always leave at least 1 slot for non-FARM roles). At pop=4
-    // this yields floor(0.6*4)=2 — same as legacy, no regression. At pop=10
-    // this yields floor(0.6*10)=6 — FARM scales with population so the
-    // specialist budget does not over-grow and cause logistics collapse.
-    const farmMinScaled = Math.floor(targetFarmRatio * n);
-    const farmMin = Math.max(1, Math.min(n - 1, Math.max(farmMinScaled, 1)));
+    const farmMin = Math.min(2, n);
     const woodMin = (lumberCount > 0) ? Math.min(1, n - farmMin) : 0;
     const reserved = farmMin + woodMin;
 
@@ -375,13 +366,63 @@ export class RoleAssignmentSystem {
     res = pickBestForRole(pool, "mining",     stoneSlots);      assignTo(res.picked, ROLE.STONE);      pool = res.remaining;
     res = pickBestForRole(pool, "farming",    herbsSlots);      assignTo(res.picked, ROLE.HERBS);      pool = res.remaining;
 
-    // Legacy ordering for FARM/WOOD/HAUL (spawn-order → cluster proximity).
-    let idx = 0;
-    for (let i = 0; i < totalFarm && idx < pool.length; i += 1) pool[idx++].role = ROLE.FARM;
-    for (let i = 0; i < totalWood && idx < pool.length; i += 1) pool[idx++].role = ROLE.WOOD;
-    for (let i = 0; i < haulSlots && idx < pool.length; i += 1) pool[idx++].role = ROLE.HAUL;
-    // Any leftover workers get FARM.
-    while (idx < pool.length) pool[idx++].role = ROLE.FARM;
+    // v0.8.2 Round-5b (02d Step 4) — specialty anti-mismatch for FARM/WOOD/HAUL.
+    // Uses a "not-worst-fit" sort: workers whose dominant skill is strongly
+    // mismatched for a role (e.g. cooking-specialist in WOOD) are pushed to the
+    // back. Tiebreaker = original pool index → preserves spatial cluster locality
+    // for workers with equal mismatch penalty.
+    const topSkillKey = (agent) => {
+      const skills = agent.skills ?? {};
+      let best = "generalist"; let bestV = -Infinity;
+      for (const k of Object.keys(skills)) {
+        const v = Number(skills[k]);
+        if (Number.isFinite(v) && v > bestV) { bestV = v; best = k; }
+      }
+      return best;
+    };
+    const mismatchPenalty = (role, agent) => {
+      const top = topSkillKey(agent);
+      if (role === ROLE.FARM) {
+        if (top === "farming") return 0;
+        if (top === "cooking" || top === "crafting" || top === "mining") return 1;
+        return 0.5;
+      }
+      if (role === ROLE.WOOD) {
+        if (top === "woodcutting") return 0;
+        if (top === "cooking" || top === "crafting") return 1;
+        return 0.5;
+      }
+      if (role === ROLE.HAUL) {
+        if (top === "cooking" || top === "crafting") return 0.75;
+        return 0;
+      }
+      return 0.5;
+    };
+    const sortByMismatch = (arr, role) =>
+      arr.map((agent, i) => ({ agent, i }))
+        .sort((a, b) => {
+          const da = mismatchPenalty(role, a.agent);
+          const db = mismatchPenalty(role, b.agent);
+          return da !== db ? da - db : a.i - b.i;
+        })
+        .map(({ agent }) => agent);
+
+    const farmSorted = sortByMismatch(pool, ROLE.FARM);
+    const farmPicked = farmSorted.slice(0, totalFarm);
+    for (const a of farmPicked) a.role = ROLE.FARM;
+
+    const afterFarm = pool.filter(a => !farmPicked.includes(a));
+    const woodSorted = sortByMismatch(afterFarm, ROLE.WOOD);
+    const woodPicked = woodSorted.slice(0, totalWood);
+    for (const a of woodPicked) a.role = ROLE.WOOD;
+
+    const afterWood = afterFarm.filter(a => !woodPicked.includes(a));
+    const haulSorted = sortByMismatch(afterWood, ROLE.HAUL);
+    const haulPicked = haulSorted.slice(0, haulSlots);
+    for (const a of haulPicked) a.role = ROLE.HAUL;
+
+    const leftover = afterWood.filter(a => !haulPicked.includes(a));
+    for (const a of leftover) a.role = ROLE.FARM;
 
     // v0.8.2 Round-5 Wave-1 (01b Step 5) — publish roleCounts to metrics so
     // ColonyPlanner's Priority 3.75 "idle processing chain" branch can gate
