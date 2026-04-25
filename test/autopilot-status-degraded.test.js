@@ -32,7 +32,11 @@ test("getAutopilotStatus: LLM OK shape — no 'LLM offline' suffix", () => {
   assert.ok(!/fallback\/fallback/.test(status.text));
 });
 
-test("getAutopilotStatus: LLM offline shape — appends 'LLM offline' and rewrites fallback/fallback", () => {
+test("getAutopilotStatus: LLM offline shape (dev-mode) — appends 'LLM offline' and rewrites fallback/fallback", () => {
+  // v0.8.2 Round-6 Wave-1 (01c-ui Step 4) — engineer-facing "LLM offline —
+  // DIRECTOR steering" is now dev-mode-only. Pass `{ devMode: true }` to
+  // retain the legacy assertion. The `test/hud-dev-string-quarantine.test.js`
+  // suite covers the casual default shape (no countdown / no offline tag).
   const status = getAutopilotStatus({
     ai: {
       enabled: true,
@@ -43,7 +47,7 @@ test("getAutopilotStatus: LLM offline shape — appends 'LLM offline' and rewrit
       lastPolicyResultSec: 2,
     },
     metrics: { timeSec: 5, proxyHealth: "error" },
-  });
+  }, { devMode: true });
   assert.equal(status.enabled, true);
   // Compound mode collapses to the player-readable phrase.
   assert.ok(!/fallback\/fallback/.test(status.text),
