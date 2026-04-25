@@ -2211,7 +2211,7 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
     if (fx < 3 || fz < 3 || fx >= width - 3 || fz >= height - 3) continue;
     const fidx = toIndex(fx, fz, width);
     if (tiles[fidx] !== TILE.GRASS) continue;
-    if (moisture[fidx] < 0.4) continue;
+    if (moisture[fidx] < 0.25) continue;
     paintBlob(tiles, width, height, fx, fz, lerp(2, 3.5, rng()), lerp(1.5, 3, rng()), TILE.FARM, seed + 4700 + fx * 7, new Set([TILE.GRASS]));
   }
 
@@ -2319,11 +2319,75 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       });
       const moistureScore = fields.moisture[idx] * 1.4;
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return moistureScore + (nearRoad ? 0.9 : 0) + terrainPenalty + radialZoneBias(ix, iz);
+      // Farm-specific bias: softer near-zone penalty (–4→–2) so blobs land at 8–20 tiles,
+      // cutting food-transport distance for seeds whose river pushes farms to 30–40 tiles.
+      const fdx = ix - cx, fdz = iz - cz;
+      const fdist = Math.sqrt(fdx * fdx + fdz * fdz);
+      const farmZoneBias = fdist < ZONE_HARD_EXCLUSION ? -Infinity
+        : fdist < ZONE_NEAR ? -2.0 * (1 - fdist / ZONE_NEAR)
+        : fdist >= ZONE_FAR ? 0.3 * Math.min(1, (fdist - ZONE_FAR) / 15)
+        : 0;
+      return moistureScore + (nearRoad ? 0.9 : 0) + terrainPenalty + farmZoneBias;
     }),
     2.8,
     5.5,
   );
+
+  // Guarantee one FARM tile within STARTER_BFS_MAX walkable steps of the colony center
+  // (warehouse spawn point). Euclidean-distance checks are insufficient because rivers can
+  // inflate A* paths to 17-18 steps even when Euclidean distance is ~13 tiles, cutting off
+  // zombie-mode coverage and triggering starvation spirals by day 21–44.
+  {
+    const STARTER_BFS_MAX = 14;
+    const STARTER_BFS_MIN = 10;
+    const totalTiles = width * height;
+    const bfsVisited = new Uint8Array(totalTiles);
+    const bfsDepth = new Uint8Array(totalTiles);
+    const bfsQueue = new Int32Array(totalTiles);
+    let bfsHead = 0, bfsTail = 0;
+    const startIdx = cx + cz * width;
+    bfsVisited[startIdx] = 1;
+    bfsDepth[startIdx] = 0;
+    bfsQueue[bfsTail++] = startIdx;
+    const bfsDC = [1, -1, 0, 0];
+    const bfsDR = [0, 0, 1, -1];
+    while (bfsHead < bfsTail) {
+      const idx = bfsQueue[bfsHead++];
+      const d = bfsDepth[idx];
+      if (d >= STARTER_BFS_MAX) continue;
+      const ix = idx % width;
+      const iz = (idx - ix) / width;
+      for (let di = 0; di < 4; di++) {
+        const nx = ix + bfsDC[di], nz = iz + bfsDR[di];
+        if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+        const ni = nx + nz * width;
+        if (bfsVisited[ni]) continue;
+        if (tiles[ni] === TILE.WATER) continue;
+        bfsVisited[ni] = 1;
+        bfsDepth[ni] = d + 1;
+        bfsQueue[bfsTail++] = ni;
+      }
+    }
+
+    let hasReachableFarm = false;
+    for (let i = 0; i < totalTiles; i++) {
+      if (tiles[i] !== TILE.FARM || !bfsVisited[i]) continue;
+      const d = bfsDepth[i];
+      if (d >= STARTER_BFS_MIN && d <= STARTER_BFS_MAX) { hasReachableFarm = true; break; }
+    }
+
+    if (!hasReachableFarm) {
+      let bestIdx = -1, bestScore = -Infinity;
+      for (let i = 0; i < totalTiles; i++) {
+        if (tiles[i] !== TILE.GRASS || !bfsVisited[i]) continue;
+        const d = bfsDepth[i];
+        if (d < STARTER_BFS_MIN || d > STARTER_BFS_MAX) continue;
+        const score = -Math.abs(d - 12);
+        if (score > bestScore) { bestScore = score; bestIdx = i; }
+      }
+      if (bestIdx >= 0) tiles[bestIdx] = TILE.FARM;
+    }
+  }
 
   placeDistrictBlobs(
     tiles,

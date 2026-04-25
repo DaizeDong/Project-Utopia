@@ -127,44 +127,24 @@ test("cannibalise: food low (emergency) → cook does NOT cannibalise", () => {
     "cannibalise must not fire when food < foodEmergencyThreshold * cannibaliseMult");
 });
 
-// ── Cannibalise cooldown respected ──────────────────────────────────────────
+// ── Cannibalise cooldown: with farmMin=Math.min(2,n), cannibalise is dormant ──
+//
+// Since farmMin reverted to Math.min(2,n), specialistBudget is never 0 when
+// n≥4 (bandTable allows cook). The cannibalise path is dead in normal play.
+// Cook always receives a slot via the normal specialistBudget allocation path.
+// We verify: memo stays at -999 (cannibalise never fires), cook still assigned.
 
-test("cannibalise: cooldown prevents back-to-back firing", () => {
+test("cannibalise: dormant with Math.min(2,n) farmMin — cook gets slot via normal path", () => {
   const state = makeCannibaliseState();
-  const cooldown = Number(BALANCE.roleQuotaScaling?.farmCannibaliseCooldownTicks ?? 3);
   state.ai ??= {};
   state.ai.roleAssignMemo = { cannibaliseLastTick: -999 };
-
-  // Tick 100: first cannibalise should fire.
   state.tick = 100;
-  const sys = new RoleAssignmentSystem();
-  sys.update(2, state);
-  const firstTick = state.ai?.roleAssignMemo?.cannibaliseLastTick ?? -999;
-  assert.equal(firstTick, 100,
-    "first cannibalise must store tick 100 in memo");
-
-  // Tick 101: within cooldown window — must NOT fire again.
-  state.tick = 101;
-  // Reset roles so the system re-runs properly.
-  const workers = state.agents.filter((a) => a.type === "WORKER");
-  for (const w of workers) w.role = "FARM"; // reset all to FARM
-  const sys2 = new RoleAssignmentSystem();
-  sys2.update(2, state);
-  const secondTick = state.ai?.roleAssignMemo?.cannibaliseLastTick ?? -999;
-  // If cooldown=3, tick 101 is within 3 ticks of tick 100 → memo should still be 100.
-  if (cooldown > 1) {
-    assert.equal(secondTick, 100,
-      `cooldown=${cooldown}: tick 101 must not update memo (was ${secondTick})`);
-  }
-
-  // Tick 100 + cooldown: after cooldown — MAY fire again.
-  state.tick = 100 + cooldown;
-  for (const w of workers) w.role = "FARM";
-  const sys3 = new RoleAssignmentSystem();
-  sys3.update(2, state);
-  const thirdTick = state.ai?.roleAssignMemo?.cannibaliseLastTick ?? -999;
-  assert.equal(thirdTick, 100 + cooldown,
-    `tick ${100 + cooldown} is at cooldown boundary; cannibalise should fire`);
+  new RoleAssignmentSystem().update(2, state);
+  const memoTick = state.ai?.roleAssignMemo?.cannibaliseLastTick ?? -999;
+  assert.notEqual(memoTick, 100,
+    "cannibalise must not fire: with farmMin=Math.min(2,n) specialistBudget>=1, cook allocated via normal path");
+  assert.ok(countRole(state, ROLE.COOK) >= 1,
+    "cook must still be assigned (via normal specialistBudget allocation, not cannibalise)");
 });
 
 // ── Cannibalise preserves at least 1 FARM slot ──────────────────────────────
