@@ -376,6 +376,80 @@
     .heat-lens-legend .legend-red { background: #e95c4d; }
     .heat-lens-legend .legend-blue { background: #4da8e9; }
 
+    /* Terrain overlay mode label — floating pill in top-left corner. */
+    #terrainLensLabel {
+      position: absolute; top: 38px; left: 8px; z-index: 20;
+      background: rgba(18, 20, 26, 0.82);
+      border: 1px solid rgba(160, 200, 255, 0.28);
+      border-radius: 10px;
+      padding: 2px 10px;
+      font-size: 11px;
+      color: #a5f2b2;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* === PRESSURE LENS LEGEND CARD (colony panel) === */
+    .lens-legend-card {
+      margin-top: 6px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.02);
+      overflow: hidden;
+    }
+    .lens-legend-card[hidden] { display: none; }
+    .lens-legend-card > summary {
+      padding: 7px 10px; cursor: pointer;
+      font-size: 11px; font-weight: 700;
+      list-style: none; color: var(--text-muted);
+      border-bottom: 1px solid transparent;
+      user-select: none;
+    }
+    .lens-legend-card > summary::-webkit-details-marker { display: none; }
+    .lens-legend-card[open] > summary { border-bottom-color: var(--divider); }
+    .lens-legend-card-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+    .lens-legend-row {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10px; color: rgba(200,224,248,0.75);
+    }
+    .lens-legend-icon {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; flex-shrink: 0;
+    }
+    .lens-legend-icon.ring {
+      border-radius: 50%; background: transparent;
+      border-width: 2px; border-style: solid;
+      width: 10px; height: 10px;
+    }
+
+    /* === PRESSURE LABEL OVERLAYS (canvas layer) === */
+    #pressureLabelLayer {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      z-index: 12;
+      overflow: hidden;
+    }
+    .pressure-label {
+      position: absolute;
+      transform: translate(-50%, -130%);
+      font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px;
+      background: rgba(8,16,28,0.88);
+      color: #d0e8ff;
+      border: 1px solid rgba(80,160,220,0.3);
+      pointer-events: none;
+      white-space: nowrap;
+      line-height: 1.3;
+      display: none;
+    }
+    .pressure-label[data-kind="heat_surplus"] { border-color: rgba(233,92,77,0.7); color: #ffb3ab; }
+    .pressure-label[data-kind="heat_starved"]  { border-color: rgba(77,168,233,0.7); color: #a8d8ff; }
+    .pressure-label[data-kind="route"]        { border-color: rgba(255,167,90,0.7); color: #ffd4a8; }
+    .pressure-label[data-kind="depot"]        { border-color: rgba(113,217,255,0.7); color: #c8f4ff; }
+    .pressure-label[data-kind="weather"]      { border-color: rgba(114,185,255,0.7); color: #d0e8ff; }
+    .pressure-label[data-kind="ecology"]      { border-color: rgba(142,214,111,0.7); color: #c8efb0; }
+    .pressure-label[data-kind="traffic"]      { border-color: rgba(160,160,160,0.5); color: #c0c8d0; }
+
     #alertStack {
       position: absolute; top: 36px; right: 44px;
       display: flex; flex-direction: column; align-items: flex-end;
@@ -1493,6 +1567,9 @@
         display:none;
       "></div>
 
+      <!-- Pressure lens HTML label layer — populated by SceneRenderer#updatePressureLensLabels -->
+      <div id="pressureLabelLayer" aria-hidden="true"></div>
+
       <!-- === GAME STATE OVERLAY === -->
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
@@ -1556,6 +1633,8 @@
 
     <!-- === UI OVERLAY (floating panels) === -->
     <div id="ui">
+      <!-- Terrain overlay mode label — shown while terrain lens is active. -->
+      <div id="terrainLensLabel" hidden></div>
       <!-- Hidden legacy elements that JS references -->
       <div class="small muted" style="display:none">legacy</div>
       <div class="switch" style="display:none"><input id="compactToggle" type="checkbox" /><label for="compactToggle">Compact</label></div>
@@ -1599,14 +1678,14 @@
             </div>
             <div class="hint" style="font-size:10px; line-height:1.6; color:var(--text-muted);">
               <span>1–12: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>
-              <span>T: fertility</span> · <span>L: heat lens</span> · <span>F1: help</span>
+              <span>T: overlay (fertility/elev/conn/nodes)</span> · <span>L: heat lens</span> · <span>F1: help</span>
             </div>
             <!-- Keyboard shortcut reference grid -->
             <div class="hotkey-grid">
               <div class="hk-row"><span class="hk-key">1–12</span><span class="hk-desc">select build tool</span></div>
               <div class="hk-row"><span class="hk-key">Space</span><span class="hk-desc">pause / resume</span></div>
               <div class="hk-row"><span class="hk-key">Esc</span><span class="hk-desc">cancel / deselect</span></div>
-              <div class="hk-row"><span class="hk-key">T</span><span class="hk-desc">terrain fertility</span></div>
+              <div class="hk-row"><span class="hk-key">T</span><span class="hk-desc">terrain overlay (fertility/elev/conn/nodes)</span></div>
               <div class="hk-row"><span class="hk-key">L</span><span class="hk-desc">supply-chain heat lens</span></div>
               <div class="hk-row"><span class="hk-key">F1 / ?</span><span class="hk-desc">open help</span></div>
               <div class="hotkey-grid-divider"></div>
@@ -1695,6 +1774,21 @@
           </div>
         </details>
       </div>
+
+      <!-- Logistics Legend — visible when any pressure lens mode is active (toggled by JS) -->
+      <details id="lensLegendCard" class="lens-legend-card" hidden>
+        <summary>物流图例 (Logistics Legend)</summary>
+        <div class="lens-legend-card-body">
+          <div class="lens-legend-row"><span class="lens-legend-icon" style="background:#e95c4d;"></span><span>● 红圈 = 物资过剩 (heat_surplus)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon" style="background:#4da8e9;"></span><span>● 蓝圈 = 物资短缺 (heat_starved)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon ring" style="border-color:#ffa75a;"></span><span>◎ 橙环 = 路线中断 (route)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon ring" style="border-color:#71d9ff;"></span><span>◎ 黄环 = 仓库未就绪 (depot)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon ring" style="border-color:#72b9ff;"></span><span>◎ 紫圈 = 天气影响 (weather)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon ring" style="border-color:#8ed66f;"></span><span>◎ 青圈 = 生态压力 (ecology)</span></div>
+          <div class="lens-legend-row"><span class="lens-legend-icon ring" style="border-color:#a0a8b4;"></span><span>◎ 灰环 = 交通堵塞 (traffic)</span></div>
+        </div>
+      </details>
+
             </div><!-- end sidebar-panel-body (colony) -->
           </div><!-- end sidebar-panel (colony) -->
 
@@ -2047,7 +2141,7 @@
           <button class="sidebar-tab-btn dev-only" data-sidebar-target="debug" title="Debug Info">Debug</button>
           <div class="sidebar-tab-divider"></div>
           <button class="sidebar-tab-btn lens-btn" id="heatLensBtn" type="button" title="Supply-Chain Heat Lens (L) — cycles: Pressure (red=surplus/blue=starved), Heat (production density), Off">Heat (L)</button>
-          <button class="sidebar-tab-btn lens-btn" id="terrainLensBtn" type="button" title="Terrain Fertility Overlay (T)">Terrain (T)</button>
+          <button class="sidebar-tab-btn lens-btn" id="terrainLensBtn" type="button" title="Terrain Overlay (T) — cycles: Fertility, Elevation, Connectivity, Node Health, Off">Terrain (T)</button>
           <div id="heatLensLegend" class="heat-lens-legend" hidden title="Heat Lens legend — red = producer warehouse full / overflowing, blue = processor starved for input"><span class="legend-dot legend-red"></span>surplus<span class="legend-dot legend-blue"></span>starved</div>
           <button class="sidebar-tab-btn lens-btn" id="helpBtn" type="button" title="Open the strategic briefing on demand - template differences, heat lens, survival score.">? Help</button>
         </div><!-- end sidebarTabStrip -->
