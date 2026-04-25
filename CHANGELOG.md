@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 LLM Autopilot Immediate-Fire + AI Debug Panel Enhancements
+
+**Scope:** Fixes the autopilot timer bug that caused the LLM to be skipped on the first decision cycle after enabling, and improves the AI debug panels with visual color-coding and accessibility improvements.
+
+### Bug Fixes
+- **Autopilot timer reset on toggle** (`src/ui/hud/HUDController.js`, `src/ui/tools/BuildToolbar.js`): When autopilot is enabled via either the top-bar toggle or the sidebar toggle, `state.ai.lastEnvironmentDecisionSec` and `state.ai.lastPolicyDecisionSec` are now reset to `−9999`. This forces an immediate LLM call on the next simulation tick instead of waiting the full interval, so players see real LLM behavior from the moment they enable autopilot.
+
+### New Features
+- **AI Log button** (`index.html`, `src/app/GameApp.js`): Added `#aiDebugBtn` ("AI Log") button next to the Autopilot toggle in the speed-controls bar. Clicking it opens the right sidebar and switches to the Debug tab, giving one-click access to AI call logs.
+- **AI panel visibility** (`index.html`): The "AI Decisions" and "AI I/O" debug panel cards now have `open` attribute by default and use more descriptive summary labels ("AI 决策记录 (Decisions)" and "AI 调用日志 (I/O Log)") so they are visible immediately when the Debug tab is opened.
+- **Color-coded AI source badges** (`src/ui/panels/AIExchangePanel.js`, `src/ui/panels/AIDecisionPanel.js`): Each exchange card and policy/environment block now shows a colored dot (green `●` for LLM source, orange `●` for rule-based/fallback) with the source label, model name, and latency (where available), so it is immediately obvious which AI system is steering the colony.
+
+### Files Changed
+- `src/ui/hud/HUDController.js` — timer reset in `syncAutopilot`
+- `src/ui/tools/BuildToolbar.js` — timer reset in `#setupModeControls`
+- `src/app/GameApp.js` — `#aiDebugBtn` click wiring
+- `index.html` — AI Log button, panel summaries, `open` defaults
+- `src/ui/panels/AIExchangePanel.js` — color-coded badge in `renderExchangeCard`
+- `src/ui/panels/AIDecisionPanel.js` — color-coded badges in `#renderEnvironmentBlock` and `#renderPolicyBlock`
+
+### Validation
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+
+---
+
 ## [Unreleased] - v0.8.2 UI Overhaul + LLM Agent Context Expansion
 
 **Scope:** Comprehensive UI polish pass (sidebar, status bar, Colony health card, dev tools separation, hotkey display, terrain overlay, tile info tooltip, fog fix, water hard-block) plus LLM agent context expansion (terrain/soil/node/connectivity aggregates, new fallback cases, bridge utility). No new tile types.
