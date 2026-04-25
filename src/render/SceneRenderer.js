@@ -3,7 +3,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
-import { BALANCE } from "../config/balance.js";
+import { BALANCE, CASUAL_UX } from "../config/balance.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
 import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
@@ -2922,7 +2922,15 @@ export class SceneRenderer {
     // Force reflow so the reset takes effect before the new animation is applied.
     void node.offsetWidth;
     const animationName = kind === "death" ? "toastDeath" : kind === "milestone" ? "toastMilestone" : "toastFloat";
-    const durationMs = kind === "death" ? 4000 : kind === "milestone" ? 3200 : 1200;
+    const durationMs = kind === "death"
+      ? 4000
+      : kind === "milestone"
+        ? 3200
+        : kind === "err"
+          ? CASUAL_UX.errToastMs
+          : kind === "warn"
+            ? CASUAL_UX.warnToastMs
+            : CASUAL_UX.successToastMs;
     node.style.animation = `${animationName} ${durationMs / 1000}s ease-out forwards`;
 
     // Free the slot shortly after the animation ends.

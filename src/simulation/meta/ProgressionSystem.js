@@ -125,6 +125,62 @@ const MILESTONE_RULES = Object.freeze([
     baselineKey: "tools",
     current: (state) => Number(state.resources?.tools ?? 0),
   },
+  {
+    kind: "first_clinic",
+    key: "firstClinic",
+    label: "First Clinic opened",
+    message: "Herbs can now become medicine.",
+    baselineKey: "clinics",
+    current: (state) => Number(state.buildings?.clinics ?? 0),
+  },
+  {
+    kind: "first_smithy",
+    key: "firstSmithy",
+    label: "First Smithy lit",
+    message: "Stone + wood \u2192 tools is online.",
+    baselineKey: "smithies",
+    current: (state) => Number(state.buildings?.smithies ?? 0),
+  },
+  {
+    kind: "first_medicine",
+    key: "firstMedicine",
+    label: "First Medicine brewed",
+    message: "Injuries are no longer permanent.",
+    baselineKey: "medicine",
+    current: (state) => Number(state.resources?.medicine ?? 0),
+  },
+  {
+    kind: "dev_40",
+    key: "dev40",
+    label: "Dev 40 \u00b7 foothold",
+    message: "Your colony is surviving; widen the production chain.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 40 ? 1 : 0),
+  },
+  {
+    kind: "dev_60",
+    key: "dev60",
+    label: "Dev 60 \u00b7 thriving",
+    message: "Meals are flowing; consider Smithy for tool bonus.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 60 ? 1 : 0),
+  },
+  {
+    kind: "dev_80",
+    key: "dev80",
+    label: "Dev 80 \u00b7 prosperous",
+    message: "You can survive a raid; stockpile medicine and walls.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 80 ? 1 : 0),
+  },
+  {
+    kind: "first_haul_delivery",
+    key: "firstHaul",
+    label: "First warehouse delivery",
+    message: "Haulers are shortening your food trips.",
+    baselineKey: "haulDeliveredLife",
+    current: (state) => Number(state.metrics?.haulDeliveredLife ?? 0),
+  },
 ]);
 
 function clamp(v, min, max) {
@@ -193,6 +249,11 @@ function ensureProgressionState(state) {
     kitchens: Number(state.buildings?.kitchens ?? 0),
     meals: Number(state.resources?.meals ?? 0),
     tools: Number(state.resources?.tools ?? 0),
+    clinics: Number(state.buildings?.clinics ?? 0),
+    smithies: Number(state.buildings?.smithies ?? 0),
+    medicine: Number(state.resources?.medicine ?? 0),
+    haulDeliveredLife: Number(state.metrics?.haulDeliveredLife ?? 0),
+    __devNever__: 0,
   };
   return ensureRecoveryState(state);
 }

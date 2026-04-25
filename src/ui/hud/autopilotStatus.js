@@ -78,12 +78,30 @@ export function getAutopilotStatus(state) {
   const baseTitle = enabled
     ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
     : "Autopilot off. Manual control is active and fallback is ready.";
-  const text = enabled && llmOffline
+  const llmText = enabled && llmOffline
     ? `${baseText} | LLM offline \u2014 DIRECTOR steering`
     : baseText;
-  const title = enabled && llmOffline
+  const llmTitle = enabled && llmOffline
     ? `${baseTitle} \u2014 LLM unavailable, rule-based DIRECTOR in charge.`
     : baseTitle;
+
+  const food = Number(state?.resources?.food ?? 0);
+  const emergency = Number(state?.services?.balance?.foodEmergencyThreshold ?? 18);
+  const starvRisk = Number(state?.metrics?.starvationRiskCount ?? 0);
+  const enableSec = Number(state?.ai?.enabledSinceSec ?? 0);
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
+  const graceSec = Number(state?.services?.balance?.casualUx?.struggleBannerGraceSec ?? 20);
+  const struggleFoodFloor = emergency * Number(state?.services?.balance?.casualUx?.struggleFoodPctOfEmergency ?? 1.1);
+  const struggling = enabled
+    && (food <= struggleFoodFloor || starvRisk > 0)
+    && (nowSec - enableSec) >= graceSec;
+
+  const text = struggling
+    ? `${llmText} | Autopilot struggling \u2014 manual takeover recommended`
+    : llmText;
+  const title = struggling
+    ? `${llmTitle} \u2014 colony food is below emergency line; consider disabling autopilot and rebuilding farms manually.`
+    : llmTitle;
 
   return {
     enabled,
@@ -93,6 +111,7 @@ export function getAutopilotStatus(state) {
     coverageTarget,
     remainingSec,
     pausedByCrisis: false,
+    struggling,
     text,
     title,
   };

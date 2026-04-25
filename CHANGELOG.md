@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-5b 02b-casual: casual UX polish — toast linger + milestone extension + tool-tier gate + autopilot struggling banner
+
+**Scope:** Six casual-reviewer findings fixed across config, render, simulation, ui layers.
+
+### New Features
+- **CASUAL_UX config** (`balance.js`): New sibling export `CASUAL_UX` centralising casual UX timing constants (errToastMs 3500, warnToastMs 2600, struggleBannerGraceSec 20, tool-tier unlock tables).
+- **Toast linger** (`SceneRenderer.js`): err toasts now 3.5 s, warn toasts 2.6 s (was 1.2 s flat); values sourced from `CASUAL_UX`.
+- **Extended milestone rules** (`ProgressionSystem.js`): 7 new `MILESTONE_RULES` entries: `first_clinic`, `first_smithy`, `first_medicine`, `dev_40`, `dev_60`, `dev_80`, `first_haul_delivery`; `ensureProgressionState` seeds all new baseline keys including synthetic `__devNever__` for dev threshold detection.
+- **Autopilot struggling banner** (`autopilotStatus.js`, `HUDController.js`): `getAutopilotStatus` computes `struggling` when enabled + food ≤ emergency×1.1 (or starvRisk>0) + grace ≥ 20 s elapsed; appends "Autopilot struggling — manual takeover recommended" suffix; HUDController applies `data-kind="warn"` to the chip.
+- **Casual tool-tier gate** (`index.html`, `BuildToolbar.js`): 12 buttons tagged `data-tool-tier="primary|secondary|advanced"`; CSS hides secondary/advanced in `body.casual-mode` until `body.dataset.toolTierUnlocked` includes the tier; `BuildToolbar.#refreshToolTier` sets the attribute each sync based on warehouse/farm/lumber counts or elapsed time.
+- **Enriched tool titles** (`index.html`): All 12 tool `title=` strings extended with a "when to use" clause; lumber cost corrected to 5 wood (was 3, mismatched `BUILD_COST`).
+
+### New Tests
+- `test/casual-ux-balance.test.js` — 5 cases: CASUAL_UX shape contract (errToastMs, warnToastMs, grace, unlock tables).
+- `test/progression-extended-milestones.test.js` — 5 cases: first_clinic emit, dev_40 emit, dev_60 dedupe, first_haul_delivery emit, seen-already guard.
+- `test/autopilot-struggling-banner.test.js` — 5 cases: struggling true/false across food/grace/disabled/starvRisk scenarios.
+- `test/tool-tier-gate.test.js` — 5 cases: tier logic + keyboard shortcut agency preservation.
+
+### Files Changed
+- `src/config/balance.js` — CASUAL_UX sibling export
+- `src/render/SceneRenderer.js` — import CASUAL_UX; err/warn toast duration from config
+- `src/simulation/meta/ProgressionSystem.js` — 7 new MILESTONE_RULES; ensureProgressionState baseline keys extended
+- `src/ui/hud/autopilotStatus.js` — struggling signal + text/title suffix + field on return object
+- `src/ui/hud/HUDController.js` — autopilotChip data-kind="warn" when struggling
+- `src/ui/tools/BuildToolbar.js` — #refreshToolTier private helper called in sync()
+- `index.html` — data-tool-tier attrs; casual-mode tool CSS gate; enriched tool titles; lumber cost fix
+
 ## [Unreleased] - v0.8.2 Round-5b 02e-indie-critic: LLM voice overlay + humanised names + debug gate + scenario fade + author tone labels
 
 **Scope:** Five indie-critic findings fixed across simulation/ai/llm, world/scenarios, entities, app, ui layers.
