@@ -263,8 +263,11 @@ export class HUDController {
     // free and avoids clobbering any Round-0 title attributes that were
     // already present on these nodes.
     this._glossaryApplied = false;
+    this._lastHudHeight = 0;
 
     this.setupSpeedControls();
+    this.#observeStatusBarHeight();
+    this.#dismissBootSplash();
   }
 
   /**
@@ -311,6 +314,33 @@ export class HUDController {
       node.setAttribute("title", composite);
     }
     this._glossaryApplied = true;
+  }
+
+  #observeStatusBarHeight() {
+    if (typeof ResizeObserver === "undefined") return;
+    const bar = typeof document !== "undefined" ? document.getElementById("statusBar") : null;
+    if (!bar) return;
+    const observer = new ResizeObserver((entries) => {
+      const h = Math.round(entries[0]?.contentRect?.height ?? 0);
+      if (Math.abs(h - this._lastHudHeight) < 2) return;
+      this._lastHudHeight = h;
+      const root = document.documentElement;
+      if (root?.style) root.style.setProperty("--hud-height", `${h}px`);
+    });
+    observer.observe(bar);
+    this._statusBarObserver = observer;
+  }
+
+  #dismissBootSplash() {
+    if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") return;
+    const splash = document.getElementById("bootSplash");
+    if (!splash) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        splash.classList.add("done");
+        setTimeout(() => splash.classList.add("hidden"), 400);
+      });
+    });
   }
 
   #rendererForDeathToast() {
