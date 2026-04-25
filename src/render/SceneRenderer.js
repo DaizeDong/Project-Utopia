@@ -1516,6 +1516,85 @@ export class SceneRenderer {
 
   // === Tile Info Tooltip ===
 
+  // Return 0–2 contextual header lines for the tile info tooltip based on the
+  // currently active build tool. Lines are pre-formatted HTML strings.
+  #buildContextualTooltipHeader(ix, iz, tool) {
+    const grid = this.state.grid;
+    const idx = ix + iz * grid.width;
+    function esc(v) { return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    const headerLines = [];
+
+    if (tool === "farm" || tool === "herb_garden") {
+      // Fertility / moisture is the key metric.
+      if (grid.moisture && idx < grid.moisture.length) {
+        const moist = Number(grid.moisture[idx]);
+        let hint, color;
+        if (moist > 0.65)      { hint = "Fertile";   color = "#a5f2b2"; }
+        else if (moist > 0.40) { hint = "Moderate";  color = "#ffdf8a"; }
+        else                   { hint = "Poor soil";  color = "#ff8a80"; }
+        headerLines.push(
+          `<b style="font-size:12px">Fertility / Moisture</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc(moist.toFixed(2))})</span>`,
+        );
+      }
+    } else if (tool === "lumber" || tool === "clinic") {
+      // Node depletion / soil exhaustion is the key metric.
+      const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+      const tileType = grid.tiles[idx];
+      if (RESOURCE_TILES.has(tileType)) {
+        const ts = grid.tileState?.get?.(idx);
+        const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
+        const maxExhaustion = 8.0;
+        const ratio = exhaustion / maxExhaustion;
+        let hint, color;
+        if (ratio > 0.7)      { hint = "Heavily depleted"; color = "#ff8a80"; }
+        else if (ratio > 0.4) { hint = "Moderate use";     color = "#ffdf8a"; }
+        else                  { hint = "Healthy node";      color = "#a5f2b2"; }
+        headerLines.push(
+          `<b style="font-size:12px">Node Health</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc((ratio * 100).toFixed(0))}% used)</span>`,
+        );
+      } else {
+        headerLines.push(`<b style="font-size:12px">Node Health</b>`, `<span style="opacity:0.6">No resource node here</span>`);
+      }
+    } else if (tool === "quarry" || tool === "wall") {
+      // Elevation is the key metric.
+      if (grid.elevation && idx < grid.elevation.length) {
+        const elev = Number(grid.elevation[idx]);
+        let hint, color;
+        if (elev > 0.7)       { hint = "High ground";   color = "#a5f2b2"; }
+        else if (elev > 0.4)  { hint = "Mid elevation"; color = "#ffdf8a"; }
+        else                  { hint = "Low ground";     color = "#ff8a80"; }
+        headerLines.push(
+          `<b style="font-size:12px">Elevation</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc(elev.toFixed(2))})</span>`,
+        );
+      }
+    } else if (tool === "road" || tool === "warehouse") {
+      // Road connectivity is the key metric.
+      const { width, height, tiles } = grid;
+      let hasRoad = false;
+      outer: for (let dz = -3; dz <= 3; dz++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+          if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
+        }
+      }
+      const isRoadTile = grid.tiles[idx] === TILE.ROAD;
+      const hint  = isRoadTile ? "Road tile" : (hasRoad ? "Road nearby" : "Not connected");
+      const color = (isRoadTile || hasRoad) ? "#a5f2b2" : "#ff8a80";
+      headerLines.push(
+        `<b style="font-size:12px">Road Connectivity</b>`,
+        `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span>`,
+      );
+    }
+
+    return headerLines;
+  }
+
   #resolveTileInfoTooltipEl() {
     if (this.tileInfoTooltipEl) return this.tileInfoTooltipEl;
     if (typeof document === "undefined") return null;
@@ -1546,6 +1625,15 @@ export class SceneRenderer {
     // Safe: all dynamic values are numbers / enum strings — no user text injected.
     function esc(v) { return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
     const rows = [];
+
+    // Contextual header: show the most relevant metric first based on active tool.
+    const activeTool = this.state?.controls?.tool ?? "select";
+    const ctxHeader = this.#buildContextualTooltipHeader(ix, iz, activeTool);
+    if (ctxHeader.length > 0) {
+      rows.push(...ctxHeader);
+      rows.push(`<hr style="border:none;border-top:1px solid rgba(255,255,255,0.15);margin:3px 0">`);
+    }
+
     rows.push(`<b>${esc(tileName)}</b> <span style="color:${passableColor};font-size:10px">${esc(passable)}</span>`);
 
     // Elevation
@@ -3029,6 +3117,18 @@ export class SceneRenderer {
       this.lastTerrainVersion = -1;
     }
     return this.terrainLensMode;
+  }
+
+  // Directly set a specific terrain overlay mode without cycling.
+  // targetMode: null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"
+  // Returns the new mode (unchanged if targetMode is invalid or already active).
+  setTerrainLensMode(targetMode) {
+    const VALID = [null, "fertility", "elevation", "connectivity", "nodeDepletion"];
+    if (!VALID.includes(targetMode)) return this.terrainLensMode;
+    if (this.terrainLensMode === targetMode) return targetMode;
+    this.terrainLensMode = targetMode;
+    this.#updateTerrainFertilityOverlay();
+    return targetMode;
   }
 
   getTerrainLensActive() {
