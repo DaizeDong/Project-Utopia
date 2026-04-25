@@ -192,6 +192,30 @@ export class GameApp {
       this.terrainLensBtn?.addEventListener("click", this.boundOnTerrainLensClick);
     }
 
+    // AI Debug button — opens right sidebar on the Debug tab so players can
+    // inspect LLM call logs without hunting through the sidebar tabs manually.
+    if (typeof document !== "undefined") {
+      const aiDebugBtn = document.getElementById("aiDebugBtn");
+      if (aiDebugBtn) {
+        aiDebugBtn.addEventListener("click", () => {
+          // Open the sidebar if it is currently collapsed.
+          const wrap = document.getElementById("wrap");
+          if (wrap && !wrap.classList.contains("sidebar-open")) {
+            wrap.classList.add("sidebar-open");
+            wrap.classList.remove("sidebar-collapsed");
+            const toggleBtn = document.getElementById("sidebarToggleBtn");
+            if (toggleBtn) toggleBtn.textContent = "\u2190";
+            try { localStorage.setItem("utopiaSidebarOpen", "1"); } catch {}
+          }
+          // Switch to the Debug tab by simulating a click on its tab button.
+          const debugTabBtn = document.querySelector(".sidebar-tab-btn[data-sidebar-target='debug']");
+          if (debugTabBtn) {
+            debugTabBtn.click();
+          }
+        });
+      }
+    }
+
     this.benchmark = {
       running: false,
       activeConfig: null,

@@ -91,29 +91,45 @@
     #statusScoreboard #statusNextAction,
     #statusScoreboard #statusScenario,
     #statusScoreboard #statusBuildHint,
-    #statusScoreboard #statusAutopilotCrisis,
     #statusScoreboard #latestDeathRow,
     #statusScoreboard #statusScoreBreak { display: none !important; }
-    /* Autopilot chip — keep, slim it */
-    #aiAutopilotChip { flex-shrink: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
-    /* Objective — one line only */
+    /* Crisis alert — keep visible but constrained */
+    #statusAutopilotCrisis { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Autopilot chip — widened to fit status text */
+    #aiAutopilotChip { flex-shrink: 1; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    /* Objective — show only survival time; hide score and dev (they live in Debug panel) */
     #statusObjective {
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       display: inline-flex; flex-wrap: nowrap; gap: 4px;
-      max-width: min(320px, 26vw);
     }
     #statusObjective span { white-space: nowrap; }
-    /* Status action — always single line */
+    #statusBar #statusObjectiveScore,
+    #statusBar #statusObjectiveDev { display: none !important; }
+    /* Status action — floating toast at bottom-left, not in bar */
     #statusAction {
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      max-height: 20px; -webkit-line-clamp: 1; display: inline-block;
-      flex-shrink: 1; max-width: min(300px, 25vw);
+      position: fixed;
+      bottom: 36px;
+      left: 8px;
+      max-width: 420px;
+      background: rgba(20,20,30,0.88);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: #ddd;
+      pointer-events: none;
+      z-index: 18;
+      white-space: normal;
+      word-wrap: break-word;
+      transition: opacity 0.3s;
     }
-    /* Storyteller strip — compact in bar */
-    #storytellerStrip {
-      max-height: 18px !important; overflow: hidden !important;
-      flex-shrink: 1; min-width: 0; max-width: min(200px, 15vw);
-    }
+    /* Storyteller strip — hidden from bar, content moved to Colony panel sidebar */
+    #statusBar #storytellerStrip { display: none !important; }
+    /* Resource chips in bar — allow slight shrink but keep icon+number readable */
+    #statusBar .hud-resource { flex-shrink: 1; min-width: 28px; }
+    /* Sublabels always hidden in status bar */
+    #statusBar .hud-sublabel { display: none !important; }
+    #statusBar .hud-chip { font-size: 12px; }
 
     .hud-resource {
       display: flex; align-items: center; gap: 2px;
@@ -1538,6 +1554,7 @@
           <input id="aiToggleTop" type="checkbox" aria-label="Toggle AI autopilot" />
           Autopilot
         </label>
+        <button id="aiDebugBtn" class="speed-btn" type="button" title="Open LLM debug panel — shows AI call inputs, outputs, and decisions" style="font-size:11px;padding:0 6px;">AI Log</button>
         <span id="gameTimer" class="game-timer" title="Elapsed game time">0:00</span>
       </div>
 
@@ -1715,6 +1732,12 @@
           <div class="sidebar-panel" data-sidebar-panel="colony">
             <div class="sidebar-panel-header"><span>Colony</span></div>
             <div class="sidebar-panel-body">
+              <!-- Storyteller sidebar section — mirrors #storytellerStrip content -->
+              <div id="storytellerSidebarSection" class="storyteller-sidebar-section" style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:6px;">
+                <div style="font-size:9px;opacity:0.5;font-weight:700;letter-spacing:0.05em;margin-bottom:3px;">AI STORYTELLER</div>
+                <div><span id="storytellerSidebarBadge" class="hud-storyteller-badge" data-mode="idle">DRIFT</span><span id="storytellerSidebarFocus" style="font-size:11px;margin-left:6px;color:#aad4ff;"></span></div>
+                <div id="storytellerSidebarSummary" style="font-size:10px;opacity:0.75;margin-top:2px;"></div>
+              </div>
 
       <!-- === COLONY PANEL (right) === -->
       <div id="colonyFloatingPanel" class="floating-panel floating-panel-right">
@@ -1910,15 +1933,15 @@
           </div>
         </details>
 
-        <details class="card" data-panel-key="ai-insights">
-          <summary>AI Decisions</summary>
+        <details class="card" data-panel-key="ai-insights" open>
+          <summary>AI 决策记录 (Decisions)</summary>
           <div id="aiDecisionPanelBody" class="panel-body panel-body-scroll">
             <div class="small muted">Waiting for AI decisions...</div>
           </div>
         </details>
 
-        <details class="card" data-panel-key="ai-exchange">
-          <summary>AI I/O</summary>
+        <details class="card" data-panel-key="ai-exchange" open>
+          <summary>AI 调用日志 (I/O Log)</summary>
           <div id="aiExchangePanelBody" class="panel-body panel-body-scroll">
             <div class="small muted">Waiting for AI exchange...</div>
           </div>
