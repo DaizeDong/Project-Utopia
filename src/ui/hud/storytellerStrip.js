@@ -473,20 +473,38 @@ export function computeStorytellerStripModel(state) {
   // Surfaces "Why no WHISPER?" answer string synthesised from existing state
   // fields (no new sim signals). HUDController pipes whisperBlockedReason
   // into the storyteller tooltip so players stop asking "is this AI on?".
+  //
+  // v0.8.2 Round-6 Wave-1 01b-playability (Step 4) — the player-facing
+  // whisperBlockedReason is now in-fiction (no "LLM"/"WHISPER" jargon). The
+  // raw diagnostic strings are kept on `diagnostic.whisperBlockedReasonDev`
+  // so dev-mode HUD overlays and existing tests can still read them. Per
+  // summary.md §3 D2, the *dev* field name is locked across Wave-1 plans
+  // (01b/01c/02b) — Wave-2/3 must not rename it.
   const policyLlmCount = Number(state?.ai?.policyLlmCount ?? 0);
   const policyTotalCount = Number(state?.ai?.policyDecisionCount ?? 0);
   let whisperBlockedReason;
+  let whisperBlockedReasonDev;
   if (badgeState === "llm-live") {
-    whisperBlockedReason = "LLM live \u2014 WHISPER active";
+    whisperBlockedReason = "Story Director: speaking";
+    whisperBlockedReasonDev = "LLM live \u2014 WHISPER active";
   } else if (badgeState === "llm-stale") {
-    whisperBlockedReason = "LLM stale \u2014 last tick failed guardrail";
+    whisperBlockedReason = "Story Director: catching breath";
+    whisperBlockedReasonDev = "LLM stale \u2014 last tick failed guardrail";
   } else if (badgeState === "fallback-degraded") {
     const errKind = proxyHealth === "error" ? "http" : (lastPolicyError ? "error" : "unknown");
-    whisperBlockedReason = `LLM errored (${errKind})`;
+    whisperBlockedReason = "Story Director: relying on rule-set";
+    whisperBlockedReasonDev = `LLM errored (${errKind})`;
   } else if (badgeState === "fallback-healthy") {
-    whisperBlockedReason = policyLlmCount === 0 ? "LLM never reached" : "LLM quiet \u2014 fallback steering";
+    if (policyLlmCount === 0) {
+      whisperBlockedReason = "Story Director: settling in";
+      whisperBlockedReasonDev = "LLM never reached";
+    } else {
+      whisperBlockedReason = "Story Director: pondering";
+      whisperBlockedReasonDev = "LLM quiet \u2014 fallback steering";
+    }
   } else {
-    whisperBlockedReason = "No policy yet";
+    whisperBlockedReason = "Story Director: warming up";
+    whisperBlockedReasonDev = "No policy yet";
   }
 
   const diagnostic = {
@@ -497,6 +515,7 @@ export function computeStorytellerStripModel(state) {
     policyLlmCount,
     policyTotalCount,
     whisperBlockedReason,
+    whisperBlockedReasonDev,
   };
 
   return {
