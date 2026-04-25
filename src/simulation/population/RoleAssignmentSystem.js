@@ -151,15 +151,17 @@ export class RoleAssignmentSystem {
     const clinicCount = Number(state.buildings?.clinics ?? 0);
     const lumberCount = Number(state.buildings?.lumbers ?? 0);
 
-    // Reserve minimum slots for FARM (2) and WOOD (1 if lumber tiles exist).
-    // v0.8.2 Round-5b Wave-1 (01b Step 3) — farmMin stays at Wave-1's
-    // min(2,n) RESERVE value. Dynamic scaling was tried and reverted: at
-    // n=12 the scaled reserve consumed the specialist budget (lost haulers
-    // → logistics collapse → 4-seed LOSS). The Round 5b structural win is
-    // the bandTable for n<=5 (Step 1/2) + cannibalise valve (Step 4) +
-    // low-pop idle-chain threshold (Step 5). Step 3 is retained as a
-    // configuration knob but not currently wired into reserve math.
-    const farmMin = Math.min(2, n);
+    // Reserve minimum slots for FARM and WOOD.
+    // v0.8.2 Round-6 Wave-1 (01b-structural Step 3) — dynamic farmMin.
+    // Old formula min(2, n) was correct for low pop but at pop=10 still only
+    // reserved 2 slots, leaving specialist budget artificially inflated.
+    // New formula: floor(targetFarmRatio * n), hard-floor at 1, soft-ceiling
+    // at n-1 (always leave at least 1 slot for non-FARM roles). At pop=4
+    // this yields floor(0.6*4)=2 — same as legacy, no regression. At pop=10
+    // this yields floor(0.6*10)=6 — FARM scales with population so the
+    // specialist budget does not over-grow and cause logistics collapse.
+    const farmMinScaled = Math.floor(targetFarmRatio * n);
+    const farmMin = Math.max(1, Math.min(n - 1, Math.max(farmMinScaled, 1)));
     const woodMin = (lumberCount > 0) ? Math.min(1, n - farmMin) : 0;
     const reserved = farmMin + woodMin;
 
@@ -294,11 +296,17 @@ export class RoleAssignmentSystem {
     // gate on 2× the idle threshold so a marginal food situation doesn't
     // preempt the FARM reserve and dent long-horizon survival (seed 42 @ day
     // 90 benchmark risk — see summary.md § 6).
+    //
+    // v0.8.2 Round-6 Wave-1 (01b-structural) — inline tryBoost ALSO gates on
+    // q(role) >= 1 so bandTable explicit zeros (smith=0/herbalist=0 at pop<8)
+    // are not bypassed. The `pendingRoleBoost` hint path (from ColonyPlanner LLM)
+    // still overrides the band — it's a deliberate "emergency override band" escape
+    // hatch per plan Risk 3 decision. The inline boost has no such authority.
     void foodRate;  // reserved for Wave 2 foodRate breakdown wire-up
     if (!emergencyActive) {
-      cookSlots = tryBoost(cookSlots, kitchenCount > 0 && foodStock >= idleThreshold * 2);
-      smithSlots = tryBoost(smithSlots, smithyCount > 0 && stoneStock >= 10);
-      herbalistSlots = tryBoost(herbalistSlots, clinicCount > 0 && herbsStock >= 6);
+      cookSlots = tryBoost(cookSlots, kitchenCount > 0 && foodStock >= idleThreshold * 2 && q("cook") >= 1);
+      smithSlots = tryBoost(smithSlots, smithyCount > 0 && stoneStock >= 10 && q("smith") >= 1);
+      herbalistSlots = tryBoost(herbalistSlots, clinicCount > 0 && herbsStock >= 6 && q("herbalist") >= 1);
     }
 
     // v0.8.2 Round-5 Wave-1 (01b Step 6) — consume `pendingRoleBoost` hint

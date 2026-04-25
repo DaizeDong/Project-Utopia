@@ -255,20 +255,22 @@ export const BALANCE = Object.freeze({
     // minFloor=1 promotion, so band entries with value 0 stay 0 (which is
     // what kills the allocation-loss at pop=4). n>=8 falls through to the
     // Wave-1 perWorker formula below (no regression risk for seed=7/42).
+    // v0.8.2 Round-6 Wave-1 (01b-structural Step 1) — structural zeros fix.
+    // Round 5 RED: all bands had allow=1 which reproduced the allocation-loss
+    // at pop=4 (6 specialists contending for 1 slot). The fix: band entries
+    // with 0 MUST stay 0 — computePopulationAwareQuotas does NOT apply
+    // minFloor to band-hit entries (only the n>=8 perWorker fall-through path
+    // applies minFloor=1). This is the core structural repair.
+    //
+    // Band semantics (per v2 debugger Round-6 mandate #2):
+    //   n<=3: farm-only — no specialist has headcount to run anything
+    //   n 4-5: only cook may activate (cook=1, all others=0)
+    //   n 6-7: cook + haul + stone may activate; smith/herbalist/herbs still 0
+    //   n>=8: fall-through to perWorker formula (Wave-1 behaviour retained)
     bandTable: [
-      // Round 5b Wave-1 post-benchmark-tune: bandTable's role is to make
-      // allocation-loss at pop=4 EXPLICIT and auditable, not to reduce
-      // specialist activation. We keep Wave-1 minFloor=1 semantics for
-      // every band and rely on the kitchen/smithy/clinic BUILDING gates
-      // (in RoleAssignmentSystem.update) + haulMinPopulation to cap
-      // specialists that weren't deserved. The structural fix remains:
-      // bandTable overrides can be used in future tuning; the cannibalise
-      // valve + low-pop idle-chain threshold are the hot-path changes.
-      // pop<=3: keep all at 1 (Wave-1 minFloor) — specialistBudget + gate
-      // naturally zero them out.
-      { minPop: 0, maxPop: 3, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
-      { minPop: 4, maxPop: 5, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
-      { minPop: 6, maxPop: 7, allow: { cook: 1, smith: 1, herbalist: 1, haul: 1, stone: 1, herbs: 1 } },
+      { minPop: 0, maxPop: 3, allow: { cook: 0, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
+      { minPop: 4, maxPop: 5, allow: { cook: 1, smith: 0, herbalist: 0, haul: 0, stone: 0, herbs: 0 } },
+      { minPop: 6, maxPop: 7, allow: { cook: 1, smith: 0, herbalist: 0, haul: 1, stone: 1, herbs: 0 } },
       // minPop: 8+ → fall-through to perWorker path (Wave-1 behaviour retained).
     ],
     bandHysteresisPop: 1,

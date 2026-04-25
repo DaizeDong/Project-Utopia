@@ -127,20 +127,22 @@ test("bandTable: n=4 with kitchen activates cook (Wave-1 compat retained)", () =
   assert.ok(countRole(state, ROLE.COOK) >= 1, `n=4 band-hit (minFloor=1 semantics) should activate cook (got ${countRole(state, ROLE.COOK)})`);
 });
 
-test("bandTable: n=6 preserves Wave-1 minFloor=1 so specialists with buildings still activate", () => {
-  // Round 5b post-tuning: bandTable is structurally present for future
-  // tuning but all bands currently mirror Wave-1's minFloor=1 behaviour
-  // (4-seed benchmark confirmed that tightening the bands below minFloor
-  // regressed seed 1/7/42/99 outcomes). With a smithy present, n=6
-  // should yield >= 1 smith.
+test("bandTable: n=6 — smith=0 (band 6-7 explicit zero blocks smith; cook and haul activate)", () => {
+  // v0.8.2 Round-6 Wave-1 (01b-structural Step 8) — structural zeros fix.
+  // Band 6-7 now has smith=0 (explicit block). The plan: band 4-5 allows only
+  // cook, band 6-7 adds haul and stone but NOT smith. Smith activates at n>=8
+  // via the perWorker fall-through. This test verifies the structural zero is
+  // respected (cook activates via kitchen gate, smith stays 0 despite smithy).
   const state = createInitialGameState();
   setWorkerCount(state, 6);
   state.buildings.smithies = 1;
+  state.buildings.kitchens = 1;
   state.buildings.warehouses = 1;
   state.resources.food = 60;
   state.resources.stone = 2;
   new RoleAssignmentSystem().update(2, state);
-  assert.ok(countRole(state, ROLE.SMITH) >= 1, "band 6-7 keeps Wave-1 minFloor=1 semantics for building-gated specialists");
+  assert.equal(countRole(state, ROLE.SMITH), 0, "band 6-7 smith=0 must block smith even with smithy present");
+  assert.ok(countRole(state, ROLE.COOK) >= 1, "band 6-7 cook=1 must activate cook when kitchen present");
 });
 
 test("bandTable: n=10 falls through to perWorker path (Wave-1 behaviour)", () => {
