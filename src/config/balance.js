@@ -622,6 +622,38 @@ export const BALANCE = Object.freeze({
   raidDeathBudget: 8,
   raidEnvironmentCooldownSec: 360,
   raidEnvironmentThreatThreshold: 75,
+  // --- v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 9) — EventDirector
+  // proactive pressure cadence + species/mood tuning. Per plan §5 risk
+  // analysis: 240s ≈ 4 game-min @ 4× speed → ~1 dispatched event per
+  // game-day; raise to 360 if 4-seed bench DevIndex tanks > 5%.
+  eventDirectorBaseIntervalSec: 240,
+  eventDirectorWeights: Object.freeze({
+    banditRaid: 0.30,
+    animalMigration: 0.25,
+    tradeCaravan: 0.18,
+    diseaseOutbreak: 0.10,
+    wildfire: 0.10,
+    moraleBreak: 0.07,
+  }),
+  eventDirectorTuning: Object.freeze({
+    banditRaid: Object.freeze({ durationSec: 30, intensity: 1 }),
+    animalMigration: Object.freeze({ durationSec: 22, intensity: 1 }),
+    tradeCaravan: Object.freeze({ durationSec: 20, intensity: 1 }),
+    diseaseOutbreak: Object.freeze({ durationSec: 35, intensity: 1 }),
+    wildfire: Object.freeze({ durationSec: 25, intensity: 1 }),
+    moraleBreak: Object.freeze({ durationSec: 30, intensity: 1 }),
+  }),
+  // Predator species mix at spawn (Step 6/8). Wolf is the most common pack
+  // hunter; bear is the rare bruiser; raider_beast is the new "raider"
+  // archetype that targets workers exclusively.
+  predatorSpeciesWeights: Object.freeze({ wolf: 0.55, bear: 0.30, raider_beast: 0.15 }),
+  herbivoreSpeciesWeights: Object.freeze({ deer: 1.0 }),
+  // Mood→output coupling (Step 5). At mood=0 the worker outputs at
+  // moodOutputMin (50%); at mood=1.0 outputs at 100%. Linear in between.
+  moodOutputMin: 0.5,
+  // Per-worker MORALE_BREAK enqueue cooldown so a chronically-low-mood
+  // worker cannot spam the queue every tick.
+  moraleBreakCooldownSec: 90,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.

@@ -578,6 +578,90 @@ function applyActiveEvent(event, dt, state) {
       }
     }
   }
+
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 4) — proactive event
+  // effects. Three branches added so EventDirectorSystem's queued events
+  // actually do something the player can perceive.
+  if (event.type === EVENT_TYPE.DISEASE_OUTBREAK) {
+    const intensity = Math.max(1, Number(event.intensity ?? 1));
+    const medicineDrain = 0.4 * intensity * dt;
+    state.resources.medicine = Math.max(0, Number(state.resources.medicine ?? 0) - medicineDrain);
+    // Pick one alive worker per tick and apply hp damage. Deterministic-ish:
+    // index by tick parity so test fixtures with a small worker set still see
+    // hp deduction within 1-2 ticks.
+    const workers = (state.agents ?? []).filter((a) => a.type === "WORKER" && a.alive !== false);
+    if (workers.length > 0) {
+      const idx = Math.floor(Number(state.metrics?.tick ?? 0)) % workers.length;
+      const victim = workers[idx];
+      const dmg = 5 * dt * intensity;
+      victim.hp = Math.max(0, Number(victim.hp ?? 0) - dmg);
+      event.payload ??= {};
+      event.payload.diseaseInfectedCount = Number(event.payload.diseaseInfectedCount ?? 0) + 1;
+    }
+    if (!event.payload?.diseaseLogged) {
+      recordWorkerEventMemory(
+        state,
+        `Plague spread (${Number(event.payload?.diseaseInfectedCount ?? 1)} infected)`,
+        `disease:${event.id ?? "anon"}`,
+        45,
+      );
+      event.payload ??= {};
+      event.payload.diseaseLogged = true;
+    }
+  }
+
+  if (event.type === EVENT_TYPE.WILDFIRE) {
+    const intensity = Math.max(1, Number(event.intensity ?? 1));
+    const targetTiles = collectTargetTiles(event);
+    const grid = state.grid;
+    const width = Number(grid?.width ?? 0);
+    if (targetTiles.length > 0 && grid?.tiles && width > 0) {
+      // Per-second 5% × dt × intensity probability of converting one LUMBER
+      // tile to RUINS. Deterministic-ish: use tick parity to pick the candidate
+      // index so seeded benchmarks stay reproducible (no Math.random here).
+      const burnChance = Math.min(1, 0.05 * dt * intensity);
+      const tickSalt = Number(state.metrics?.tick ?? 0);
+      // Cheap deterministic roll without consuming services.rng (which the
+      // bench harness reserves for spawn distribution).
+      const roll = ((tickSalt * 9301 + 49297) % 233280) / 233280;
+      if (roll < burnChance) {
+        for (let i = 0; i < targetTiles.length; i += 1) {
+          const tileIdx = (tickSalt + i) % targetTiles.length;
+          const tile = targetTiles[tileIdx];
+          const cur = grid.tiles[tile.ix + tile.iz * width];
+          if (cur === TILE.LUMBER) {
+            if (applyImpactTileToGrid(state, tile)) {
+              event.payload ??= {};
+              event.payload.wildfireBurnedTiles = Number(event.payload.wildfireBurnedTiles ?? 0) + 1;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (event.type === EVENT_TYPE.MORALE_BREAK) {
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const workers = (state.agents ?? []).filter((a) => a.type === "WORKER" && a.alive !== false);
+    if (workers.length > 0 && !event.payload?.moraleBreakAssigned) {
+      let victim = workers[0];
+      let lowMood = Number(workers[0].mood ?? 0.5);
+      for (let i = 1; i < workers.length; i += 1) {
+        const m = Number(workers[i].mood ?? 0.5);
+        if (m < lowMood) {
+          lowMood = m;
+          victim = workers[i];
+        }
+      }
+      victim.blackboard ??= {};
+      const breakDurationSec = Math.max(5, Number(event.durationSec ?? 30));
+      victim.blackboard.moraleBreak = { untilSec: nowSec + breakDurationSec };
+      event.payload ??= {};
+      event.payload.moraleBreakAssigned = true;
+      event.payload.moraleBreakWorkerId = victim.id ?? "";
+    }
+  }
 }
 
 function advanceLifecycle(event, dt) {

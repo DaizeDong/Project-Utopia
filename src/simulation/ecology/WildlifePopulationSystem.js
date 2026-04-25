@@ -484,6 +484,20 @@ export class WildlifePopulationSystem {
     ecology.clusters = clusters;
     const totalPredators = (state.animals ?? []).filter((animal) => animal.alive !== false && animal.kind === ANIMAL_KIND.PREDATOR).length;
     const totalHerbivores = (state.animals ?? []).filter((animal) => animal.alive !== false && animal.kind === ANIMAL_KIND.HERBIVORE).length;
+    // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 8) — expose per-species
+    // predator counts so HUD/Inspector can show wolf/bear/raider_beast splits
+    // without each panel re-walking state.animals.
+    const predatorsBySpecies = { wolf: 0, bear: 0, raider_beast: 0 };
+    for (const animal of state.animals ?? []) {
+      if (!animal || animal.alive === false) continue;
+      if (animal.kind !== ANIMAL_KIND.PREDATOR) continue;
+      const species = String(animal.species ?? "wolf");
+      if (predatorsBySpecies[species] === undefined) {
+        predatorsBySpecies[species] = 0;
+      }
+      predatorsBySpecies[species] += 1;
+    }
+    ecology.predatorsBySpecies = predatorsBySpecies;
     ecology.flags = {
       extinctionRisk: zoneStats.some((entry) => entry.herbivoreCount < Number(entry.herbivoreCapacity?.min ?? 0)),
       overgrowthRisk: zoneStats.some((entry) => entry.herbivoreCount > Number(entry.herbivoreCapacity?.max ?? Infinity) || entry.predatorCount > Number(entry.predatorCapacity?.max ?? Infinity)),

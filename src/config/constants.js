@@ -54,6 +54,23 @@ export const EVENT_TYPE = Object.freeze({
   ANIMAL_MIGRATION: "animalMigration",
   BANDIT_RAID: "banditRaid",
   TRADE_CARAVAN: "tradeCaravan",
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 1) — proactive event
+  // pressure. EventDirectorSystem rolls these into state.events.queue on a
+  // ~240s cadence; WorldEventSystem.applyActiveEvent dispatches their effects.
+  MORALE_BREAK: "moraleBreak",
+  DISEASE_OUTBREAK: "diseaseOutbreak",
+  WILDFIRE: "wildfire",
+});
+
+// v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 1) — predator/herbivore
+// species variants. ANIMAL_KIND stays binary (HERBIVORE/PREDATOR) so existing
+// code paths keep working; species is a sub-field on the animal that
+// AnimalAISystem reads to vary attack cadence + behaviour.
+export const ANIMAL_SPECIES = Object.freeze({
+  DEER: "deer",
+  WOLF: "wolf",
+  BEAR: "bear",
+  RAIDER_BEAST: "raider_beast",
 });
 
 // v0.8.0 Phase 3 M1a — per-tile resource node bitmask stored on tileState.nodeFlags.
@@ -111,6 +128,11 @@ export const SYSTEM_ORDER = Object.freeze([
   "ProgressionSystem",
   "DevIndexSystem",
   "RaidEscalatorSystem",
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 2) — EventDirector
+  // sits after RaidEscalator (so it can read raidEscalation.intervalTicks for
+  // the bandit-raid cooldown downgrade) and before ColonyDirector (so its
+  // queued events are visible to the same-tick building snapshot).
+  "EventDirectorSystem",
   "ColonyDirectorSystem",
   "RoleAssignmentSystem",
   "PopulationGrowthSystem",

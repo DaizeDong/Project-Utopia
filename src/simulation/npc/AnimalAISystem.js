@@ -1,5 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
-import { ANIMAL_KIND, TILE } from "../../config/constants.js";
+import { ANIMAL_KIND, ANIMAL_SPECIES, TILE } from "../../config/constants.js";
 import { getLongRunWildlifeTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
@@ -15,6 +15,21 @@ const WANDER_REFRESH_JITTER_SEC = 1.4;
 const HERBIVORE_FLEE_ENTER_DIST = 3.4;
 const HERBIVORE_FLEE_EXIT_DIST = 4.8;
 const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
+
+// v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species-aware
+// behaviour table. Wolf is the standard pack hunter (default fallback);
+// bear is slow but hits hard with longer chase tolerance; raider_beast
+// ignores herbivores and goes straight for workers (the new "raider" role).
+const PREDATOR_SPECIES_PROFILE = Object.freeze({
+  [ANIMAL_SPECIES.WOLF]: { attackCooldownSec: 1.4, chaseDistanceMult: 1.0, ignoresHerbivores: false, targetsWorkers: false },
+  [ANIMAL_SPECIES.BEAR]: { attackCooldownSec: 2.6, chaseDistanceMult: 1.5, ignoresHerbivores: false, targetsWorkers: false },
+  [ANIMAL_SPECIES.RAIDER_BEAST]: { attackCooldownSec: 1.8, chaseDistanceMult: 1.2, ignoresHerbivores: true, targetsWorkers: true },
+});
+
+function getPredatorProfile(animal) {
+  const species = String(animal?.species ?? ANIMAL_SPECIES.WOLF);
+  return PREDATOR_SPECIES_PROFILE[species] ?? PREDATOR_SPECIES_PROFILE[ANIMAL_SPECIES.WOLF];
+}
 
 function resolveTargetPriority(policy, key, fallback = 1) {
   return Math.max(0, Math.min(3, Number(policy?.targetPriorities?.[key] ?? fallback)));
@@ -655,6 +670,8 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   animal.attackCooldownSec = Math.max(0, Number(animal.attackCooldownSec ?? 0) - dt);
   const policy = getAnimalPolicy(state, "predators");
   const tuning = getLongRunWildlifeTuning(state);
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species profile.
+  const profile = getPredatorProfile(animal);
   const zoneId = String(getWildlifeZone(state, animal)?.id ?? "");
   const zoneHerbivores = zoneId
     ? countZoneAnimals(state, zoneId, herbivores)
@@ -662,8 +679,13 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   const huntSuppressed = zoneHerbivores <= Number(tuning.predatorHuntPreyFloor ?? 0);
   animal.debug ??= {};
   animal.debug.huntSuppressedReason = huntSuppressed ? "prey-floor" : "";
+  animal.debug.predatorSpecies = String(animal.species ?? ANIMAL_SPECIES.WOLF);
 
-  const prey = huntSuppressed ? null : choosePredatorPrey(animal, herbivores, state, policy);
+  // raider_beast ignores herbivores entirely — they are the "raider" archetype
+  // that exists to harass the colony, not the wildlife loop.
+  const prey = (huntSuppressed || profile.ignoresHerbivores)
+    ? null
+    : choosePredatorPrey(animal, herbivores, state, policy);
   const distance = prey ? Math.sqrt(distanceSq(animal, prey)) : Infinity;
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
@@ -701,7 +723,10 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
         prey.hp = Math.max(0, Number(prey.hp ?? 0) - dmg);
         prey.memory.recentEvents.unshift("predator-hit");
         prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
-        animal.attackCooldownSec = Number(BALANCE.predatorAttackCooldownSec ?? 1.4);
+        // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species
+        // attack cadence overrides the global BALANCE default. Bears are
+        // slow but punishing; wolves stay on the standard 1.4s.
+        animal.attackCooldownSec = Number(profile.attackCooldownSec ?? BALANCE.predatorAttackCooldownSec ?? 1.4);
         recoverPredatorHungerOnHit(animal);
         emitEvent(state, EVENT_TYPES.PREDATOR_ATTACK, {
           entityId: animal.id, entityName: animal.displayName ?? animal.id,

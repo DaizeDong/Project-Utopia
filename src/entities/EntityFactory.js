@@ -1,4 +1,4 @@
-import { ENTITY_TYPE, ROLE, VISITOR_KIND, ANIMAL_KIND, TILE } from "../config/constants.js";
+import { ENTITY_TYPE, ROLE, VISITOR_KIND, ANIMAL_KIND, ANIMAL_SPECIES, TILE } from "../config/constants.js";
 import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balance.js";
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
@@ -276,18 +276,75 @@ export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.
   };
 }
 
-export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.random) {
+// v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 6) — per-species HP table.
+// Wolf is the standard pack hunter; bear is the rare bruiser; raider_beast is
+// the new "raider" archetype that targets workers exclusively. Deer is the
+// only herbivore species today (placeholder for future content rounds).
+const ANIMAL_SPECIES_HP = Object.freeze({
+  [ANIMAL_SPECIES.DEER]: 70,
+  [ANIMAL_SPECIES.WOLF]: 80,
+  [ANIMAL_SPECIES.BEAR]: 130,
+  [ANIMAL_SPECIES.RAIDER_BEAST]: 110,
+});
+
+const ANIMAL_SPECIES_LABEL = Object.freeze({
+  [ANIMAL_SPECIES.DEER]: "Deer",
+  [ANIMAL_SPECIES.WOLF]: "Wolf",
+  [ANIMAL_SPECIES.BEAR]: "Bear",
+  [ANIMAL_SPECIES.RAIDER_BEAST]: "Raider-beast",
+});
+
+function pickPredatorSpecies(random) {
+  const weights = BALANCE.predatorSpeciesWeights ?? { wolf: 0.55, bear: 0.30, raider_beast: 0.15 };
+  const entries = [
+    [ANIMAL_SPECIES.WOLF, Number(weights.wolf ?? 0)],
+    [ANIMAL_SPECIES.BEAR, Number(weights.bear ?? 0)],
+    [ANIMAL_SPECIES.RAIDER_BEAST, Number(weights.raider_beast ?? 0)],
+  ];
+  const total = entries.reduce((sum, [, w]) => sum + Math.max(0, w), 0);
+  if (total <= 0) return ANIMAL_SPECIES.WOLF;
+  let pick = random() * total;
+  for (const [species, w] of entries) {
+    pick -= Math.max(0, w);
+    if (pick <= 0) return species;
+  }
+  return entries[entries.length - 1][0];
+}
+
+export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.random, species = null) {
   const id = nextId("animal");
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 6) — species variant.
+  // Defaults preserve the legacy two-species behaviour: HERBIVORE → DEER,
+  // PREDATOR → weighted random over wolf/bear/raider_beast. Existing
+  // call-sites that don't pass a 5th arg still get a working animal back.
+  let resolvedSpecies = species;
+  if (!resolvedSpecies) {
+    if (kind === ANIMAL_KIND.HERBIVORE) {
+      resolvedSpecies = ANIMAL_SPECIES.DEER;
+    } else if (kind === ANIMAL_KIND.PREDATOR) {
+      resolvedSpecies = pickPredatorSpecies(random);
+    } else {
+      resolvedSpecies = ANIMAL_SPECIES.DEER;
+    }
+  }
+  const hp = Number(ANIMAL_SPECIES_HP[resolvedSpecies] ?? (kind === ANIMAL_KIND.PREDATOR ? 90 : 70));
+  const speciesLabel = ANIMAL_SPECIES_LABEL[resolvedSpecies]
+    ?? (kind === ANIMAL_KIND.PREDATOR ? "Predator" : "Herbivore");
   // v0.8.2 Round-0 01e-innovation (Step 2). Animals get a constant backstory
   // so EntityFocusPanel has consistent content to render for every entity
-  // kind (colonist / visitor / animal). No name-bank for animals — they stay
-  // on the "Predator-N" / "Herbivore-N" label format.
-  const backstory = kind === ANIMAL_KIND.PREDATOR
-    ? "lone predator"
-    : "wild forager";
+  // kind (colonist / visitor / animal). Species sub-types extend the per-kind
+  // backstory so a Bear reads differently from a Wolf in EntityFocusPanel.
+  let backstory;
+  if (kind === ANIMAL_KIND.PREDATOR) {
+    if (resolvedSpecies === ANIMAL_SPECIES.BEAR) backstory = "lone bruiser";
+    else if (resolvedSpecies === ANIMAL_SPECIES.RAIDER_BEAST) backstory = "feral raider";
+    else backstory = "lone predator";
+  } else {
+    backstory = "wild forager";
+  }
   return {
     id,
-    displayName: withLabel(id, kind === ANIMAL_KIND.PREDATOR ? "Predator" : "Herbivore"),
+    displayName: withLabel(id, speciesLabel),
     type: ENTITY_TYPE.ANIMAL,
     kind,
     backstory,
@@ -297,8 +354,8 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
     vz: (random() - 0.5) * 0.25,
     desiredVel: { x: 0, z: 0 },
     hunger: 1,
-    hp: kind === ANIMAL_KIND.PREDATOR ? 90 : 70,
-    maxHp: kind === ANIMAL_KIND.PREDATOR ? 90 : 70,
+    hp,
+    maxHp: hp,
     alive: true,
     deathReason: "",
     deathSec: -1,
@@ -330,6 +387,7 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
       lastPathRecalcSec: 0,
     },
     groupId: kind === ANIMAL_KIND.PREDATOR ? GROUP_IDS.PREDATORS : GROUP_IDS.HERBIVORES,
+    species: resolvedSpecies,
   };
 }
 
