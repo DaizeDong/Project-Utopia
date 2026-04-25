@@ -1,5 +1,38 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-1 01e-innovation: policyHistory ring + WHISPER diagnostic + AIPolicyTimelinePanel + errorLog
+
+**Scope:** Exposes existing AI diagnostic data to the player UI without adding new simulation logic. Four deliverables: (1) policyHistory ring buffer in NPCBrainSystem (32-entry, focus+source-dedup, pure observer); (2) WHISPER diagnostic overlay in storytellerStrip — synthesises whisperBlockedReason from lastPolicyError/proxyHealth/policyLlmCount and pipes it into the storytellerStrip tooltip + new #storytellerWhyNoWhisper sibling span; (3) AIPolicyTimelinePanel — new read-only Debug subpanel rendering state.ai.policyHistory newest-first (12 entries max); (4) AIExchangePanel errorLog card — collapsed view of last ≤5 errored/fallback exchanges. All data sources pre-existed in state; benchmark bit-identical.
+
+### New Features
+- **policyHistory ring buffer** (`src/simulation/ai/brains/NPCBrainSystem.js`, `src/entities/EntityFactory.js`): `state.ai.policyHistory` array (cap=32) initialised to `[]` in EntityFactory. NPCBrainSystem.update pushes `{ atSec, source, badgeState, focus, errorKind, errorMessage, model }` on focus or source change; deduplicates when both dimensions and Δt<5 s are unchanged.
+- **WHISPER diagnostic overlay** (`src/ui/hud/storytellerStrip.js`, `src/ui/hud/HUDController.js`, `index.html`): `computeStorytellerStripModel` now includes a `diagnostic` sub-object with `whisperBlockedReason` (five human-readable strings for llm-live / llm-stale / fallback-degraded / fallback-healthy / idle). HUDController appends "Why no WHISPER?: <reason>" to the strip tooltip and updates the new `#storytellerWhyNoWhisper` sibling span.
+- **AIPolicyTimelinePanel** (`src/ui/panels/AIPolicyTimelinePanel.js`, `src/app/GameApp.js`, `index.html`): New read-only panel class rendering policyHistory as a reverse-chronological `<ul>`. Registered in GameApp panel lifecycle (#safeRenderPanel) and mounted to the new `<details data-panel-key="ai-timeline">` section in the Debug sidebar.
+- **AIExchangePanel errorLog card** (`src/ui/panels/AIExchangePanel.js`): `renderErrorLogCard` helper filters policyExchanges/environmentExchanges for entries with error or fallback flags and renders them as a collapsed `<details>` card (≤5 rows). Reads existing ring buffers — no new state fields.
+
+### New Tests
+- `test/storyteller-strip-whisper-diagnostic.test.js` — 5 tests: all five badgeState → whisperBlockedReason mappings.
+- `test/ai-policy-history.test.js` — 3 tests: empty init, 32-cap slice, dedup semantic.
+- `test/ai-policy-timeline-panel.test.js` — 3 tests: empty history copy, 3-entry order, >12 truncation.
+
+### Files Changed
+- `src/simulation/ai/brains/NPCBrainSystem.js` — policyHistory ring push (pure observer block, lines ~349-381)
+- `src/entities/EntityFactory.js` — `ai.policyHistory: []` initialisation (line ~635)
+- `src/ui/hud/storytellerStrip.js` — `diagnostic` sub-object + `whisperBlockedReason` in `computeStorytellerStripModel`
+- `src/ui/hud/HUDController.js` — tooltip diagSuffix + #storytellerWhyNoWhisper span update
+- `src/ui/panels/AIExchangePanel.js` — `renderErrorLogCard` helper + wired into `render()`
+- `src/ui/panels/AIPolicyTimelinePanel.js` — new file (AIPolicyTimelinePanel class)
+- `src/app/GameApp.js` — import + instantiation + safeRenderPanel registration for AIPolicyTimelinePanel
+- `index.html` — #storytellerWhyNoWhisper span + Director Timeline `<details>` block
+- `test/storyteller-strip-whisper-diagnostic.test.js` — new file
+- `test/ai-policy-history.test.js` — new file
+- `test/ai-policy-timeline-panel.test.js` — new file
+
+### Validation
+- Full suite: `1202/1204` pass (1202 pass, 0 fail, 2 pre-existing skips).
+
+---
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-1 01b-structural: bandTable + dynamic farmMin + cannibalise safety valve
 
 **Scope:** Structural fix for Round-5 RED verdict — RoleAssignmentSystem pop=4 allocation loss. bandTable now carries explicit zeros so blocked specialists stay at 0 without entering specialistBudget contention. Dynamic farmMin scales with targetFarmRatio * n. Inline tryBoost gated on q(role)>=1 to respect bandTable zeros.

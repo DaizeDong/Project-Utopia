@@ -971,6 +971,23 @@ export class HUDController {
           : "";
         const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}${diagSuffix}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
+        // v0.8.2 Round-5b Wave-1 (01e Step 1) — update the sibling
+        // #storytellerWhyNoWhisper span so CSS selectors / tests can
+        // read the reason without parsing the tooltip string. Hidden
+        // when llm-live (reason is not applicable); shown otherwise.
+        if (typeof document !== "undefined") {
+          const whySpan = document.getElementById("storytellerWhyNoWhisper");
+          if (whySpan) {
+            const reason = model.diagnostic?.whisperBlockedReason ?? "";
+            if (model.badgeState !== "llm-live" && reason) {
+              whySpan.textContent = `Why no WHISPER?: ${reason}`;
+              if (whySpan.hasAttribute?.("hidden")) whySpan.removeAttribute?.("hidden");
+            } else {
+              whySpan.textContent = "";
+              if (!whySpan.hasAttribute?.("hidden")) whySpan.setAttribute?.("hidden", "");
+            }
+          }
+        }
         // v0.8.2 Round-5 Wave-3 (02e Step 5) — aria-label marker when the
         // summary text is sourced from AUTHOR_VOICE_PACK. Enables test /
         // a11y selectors to confirm voice-pack reach-through.
