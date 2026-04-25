@@ -67,6 +67,13 @@ export function resolveGlobalShortcut(event, context = {}) {
     return { type: "resetCamera" };
   }
   // v0.8.0 Phase 7.C — Supply-Chain Heat Lens toggle.
+  //
+  // v0.8.2 Round-6 Wave-1 01b-playability (Step 7) — note: KeyL does NOT
+  // toggle the Fertility / Terrain overlay. Reviewers occasionally report
+  // "L popped a fertility legend" — that side effect is a *tool-selection*
+  // consequence inside `#applyContextualOverlay` (see HUDController), not a
+  // shortcut binding. This branch only emits `toggleHeatLens`. KeyT below
+  // is the dedicated terrain-fertility hotkey.
   if (code === "KeyL" || key === "l") {
     if (!isActivePhase) return null;
     return { type: "toggleHeatLens" };
@@ -78,7 +85,13 @@ export function resolveGlobalShortcut(event, context = {}) {
   }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
   if (code === "Space" || key === " ") {
-    return context.phase === "active" ? { type: "togglePause" } : null;
+    // v0.8.2 Round-6 Wave-1 01b-playability (Step 7) — explicit `return null`
+    // in non-active phases prevents Space from falling through into the
+    // TOOL_SHORTCUTS table (e.g. if a future code-mapping accidentally maps
+    // " " or "Space" to a tool). The previous ternary already returned null
+    // but we make the intent explicit for future readers.
+    if (context.phase !== "active") return null;
+    return { type: "togglePause" };
   }
 
   const tool = shift ? null : TOOL_SHORTCUTS[code];

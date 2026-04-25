@@ -740,7 +740,16 @@ export class BuildToolbar {
     let predators = 0;
 
     for (const agent of this.state.agents) {
-      if (agent.type === "WORKER" && !agent.isStressWorker) workers += 1;
+      // v0.8.2 Round-6 Wave-1 01b-playability (Step 6) — Population panel /
+      // target-sync now counts the FULL `agent.type === "WORKER"` set
+      // (base + stress) rather than just `!isStressWorker`. This aligns
+      // with HUDController.js (lines 734-744 / 1153) which has always shown
+      // the full count via `state.metrics.populationStats.workers`. Pre-fix
+      // the top-bar said `Workers 13` while this Population panel said
+      // `Workers 0` because the worker pool was entirely stress-rolled.
+      // The base/stress split is preserved for the developer-only
+      // Population Breakdown line in `populationBreakdownVal` (see :1004).
+      if (agent.type === "WORKER") workers += 1;
       if (agent.type === "VISITOR") {
         if (agent.kind === "TRADER" || agent.groupId === "traders") traders += 1;
         else saboteurs += 1;

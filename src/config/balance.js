@@ -605,6 +605,18 @@ export const BALANCE = Object.freeze({
   raidIntensityPerTier: 0.3,
   // Round 2 01d: Heat Lens should warn before a processor is completely empty.
   heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
+  // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — soft cap on the
+  // EnvironmentDirector's threat-gated saboteur spawns. Once a run accumulates
+  // this many starvation/raid deaths, the new "Raiders sighted near <gate>"
+  // micro-raid path goes silent so 4-seed bench DevIndex floor (≥ 32) and
+  // deaths ceiling (≤ 499) stay safely inside their lanes. See plan §5 risk
+  // analysis: predicted incremental deaths +5..12 vs. baseline 454, leaving
+  // ~33 of the 499-death budget as headroom even with all 4 seeds firing.
+  raidDeathBudget: 18,
+  // Cooldown between EnvironmentDirector micro-raid pulses (sim seconds).
+  raidEnvironmentCooldownSec: 90,
+  // Threat threshold (state.gameplay.threat is on a 0..100 scale).
+  raidEnvironmentThreatThreshold: 60,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
