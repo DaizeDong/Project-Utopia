@@ -297,8 +297,9 @@ export function buildHeatLens(state) {
   // density score (< 0.2 of the risk threshold) as the idle/starving state.
   const STARVATION_FRACTION = 0.2;
 
-  // Budget: cap total emitted markers so the pool stays bounded on huge maps.
+  // Budget: cap primary markers; halo pass can grow to MAX_HEAT_MARKERS_HALO.
   const MAX_HEAT_MARKERS = 48;
+  const MAX_HEAT_MARKERS_HALO = 160;
 
   for (let iz = 0; iz < height && markers.length < MAX_HEAT_MARKERS; iz += 1) {
     for (let ix = 0; ix < width && markers.length < MAX_HEAT_MARKERS; ix += 1) {
@@ -383,6 +384,31 @@ export function buildHeatLens(state) {
       priority: 116,
       label: "stone input empty",
     }, seen);
+  }
+
+  // Halo pass: for each primary marker, emit 4-way neighbourhood secondaries.
+  const primarySnapShot = markers.slice();
+  const HALO_OFFSETS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const parent of primarySnapShot) {
+    if (markers.length >= MAX_HEAT_MARKERS_HALO) break;
+    for (const [dx, dz] of HALO_OFFSETS) {
+      if (markers.length >= MAX_HEAT_MARKERS_HALO) break;
+      const hx = parent.ix + dx;
+      const hz = parent.iz + dz;
+      if (hx < 0 || hz < 0 || hx >= width || hz >= height) continue;
+      const htile = tiles[hx + hz * width];
+      if (HEAT_PRODUCER_TILES.includes(htile) || HEAT_PROCESSOR_INPUT_CHECK[htile] || htile === TILE.WAREHOUSE) continue;
+      pushUniqueMarker(markers, {
+        id: `halo:${parent.id}:${dx}:${dz}`,
+        kind: parent.kind,
+        ix: hx,
+        iz: hz,
+        radius: Number(parent.radius ?? 0.95) * 0.75,
+        weight: Number(parent.weight ?? 0.9) * 0.55,
+        priority: Number(parent.priority ?? 100) - 10,
+        label: "halo",
+      }, seen);
+    }
   }
 
   return markers.sort((a, b) => {
