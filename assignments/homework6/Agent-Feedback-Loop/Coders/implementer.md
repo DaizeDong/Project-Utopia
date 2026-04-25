@@ -123,8 +123,12 @@ tools_forbidden:
    常常 assert DOM id 白名单。
 4. **commit 前 HEAD 必须是干净的**（除本 plan 改动外无其他未追踪更改）。
    若发现异常文件，先 `git status` 确认来源再决定是否纳入。
-5. **不跨越 freeze 边界**：若你在读代码过程中发现 plan 疑似要求加新 mechanic，
-   立即在 commit log 里标 `FREEZE-VIOLATION` 并 SKIPPED，等 orchestrator 仲裁。
+5. **freeze 边界按 plan 声明执行**：plan frontmatter 应携带由上游 enhancer 写下
+   的 `freeze_policy` 字段（继承自 Stage B Runtime Context）。若 `freeze_policy:
+   active` 而 plan 仍要求加新 tile/building/tool/mood/score/audio asset/relationship
+   mechanic，立即在 commit log 标 `FREEZE-VIOLATION` 并 SKIPPED，等 orchestrator
+   仲裁；若 `freeze_policy: lifted` 则按 plan 完整执行。`freeze_policy` 字段缺失
+   按 active 处理。
 6. **不改 Plans/ 或 Feedbacks/**：这两个目录在此阶段是**只读**。
 
 ---
