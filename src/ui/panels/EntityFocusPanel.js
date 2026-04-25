@@ -469,7 +469,14 @@ export class EntityFocusPanel {
       .filter(([, v]) => Number.isFinite(v))
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([otherId, v]) => `${lookupDisplayNameById(otherId)}: ${formatRelationOpinion(v)}`);
+      .map(([otherId, v]) => {
+        const name = escapeHtml(lookupDisplayNameById(otherId));
+        const label = escapeHtml(formatRelationOpinion(v));
+        const reason = relMap[`__reason__${otherId}`];
+        const reasonSuffix = reason ? ` <span class="muted">(because ${escapeHtml(String(reason))})</span>` : "";
+        return `${name}: ${label}${reasonSuffix}`;
+      });
+    // Reason suffixes contain HTML — do not double-escape; per-piece escaping above already sanitises.
     const relationsLine = topRelations.length > 0 ? topRelations.join(" | ") : "(no relationships yet)";
     const recentMemories = Array.isArray(entity.memory?.recentEvents)
       ? entity.memory.recentEvents.slice(0, 3)
@@ -482,7 +489,7 @@ export class EntityFocusPanel {
         <summary class="small"><b>Character</b></summary>
         <div class="small" style="margin-top:4px;"><b>Traits:</b> ${escapeHtml(traitsText)}</div>
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
-        <div class="small"><b>Relationships:</b> ${escapeHtml(relationsLine)}</div>
+        <div class="small"><b>Relationships:</b> ${relationsLine}</div>
         <div class="small" style="margin-top:4px;"><b>Recent Memory:</b></div>
         ${memoryLines}
       </details>
@@ -514,7 +521,7 @@ export class EntityFocusPanel {
       <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
-      <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}</div>
+      <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}${entity.debug?.lastIntentReason ? ` <span class="muted">(because: ${escapeHtml(entity.debug.lastIntentReason)})</span>` : ""}</div>
       <div class="small"><b>Hunger:</b> ${escapeHtml(hungerLabel)}${hungerPct === null ? "" : ` (${hungerPct}% well-fed)`}</div>
       ${engBlockOpen}
       <div class="small"><b>FSM:</b> current=${escapeHtml(fsmState)} prev=${escapeHtml(fsmPrev)} | nextPath=${escapeHtml(fsmPath || "-")}</div>
