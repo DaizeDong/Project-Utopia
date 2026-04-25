@@ -10,7 +10,7 @@ import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
-import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles } from "./PressureLens.js";
+import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 import { FogOverlay } from "./FogOverlay.js";
 
@@ -1785,48 +1785,100 @@ export class SceneRenderer {
     const offsetLeft = canvasRect ? canvasRect.left : 0;
     const offsetTop = canvasRect ? canvasRect.top : 0;
 
+    // v0.8.2 Round-6 Wave-1 (01c-ui Step 5) — two-pass projection +
+    // screen-space dedup. Pass 1 projects each marker and records its pixel
+    // coordinates / resolved label / weight. Pass 2 invokes
+    // `dedupPressureLabels` (a pure helper exported from PressureLens.js so
+    // tests can stand it up without canvas) which collapses repeat labels
+    // and bucket-overlapping primaries. Pass 3 writes display state to the
+    // pool elements. This eliminates the "supply surplus / supply surplus /
+    // supply surplus" stack reviewers reported (feedback #4).
+    const projected = [];
     for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
-      const el = this.pressureLabelPool[i];
       const marker = markers[i];
       if (!marker || vpW <= 0 || vpH <= 0) {
-        el.style.display = "none";
+        projected.push(null);
         continue;
       }
-
       const wp = tileToWorld(marker.ix, marker.iz, this.state.grid);
       VEC_TMP.set(wp.x, 0.3, wp.z);
       VEC_TMP.project(this.camera);
-
-      // Discard labels that are off-screen or behind the camera.
+      // Off-screen / behind camera → omit from dedup pool.
       if (VEC_TMP.z > 1 || Math.abs(VEC_TMP.x) > 1.05 || Math.abs(VEC_TMP.y) > 1.05) {
-        el.style.display = "none";
+        projected.push(null);
         continue;
       }
-
-      // NDC → pixel coords relative to canvas.
       const px = (VEC_TMP.x * 0.5 + 0.5) * vpW;
       const py = (-VEC_TMP.y * 0.5 + 0.5) * vpH;
-
       // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 2): when a marker carries
       // an explicit empty-string label (heat-lens halo markers, see
-      // PressureLens.js#buildHeatLens), suppress the label DOM entirely. We
-      // intentionally check `marker.label === ""` (NOT `?? ""`) so that an
-      // omitted label still falls back to `marker.kind` per the legacy
-      // behaviour. This prevents an empty <div> from rendering "halo" or
-      // dangling whitespace in the heat-lens overlay.
+      // PressureLens.js#buildHeatLens), suppress the label DOM entirely.
       const rawLabel = marker.label;
       const labelText = rawLabel === ""
         ? ""
         : String(rawLabel ?? marker.kind ?? "");
       if (labelText === "") {
-        el.style.display = "none";
+        projected.push(null);
         continue;
       }
+      projected.push({
+        idx: i,
+        px,
+        py,
+        label: labelText,
+        weight: Number(marker.weight ?? marker.priority ?? 0),
+        kind: marker.kind ?? "",
+      });
+    }
 
-      el.dataset.kind = marker.kind ?? "";
+    // Pass 2: dedup. Build entries array (skip nulls) and remember mapping.
+    const entries = [];
+    const entryToPoolIdx = [];
+    for (let i = 0; i < projected.length; i += 1) {
+      const p = projected[i];
+      if (!p) continue;
+      entries.push(p);
+      entryToPoolIdx.push(i);
+    }
+    const decisions = dedupPressureLabels(entries, { nearPx: 24, bucketPx: 32 });
+
+    // Pass 3: write display state.
+    const visible = new Map(); // poolIdx -> { decision, entry }
+    for (let j = 0; j < decisions.length; j += 1) {
+      const d = decisions[j];
+      const poolIdx = entryToPoolIdx[j];
+      if (d.keep) {
+        visible.set(poolIdx, { decision: d, entry: entries[j] });
+      }
+    }
+    for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
+      const el = this.pressureLabelPool[i];
+      if (!visible.has(i)) {
+        // Not visible: hidden either because off-screen, empty label, or
+        // collapsed into a sibling.
+        el.style.display = "none";
+        if (el.dataset) {
+          if ("merged" in el.dataset) delete el.dataset.merged;
+          if ("count" in el.dataset) delete el.dataset.count;
+        }
+        continue;
+      }
+      const { decision, entry } = visible.get(i);
+      const renderPx = decision.cx ?? entry.px;
+      const renderPy = decision.cy ?? entry.py;
+      const count = decision.count ?? 1;
+      const labelText = count > 1 ? `${entry.label} \u00d7${count}` : entry.label;
+      el.dataset.kind = entry.kind;
+      if (count > 1) {
+        el.dataset.merged = "1";
+        el.dataset.count = String(count);
+      } else {
+        if (el.dataset && "merged" in el.dataset) delete el.dataset.merged;
+        if (el.dataset && "count" in el.dataset) delete el.dataset.count;
+      }
       el.textContent = labelText;
-      el.style.left = `${Math.round(px + offsetLeft)}px`;
-      el.style.top = `${Math.round(py + offsetTop)}px`;
+      el.style.left = `${Math.round(renderPx + offsetLeft)}px`;
+      el.style.top = `${Math.round(renderPy + offsetTop)}px`;
       el.style.display = "block";
     }
   }
