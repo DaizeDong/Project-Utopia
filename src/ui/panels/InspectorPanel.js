@@ -74,6 +74,52 @@ export class InspectorPanel {
       return `${n.label}: ${t}`;
     });
 
+    // Processing block for kitchen / smithy / clinic tiles (Step 5)
+    const PROCESSING_KINDS = { [TILE.KITCHEN]: "kitchen", [TILE.SMITHY]: "smithy", [TILE.CLINIC]: "clinic" };
+    const processingKind = PROCESSING_KINDS[currentType];
+    let processingBlock = "";
+    if (processingKind) {
+      const snapshot = Array.isArray(this.state.metrics?.processing) ? this.state.metrics.processing : [];
+      const entry = snapshot.find((e) => e.ix === tile.ix && e.iz === tile.iz);
+      if (entry) {
+        const pct = Math.floor((entry.progress01 ?? 0) * 100);
+        const eta = Math.max(0, Math.round(entry.etaSec ?? 0));
+        const workerLabel = entry.workerPresent ? `${entry.kind} present` : `${entry.kind} missing`;
+        const statusLabel = entry.stalled ? `stalled \u2014 ${entry.stallReason ?? "unknown"}` : "running";
+        const inputLabel = entry.kind === "kitchen" ? `food OK: ${entry.inputOk}`
+          : entry.kind === "smithy" ? `stone+wood OK: ${entry.inputOk}`
+          : `herbs OK: ${entry.inputOk}`;
+        processingBlock = `
+          <details style="margin-top:8px;" open>
+            <summary class="small"><b>Processing</b></summary>
+            <div class="small" style="margin-top:6px;"><b>Cycle:</b> ${pct}% (ETA ${eta}s)</div>
+            <div class="small"><b>Worker:</b> ${workerLabel}</div>
+            <div class="small"><b>Inputs:</b> ${inputLabel}</div>
+            <div class="small"><b>Status:</b> ${statusLabel}</div>
+          </details>`;
+      } else {
+        processingBlock = `
+          <details style="margin-top:8px;" open>
+            <summary class="small"><b>Processing</b></summary>
+            <div class="small muted">No cycle data yet (idle or simulation warming up).</div>
+          </details>`;
+      }
+    }
+
+    // Logistics efficiency for all production tiles (bonus carry-over)
+    const PRODUCTION_TILE_SET = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+      TILE.WAREHOUSE, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+    const tileKey = `${tile.ix},${tile.iz}`;
+    const logEff = this.state.metrics?.logistics?.buildingEfficiency?.[tileKey];
+    let logisticsLine = "";
+    if (logEff !== undefined && PRODUCTION_TILE_SET.has(currentType)) {
+      const eff = Number(logEff);
+      const label = eff >= 1.1 ? `connected \xd7${eff.toFixed(2)}`
+        : eff >= 0.95 ? `adjacent \xd7${eff.toFixed(2)}`
+        : `isolated \xd7${eff.toFixed(2)}`;
+      logisticsLine = `<div class="small"><b>Logistics:</b> ${label}</div>`;
+    }
+
     return `
       <div><b>Selected Tile</b></div>
       <div class="small" style="margin-top:6px;"><b>Coord:</b> (${tile.ix}, ${tile.iz}) | idx=${idx}</div>
@@ -83,6 +129,8 @@ export class InspectorPanel {
       <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
       <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
       <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
+      ${logisticsLine}
+      ${processingBlock}
       <details style="margin-top:8px;" open>
         <summary class="small"><b>Tile Context</b></summary>
         <div class="small" style="margin-top:6px;">

@@ -248,6 +248,19 @@ export class HUDController {
     this.latestDeathVal = document.getElementById("latestDeathVal");
     this.alertStack = document.getElementById("alertStack");
     this.foodRateBreakdown = document.getElementById("foodRateBreakdown");
+    this.woodRateBreakdown = document.getElementById("woodRateBreakdown");
+    this.stoneRateBreakdown = document.getElementById("stoneRateBreakdown");
+    this.herbsRateBreakdown = document.getElementById("herbsRateBreakdown");
+    this.mealsRateBreakdown = document.getElementById("mealsRateBreakdown");
+    this.toolsRateBreakdown = document.getElementById("toolsRateBreakdown");
+    this.medicineRateBreakdown = document.getElementById("medicineRateBreakdown");
+    this.foodRunoutHint = document.getElementById("foodRunoutHint");
+    this.mealsRunoutHint = document.getElementById("mealsRunoutHint");
+    this.herbsRunoutHint = document.getElementById("herbsRunoutHint");
+    this.medicineRunoutHint = document.getElementById("medicineRunoutHint");
+    this.toolsRunoutHint = document.getElementById("toolsRunoutHint");
+    this.stoneRunoutHint = document.getElementById("stoneRunoutHint");
+    this._lastRunoutSmoothed = {};
     this._lastResourceSnapshot = null;
     this._lastSnapshotSimSec = 0;
     this._lastComputedRates = null; // cached between windows so UI shows continuous values
@@ -655,29 +668,8 @@ export class HUDController {
         : `▼ ${rate.toFixed(1)}/min`;
     };
     const rates = this._lastComputedRates;
-    // v0.8.2 Round-1 01d-mechanics-content (Step 5) — Food-rate breakdown.
-    // Reviewer saw "Food -149.6/min" swing without knowing whether it was
-    // production dropping, consumption spiking, or spoilage. If the backend
-    // (ColonyPerceiver / ResourceSystem) has populated per-minute counters
-    // on state.metrics we surface them as `(prod +X / cons -Y / spoil -Z)`
-    // alongside the net rate. When the counters are missing we render an
-    // empty string so the UI never shows stale "—" noise.
-    if (this.foodRateBreakdown) {
-      const m = state.metrics ?? {};
-      const prod = Number(m.foodProducedPerMin ?? m.foodProduced ?? 0);
-      const cons = Number(m.foodConsumedPerMin ?? m.foodConsumed ?? 0);
-      const spoil = Number(m.foodSpoiledPerMin ?? m.foodSpoiled ?? 0);
-      const parts = [];
-      if (prod > 0.05) parts.push(`prod +${prod.toFixed(0)}`);
-      if (cons > 0.05) parts.push(`cons -${cons.toFixed(0)}`);
-      if (spoil > 0.05) parts.push(`spoil -${spoil.toFixed(0)}`);
-      // v0.8.2 Round-5 Wave-2 (01c-ui Step 3): when no channel crosses the
-      // visible threshold the backend is still warming up its 3-second
-      // sampling window. Render "(sampling…)" so players don't think the
-      // UI is broken.
-      this.foodRateBreakdown.textContent = parts.length > 0
-        ? `(${parts.join(" / ")})`
-        : "(sampling…)";
+    for (const r of ["food", "wood", "stone", "herbs", "meals", "tools", "medicine"]) {
+      this.#renderRateBreakdown(r, state);
     }
     if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food);
     if (this.woodRateVal) this.woodRateVal.textContent = formatRate(rates?.wood);
@@ -1443,6 +1435,7 @@ export class HUDController {
     // the prefix and the glossary copy is appended after " | ".
     this.#applyGlossaryTooltips();
 
+    this.#renderRunoutHints(state);
     // Colony Health Card — live status summary at top of Colony panel.
     this.#updateColonyHealthCard(state);
   }
@@ -1452,6 +1445,52 @@ export class HUDController {
    * Shows badge (THRIVING/STABLE/STRUGGLING/CRISIS), current day,
    * food rate, idle worker count, and threat level.
    */
+  #renderRateBreakdown(resource, state) {
+    const node = this[`${resource}RateBreakdown`];
+    if (!node) return;
+    const m = state.metrics ?? {};
+    const prod = Number(m[`${resource}ProducedPerMin`] ?? 0);
+    const cons = Number(m[`${resource}ConsumedPerMin`] ?? 0);
+    const spoil = resource === "food" ? Number(m.foodSpoiledPerMin ?? m.foodSpoiled ?? 0) : 0;
+    const parts = [];
+    if (prod > 0.05) parts.push(`prod +${prod.toFixed(0)}`);
+    if (cons > 0.05) parts.push(`cons -${cons.toFixed(0)}`);
+    if (spoil > 0.05) parts.push(`spoil -${spoil.toFixed(0)}`);
+    node.textContent = parts.length > 0 ? `(${parts.join(" / ")})` : "(sampling…)";
+  }
+
+  #renderRunoutHints(state) {
+    const m = state.metrics ?? {};
+    const res = state.resources ?? {};
+    for (const resource of ["food", "meals", "herbs", "medicine", "tools", "stone"]) {
+      const hintNode = this[`${resource}RunoutHint`];
+      if (!hintNode) continue;
+      const produced = Number(m[`${resource}ProducedPerMin`] ?? 0);
+      const consumed = Number(m[`${resource}ConsumedPerMin`] ?? 0);
+      const stock = Number(res[resource] ?? 0);
+      const netPerSec = (produced - consumed) / 60;
+      if (netPerSec >= -0.02 || stock <= 0) {
+        hintNode.textContent = "";
+        hintNode.className = "runout-hint";
+        this._lastRunoutSmoothed[resource] = undefined;
+        continue;
+      }
+      const rawRunout = stock / -netPerSec;
+      const prev = this._lastRunoutSmoothed[resource];
+      const smoothed = prev === undefined ? rawRunout : prev * 0.7 + rawRunout * 0.3;
+      this._lastRunoutSmoothed[resource] = smoothed;
+      if (smoothed >= 180) {
+        hintNode.textContent = "";
+        hintNode.className = "runout-hint";
+        continue;
+      }
+      const minutes = Math.floor(smoothed / 60);
+      const seconds = Math.floor(smoothed % 60);
+      hintNode.textContent = `\u2248 ${minutes}m ${seconds}s until empty`;
+      hintNode.className = smoothed < 60 ? "runout-hint warn-critical" : "runout-hint warn-soon";
+    }
+  }
+
   #updateColonyHealthCard(state) {
     const card = typeof document !== "undefined"
       ? document.getElementById("colonyHealthCard")

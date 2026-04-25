@@ -8,6 +8,8 @@ export class ProcessingSystem {
     this.name = "ProcessingSystem";
     // Track per-building processing cooldowns: Map<tileKey, { nextProcessSec }>
     this.buildingTimers = new Map();
+    // Reused every tick — length=0 reset avoids GC pressure from new Array.
+    this.snapshotBuffer = [];
   }
 
   update(dt, state) {
@@ -17,10 +19,83 @@ export class ProcessingSystem {
     this.#processKitchens(dt, state, nowSec);
     this.#processSmithies(dt, state, nowSec);
     this.#processClinics(dt, state, nowSec);
+    this.#emitSnapshot(state, nowSec);
   }
 
   #tileKey(ix, iz) {
     return `${ix},${iz}`;
+  }
+
+  #computeEffectiveCycle(state, kind) {
+    const toolMult = Number(state.gameplay?.toolProductionMultiplier ?? 1);
+    const isNight = Boolean(state.environment?.isNight);
+    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    const weather = state.weather?.current ?? "clear";
+    let cycleSec, weatherMult;
+    if (kind === "kitchen") {
+      cycleSec = Number(BALANCE.kitchenCycleSec ?? 3);
+      weatherMult = 1;
+    } else if (kind === "smithy") {
+      cycleSec = Number(BALANCE.smithyCycleSec ?? 8);
+      weatherMult = weather === "storm" ? 1.3 : weather === "rain" ? 1.1 : 1;
+    } else {
+      cycleSec = Number(BALANCE.clinicCycleSec ?? 4);
+      weatherMult = weather === "rain" ? 0.9 : weather === "drought" ? 1.2 : weather === "storm" ? 1.3 : 1;
+    }
+    return (cycleSec * nightPenalty * weatherMult) / toolMult;
+  }
+
+  #emitSnapshot(state, nowSec) {
+    this.snapshotBuffer.length = 0;
+    const grid = state.grid;
+    if (!grid?.tiles) { state.metrics.processing = this.snapshotBuffer; return; }
+
+    const foodCost = Number(BALANCE.kitchenFoodCost ?? 2);
+    const stoneCost = Number(BALANCE.smithyStoneCost ?? 3);
+    const woodCost = Number(BALANCE.smithyWoodCost ?? 2);
+    const herbsCost = Number(BALANCE.clinicHerbsCost ?? 2);
+    const kindForTile = {
+      [TILE.KITCHEN]: "kitchen",
+      [TILE.SMITHY]: "smithy",
+      [TILE.CLINIC]: "clinic",
+    };
+    const roleForKind = {
+      kitchen: ROLE.COOK,
+      smithy: ROLE.SMITH,
+      clinic: ROLE.HERBALIST,
+    };
+
+    const { width, height, tiles } = grid;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const tileType = tiles[ix + iz * width];
+        const kind = kindForTile[tileType];
+        if (!kind) continue;
+        const key = this.#tileKey(ix, iz);
+        const timer = this.buildingTimers.get(key);
+        const effectiveCycle = this.#computeEffectiveCycle(state, kind);
+        const remaining = timer ? (timer.nextProcessSec - nowSec) : effectiveCycle;
+        const progress01 = (timer && effectiveCycle > 0)
+          ? Math.min(1, Math.max(0, 1 - remaining / effectiveCycle))
+          : 0;
+        const etaSec = Math.max(0, remaining);
+        const workerPresent = this.#hasWorkerAtTile(state, ix, iz, roleForKind[kind]);
+        let inputOk;
+        if (kind === "kitchen") {
+          inputOk = (state.resources?.food ?? 0) >= foodCost;
+        } else if (kind === "smithy") {
+          inputOk = (state.resources?.stone ?? 0) >= stoneCost && (state.resources?.wood ?? 0) >= woodCost;
+        } else {
+          inputOk = (state.resources?.herbs ?? 0) >= herbsCost;
+        }
+        const stalled = !workerPresent || !inputOk;
+        const stallReason = !workerPresent
+          ? (kind === "kitchen" ? "no cook" : kind === "smithy" ? "no smith" : "no herbalist")
+          : (!inputOk ? "input shortage" : null);
+        this.snapshotBuffer.push({ kind, ix, iz, progress01, etaSec, workerPresent, stalled, stallReason, inputOk });
+      }
+    }
+    state.metrics.processing = this.snapshotBuffer;
   }
 
   #hasWorkerAtTile(state, ix, iz, requiredRole) {
