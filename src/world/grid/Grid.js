@@ -1026,9 +1026,16 @@ function ensureMinimumInfrastructure(tiles, width, height, seed) {
   }
 
   cursor = 0;
+  const _farmCx = Math.floor(width / 2);
+  const _farmCz = Math.floor(height / 2);
   while (farms < minFarm && cursor < farmCandidates.length) {
     const c = farmCandidates[cursor];
     cursor += 1;
+    // Skip tiles within 10 tiles of center — mirrors the radialZoneBias hard
+    // exclusion zone so fallback farms don't land at the spawn point.
+    const _fdx = c.ix - _farmCx;
+    const _fdz = c.iz - _farmCz;
+    if (_fdx * _fdx + _fdz * _fdz < 10 * 10) continue;
     const idx = toIndex(c.ix, c.iz, width);
     if (tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL || tiles[idx] === TILE.WAREHOUSE) continue;
     tiles[idx] = TILE.FARM;
@@ -2277,15 +2284,21 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   //   mid zone       ZONE_NEAR..FAR    : neutral
   //   far zone       dist >= ZONE_FAR  : bonus — reward exploring outward
   // Distances use Euclidean from grid center (spawn point).
-  const ZONE_NEAR = 8;
+  // ZONE_NEAR raised from 8→16 and max penalty raised from -1.8→-4.0 so that
+  // high moisture+road scores (up to ~2.3) can no longer overcome the penalty.
+  // Additionally, any tile within 12 tiles of center returns -Infinity so
+  // no blob center can ever be placed in the immediate spawn zone.
+  const ZONE_NEAR = 16;
   const ZONE_FAR = 25;
   const cx = (width - 1) / 2;
   const cz = (height - 1) / 2;
+  const ZONE_HARD_EXCLUSION = 12;
   function radialZoneBias(ix, iz) {
     const dx = ix - cx;
     const dz = iz - cz;
     const dist = Math.sqrt(dx * dx + dz * dz);
-    if (dist < ZONE_NEAR) return -1.8 * (1 - dist / ZONE_NEAR);
+    if (dist < ZONE_HARD_EXCLUSION) return -Infinity;
+    if (dist < ZONE_NEAR) return -4.0 * (1 - dist / ZONE_NEAR);
     if (dist >= ZONE_FAR) return 0.6 * Math.min(1, (dist - ZONE_FAR) / 15);
     return 0;
   }

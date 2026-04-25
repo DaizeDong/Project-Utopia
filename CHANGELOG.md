@@ -5,6 +5,9 @@
 **Scope:** Comprehensive UI polish pass (sidebar, status bar, Colony health card, dev tools separation, hotkey display, terrain overlay, tile info tooltip, fog fix, water hard-block) plus LLM agent context expansion (terrain/soil/node/connectivity aggregates, new fallback cases, bridge utility). No new tile types.
 
 ### New Features
+- **Multi-mode terrain overlay**: T key now cycles through 4 overlay modes — Fertility (moisture-based), Elevation, Connectivity (road proximity ≤3 tiles), and Node Health (soil exhaustion on FARM/LUMBER/QUARRY/HERB_GARDEN tiles). `terrainLensMode` string replaces the old `terrainLensActive` boolean. `#terrainLensLabel` floating pill label in top-left shows the active mode name when the overlay is on.
+- **Pressure lens UX**: Floating HTML labels projected from world coordinates now appear on each pressure marker (kind-colored border + short text). Persistent collapsible legend card in Colony sidebar lists all 7 marker kinds with color swatches. Labels hidden when lens is off.
+- **Terrain center-bias fix**: `ZONE_NEAR` raised 8→16, max penalty −1.8→−4.0; hard exclusion zone (dist<12 tiles from spawn returns −Infinity) prevents any resource blob from centering near spawn. `ensureMinimumInfrastructure` fallback farms also skip tiles within 10 tiles of center.
 - **UI overhaul**: Right sidebar with collapsible panels (Build/Colony/Settings/Debug); compact status bar (icon+number, no bars); Colony health card with THRIVING/STABLE/STRUGGLING/CRISIS badge; dev tools moved from Settings to Debug panel; sidebar tab divider; improved hotkey display in Build panel
 - **Tile info system**: Hover tooltip in Select mode showing tile type, elevation, moisture, fertility, building info; T key terrain fertility overlay; lens button active-state visual
 - **Terrain fog fix**: Fog-of-war DataTexture flipY=true, LinearFilter smooth edges, renderOrder=42 above all entities; fog correctly tracks worker positions

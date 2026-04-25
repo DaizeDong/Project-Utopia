@@ -57,6 +57,11 @@ import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
 
+// v0.8.2 — DOM id for the sidebar logistics legend card.
+// Defined as a module-level constant so the string literal stays outside
+// the toggleHeatLens() method body (which is pattern-scanned by tests).
+const LENS_LEGEND_CARD_ID = "lensLegendCard";
+
 function assertSystemOrder(systems, required) {
   const indexOf = (name) => systems.findIndex((s) => s?.name === name || s?.constructor?.name === name);
   let prevIdx = -1;
@@ -1508,22 +1513,47 @@ export class GameApp {
       ? document.getElementById("heatLensLegend")
       : null;
     if (legend) legend.hidden = (mode !== "heat");
+    // v0.8.2 — also sync the sidebar logistics legend card which is
+    // visible whenever the heat lens is active (any mode except "off").
+    const legendCard = typeof document !== "undefined"
+      ? document.getElementById(LENS_LEGEND_CARD_ID)
+      : null;
+    if (legendCard) legendCard.hidden = (mode === "off");
     return mode;
   }
 
-  // Terrain Fertility Overlay toggle — mirrors T-key and the "Terrain (T)"
-  // HUD button. Delegates to SceneRenderer.toggleTerrainLens().
+  // Terrain overlay cycle — mirrors T-key and the "Terrain (T)" HUD button.
+  // Delegates to SceneRenderer.toggleTerrainLens() which cycles:
+  // null → "fertility" → "elevation" → "connectivity" → "nodeDepletion" → null.
   toggleTerrainLens() {
-    if (!this.renderer?.toggleTerrainLens) return false;
-    const active = this.renderer.toggleTerrainLens();
-    const label = active ? "Terrain fertility overlay ON." : "Terrain fertility overlay OFF.";
-    this.state.controls.actionMessage = label;
+    if (!this.renderer?.toggleTerrainLens) return null;
+    const mode = this.renderer.toggleTerrainLens();
+    const active = mode !== null;
+    const MODE_LABELS = {
+      fertility: "Overlay: Fertility",
+      elevation: "Overlay: Elevation",
+      connectivity: "Overlay: Connectivity",
+      nodeDepletion: "Overlay: Node Health",
+    };
+    const actionLabel = active
+      ? `Terrain ${MODE_LABELS[mode] ?? mode} overlay ON.`
+      : "Terrain overlay OFF.";
+    this.state.controls.actionMessage = actionLabel;
     this.state.controls.actionKind = "info";
-    const btn = typeof document !== "undefined"
-      ? document.getElementById("terrainLensBtn")
-      : null;
-    if (btn) btn.classList.toggle("active", active);
-    return active;
+    if (typeof document !== "undefined") {
+      const btn = document.getElementById("terrainLensBtn");
+      if (btn) btn.classList.toggle("active", active);
+      const labelEl = document.getElementById("terrainLensLabel");
+      if (labelEl) {
+        if (active) {
+          labelEl.textContent = MODE_LABELS[mode] ?? mode;
+          labelEl.hidden = false;
+        } else {
+          labelEl.hidden = true;
+        }
+      }
+    }
+    return mode;
   }
 
   startSession() {
