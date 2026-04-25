@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-1 01a-onboarding: first-60s trust cleanup — silent halo, in-fiction LLM offline, hotkey-help truth-up, Vitals→Health
+
+**Scope:** Reviewer 01a-onboarding gave 3/10, citing "demo-grade noise" in the first 60 seconds: floating "halo" debug labels in the heat-lens overlay, red `AI proxy unreachable (...)` toast on every fresh launch (no API key locally), Help dialog claiming "0 resets camera" (it actually selects the kitchen tool), and `Vitals: hp=100.0/100.0 | hunger=0.639 | alive=true` rows that read like a debugger dump. All UI-only / string-only fixes — sim untouched.
+
+### New Features
+- **Heat-lens halo silenced** (`PressureLens.js`, `SceneRenderer.js`): Halo markers now ship with `label: ""` instead of the `"halo"` placeholder; `#updatePressureLensLabels` short-circuits to `display: none` for empty labels. Coloured rings still render (the visual halo stays); the dev placeholder no longer leaks into player view.
+- **In-fiction AI-offline messaging** (`GameApp.js`): The `actionMessage` strip on AI-proxy-down (`fetch failed`, timeout, etc.) and on AI-proxy-no-key now reads `"Story AI is offline — fallback director is steering. (Game still works.)"`. Original `err.message` is retained via `console.warn` + `pushWarning(state, ..., "ai-health")` so dev panels and browser console keep the diagnostic. `actionKind` flips from `error` to `info` (no red toast on first launch).
+- **R / Home reset camera + Help dialog truth-up** (`shortcutResolver.js`, `index.html`): `KeyR` added as a sibling to `Home` for resetCamera; `SHORTCUT_HINT` updated; Help → Controls page bullet now reads "R or Home resets camera (number keys 1-0/-/= are build tools)" instead of the old (incorrect) "0 resets camera". `Digit0` retains its kitchen-tool binding.
+- **Help default tab → Resource Chain** (`index.html`): First-time players opening Help now land on the Resource Chain primer (the actually-useful onboarding page) rather than the wall of hotkeys; Controls is one tab-click away.
+- **Health label replaces Vitals dump** (`EntityFocusPanel.js`): EntityFocusPanel's first-line stats now read `Health: Healthy (100%)` / `Wounded` / `Critical` / `Deceased` for casual profiles; the raw `hp=100.0/100.0 | hunger=0.639 | alive=true` row is preserved as a `Vitals (dev):` line gated behind `casual-hidden dev-only` (visible only in `?dev=1&ui=full`). The `Position: world=(...) tile=(...)` row also moves behind the dev gate — casual players never see fractional world coordinates.
+- **GameStateOverlay formatters exported** (`GameStateOverlay.js`): `formatTemplatePressure` / `formatTemplatePriority` exported so tests can lock the synchronous-briefing contract without spinning up the full overlay class.
+
+### New Tests
+- `test/onboarding-noise-reduction.test.js` — 6 cases across 3 suites: (a) menu briefing formatters return distinct strings per templateId (regression guard against "stale briefing" reports), (b) every halo marker carries `label === ""` (regression guard against the placeholder leaking back), (c) GameApp `actionMessage` assignments use in-fiction phrasing and never contain `WHISPER` / `LLM` / `API key` tokens.
+
+### Files Changed
+- `src/render/PressureLens.js` — halo marker `label: "halo"` → `label: ""` (Step 1).
+- `src/render/SceneRenderer.js` — `#updatePressureLensLabels` empty-label `display:none` short-circuit (Step 2).
+- `src/app/GameApp.js` — `actionMessage` rewrite + `pushWarning("ai-health")` capture for both proxy-down and no-API-key paths (Step 3).
+- `src/app/shortcutResolver.js` — `KeyR` reset-camera alias + updated `SHORTCUT_HINT` (Step 4).
+- `index.html` — Help dialog default-active tab swap (Controls → Resource Chain) + reset-camera bullet truth-up (Step 5).
+- `src/ui/panels/EntityFocusPanel.js` — `Health: <label> (<pct>%)` casual row + dev-only `Vitals (dev): hp=… hunger=… alive=…` row + Position row gated by `engClasses` (Steps 6, 7).
+- `src/ui/hud/GameStateOverlay.js` — export `formatTemplatePressure` / `formatTemplatePriority` (Step 10 test enabling).
+- `test/onboarding-noise-reduction.test.js` — new (Step 10).
+
+### Notes
+- Pre-existing test failures unrelated to this commit (build-spam wood cap, entity-pick-hitbox `ENTITY_PICK_FALLBACK_PX = 16` literal mismatch, event-log `building_destroyed` filter, ui-voice main.js dev-mode regex) were verified to fail on parent commit `2558cf1` and are not introduced by this work. Test deltas: 1299 pass / 4 fail / 2 skip (vs baseline 1293 pass / 4 fail / 2 skip — net **+6 passing**, no new red).
+- `freeze_policy: lifted` per plan frontmatter; this round's edits are UI-only / string-only and do not introduce new tile / building / tool / mood / score / audio asset / relationship mechanic surfaces.
+
 ## [Unreleased] - v0.8.2 Round-5b 01d-mechanics-content: processing snapshot + all-resource breakdown + runout ETA + Inspector processing block
 
 **Scope:** 4 reviewer gaps closed — building processing now visible in HUD + Inspector; all 7 resources show (prod/cons/spoil) breakdown; food/meals/herbs/medicine/tools/stone show runout ETA with warn-soon/warn-critical; clicking KITCHEN/SMITHY/CLINIC tile shows cycle%, ETA, worker presence, input status.

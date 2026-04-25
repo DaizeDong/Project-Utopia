@@ -438,6 +438,28 @@ export class EntityFocusPanel {
       ? Math.round(Math.max(0, Math.min(1, 1 - hungerN)) * 100)
       : null;
 
+    // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 6): humanise the Vitals row.
+    // Reviewer 01a-onboarding called out "hp=100.0/100.0 | hunger=0.639 |
+    // alive=true" as the canonical "looks like a debugger" line. We dual-track:
+    // a casual-friendly "Health: Healthy (100%)" row always visible, and the
+    // raw hp= / hunger= / alive= numbers retained behind the casual-hidden
+    // dev-only gate so power users keep their telemetry.
+    const alive = Boolean(entity.alive ?? true);
+    const hpPct = maxHp > 0
+      ? Math.round(Math.max(0, Math.min(1, hp / maxHp)) * 100)
+      : null;
+    const healthLabel = !alive
+      ? "Deceased"
+      : hpPct === null
+        ? "Unknown"
+        : hpPct >= 80
+          ? "Healthy"
+          : hpPct >= 50
+            ? "Wounded"
+            : "Critical";
+    const healthPctText = hpPct === null ? "" : ` (${hpPct}%)`;
+    const healthDeceasedSuffix = alive ? "" : " — deceased";
+
     // v0.8.2 Round-0 02d-roleplayer (Step 4) — Character block. Surfaces
     // data that already lived on the worker object (traits/mood/morale/
     // social/rest, relationships map, memory.recentEvents) so reviewers get
@@ -529,13 +551,14 @@ export class EntityFocusPanel {
       <div class="small"><b>Policy Influence:</b> applied=${String(Boolean(entity.debug?.policyApplied))} | topIntent=${escapeHtml(entity.debug?.policyTopIntent ?? "-")} | topWeight=${fmtNum(entity.debug?.policyTopWeight ?? 0, 2)} | policyDesired=${escapeHtml(entity.debug?.policyDesiredState ?? "-")}</div>
       <div class="small"><b>Decision Time:</b> sim=${simSec} | policyAt=${policySec} | envAt=${envSec}</div>
       ${engBlockClose}
-      <div class="small"><b>Position:</b> world=${vecFmt(entity.x, entity.z)} tile=(${posTile.ix}, ${posTile.iz})</div>
+      <div class="small ${engClasses}"><b>Position:</b> world=${vecFmt(entity.x, entity.z)} tile=(${posTile.ix}, ${posTile.iz})</div>
       ${engBlockOpen}
       <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx, entity.vz)} speed=${fmtNum(speed, 3)} | <b>Desired:</b> ${vecFmt(entity.desiredVel?.x, entity.desiredVel?.z)}</div>
       <div class="small"><b>Path:</b> idx=${entity.pathIndex ?? 0}/${pathLen} | next=${nextNode} | target=${target}</div>
       <div class="small"><b>Path Recalc:</b> ${fmtSec(entity.debug?.lastPathRecalcSec)} | <b>Path Grid:</b> ${entity.pathGridVersion ?? "-"} | <b>Path Traffic:</b> ${entity.pathTrafficVersion ?? 0}</div>
       ${engBlockClose}
-      <div class="small"><b>Vitals:</b> hp=${fmtNum(hp, 1)}/${fmtNum(maxHp, 1)} | hunger=${fmtNum(entity.hunger, 3)} | alive=${String(Boolean(entity.alive ?? true))}</div>
+      <div class="small"><b>Health:</b> ${escapeHtml(healthLabel)}${healthPctText}${healthDeceasedSuffix}</div>
+      <div class="small ${engClasses}"><b>Vitals (dev):</b> hp=${fmtNum(hp, 1)}/${fmtNum(maxHp, 1)} | hunger=${fmtNum(entity.hunger, 3)} | alive=${String(Boolean(entity.alive ?? true))}</div>
       <div class="small"><b>Carry:</b> food=${fmtNum(entity.carry?.food, 2)} wood=${fmtNum(entity.carry?.wood, 2)} | <b>Attack CD:</b> ${fmtNum(entity.attackCooldownSec ?? 0, 2)}</div>
       <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:8px 0;" class="${engClasses}" />
       <div class="small ${engClasses}"><b>Mode:</b> ${escapeHtml(this.state.ai.mode)} | <b>Policy Source:</b> ${escapeHtml(this.state.ai.lastPolicySource)} | <b>Model:</b> ${escapeHtml(this.state.ai.lastPolicyModel || this.state.metrics.proxyModel || "-")}</div>

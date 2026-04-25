@@ -14,7 +14,7 @@ export const TOOL_SHORTCUTS = Object.freeze({
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | Home reset camera | L heat lens | T terrain overlay | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | R or Home reset camera | L heat lens | T terrain overlay | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -53,6 +53,16 @@ export function resolveGlobalShortcut(event, context = {}) {
   const isActivePhase = context.phase === "active" || context.phase === undefined;
 
   if (code === "Home" || key === "home") {
+    if (!isActivePhase) return null;
+    return { type: "resetCamera" };
+  }
+  // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 4): KeyR is a familiar
+  // "reset" key; we add it as a sibling alias for Home so the Help dialog
+  // can advertise "R or Home resets camera" without breaking the existing
+  // Digit0 = kitchen tool binding. KeyR has no other registered handler in
+  // active phase. Matches uppercase ("R") and lowercase ("r") via key
+  // fallback for consistency with KeyL/KeyT.
+  if (code === "KeyR" || key === "r") {
     if (!isActivePhase) return null;
     return { type: "resetCamera" };
   }

@@ -1807,8 +1807,24 @@ export class SceneRenderer {
       const px = (VEC_TMP.x * 0.5 + 0.5) * vpW;
       const py = (-VEC_TMP.y * 0.5 + 0.5) * vpH;
 
+      // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 2): when a marker carries
+      // an explicit empty-string label (heat-lens halo markers, see
+      // PressureLens.js#buildHeatLens), suppress the label DOM entirely. We
+      // intentionally check `marker.label === ""` (NOT `?? ""`) so that an
+      // omitted label still falls back to `marker.kind` per the legacy
+      // behaviour. This prevents an empty <div> from rendering "halo" or
+      // dangling whitespace in the heat-lens overlay.
+      const rawLabel = marker.label;
+      const labelText = rawLabel === ""
+        ? ""
+        : String(rawLabel ?? marker.kind ?? "");
+      if (labelText === "") {
+        el.style.display = "none";
+        continue;
+      }
+
       el.dataset.kind = marker.kind ?? "";
-      el.textContent = String(marker.label ?? marker.kind ?? "");
+      el.textContent = labelText;
       el.style.left = `${Math.round(px + offsetLeft)}px`;
       el.style.top = `${Math.round(py + offsetTop)}px`;
       el.style.display = "block";

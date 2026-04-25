@@ -46,12 +46,17 @@ function formatTemplateLead(templateId) {
   return String(voice?.summary ?? template?.description ?? "Build and manage a colony.").trim();
 }
 
-function formatTemplatePressure(templateId) {
+// v0.8.2 Round-6 Wave-1 01a-onboarding (Step 10): exported so the
+// onboarding-noise-reduction test can assert template-switching produces
+// distinct briefing strings without mounting the full overlay class. The
+// reviewer's "briefing doesn't update" report was a UI render race; the
+// formatter itself is pure and synchronous.
+export function formatTemplatePressure(templateId) {
   const voice = getScenarioVoiceForTemplate(templateId);
   return `First pressure: ${String(voice?.openingPressure ?? voice?.hintInitial ?? "Open with a plan and keep the first route alive.").trim()}`;
 }
 
-function formatTemplatePriority(templateId) {
+export function formatTemplatePriority(templateId) {
   const voice = getScenarioVoiceForTemplate(templateId);
   return `First build: ${String(voice?.hintInitial ?? "Open with the first build that keeps food and wood moving.").trim()}`;
 }
