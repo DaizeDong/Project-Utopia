@@ -1160,6 +1160,11 @@ export class HUDController {
       this.aiAutopilotChip.setAttribute?.("data-ai-mode", status.aiMode);
       this.aiAutopilotChip.setAttribute?.("data-coverage", status.coverageTarget);
       this.aiAutopilotChip.setAttribute?.("title", status.title);
+      if (status.struggling) {
+        this.aiAutopilotChip.setAttribute?.("data-kind", "warn");
+      } else {
+        this.aiAutopilotChip.removeAttribute?.("data-kind");
+      }
     }
     if (this.aiToggleTop) this.aiToggleTop.checked = Boolean(state.ai?.enabled);
     if (this.aiToggleMirror) this.aiToggleMirror.checked = Boolean(state.ai?.enabled);
