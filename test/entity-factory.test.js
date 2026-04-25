@@ -22,10 +22,12 @@ import {
   createVisitor,
   createAnimal,
   WORKER_NAME_BANK,
+  SURNAME_BANK,
   buildWorkerBackstory,
 } from "../src/entities/EntityFactory.js";
 import { VISITOR_KIND, ANIMAL_KIND } from "../src/config/constants.js";
 import { resetIdsForTest } from "../src/app/id.js";
+import { setActiveUiProfile } from "../src/app/uiProfileState.js";
 
 // Tiny deterministic LCG matching EntityFactory's internal seed function.
 function seededRandom(seed = 1337) {
@@ -46,10 +48,12 @@ test("WORKER_NAME_BANK is a frozen, non-empty array of capitalised short names",
   }
 });
 
-test("createWorker.displayName matches /^[A-Z][a-z]+-\\d+$/ and is distinct from id", () => {
+test("createWorker.displayName (full profile) matches /^[A-Z][a-z]+-\\d+$/ and is distinct from id", () => {
+  setActiveUiProfile("full");
   resetIdsForTest();
   const rng = seededRandom(42);
   const worker = createWorker(0, 0, rng);
+  setActiveUiProfile("casual"); // restore default
   assert.match(worker.displayName, /^[A-Z][a-z]+-\d+$/);
   assert.notStrictEqual(worker.displayName, worker.id);
   // id itself should still be the canonical worker_N so downstream systems
@@ -102,4 +106,37 @@ test("createVisitor and createAnimal carry a stock backstory so EntityFocusPanel
   assert.strictEqual(saboteur.backstory, "roaming saboteur");
   assert.strictEqual(predator.backstory, "lone predator");
   assert.strictEqual(herbivore.backstory, "wild forager");
+});
+
+// v0.8.2 Round-5b (02e Step 7) — case (f): casual profile humanised name.
+test("(f) casual profile displayName is 'FirstName Surname' form", () => {
+  setActiveUiProfile("casual");
+  resetIdsForTest();
+  const rng = seededRandom(42);
+  const worker = createWorker(0, 0, rng);
+  setActiveUiProfile("casual"); // keep default
+  assert.match(worker.displayName, /^[A-Z][a-z]+ [A-Z][a-z]+$/,
+    `casual displayName should be "Name Surname", got: ${worker.displayName}`);
+  assert.notStrictEqual(worker.displayName, worker.id);
+});
+
+// v0.8.2 Round-5b (02e Step 7) — case (g): full profile keeps old format.
+test("(g) full profile displayName keeps /^[A-Z][a-z]+-\\d+$/ format", () => {
+  setActiveUiProfile("full");
+  resetIdsForTest();
+  const rng = seededRandom(42);
+  const worker = createWorker(0, 0, rng);
+  setActiveUiProfile("casual"); // restore default
+  assert.match(worker.displayName, /^[A-Z][a-z]+-\d+$/,
+    `full profile displayName should be "Name-N", got: ${worker.displayName}`);
+});
+
+// v0.8.2 Round-5b (02e Step 7) — SURNAME_BANK shape guard.
+test("SURNAME_BANK is frozen with 40 capitalized entries", () => {
+  assert.ok(Array.isArray(SURNAME_BANK));
+  assert.ok(Object.isFrozen(SURNAME_BANK));
+  assert.strictEqual(SURNAME_BANK.length, 40);
+  for (const name of SURNAME_BANK) {
+    assert.match(name, /^[A-Z][a-z]+$/, `SURNAME_BANK entry "${name}" must be capitalized`);
+  }
 });

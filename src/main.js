@@ -183,31 +183,35 @@ if (canvas) {
     });
     if (devOn) {
       window.__utopia = app;
+      window.__utopiaLongRun = {
+        getTelemetry: () => app?.getLongRunTelemetry?.() ?? null,
+        configure: (options) => app?.configureLongRunMode?.(options),
+        clearAiManualModeLock: () => app?.clearAiManualModeLock?.(),
+        setAiEnabled: (enabled, options) => app?.setAiEnabled?.(enabled, options),
+        startRun: () => app?.startSession?.(),
+        regenerate: (params, options) => {
+          const norm = normalizeRegenerateArgs(params);
+          return app?.regenerateWorld?.(norm, options) ?? null;
+        },
+        focusTile: (ix, iz, zoom) => app?.focusTile?.(ix, iz, zoom) ?? null,
+        focusEntity: (entityId, zoom) => app?.focusEntity?.(entityId, zoom) ?? null,
+        selectTile: (ix, iz, options) => app?.selectTile?.(ix, iz, options) ?? null,
+        selectEntity: (entityId, options) => app?.selectEntity?.(entityId, options) ?? false,
+        placeToolAt: (...args) => {
+          const norm = normalizePlaceToolArgs(args);
+          if (!norm.ok) return norm;
+          return app?.placeToolAt?.(norm.tool, norm.ix, norm.iz) ?? null;
+        },
+        placeFirstValidBuild: (tool, centerIx, centerIz, radius) =>
+          app?.placeFirstValidBuild?.(tool, centerIx, centerIz, radius) ?? null,
+        saveSnapshot: (slotId) => app?.saveSnapshot?.(slotId),
+        loadSnapshot: (slotId) => app?.loadSnapshot?.(slotId),
+      };
+    } else {
+      window.__utopia = undefined;
+      // Minimal stub so non-dev smoke scripts don't throw on __utopiaLongRun access.
+      window.__utopiaLongRun = { getTelemetry: () => null };
     }
-    window.__utopiaLongRun = {
-      getTelemetry: () => app?.getLongRunTelemetry?.() ?? null,
-      configure: (options) => app?.configureLongRunMode?.(options),
-      clearAiManualModeLock: () => app?.clearAiManualModeLock?.(),
-      setAiEnabled: (enabled, options) => app?.setAiEnabled?.(enabled, options),
-      startRun: () => app?.startSession?.(),
-      regenerate: (params, options) => {
-        const norm = normalizeRegenerateArgs(params);
-        return app?.regenerateWorld?.(norm, options) ?? null;
-      },
-      focusTile: (ix, iz, zoom) => app?.focusTile?.(ix, iz, zoom) ?? null,
-      focusEntity: (entityId, zoom) => app?.focusEntity?.(entityId, zoom) ?? null,
-      selectTile: (ix, iz, options) => app?.selectTile?.(ix, iz, options) ?? null,
-      selectEntity: (entityId, options) => app?.selectEntity?.(entityId, options) ?? false,
-      placeToolAt: (...args) => {
-        const norm = normalizePlaceToolArgs(args);
-        if (!norm.ok) return norm;
-        return app?.placeToolAt?.(norm.tool, norm.ix, norm.iz) ?? null;
-      },
-      placeFirstValidBuild: (tool, centerIx, centerIz, radius) =>
-        app?.placeFirstValidBuild?.(tool, centerIx, centerIz, radius) ?? null,
-      saveSnapshot: (slotId) => app?.saveSnapshot?.(slotId),
-      loadSnapshot: (slotId) => app?.loadSnapshot?.(slotId),
-    };
   } catch (err) {
     const message = String(err?.message ?? err ?? "Unknown startup failure");
     console.error("[Project Utopia] startup failed:", err);

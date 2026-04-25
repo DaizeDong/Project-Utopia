@@ -269,3 +269,46 @@ test("computeStorytellerStripModel: fallback-healthy vs fallback-degraded badgeS
   });
   assert.equal(degraded.badgeState, "fallback-degraded");
 });
+
+// v0.8.2 Round-5b (02e Step 7) — case (d): LLM-live + specific focusTag → voicePrefixText non-empty.
+test("(d) LLM-live + broken-routes focusTag → voicePrefixText non-empty, summaryText unchanged", () => {
+  const llmSummary = "Workers need to rebuild the broken route to the east depot.";
+  const state = {
+    world: { mapTemplateId: "fortified_basin" },
+    ai: {
+      lastPolicySource: "llm",
+      groupPolicies: new Map([
+        ["workers", { data: { focus: "rebuild the broken supply lane", summary: llmSummary } }],
+      ]),
+    },
+  };
+  const model = computeStorytellerStripModel(state);
+  assert.equal(model.mode, "llm");
+  // voicePrefixText should be set (overlay hit) because focusTag is "broken-routes"
+  // and fortified_basin has an entry for that bucket in AUTHOR_VOICE_PACK.
+  assert.equal(model.voicePackOverlayHit, true,
+    `expected voicePackOverlayHit=true for llm+broken-routes; got ${model.voicePackOverlayHit}`);
+  assert.ok(typeof model.voicePrefixText === "string" && model.voicePrefixText.length > 0,
+    "voicePrefixText should be non-empty for LLM-live broken-routes");
+  // summaryText must still contain the LLM output (not overwritten)
+  assert.ok(model.summaryText.length > 0, "summaryText must not be empty");
+});
+
+// v0.8.2 Round-5b (02e Step 7) — case (e): LLM-live + default focusTag → voicePrefixText empty.
+test("(e) LLM-live + default focusTag → voicePrefixText empty (no spurious overlay)", () => {
+  const state = {
+    world: { mapTemplateId: "fortified_basin" },
+    ai: {
+      lastPolicySource: "llm",
+      groupPolicies: new Map([
+        ["workers", { data: { focus: "general management", summary: "Keep hunger in check." } }],
+      ]),
+    },
+  };
+  const model = computeStorytellerStripModel(state);
+  assert.equal(model.mode, "llm");
+  assert.equal(model.voicePackOverlayHit, false,
+    "voicePackOverlayHit should be false for default focusTag");
+  assert.strictEqual(model.voicePrefixText, "",
+    "voicePrefixText should be empty when focusTag is 'default'");
+});
