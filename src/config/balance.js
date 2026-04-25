@@ -607,6 +607,20 @@ export const BALANCE = Object.freeze({
   heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
 });
 
+// v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
+export const CASUAL_UX = Object.freeze({
+  errToastMs: 3500,
+  warnToastMs: 2600,
+  successToastMs: 1400,
+  struggleBannerGraceSec: 20,
+  struggleFoodPctOfEmergency: 1.1,
+  toolTierUnlockTimeSec: Object.freeze({ secondary: 180, advanced: 360 }),
+  toolTierUnlockBuildings: Object.freeze({
+    secondary: Object.freeze({ warehouses: 1 }),
+    advanced: Object.freeze({ farms: 3, lumbers: 1 }),
+  }),
+});
+
 // --- Terrain depth constants ---
 
 export const RUIN_SALVAGE = Object.freeze({

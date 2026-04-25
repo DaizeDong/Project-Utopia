@@ -1030,5 +1030,20 @@ export class BuildToolbar {
     if (this.terrainSettlementDensityLabel) this.terrainSettlementDensityLabel.textContent = `${Math.round(tuned.settlementDensity * 100)}%`;
     if (this.terrainWallModeSelect) this.#setFieldValueIfIdle(this.terrainWallModeSelect, tuned.wallMode);
     if (this.terrainOceanSideSelect) this.#setFieldValueIfIdle(this.terrainOceanSideSelect, tuned.oceanSide);
+
+    this.#refreshToolTier(this.state);
+  }
+
+  #refreshToolTier(state) {
+    if (typeof document === "undefined") return;
+    const unlock = state?.services?.balance?.casualUx?.toolTierUnlockBuildings ?? {};
+    const unlockT = state?.services?.balance?.casualUx?.toolTierUnlockTimeSec ?? {};
+    const ts = Number(state?.metrics?.timeSec ?? 0);
+    const bld = state?.buildings ?? {};
+    const meetsBuildings = (req) => Object.entries(req ?? {}).every(([k, v]) => Number(bld[k] ?? 0) >= Number(v));
+    const tiers = ["primary"];
+    if (ts >= Number(unlockT.secondary ?? 180) || meetsBuildings(unlock.secondary)) tiers.push("secondary");
+    if (ts >= Number(unlockT.advanced ?? 360) || meetsBuildings(unlock.advanced)) tiers.push("advanced");
+    document.body.dataset.toolTierUnlocked = tiers.join(" ");
   }
 }
