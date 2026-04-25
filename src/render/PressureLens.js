@@ -541,6 +541,15 @@ export function buildHeatLens(state) {
       // empty) so we keep the halo's coloured disc/ring without leaking the
       // dev placeholder into the player's eye-line. (Per summary §2 D1,
       // 01a/01b/02b agree on label="" as the Wave-1 floor.)
+      // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 4) — hoverTooltip
+      // ADD-ONLY field. Per Stage B summary §2 D1, Wave-1 has locked the
+      // label="" floor on this exact line; "near <parent>" is exposed as a
+      // separate `hoverTooltip` payload so the SceneRenderer can wire it up
+      // on pointer-enter without re-rendering the visible label string.
+      const parentLabelText = String(parent?.label ?? "").trim();
+      const hoverTooltip = parentLabelText.length > 0
+        ? `near ${parentLabelText}`
+        : "";
       pushUniqueMarker(markers, {
         id: `halo:${parent.id}:${dx}:${dz}`,
         kind: parent.kind,
@@ -550,6 +559,7 @@ export function buildHeatLens(state) {
         weight: Number(parent.weight ?? 0.9) * 0.55,
         priority: Number(parent.priority ?? 100) - 10,
         label: "",
+        hoverTooltip,
       }, seen);
     }
   }
