@@ -13,6 +13,7 @@ import { enqueueEvent } from "../../world/events/WorldEventQueue.js";
 import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
+import { recordProductionEntry } from "../economy/ResourceSystem.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -756,6 +757,25 @@ export function handleHarvest(worker, state, services, dt) {
           }
         }
       }
+      // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — production
+      // telemetry for InspectorPanel "Last Yield" / "Idle Reason". Reads
+      // the latest tile-state to derive an idle reason when this completion
+      // tick produced 0 (depleted node / fallow soil); reports farmAmount
+      // (the credited yield, post-refund).
+      if (worker.targetTile) {
+        const ts = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+        const reason = (Number(ts?.fertility ?? 1) <= 0 && Number(ts?.fallowUntil ?? 0) > 0)
+          ? "fallow soil"
+          : ((Number(ts?.yieldPool ?? 0) <= 0) ? "depleted node" : null);
+        recordProductionEntry(
+          state,
+          worker.targetTile.ix,
+          worker.targetTile.iz,
+          "farm",
+          Math.max(0, Number(farmAmount) || 0),
+          reason,
+        );
+      }
     }
   } else if (effectiveRole === ROLE.STONE) {
     worker.debug ??= {};
@@ -768,6 +788,10 @@ export function handleHarvest(worker, state, services, dt) {
     // v0.8.0 Phase 3 M1a: decrement the STONE node yieldPool on the completion tick.
     if (preCooldown > 0 && worker.cooldown <= 0 && worker.targetTile) {
       applyNodeYieldHarvest(state, worker, "stone", stoneAmount);
+      // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — telemetry.
+      const ts = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      const reason = (Number(ts?.yieldPool ?? 0) <= 0) ? "depleted node" : null;
+      recordProductionEntry(state, worker.targetTile.ix, worker.targetTile.iz, "quarry", Math.max(0, Number(stoneAmount) || 0), reason);
     }
   } else if (effectiveRole === ROLE.HERBS) {
     const herbFertility = worker.targetTile ? getTileFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz) : 1;
@@ -781,6 +805,12 @@ export function handleHarvest(worker, state, services, dt) {
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
       if (preCooldown > 0) applyNodeYieldHarvest(state, worker, "herbs", herbAmount);
+      // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — telemetry.
+      const ts = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      const reason = (Number(ts?.yieldPool ?? 0) <= 0)
+        ? "depleted node"
+        : ((Number(ts?.fertility ?? 1) <= 0) ? "fallow soil" : null);
+      recordProductionEntry(state, worker.targetTile.ix, worker.targetTile.iz, "herb_garden", Math.max(0, Number(herbAmount) || 0), reason);
     }
   } else {
     const doctrine = Number(state.gameplay?.modifiers?.lumberYield ?? 1);
@@ -794,6 +824,12 @@ export function handleHarvest(worker, state, services, dt) {
     if (worker.cooldown <= 0 && worker.targetTile) {
       drainFertility(state.grid, worker.targetTile.ix, worker.targetTile.iz);
       if (preCooldown > 0) applyNodeYieldHarvest(state, worker, "wood", woodAmount);
+      // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — telemetry.
+      const ts = getTileState(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+      const reason = (Number(ts?.yieldPool ?? 0) <= 0)
+        ? "depleted node"
+        : ((Number(ts?.fertility ?? 1) <= 0) ? "fallow soil" : null);
+      recordProductionEntry(state, worker.targetTile.ix, worker.targetTile.iz, "lumber", Math.max(0, Number(woodAmount) || 0), reason);
     }
   }
 }

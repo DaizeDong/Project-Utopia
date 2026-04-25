@@ -41,6 +41,57 @@ function ensureResourceFlowState(state) {
 }
 
 /**
+ * v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — per-tile production
+ * telemetry. WorkerAISystem's farm/lumber/quarry/herb harvest paths call
+ * `recordProductionEntry(state, ix, iz, kind, lastYield, idleReason)` on the
+ * harvest completion tick; InspectorPanel then reads
+ * `state.metrics.production.byTile.get("ix,iz")` to render a "Last Yield" /
+ * "Idle Reason" line for FARM/LUMBER/QUARRY/HERB_GARDEN/WAREHOUSE tiles.
+ *
+ * Map shape (also documented in Stage B summary §3 Wave-2 locked-against-
+ * rewrite list):
+ *   state.metrics.production = {
+ *     byTile: Map<"ix,iz", { kind, lastYield, lastTickSec, idleReason|null }>,
+ *     lastUpdatedSec: number,
+ *   }
+ *
+ * The Map instance is created lazily ONCE per state and reused across ticks
+ * (no per-tick re-allocation) to keep GC pressure flat on the 96×72 grid.
+ *
+ * @param {object} state - Game state root.
+ * @param {number} ix - Tile column.
+ * @param {number} iz - Tile row.
+ * @param {"farm"|"lumber"|"quarry"|"herb_garden"|"warehouse"} kind
+ * @param {number} lastYield - Carry units credited on this completion tick.
+ * @param {string|null} idleReason - Optional reason ("depleted node",
+ *   "fallow soil", "no worker") set when the tile produced 0; pass null for
+ *   normal harvests.
+ */
+export function recordProductionEntry(state, ix, iz, kind, lastYield, idleReason = null) {
+  if (!state) return;
+  if (!Number.isFinite(ix) || !Number.isFinite(iz)) return;
+  if (!state.metrics) state.metrics = {};
+  let prod = state.metrics.production;
+  if (!prod || !(prod.byTile instanceof Map)) {
+    prod = { byTile: new Map(), lastUpdatedSec: 0 };
+    state.metrics.production = prod;
+  }
+  const key = `${ix},${iz}`;
+  const tickSec = Number(state.metrics.timeSec ?? 0);
+  // Reuse existing entry if present (avoid per-call object alloc on hot path).
+  let entry = prod.byTile.get(key);
+  if (!entry) {
+    entry = { kind, lastYield: 0, lastTickSec: 0, idleReason: null };
+    prod.byTile.set(key, entry);
+  }
+  entry.kind = kind;
+  entry.lastYield = Number(lastYield ?? 0);
+  entry.lastTickSec = tickSec;
+  entry.idleReason = idleReason ?? null;
+  prod.lastUpdatedSec = tickSec;
+}
+
+/**
  * True-source resource flow emitter. Called by ProcessingSystem (farm
  * harvest, kitchen consumption, spoilage) and MortalitySystem (medicine
  * heal) so HUDController can render a breakdown. Safe to call with 0 or
