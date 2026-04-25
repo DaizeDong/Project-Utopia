@@ -1512,6 +1512,15 @@
     /* Step 14 — Scenario pill: remove forced uppercase */
     .overlay-scenario-badge { text-transform: none !important; letter-spacing: normal !important; }
 
+    /* Round 5b / 01d-mechanics-content — resource runout ETA hints */
+    .runout-hint { font-size: 10px; margin-left: 4px; }
+    .runout-hint.warn-soon { color: #c18; }
+    .runout-hint.warn-critical { color: #f33; animation: flashWarn 1s infinite; }
+    @keyframes flashWarn { 50% { opacity: 0.4; } }
+    @media (prefers-reduced-motion: reduce) {
+      .runout-hint.warn-critical { animation: none; }
+    }
+
   </style>
 </head>
 <body>
@@ -1864,20 +1873,20 @@
         <details class="card" data-panel-key="resources" open>
           <summary>Resources</summary>
           <div class="panel-body">
-            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span><span id="foodRateBreakdown" class="small muted" style="margin-left:4px;">—</span></div></div>
+            <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span><span id="foodRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="foodRunoutHint" class="runout-hint"></span></div></div>
             <div class="bar"><div id="foodBar"></div></div>
-            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span></div></div>
+            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span><span id="woodRateBreakdown" class="small muted" style="margin-left:4px;">—</span></div></div>
             <div class="bar"><div id="woodBar"></div></div>
-            <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div><span id="stoneVal">0</span><span id="stoneRateVal" class="hud-rate">—</span></div></div>
+            <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div><span id="stoneVal">0</span><span id="stoneRateVal" class="hud-rate">—</span><span id="stoneRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="stoneRunoutHint" class="runout-hint"></span></div></div>
             <div class="bar"><div id="stoneBar" style="background:linear-gradient(90deg,#a0896e,#8b7d6b)"></div></div>
-            <div class="kv" style="margin-top:6px" title="Gathered from herb gardens, refined into medicine"><div>Herbs</div><div><span id="herbsVal">0</span><span id="herbsRateVal" class="hud-rate">—</span></div></div>
+            <div class="kv" style="margin-top:6px" title="Gathered from herb gardens, refined into medicine"><div>Herbs</div><div><span id="herbsVal">0</span><span id="herbsRateVal" class="hud-rate">—</span><span id="herbsRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="herbsRunoutHint" class="runout-hint"></span></div></div>
             <div class="bar"><div id="herbsBar" style="background:linear-gradient(90deg,#7bb86a,#5a9a4a)"></div></div>
             <div style="margin-top:8px; border-top:1px solid var(--divider); padding-top:6px">
-              <div class="kv" title="Cooked in kitchens from food, provides 2x hunger recovery"><div>Meals</div><div><span id="mealsVal">0</span><span id="mealsRateVal" class="hud-rate">—</span></div></div>
+              <div class="kv" title="Cooked in kitchens from food, provides 2x hunger recovery"><div>Meals</div><div><span id="mealsVal">0</span><span id="mealsRateVal" class="hud-rate">—</span><span id="mealsRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="mealsRunoutHint" class="runout-hint"></span></div></div>
               <div class="bar"><div id="mealsBar" style="background:linear-gradient(90deg,#d4a65a,#c89040)"></div></div>
-              <div class="kv" style="margin-top:6px" title="Forged in smithies from stone+wood, boosts harvest speed by 15%"><div>Tools</div><div><span id="toolsVal">0</span><span id="toolsRateVal" class="hud-rate">—</span></div></div>
+              <div class="kv" style="margin-top:6px" title="Forged in smithies from stone+wood, boosts harvest speed by 15%"><div>Tools</div><div><span id="toolsVal">0</span><span id="toolsRateVal" class="hud-rate">—</span><span id="toolsRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="toolsRunoutHint" class="runout-hint"></span></div></div>
               <div class="bar"><div id="toolsBar" style="background:linear-gradient(90deg,#8c7a6b,#706050)"></div></div>
-              <div class="kv" style="margin-top:6px" title="Produced in clinics from herbs, heals injured workers"><div>Medicine</div><div><span id="medicineVal">0</span><span id="medicineRateVal" class="hud-rate">—</span></div></div>
+              <div class="kv" style="margin-top:6px" title="Produced in clinics from herbs, heals injured workers"><div>Medicine</div><div><span id="medicineVal">0</span><span id="medicineRateVal" class="hud-rate">—</span><span id="medicineRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="medicineRunoutHint" class="runout-hint"></span></div></div>
               <div class="bar"><div id="medicineBar" style="background:linear-gradient(90deg,#c4d8c0,#90b88a)"></div></div>
             </div>
           </div>

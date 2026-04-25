@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-5b 01d-mechanics-content: processing snapshot + all-resource breakdown + runout ETA + Inspector processing block
+
+**Scope:** 4 reviewer gaps closed — building processing now visible in HUD + Inspector; all 7 resources show (prod/cons/spoil) breakdown; food/meals/herbs/medicine/tools/stone show runout ETA with warn-soon/warn-critical; clicking KITCHEN/SMITHY/CLINIC tile shows cycle%, ETA, worker presence, input status.
+
+### New Features
+- **ProcessingSystem snapshot** (`ProcessingSystem.js`): `#emitSnapshot` scans all KITCHEN/SMITHY/CLINIC tiles each tick, writes `state.metrics.processing = [{kind, ix, iz, progress01, etaSec, workerPresent, stalled, stallReason, inputOk}]` reusing `snapshotBuffer` in-place to avoid GC pressure.
+- **All-resource rate breakdown** (`HUDController.js`): Generic `#renderRateBreakdown(resource, state)` helper replaces food-only block; now covers wood/stone/herbs/meals/tools/medicine too. Each resource row shows `(prod +X / cons -Y)` breakdown from `state.metrics.*ProducedPerMin / *ConsumedPerMin`.
+- **Runout ETA hints** (`HUDController.js`, `index.html`): `#renderRunoutHints` computes `netPerSec = (produced - consumed) / 60`; when negative and `runoutSec < 180` shows `≈ Xm Ys until empty`. EMA smoothing (α=0.3) prevents flicker. Class `warn-soon` (pink) at <180s, `warn-critical` (red flash) at <60s. Wood excluded (long-term axis). 5 resources: food/meals/herbs/medicine/tools/stone.
+- **Inspector processing block** (`InspectorPanel.js`): When KITCHEN/SMITHY/CLINIC tile is selected, finds matching `state.metrics.processing` entry and renders `<details open><summary>Processing</summary>` with cycle%, ETA, worker present/missing, input status, stall reason.
+- **Inspector logistics efficiency line** (`InspectorPanel.js`): For all production tiles (FARM/LUMBER/QUARRY/HERB_GARDEN/WAREHOUSE/KITCHEN/SMITHY/CLINIC), surfaces `state.metrics.logistics.buildingEfficiency[key]` as `Logistics: connected ×1.15 | isolated ×0.85`.
+- **DOM spans** (`index.html`): 6 `*RateBreakdown` spans + 6 `*RunoutHint` spans added to resource rows; CSS `.runout-hint / .warn-soon / .warn-critical / @keyframes flashWarn` + reduce-motion guard.
+
+### New Tests
+- `test/processingSnapshot.test.js` — 5 cases: snapshot length, kitchen entry correctness, smithy stall, progress monotonicity, snapshotBuffer reuse.
+- `test/inspectorProcessingBlock.test.js` — 5 cases: Processing block presence, Cycle% display, ETA display, stall text, grass tile exclusion.
+- `test/resourceRunoutEta.test.js` — 5 cases: warn-soon trigger, warn-critical trigger, surplus clears hint, >180s hint suppressed, wood not tracked.
+
+### Files Changed
+- `src/simulation/economy/ProcessingSystem.js` — `snapshotBuffer`, `#computeEffectiveCycle` helper, `#emitSnapshot` grid scan
+- `src/ui/hud/HUDController.js` — 6 breakdown + 6 runout DOM refs; `#renderRateBreakdown`; `#renderRunoutHints`; `_lastRunoutSmoothed`
+- `src/ui/panels/InspectorPanel.js` — processing block + logistics efficiency line in `#renderTileSection`
+- `index.html` — 12 new spans (6 rateBreakdown + 6 runoutHint) + runout-hint CSS block
+
 ## [Unreleased] - v0.8.2 Round-5b 01c-ui: HUD height var + Heat Lens halo + responsive breakpoints + KPI typography + boot splash
 
 **Scope:** 12 of 17 reviewer UI findings fixed across ui/render layers.
