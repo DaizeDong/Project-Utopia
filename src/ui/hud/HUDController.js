@@ -1033,10 +1033,21 @@ export class HUDController {
         // pre-computed whisperBlockedReason from model.diagnostic so the
         // hover tooltip answers "why isn't WHISPER on?" without requiring
         // the player to open a debug panel.
+        //
+        // v0.8.2 Round-6 Wave-1 01b-playability (Step 5) — gate the
+        // engineer-facing dev string behind `state.controls.devMode`. The
+        // in-fiction `whisperBlockedReason` (e.g. "Story Director:
+        // pondering") is fine to surface to casual players; the
+        // `whisperBlockedReasonDev` ("LLM errored (http)") only appears when
+        // dev mode is explicitly enabled.
+        const isDevMode = Boolean(state.controls?.devMode);
+        const diagText = isDevMode
+          ? (model.diagnostic?.whisperBlockedReasonDev ?? model.diagnostic?.whisperBlockedReason ?? "")
+          : (model.diagnostic?.whisperBlockedReason ?? "");
         const diagSuffix = (model.diagnostic
             && model.badgeState !== "llm-live"
-            && model.diagnostic.whisperBlockedReason)
-          ? ` \u2014 Why no WHISPER?: ${model.diagnostic.whisperBlockedReason}`
+            && diagText)
+          ? ` \u2014 Why no WHISPER?: ${diagText}`
           : "";
         const tooltipText = `${degradedPrefix}${tagFrag}[${model.prefix}] ${model.focusText}${summaryWithSeparator}${beatFrag}${diagSuffix}`;
         this.storytellerStrip.setAttribute?.("title", tooltipText);
@@ -1044,12 +1055,20 @@ export class HUDController {
         // #storytellerWhyNoWhisper span so CSS selectors / tests can
         // read the reason without parsing the tooltip string. Hidden
         // when llm-live (reason is not applicable); shown otherwise.
+        //
+        // v0.8.2 Round-6 Wave-1 01b-playability (Step 5) — same dev-mode
+        // gate as the tooltip suffix above: casual players see the
+        // in-fiction whisperBlockedReason; dev-mode appends the engineer
+        // string. Empty when dev-mode is off AND there is no in-fiction
+        // reason (defence in depth, should not happen post-Step 4).
         if (typeof document !== "undefined") {
           const whySpan = document.getElementById("storytellerWhyNoWhisper");
           if (whySpan) {
-            const reason = model.diagnostic?.whisperBlockedReason ?? "";
-            if (model.badgeState !== "llm-live" && reason) {
-              whySpan.textContent = `Why no WHISPER?: ${reason}`;
+            const reasonText = isDevMode
+              ? (model.diagnostic?.whisperBlockedReasonDev ?? model.diagnostic?.whisperBlockedReason ?? "")
+              : (model.diagnostic?.whisperBlockedReason ?? "");
+            if (model.badgeState !== "llm-live" && reasonText) {
+              whySpan.textContent = `Why no WHISPER?: ${reasonText}`;
               if (whySpan.hasAttribute?.("hidden")) whySpan.removeAttribute?.("hidden");
             } else {
               whySpan.textContent = "";

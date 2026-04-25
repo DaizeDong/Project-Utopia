@@ -291,6 +291,24 @@ export function buildHeatLens(state) {
   const resources = state.resources ?? {};
   const markers = [];
   const seen = new Set();
+  // v0.8.2 Round-6 Wave-1 01b-playability (Step 3) — primary-marker dedup by
+  // tileKey, regardless of kind. Each colony tile gets at most one main heat
+  // marker (RED > BLUE > warehouse-idle). The `pushUniqueMarker` `seen` set
+  // already deduplicates by full marker id, but ids carry a kind prefix, so
+  // RED+BLUE on the same tile would historically have produced two stacked
+  // labels. The tile-keyed map below makes the priority order explicit and
+  // makes the heat-lens overlay readable when multiple categories alias to
+  // the same square.
+  const PRIMARY_PRIORITY = { heat_surplus: 3, heat_starved: 2 };
+  const primaryByKey = new Map();
+  const tryPushPrimary = (marker) => {
+    const k = tileKey(marker.ix, marker.iz);
+    const existingPriority = primaryByKey.get(k) ?? 0;
+    const incomingPriority = PRIMARY_PRIORITY[marker.kind] ?? 1;
+    if (incomingPriority <= existingPriority) return;
+    primaryByKey.set(k, incomingPriority);
+    pushUniqueMarker(markers, marker, seen);
+  };
   let firstSmithy = null;
   let hasQuarry = false;
   // Spec § 6: blue warehouses are "< 20% capacity" analogue — we treat an empty
@@ -298,8 +316,14 @@ export function buildHeatLens(state) {
   const STARVATION_FRACTION = 0.2;
 
   // Budget: cap primary markers; halo pass can grow to MAX_HEAT_MARKERS_HALO.
+  // v0.8.2 Round-6 Wave-1 01b-playability (Step 1) — drop the halo budget from
+  // 160 to 64. With label="" (01a Step 1) the halo discs/rings only contribute
+  // visual pulse, not text — so the per-tile information density was lower than
+  // 160 markers' worth of overdraw warranted. 64 keeps "1 main marker + up to
+  // 4 neighbours" room for ~12 simultaneous primary RED/BLUE markers, which
+  // covers any realistic late-game economy without flooding the overlay.
   const MAX_HEAT_MARKERS = 48;
-  const MAX_HEAT_MARKERS_HALO = 160;
+  const MAX_HEAT_MARKERS_HALO = 64;
 
   for (let iz = 0; iz < height && markers.length < MAX_HEAT_MARKERS; iz += 1) {
     for (let ix = 0; ix < width && markers.length < MAX_HEAT_MARKERS; ix += 1) {
@@ -311,7 +335,7 @@ export function buildHeatLens(state) {
       // RED — raw producer beside a saturated warehouse.
       if (HEAT_PRODUCER_TILES.includes(tileType)) {
         if (anyHotWarehouseAdjacent(state, ix, iz)) {
-          pushUniqueMarker(markers, {
+          tryPushPrimary({
             id: `heat-red:${key}`,
             kind: "heat_surplus",
             ix,
@@ -320,7 +344,7 @@ export function buildHeatLens(state) {
             weight: 0.9,
             priority: 118,
             label: "supply surplus",
-          }, seen);
+          });
         }
         continue;
       }
@@ -329,7 +353,7 @@ export function buildHeatLens(state) {
       const processorCheck = HEAT_PROCESSOR_INPUT_CHECK[tileType];
       if (typeof processorCheck === "function") {
         if (processorCheck(resources)) {
-          pushUniqueMarker(markers, {
+          tryPushPrimary({
             id: `heat-blue:${key}`,
             kind: "heat_starved",
             ix,
@@ -338,7 +362,7 @@ export function buildHeatLens(state) {
             weight: 0.82,
             priority: 116,
             label: "input starved",
-          }, seen);
+          });
         }
         continue;
       }
@@ -351,7 +375,7 @@ export function buildHeatLens(state) {
         if (density && density.byKey && Object.prototype.hasOwnProperty.call(density.byKey, key)) {
           const fraction = warehouseStarvationScore(state, key);
           if (fraction < STARVATION_FRACTION) {
-            pushUniqueMarker(markers, {
+            tryPushPrimary({
               id: `heat-blue:${key}`,
               kind: "heat_starved",
               ix,
@@ -360,7 +384,7 @@ export function buildHeatLens(state) {
               weight: 0.68,
               priority: 110,
               label: "warehouse idle",
-            }, seen);
+            });
           }
         }
       }
@@ -374,7 +398,7 @@ export function buildHeatLens(state) {
     && Number(resources.stone ?? 0) <= 0
     && markers.length < MAX_HEAT_MARKERS
   ) {
-    pushUniqueMarker(markers, {
+    tryPushPrimary({
       id: `heat-blue:${firstSmithy.key}:stone-empty`,
       kind: "heat_starved",
       ix: firstSmithy.ix,
@@ -383,7 +407,7 @@ export function buildHeatLens(state) {
       weight: 0.82,
       priority: 116,
       label: "stone input empty",
-    }, seen);
+    });
   }
 
   // Halo pass: for each primary marker, emit 4-way neighbourhood secondaries.

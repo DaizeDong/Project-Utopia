@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-1 01b-playability: HUD signal denoising — halo cap 64, primary-marker dedup, in-fiction WHISPER reason, threat-gated raid pulse
+
+**Scope:** Reviewer 01b-playability gave 3/10, citing three root causes: (i) Heat Lens halo overlay flooded the map with up to 160 silent markers (visual noise even after 01a silenced the labels); (ii) `Why no WHISPER?` storyteller tooltip leaked engineer phrasing (`LLM errored (http)`, `LLM never reached`) directly to casual players; (iii) the Population panel reported `Workers 0` while the HUD top bar said `Workers 13` because `BuildToolbar.#syncPopulationTargetsFromWorld` excluded stress workers. Plus Survival mode had no death threat — 4-seed bench raids fired but never visited the player early enough to feel risky. Step 10 closes that loop with a threat-gated saboteur micro-pulse, gated by `BALANCE.raidDeathBudget` so 4-seed bench (deaths ≤ 499 / DevIndex median ≥ 42) stays inside its lanes.
+
+### New Features
+- **Halo budget 160 → 64** (`PressureLens.js`): With `label=""` (01a Step 1), halo discs/rings only carry visual pulse, not text; 64 leaves room for ~12 simultaneous primary RED/BLUE markers + 4 neighbours each, which covers any realistic late-game economy without flooding the overlay. (Step 1)
+- **Primary heat marker dedup by tileKey** (`PressureLens.js`): Each colony tile now holds at most one main heat marker (RED `heat_surplus` > BLUE `heat_starved` > warehouse-idle). Switches the existing `seen` id-set to a `primaryByKey` Map keyed on `${ix},${iz}` with explicit priority. Halo markers (id starting with `halo:`) are exempt — they intentionally render adjacent. (Step 3)
+- **In-fiction `whisperBlockedReason` + dev field** (`storytellerStrip.js`): Player-facing tooltip now reads `Story Director: pondering / settling in / relying on rule-set / catching breath / speaking / warming up`. The original engineer strings (`LLM errored (http)`, `LLM never reached`, etc.) are preserved on `diagnostic.whisperBlockedReasonDev` so dev-mode HUD overlays and existing tests can still read them. Per Round-6 summary §3 D2 the dev field name is locked across Wave-1 plans (01b/01c/02b). (Step 4)
+- **Dev-mode gate on `Why no WHISPER?` tooltip / span** (`HUDController.js`): When `state.controls.devMode === true`, the tooltip suffix and `#storytellerWhyNoWhisper` span show the engineer string; otherwise both surface the in-fiction reason. (Step 5)
+- **Population panel workers single source** (`BuildToolbar.js`): `#syncPopulationTargetsFromWorld` now counts the full `agent.type === "WORKER"` set (base + stress) instead of `!isStressWorker` only. Resolves the `Workers 13` (HUD) vs `Workers 0` (Population panel) contradiction. Base/stress split is preserved for the developer-only Population Breakdown line (`populationBreakdownVal`). (Step 6)
+- **Space-in-non-active explicit return null** (`shortcutResolver.js`): The Space → togglePause branch now uses an early `return null` when `phase !== "active"` (functionally identical to the previous ternary, but defensive against future code-mapping accidents that might map Space into TOOL_SHORTCUTS). KeyL block adds a comment clarifying that L → Heat Lens does NOT touch the Fertility overlay (the fertility legend pop reviewer occasionally reports is a tool-selection side-effect inside `#applyContextualOverlay`, not a shortcut binding). (Step 7)
+- **Threat-gated saboteur micro-pulse** (`EnvironmentDirectorSystem.js`, `balance.js`): When `state.gameplay.threat ≥ BALANCE.raidEnvironmentThreatThreshold` (60/100) and ≥ `raidEnvironmentCooldownSec` (90s) since the last pulse, EnvironmentDirector spawns 1-2 SABOTEUR visitors on a north/south border tile and pushes a `Raiders sighted near <side> gate.` info-level toast via `pushWarning`. Soft-capped by `BALANCE.raidDeathBudget=18` so a death-spiralling run stops summoning new threats automatically. Determinism: uses `services.rng` only when present (production); skips gracefully in unit-test contexts. (Step 10)
+
+### DONE-by-predecessor / DONE-by-existing-code
+- **Step 2** (SceneRenderer halo display:none) — Already landed by 01a Step 2 in `2b04f16`. No edit; the existing 01a code-path handles `marker.label === ""`.
+- **Step 8** (SurvivalScoreSystem new file) — Equivalent contract already shipped by v0.8.0 Phase 4 as `updateSurvivalScore` exported from `ProgressionSystem.js`. Plan §4 Step 8 is therefore an architectural no-op; the new `test/survival-score-system.test.js` exercises the existing contract end-to-end.
+- **Step 9** (HUD KPI `pts:` display + +N flash) — Already shipped by v0.8.2 Round-5 (HUDController.js:782, 1209 read `state.metrics.survivalScore`). No HUDController edit required.
+
+### New Tests
+- `test/heat-lens-halo-silent.test.js` — 3 cases: (a) every halo marker carries `label === ""`, (b) marker count ≤ 64 even when grid is filled with starved kitchens (Step 1 cap regression), (c) at most one primary marker per tile-key (Step 3 dedup regression).
+- `test/storyteller-llm-diagnostic-hidden.test.js` — 2 cases: (a) `whisperBlockedReason` never contains `LLM` / `WHISPER` / `errored` / `proxy` / `http` tokens across all 5 badge states, (b) `whisperBlockedReasonDev` preserves the engineer phrasing per badge (regression guard against accidental reason → dev field swap).
+- `test/survival-score-system.test.js` — 4 cases exercising `updateSurvivalScore`: 60-tick monotonic accrual, single-birth +5 (idempotent), single-death −10 (idempotent), and "deaths do not pin score below floor" smoke check.
+- `test/storyteller-strip-whisper-diagnostic.test.js` (updated) — 5 existing cases now assert both the in-fiction reason regex (`/Story Director/`) AND the engineer dev string (per badge); test count unchanged (5 → 5), assertion count doubled.
+
+### Files Changed
+- `src/render/PressureLens.js` — `MAX_HEAT_MARKERS_HALO` 160 → 64; primary-marker tile-key dedup with `primaryByKey` Map + `tryPushPrimary` helper (Steps 1, 3).
+- `src/ui/hud/storytellerStrip.js` — `whisperBlockedReason` rewritten as in-fiction copy; `whisperBlockedReasonDev` field added with original engineer strings (Step 4).
+- `src/ui/hud/HUDController.js` — `Why no WHISPER?` tooltip suffix + `#storytellerWhyNoWhisper` span gated by `state.controls.devMode` (Step 5).
+- `src/ui/tools/BuildToolbar.js` — `#syncPopulationTargetsFromWorld` workers count drops `!isStressWorker` filter (Step 6).
+- `src/app/shortcutResolver.js` — Space `phase !== "active"` early return; KeyL inline comment on Fertility-side-effect non-coupling (Step 7).
+- `src/simulation/ai/director/EnvironmentDirectorSystem.js` — `#maybeSpawnThreatGatedRaid` private method + `pickEdgeSpawn` helper + `pushWarning` toast wiring (Step 10).
+- `src/config/balance.js` — `raidDeathBudget=18`, `raidEnvironmentCooldownSec=90`, `raidEnvironmentThreatThreshold=60` appended to BALANCE (Step 10 tunables).
+- `test/heat-lens-halo-silent.test.js` — new (3 cases).
+- `test/storyteller-llm-diagnostic-hidden.test.js` — new (2 cases).
+- `test/survival-score-system.test.js` — new (4 cases).
+- `test/storyteller-strip-whisper-diagnostic.test.js` — assertion update for new in-fiction reason + dev field.
+
+### Notes
+- Same 4 pre-existing test failures as 01a baseline (build-spam wood cap, SceneRenderer source proximity-fallback regex, formatGameEventForLog noisy-event filter, ui-voice main.js dev-mode regex) — all verified failing on parent commit `2b04f16` and not introduced by this work. Test deltas: 1308 pass / 4 fail / 2 skip (vs 01a baseline 1299 pass / 4 fail / 2 skip — net **+9 passing**, no new red).
+- `freeze_policy: lifted` per plan frontmatter; Step 10 introduces a saboteur-spawn pathway behind a hard `BALANCE.raidDeathBudget` gate, no new tile / building / tool / mood / audio asset.
+- Per Round-6 summary §2 D1, `PressureLens.js:409` halo `label=""` floor is preserved (01a Wave-1 lock). Step 1 only mutates the cap constant `MAX_HEAT_MARKERS_HALO` 160 → 64; the `:409` line itself is untouched.
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-1 01a-onboarding: first-60s trust cleanup — silent halo, in-fiction LLM offline, hotkey-help truth-up, Vitals→Health
 
 **Scope:** Reviewer 01a-onboarding gave 3/10, citing "demo-grade noise" in the first 60 seconds: floating "halo" debug labels in the heat-lens overlay, red `AI proxy unreachable (...)` toast on every fresh launch (no API key locally), Help dialog claiming "0 resets camera" (it actually selects the kitchen tool), and `Vitals: hp=100.0/100.0 | hunger=0.639 | alive=true` rows that read like a debugger dump. All UI-only / string-only fixes — sim untouched.
