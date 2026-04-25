@@ -23,9 +23,15 @@ const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
 const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
   temperate_plains: Object.freeze({
     title: "Broken Frontier",
-    summary: "Reconnect the west lumber line, reclaim the east depot, then scale the colony.",
-    openingPressure: "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
-    hintInitial: "Reconnect the west lumber route and reclaim the east depot before scaling up.",
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — soften the OKR-speak
+    // briefing copy. The mechanics (anchor IDs, target counts, route labels)
+    // are unchanged; only the player-facing prose is rewritten so a casual
+    // first-timer can name what they see on screen ("west forest is overgrown")
+    // instead of decoding "lumber line" / "depot". Title stays as
+    // "Broken Frontier" because tests pin it as the canonical name.
+    summary: "Your colony just landed. The west forest is overgrown — clear a path back, then rebuild the east warehouse.",
+    openingPressure: "The frontier is wide open, but the colony stalls fast if the west forest path and the broken east warehouse stay disconnected.",
+    hintInitial: "Build a road to the west forest and put a warehouse on the broken east platform before scaling up.",
     hintAfterLogistics: "Starter logistics are online. Refill the stockpile before the first pressure wave.",
     hintAfterStockpile: "Fortify the colony and hold stability under pressure.",
     hintCompleted: "All objectives completed.",
@@ -384,7 +390,12 @@ function buildFrontierRepairScenario(grid) {
     },
     objectiveCopy: {
       logisticsTitle: "Reconnect the Frontier",
-      logisticsDescription: "Reconnect the west lumber outpost, reclaim the east depot with a warehouse, then reach 6 farms, 3 lumbers, 8 walls, and 20 roads.",
+      // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — drop the inventory-list
+      // "Reconnect the west lumber outpost, reclaim the east depot with a
+      // warehouse" prose for a casual goal sentence. Mechanical targets
+      // (6 farms / 3 lumbers / 8 walls / 20 roads) stay verbatim because
+      // the objective tracker counts them; only framing is rewritten.
+      logisticsDescription: "Connect the west forest to your warehouse, plant a warehouse on the east platform, then build 6 farms, 3 lumbers, 8 walls, and 20 roads.",
       stockpileTitle: "Refill the Stockpile",
       stockpileDescription: "Reach 95 food and 90 wood once the repaired frontier route is running.",
       stabilityTitle: "Fortify and Stabilize",

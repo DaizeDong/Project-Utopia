@@ -192,12 +192,20 @@ export class EntityFocusPanel {
       const role = String(w.role ?? "-");
       const stateLabel = String(w.stateLabel ?? "-");
       const hungerN = Number(w.hunger);
+      // v0.8.2 Round-6 Wave-1 02b-casual (Step 10) — swap the worker-list
+      // mood label "peckish" for the casual-friendly "a bit hungry".
+      // Reviewer reported "what is peckish? Looked it up: hungry but not
+      // very. Words like that don't appear in mainstream games." The
+      // primary Hunger row (rendered separately at the entity-detail
+      // template, line ~430) keeps "Peckish" capitalised because
+      // entity-focus-player-view.test.js pins that label literal — only
+      // the worker-list rollup is rewritten here.
       const hungerLabel = !Number.isFinite(hungerN)
         ? "?"
         : hungerN < 0.2
           ? "well-fed"
           : hungerN < 0.5
-            ? "peckish"
+            ? "a bit hungry"
             : hungerN < 0.8
               ? "hungry"
               : "starving";
