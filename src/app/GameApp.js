@@ -62,6 +62,19 @@ import { evaluateRunOutcomeState } from "./runOutcome.js";
 // the toggleHeatLens() method body (which is pattern-scanned by tests).
 const LENS_LEGEND_CARD_ID = "lensLegendCard";
 
+// Context-aware terrain overlay: maps build-tool name → most relevant overlay mode.
+// null means "turn off overlay" (no relevant terrain dependency).
+const TOOL_OVERLAY_MAP = Object.freeze({
+  farm:        "fertility",
+  herb_garden: "fertility",
+  lumber:      "nodeDepletion",
+  clinic:      "nodeDepletion",
+  quarry:      "elevation",
+  wall:        "elevation",
+  warehouse:   "connectivity",
+  road:        "connectivity",
+});
+
 function assertSystemOrder(systems, required) {
   const indexOf = (name) => systems.findIndex((s) => s?.name === name || s?.constructor?.name === name);
   let prevIdx = -1;
@@ -190,6 +203,16 @@ export class GameApp {
     if (typeof document !== "undefined") {
       this.terrainLensBtn = document.getElementById("terrainLensBtn");
       this.terrainLensBtn?.addEventListener("click", this.boundOnTerrainLensClick);
+    }
+
+    // Context-aware overlay: listen for tool-change events dispatched by BuildToolbar.
+    // Tracks last auto-applied overlay so we can detect manual user overrides (T-key).
+    this._lastAutoOverlay = null;
+    if (typeof document !== "undefined") {
+      this.boundOnToolChange = (e) => {
+        this.#applyContextualOverlay(e.detail?.tool ?? "select");
+      };
+      document.addEventListener("utopia:toolChange", this.boundOnToolChange);
     }
 
     // AI Debug button — opens right sidebar on the Debug tab so players can
@@ -1451,6 +1474,7 @@ export class GameApp {
       this.state.controls.actionMessage = `Selected tool: ${action.tool} (shortcut).`;
       this.state.controls.actionKind = "info";
       this.toolbar?.sync?.();
+      this.#applyContextualOverlay(action.tool);
       return;
     }
     if (action.type === "clearSelection") {
@@ -1546,12 +1570,71 @@ export class GameApp {
     return mode;
   }
 
+  // Sync the HUD terrainLensLabel element and terrainLensBtn active state to
+  // reflect the given overlay mode. Extracted so both auto-switch and manual
+  // toggle paths share the same DOM update logic.
+  #syncTerrainLensLabel(mode) {
+    if (typeof document === "undefined") return;
+    const MODE_LABELS = {
+      fertility:     "Overlay: Fertility",
+      elevation:     "Overlay: Elevation",
+      connectivity:  "Overlay: Connectivity",
+      nodeDepletion: "Overlay: Node Health",
+    };
+    const labelEl = document.getElementById("terrainLensLabel");
+    if (labelEl) {
+      if (mode) {
+        labelEl.textContent = MODE_LABELS[mode] ?? mode;
+        labelEl.hidden = false;
+      } else {
+        labelEl.hidden = true;
+      }
+    }
+    const btn = document.getElementById("terrainLensBtn");
+    if (btn) btn.classList.toggle("active", mode !== null);
+  }
+
+  // Automatically activate the most relevant terrain overlay for the given
+  // build tool. Only overrides the overlay when:
+  //   – the new tool requests a specific overlay (mode !== null), OR
+  //   – the user hasn't manually chosen a different overlay since the last
+  //     auto-switch (i.e. the current mode still matches _lastAutoOverlay).
+  // Selecting "select" / bridge / kitchen / smithy → turns overlay off (null).
+  #applyContextualOverlay(tool) {
+    if (!this.renderer?.setTerrainLensMode) return;
+    const mode = TOOL_OVERLAY_MAP[tool] ?? null;
+    const current = this.renderer.getTerrainLensMode?.() ?? null;
+    // Allow auto-switch when: requesting a specific overlay (mode != null),
+    // OR when the current overlay was set by a previous auto-switch (current
+    // still matches _lastAutoOverlay, meaning the user never manually changed it).
+    if (mode !== null || current === this._lastAutoOverlay) {
+      this.renderer.setTerrainLensMode(mode);
+      this._lastAutoOverlay = mode;
+      this.#syncTerrainLensLabel(mode);
+      if (mode) {
+        const MODE_LABELS = {
+          fertility:     "Overlay: Fertility",
+          elevation:     "Overlay: Elevation",
+          connectivity:  "Overlay: Connectivity",
+          nodeDepletion: "Overlay: Node Health",
+        };
+        this.state.controls.actionMessage = `Auto-overlay: ${MODE_LABELS[mode] ?? mode}`;
+        this.state.controls.actionKind = "info";
+      }
+    }
+  }
+
   // Terrain overlay cycle — mirrors T-key and the "Terrain (T)" HUD button.
   // Delegates to SceneRenderer.toggleTerrainLens() which cycles:
   // null → "fertility" → "elevation" → "connectivity" → "nodeDepletion" → null.
+  // Manual invocation marks _lastAutoOverlay = null so subsequent tool selections
+  // can detect that the user chose a mode independently and respect it.
   toggleTerrainLens() {
     if (!this.renderer?.toggleTerrainLens) return null;
     const mode = this.renderer.toggleTerrainLens();
+    // Mark as user-driven: auto-switch logic will not override this choice
+    // until the next tool selection that has a specific overlay preference.
+    this._lastAutoOverlay = null;
     const active = mode !== null;
     const MODE_LABELS = {
       fertility: "Overlay: Fertility",
@@ -1564,19 +1647,7 @@ export class GameApp {
       : "Terrain overlay OFF.";
     this.state.controls.actionMessage = actionLabel;
     this.state.controls.actionKind = "info";
-    if (typeof document !== "undefined") {
-      const btn = document.getElementById("terrainLensBtn");
-      if (btn) btn.classList.toggle("active", active);
-      const labelEl = document.getElementById("terrainLensLabel");
-      if (labelEl) {
-        if (active) {
-          labelEl.textContent = MODE_LABELS[mode] ?? mode;
-          labelEl.hidden = false;
-        } else {
-          labelEl.hidden = true;
-        }
-      }
-    }
+    this.#syncTerrainLensLabel(mode);
     return mode;
   }
 

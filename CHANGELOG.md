@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Context-Aware Terrain Overlay Auto-Switching
+
+**Scope:** When the player selects a build tool the most relevant terrain overlay activates automatically. Farm/herb_garden → Fertility, lumber/clinic → Node Health, quarry/wall → Elevation, road/warehouse → Connectivity. Selecting a tool with no terrain dependency (kitchen, smithy, bridge, select) turns the overlay off — unless the user manually toggled the overlay with T-key, in which case their choice is preserved.
+
+### New Features
+- **`setTerrainLensMode(targetMode)`** (`src/render/SceneRenderer.js`): New direct-set method alongside the existing `toggleTerrainLens()` cycle. Accepts `null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"`. Returns unchanged mode if target is already active or invalid. Purely additive — does not change `toggleTerrainLens()` signature or behavior.
+- **`#applyContextualOverlay(tool)`** (`src/app/GameApp.js`): Private method that maps the active build tool to its preferred overlay via `TOOL_OVERLAY_MAP` and calls `renderer.setTerrainLensMode()`. Tracks `_lastAutoOverlay` to detect manual T-key overrides: auto-switch is suppressed if the current mode differs from the last auto-applied one (user override), unless the new tool demands a specific overlay.
+- **`#syncTerrainLensLabel(mode)`** (`src/app/GameApp.js`): Extracted HUD sync helper shared by auto-switch and manual `toggleTerrainLens()` paths. Updates `#terrainLensLabel` text/hidden state and `#terrainLensBtn` active class.
+- **`utopia:toolChange` custom event** (`src/ui/tools/BuildToolbar.js`): Dispatched on `document` (non-bubbling) whenever the player clicks a toolbar button, so `GameApp` can react without tight coupling to `BuildToolbar` internals.
+- **Contextual tooltip headers** (`src/render/SceneRenderer.js`): `#buildContextualTooltipHeader(ix, iz, tool)` helper prepends 2 larger-font lines to the tile-info tooltip showing the most relevant metric for the active tool (fertility rating for farm/herb_garden, node health for lumber/clinic, elevation label for quarry/wall, connectivity status for road/warehouse).
+- **Manual override guard in `toggleTerrainLens()`** (`src/app/GameApp.js`): T-key cycle now resets `_lastAutoOverlay = null` so the next tool selection respects the user's manual choice instead of immediately overwriting it (unless the new tool requests a specific overlay).
+
+### Files Changed
+- `src/render/SceneRenderer.js` — `setTerrainLensMode()`, `#buildContextualTooltipHeader()`, contextual header wired into `#updateTileInfoTooltip()`
+- `src/app/GameApp.js` — `TOOL_OVERLAY_MAP` module const, `_lastAutoOverlay` field, `#applyContextualOverlay()`, `#syncTerrainLensLabel()`, `toggleTerrainLens()` override guard, `utopia:toolChange` listener, keyboard `selectTool` handler now calls `#applyContextualOverlay`
+- `src/ui/tools/BuildToolbar.js` — `#setupToolButtons()` dispatches `utopia:toolChange` after every tool-button click
+
+### Validation
+- Full suite: `1185/1187` pass (1185 pass, 0 fail, 2 pre-existing skips).
+
+---
+
 ## [Unreleased] - v0.8.2 LLM Autopilot Immediate-Fire + AI Debug Panel Enhancements
 
 **Scope:** Fixes the autopilot timer bug that caused the LLM to be skipped on the first decision cycle after enabling, and improves the AI debug panels with visual color-coding and accessibility improvements.

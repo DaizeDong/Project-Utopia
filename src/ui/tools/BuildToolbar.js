@@ -183,6 +183,10 @@ export class BuildToolbar {
         }
         this.state.controls.actionKind = "info";
         this.sync();
+        // Notify GameApp so it can apply the context-aware terrain overlay.
+        if (typeof document !== "undefined") {
+          document.dispatchEvent(new CustomEvent("utopia:toolChange", { detail: { tool }, bubbles: false }));
+        }
       });
     });
   }
