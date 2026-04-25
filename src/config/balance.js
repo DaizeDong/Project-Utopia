@@ -612,11 +612,16 @@ export const BALANCE = Object.freeze({
   // deaths ceiling (≤ 499) stay safely inside their lanes. See plan §5 risk
   // analysis: predicted incremental deaths +5..12 vs. baseline 454, leaving
   // ~33 of the 499-death budget as headroom even with all 4 seeds firing.
-  raidDeathBudget: 18,
-  // Cooldown between EnvironmentDirector micro-raid pulses (sim seconds).
-  raidEnvironmentCooldownSec: 90,
-  // Threat threshold (state.gameplay.threat is on a 0..100 scale).
-  raidEnvironmentThreatThreshold: 60,
+  // v0.8.2 Round-6 Wave-1 acceptance-gate tune (post-bench 2025-04-25):
+  // initial 18/90/60 caused seed-42 deaths to climb to 589 and DevIndex to drop
+  // 74→36; pop crashed to 2 by day 90. Per Stage B summary §7 Risk #2 mitigation
+  // ladder, tighten without rolling back the mechanic itself: smaller budget +
+  // longer cooldown + later threshold so the saboteur pulse stays present as
+  // a UX signal but cannot snowball before pop recovery. Re-validated against
+  // 4-seed bench post-tune.
+  raidDeathBudget: 8,
+  raidEnvironmentCooldownSec: 360,
+  raidEnvironmentThreatThreshold: 75,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
