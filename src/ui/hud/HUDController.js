@@ -202,6 +202,7 @@ export class HUDController {
     this.aiToggleTop = document.getElementById("aiToggleTop");
     this.aiToggleMirror = document.getElementById("aiToggle");
     this.gameTimer = document.getElementById("gameTimer");
+    this.timeScaleActualLabel = document.getElementById("timeScaleActualLabel");
 
     // v0.8.2 Round-0 01d — Resource rate badges. Snapshot every RATE_WINDOW_SEC
     // sim-seconds and compute (delta / window) * 60 → per-minute rate. Kept at 3s
@@ -1298,6 +1299,13 @@ export class HUDController {
     this.speedPauseBtn?.classList.toggle("active", paused);
     this.speedPlayBtn?.classList.toggle("active", !paused && !fast);
     this.speedFastBtn?.classList.toggle("active", fast && !paused);
+    if (this.timeScaleActualLabel) {
+      const requested = Number(state.controls.timeScale ?? 1);
+      const actual = Number(state.metrics.timeScaleActual ?? requested);
+      const showLabel = fast && !paused && Math.abs(actual - requested) > 0.2;
+      this.timeScaleActualLabel.style.display = showLabel ? "" : "none";
+      if (showLabel) this.timeScaleActualLabel.textContent = `actual ×${actual.toFixed(1)}`;
+    }
 
     // v0.8.2 Round-1 01a-onboarding — append glossary tooltips to abbreviated
     // HUD nodes exactly once per HUDController instance. Placed at the end of

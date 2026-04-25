@@ -11,7 +11,7 @@ export const BUILD_COST = Object.freeze({
   herb_garden: { wood: 4 },
   kitchen: { wood: 8, stone: 3 },
   smithy: { wood: 6, stone: 5 },
-  clinic: { wood: 6, herbs: 4 },
+  clinic: { wood: 6, herbs: 2 },
   bridge: { wood: 3, stone: 1 },
 });
 
@@ -36,15 +36,15 @@ export const BUILD_COST = Object.freeze({
 //  - herb_garden: softTarget=2 matches the scenario recipe gate for a
 //    clinic pipeline.
 export const BUILD_COST_ESCALATOR = Object.freeze({
-  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.2, cap: 2.5 }),
-  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0 }),
-  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
-  smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
-  clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0 }),
-  farm: Object.freeze({ softTarget: 6, perExtra: 0.1, cap: 1.8 }),
-  lumber: Object.freeze({ softTarget: 4, perExtra: 0.1, cap: 1.8 }),
-  quarry: Object.freeze({ softTarget: 3, perExtra: 0.15, cap: 1.8 }),
-  herb_garden: Object.freeze({ softTarget: 2, perExtra: 0.15, cap: 2.0 }),
+  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.2, cap: 2.5, perExtraBeyondCap: 0.08, hardCap: 20 }),
+  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0, perExtraBeyondCap: 0.05, hardCap: 40 }),
+  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
+  smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
+  clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
+  farm: Object.freeze({ softTarget: 6, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
+  lumber: Object.freeze({ softTarget: 4, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
+  quarry: Object.freeze({ softTarget: 3, perExtra: 0.15, cap: 1.8, perExtraBeyondCap: 0.05 }),
+  herb_garden: Object.freeze({ softTarget: 2, perExtra: 0.15, cap: 2.0, perExtraBeyondCap: 0.05 }),
 });
 
 /**
@@ -67,21 +67,38 @@ export function computeEscalatedBuildCost(kind, existingCount) {
   const base = BUILD_COST[kind] ?? {};
   const esc = BUILD_COST_ESCALATOR[kind];
   if (!esc) {
-    // Return a shallow clone so callers can't accidentally mutate the
-    // frozen base constant.
     return { ...base };
   }
   const count = Math.max(0, Number(existingCount) | 0);
   const over = Math.max(0, count - Number(esc.softTarget ?? 0));
   const rawMultiplier = 1 + Number(esc.perExtra ?? 0) * over;
   const cap = Number(esc.cap ?? rawMultiplier);
-  const multiplier = Math.min(cap, rawMultiplier);
+  let multiplier;
+  if (rawMultiplier > cap && esc.perExtraBeyondCap != null) {
+    // Beyond the cap plateau: continue linear growth at a shallower rate so
+    // stacking spam still costs more each time (no flat ceiling cheese).
+    const stepsAboveCap = rawMultiplier - cap;
+    multiplier = cap + stepsAboveCap * Number(esc.perExtraBeyondCap);
+  } else {
+    multiplier = Math.min(cap, rawMultiplier);
+  }
   const out = {};
   for (const [res, amount] of Object.entries(base)) {
-    const v = Number(amount ?? 0);
-    out[res] = Math.ceil(v * multiplier);
+    out[res] = Math.ceil(Number(amount ?? 0) * multiplier);
   }
   return out;
+}
+
+/**
+ * Returns whether a building kind has reached its hard placement cap.
+ * Hard-capped kinds block all further placement in BuildAdvisor.
+ */
+export function isBuildKindHardCapped(kind, existingCount) {
+  const esc = BUILD_COST_ESCALATOR[kind];
+  const hardCap = esc?.hardCap != null ? Number(esc.hardCap) : null;
+  if (hardCap == null) return { capped: false, hardCap: null };
+  const capped = Number(existingCount) >= hardCap;
+  return { capped, hardCap };
 }
 
 /**
@@ -406,12 +423,12 @@ export const BALANCE = Object.freeze({
   smithyWoodCost: 2,
   smithyToolOutput: 1,
   clinicCycleSec: 4,
-  clinicHerbsCost: 2,
+  clinicHerbsCost: 1,
   clinicMedicineOutput: 1,
   mealHungerRecoveryMultiplier: 2.0,
   toolHarvestSpeedBonus: 0.15,
   toolMaxEffective: 3,
-  medicineHealPerSecond: 8,
+  medicineHealPerSecond: 6,
   // Phase 1: Weather modifiers for new tiles
   quarryWeatherModifiers: { clear: 1.0, rain: 0.85, storm: 0.7, drought: 1.0, winter: 0.9 },
   herbGardenWeatherModifiers: { clear: 1.0, rain: 1.15, storm: 0.9, drought: 0.4, winter: 0.3 },
