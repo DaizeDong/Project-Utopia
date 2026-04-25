@@ -1,5 +1,5 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { FOG_STATE, NODE_FLAGS, ROLE, TILE } from "../../config/constants.js";
+import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
@@ -9,6 +9,7 @@ import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { enqueueEvent } from "../../world/events/WorldEventQueue.js";
 import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
@@ -594,9 +595,13 @@ export function handleDeliver(worker, state, services, dt) {
     const tileEfficiency = Number(logistics.buildingEfficiency?.[key] ?? 1);
     // Treat efficiency at or below LogisticsSystem.ISOLATION_PENALTY as isolated.
     const isolatedMultiplier = tileEfficiency <= ISOLATION_PENALTY + 1e-6 ? isolationPenalty : 1;
+    // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 5) — mood→output
+    // coupling on the unload leg. Default 1.0 if blackboard missing.
+    const moodUnloadMult = Number(worker.blackboard?.moodOutputMultiplier ?? 1);
     const unloadBudget = Math.max(0.2, Number(BALANCE.workerUnloadRatePerSecond ?? 4.2) / penalty)
       * dt
-      * isolatedMultiplier;
+      * isolatedMultiplier
+      * moodUnloadMult;
     let remaining = unloadBudget;
     const unloadFood = Math.min(Number(worker.carry.food ?? 0), remaining);
     worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - unloadFood);
@@ -675,6 +680,11 @@ export function handleHarvest(worker, state, services, dt) {
     else if (tileAtTarget === TILE.QUARRY) effectiveRole = ROLE.STONE;
     else if (tileAtTarget === TILE.HERB_GARDEN) effectiveRole = ROLE.HERBS;
   }
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 5) — mood→output
+  // coupling. Defaults to 1.0 if blackboard hasn't been populated yet (e.g.
+  // first-tick before mood compositor ran). Forced to 0 while MORALE_BREAK
+  // is active (set in the per-tick mood block).
+  const moodMult = Number(worker.blackboard?.moodOutputMultiplier ?? 1);
   if (effectiveRole === ROLE.FARM) {
     const doctrine = Number(state.gameplay?.modifiers?.farmYield ?? 1);
     const ecology = getFarmEcologyYieldMultiplier(worker, state);
@@ -682,7 +692,7 @@ export function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = ecology.pressure;
     worker.debug.lastFarmYieldMultiplier = ecology.multiplier;
-    const farmAmount = Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility * logisticsBonus);
+    const farmAmount = Math.max(0.2, state.weather.farmProductionMultiplier * doctrine * ecology.multiplier * toolMultiplier * fertility * logisticsBonus) * moodMult;
     // Capture pre-resolve cooldown so we can tell whether this tick was the
     // completion tick (amount was added inside resolveWorkCooldown).
     const preCooldown = Number(worker.cooldown ?? 0);
@@ -752,7 +762,7 @@ export function handleHarvest(worker, state, services, dt) {
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const quarryWeather = Number(BALANCE.quarryWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    const stoneAmount = Math.max(0.2, quarryWeather * toolMultiplier * logisticsBonus);
+    const stoneAmount = Math.max(0.2, quarryWeather * toolMultiplier * logisticsBonus) * moodMult;
     const preCooldown = Number(worker.cooldown ?? 0);
     resolveWorkCooldown(worker, dt, stoneAmount, "stone", services.rng, isNight);
     // v0.8.0 Phase 3 M1a: decrement the STONE node yieldPool on the completion tick.
@@ -765,7 +775,7 @@ export function handleHarvest(worker, state, services, dt) {
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
     const herbWeather = Number(BALANCE.herbGardenWeatherModifiers?.[state.weather?.current ?? "clear"] ?? 1);
-    const herbAmount = Math.max(0.2, herbWeather * toolMultiplier * herbFertility * logisticsBonus);
+    const herbAmount = Math.max(0.2, herbWeather * toolMultiplier * herbFertility * logisticsBonus) * moodMult;
     const preCooldown = Number(worker.cooldown ?? 0);
     resolveWorkCooldown(worker, dt, herbAmount, "herbs", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
@@ -778,7 +788,7 @@ export function handleHarvest(worker, state, services, dt) {
     worker.debug ??= {};
     worker.debug.lastFarmPressure = 0;
     worker.debug.lastFarmYieldMultiplier = 1;
-    const woodAmount = Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility * logisticsBonus);
+    const woodAmount = Math.max(0.2, state.weather.lumberProductionMultiplier * doctrine * toolMultiplier * lumberFertility * logisticsBonus) * moodMult;
     const preCooldown = Number(worker.cooldown ?? 0);
     resolveWorkCooldown(worker, dt, woodAmount, "wood", services.rng, isNight);
     if (worker.cooldown <= 0 && worker.targetTile) {
@@ -1029,12 +1039,50 @@ export class WorkerAISystem {
         0.35 * Number(worker.hunger ?? 0.5) + 0.30 * Number(worker.rest ?? 0.5)
         + 0.20 * Number(worker.morale ?? 0.5) + 0.15 * Number(worker.social ?? 0.5), 0, 1);
 
+      // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 5) — mood→output
+      // coupling. Linear ramp: mood=0 → moodOutputMin (default 0.5×); mood=1
+      // → 1.0×. handleHarvest + handleDeliver read this from blackboard.
+      // Forced to 0× while a MORALE_BREAK is active (sub-tick check).
+      worker.blackboard ??= {};
+      const moodOutputMin = Number(BALANCE.moodOutputMin ?? 0.5);
+      const baseMult = clamp(moodOutputMin + (1 - moodOutputMin) * Number(worker.mood ?? 0.5), 0, 1);
+      const nowSecMood = Number(state.metrics?.timeSec ?? 0);
+      const breakState = worker.blackboard.moraleBreak;
+      const onBreak = breakState && Number(breakState.untilSec ?? -Infinity) > nowSecMood;
+      worker.blackboard.moodOutputMultiplier = onBreak ? 0 : baseMult;
+      if (!onBreak && breakState) {
+        // Clear once expired so EntityFocusPanel doesn't render a stale flag.
+        worker.blackboard.moraleBreak = null;
+      }
+
       // Emit mood_low event when mood drops below threshold (once per episode)
       if (worker.mood < 0.3 && prevMood >= 0.3) {
         emitEvent(state, EVENT_TYPES.WORKER_MOOD_LOW, {
           entityId: worker.id, entityName: worker.displayName ?? worker.id,
           mood: worker.mood,
         });
+      }
+
+      // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 5) — MORALE_BREAK
+      // enqueue on a downward 0.25 crossing. 50% chance + per-worker 90s
+      // cooldown so a chronically miserable colony doesn't flood the queue.
+      if (worker.mood < 0.25 && prevMood >= 0.25) {
+        const lastBreakSec = Number(worker.blackboard.lastMoraleBreakEnqueueSec ?? -Infinity);
+        const cooldown = Number(BALANCE.moraleBreakCooldownSec ?? 90);
+        if (nowSecMood - lastBreakSec >= cooldown) {
+          // Deterministic-ish gate: 50% via tick parity (no extra rng draw to
+          // preserve seeded benchmark RNG offsets).
+          if ((Number(state.metrics?.tick ?? 0) % 2) === 0) {
+            enqueueEvent(
+              state,
+              EVENT_TYPE.MORALE_BREAK,
+              { ix: worker.x | 0, iz: worker.z | 0, workerId: worker.id },
+              30,
+              1,
+            );
+            worker.blackboard.lastMoraleBreakEnqueueSec = nowSecMood;
+          }
+        }
       }
 
       // Relationship updates: proximity-based opinion drift (every ~5s)
