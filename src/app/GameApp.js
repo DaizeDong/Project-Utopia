@@ -1510,6 +1510,17 @@ export class GameApp {
   #onGlobalKeyDown(event) {
     if (this.#shouldIgnoreGlobalShortcut(event)) return;
 
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 2) — defensive F1 swallow.
+    // Even before resolveGlobalShortcut runs we unconditionally call
+    // preventDefault for the F1 key. The browser default in some shells
+    // ("Help", quick-find, legacy refresh) reloads the page and casual
+    // reviewer lost progress 3× in 25min to this. Cheap belt-and-braces
+    // — runs even when shouldIgnoreGlobalShortcut would otherwise let the
+    // event bubble (e.g. a focused button on the topbar).
+    if (event && (event.key === "F1" || event.code === "F1")) {
+      event.preventDefault();
+    }
+
     // v0.8.2 Round-5 Wave-2 (01d Step 7): Tab / Shift+Tab cycles through
     // alive workers and updates state.controls.selectedEntityId so casual
     // users have a keyboard-only path to the observation loop.
@@ -1561,6 +1572,17 @@ export class GameApp {
     }
     if (action.type === "toggleTerrainLens") {
       this.toggleTerrainLens();
+    }
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 2) — F1 / ? open the in-game
+    // Help modal. The modal itself is wired in index.html via
+    // window.__utopiaHelp.open(); we delegate to that global so the modal
+    // remains the single source of truth (CSS, focus management, ESC-to-
+    // close all live there). Defensive guard if the global is missing.
+    if (action.type === "openHelp") {
+      const helpApi = (typeof window !== "undefined") ? window.__utopiaHelp : null;
+      if (helpApi && typeof helpApi.open === "function") {
+        helpApi.open();
+      }
     }
   }
 
@@ -1730,6 +1752,26 @@ export class GameApp {
     }
     const mapLabel = this.state?.world?.mapTemplateName ?? "Current map";
     const mapSize = `${Math.floor(Number(this.state?.grid?.width ?? selectedWidth ?? 0))}x${Math.floor(Number(this.state?.grid?.height ?? selectedHeight ?? 0))}`;
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 3) — blur the menu's
+    // <select id="overlayMapTemplate"> and any focused menu select so
+    // pressing 1-9 after Start Colony selects a build tool instead of
+    // re-rolling the map template. Casual reviewer reported "I pressed 3
+    // and the map regenerated" — this is the select element keeping
+    // keyboard focus and consuming digit keys for option-cycling. We
+    // only blur known menu selects (by id whitelist) to avoid clobbering
+    // unrelated input focus the user may have intentionally established.
+    if (typeof document !== "undefined") {
+      const MENU_SELECT_IDS = ["overlayMapTemplate", "mapTemplateSelect", "doctrineSelect"];
+      for (const id of MENU_SELECT_IDS) {
+        document.getElementById(id)?.blur?.();
+      }
+      const active = document.activeElement;
+      if (active && typeof active.matches === "function") {
+        if (active.matches("#overlayMapTemplate, #mapTemplateSelect, #doctrineSelect")) {
+          active.blur?.();
+        }
+      }
+    }
     this.#setRunPhase("active", {
       actionMessage: `Run started: ${mapLabel} (${mapSize} tiles). Build the starter network now. Try Again replays this layout; New Map rerolls.`,
       actionKind: "success",

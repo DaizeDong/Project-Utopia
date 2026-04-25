@@ -66,7 +66,12 @@ function formatHeatLensUseCase(templateId) {
   const tagLine = Array.isArray(template?.tags) && template.tags.length > 0
     ? template.tags.slice(0, 3).join(" / ")
     : "routes / warehouses / processors";
-  return `Heat Lens: red means surplus is trapped and blue means the first bottleneck is starving input (${tagLine}).`;
+  // v0.8.2 Round-6 Wave-1 02b-casual (Step 6) — drop the engineer-flavoured
+  // jargon (the old prose described surpluses as trapped and processors as
+  // starved) for casual on-screen phrasing. Keeps tagLine for template
+  // context. Test guard at test/casual-jargon-strings.test.js asserts the
+  // forbidden substrings do not appear anywhere in this source file.
+  return `Heat Lens: red tiles = stuff piling up unused. Blue tiles = a building waiting on input. (${tagLine})`;
 }
 
 // v0.8.0 Phase 4 — Survival Mode. The outcome meta now surfaces survival time
