@@ -52,6 +52,32 @@ function buildDevIndexTooltip(state, casualMode) {
     : explainTerm("dev");
 }
 
+// v0.8.2 Round-5b (02e Step 6b) — author-tone label for Dev/Threat/Score KPIs.
+// Short-sentence that replaces "Dev 44/100" with an authored feel in tooltip.
+// Source: existing Help panel "Threat & Prosperity" prose + scenario openingPressure.
+function buildAuthorToneLabel(metric, value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return { label: "", tierKey: "low" };
+  if (metric === "dev") {
+    if (v < 40) return { label: "Scrappy outpost, still finding its rhythm.", tierKey: "low" };
+    if (v < 60) return { label: "Working colony \u2014 entropy is being held at bay.", tierKey: "mid" };
+    if (v < 80) return { label: "Breathing room at last; the routes compound.", tierKey: "high" };
+    return { label: "The chain reinforces itself; pressure can wait.", tierKey: "elite" };
+  }
+  if (metric === "threat") {
+    if (v < 30) return { label: "Frontier holds; no pressure incoming.", tierKey: "low" };
+    if (v < 60) return { label: "Threat is the cost of being late.", tierKey: "mid" };
+    return { label: "The danger is not distance but exposure.", tierKey: "high" };
+  }
+  if (metric === "score") {
+    if (v < 500) return { label: "Holding on \u2014 the colony needs time.", tierKey: "low" };
+    if (v < 3000) return { label: "Routes compound and the score follows.", tierKey: "mid" };
+    if (v < 15000) return { label: "The colony breathes on its own now.", tierKey: "high" };
+    return { label: "The chain reinforces itself; entropy waits outside.", tierKey: "elite" };
+  }
+  return { label: "", tierKey: "low" };
+}
+
 function scenarioGoalChips(state) {
   const runtime = getScenarioRuntime(state);
   const targets = runtime.logisticsTargets ?? {};
@@ -851,7 +877,27 @@ export class HUDController {
         ? document.getElementById("storytellerTemplateTag")
         : null;
       const milestoneFlash = this.#currentMilestoneFlash(state);
-      if (getBadgeEl && getFocusEl && getSummaryEl) {
+      // v0.8.2 Round-5b (02e Step 6c / Step 3) — scenario-intro highest-priority
+      // branch: during first 1.5s after regenerateWorld, override strip content
+      // to show opening-pressure text. Exits early to skip other strip logic.
+      const scenarioIntro = state.ui?.scenarioIntro;
+      const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+        ? performance.now() : Date.now();
+      if (getBadgeEl && getFocusEl && getSummaryEl && scenarioIntro
+          && scenarioIntro.enteredAtMs
+          && (nowMs - scenarioIntro.enteredAtMs) < (scenarioIntro.durationMs ?? 1500)) {
+        if (getBadgeEl.textContent !== "SCENARIO") getBadgeEl.textContent = "SCENARIO";
+        if (getBadgeEl.dataset) getBadgeEl.dataset.mode = "scenario-intro";
+        else getBadgeEl.setAttribute?.("data-mode", "scenario-intro");
+        const introTitle = String(scenarioIntro.title ?? "");
+        if (getFocusEl.textContent !== introTitle) getFocusEl.textContent = introTitle;
+        const introSummary = `: ${String(scenarioIntro.openingPressure ?? "")}`;
+        if (getSummaryEl.textContent !== introSummary) getSummaryEl.textContent = introSummary;
+        if (getBeatEl) {
+          if (getBeatEl.textContent !== "") getBeatEl.textContent = "";
+          if (!getBeatEl.hasAttribute?.("hidden")) getBeatEl.setAttribute?.("hidden", "");
+        }
+      } else if (getBadgeEl && getFocusEl && getSummaryEl) {
         if (milestoneFlash) {
           if (getBadgeEl.textContent !== "MILESTONE") getBadgeEl.textContent = "MILESTONE";
           if (getBadgeEl.dataset) getBadgeEl.dataset.mode = "milestone";
@@ -997,6 +1043,28 @@ export class HUDController {
             getSummaryEl.setAttribute?.("aria-label", "author-voice");
           } else {
             getSummaryEl.removeAttribute?.("aria-label");
+          }
+        }
+        // v0.8.2 Round-5b (02e Step 6a) — LLM-live voice-prefix DOM slot.
+        // Dynamically created if #storytellerVoicePrefix is absent in index.html.
+        if (typeof document !== "undefined") {
+          let voicePrefixEl = document.getElementById("storytellerVoicePrefix");
+          if (!voicePrefixEl && this.storytellerStrip) {
+            voicePrefixEl = document.createElement("span");
+            voicePrefixEl.id = "storytellerVoicePrefix";
+            voicePrefixEl.className = "storyteller-voice-prefix";
+            voicePrefixEl.setAttribute("aria-label", "author-voice");
+            this.storytellerStrip.insertBefore(voicePrefixEl, this.storytellerStrip.firstChild);
+          }
+          if (voicePrefixEl) {
+            const prefixText = (model.voicePackOverlayHit && model.voicePrefixText)
+              ? String(model.voicePrefixText) : "";
+            if (voicePrefixEl.textContent !== prefixText) voicePrefixEl.textContent = prefixText;
+            if (prefixText) {
+              if (voicePrefixEl.hasAttribute?.("hidden")) voicePrefixEl.removeAttribute?.("hidden");
+            } else {
+              if (!voicePrefixEl.hasAttribute?.("hidden")) voicePrefixEl.setAttribute?.("hidden", "");
+            }
           }
         }
         }
@@ -1146,7 +1214,34 @@ export class HUDController {
           }
         }
         this.statusObjectiveDev.textContent = devText;
-        this.statusObjectiveDev.setAttribute?.("title", devTitle);
+        // v0.8.2 Round-5b (02e Step 6b) — author-tone tooltip on Dev KPI.
+        const devTone = buildAuthorToneLabel("dev", devScore);
+        const devTitleWithTone = devTone.label ? `${devTitle}\n${devTone.label}` : devTitle;
+        this.statusObjectiveDev.setAttribute?.("title", devTitleWithTone);
+        if (casualMode && inActive && devTicks > 0 && devTone.label) {
+          this.statusObjectiveDev.textContent = `${devText} \u2014 ${devTone.label}`;
+        }
+        // author-tone tooltip on Score KPI
+        const rawScore = Number(state.metrics?.survivalScore ?? 0);
+        const scoreTone = buildAuthorToneLabel("score", rawScore);
+        if (scoreTone.label && this.statusObjectiveScore) {
+          const scoreTitleWithTone = `${scoreTitle}\n${scoreTone.label}`;
+          this.statusObjectiveScore.setAttribute?.("title", scoreTitleWithTone);
+        }
+        // author-tone tooltip on Threat KPI (if element exists)
+        if (typeof document !== "undefined") {
+          const threatEl = document.getElementById("statusObjectiveThreat");
+          if (threatEl) {
+            const threat = Number(state.gameplay?.threat ?? 0);
+            const threatTone = buildAuthorToneLabel("threat", threat);
+            if (threatTone.label) {
+              const existingTitle = threatEl.getAttribute?.("title") ?? "";
+              if (!existingTitle.includes(threatTone.label)) {
+                threatEl.setAttribute?.("title", `${existingTitle}\n${threatTone.label}`.trim());
+              }
+            }
+          }
+        }
       } else {
         this.statusObjective.textContent = objectiveText;
       }

@@ -376,6 +376,20 @@ function adjustWorkerPolicy(policy, context, summary) {
       : focusSentence;
   }
   policy.steeringNotes = notes.slice(0, 4);
+  // v0.8.2 Round-5b (02e Step 2) — tag for voice-pack overlay. Mirrors
+  // deriveFocusTag in storytellerStrip but avoids cross-layer import.
+  policy.authorVoiceHintTag = deriveFocusHintTag(policy.focus);
+}
+
+function deriveFocusHintTag(focus) {
+  const f = String(focus ?? "").toLowerCase();
+  if (!f) return "default";
+  if (/(broken|supply lane|rebuild|reconnect|route repair)/.test(f)) return "broken-routes";
+  if (/(cargo|stalled cargo|cargo relief)/.test(f)) return "cargo-stall";
+  if (/(stockpile|larder|food recovery)/.test(f)) return "stockpile";
+  if (/(frontier buildout|push the frontier|safe edge of the frontier)/.test(f)) return "frontier";
+  if (/(safety|defend|hold the gates|wall)/.test(f)) return "safety";
+  return "default";
 }
 
 function adjustTraderPolicy(policy, context, summary) {
@@ -424,6 +438,7 @@ function adjustTraderPolicy(policy, context, summary) {
       : focusSentence;
   }
   policy.steeringNotes = notes.slice(0, 4);
+  policy.authorVoiceHintTag = "default";
 }
 
 function adjustSaboteurPolicy(policy, context, summary) {
@@ -471,6 +486,7 @@ function adjustSaboteurPolicy(policy, context, summary) {
       : focusSentence;
   }
   policy.steeringNotes = notes.slice(0, 4);
+  policy.authorVoiceHintTag = "default";
 }
 
 function adjustHerbivorePolicy(policy, context, summary) {

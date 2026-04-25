@@ -3,6 +3,7 @@ import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balanc
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
 import { createDefaultAiRuntimeStats } from "../app/aiRuntimeStats.js";
+import { getActiveUiProfile } from "../app/uiProfileState.js";
 import {
   createInitialGrid,
   randomTileOfTypes,
@@ -55,6 +56,24 @@ function pickWorkerName(random) {
     ? idx
     : 0;
   return WORKER_NAME_BANK[safeIdx];
+}
+
+// v0.8.2 Round-5b (02e Step 4) — 40 ASCII neutral surnames for casual profile.
+// Source: Dwarf Fortress / Crusader Kings naming cadence; all ≤ 8 letters.
+// Only consumed in casual uiProfile — full/dev profile preserves old RNG seq.
+export const SURNAME_BANK = Object.freeze([
+  "Hollowbrook", "Riven", "Marsh", "Cole", "Orr", "Vesper", "Pale",
+  "Thorn", "Brannt", "Ashford", "Keane", "Drift", "Hale", "Fenn",
+  "Lowe", "Grove", "Stoker", "Reeve", "Moss", "Quinn",
+  "Ward", "Tull", "Orrow", "Sable", "Rook", "Venn", "Coll", "Pike",
+  "Arden", "Bower", "Cray", "Dane", "Elm", "Foss", "Glade", "Hearn",
+  "Inge", "Jorvik", "Lark", "Mend",
+]);
+
+function pickSurname(random) {
+  const idx = Math.floor(random() * SURNAME_BANK.length);
+  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < SURNAME_BANK.length ? idx : 0;
+  return SURNAME_BANK[safeIdx];
 }
 
 // v0.8.2 Round-0 02d-roleplayer (Step 1) — Visitor name banks. 01e introduced
@@ -187,8 +206,15 @@ export function createWorker(x, z, random = Math.random) {
   // offset of the deterministic RNG stream (see Risks §Snapshot determinism
   // in Round0/Plans/01e-innovation.md). pickTraits / generateSkills still
   // consume the same number of random() calls they did before.
+  // v0.8.2 Round-5b (02e Step 4): casual profile adds SURNAME_BANK pick
+  // here (1 extra random() call, before pickTraits to keep RNG offset stable).
+  // full/dev profile skips surname to preserve benchmark RNG sequence.
   const workerName = pickWorkerName(random);
-  const displayName = `${workerName}-${seqFromId(id)}`;
+  const uiProfile = getActiveUiProfile();
+  const surname = uiProfile === "casual" ? pickSurname(random) : null;
+  const displayName = uiProfile === "casual"
+    ? `${workerName} ${surname}`
+    : `${workerName}-${seqFromId(id)}`;
   const hungerSeekThreshold = 0.12 + random() * 0.08;
   const eatRecoveryTarget = 0.62 + random() * 0.12;
   const traits = pickTraits(random);
@@ -785,6 +811,12 @@ export function createInitialGameState(options = {}) {
         devIndexSample: 0,
       },
       lastRaidTick: -9999,
+    },
+    ui: {
+      // v0.8.2 Round-5b (02e Step 3) — scenario switch intro overlay payload.
+      // Written by GameApp.regenerateWorld after deepReplace; null when inactive.
+      // enteredAtMs is performance.now() at switch time; expires after durationMs.
+      scenarioIntro: null,
     },
     controls: {
       farmRatio: 0.5,

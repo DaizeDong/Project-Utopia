@@ -416,9 +416,18 @@ export function computeStorytellerStripModel(state) {
   // verbatim so authored model output is never overwritten. Idle keeps its
   // "holding steady" copy. See AUTHOR_VOICE_PACK comment for source origins.
   const mapTemplateId = String(state?.world?.mapTemplateId ?? "").trim();
-  const focusTag = deriveFocusTag(focus);
+  // v0.8.2 Round-5b (02e Step 2) — prefer policy.authorVoiceHintTag written by
+  // PromptBuilder when available; fall back to deriveFocusTag heuristic.
+  const policyTag = String(state?.ai?.groupPolicies?.get?.("workers")?.authorVoiceHintTag ?? "");
+  const focusTag = policyTag || deriveFocusTag(focus);
   let summaryText;
   let voicePackHit = false;
+  // v0.8.2 Round-5b (02e Step 1) — LLM-live overlay. Fallback path unchanged.
+  // LLM path: voice-pack lookup runs independently of summaryText; if it hits,
+  // voicePrefixText carries the authored short-sentence (rendered before summary
+  // by HUDController). summaryText remains the humanised LLM output unchanged.
+  let voicePrefixText = "";
+  let voicePackOverlayHit = false;
   if (hasPolicy) {
     if (mode === "fallback") {
       const vp = lookupAuthorVoice(mapTemplateId, focusTag);
@@ -430,6 +439,14 @@ export function computeStorytellerStripModel(state) {
       }
     } else {
       summaryText = humaniseSummary(summary || "colony on autopilot");
+      // LLM-live overlay: add author prefix if focusTag is specific (non-default).
+      if (mode === "llm" && focusTag && focusTag !== "default") {
+        const vp = lookupAuthorVoice(mapTemplateId, focusTag);
+        if (vp.hit) {
+          voicePrefixText = vp.text;
+          voicePackOverlayHit = true;
+        }
+      }
     }
   } else {
     summaryText = "colony holding steady \u2014 awaiting the next directive";
@@ -486,11 +503,13 @@ export function computeStorytellerStripModel(state) {
     mode,
     focusText,
     summaryText,
+    voicePrefixText,
     prefix,
     beatText,
     templateTag,
     badgeState,
     voicePackHit,
+    voicePackOverlayHit,
     diagnostic,
   };
 }
