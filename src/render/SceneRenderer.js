@@ -464,8 +464,8 @@ export class SceneRenderer {
     this.lensMode = "pressure";
     this.lastHeatLensSignature = "";
     this.lastPlacementLensSignature = "";
-    // Terrain Fertility Overlay — toggled by T key.
-    this.terrainLensActive = false;
+    // Terrain Overlay — toggled by T key. null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"
+    this.terrainLensMode = null;
     this.terrainOverlayPool = [];
     this.lastTerrainVersion = -1;
     // Tile info tooltip DOM element (resolved lazily).
@@ -474,6 +474,9 @@ export class SceneRenderer {
     // Track last pointer position for tooltip positioning.
     this.lastPointerClientX = 0;
     this.lastPointerClientY = 0;
+    // v0.8.2 — Pressure lens HTML label pool (populated lazily from #pressureLabelLayer).
+    this.pressureLabelPool = [];
+    this.pressureLabelLayerEl = null;
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -1387,7 +1390,7 @@ export class SceneRenderer {
   }
 
   #updateTerrainFertilityOverlay() {
-    if (!this.terrainLensActive) {
+    if (!this.terrainLensMode) {
       this.#hideTerrainOverlay();
       return;
     }
@@ -1397,7 +1400,16 @@ export class SceneRenderer {
       return;
     }
     this.lastTerrainVersion = gridVersion;
-    const markers = this.#buildTerrainFertilityMarkers();
+    let markers;
+    if (this.terrainLensMode === "elevation") {
+      markers = this.#buildTerrainElevationMarkers();
+    } else if (this.terrainLensMode === "connectivity") {
+      markers = this.#buildTerrainConnectivityMarkers();
+    } else if (this.terrainLensMode === "nodeDepletion") {
+      markers = this.#buildTerrainNodeDepletionMarkers();
+    } else {
+      markers = this.#buildTerrainFertilityMarkers();
+    }
     this.#ensureTerrainOverlayPool(markers.length);
     for (let i = 0; i < this.terrainOverlayPool.length; i++) {
       const mesh = this.terrainOverlayPool[i];
@@ -1409,6 +1421,97 @@ export class SceneRenderer {
       mesh.material.color.setHex(marker.color);
       mesh.material.opacity = marker.opacity;
     }
+  }
+
+  // Build elevation markers. Color tiles by their elevation value.
+  #buildTerrainElevationMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles, elevation } = grid;
+    const markers = [];
+    if (!elevation) return markers;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        const e = Number(elevation[idx] ?? 0);
+        let color, opacity;
+        if (e > 0.7) {
+          color = 0xcc4444; // red — very high
+          opacity = 0.50;
+        } else if (e > 0.4) {
+          color = 0xcc8833; // orange — high
+          opacity = 0.45;
+        } else if (e > 0.2) {
+          color = 0xaacc33; // yellow-green — mid
+          opacity = 0.40;
+        } else {
+          color = 0x88aacc; // light blue — low
+          opacity = 0.35;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  // Build connectivity markers. Color non-water tiles by road proximity (Manhattan ≤ 3).
+  #buildTerrainConnectivityMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles } = grid;
+    const markers = [];
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        // Check for a ROAD tile within Manhattan distance 3.
+        let hasRoad = false;
+        outer: for (let dz = -3; dz <= 3; dz++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+            const nx = ix + dx;
+            const nz = iz + dz;
+            if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+            if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
+          }
+        }
+        const color = hasRoad ? 0x44cc44 : 0xcc4444;
+        const opacity = hasRoad ? 0.60 : 0.40;
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  // Build node-depletion markers. Color resource buildings by soil exhaustion.
+  #buildTerrainNodeDepletionMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles } = grid;
+    const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+    const markers = [];
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        const tileType = tiles[idx];
+        if (!RESOURCE_TILES.has(tileType)) continue;
+        const ts = grid.tileState?.get?.(idx);
+        const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
+        const maxExhaustion = 8.0; // matches TERRAIN_MECHANICS.soilExhaustionMax
+        const ratio = exhaustion / maxExhaustion;
+        let color, opacity;
+        if (ratio > 0.7) {
+          color = 0xcc2222; // red — heavily depleted
+          opacity = 0.60;
+        } else if (ratio > 0.4) {
+          color = 0xcc8822; // orange — moderate depletion
+          opacity = 0.50;
+        } else {
+          color = 0x33cc33; // green — healthy
+          opacity = 0.50;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
   }
 
   // === Tile Info Tooltip ===
@@ -1558,6 +1661,67 @@ export class SceneRenderer {
 
   #hidePressureMarkers() {
     for (const entry of this.pressureMarkerPool) entry.group.visible = false;
+  }
+
+  // v0.8.2 — Pressure lens HTML label overlays.
+  // Projects each active pressure marker's world position onto screen space and
+  // positions a pooled <div class="pressure-label"> absolutely over the canvas.
+  // When the lens is off, all labels are hidden. Maximum pool size is 24
+  // (matching the buildPressureLens cap) so the DOM cost stays bounded.
+  #updatePressureLensLabels() {
+    if (typeof document === "undefined") return;
+
+    // Lazily resolve the label container once.
+    if (!this.pressureLabelLayerEl) {
+      this.pressureLabelLayerEl = document.getElementById("pressureLabelLayer");
+    }
+    const container = this.pressureLabelLayerEl;
+    if (!container) return;
+
+    const markers = this.lensMode !== "off" ? this.pressureLensMarkers : [];
+
+    // Grow pool as needed (max 24 to match buildPressureLens cap).
+    while (this.pressureLabelPool.length < markers.length) {
+      const div = document.createElement("div");
+      div.className = "pressure-label";
+      container.appendChild(div);
+      this.pressureLabelPool.push(div);
+    }
+
+    const canvasRect = this.canvas.getBoundingClientRect?.() ?? null;
+    const vpW = canvasRect ? canvasRect.width : this.canvas.clientWidth;
+    const vpH = canvasRect ? canvasRect.height : this.canvas.clientHeight;
+    const offsetLeft = canvasRect ? canvasRect.left : 0;
+    const offsetTop = canvasRect ? canvasRect.top : 0;
+
+    for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
+      const el = this.pressureLabelPool[i];
+      const marker = markers[i];
+      if (!marker || vpW <= 0 || vpH <= 0) {
+        el.style.display = "none";
+        continue;
+      }
+
+      const wp = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      VEC_TMP.set(wp.x, 0.3, wp.z);
+      VEC_TMP.project(this.camera);
+
+      // Discard labels that are off-screen or behind the camera.
+      if (VEC_TMP.z > 1 || Math.abs(VEC_TMP.x) > 1.05 || Math.abs(VEC_TMP.y) > 1.05) {
+        el.style.display = "none";
+        continue;
+      }
+
+      // NDC → pixel coords relative to canvas.
+      const px = (VEC_TMP.x * 0.5 + 0.5) * vpW;
+      const py = (-VEC_TMP.y * 0.5 + 0.5) * vpH;
+
+      el.dataset.kind = marker.kind ?? "";
+      el.textContent = String(marker.label ?? marker.kind ?? "");
+      el.style.left = `${Math.round(px + offsetLeft)}px`;
+      el.style.top = `${Math.round(py + offsetTop)}px`;
+      el.style.display = "block";
+    }
   }
 
   #updateHeatTileOverlay(markers) {
@@ -2852,20 +3016,27 @@ export class SceneRenderer {
     return this.lensMode;
   }
 
-  // Toggle terrain fertility overlay. Returns true if now active, false if off.
+  // Cycle terrain overlay mode: null → "fertility" → "elevation" → "connectivity" → "nodeDepletion" → null.
+  // Returns the new mode string (null when off).
   toggleTerrainLens() {
-    this.terrainLensActive = !this.terrainLensActive;
-    if (!this.terrainLensActive) {
+    const MODES = [null, "fertility", "elevation", "connectivity", "nodeDepletion"];
+    const idx = MODES.indexOf(this.terrainLensMode);
+    this.terrainLensMode = MODES[(idx + 1) % MODES.length];
+    if (!this.terrainLensMode) {
       this.#hideTerrainOverlay();
     } else {
       // Force rebuild on next render pass.
       this.lastTerrainVersion = -1;
     }
-    return this.terrainLensActive;
+    return this.terrainLensMode;
   }
 
   getTerrainLensActive() {
-    return this.terrainLensActive;
+    return this.terrainLensMode !== null;
+  }
+
+  getTerrainLensMode() {
+    return this.terrainLensMode;
   }
 
   resetView() {
@@ -2920,6 +3091,7 @@ export class SceneRenderer {
     this.#updatePathLine();
     this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
+    this.#updatePressureLensLabels();
     this.#updatePlacementLens();
     this.#updateTerrainFertilityOverlay();
     this.#updateOverlayMeshes();
