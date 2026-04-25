@@ -1,5 +1,53 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-6 Wave-2 01d-mechanics-content: EventDirector proactive pressure pump + mood→output coupling + predator species variants
+
+**Scope:** Reviewer 01d-mechanics-content rated content variety 3/10 ("12 minutes simulated, animals only died once, zero raids, zero disease, zero natural disasters; mood/morale visible in UI but with 0 behaviour consequences; 1 predator species"). Three structural causes: (i) **no system pumps proactive events into `state.events.queue`** — `WorldEventSystem` consumes them, but the only producer is `EnvironmentDirectiveApplier` which depends on a live LLM directive (offline ≈100% in default runs); (ii) **mood is a decorative parameter** — `WorkerAISystem` writes `worker.mood` every tick + emits `WORKER_MOOD_LOW`, but no consumer reads it and no action branch uses it; (iii) **only 1 predator species** with 1 behaviour template. This plan delivers methodology A: EventDirector + mood gameplay coupling + species variants — three reviewer ROI items in one plan, no new tile / texture / render-mesh changes (which would have blown LOC + benchmark budgets).
+
+### New Features (Round 6 Wave-2 — 01d-mechanics-content)
+- **EventDirectorSystem** (`src/simulation/meta/EventDirectorSystem.js`, NEW): Periodic proactive event pump. Every `BALANCE.eventDirectorBaseIntervalSec` (default 240s game-time ≈ 1 game-day @ 4× speed), rolls a weighted random over six EVENT_TYPEs (`banditRaid 0.30 / animalMigration 0.25 / tradeCaravan 0.18 / diseaseOutbreak 0.10 / wildfire 0.10 / moraleBreak 0.07`) using the seeded `services.rng` (deterministic). On a `BANDIT_RAID` roll while `state.gameplay.raidEscalation.intervalTicks` cooldown is active, downgrades to a non-raid type so the cadence promise holds. Wired between `RaidEscalatorSystem` and `ColonyDirectorSystem` in `SYSTEM_ORDER` so it can read `raidEscalation` and write the queue before ColonyDirector's snapshot. (Steps 2, 3, 9)
+- **Three new EVENT_TYPE strings** (`src/config/constants.js`): `MORALE_BREAK`, `DISEASE_OUTBREAK`, `WILDFIRE`. Each gets an `applyActiveEvent` branch in `WorldEventSystem`:
+  - `DISEASE_OUTBREAK`: drains `state.resources.medicine` at 0.4 × intensity per second; rotates damage across alive workers (5 hp/s × intensity); records "Plague spread (X infected)" worker memory.
+  - `WILDFIRE`: probabilistically converts `targetTiles` LUMBER → RUINS at 5% × dt × intensity per second using `applyImpactTileToGrid` (reuse of bandit raid helper).
+  - `MORALE_BREAK`: pinpoints the lowest-mood worker and stamps `worker.blackboard.moraleBreak = { untilSec }` for the event duration (default 30s). During the break, mood multiplier is forced to 0 (worker harvests/unloads at 0× output). (Steps 1, 4)
+- **Mood→output coupling** (`src/simulation/npc/WorkerAISystem.js`): On every tick after the mood compositor recomputes `worker.mood`, also computes `worker.blackboard.moodOutputMultiplier = clamp(BALANCE.moodOutputMin + (1 - moodOutputMin) × mood, 0, 1)` (default min 0.5 → low-mood workers harvest at 50%, high-mood at 100%). Forced to 0 while a `MORALE_BREAK` blackboard tag is active. The multiplier is applied to: (a) `farmAmount` / `stoneAmount` / `herbAmount` / `woodAmount` in `handleHarvest` before `resolveWorkCooldown`, and (b) `unloadBudget` in `handleDeliver`. Move speed (deliver pace) intentionally NOT touched per plan §5 risk ("avoid stacking with weather/fatigue/hunger multipliers across all subsystems"). On a downward 0.25 mood crossing, enqueues a `MORALE_BREAK` event (50% probability via tick-parity gate to preserve seeded RNG, 90s per-worker cooldown via `BALANCE.moraleBreakCooldownSec`). (Step 5)
+- **Predator species variants** (`src/config/constants.js`, `src/entities/EntityFactory.js`, `src/simulation/npc/AnimalAISystem.js`, `src/simulation/ecology/WildlifePopulationSystem.js`):
+  - New `ANIMAL_SPECIES` enum (`DEER / WOLF / BEAR / RAIDER_BEAST`) — sub-field on the animal, `ANIMAL_KIND` stays binary.
+  - `createAnimal(x, z, kind, random, species=null)` accepts a 5th species arg; if omitted, herbivores default to DEER and predators draw weighted-random over wolf 55% / bear 30% / raider_beast 15% per `BALANCE.predatorSpeciesWeights`.
+  - HP table: deer 70 / wolf 80 / bear 130 / raider_beast 110. `displayName` carries the species label (`Wolf-12`, `Bear-7`, `Raider-beast-3`, `Deer-19`).
+  - `AnimalAISystem.predatorTick` reads `animal.species` and applies a per-species behaviour profile: wolf `attackCooldownSec=1.4` (default pack hunter); bear `attackCooldownSec=2.6` + 1.5× chase distance (slow but punishing); raider_beast `attackCooldownSec=1.8` + `ignoresHerbivores=true` (the new "raider" archetype that targets workers exclusively).
+  - `WildlifePopulationSystem` exposes `state.metrics.ecology.predatorsBySpecies = { wolf, bear, raider_beast }` so HUD/Inspector panels can show species splits without re-walking `state.animals`. (Steps 1, 6, 7, 8)
+- **9 new BALANCE keys** (`src/config/balance.js`): `eventDirectorBaseIntervalSec` (240), `eventDirectorWeights` (frozen), `eventDirectorTuning` (per-type duration/intensity), `predatorSpeciesWeights`, `herbivoreSpeciesWeights`, `moodOutputMin` (0.5), `moraleBreakCooldownSec` (90). Appended at file tail; no existing keys mutated. (Step 9)
+
+### New Tests (+18 cases, all passing)
+- `test/event-director.test.js` (5 cases): first-tick anchor (no dispatch); dispatches one event after intervalSec; weight distribution converges to ±10% over 100 dispatches; bandit raid downgrades when cooldown active; falls back to Math.random when services.rng absent.
+- `test/mood-output-coupling.test.js` (5 cases): mood=0 → moodOutputMin; mood=1 → 1.0; mood=0.5 → midpoint; low-mood (0.1) yields ≥40% less than high-mood (0.9); BALANCE keys exist with expected defaults.
+- `test/predator-species.test.js` (5 cases): herbivore defaults to deer + 70 hp; predator distribution matches `predatorSpeciesWeights` ±0.12 over 300 spawns; species HP table matches plan §6; displayName species labels (Wolf / Bear / Raider-beast / Deer); profile contract (wolf 1.4s, bear 2.6s, raider_beast 1.8s).
+- `test/event-director-disease-wildfire.test.js` (3 cases): DISEASE_OUTBREAK drains medicine + drops worker hp over 36s; WILDFIRE converts a LUMBER tile to RUINS within 10s; MORALE_BREAK assigns blackboard.moraleBreak.untilSec on the lowest-mood worker.
+
+### Files Changed
+- `src/config/constants.js` — `EVENT_TYPE` +3 entries; new `ANIMAL_SPECIES` enum; `SYSTEM_ORDER` insertion of `EventDirectorSystem` between `RaidEscalatorSystem` and `ColonyDirectorSystem`.
+- `src/config/balance.js` — 9 new keys appended at file tail (no existing-key mutation).
+- `src/simulation/meta/EventDirectorSystem.js` — NEW (~150 LOC).
+- `src/app/GameApp.js` — wires `EventDirectorSystem` into `createSystems()` between `RaidEscalatorSystem` and `RoleAssignmentSystem` (matches `SYSTEM_ORDER`).
+- `src/world/events/WorldEventSystem.js` — `applyActiveEvent` adds three branches (`DISEASE_OUTBREAK` / `WILDFIRE` / `MORALE_BREAK`) ~70 LOC.
+- `src/simulation/npc/WorkerAISystem.js` — mood→output multiplier compute + apply at four harvest yields + unload rate; `MORALE_BREAK` enqueue on mood<0.25 crossing with 50%/cooldown gates.
+- `src/entities/EntityFactory.js` — `createAnimal(x, z, kind, random, species=null)` 5th arg + species pickers + species HP/label tables.
+- `src/simulation/npc/AnimalAISystem.js` — `PREDATOR_SPECIES_PROFILE` table + `getPredatorProfile`; `predatorTick` reads profile for cooldown/ignoresHerbivores.
+- `src/simulation/ecology/WildlifePopulationSystem.js` — exposes `ecology.predatorsBySpecies` aggregation.
+- `test/event-director.test.js` — NEW (5 cases).
+- `test/mood-output-coupling.test.js` — NEW (5 cases).
+- `test/predator-species.test.js` — NEW (5 cases).
+- `test/event-director-disease-wildfire.test.js` — NEW (3 cases).
+
+### Notes
+- **Test summary**: 1355 / 1361 passing (4 pre-existing baseline failures + 2 pre-existing skips). +18 new passing tests. 0 new failures introduced. The 4 pre-existing failures (build-spam wood cap, scene-renderer source proximity-fallback regex, formatGameEventForLog noisy-event filter, ui-voice main.js dev-mode regex) are inherited from the Wave-1 baseline and are NOT caused by this work.
+- **Bench (seed 42, temperate_plains, 365 days, --soft-validation)**: outcome=`max_days_reached`, devIndex(last)=70.44, survivalScore=82620, passed=true. Far above the implementer hand-off threshold of 41.8 (5% below 44 baseline). EventDirector cadence at 240s baseline does not regress DevIndex. Day-30 / 90 / 180 / 365 checkpoints all hit ~70.5 ± 0.5.
+- **freeze_policy: lifted** (per plan frontmatter). Plan §3 deliberately avoided new tile IDs / textures / mesh atlases / map-template generators because those would have collided with Wave-1 locks (PressureLens halo, SceneRenderer dedup, body.dev-mode gate) and exceeded the 4-seed benchmark perf budget.
+- **Wave-2 sequencing (Stage B §8)**: 01d went first; 02a Wave-2 sibling plan touches `RaidEscalatorSystem` + `balance.js#raidFallback*` and may rebase on this commit without conflict (no overlapping balance keys; EventDirector reads `raidEscalation.intervalTicks` but does not write it).
+
+
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-1 02b-casual: F1 / select-blur shortcut traps + Heat Lens casual copy + scenario casual rewrite + peckish jargon clean
 
 **Scope:** Reviewer 02b-casual rated the build 3/10 and quit at ~25 minutes citing a hostile first-contact UX. Three load-bearing root causes: (i) **player-facing engineering jargon** ("surplus is trapped", "starving input", "halo", "peckish", "AI proxy unreachable (timeout)", "Why no WHISPER?"), (ii) **keyboard-shortcut traps that destroyed progress** — F1 was not in `shortcutResolver`'s handled keyset, so the browser default (refresh / Help) reloaded the page; the `#overlayMapTemplate` `<select>` retained focus after Start Colony, so digit-1..9 cycled the template instead of selecting build tools, and (iii) **emotional payoff layer** (audio / newborn moment / KPI contradictions). This plan covers (i) and (ii) — Method A "Casual Onboarding Pack". Audio MVP (Method C) is explicitly DEFERRED to Round 7+ per plan §3 because procedural tones without curated assets sound worse than silence.
