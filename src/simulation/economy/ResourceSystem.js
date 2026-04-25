@@ -286,7 +286,11 @@ export class ResourceSystem {
     const gridChanged = this.lastGridVersion !== state.grid.version;
 
     if (gridChanged) {
+      const prevBuildings = state.buildings ? { ...state.buildings } : null;
       state.buildings = rebuildBuildingStats(state.grid);
+      if (prevBuildings) {
+        this.#detectObjectiveRegressions(prevBuildings, state.buildings, state);
+      }
       if (state.debug) {
         const roads = countTilesByType(state.grid, [TILE.ROAD]);
         const farms = countTilesByType(state.grid, [TILE.FARM]);
@@ -441,5 +445,44 @@ export class ResourceSystem {
       workersStarving,
       ts: nowSec,
     });
+  }
+
+  // v0.8.2 Round-5b (02a-rimworld-veteran Step 3) — Detect when scenario-tracked
+  // building counts drop between grid rebuilds and emit OBJECTIVE_REGRESSED with
+  // a cause inferred from recent BUILDING_DESTROYED events in the event log.
+  #detectObjectiveRegressions(prev, curr, state) {
+    const tracked = [
+      ["warehouses", "warehouse"],
+      ["farms", "farm"],
+      ["lumbers", "lumber_camp"],
+      ["walls", "wall"],
+      ["kitchens", "kitchen"],
+    ];
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const windowSec = Number(BALANCE.scenarioObjectiveRegressionWindowSec ?? 8);
+    const log = state.events?.log ?? [];
+    for (const [pluralKey, category] of tracked) {
+      const from = Number(prev?.[pluralKey] ?? 0);
+      const to = Number(curr?.[pluralKey] ?? 0);
+      const delta = from - to;
+      if (delta < 1) continue;
+      let cause = "unknown";
+      for (let i = log.length - 1; i >= 0; i--) {
+        const ev = log[i];
+        if (nowSec - Number(ev.t ?? 0) > windowSec) break;
+        if (ev.type !== "building_destroyed") continue;
+        const detail = ev.detail ?? {};
+        if (detail.cause === "wildfire") { cause = "wildfire"; break; }
+        if (detail.tool === "erase") { cause = "demolish"; break; }
+      }
+      emitEvent(state, EVENT_TYPES.OBJECTIVE_REGRESSED, {
+        category,
+        pluralKey,
+        from,
+        to,
+        delta,
+        cause,
+      });
+    }
   }
 }

@@ -628,13 +628,25 @@ export function generateFallbackPlan(observation, state) {
   // pop>=12 branch upgrades priority to "critical" so the planner can't be
   // crowded out by farm/warehouse stacking when the meal pipeline is the
   // actual bottleneck.
+  // v0.8.2 Round-5b (02a-rimworld-veteran Step 2) — Scenario-aware Kitchen gate.
+  // Gate Bastion / Broken Frontier allocate 7-10 walls × 1 stone each, so a
+  // flat stone>=2 gate loses to wall allocation and Kitchen never gets built.
+  // If scenario wants walls AND we've built less than half, reserve stone for
+  // remaining walls before opening the Kitchen gate.
+  const wallTargetTotal = Number(state?.gameplay?.scenario?.targets?.walls ?? 0);
+  const wallBuilt = Number(buildings.walls ?? 0);
+  const remainingWalls = Math.max(0, wallTargetTotal - wallBuilt);
+  const reservedStoneForWalls = (wallTargetTotal >= 7 && wallBuilt < wallTargetTotal * 0.5)
+    ? Math.min(remainingWalls, Math.max(0, stone - 2))
+    : 0;
+  const kitchenStoneGate = 2 + reservedStoneForWalls;
   if (
     kitchens === 0
     && farms >= 2
     && food >= 5
     && workerCount >= 2
     && wood >= 8
-    && stone >= 2
+    && stone >= kitchenStoneGate
     && clusters.length > 0
   ) {
     const forceCritical = workerCount >= 12;

@@ -270,7 +270,10 @@ export class GameApp {
       },
     );
     this.accumulatorSec = 0;
-    this.maxSimulationStepsPerFrame = 6;
+    // v0.8.2 Round-5b (02a Step 1) — raise from 6 to 12 to deliver real 4×
+    // fast-forward. Phase 10 long-horizon hardening validated 12 steps/frame
+    // holds determinism.
+    this.maxSimulationStepsPerFrame = 12;
     this.uiRefreshIntervalSec = 1 / 8;
     this.uiRefreshAccumulator = this.uiRefreshIntervalSec;
     this.systemProfileInterval = 4;

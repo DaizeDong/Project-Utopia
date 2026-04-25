@@ -32,6 +32,11 @@ const EVENT_TYPES = Object.freeze({
   // death in the last 30s. ColonyDirectorSystem listens and clamps
   // state.controls.speed to 0 + sets pausedByCrisis flag for HUD surfaces.
   FOOD_CRISIS_DETECTED: "food_crisis_detected",
+  // v0.8.2 Round-5b (02a-rimworld-veteran Step 3) — Emitted by ResourceSystem
+  // when state.buildings[category] decreases by ≥1 between grid rebuilds.
+  // Surfaces silent scenario-objective regression (e.g. warehouses 7→3 with
+  // no event log). Cause inferred from recent BUILDING_DESTROYED events.
+  OBJECTIVE_REGRESSED: "objective_regressed",
 });
 
 export { EVENT_TYPES };
