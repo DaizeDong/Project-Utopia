@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-5b Wave-1 01a-onboarding: food-crisis autopause + buildHint pipe + status-text data-full
+
+**Scope:** Onboarding failure-contract closure — 3 simulation/UI/render layers. Four root-causes addressed: (R-A) Autopilot silently collapsing the colony without any HUD feedback; (R-B) build-tool reject reasons invisible (red mesh but no text); (R-B) scenario/next-action text truncated with no hover fallback; (R-B) hotkey doc `1-6`/`1-12` inconsistency.
+
+### New Features
+- **FOOD_CRISIS_DETECTED event** (`src/simulation/meta/GameEventBus.js`): New event type `"food_crisis_detected"` emitted by `ResourceSystem.#emitFoodCrisisIfNeeded` when `food=0` + `autopilot.enabled` + ≥1 starvation death in last 30 s. `benchmarkMode=true` bypasses the emit to keep long-horizon-bench.mjs deterministic. 5 s cooldown prevents repeat emits within a single crisis.
+- **Autopilot food-crisis auto-pause** (`src/app/GameApp.js`): `#maybeAutopauseOnFoodCrisis()` scans the event log for fresh `FOOD_CRISIS_DETECTED` events; on first detection sets `controls.isPaused=true`, `ai.pausedByCrisis=true`, `ai.pausedByCrisisAt`, and writes a teaching-style `actionMessage`. Auto-clears when `food >= 10` and 30 s elapsed.
+- **`#statusAutopilotCrisis` banner** (`src/ui/hud/HUDController.js`, `index.html`): Red alert div shown whenever `ai.pausedByCrisis===true`, displaying the `actionMessage` teaching string. Hidden when crisis clears.
+- **Build-reject reason text pipeline** (`src/render/SceneRenderer.js`): `#onPointerMove` pipes `BuildSystem.previewToolAt(...).reasonText` into `state.controls.buildHint` on invalid hover. Appends `" (Ctrl+Z to undo last build.)"` when undo stack is non-empty.
+- **`#statusBuildHint` HUD slot** (`src/ui/hud/HUDController.js`, `index.html`): New `<span id="statusBuildHint">` renders `state.controls.buildHint` with diff-guard to avoid DOM thrash. Hidden when hint is empty.
+- **`data-full` anti-truncation** (`src/ui/hud/HUDController.js`): `#renderNextAction` sets both `title=` and `data-full=` to the full untruncated text so CSS ellipsis never swallows player instructions. Hover tooltip exposes the complete directive.
+- **`autopilotStatus.js` pausedByCrisis branch**: `getAutopilotStatus` returns `"Autopilot PAUSED · food crisis — press Space or toggle to resume"` instead of the optimistic ON banner. `"fallback/fallback"` collapses to `"rule-based"`.
+- **Hotkey doc `1-6` → `1-12`** (`index.html`): Help/Controls page now reads `1–12 — quick-pick build tool (12 tools in the Build toolbar; hover any button for name + hotkey)` matching the Welcome banner.
+
+### New Tests
+- `test/autopilot-food-crisis-autopause.test.js` — 6 tests: FOOD_CRISIS_DETECTED emitted on food=0+autopilot+starvation; benchmarkMode bypass; food>0 no-emit; autopilot off no-emit; no-deaths no-emit; 5 s cooldown.
+- `test/build-hint-reasoned-reject.test.js` — 2 tests: farm on water tile yields `ok:false` + non-empty `reasonText`; non-grass tile reject populates `reasonText`.
+- `test/hud-truncation-data-full.test.js` — 4 tests: `data-full` stores full text; falls back to loopText when title empty; long text >40 chars stored untruncated; `title` and `data-full` consistent.
+
+### Files Changed
+- `src/simulation/meta/GameEventBus.js` — `FOOD_CRISIS_DETECTED: "food_crisis_detected"` added to `EVENT_TYPES`
+- `src/simulation/economy/ResourceSystem.js` — `#emitFoodCrisisIfNeeded(state)` private method; called at end of `update()`
+- `src/app/GameApp.js` — `#maybeAutopauseOnFoodCrisis()` private method; called from `stepSimulation()` after systems run
+- `src/ui/hud/autopilotStatus.js` — `pausedByCrisis` early-return branch; `"fallback/fallback"` → `"rule-based"` label; `pausedByCrisis` field in return object
+- `src/ui/hud/HUDController.js` — `statusBuildHint`/`statusAutopilotCrisis` DOM refs; `#renderBuildHint()`; `#renderAutopilotCrisis()`; `#renderNextAction` sets `data-full=`; both render methods called from `render()`
+- `src/render/SceneRenderer.js` — `#onPointerMove` pipes `previewToolAt().reasonText` + Ctrl+Z hint into `state.controls.buildHint`
+- `index.html` — `<span id="statusBuildHint">`, `<span id="statusAutopilotCrisis">` DOM nodes; Controls hotkey line `1-6` → `1-12`
+- `test/autopilot-food-crisis-autopause.test.js` — new test file (6 tests)
+- `test/build-hint-reasoned-reject.test.js` — new test file (2 tests)
+- `test/hud-truncation-data-full.test.js` — new test file (4 tests)
+
+### Validation
+- Full suite: 1202/1204 pass (1202 pass, 0 fail, 2 pre-existing skips). +4 new tests from Step 10 (hud-truncation-data-full).
+
+---
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-1 01e-innovation: policyHistory ring + WHISPER diagnostic + AIPolicyTimelinePanel + errorLog
 
 **Scope:** Exposes existing AI diagnostic data to the player UI without adding new simulation logic. Four deliverables: (1) policyHistory ring buffer in NPCBrainSystem (32-entry, focus+source-dedup, pure observer); (2) WHISPER diagnostic overlay in storytellerStrip — synthesises whisperBlockedReason from lastPolicyError/proxyHealth/policyLlmCount and pipes it into the storytellerStrip tooltip + new #storytellerWhyNoWhisper sibling span; (3) AIPolicyTimelinePanel — new read-only Debug subpanel rendering state.ai.policyHistory newest-first (12 entries max); (4) AIExchangePanel errorLog card — collapsed view of last ≤5 errored/fallback exchanges. All data sources pre-existed in state; benchmark bit-identical.
