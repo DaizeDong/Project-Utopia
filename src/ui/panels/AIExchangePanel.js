@@ -58,6 +58,14 @@ function renderExchangeCard(title, exchange, keyPrefix) {
     `;
   }
 
+  const isLlm = exchange.source === "llm";
+  const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+  const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+  const latencyPart = exchange.latencyMs != null ? ` | ${Number(exchange.latencyMs).toFixed(0)}ms` : "";
+  const modelPart = exchange.model ? ` ${escapeHtml(exchange.model)}${latencyPart}` : latencyPart;
+  const sourceLabel = isLlm ? `LLM${modelPart}` : "RULE-BASED";
+  const badgeLine = `${badgeDot} ${sourceLabel} at T=${fmtSec(exchange.simSec)}`;
+
   const status = [
     `source=${escapeHtml(exchange.source || "-")}`,
     `fallback=${String(Boolean(exchange.fallback))}`,
@@ -68,7 +76,8 @@ function renderExchangeCard(title, exchange, keyPrefix) {
   return `
     <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
       <summary class="small"><b>${escapeHtml(title)}</b></summary>
-      <div class="small" style="margin-top:6px;">${status}</div>
+      <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+      <div class="small" style="margin-top:2px;">${status}</div>
       <div class="small"><b>Endpoint:</b> ${escapeHtml(exchange.endpoint || "-")} | <b>Error:</b> ${escapeHtml(exchange.error || "none")}</div>
       <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:prompt-system`)}" style="margin-top:6px;" open>
         <summary class="small"><b>Prompt Input: System</b></summary>

@@ -495,6 +495,10 @@ export class BuildToolbar {
         this.state.ai.mode = "fallback";
         this.state.controls.actionMessage = "AI disabled. Using fallback.";
       } else {
+        // Reset decision timers so the LLM is called immediately on the next
+        // simulation tick rather than waiting for the full interval to elapse.
+        this.state.ai.lastEnvironmentDecisionSec = -9999;
+        this.state.ai.lastPolicyDecisionSec = -9999;
         this.state.controls.actionMessage = "AI enabled. Waiting for next decision cycle.";
       }
       this.state.controls.actionKind = "info";

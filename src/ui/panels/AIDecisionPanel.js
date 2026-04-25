@@ -134,8 +134,15 @@ export class AIDecisionPanel {
     const resultSec = fmtSec(ai.lastEnvironmentResultSec);
     const err = ai.lastEnvironmentError ? escapeHtml(ai.lastEnvironmentError) : "";
 
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
     if (!directive) {
       return `
+        <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
         <div class="small muted">No environment directive applied yet.</div>
         <div class="small muted" style="margin-top:4px;">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
       `;
@@ -155,6 +162,7 @@ export class AIDecisionPanel {
       : "none";
 
     return `
+      <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
       <div class="small"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
       <div class="small"><b>weather:</b> ${escapeHtml(weather)} | <b>duration:</b> ${fmtNum(durationSec, 1)}s | <b>tension:</b> ${fmtNum(tension, 2)}</div>
       <div class="small"><b>focus:</b> ${focus}</div>
@@ -179,11 +187,18 @@ export class AIDecisionPanel {
     const groupTarget = ai.groupStateTargets?.get?.(groupId) ?? null;
     const targetTtl = groupTarget ? fmtSec(Number(groupTarget.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0)) : "-";
 
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
     if (!policy) {
       return `
         <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;">
           <summary class="small"><b>${escapeHtml(groupId)}</b> (no policy)</summary>
-          <div class="small muted" style="margin-top:6px;">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
+          <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+          <div class="small muted">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
           ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
         </details>
       `;
@@ -202,7 +217,8 @@ export class AIDecisionPanel {
     return `
       <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;" open>
         <summary class="small"><b>${escapeHtml(groupId)}</b> | ttl=${ttl}s | risk=${risk}</summary>
-        <div class="small" style="margin-top:6px;"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
+        <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+        <div class="small"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
         <div class="small"><b>expires:</b> ${expiresAtSec}</div>
         <div class="small"><b>stateTarget:</b> ${escapeHtml(groupTarget?.targetState ?? "none")} | <b>priority:</b> ${fmtNum(groupTarget?.priority ?? 0, 2)} | <b>targetTTL:</b> ${targetTtl}</div>
         <div class="small"><b>focus:</b> ${focus}</div>

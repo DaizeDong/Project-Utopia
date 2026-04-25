@@ -518,6 +518,12 @@ export class HUDController {
       const active = Boolean(enabled);
       this.state.ai.enabled = active;
       if (!active) this.state.ai.mode = "fallback";
+      // Reset decision timers so the LLM is called immediately on the next
+      // simulation tick rather than waiting for the full interval to elapse.
+      if (active) {
+        this.state.ai.lastEnvironmentDecisionSec = -9999;
+        this.state.ai.lastPolicyDecisionSec = -9999;
+      }
       this.state.controls.actionMessage = describeAutopilotToggle(active).actionMessage;
       this.state.controls.actionKind = "info";
       if (this.aiToggleTop) this.aiToggleTop.checked = active;
@@ -984,6 +990,31 @@ export class HUDController {
         }
       }
     }
+
+    // Mirror storyteller content into the Colony sidebar section (#storytellerSidebarBadge etc.)
+    // so players see the storyteller status when the bar strip is hidden.
+    if (typeof document !== "undefined") {
+      const sidebarBadge = document.getElementById("storytellerSidebarBadge");
+      const sidebarFocus = document.getElementById("storytellerSidebarFocus");
+      const sidebarSummary = document.getElementById("storytellerSidebarSummary");
+      if (sidebarBadge || sidebarFocus || sidebarSummary) {
+        const badgeEl = typeof document !== "undefined" ? document.getElementById("storytellerBadge") : null;
+        const focusEl = typeof document !== "undefined" ? document.getElementById("storytellerFocus") : null;
+        const summaryEl = typeof document !== "undefined" ? document.getElementById("storytellerSummary") : null;
+        if (sidebarBadge && badgeEl) {
+          sidebarBadge.textContent = badgeEl.textContent;
+          if (badgeEl.dataset?.mode !== undefined) sidebarBadge.dataset.mode = badgeEl.dataset.mode;
+          else sidebarBadge.setAttribute?.("data-mode", badgeEl.getAttribute?.("data-mode") ?? "idle");
+        }
+        if (sidebarFocus && focusEl) {
+          sidebarFocus.textContent = focusEl.textContent;
+        }
+        if (sidebarSummary && summaryEl) {
+          sidebarSummary.textContent = summaryEl.textContent;
+        }
+      }
+    }
+
     this.eventVal.textContent = getEventInsight(state);
     this.timeVal.textContent = `${state.metrics.timeSec.toFixed(1)}s`;
     if (this.toolVal) this.toolVal.textContent = state.controls.tool;
