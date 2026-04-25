@@ -5,7 +5,7 @@ round: 6
 wave: 1
 date: 2026-04-25
 parent_commit: db19ef5
-head_commit: PENDING
+head_commit: 35ba584
 status: DONE
 steps_done: 10/10
 tests_passed: 1319/1325 (4 pre-existing failures + 2 pre-existing skips)
