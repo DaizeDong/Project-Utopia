@@ -57,6 +57,8 @@ import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
+import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
+import { setActiveUiProfile } from "./uiProfileState.js";
 
 // v0.8.2 — DOM id for the sidebar logistics legend card.
 // Defined as a module-level constant so the string literal stays outside
@@ -1078,6 +1080,14 @@ export class GameApp {
     next.metrics.aiRuntime = { ...(this.state.metrics.aiRuntime ?? next.metrics.aiRuntime ?? {}) };
 
     deepReplaceObject(this.state, next);
+    // v0.8.2 Round-5b (02e Step 3) — write scenario intro overlay so HUDController
+    // can show the 1.5s opening-pressure fade when a new map is loaded.
+    if (!this.state.ui) this.state.ui = {};
+    const _introPayload = getScenarioIntroPayload(this.state.world.mapTemplateId);
+    this.state.ui.scenarioIntro = {
+      ..._introPayload,
+      enteredAtMs: typeof performance !== "undefined" ? performance.now() : Date.now(),
+    };
     this.#sanitizeControls(false);
 
     this.systems = this.createSystems();
@@ -1891,6 +1901,9 @@ export class GameApp {
     if (this.state?.controls) {
       this.state.controls.uiProfile = profile;
     }
+    // v0.8.2 Round-5b (02e Step 4) — sync module-level uiProfileState so
+    // EntityFactory.createWorker can read the active profile without a prop-drill.
+    setActiveUiProfile(profile);
   }
 
   dispose() {

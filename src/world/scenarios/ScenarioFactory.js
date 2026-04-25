@@ -87,6 +87,18 @@ export function getScenarioVoiceForTemplate(templateId) {
   return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
 }
 
+// v0.8.2 Round-5b (02e Step 3) — intro payload for scenario switch fade.
+// GameApp.regenerateWorld writes this to state.ui.scenarioIntro after deepReplace;
+// HUDController reads it to show a 1.5s opening-pressure overlay on the strip.
+export function getScenarioIntroPayload(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return Object.freeze({
+    title: String(voice.title ?? ""),
+    openingPressure: String(voice.openingPressure ?? ""),
+    durationMs: 1500,
+  });
+}
+
 /**
  * v0.8.2 Round-5b Wave-1 (01e Step 3) — export the per-template scenario
  * voice strings pre-packaged for HUD consumption. Returns a frozen map
