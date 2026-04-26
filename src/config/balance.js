@@ -612,17 +612,25 @@ export const BALANCE = Object.freeze({
   // and protect the 4-seed bench gate (DevIndex ≥ 32 / deaths ≤ 499).
   // Per plan §5 R1 mitigation ladder: raise graceSec to 480 if 4-seed bench
   // tanks > 5%; or, as last resort, retreat raidEnvironmentDeathBudget.
+  // v0.8.2 Round-6 Wave-2 acceptance-gate tune (post-bench 2025-04-25):
+  // Wave-2 baseline (graceSec 360 / popFloor 18 / eventDirectorBaseIntervalSec
+  // 240) collapsed seed-99 by day 23 (pop 1, deaths 48). Apply Stage B Risk
+  // #2 mitigation in priority order: 02a raidFallback first, then 01d
+  // EventDirector base interval. Raise grace 360 -> 480 (extra game-day of
+  // boot calm) + popFloor 18 -> 24 (only fire raid when colony is genuinely
+  // defendable) + EventDirector interval 240 -> 360 (~50% slower proactive
+  // pressure). 01b raid params untouched (already tightened in 8604240).
   raidFallbackScheduler: Object.freeze({
-    graceSec: 360,        // boot grace (~6 game-min) before the first auto-raid
-    popFloor: 18,         // skip if colony hasn't grown to a defendable size
+    graceSec: 480,        // boot grace (~8 game-min) before the first auto-raid
+    popFloor: 24,         // skip if colony hasn't grown to a defendable size
     foodFloor: 60,        // skip if starvation imminent
     durationSec: 18,      // matches the default WorldEventSystem raid window
   }),
   // Flat aliases so callers can read BALANCE.raidFallback* directly without
   // dereferencing the frozen sub-block (matches the `raidIntervalBaseTicks`
   // flat-field convention this file already uses).
-  raidFallbackGraceSec: 360,
-  raidFallbackPopFloor: 18,
+  raidFallbackGraceSec: 480,
+  raidFallbackPopFloor: 24,
   raidFallbackFoodFloor: 60,
   raidFallbackDurationSec: 18,
   // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — soft cap on the
@@ -643,10 +651,11 @@ export const BALANCE = Object.freeze({
   raidEnvironmentCooldownSec: 360,
   raidEnvironmentThreatThreshold: 75,
   // --- v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 9) — EventDirector
-  // proactive pressure cadence + species/mood tuning. Per plan §5 risk
-  // analysis: 240s ≈ 4 game-min @ 4× speed → ~1 dispatched event per
-  // game-day; raise to 360 if 4-seed bench DevIndex tanks > 5%.
-  eventDirectorBaseIntervalSec: 240,
+  // proactive pressure cadence + species/mood tuning. Initial 240s tanked
+  // seed-99 (loss day 23) via combined event + raid pressure; per Stage B
+  // §7 Risk #2 lifted to 360s (~50% slower) alongside the 02a raidFallback
+  // tightening above.
+  eventDirectorBaseIntervalSec: 360,
   eventDirectorWeights: Object.freeze({
     banditRaid: 0.30,
     animalMigration: 0.25,
@@ -669,8 +678,13 @@ export const BALANCE = Object.freeze({
   predatorSpeciesWeights: Object.freeze({ wolf: 0.55, bear: 0.30, raider_beast: 0.15 }),
   herbivoreSpeciesWeights: Object.freeze({ deer: 1.0 }),
   // Mood→output coupling (Step 5). At mood=0 the worker outputs at
-  // moodOutputMin (50%); at mood=1.0 outputs at 100%. Linear in between.
-  moodOutputMin: 0.5,
+  // moodOutputMin; at mood=1.0 outputs at 100%. Linear in between.
+  // v0.8.2 Round-6 Wave-2 acceptance-gate tune (post-bench 2025-04-25):
+  // initial 0.5 (50% output at mood=0) caused seed-99 death spiral by day 23
+  // (low-mood early-game → halved output → starvation → more low mood → death).
+  // Softened to 0.7 (max 30% penalty) preserves the gameplay signal without
+  // the runaway feedback loop. Validated against 4-seed bench post-tune.
+  moodOutputMin: 0.7,
   // Per-worker MORALE_BREAK enqueue cooldown so a chronically-low-mood
   // worker cannot spam the queue every tick.
   moraleBreakCooldownSec: 90,
