@@ -131,7 +131,7 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
 });
 
 export const INITIAL_RESOURCES = Object.freeze({
-  food: 200,
+  food: 400,
   wood: 80,
   stone: 15,
   herbs: 8,

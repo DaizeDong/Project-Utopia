@@ -714,22 +714,29 @@ export class HUDController {
       this._lastResourceSnapshot = snap;
       this._lastSnapshotSimSec = simSec;
     }
-    const formatRate = (rate) => {
+    const formatRate = (rate, stockSec) => {
       if (rate == null || !Number.isFinite(rate)) return "—";
       if (Math.abs(rate) < 0.05) return "= 0.0/min";
+      // v0.8.2 Round-7 01b: cross-check stockSec — if stock is nearly depleted
+      // (<120s) but rate shows positive, the measurement window is misleading;
+      // display "≈ 0/min" to avoid showing false hope.
+      if (rate > 0 && stockSec != null && Number.isFinite(stockSec) && stockSec > 0 && stockSec < 120) {
+        return "≈ 0/min";
+      }
       return rate >= 0
         ? `▲ +${rate.toFixed(1)}/min`
         : `▼ ${rate.toFixed(1)}/min`;
     };
     const rates = this._lastComputedRates;
+    const resourceEmptySec = state.metrics?.resourceEmptySec ?? {};
     for (const r of ["food", "wood", "stone", "herbs", "meals", "tools", "medicine"]) {
       this.#renderRateBreakdown(r, state);
     }
-    if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food);
+    if (this.foodRateVal) this.foodRateVal.textContent = formatRate(rates?.food, resourceEmptySec.food);
     if (this.woodRateVal) this.woodRateVal.textContent = formatRate(rates?.wood);
     if (this.stoneRateVal) this.stoneRateVal.textContent = formatRate(rates?.stone);
     if (this.herbsRateVal) this.herbsRateVal.textContent = formatRate(rates?.herbs);
-    if (this.mealsRateVal) this.mealsRateVal.textContent = formatRate(rates?.meals);
+    if (this.mealsRateVal) this.mealsRateVal.textContent = formatRate(rates?.meals, resourceEmptySec.meals);
     if (this.toolsRateVal) this.toolsRateVal.textContent = formatRate(rates?.tools);
     if (this.medicineRateVal) this.medicineRateVal.textContent = formatRate(rates?.medicine);
 
@@ -1512,6 +1519,11 @@ export class HUDController {
     }
     if (this.statusAction) {
       if (state.controls.actionMessage) {
+        // v0.8.2 Round-7 01b: skip DOM thrash for repeated error messages
+        // (error chips stay visible until cleared; no need to re-apply the same text).
+        if (state.controls.actionKind === "error" && state.controls.actionMessage === this.lastActionMessage) {
+          // no-op: already showing this error
+        } else {
         this.statusAction.textContent = state.controls.actionMessage;
         // v0.8.2 Round-0 01d — mirror textContent into the native `title`
         // attribute so the browser tooltip shows the full message even when
@@ -1536,6 +1548,7 @@ export class HUDController {
           }
           this.lastActionMessage = state.controls.actionMessage;
         }
+        } // end else (not repeated error)
       } else {
         this.statusAction.setAttribute("title", "");
         this.statusAction.style.opacity = "0";

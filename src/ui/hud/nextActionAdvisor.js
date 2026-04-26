@@ -200,6 +200,25 @@ export function getNextActionAdvice(state) {
 
   const runtime = getScenarioRuntime(state);
   const context = getScenarioContext(runtime);
+  // v0.8.2 Round-7 01b: no-farms emergency rule — highest priority when colony
+  // has no farms and is already running low on food.
+  if (
+    Number(state.resources?.food ?? 0) < 80
+    && (Number(state.buildings?.farms ?? 0)) === 0
+    && (Number(state.metrics?.timeSec ?? 0)) > 10
+  ) {
+    return withCauseFields(advice({
+      priority: "critical",
+      label: "No farms — place a Farm on green terrain to feed your workers.",
+      detail: "Without farms food will run out soon. Place a Farm on green terrain.",
+      tool: "farm",
+      reason: "no_farms_emergency",
+    }), {
+      headline: "No farms",
+      whyNow: "Colony has no farms and food is critically low.",
+      expectedOutcome: "A farm will start producing food to keep workers alive.",
+    });
+  }
   return getFoodCrisisAdvice(state)
     ?? getRouteAdvice(state, runtime, context)
     ?? getDepotAdvice(runtime, context)
