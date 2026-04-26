@@ -514,13 +514,22 @@ export class HUDController {
     const node = this.statusNextAction;
     if (!node) return;
     const next = getNextActionAdvice(state);
+    const digestNow = getCausalDigest(state);
     const isIdle = next.priority === "idle";
     const headline = String(next.headline ?? next.whyNow ?? next.bottleneck ?? "").trim();
     const action = String(next.label ?? "Hold").trim();
     const outcome = String(next.expectedOutcome ?? next.detail ?? "").trim();
-    const loopText = isIdle
+    // Use causalDigest override only when advice priority is not already critical
+    let loopTextOverride = null;
+    if (digestNow?.severity === "error" && digestNow?.action && next.priority !== "critical") {
+      loopTextOverride = String(digestNow.action).trim();
+      node.setAttribute?.("data-severity", "critical");
+    } else {
+      node.removeAttribute?.("data-severity");
+    }
+    const loopText = loopTextOverride ?? (isIdle
       ? (next.label ? `Next: ${next.label}` : "Next: hold")
-      : [headline || "Next", action, outcome].filter(Boolean).join(" -> ");
+      : [headline || "Next", action, outcome].filter(Boolean).join(" -> "));
     const titleParts = [next.whyNow, next.detail, next.expectedOutcome]
       .map((part) => String(part ?? "").trim())
       .filter(Boolean);
@@ -1470,6 +1479,13 @@ export class HUDController {
     // only touch the DOM when the text changes to avoid layout thrash, and
     // hide the node outright when there is no active scenario (Quick Start).
     this.#renderNextAction(state);
+    // v0.8.2 Round-7 01a — food crisis pulse on statusFood chip.
+    const foodEta = state.metrics?.resourceEmptySec?.food;
+    if (foodEta > 0 && foodEta <= 120) {
+      this.statusFood?.classList.add('hud-critical-pulse');
+    } else {
+      this.statusFood?.classList.remove('hud-critical-pulse');
+    }
     // v0.8.2 Round-5b Wave-1 (01a Step 3+5) — mount new status slots.
     this.#renderBuildHint(state);
     this.#renderAutopilotCrisis(state);
