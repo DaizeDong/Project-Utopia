@@ -48,6 +48,17 @@ function renderErrorLogCard(title, exchanges, keyPrefix) {
   `;
 }
 
+function renderInactiveExchangeCard(title, keyPrefix, reason, detail = "") {
+  return `
+    <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
+      <summary class="small"><b>${escapeHtml(title)}</b></summary>
+      <div class="small" style="margin-top:6px;font-weight:600;"><span style="color:#f3b85d;font-weight:700;">&#9679;</span> NOT WIRED IN LIVE RUNTIME</div>
+      <div class="small muted" style="margin-top:4px;">${escapeHtml(reason)}</div>
+      ${detail ? `<div class="small" style="margin-top:4px;"><b>Decision:</b> ${escapeHtml(detail)}</div>` : ""}
+    </details>
+  `;
+}
+
 function renderExchangeCard(title, exchange, keyPrefix) {
   if (!exchange) {
     return `
@@ -106,6 +117,10 @@ function renderExchangeCard(title, exchange, keyPrefix) {
       <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:guarded`)}" style="margin-top:6px;">
         <summary class="small"><b>Guarded Output</b></summary>
         <pre class="entity-exchange-pre" data-ai-exchange-scroll="${escapeHtml(`${keyPrefix}:guarded:pre`)}">${escapeHtml(prettyJson(exchange.guardedOutput) || "(empty)")}</pre>
+      </details>
+      <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:decision`)}" style="margin-top:6px;" open>
+        <summary class="small"><b>Decision Result</b></summary>
+        <pre class="entity-exchange-pre" data-ai-exchange-scroll="${escapeHtml(`${keyPrefix}:decision:pre`)}">${escapeHtml(prettyJson(exchange.decisionResult ?? exchange.guardedOutput) || "(empty)")}</pre>
       </details>
     </details>
   `;
@@ -217,17 +232,31 @@ export class AIExchangePanel {
     if (!this.root) return;
     this.#captureOpenStates();
     this.#captureScrollStates();
-    const policy = this.state.ai.lastPolicyExchange ?? null;
-    const environment = this.state.ai.lastEnvironmentExchange ?? null;
+    const ai = this.state.ai ?? {};
+    const environment = ai.lastEnvironmentExchange ?? null;
+    const strategic = ai.lastStrategicExchange ?? null;
+    const policy = ai.lastPolicyExchange ?? null;
+    const planner = ai.lastColonyPlannerExchange ?? ai.lastPlannerExchange ?? null;
 
-    const policyExchanges = this.state.ai?.policyExchanges ?? [];
-    const environmentExchanges = this.state.ai?.environmentExchanges ?? [];
+    const environmentExchanges = ai.environmentExchanges ?? [];
+    const strategicExchanges = ai.strategicExchanges ?? [];
+    const policyExchanges = ai.policyExchanges ?? [];
     const html = `
-      <div class="small muted">Shows exact prompt input and model output for demo/debug.</div>
-      ${renderExchangeCard("Policy Exchange", policy, "policy")}
-      ${renderExchangeCard("Environment Exchange", environment, "environment")}
-      ${renderErrorLogCard("Last LLM errors (policy)", policyExchanges, "policy")}
+      <div class="small muted">Categories match docs/llm-agent-flows.md. Each live card shows prompt input, raw model output, validated output, and the final decision applied to simulation state.</div>
+      ${renderExchangeCard("Environment Director", environment, "environment")}
+      ${renderExchangeCard("Strategic Director", strategic, "strategic")}
+      ${renderExchangeCard("NPC Brain", policy, "npc-brain")}
+      ${planner
+        ? renderExchangeCard("Colony Planner", planner, "colony-planner")
+        : renderInactiveExchangeCard(
+          "Colony Planner",
+          "colony-planner",
+          "docs/llm-agent-flows.md defines this LLM flow, but GameApp currently wires rule-based ColonyDirectorSystem instead of AgentDirectorSystem/ColonyPlanner.",
+          "No live Colony Planner LLM calls can appear until that system is wired into GameApp.",
+        )}
       ${renderErrorLogCard("Last LLM errors (environment)", environmentExchanges, "environment")}
+      ${renderErrorLogCard("Last LLM errors (strategic)", strategicExchanges, "strategic")}
+      ${renderErrorLogCard("Last LLM errors (npc brain)", policyExchanges, "npc-brain")}
     `;
     if (html === this.lastHtml) return;
     if (this.#isUserInteracting()) return;

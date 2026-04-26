@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased] - v0.8.3 Round-8/9: AI runtime transparency, manual recovery loops, full-suite cleanup
+
+### New Features
+
+- **LLM runtime exchange visibility** (`server/ai-proxy.js`, `src/simulation/ai/llm/LLMClient.js`, `src/ui/panels/AIExchangePanel.js`): added request/response metadata, fallback status, and panel rendering so players can inspect whether live LLM calls are active, degraded, or replaced by local fallback decisions.
+- **AI automation boundary panel** (`src/ui/panels/AIAutomationPanel.js`): added explicit Autopilot OFF / LLM-disabled copy while still showing rule-based director and fallback summaries, reducing ambiguity around what the AI is actually controlling.
+- **Strategic/director decision summaries** (`src/simulation/ai/strategic/StrategicDirector.js`, `src/simulation/ai/director/EnvironmentDirectorSystem.js`, `src/simulation/ai/brains/NPCBrainSystem.js`): surfaced inputs, chosen action, fallback status, and decision outcomes across the existing LLM-agent categories.
+- **Manual build and objective recovery loops** (`src/simulation/construction/BuildAdvisor.js`, `src/render/SceneRenderer.js`, `src/simulation/meta/ProgressionSystem.js`): failed placements now include recovery guidance; route/depot progress emits clearer milestone and action feedback.
+- **Worker food-route diagnosis and durable memory** (`src/ui/panels/EntityFocusPanel.js`, `src/simulation/lifecycle/MortalitySystem.js`, `src/simulation/population/PopulationGrowthSystem.js`, `src/simulation/npc/WorkerAISystem.js`): worker panels now explain starvation causes, family links, trait behavior, and capped serializable memory history.
+
+### Bug Fixes
+
+- **Storyteller DOM readability** (`src/ui/hud/storytellerStrip.js`, `index.html`): fixed joined extracted strings such as `MILESTONEDepot` and duplicate `DIRECTORDIRECTOR` wording while preserving the visual strip.
+- **Food-crisis next actions** (`src/ui/hud/nextActionAdvisor.js`, `src/ui/interpretation/WorldExplain.js`): starvation guidance now checks isolated farms/worksites and recommends concrete road, warehouse, reconnect, or reachable-farm actions before generic advice.
+- **Non-dev smoke API** (`src/main.js`): keeps `window.__utopiaLongRun` available for browser verification while leaving the broader `window.__utopia` handle dev-gated.
+- **Progression and event-log priority** (`src/simulation/meta/ProgressionSystem.js`, `src/ui/panels/DeveloperPanel.js`): emergency recovery messages now win over same-tick depot milestones, and noisy destroyed-building events are suppressed from formatted logs.
+
+### Validation
+
+- Full `npm test`: 1449 tests, 1447 pass, 0 fail, 2 skipped.
+- Targeted Round 9 suite: 40/40 passing across Storyteller, AI automation, next-action, and world-explain tests.
+- `npm run build`: passing.
+- `git diff --check`: passing.
+- Visible headed-browser verification confirmed startup, AI Log visibility, explicit LLM/autopilot boundary copy, fixed Storyteller text, and concrete food-crisis advice. Local screenshots/logs were cleaned before push; key assertions are recorded in `assignments/homework6/Agent-Feedback-Loop/Round9/Validation/test-report.md`.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 01e+02b: trait behavioral wiring + local WHISPER narrative + emotional decision prefix + manual advisory HUD chip
 
 ### New Features (Round-7 01e+02b — trait systems + narrative intelligence)

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
+import { summarizeBuildPreview } from "../src/simulation/construction/BuildAdvisor.js";
 import { BuildSystem } from "../src/simulation/construction/BuildSystem.js";
 import { TILE } from "../src/config/constants.js";
 
@@ -32,6 +33,9 @@ test("buildHint: hovering water with farm tool yields ok:false + non-empty reaso
   assert.equal(preview.ok, false, "farm on water must be rejected");
   assert.ok(typeof preview.reasonText === "string", "reasonText must be a string");
   assert.ok(preview.reasonText.length > 0, "reasonText must be non-empty for the HUD hint");
+  assert.ok(typeof preview.recoveryText === "string", "recoveryText must be a string");
+  assert.match(preview.recoveryText, /Bridge|grass|road|ruins/i);
+  assert.match(summarizeBuildPreview(preview), /Use Bridge|grass|road|ruins/i);
 });
 
 test("buildHint: hovering non-grass with farm tool yields ok:false + reasonText", () => {

@@ -114,10 +114,13 @@ export class EnvironmentDirectorSystem {
 
       const debugExchange = this.pendingResult.debug ?? {};
       const environmentExchange = {
+        category: "environment-director",
+        label: "Environment Director",
         simSec: now,
         source: usedFallback ? "fallback" : "llm",
         fallback: usedFallback,
         model: this.pendingResult.model ?? state.ai.lastEnvironmentModel ?? "",
+        latencyMs: this.pendingResult.latencyMs ?? null,
         endpoint: debugExchange.endpoint ?? "/api/ai/environment",
         requestedAtIso: debugExchange.requestedAtIso ?? "",
         requestSummary: debugExchange.requestSummary ?? null,
@@ -127,12 +130,16 @@ export class EnvironmentDirectorSystem {
         rawModelContent: debugExchange.rawModelContent ?? "",
         parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
+        decisionResult: this.pendingResult.data ?? null,
         error: this.pendingResult.error ?? debugExchange.error ?? "",
       };
       state.ai.lastEnvironmentExchange = environmentExchange;
       state.ai.environmentExchanges ??= [];
       state.ai.environmentExchanges.unshift(environmentExchange);
       state.ai.environmentExchanges = state.ai.environmentExchanges.slice(0, 8);
+      state.ai.llmCallLog ??= [];
+      state.ai.llmCallLog.unshift(environmentExchange);
+      state.ai.llmCallLog = state.ai.llmCallLog.slice(0, 24);
 
       if (state.debug?.aiTrace) {
         state.debug.aiTrace.unshift({

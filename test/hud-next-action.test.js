@@ -77,13 +77,15 @@ test("HUDController renders next-action advice with priority attributes", () => 
     hud.render();
 
     assert.equal(nodes.statusNextAction.attrs["data-priority"], "critical");
+    assert.equal(nodes.statusNextAction.attrs["data-owner"], "manual");
     assert.equal(nodes.statusNextAction.attrs["data-tool"], "farm");
     assert.equal(nodes.statusNextAction.attrs["data-reason"], "food_crisis");
-    assert.match(nodes.statusNextAction.textContent, /^Food bottleneck -> Recover food now -> /);
+    assert.match(nodes.statusNextAction.textContent, /^Manual guide: Food bottleneck -> Stabilize food supply -> /);
     assert.match(nodes.statusNextAction.attrs["data-headline"], /Food bottleneck/);
-    assert.match(nodes.statusNextAction.attrs["data-outcome"], /Reconnecting farms keeps workers fed/);
+    assert.match(nodes.statusNextAction.attrs["data-outcome"], /reachable farms keep workers fed/i);
     assert.match(nodes.statusNextAction.attrs["data-why-now"], /Food is below the emergency line/);
-    assert.match(nodes.statusNextAction.attrs.title, /Reconnect farms before workers enter starvation recovery/);
+    assert.match(nodes.statusNextAction.attrs.title, /Guidance only/);
+    assert.match(nodes.statusNextAction.attrs.title, /Place another farm on green terrain/);
   } finally {
     globalThis.document = prevDocument;
   }

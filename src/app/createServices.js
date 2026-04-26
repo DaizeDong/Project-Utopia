@@ -55,6 +55,39 @@ function createOfflineFallbackClient(baseClient) {
         },
       };
     },
+    async requestStrategic(promptContent, enabled, fallbackData = null) {
+      const requestSummary = (() => {
+        if (typeof promptContent !== "string") return promptContent ?? {};
+        try {
+          return JSON.parse(promptContent);
+        } catch {
+          return { channel: "strategic-director", rawPrompt: promptContent };
+        }
+      })();
+      this.lastStatus = enabled ? "offline-fallback" : "fallback";
+      this.lastError = "";
+      this.lastLatencyMs = 0;
+      this.lastModel = "offline-fallback";
+      return {
+        fallback: true,
+        data: fallbackData,
+        latencyMs: 0,
+        error: "",
+        model: "offline-fallback",
+        debug: {
+          requestedAtIso: new Date().toISOString(),
+          endpoint: "/api/ai/environment",
+          requestSummary,
+          promptSystem: "(offline fallback: strategic proxy call skipped)",
+          promptUser: typeof promptContent === "string" ? promptContent : JSON.stringify(requestSummary, null, 2),
+          requestPayload: { endpoint: "/api/ai/environment", channel: "strategic-director", mode: "offline-fallback" },
+          rawModelContent: JSON.stringify(fallbackData, null, 2),
+          parsedBeforeValidation: fallbackData,
+          guardedOutput: fallbackData,
+          error: "",
+        },
+      };
+    },
   };
 }
 
