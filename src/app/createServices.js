@@ -4,6 +4,7 @@ import { buildEnvironmentFallback, buildPolicyFallback } from "../simulation/ai/
 import { SeededRng, deriveRngSeed } from "./rng.js";
 import { createSnapshotService } from "./snapshotService.js";
 import { createReplayService } from "./replayService.js";
+import { createLeaderboardService } from "./leaderboardService.js";
 
 function createOfflineFallbackClient(baseClient) {
   return {
@@ -81,5 +82,12 @@ export function createServices(seed = 1337, options = {}) {
     rng,
     snapshotService: createSnapshotService(),
     replayService: createReplayService(),
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 2a) — local leaderboard
+    // persisted in localStorage at `utopia:leaderboard:v1`. Storage may be
+    // unavailable in Node test runs / Safari private mode; the service
+    // tolerates a null backing store and silently falls back to in-memory.
+    leaderboardService: createLeaderboardService(
+      typeof localStorage !== "undefined" ? localStorage : null,
+    ),
   };
 }

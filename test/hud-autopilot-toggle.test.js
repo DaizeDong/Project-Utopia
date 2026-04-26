@@ -100,13 +100,21 @@ function withHudDom(fn) {
   }
 }
 
+// v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — autopilot decoupling.
+// HUDController now gates the toggle handler on `event.isTrusted` (true for
+// genuine user clicks) OR an explicit `detail.userInitiated` escape hatch
+// for programmatic toggles (tests, scripted UI). Synthetic events from
+// button-click bubbling are dropped, fixing the Run-3 reviewer report
+// "Autopilot turned off after I clicked Fast Forward".
+const userChange = { type: "change", detail: { userInitiated: true } };
+
 test("HUDController syncs top Autopilot toggle into the sidebar toggle and state", () => {
   withHudDom((nodes) => {
     const state = createInitialGameState({ seed: 31 });
     const hud = new HUDController(state);
 
     nodes.aiToggleTop.checked = true;
-    nodes.aiToggleTop.dispatchEvent({ type: "change" });
+    nodes.aiToggleTop.dispatchEvent(userChange);
 
     assert.equal(state.ai.enabled, true);
     assert.equal(nodes.aiToggle.checked, true);
@@ -125,16 +133,35 @@ test("HUDController syncs sidebar Autopilot toggle back into the top toggle", ()
     new HUDController(state);
 
     nodes.aiToggle.checked = true;
-    nodes.aiToggle.dispatchEvent({ type: "change" });
+    nodes.aiToggle.dispatchEvent(userChange);
 
     assert.equal(state.ai.enabled, true);
     assert.equal(nodes.aiToggleTop.checked, true);
 
     nodes.aiToggle.checked = false;
-    nodes.aiToggle.dispatchEvent({ type: "change" });
+    nodes.aiToggle.dispatchEvent(userChange);
 
     assert.equal(state.ai.enabled, false);
     assert.equal(state.ai.mode, "fallback");
     assert.equal(nodes.aiToggleTop.checked, false);
+  });
+});
+
+// v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — Autopilot decoupling
+// regression guard: an untrusted change event with no userInitiated hint
+// must NOT toggle the AI state. This pins the contract that fixed the
+// Run-3 reviewer's "Autopilot got silently turned off" complaint.
+test("untrusted change events without userInitiated do not toggle ai.enabled", () => {
+  withHudDom((nodes) => {
+    const state = createInitialGameState({ seed: 33 });
+    new HUDController(state);
+    state.ai.enabled = true;
+
+    nodes.aiToggleTop.checked = false;
+    // Synthetic event with no isTrusted, no detail.userInitiated — exactly
+    // what a button-click bubbling into a focused checkbox looks like.
+    nodes.aiToggleTop.dispatchEvent({ type: "change" });
+
+    assert.equal(state.ai.enabled, true, "untrusted change must not flip ai.enabled");
   });
 });

@@ -14,7 +14,7 @@ export const TOOL_SHORTCUTS = Object.freeze({
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | R or Home reset camera | L heat lens | T terrain overlay | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | R or Home reset camera | L heat lens | T terrain overlay | [/] speed tier | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {
@@ -102,6 +102,20 @@ export function resolveGlobalShortcut(event, context = {}) {
   if (code === "KeyT" || key === "t") {
     if (!isActivePhase) return null;
     return { type: "toggleTerrainLens" };
+  }
+  // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5b) — speed tier hotkeys.
+  // `[` steps the timeScale tier down, `]` steps it up. Tiers are defined
+  // in GameApp#stepSpeedTier as [0.5, 1, 2, 4, 8]. Phase-gated to active
+  // (non-active phases have no live simulation to scale). The keys are
+  // ASCII-symmetric across the US/UK/DE layouts (Code-based check covers
+  // most others; key-based fallback handles dead-key layouts).
+  if (code === "BracketLeft" || key === "[") {
+    if (!isActivePhase) return null;
+    return { type: "speedTierStep", direction: -1 };
+  }
+  if (code === "BracketRight" || key === "]") {
+    if (!isActivePhase) return null;
+    return { type: "speedTierStep", direction: 1 };
   }
   if (code === "Escape" || key === "escape") return { type: "clearSelection" };
   if (code === "Space" || key === " ") {

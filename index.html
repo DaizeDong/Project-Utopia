@@ -1091,6 +1091,84 @@
       margin-bottom: 12px; white-space: pre-wrap;
     }
 
+    /* v0.8.2 Round-6 Wave-3 02c-speedrunner — leaderboard + seed chip.
+       Visual hooks reuse the existing overlay panel typography so we avoid
+       introducing new design tokens (kept Wave-1 01c-ui contract intact). */
+    .overlay-leaderboard {
+      margin: 8px 0 12px 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.03);
+      font-size: 12px;
+    }
+    .overlay-leaderboard:empty,
+    .overlay-leaderboard[hidden] { display: none; }
+    .overlay-board-title {
+      margin: 0 0 6px 0;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .overlay-leaderboard-list {
+      list-style: decimal inside;
+      margin: 0 0 6px 0;
+      padding: 0;
+      max-height: 140px;
+      overflow-y: auto;
+      font-variant-numeric: tabular-nums;
+    }
+    .overlay-leaderboard-list li {
+      padding: 2px 0;
+      line-height: 1.45;
+    }
+    .overlay-leaderboard-list:empty::before {
+      content: "No runs yet \2014 finish a run to record one.";
+      color: var(--text-muted);
+      font-style: italic;
+      display: block;
+      padding: 4px 0;
+    }
+    .overlay-board-clear {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .overlay-board-clear:hover { color: #fff; background: rgba(255,255,255,0.08); }
+    .overlay-end-seedline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .overlay-end-seedline-label {
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    #overlayEndSeedChip {
+      padding: 3px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--panel-border);
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+      font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+      cursor: pointer;
+    }
+    #overlayEndSeedChip:hover, #overlayEndSeedChip:focus {
+      outline: 1px solid var(--accent);
+      background: rgba(61,155,233,0.15);
+    }
+    .overlay-end-rank { font-style: italic; }
+
     .overlay-kicker {
       display: inline-flex; align-items: center; gap: 6px;
       padding: 5px 10px; border-radius: 999px;
@@ -1768,7 +1846,8 @@
       <div id="speedControls">
         <button id="speedPauseBtn" type="button" title="Pause (Space)" aria-label="Pause simulation">&#9208;</button>
         <button id="speedPlayBtn" type="button" title="Normal speed (1x)" aria-label="Normal speed" class="active">&#9654;</button>
-        <button id="speedFastBtn" type="button" title="Fast forward (4x)" aria-label="Fast forward 4x">&#9193;</button>
+        <button id="speedFastBtn" type="button" title="Fast forward (4x) - key ]" aria-label="Fast forward 4x">&#9193;</button>
+        <button id="speedUltraBtn" type="button" title="Ultra speed (8x) - key ] twice" aria-label="Ultra speed 8x">&#9197;</button>
         <label class="speed-toggle" title="Toggle AI autopilot">
           <input id="aiToggleTop" type="checkbox" aria-label="Toggle AI autopilot" />
           Autopilot
@@ -1820,6 +1899,15 @@
             <div id="overlayMenuSizeHint" class="overlay-menu-briefing-line"></div>
           </div>
           <div id="overlayObjectiveCards" class="overlay-objectives"></div>
+          <!-- v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3a) — Best Runs
+               leaderboard surfaces the localStorage utopia:leaderboard:v1
+               cache. Speedrunner reviewer reported 0 score persistence;
+               this list closes the gap. Empty until first run. -->
+          <div id="overlayLeaderboard" class="overlay-leaderboard">
+            <h3 class="overlay-board-title">Best Runs</h3>
+            <ol id="overlayLeaderboardList" class="overlay-leaderboard-list"></ol>
+            <button id="overlayClearLeaderboardBtn" type="button" class="overlay-board-clear" title="Clear local leaderboard (kept in browser localStorage only).">Clear</button>
+          </div>
           <div class="overlay-map-settings" style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
             <label class="small" style="font-weight:700; color:var(--text-muted);">Template:</label>
             <select id="overlayMapTemplate" title="Choose the opening template. The briefing updates immediately." style="flex:1; min-width:140px; padding:4px 6px; font-size:12px;"></select>
@@ -1850,6 +1938,14 @@
           <div id="overlayEndMeta" class="overlay-scenario-badge">Scenario</div>
           <p id="overlayEndReason" class="overlay-lead">-</p>
           <div id="overlayEndStats" class="overlay-end-stats">-</div>
+          <!-- v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3a) — copy-able
+               seed chip so a speedrunner can paste their seed into chat
+               or a forum without scraping the boot screen. -->
+          <div class="overlay-end-seedline">
+            <span class="overlay-end-seedline-label">Seed</span>
+            <code id="overlayEndSeedChip" tabindex="0" title="Click to copy seed">&mdash;</code>
+            <span id="overlayEndSeedRank" class="overlay-end-rank"></span>
+          </div>
           <div class="overlay-actions">
             <button id="overlayRestartBtn" class="primary" type="button" title="Restart with the same map and scenario">Try Again</button>
             <button id="overlayResetBtn" type="button" title="Generate a new random map">New Map</button>
