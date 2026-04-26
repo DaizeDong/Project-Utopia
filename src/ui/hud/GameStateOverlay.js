@@ -620,6 +620,50 @@ export class GameStateOverlay {
           this.endSeedRank.textContent = "first run";
         }
       }
+      // v0.8.2 Round-7 02d — run-end Chronicle summary: death cause breakdown,
+      // last fallen name, scenario theme question. Rendered into
+      // #overlayEndChronicle if present; silently skipped in test rigs that
+      // mount a partial overlay DOM. Only re-renders when the deathLog length
+      // changes to avoid unnecessary DOM thrash.
+      const chronicleEl = document.getElementById?.("overlayEndChronicle");
+      if (chronicleEl) {
+        const deathLogStructured = this.state.gameplay?.deathLogStructured ?? [];
+        const daysSurvived = Math.floor(Number(this.state.metrics?.timeSec ?? 0) / 60);
+        const deaths = Number(this.state.metrics?.deathsTotal ?? deathLogStructured.length);
+        const births = Number(this.state.metrics?.totalBirths ?? 0);
+        const devIdx = Math.round(Number(this.state.gameplay?.devIndex ?? 0));
+        const causeCount = {};
+        for (const d of deathLogStructured) {
+          const c = d.cause ?? "unknown";
+          causeCount[c] = (causeCount[c] ?? 0) + 1;
+        }
+        const topCause = Object.entries(causeCount).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+        const lastDead = deathLogStructured[0];
+        // Scenario theme question aligned to map template id.
+        const templateId = String(this.state?.controls?.mapTemplateId ?? this.state?.world?.mapTemplateId ?? "").trim();
+        const THEME_Q = {
+          "rugged_highlands": "Who was the colony defending, in the end?",
+          "archipelago_isles": "Was isolation the enemy, or the shelter?",
+          "coastal_ocean": "What did the sea take from them?",
+          "fertile_riverlands": "Did abundance make them careless?",
+          "fortified_basin": "Were the walls a shield or a cage?",
+          "temperate_plains": "Did the colony build what it set out to build?",
+        };
+        const themeQ = THEME_Q[templateId] ?? "What was worth saving?";
+        const escName = (s) => String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        let summaryHtml = `
+          <div style="font-size:12px;color:rgba(220,220,220,0.85);margin-top:10px;line-height:1.6">
+            <div>Day ${daysSurvived} \u00b7 ${births} born \u00b7 ${deaths} fallen \u00b7 Dev ${devIdx}/100</div>
+            ${topCause ? `<div>Most died of: <strong>${escName(topCause)}</strong></div>` : ""}
+            ${lastDead ? `<div style="font-style:italic;color:rgba(200,224,248,0.7)">"${escName(lastDead.name)}" was the last to fall.</div>` : ""}
+            <div style="margin-top:8px;font-size:11px;color:rgba(180,200,230,0.55);font-style:italic">${escName(themeQ)}</div>
+          </div>`;
+        const newSig = `${deaths}|${daysSurvived}|${topCause}|${lastDead?.name ?? ""}`;
+        if (chronicleEl.dataset.sig !== newSig) {
+          chronicleEl.dataset.sig = newSig;
+          chronicleEl.innerHTML = summaryHtml;
+        }
+      }
     }
   }
 }

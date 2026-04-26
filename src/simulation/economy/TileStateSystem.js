@@ -28,6 +28,9 @@ export class TileStateSystem {
   constructor() {
     this.name = "TileStateSystem";
     this._nextUpdateSec = 0;
+    // v0.8.2 Round-7 01d — dedup map for salinization warnings (key → lastWarnSec)
+    // to avoid flooding objectiveLog with repeated alerts for the same tile.
+    this._salinizationLogDedup = new Map();
   }
 
   update(dt, state, services = null) {
@@ -156,6 +159,25 @@ export class TileStateSystem {
       // and self-limiting vs. the per-harvest increment).
       if ((entry.salinized ?? 0) > 0 && decay > 0) {
         entry.salinized = Math.max(0, Number(entry.salinized) - decay);
+      }
+
+      // v0.8.2 Round-7 01d — salinization early-warning: push a player-visible
+      // advisory into objectiveLog when a FARM tile exceeds 70% salinization.
+      // Dedup ensures at most one warning per tile per 180s to avoid log spam.
+      if (type === TILE.FARM && Number(entry.salinized ?? 0) > 0.7 && state.gameplay) {
+        const w = grid.width;
+        const idx2 = idx; // idx is the outer loop variable
+        const ix = idx2 % w;
+        const iz = Math.floor(idx2 / w);
+        const nowSec = Number(state.metrics?.timeSec ?? 0);
+        const warnKey = `salinization:${ix},${iz}`;
+        const lastWarn = Number(this._salinizationLogDedup.get(warnKey) ?? -Infinity);
+        if (nowSec - lastWarn > 180) {
+          this._salinizationLogDedup.set(warnKey, nowSec);
+          if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+          state.gameplay.objectiveLog.unshift(`[${nowSec.toFixed(0)}s] Farm soil at (${ix},${iz}) over-farmed \u2014 consider fallowing`);
+          state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+        }
       }
 
       // FARM-only yieldPool: initialise a freshly-placed farm and passively regen.

@@ -94,6 +94,35 @@ export class EventPanel {
       `;
     }
 
+    // v0.8.2 Round-7 01d — Chronicles: permanent death log rendered below
+    // the recent log block. Uses state.gameplay.deathLogStructured (array of
+    // { name, role, trait, cause, location, timeSec }) populated by
+    // MortalitySystem.recordDeath. Shown inside a <details> element so the
+    // player can collapse it when it grows long.
+    const deathLogStructured = this.state.gameplay?.deathLogStructured ?? [];
+    if (deathLogStructured.length > 0) {
+      const chronEntries = deathLogStructured.map((d) => {
+        const day = Math.floor(Number(d.timeSec ?? 0) / 60);
+        const trait = d.trait ? `, ${String(d.trait)}` : "";
+        const nameSafe = String(d.name ?? "Unknown").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        const causeSafe = String(d.cause ?? "died").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        const locSafe = String(d.location ?? "the colony").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+        return `<div class="chronicle-entry">&#128128; <strong>${nameSafe}</strong>${trait} &mdash; ${causeSafe} near ${locSafe} <span class="chronicle-day">Day ${day}</span></div>`;
+      }).join("");
+      html += `
+        <details class="chronicle-section">
+          <summary class="chronicle-header">Chronicles &middot; ${deathLogStructured.length} fallen</summary>
+          <div class="chronicle-list">${chronEntries}</div>
+        </details>
+        <style>
+          .chronicle-entry { font-size: 10px; color: rgba(200,200,200,0.8); padding: 2px 4px; border-left: 2px solid #555; margin-bottom: 2px; }
+          .chronicle-day { color: rgba(200,224,248,0.5); font-size: 9px; }
+          .chronicle-header { cursor: pointer; font-size: 11px; color: rgba(200,224,248,0.6); padding: 4px; }
+          .chronicle-section { margin-top: 6px; }
+        </style>
+      `;
+    }
+
     if (html === this.lastHtml) return;
     this.lastHtml = html;
     this.root.innerHTML = html;
