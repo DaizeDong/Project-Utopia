@@ -69,11 +69,23 @@ export class EventPanel {
     const objectiveLog = this.state.gameplay?.objectiveLog ?? [];
     if (objectiveLog.length > 0) {
       const recent = objectiveLog
-        .slice(0, 3)
-        .map((line) => `<div class='small muted'>${String(line ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")}</div>`)
+        .slice(0, 6)
+        .map((line) => {
+          const text = String(line ?? "");
+          const escaped = text
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;");
+          // v0.8.2 Round-7 02a — keyword-based severity coloring
+          const lc = text.toLowerCase();
+          let cssClass = "small muted";
+          if (lc.includes("fire") || lc.includes("died") || lc.includes("depleted")) {
+            cssClass = "small warn-critical";
+          } else if (lc.includes("warning")) {
+            cssClass = "small warn-soon";
+          }
+          return `<div class='${cssClass}'>${escaped}</div>`;
+        })
         .join("");
       html += `
         <hr style="border:none; border-top:1px solid rgba(53, 94, 129, 0.2); margin:6px 0;" />

@@ -1750,6 +1750,20 @@ export class HUDController {
       const seconds = Math.floor(smoothed % 60);
       hintNode.textContent = `\u2248 ${minutes}m ${seconds}s until empty`;
       hintNode.className = smoothed < 60 ? "runout-hint warn-critical" : "runout-hint warn-soon";
+      // v0.8.2 Round-7 02a — push warn-critical runout to objectiveLog (45s dedup).
+      if (smoothed < 60) {
+        const logKey = resource;
+        this._runoutLoggedAt ??= {};
+        const lastLogged = this._runoutLoggedAt[logKey] ?? -Infinity;
+        const nowSec = Number(state.metrics?.timeSec ?? 0);
+        if (nowSec - lastLogged > 45) {
+          this._runoutLoggedAt[logKey] = nowSec;
+          if (state.gameplay && Array.isArray(state.gameplay.objectiveLog)) {
+            state.gameplay.objectiveLog.unshift(`[${nowSec.toFixed(1)}s] Warning: ${resource} nearly depleted (< 60s)`);
+            state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+          }
+        }
+      }
     }
   }
 
