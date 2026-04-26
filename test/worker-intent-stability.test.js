@@ -166,10 +166,12 @@ test("Worker in 'eat' state with hunger=0.44 (above recover threshold 0.42) leav
     `Expected NOT seek_food but got seek_food (reason: ${result.reason})`);
 });
 
-test("Worker NOT in eat/seek_food state with hunger=0.20 does NOT trigger eat (no hysteresis)", () => {
-  // hunger=0.20 is just above the 0.18 threshold; without hysteresis a fresh worker does not eat.
+test("Worker NOT in eat/seek_food state with hunger=0.30 does NOT trigger eat (no hysteresis)", () => {
+  // v0.8.2 Round-7 02a: workerStarvingPreemptThreshold is 0.22; hunger=0.30 is above both the
+  // preempt threshold (0.22) and the normal seek threshold (0.18), so a fresh worker should not eat.
+  // (Test was updated from hunger=0.20 because 0.20 < 0.22 now triggers the starving-preempt rule.)
   const worker = makeWorker({
-    hunger: 0.20,
+    hunger: 0.30,
     carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
     blackboard: { fsm: { state: "seek_task" } },
   });
@@ -177,9 +179,9 @@ test("Worker NOT in eat/seek_food state with hunger=0.20 does NOT trigger eat (n
 
   const result = deriveWorkerDesiredStateExported(worker, state);
   assert.notEqual(result.desiredState, "eat",
-    `Expected NOT eat for worker not in eat state with hunger 0.20`);
+    `Expected NOT eat for worker not in eat state with hunger 0.30`);
   assert.notEqual(result.desiredState, "seek_food",
-    `Expected NOT seek_food for worker not in eat state with hunger 0.20`);
+    `Expected NOT seek_food for worker not in eat state with hunger 0.30`);
 });
 
 test("Worker with hunger below 0.18 starts seeking food before crisis threshold", () => {
