@@ -664,12 +664,18 @@ export function generateFallbackPlan(observation, state) {
   // `state.ai.fallbackHints.pendingRoleBoost = role` and RoleAssignmentSystem
   // consumes it next tick to force a single slot.
   //
-  // The food guard mirrors the ingredients check — don't ask for a cook when
-  // the stockpile is too low for the kitchen to even start cycling.
+  // v0.8.2 Round-7 02c — COOK deadlock root fix: the previous food-threshold
+  // gate (`food >= idleChainThreshold`) was the chicken-egg root cause.
+  // Kitchen exists → no COOK assigned → Kitchen never runs → food never
+  // accumulates → threshold never met → COOK never assigned. Correct logic:
+  // if Kitchen exists and no COOK is assigned, ALWAYS emit reassign_role.
+  // The food gate is REMOVED for COOK; smith/herbalist gates are unchanged.
   //
-  // Low-pop colonies (workerCount < lowPopBand) use a lower food threshold
-  // because food is drained faster than produced at small pop sizes, so the
-  // normal threshold is never cleared and the pipeline stays permanently idle.
+  // Settings quota floor (Round-7 02c): if the player has configured a
+  // minimum COOK/SMITH/HERBALIST via Settings sliders (state.settings or
+  // state.controls.roleQuotas), honour those as hard lower bounds by forcing
+  // the reassign_role step even when the building-exists + worker=0 condition
+  // would otherwise be gated out.
   const idleChainThresholdBase = Number(BALANCE.fallbackIdleChainThreshold ?? 15);
   const idleChainLowPopBand = Number(BALANCE.fallbackIdleChainLowPopBand ?? 6);
   const idleChainLowPopThreshold = Number(BALANCE.fallbackIdleChainThresholdLowPop ?? 6);
@@ -683,18 +689,45 @@ export function generateFallbackPlan(observation, state) {
   const cookWorkers = Number(roleCounts?.COOK ?? roleCounts?.cook ?? 0);
   const smithWorkers = Number(roleCounts?.SMITH ?? roleCounts?.smith ?? 0);
   const herbalistWorkers = Number(roleCounts?.HERBALIST ?? roleCounts?.herbalist ?? 0);
-  if (kitchens >= 1 && cookWorkers === 0 && food >= idleChainThreshold) {
+
+  // Quota floors from Settings panel (state.settings) or controls (state.controls.roleQuotas).
+  // These act as hard lower bounds: if the player explicitly wants ≥1 COOK,
+  // the planner must request it regardless of food level.
+  const settingsQuotaCook = Math.max(
+    Number(state.settings?.roleQuotaCook ?? 0),
+    Number(state.controls?.roleQuotas?.cook ?? 0) > 98 ? 0 : Number(state.controls?.roleQuotas?.cook ?? 0),
+  );
+  const settingsQuotaSmith = Math.max(
+    Number(state.settings?.roleQuotaSmith ?? 0),
+    Number(state.controls?.roleQuotas?.smith ?? 0) > 98 ? 0 : Number(state.controls?.roleQuotas?.smith ?? 0),
+  );
+  const settingsQuotaHerbalist = Math.max(
+    Number(state.settings?.roleQuotaHerbalist ?? 0),
+    Number(state.controls?.roleQuotas?.herbalist ?? 0) > 98 ? 0 : Number(state.controls?.roleQuotas?.herbalist ?? 0),
+  );
+
+  // COOK: kitchen-driven allocation — remove food threshold gate.
+  // Root fix: any Kitchen present + COOK=0 → always request reassign.
+  // Also fires when settingsQuotaCook demands ≥1 but none is assigned.
+  const needsCook = (kitchens >= 1 && cookWorkers === 0)
+    || (settingsQuotaCook >= 1 && cookWorkers < settingsQuotaCook);
+  if (needsCook) {
     steps.push({
       id: nextId++,
-      thought: "Kitchen exists but no cook — pipeline idle",
+      thought: kitchens >= 1
+        ? "Kitchen exists but no cook — pipeline idle, must assign cook"
+        : "Settings quota requires cook — reassign to meet minimum",
       action: { type: "reassign_role", role: "COOK", hint: null },
       predicted_effect: { cook_slot_delta: "+1", meals_rate: "+1/cycle" },
-      priority: "high",
+      priority: "critical",
       depends_on: [],
       status: "pending",
     });
   }
-  if ((buildings.smithies ?? 0) >= 1 && smithWorkers === 0 && stone >= 5) {
+  // SMITH: stone gate retained (stone production must exist before smithy runs).
+  const needsSmith = ((buildings.smithies ?? 0) >= 1 && smithWorkers === 0 && stone >= 5)
+    || (settingsQuotaSmith >= 1 && smithWorkers < settingsQuotaSmith);
+  if (needsSmith) {
     steps.push({
       id: nextId++,
       thought: "Smithy exists but no smith — pipeline idle",
@@ -705,7 +738,10 @@ export function generateFallbackPlan(observation, state) {
       status: "pending",
     });
   }
-  if ((buildings.clinics ?? 0) >= 1 && herbalistWorkers === 0 && herbs >= 3) {
+  // HERBALIST: herbs gate retained.
+  const needsHerbalist = ((buildings.clinics ?? 0) >= 1 && herbalistWorkers === 0 && herbs >= 3)
+    || (settingsQuotaHerbalist >= 1 && herbalistWorkers < settingsQuotaHerbalist);
+  if (needsHerbalist) {
     steps.push({
       id: nextId++,
       thought: "Clinic exists but no herbalist — pipeline idle",
@@ -1127,5 +1163,66 @@ export class ColonyPlanner {
     this._stats.fallbackPlans++;
     this._stats.lastPlanSource = "fallback";
     return { plan, source: "fallback" };
+  }
+
+  /**
+   * Advisory recommendation for manual-mode HUD chip. Pure read — does NOT
+   * modify state. Returns a human-readable text + urgency level so the HUD
+   * can render a colour-coded advisory without triggering any planner side
+   * effects.
+   *
+   * Priority order (highest first):
+   *  1. Kitchen idle  — Kitchen exists but COOK=0           → critical
+   *  2. No Farm + food ETA < 90s                            → critical
+   *  3. Food ETA < 60s                                       → high
+   *  4. devIndex < 20                                        → medium
+   *  5. Stable                                               → low
+   *
+   * @param {object} state — game state (read-only)
+   * @returns {{ text: string, urgency: 'critical'|'high'|'medium'|'low' }}
+   */
+  static getAdvisoryRecommendation(state) {
+    const buildings  = state?.buildings  ?? {};
+    const resources  = state?.resources  ?? {};
+    const metrics    = state?.metrics    ?? {};
+    const gameplay   = state?.gameplay   ?? {};
+
+    const kitchens   = Number(buildings.kitchens ?? 0);
+    const farms      = Number(buildings.farms    ?? 0);
+    const roleCounts = metrics.roleCounts ?? {};
+    const cookWorkers = Number(roleCounts.COOK ?? roleCounts.cook ?? 0);
+
+    const food      = Number(resources.food ?? 0);
+    // foodRatePerMin is published by EconomyTelemetry; fall back to 0 if absent.
+    const foodRatePerSec = Number(
+      metrics.foodRate ?? (metrics.foodRatePerMin != null ? metrics.foodRatePerMin / 60 : null) ?? 0,
+    );
+    // ETA in seconds until food hits zero (Infinity when rate is non-negative).
+    const foodEta = (foodRatePerSec < 0 && food > 0) ? food / (-foodRatePerSec) : Infinity;
+
+    const devIndex = Number(gameplay.devIndex ?? gameplay.devIndexSmoothed ?? 100);
+
+    // Rule 1: Kitchen exists but no COOK → chicken-egg deadlock.
+    if (kitchens > 0 && cookWorkers === 0) {
+      return { text: "Kitchen idle — assign a Cook worker", urgency: "critical" };
+    }
+
+    // Rule 2: Food running out soon AND no farms to recover.
+    if (foodEta < 90 && farms === 0) {
+      return { text: "Build a Farm on green terrain now", urgency: "critical" };
+    }
+
+    // Rule 3: Food running out soon (farms exist but production insufficient).
+    if (foodEta < 60) {
+      return { text: "Food runs out soon — prioritize farming", urgency: "high" };
+    }
+
+    // Rule 4: Development index too low (frontier / logistics incomplete).
+    if (devIndex < 20) {
+      return { text: "Frontier route incomplete — check Heat Lens (L)", urgency: "medium" };
+    }
+
+    // Rule 5: Colony is stable.
+    return { text: "Colony stable — expand carefully", urgency: "low" };
   }
 }

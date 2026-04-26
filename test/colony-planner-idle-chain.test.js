@@ -111,7 +111,13 @@ test("Priority 3.75 idle-chain low-pop: pop=4 + kitchen + COOK=0 + food=6 → re
   assert.ok(reassign, "low-pop (n<6) should use lower food threshold (6) for idle-chain trigger");
 });
 
-test("Priority 3.75 idle-chain low-pop: pop=4 + food=5 (below lowPopThreshold=6) → NO reassign", () => {
+// v0.8.2 Round-7 02c — COOK deadlock root fix: the food-threshold gate has
+// been removed for COOK. Previously food=5 (below lowPopThreshold=6) blocked
+// the reassign_role step, producing the chicken-egg deadlock: Kitchen exists
+// → no COOK → no meals → food stays low → threshold never met → COOK never
+// assigned. Correct behaviour: kitchen present + COOK=0 always emits
+// reassign_role, regardless of food level.
+test("Priority 3.75 idle-chain low-pop: pop=4 + food=5 + kitchen=1 + COOK=0 → reassign_role (deadlock fix Round-7)", () => {
   const state = makeTestState({
     resources: { food: 5, wood: 30, stone: 4, herbs: 2 },
     buildings: { kitchens: 1, warehouses: 1, farms: 3, lumbers: 1 },
@@ -123,5 +129,7 @@ test("Priority 3.75 idle-chain low-pop: pop=4 + food=5 (below lowPopThreshold=6)
   }
   const plan = generateFallbackPlan(makeObservation(state), state);
   const reassign = plan.steps.find((s) => s.action?.type === "reassign_role" && s.action.role === "COOK");
-  assert.ok(!reassign, "food=5 is below the low-pop threshold of 6; no reassign_role expected");
+  // Root fix: kitchen=1 + COOK=0 must always produce a reassign_role step.
+  // The old food-gate (food >= lowPopThreshold) caused the deadlock and is now removed.
+  assert.ok(reassign, "kitchen=1 + COOK=0 must always emit reassign_role regardless of food level (deadlock fix)");
 });
