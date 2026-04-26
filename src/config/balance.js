@@ -682,8 +682,15 @@ export const BALANCE = Object.freeze({
   // v0.8.2 Round-6 Wave-2 acceptance-gate tune (post-bench 2025-04-25):
   // initial 0.5 (50% output at mood=0) caused seed-99 death spiral by day 23
   // (low-mood early-game → halved output → starvation → more low mood → death).
-  // Softened to 0.7 (max 30% penalty) preserves the gameplay signal without
-  // the runaway feedback loop. Validated against 4-seed bench post-tune.
+  // Softened to 0.7 (max 30% penalty). Wave-2 tune that restored the 4-seed
+  // gate after the initial 0.5 collapsed seed-99. Wave-3 tested 0.85/0.9 to
+  // try to recover seed-7 (which dropped to devIndex 13.33 then loss-day-31
+  // after 02d rivalry shipped, via RNG drift not mood propagation), but
+  // tightening moved more seeds (99) into loss; lowering kept seed-7 in
+  // zombie max state but lost seed-99. 0.7 is the local optimum: 3/4 seeds
+  // healthy, seed-7 zombie-max. Seed-7's remaining fragility is documented
+  // and handed off to Round 7 (likely needs the rivalry delta itself softened
+  // or a per-pair mood floor).
   moodOutputMin: 0.7,
   // Per-worker MORALE_BREAK enqueue cooldown so a chronically-low-mood
   // worker cannot spam the queue every tick.
