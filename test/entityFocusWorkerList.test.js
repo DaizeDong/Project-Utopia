@@ -41,6 +41,21 @@ test("EntityFocusPanel exposes #renderWorkerList() and binds a click delegate", 
   );
 });
 
+test("worker-list exposes status filter chips without changing selected entity", () => {
+  assert.match(SRC, /deriveEntityFocusGroups/, "worker list should derive focus groups");
+  assert.match(SRC, /data-entity-focus-filter/, "worker list should render filter chips");
+  assert.match(
+    SRC,
+    /entityFocusFilter\s*=\s*filter/,
+    "filter chip delegate should set state.controls.entityFocusFilter",
+  );
+  assert.match(
+    SRC,
+    /selectedInFilterIndex/,
+    "selected row should be pinned when pagination would hide it",
+  );
+});
+
 test("worker-list button carries data-entity-id and a .selected class for the chosen worker", () => {
   // The template builds rows as <button ... data-entity-id="ID" class="entity-worker-row{selectedClass}">
   assert.match(

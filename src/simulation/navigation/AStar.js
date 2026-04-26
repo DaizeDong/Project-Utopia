@@ -101,6 +101,10 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
   const trafficPenaltyByKey = dynamicCosts?.traffic && typeof dynamicCosts.traffic.penaltyByKey === "object"
     ? dynamicCosts.traffic.penaltyByKey
     : null;
+  const hasHazardTiles = hazardTiles instanceof Set && hazardTiles.size > 0;
+  const hasHazardPenaltyByKey = hazardPenaltyByKey && Object.keys(hazardPenaltyByKey).length > 0;
+  const hasTrafficPenaltyByKey = trafficPenaltyByKey && Object.keys(trafficPenaltyByKey).length > 0;
+  const hasDynamicTileCosts = Boolean(hasHazardTiles || hasHazardPenaltyByKey || hasTrafficPenaltyByKey);
 
   if (startKey === goalKey) return [start];
 
@@ -144,13 +148,15 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
       if (tileType !== 1) {
         stepCost *= weatherMoveCostMultiplier;
       }
-      const hazardKey = `${nx},${nz}`;
-      if (hazardTiles?.has?.(hazardKey)) {
-        stepCost *= Math.max(1, Number(hazardPenaltyByKey?.[hazardKey] ?? hazardPenaltyMultiplier));
-      }
-      const trafficPenalty = Math.max(1, Number(trafficPenaltyByKey?.[hazardKey] ?? 1));
-      if (trafficPenalty > 1) {
-        stepCost *= trafficPenalty;
+      if (hasDynamicTileCosts) {
+        const dynamicKey = `${nx},${nz}`;
+        if (hazardTiles?.has?.(dynamicKey)) {
+          stepCost *= Math.max(1, Number(hazardPenaltyByKey?.[dynamicKey] ?? hazardPenaltyMultiplier));
+        }
+        const trafficPenalty = Math.max(1, Number(trafficPenaltyByKey?.[dynamicKey] ?? 1));
+        if (trafficPenalty > 1) {
+          stepCost *= trafficPenalty;
+        }
       }
 
       const tentative = gScore[current] + stepCost;

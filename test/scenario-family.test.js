@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { EVENT_TYPE, WEATHER } from "../src/config/constants.js";
+import { EVENT_TYPE, TILE, WEATHER } from "../src/config/constants.js";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { getScenarioEventCandidates, getScenarioRuntime, resolveScenarioFocusTiles } from "../src/world/scenarios/ScenarioFactory.js";
 
@@ -50,4 +50,21 @@ test("scenario families expose event and weather focus tiles", () => {
   assert.ok(basinBandits.some((zone) => /north gate|south granary/i.test(zone.label)));
   assert.ok(islandTrade.length >= 1);
   assert.match(islandTrade[0].label, /relay depot/i);
+});
+
+test("scenario runtime cache reuses stable grids and invalidates on grid.version changes", () => {
+  const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
+  const anchor = state.gameplay.scenario.anchors.eastDepot;
+
+  const first = getScenarioRuntime(state);
+  const cached = getScenarioRuntime(state);
+  assert.equal(cached, first, "stable grid should reuse cached scenario runtime");
+  assert.equal(first.readyDepots, 0);
+
+  state.grid.tiles[anchor.ix + anchor.iz * state.grid.width] = TILE.WAREHOUSE;
+  state.grid.version = Number(state.grid.version ?? 0) + 1;
+
+  const afterGridChange = getScenarioRuntime(state);
+  assert.notEqual(afterGridChange, first, "grid.version change must invalidate runtime cache");
+  assert.ok(afterGridChange.readyDepots > first.readyDepots);
 });

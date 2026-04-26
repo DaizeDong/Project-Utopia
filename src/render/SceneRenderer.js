@@ -10,7 +10,7 @@ import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
-import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels } from "./PressureLens.js";
+import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels, getPressureLabelRank, heatLabelBudgetForZoom } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
 import { FogOverlay } from "./FogOverlay.js";
 
@@ -380,7 +380,8 @@ export class SceneRenderer {
     const deviceMemory = Number(globalThis?.navigator?.deviceMemory ?? 0);
     this.lowMemoryMode = Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 8;
     this.basePixelRatio = this.lowMemoryMode ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
-    this.lowQualityPixelRatio = this.lowMemoryMode ? 0.85 : 1;
+    this.lowQualityPixelRatio = this.lowMemoryMode ? 0.55 : 0.6;
+    this.ultraLowQualityPixelRatio = this.lowMemoryMode ? 0.45 : 0.5;
     this.currentPixelRatio = this.basePixelRatio;
     this.renderer.setPixelRatio(this.currentPixelRatio);
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
@@ -464,6 +465,7 @@ export class SceneRenderer {
     this.lastShowTileIcons = null;
     this.lastVisualPreset = this.state.controls.visualPreset;
     this.lastEntityRenderSignature = "";
+    this.entityMeshUpdateAccumulatorSec = Infinity;
     this.pressureLensMarkers = [];
     this.lastPressureLensSignature = "";
     // v0.8.0 Phase 7.C — supply-chain heat lens overlay toggle.
@@ -1087,7 +1089,7 @@ export class SceneRenderer {
 
   #setupEntityMeshes() {
     const sphere = new THREE.SphereGeometry(0.34, 14, 14);
-    const maxWorkers = 900;
+    const maxWorkers = 1200;
     const maxVisitors = 240;
     const maxHerbivores = 300;
     const maxPredators = 120;
@@ -1831,7 +1833,10 @@ export class SceneRenderer {
         px,
         py,
         label: labelText,
-        weight: Number(marker.weight ?? marker.priority ?? 0),
+        weight: getPressureLabelRank({ ...marker, resolvedLabel: labelText }),
+        markerWeight: Number(marker.weight ?? 0),
+        priority: Number(marker.priority ?? 0),
+        hoverTooltip: marker.hoverTooltip ?? "",
         kind: marker.kind ?? "",
       });
     }
@@ -1848,20 +1853,36 @@ export class SceneRenderer {
     const decisions = dedupPressureLabels(entries, { nearPx: 24, bucketPx: 32 });
 
     // Pass 3: write display state.
-    const visible = new Map(); // poolIdx -> { decision, entry }
+    const visibleCandidates = [];
     for (let j = 0; j < decisions.length; j += 1) {
       const d = decisions[j];
       const poolIdx = entryToPoolIdx[j];
       if (d.keep) {
-        visible.set(poolIdx, { decision: d, entry: entries[j] });
+        visibleCandidates.push({ poolIdx, decision: d, entry: entries[j] });
       }
     }
+    const labelBudget = this.lensMode === "heat"
+      ? heatLabelBudgetForZoom(this.camera?.zoom)
+      : Number.POSITIVE_INFINITY;
+    visibleCandidates.sort((a, b) => {
+      const rankDelta = Number(b.entry?.weight ?? 0) - Number(a.entry?.weight ?? 0);
+      if (Math.abs(rankDelta) > 0.0001) return rankDelta;
+      const countDelta = Number(b.decision?.count ?? 1) - Number(a.decision?.count ?? 1);
+      if (countDelta !== 0) return countDelta;
+      return String(a.entry?.label ?? "").localeCompare(String(b.entry?.label ?? ""));
+    });
+    const visible = new Map(); // poolIdx -> { decision, entry }
+    for (const item of visibleCandidates.slice(0, labelBudget)) {
+      visible.set(item.poolIdx, { decision: item.decision, entry: item.entry });
+    }
+    container.dataset.hiddenLabelCount = String(Math.max(0, visibleCandidates.length - visible.size));
     for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
       const el = this.pressureLabelPool[i];
       if (!visible.has(i)) {
         // Not visible: hidden either because off-screen, empty label, or
         // collapsed into a sibling.
         el.style.display = "none";
+        el.title = "";
         if (el.dataset) {
           if ("merged" in el.dataset) delete el.dataset.merged;
           if ("count" in el.dataset) delete el.dataset.count;
@@ -1882,6 +1903,7 @@ export class SceneRenderer {
         if (el.dataset && "count" in el.dataset) delete el.dataset.count;
       }
       el.textContent = labelText;
+      el.title = entry.hoverTooltip ? String(entry.hoverTooltip) : labelText;
       el.style.left = `${Math.round(renderPx + offsetLeft)}px`;
       el.style.top = `${Math.round(renderPy + offsetTop)}px`;
       el.style.display = "block";
@@ -2511,20 +2533,35 @@ export class SceneRenderer {
   }
 
   #setRenderPixelRatio(targetPixelRatio) {
-    const clamped = Math.max(0.85, Math.min(this.basePixelRatio, targetPixelRatio));
+    const clamped = Math.max(0.45, Math.min(this.basePixelRatio, targetPixelRatio));
     if (Math.abs(clamped - this.currentPixelRatio) < 0.01) return;
     this.currentPixelRatio = clamped;
     this.renderer.setPixelRatio(clamped);
+  }
+
+  #entityMeshUpdateIntervalSec(totalEntities) {
+    const requestedScale = Number(this.state.controls?.timeScale ?? 1);
+    if (totalEntities >= 1000 && requestedScale >= 7) return 1 / 8;
+    if (totalEntities >= 700 && requestedScale >= 7) return 1 / 10;
+    if (totalEntities >= 700) return 1 / 15;
+    if (totalEntities >= 350) return 1 / 24;
+    return 0;
   }
 
   #updateEntityMeshes() {
     this.#collectEntityBuckets();
     const totalEntities = this.allEntities.length;
     const spritesReady = this.unitSpriteTextures.size > 0;
-    const spriteMode = Boolean(this.state.controls.showUnitSprites) && spritesReady && this.state.controls.visualPreset === "flat_worldsim";
+    const spriteMode = totalEntities < 650
+      && Boolean(this.state.controls.showUnitSprites)
+      && spritesReady
+      && this.state.controls.visualPreset === "flat_worldsim";
     this.state.debug.unitSpriteLoaded = spritesReady;
 
     if (spriteMode) {
+      this.#setRenderPixelRatio(totalEntities >= 1000
+        ? this.ultraLowQualityPixelRatio
+        : totalEntities >= 700 ? this.lowQualityPixelRatio : this.basePixelRatio);
       this.#syncEntitySprites(this.allEntities);
       if (this.entityModelInstances.size > 0) {
         this.#clearGroup(this.entityModelRoot);
@@ -2544,7 +2581,6 @@ export class SceneRenderer {
       this.herbivoreMesh.instanceMatrix.needsUpdate = true;
       this.predatorMesh.instanceMatrix.needsUpdate = true;
 
-      this.#setRenderPixelRatio(this.basePixelRatio);
       if (this.state.debug) {
         this.state.debug.renderMode = "sprites";
         this.state.debug.renderEntityCount = totalEntities;
@@ -2574,7 +2610,12 @@ export class SceneRenderer {
       }
     }
 
-    this.#setRenderPixelRatio(this.useEntityModels ? this.basePixelRatio : this.lowQualityPixelRatio);
+    const fastPixelRatio = totalEntities >= 1000
+      ? this.ultraLowQualityPixelRatio
+      : totalEntities >= 700
+        ? this.lowQualityPixelRatio
+        : Math.max(this.lowQualityPixelRatio, Math.min(this.basePixelRatio, 0.9));
+    this.#setRenderPixelRatio(this.useEntityModels ? this.basePixelRatio : fastPixelRatio);
 
     if (this.useEntityModels) {
       this.#syncEntityModels(this.allEntities);
@@ -2595,11 +2636,13 @@ export class SceneRenderer {
 
     let i = 0;
     if (workerFallbackVisible) {
-      for (const e of this.workerEntities) {
+      const capacity = Number(this.workerMesh.instanceMatrix?.count ?? this.workerEntities.length);
+      const visibleCount = Math.min(this.workerEntities.length, capacity);
+      for (const e of this.workerEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.workerMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.workerMesh.count = this.workerEntities.length;
+      this.workerMesh.count = visibleCount;
     } else {
       this.workerMesh.count = 0;
     }
@@ -2607,11 +2650,13 @@ export class SceneRenderer {
 
     i = 0;
     if (visitorFallbackVisible) {
-      for (const e of this.visitorEntities) {
+      const capacity = Number(this.visitorMesh.instanceMatrix?.count ?? this.visitorEntities.length);
+      const visibleCount = Math.min(this.visitorEntities.length, capacity);
+      for (const e of this.visitorEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.visitorMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.visitorMesh.count = this.visitorEntities.length;
+      this.visitorMesh.count = visibleCount;
     } else {
       this.visitorMesh.count = 0;
     }
@@ -2619,11 +2664,13 @@ export class SceneRenderer {
 
     i = 0;
     if (herbivoreFallbackVisible) {
-      for (const e of this.herbivoreEntities) {
+      const capacity = Number(this.herbivoreMesh.instanceMatrix?.count ?? this.herbivoreEntities.length);
+      const visibleCount = Math.min(this.herbivoreEntities.length, capacity);
+      for (const e of this.herbivoreEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.herbivoreMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.herbivoreMesh.count = this.herbivoreEntities.length;
+      this.herbivoreMesh.count = visibleCount;
     } else {
       this.herbivoreMesh.count = 0;
     }
@@ -2631,11 +2678,13 @@ export class SceneRenderer {
 
     i = 0;
     if (predatorFallbackVisible) {
-      for (const e of this.predatorEntities) {
+      const capacity = Number(this.predatorMesh.instanceMatrix?.count ?? this.predatorEntities.length);
+      const visibleCount = Math.min(this.predatorEntities.length, capacity);
+      for (const e of this.predatorEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.predatorMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.predatorMesh.count = this.predatorEntities.length;
+      this.predatorMesh.count = visibleCount;
     } else {
       this.predatorMesh.count = 0;
     }
@@ -2651,6 +2700,17 @@ export class SceneRenderer {
     if (this.state.debug) {
       this.state.debug.renderMode = this.useEntityModels ? "detailed" : "fast";
       this.state.debug.renderEntityCount = totalEntities;
+      this.state.debug.renderEntityMeshLod = {
+        totalEntities,
+        updateIntervalSec: this.#entityMeshUpdateIntervalSec(totalEntities),
+        skippedFrame: false,
+      };
+      this.state.debug.renderFallbackCounts = {
+        workers: this.workerMesh.count,
+        visitors: this.visitorMesh.count,
+        herbivores: this.herbivoreMesh.count,
+        predators: this.predatorMesh.count,
+      };
       this.state.debug.renderModelDisableThreshold = this.modelDisableThreshold;
       this.state.debug.renderPixelRatio = this.currentPixelRatio;
     }
@@ -3315,8 +3375,10 @@ export class SceneRenderer {
     if (this._rainParticles) this.#updateRainParticles();
 
     this.#rebuildTilesIfNeeded();
+    const totalEntities = Number(this.state.agents?.length ?? 0) + Number(this.state.animals?.length ?? 0);
+    const entityUpdateIntervalSec = this.#entityMeshUpdateIntervalSec(totalEntities);
+    this.entityMeshUpdateAccumulatorSec += dt;
     const entityRenderSignature = [
-      this.state.metrics.tick,
       this.state.agents.length,
       this.state.animals.length,
       this.state.controls.showUnitSprites ? 1 : 0,
@@ -3324,9 +3386,19 @@ export class SceneRenderer {
       this.modelDisableThreshold,
       this.modelTemplates.size,
     ].join("|");
-    if (entityRenderSignature !== this.lastEntityRenderSignature) {
+    const shouldUpdateEntities = entityRenderSignature !== this.lastEntityRenderSignature
+      || entityUpdateIntervalSec <= 0
+      || this.entityMeshUpdateAccumulatorSec >= entityUpdateIntervalSec;
+    if (shouldUpdateEntities) {
       this.lastEntityRenderSignature = entityRenderSignature;
+      this.entityMeshUpdateAccumulatorSec = 0;
       this.#updateEntityMeshes();
+    } else if (this.state.debug) {
+      this.state.debug.renderEntityMeshLod = {
+        totalEntities,
+        updateIntervalSec: entityUpdateIntervalSec,
+        skippedFrame: true,
+      };
     }
     this.#updatePathLine();
     this.fogOverlay?.update?.(this.state);

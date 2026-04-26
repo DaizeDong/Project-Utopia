@@ -318,6 +318,7 @@ export class DeveloperPanel {
   #renderAlgorithms() {
     if (!this.algoVal) return;
     const astar = this.state.debug.astar ?? {};
+    const workers = astar.workerPool ?? {};
     const boids = this.state.debug.boids ?? {};
     const traffic = this.state.metrics?.traffic ?? this.state.debug?.traffic ?? {};
     const req = Number(astar.requests ?? 0);
@@ -332,6 +333,7 @@ export class DeveloperPanel {
       "A*",
       `requests=${req} success=${success} fail=${fail} successRate=${this.#fmtNum(successRate, 1)}%`,
       `cache hits=${astar.cacheHits ?? 0} misses=${astar.cacheMisses ?? 0}`,
+      `workers=${workers.workerCount ?? 0} inFlight=${workers.inFlight ?? 0} queue=${workers.queueLength ?? 0} done=${workers.completed ?? 0} applied=${workers.applied ?? 0}`,
       `last duration=${this.#fmtNum(astar.lastDurationMs, 3)}ms avg duration=${this.#fmtNum(astar.avgDurationMs, 3)}ms`,
       `last path len=${this.#fmtNum(astar.lastPathLength, 1)} avg path len=${this.#fmtNum(astar.avgPathLength, 1)}`,
       `traffic version=${astar.trafficVersion ?? 0} hotspots=${astar.lastTrafficHotspots ?? 0} peakLoad=${this.#fmtNum(astar.lastTrafficPeakLoad, 1)}`,

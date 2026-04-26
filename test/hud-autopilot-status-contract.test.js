@@ -128,8 +128,8 @@ test("getAutopilotStatus reports manual guidance boundary when disabled", () => 
 
   assert.equal(status.enabled, false);
   assert.equal(status.dataMode, "off");
-  assert.equal(status.text, "Autopilot off. Manual guidance active; director may still react.");
-  assert.equal(status.title, "Autopilot off. You choose actions; background director systems may still react.");
+  assert.equal(status.text, "Autopilot OFF · manual; builders/director idle");
+  assert.match(status.title, /automatic phase builders are idle/);
 });
 
 test("describeAutopilotToggle reports the toggle action copy", () => {
@@ -138,8 +138,8 @@ test("describeAutopilotToggle reports the toggle action copy", () => {
 
   assert.equal(enabled.actionMessage, "AI enabled. Waiting for next decision cycle.");
   assert.equal(enabled.title, "Autopilot is on and will keep steering until you turn it off.");
-  assert.equal(disabled.actionMessage, "Autopilot off. Manual guidance active; background director may still react.");
-  assert.equal(disabled.title, "Autopilot is off. You choose actions; background director systems may still react.");
+  assert.equal(disabled.actionMessage, "Autopilot off. Manual guidance active; rule builders and directors are idle.");
+  assert.equal(disabled.title, "Autopilot is off. You choose actions; automatic phase builders and connector builders are idle.");
 });
 
 test("HUDController autopilot chip and toggles mirror getAutopilotStatus", () => {

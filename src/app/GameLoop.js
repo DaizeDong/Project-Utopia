@@ -32,12 +32,19 @@ export class GameLoop {
       return;
     }
 
-    const dt = Math.min(0.1, elapsedMs / 1000);
+    const rawDt = Math.max(0, elapsedMs / 1000);
+    const dt = Math.min(0.1, rawDt);
+    const frameInfo = {
+      nowMs: now,
+      elapsedMs,
+      rawDt,
+      clampedDt: dt,
+    };
     this.last = now;
 
     try {
-      this.update(dt);
-      this.render(dt);
+      this.update(dt, frameInfo);
+      this.render(dt, frameInfo);
     } catch (err) {
       this.onError?.(err);
       if (this.stopOnError) {

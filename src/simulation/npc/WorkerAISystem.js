@@ -1,9 +1,9 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE } from "../../config/constants.js";
+import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
-import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
+import { canAttemptPath, clearPath, followPath, hasActivePath, hasPendingPathRequest, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
@@ -14,6 +14,7 @@ import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
 import { recordProductionEntry } from "../economy/ResourceSystem.js";
+import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
 
 const TARGET_REFRESH_BASE_SEC = 1.2;
 const TARGET_REFRESH_JITTER_SEC = 0.7;
@@ -24,6 +25,39 @@ export const TASK_LOCK_STATES = new Set(["harvest", "deliver", "eat", "process",
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 const WORKER_MEMORY_RECENT_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
+
+export function resolveWorkerAiLoadShedding({
+  requestedScale = 1,
+  activeWorkerCount = 0,
+  totalEntityCount = 0,
+} = {}) {
+  const scale = Number(requestedScale);
+  const workers = Math.max(0, Number(activeWorkerCount) || 0);
+  const entities = Math.max(workers, Number(totalEntityCount) || 0);
+
+  if (scale >= 7) {
+    const workerStride = (workers >= 1000 || entities >= 1200) ? 4
+      : (workers >= 800 || entities >= 1000) ? 3
+        : (workers >= 500 || entities >= 750) ? 2
+          : workers >= 250 ? 1
+            : 1;
+    const pathBudget = (workers >= 1000 || entities >= 1200) ? 256
+      : (workers >= 800 || entities >= 1000) ? 192
+        : (workers >= 500 || entities >= 750) ? 128
+          : workers >= 250 ? 96
+          : Infinity;
+    return { workerStride, pathBudget, pressureCount: entities };
+  }
+
+  const workerStride = (workers >= 1000 || entities >= 1200) ? 4
+    : (workers >= 800 || entities >= 1000) ? 3
+      : (workers >= 500 || entities >= 750) ? 2
+        : 1;
+  const pathBudget = (workers >= 1000 || entities >= 1200) ? 24
+    : (workers >= 800 || entities >= 1000) ? 32
+      : Infinity;
+  return { workerStride, pathBudget, pressureCount: entities };
+}
 
 function tileKey(tile) {
   return `${tile.ix},${tile.iz}`;
@@ -80,6 +114,40 @@ function getUnreadyDepotAnchors(runtime) {
     .filter(Boolean);
 }
 
+function buildWorkerTargetContext(state) {
+  const runtime = getScenarioRuntime(state);
+  return {
+    brokenRouteTiles: getBrokenRouteGapTiles(runtime),
+    depotAnchors: getUnreadyDepotAnchors(runtime),
+  };
+}
+
+function getWorkerTargetEntries(state, targetTileTypes, context) {
+  const typesKey = [...targetTileTypes].sort((a, b) => a - b).join(",");
+  const contextKey = `${state.grid.version}|${context.brokenRouteTiles.map(tileKey).join(";")}|${context.depotAnchors.map(tileKey).join(";")}`;
+  const cache = state._workerTargetCandidateCache ??= { contextKey: "", byTypes: new Map() };
+  if (cache.contextKey !== contextKey) {
+    cache.contextKey = contextKey;
+    cache.byTypes = new Map();
+  }
+  if (cache.byTypes.has(typesKey)) return cache.byTypes.get(typesKey);
+
+  const entries = listTilesByType(state.grid, targetTileTypes).map((candidate) => {
+    const candidateKey = tileKey(candidate);
+    return {
+      tile: candidate,
+      candidateKey,
+      tileType: getTile(state.grid, candidate.ix, candidate.iz),
+      wallCoverage: countNearbyTiles(state, candidate, [TILE.WALL], 1),
+      roadNeighbors: countNearbyTiles(state, candidate, [TILE.ROAD, TILE.WAREHOUSE], 1),
+      frontierDistance: minDistanceToTiles(candidate, context.brokenRouteTiles),
+      depotDistance: minDistanceToTiles(candidate, context.depotAnchors),
+    };
+  });
+  cache.byTypes.set(typesKey, entries);
+  return entries;
+}
+
 function buildOccupancyMap(state, excludeId, workerRole) {
   const map = new Map();
   const roleMap = new Map();
@@ -96,45 +164,68 @@ function buildOccupancyMap(state, excludeId, workerRole) {
   return { all: map, sameRole: roleMap };
 }
 
-function chooseWorkerTarget(worker, state, targetTileTypes) {
-  const candidates = listTilesByType(state.grid, targetTileTypes);
+function buildWorkerTargetOccupancy(workers) {
+  const all = new Map();
+  const byRole = new Map();
+  for (const agent of workers) {
+    const target = agent.targetTile;
+    if (!target) continue;
+    const key = `${target.ix},${target.iz}`;
+    all.set(key, (all.get(key) ?? 0) + 1);
+    let roleMap = byRole.get(agent.role);
+    if (!roleMap) {
+      roleMap = new Map();
+      byRole.set(agent.role, roleMap);
+    }
+    roleMap.set(key, (roleMap.get(key) ?? 0) + 1);
+  }
+  return { all, byRole };
+}
+
+function readOccupancyCount(map, key, worker) {
+  let count = Number(map?.get(key) ?? 0);
+  const target = worker.targetTile;
+  if (target && `${target.ix},${target.iz}` === key) count -= 1;
+  return Math.max(0, count);
+}
+
+function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null) {
+  const targetContext = state._workerTargetContext ?? buildWorkerTargetContext(state);
+  const candidates = getWorkerTargetEntries(state, targetTileTypes, targetContext);
   if (candidates.length <= 0) return null;
 
   const policy = getWorkerPolicy(worker, state);
   const current = worldToTile(worker.x, worker.z, state.grid);
-  const runtime = getScenarioRuntime(state);
-  const brokenRouteTiles = getBrokenRouteGapTiles(runtime);
-  const depotAnchors = getUnreadyDepotAnchors(runtime);
   const reservation = state._jobReservation;
-  const { all: occupancy, sameRole: sameRoleOccupancy } = buildOccupancyMap(state, worker.id, worker.role);
+  const fallbackOccupancy = occupancyCache ? null : buildOccupancyMap(state, worker.id, worker.role);
+  const occupancy = occupancyCache?.all ?? fallbackOccupancy?.all;
+  const sameRoleOccupancy = occupancyCache?.byRole?.get(worker.role) ?? fallbackOccupancy?.sameRole;
   let best = null;
 
-  for (const candidate of candidates) {
+  for (const entry of candidates) {
+    const candidate = entry.tile;
+    const candidateKey = entry.candidateKey;
     const distance = manhattanTiles(current, candidate);
-    const tileType = getTile(state.grid, candidate.ix, candidate.iz);
-    const wallCoverage = countNearbyTiles(state, candidate, [TILE.WALL], 1);
-    const roadNeighbors = countNearbyTiles(state, candidate, [TILE.ROAD, TILE.WAREHOUSE], 1);
-    const frontierDistance = minDistanceToTiles(candidate, brokenRouteTiles);
-    const depotDistance = minDistanceToTiles(candidate, depotAnchors);
-    const frontierAffinity = Number.isFinite(frontierDistance)
-      ? frontierDistance <= 2 ? 1 : frontierDistance <= 5 ? 0.45 : 0
+    const tileType = entry.tileType;
+    const frontierAffinity = Number.isFinite(entry.frontierDistance)
+      ? entry.frontierDistance <= 2 ? 1 : entry.frontierDistance <= 5 ? 0.45 : 0
       : 0;
-    const depotAffinity = Number.isFinite(depotDistance)
-      ? depotDistance <= 2 ? 1 : depotDistance <= 4 ? 0.4 : 0
+    const depotAffinity = Number.isFinite(entry.depotDistance)
+      ? entry.depotDistance <= 2 ? 1 : entry.depotDistance <= 4 ? 0.4 : 0
       : 0;
     const ecologyPressure = tileType === TILE.FARM
-      ? Math.max(0, Number(state.metrics?.ecology?.farmPressureByKey?.[tileKey(candidate)] ?? 0))
+      ? Math.max(0, Number(state.metrics?.ecology?.farmPressureByKey?.[candidateKey] ?? 0))
       : 0;
     const warehouseLoad = tileType === TILE.WAREHOUSE
-      ? Number(state.metrics?.logistics?.warehouseLoadByKey?.[tileKey(candidate)] ?? 0)
+      ? Number(state.metrics?.logistics?.warehouseLoadByKey?.[candidateKey] ?? 0)
       : 0;
-    const occupants = occupancy.get(tileKey(candidate)) ?? 0;
+    const occupants = readOccupancyCount(occupancy, candidateKey, worker);
 
     // Sqrt-based distance penalty: strong at short range, diminishing at long range
     // dist=1: -0.18, dist=4: -0.36, dist=9: -0.54, dist=16: -0.72, dist=25: -0.9
     let score = -Math.sqrt(distance) * 0.18;
-    score += roadNeighbors * 0.1 * resolveTargetPriority(policy, "road", 1);
-    score += wallCoverage * 0.07 * resolveTargetPriority(policy, "safety", 1);
+    score += entry.roadNeighbors * 0.1 * resolveTargetPriority(policy, "road", 1);
+    score += entry.wallCoverage * 0.07 * resolveTargetPriority(policy, "safety", 1);
     score += frontierAffinity * 0.42 * resolveTargetPriority(policy, "frontier", 1);
     score += depotAffinity * 0.38 * resolveTargetPriority(policy, "depot", 1);
 
@@ -162,7 +253,7 @@ function chooseWorkerTarget(worker, state, targetTileTypes) {
     if (occupants > 0 && tileType !== TILE.WAREHOUSE) {
       score -= 0.45 * occupants / (1 + 0.3 * (occupants - 1));
       // Extra penalty for same-role clustering (redundant work)
-      const sameRoleCount = sameRoleOccupancy.get(tileKey(candidate)) ?? 0;
+      const sameRoleCount = readOccupancyCount(sameRoleOccupancy, candidateKey, worker);
       if (sameRoleCount > 0) score -= 0.25 * sameRoleCount;
     }
 
@@ -491,6 +582,12 @@ function setIdleDesired(worker) {
   worker.desiredVel.z = 0;
 }
 
+function getPendingPathTarget(worker) {
+  const target = worker.blackboard?.pendingPathTargetTile ?? null;
+  if (!target || !Number.isFinite(Number(target.ix)) || !Number.isFinite(Number(target.iz))) return null;
+  return { ix: Number(target.ix), iz: Number(target.iz) };
+}
+
 function getFarmEcologyYieldMultiplier(worker, state) {
   const target = worker.targetTile ?? null;
   if (!target) return { multiplier: 1, pressure: 0 };
@@ -549,12 +646,24 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   const shouldRetarget = targetInvalid || pathStale || pathMissingAwayFromTarget || pathStuck;
 
   if (shouldRetarget) {
+    if (hasPendingPathRequest(worker, services)) {
+      return hasActivePath(worker, state) || isAtTargetTile(worker, state);
+    }
     if (!canAttemptPath(worker, state)) {
       return hasActivePath(worker, state) || isAtTargetTile(worker, state);
     }
+    if (Number.isFinite(state._workerPathBudget) && state._workerPathBudget <= 0) {
+      setIdleDesired(worker);
+      return hasActivePath(worker, state) || isAtTargetTile(worker, state);
+    }
+    if (Number.isFinite(state._workerPathBudget)) {
+      state._workerPathBudget -= 1;
+      state._workerPathBudgetUsed = Number(state._workerPathBudgetUsed ?? 0) + 1;
+    }
     const reservation = state._jobReservation;
     if (reservation) reservation.releaseAll(worker.id);
-    const target = chooseWorkerTarget(worker, state, targetTileTypes)
+    const target = getPendingPathTarget(worker)
+      ?? chooseWorkerTarget(worker, state, targetTileTypes, state._workerTargetOccupancy)
       ?? findNearestTileOfTypes(state.grid, worker, targetTileTypes);
     if (!target || !setTargetAndPath(worker, target, state, services)) {
       return false;
@@ -1021,13 +1130,63 @@ function handleWander(worker, state, services, dt) {
   if (!hasActivePath(worker, state) || pathStuck) {
     const driftedFromTarget = worker.targetTile ? !isAtTargetTile(worker, state) : true;
     const shouldRetarget = stalePath || driftedFromTarget || nowSec >= nextWanderRefreshSec || pathStuck;
-    if (shouldRetarget && canAttemptPath(worker, state)) {
+    if (shouldRetarget && !hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
       clearPath(worker);
       const fogTarget = wantsFogExploration ? findNearestHiddenTile(worker, state) : null;
-      const target = fogTarget ?? randomPassableTile(state.grid, () => services.rng.next());
+    const target = getPendingPathTarget(worker) ?? fogTarget ?? randomPassableTile(state.grid, () => services.rng.next());
       if (setTargetAndPath(worker, target, state, services)) {
         blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
       }
+    }
+  }
+
+  if (hasActivePath(worker, state)) {
+    worker.desiredVel = followPath(worker, state, dt).desired;
+  } else {
+    setIdleDesired(worker);
+  }
+}
+
+function chooseStressPatrolTile(worker, state, services) {
+  const origin = worldToTile(worker.x, worker.z, state.grid);
+  const random = () => services.rng.next();
+  const radius = 18;
+  for (let i = 0; i < 16; i += 1) {
+    const ix = Math.max(0, Math.min(state.grid.width - 1, origin.ix + Math.floor((random() * 2 - 1) * radius)));
+    const iz = Math.max(0, Math.min(state.grid.height - 1, origin.iz + Math.floor((random() * 2 - 1) * radius)));
+    if (Math.abs(ix - origin.ix) + Math.abs(iz - origin.iz) < 5) continue;
+    const tile = getTile(state.grid, ix, iz);
+    if (TILE_INFO[tile]?.passable) return { ix, iz };
+  }
+  return randomPassableTile(state.grid, random);
+}
+
+function handleStressWorkerPatrol(worker, state, services, dt) {
+  worker.blackboard ??= {};
+  worker.debug ??= {};
+  worker.hunger = 1;
+  worker.rest = 1;
+  worker.morale = 1;
+  worker.social = Math.max(0.7, Number(worker.social ?? 0.7));
+  worker.mood = 1;
+  worker.starvationSec = 0;
+  worker.blackboard.intent = "stress_patrol";
+  worker.blackboard.moodOutputMultiplier = 1;
+  worker.stateLabel = "Stress patrol";
+  worker.debug.lastIntent = "stress_patrol";
+
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const pathStuck = isPathStuck(worker, state, 2.0);
+  const shouldRetarget = !hasActivePath(worker, state)
+    || isAtTargetTile(worker, state)
+    || pathStuck
+    || nowSec >= Number(worker.blackboard.nextStressPatrolSec ?? -Infinity);
+
+  if (shouldRetarget && !hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
+    if (pathStuck || isAtTargetTile(worker, state)) clearPath(worker);
+    const target = getPendingPathTarget(worker) ?? chooseStressPatrolTile(worker, state, services);
+    if (target && setTargetAndPath(worker, target, state, services)) {
+      worker.blackboard.nextStressPatrolSec = nowSec + 3 + services.rng.next() * 4;
     }
   }
 
@@ -1063,6 +1222,11 @@ function updateIdleWithoutReasonMetric(worker, stateNode, dt, state) {
 export class WorkerAISystem {
   constructor() {
     this.name = "WorkerAISystem";
+    this.activeWorkers = [];
+    this.socialHash = { map: new Map(), cellSize: 4 };
+    this.socialNeighborBuffer = [];
+    this.relationshipNeighborBuffer = [];
+    this.highLoadStride = 1;
   }
 
   update(dt, state, services) {
@@ -1076,12 +1240,75 @@ export class WorkerAISystem {
     state._logisticsSystem ??= new LogisticsSystem();
     state._logisticsSystem.update(dt, state);
 
+    this.activeWorkers.length = 0;
     for (const worker of state.agents) {
-      if (worker.type !== "WORKER") continue;
       if (worker.alive === false) {
-        reservation.releaseAll(worker.id);
+        if (worker.type === "WORKER") reservation.releaseAll(worker.id);
         continue;
       }
+      if (worker.type === "WORKER") this.activeWorkers.push(worker);
+    }
+    state._workerTargetOccupancy = buildWorkerTargetOccupancy(this.activeWorkers);
+    state._workerTargetContext = buildWorkerTargetContext(state);
+    buildSpatialHash(this.activeWorkers, 4, this.socialHash);
+
+    const totalEntityCount = Number(state.agents?.length ?? 0) + Number(state.animals?.length ?? 0);
+    const { workerStride, pathBudget, pressureCount } = resolveWorkerAiLoadShedding({
+      requestedScale: state.controls?.timeScale,
+      activeWorkerCount: this.activeWorkers.length,
+      totalEntityCount,
+    });
+    state._workerPathBudget = pathBudget;
+    state._workerPathBudgetUsed = 0;
+    state._workerNoPathBootstrapBudget = Number.isFinite(pathBudget)
+      ? Math.max(8, Math.floor(pathBudget * 0.75))
+      : Infinity;
+    state._workerNoPathBootstrapUsed = 0;
+    this.highLoadStride = workerStride;
+    const tick = Number(state.metrics?.tick ?? 0);
+    let processedWorkers = 0;
+    let skippedWorkers = 0;
+
+    for (const worker of this.activeWorkers) {
+      const blackboard = worker.blackboard ?? (worker.blackboard = {});
+      let workerDt = dt;
+      if (workerStride > 1) {
+        blackboard.aiLodDt = Number(blackboard.aiLodDt ?? 0) + dt;
+        if (!Number.isFinite(blackboard.aiLodPhase)) {
+          let phaseSeed = 0;
+          const id = String(worker.id ?? "");
+          for (let i = 0; i < id.length; i += 1) phaseSeed += id.charCodeAt(i);
+          blackboard.aiLodPhase = Math.abs(phaseSeed);
+        }
+        const phase = blackboard.aiLodPhase % workerStride;
+        const canBootstrapNoPath = !hasPendingPathRequest(worker, services)
+          && !hasActivePath(worker, state)
+          && Number(state._workerNoPathBootstrapBudget ?? 0) > 0;
+        if ((tick + phase) % workerStride !== 0 && !canBootstrapNoPath) {
+          if (hasActivePath(worker, state)) {
+            worker.desiredVel = followPath(worker, state, dt).desired;
+          } else {
+            setIdleDesired(worker);
+          }
+          skippedWorkers += 1;
+          continue;
+        }
+        if (canBootstrapNoPath && (tick + phase) % workerStride !== 0) {
+          state._workerNoPathBootstrapBudget -= 1;
+          state._workerNoPathBootstrapUsed = Number(state._workerNoPathBootstrapUsed ?? 0) + 1;
+        }
+        workerDt = Math.max(dt, Number(blackboard.aiLodDt ?? dt));
+        blackboard.aiLodDt = 0;
+      }
+      processedWorkers += 1;
+
+      {
+        const dt = workerDt;
+
+        if (worker.isStressWorker) {
+          handleStressWorkerPatrol(worker, state, services, dt);
+          continue;
+        }
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
 
@@ -1141,8 +1368,9 @@ export class WorkerAISystem {
       let nearbyWorkers = 0;
       let hasNearbyCloseFriend = false;
       if (state.metrics.tick % 30 === 0) {
-        for (const other of state.agents) {
-          if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
+        const neighbors = queryNeighbors(this.socialHash, worker, this.socialNeighborBuffer, 128);
+        for (const other of neighbors) {
+          if (other === worker || other.alive === false) continue;
           const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
           if (dist < 4) nearbyWorkers++;
           // v0.8.2 Round-7 (01e+02b): detect Close Friend within 3 tiles for social trait rest bonus
@@ -1225,8 +1453,9 @@ export class WorkerAISystem {
       // Relationship updates: proximity-based opinion drift (every ~5s)
       if (worker.relationships && (state.metrics.tick % 300 === (worker.id?.charCodeAt?.(7) ?? 0) % 300)) {
         const relNowSec = Number(state.metrics?.timeSec ?? 0);
-        for (const other of state.agents) {
-          if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
+        const neighbors = queryNeighbors(this.socialHash, worker, this.relationshipNeighborBuffer, 128);
+        for (const other of neighbors) {
+          if (other === worker || other.alive === false) continue;
           const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
           if (dist < 3) {
             const oldOp = Number(worker.relationships[other.id] ?? 0);
@@ -1292,8 +1521,9 @@ export class WorkerAISystem {
         : 0;
       worker.debug ??= {};
       worker.debug.carryAgeSec = Number(worker.blackboard.carryAgeSec ?? 0);
-      worker.debug.nearestWarehouseDistance = Number.isFinite(estimateNearestWarehouseDistance(worker, state))
-        ? estimateNearestWarehouseDistance(worker, state)
+      const nearestWarehouseDistanceDebug = estimateNearestWarehouseDistance(worker, state);
+      worker.debug.nearestWarehouseDistance = Number.isFinite(nearestWarehouseDistanceDebug)
+        ? nearestWarehouseDistanceDebug
         : -1;
 
       const nowSec = Number(state.metrics.timeSec ?? 0);
@@ -1446,6 +1676,20 @@ export class WorkerAISystem {
       }
 
       updateIdleWithoutReasonMetric(worker, stateNode, dt, state);
+      }
+    }
+    state._workerTargetOccupancy = null;
+    if (state.debug) {
+      state.debug.workerAiLod = {
+        stride: workerStride,
+        processed: processedWorkers,
+        skipped: skippedWorkers,
+        activeWorkerCount: this.activeWorkers.length,
+        pressureCount,
+        pathBudget: Number.isFinite(pathBudget) ? pathBudget : "unlimited",
+        pathBudgetUsed: Number(state._workerPathBudgetUsed ?? 0),
+        noPathBootstrapUsed: Number(state._workerNoPathBootstrapUsed ?? 0),
+      };
     }
 
     // v0.8.0 Phase 3 M1a: per-tile node regen. Scan tileState entries and

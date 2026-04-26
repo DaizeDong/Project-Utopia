@@ -21,13 +21,13 @@ Result: 40/40 passing.
 npm test
 ```
 
-Result recorded from the local full-suite run:
+Result recorded from the latest local full-suite run:
 
-- tests: 1449
-- pass: 1447
+- tests: 1473
+- pass: 1471
 - fail: 0
 - skipped: 2
-- duration_ms: 240711.2425
+- duration_ms: 238365.2705
 
 ## Build And Diff Hygiene
 
@@ -70,6 +70,17 @@ Long-run post-fix sample:
 - duplicate director text: false
 - joined milestone text: false
 - Autopilot OFF / LLM-disabled copy explicit: true
+
+## Max-CPU Movement/Pathing Verification
+
+Visible headed Chromium stress run after the follow-up performance pass:
+
+- Target: 1000 dev stress workers, 8x time scale, path workers enabled.
+- Hardware concurrency reported by browser: 32.
+- t+10s: 1020 entities, 1009/1012 workers moving, 991/1012 workers with paths, actual speed 7.83x, average FPS 54.1, work p95 10.7 ms.
+- t+20s: 1019 entities, 1008/1012 workers moving, 1003/1012 workers with paths, actual speed 7.75x, average FPS 53.9, work p95 11.8 ms.
+- Path worker pool at t+20s: 32 workers, 37,539 completed jobs, 0 dropped jobs, queue length 0.
+- Residual console noise: AI proxy HTTP 500 health-check warnings; these do not affect local fallback simulation/pathing.
 
 ## Residual Risk
 

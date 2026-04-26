@@ -2,6 +2,7 @@ import { TILE } from "../../config/constants.js";
 import { createWorker } from "../../entities/EntityFactory.js";
 import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
 
 const CHECK_INTERVAL_SEC = 10;
 const MEMORY_RECENT_LIMIT = 6;
@@ -82,9 +83,20 @@ export class PopulationGrowthSystem {
       + smithies * 2 + clinics * 2 + herbGardens);
     if (workers.length >= cap) return;
 
+    if (state.ai?.foodRecoveryMode === true || isFoodRunwayUnsafe(state)) {
+      state.metrics ??= {};
+      state.metrics.populationGrowthBlockedReason = "food runway unsafe";
+      return;
+    }
+
     // Need sufficient food
     const food = state.resources?.food ?? 0;
-    if (food < MIN_FOOD_FOR_GROWTH) return;
+    if (food < MIN_FOOD_FOR_GROWTH) {
+      state.metrics ??= {};
+      state.metrics.populationGrowthBlockedReason = "food below growth floor";
+      return;
+    }
+    if (state.metrics) state.metrics.populationGrowthBlockedReason = "";
 
     // Spawn at a seeded-random warehouse.
     const wh = warehouses[Math.floor(rngNext() * warehouses.length)];
