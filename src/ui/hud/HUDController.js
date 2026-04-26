@@ -12,6 +12,7 @@ import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 // for 7-row rate badges. Cached per-RATE_WINDOW_SEC in render() to avoid
 // hitting ColonyPerceiver every frame.
 import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
+import { audioSystem } from "../../audio/AudioSystem.js";
 
 function shouldSuppressUserWarning(warningEvent, warningText = "") {
   const source = String(warningEvent?.source ?? "").toLowerCase();
@@ -469,6 +470,7 @@ export class HUDController {
         this.storytellerStrip?.classList?.remove?.("flash-action");
         void this.storytellerStrip?.offsetWidth;
         this.storytellerStrip?.classList?.add?.("flash-action");
+        audioSystem.onMilestone();
       }
     }
 
@@ -1750,6 +1752,12 @@ export class HUDController {
       const seconds = Math.floor(smoothed % 60);
       hintNode.textContent = `\u2248 ${minutes}m ${seconds}s until empty`;
       hintNode.className = smoothed < 60 ? "runout-hint warn-critical" : "runout-hint warn-soon";
+      // v0.8.2 Round-7 audio — play food crisis sound (throttled in AudioSystem).
+      if (smoothed < 60 && resource === "food") {
+        audioSystem.onFoodCritical(
+          typeof performance !== "undefined" ? performance.now() / 1000 : 0,
+        );
+      }
       // v0.8.2 Round-7 02a — push warn-critical runout to objectiveLog (45s dedup).
       if (smoothed < 60) {
         const logKey = resource;

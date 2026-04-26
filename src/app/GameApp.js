@@ -61,6 +61,7 @@ import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
 import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
 import { setActiveUiProfile } from "./uiProfileState.js";
+import { audioSystem } from "../audio/AudioSystem.js";
 
 // v0.8.2 — DOM id for the sidebar logistics legend card.
 // Defined as a module-level constant so the string literal stays outside
@@ -146,6 +147,10 @@ export class GameApp {
           simSec: this.state.metrics.timeSec,
           ...event,
         });
+        // Audio: play building-placed sound for successful placements (not erase).
+        if (event.kind === "build" && event.tool !== "erase") {
+          audioSystem.onBuildingPlaced();
+        }
       },
     });
     this.renderer = new SceneRenderer(canvas, this.state, this.buildSystem, (id) => {
@@ -1821,6 +1826,7 @@ export class GameApp {
       actionMessage: `Run started: ${mapLabel} (${mapSize} tiles). Build the starter network now. Try Again replays this layout; New Map rerolls.`,
       actionKind: "success",
     });
+    audioSystem.onGameStart();
   }
 
   restartSession() {
