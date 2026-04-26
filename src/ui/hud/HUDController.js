@@ -523,6 +523,11 @@ export class HUDController {
     // Next Action slot.  The getNextActionAdvice result still wins at
     // critical priority; advisory only shows when next-action is idle/done.
     const autopilotEnabled = Boolean(state?.ai?.enabled);
+    const planOwnerLabel = autopilotEnabled ? "Autopilot plan" : "Manual guide";
+    const planOwnerKey = autopilotEnabled ? "autopilot" : "manual";
+    const planBoundary = autopilotEnabled
+      ? "Autopilot may execute this plan on the next policy tick."
+      : "Guidance only: you choose actions; background director systems may still react.";
     if (!autopilotEnabled && typeof ColonyPlanner?.getAdvisoryRecommendation === "function") {
       const advisory = ColonyPlanner.getAdvisoryRecommendation(state);
       if (advisory && advisory.text) {
@@ -532,16 +537,17 @@ export class HUDController {
         const currentNext = getNextActionAdvice(state);
         const currentPriority = String(currentNext?.priority ?? "idle");
         if (currentPriority === "idle" || currentPriority === "done") {
-          node.textContent = `\uD83D\uDCA1 ${advisory.text}`;
+          node.textContent = `${planOwnerLabel}: ${advisory.text}`;
           node.setAttribute?.("data-priority", advisoryPriority);
           node.setAttribute?.("data-severity", advisoryPriority === "critical" ? "critical" : "");
+          node.setAttribute?.("data-owner", planOwnerKey);
           node.setAttribute?.("data-tool", "select");
           node.setAttribute?.("data-reason", "manual_advisory");
           node.setAttribute?.("data-headline", advisory.text);
           node.setAttribute?.("data-outcome", "");
-          node.setAttribute?.("data-why-now", "Manual mode — autopilot is off");
-          node.setAttribute?.("title", `Manual advisory: ${advisory.text}`);
-          node.setAttribute?.("data-full", advisory.text);
+          node.setAttribute?.("data-why-now", "Manual mode - autopilot is off");
+          node.setAttribute?.("title", `${planOwnerLabel}: ${advisory.text}. ${planBoundary}`);
+          node.setAttribute?.("data-full", `${planOwnerLabel}: ${advisory.text}. ${planBoundary}`);
           node.setAttribute?.("data-target", "");
           return;
         }
@@ -561,13 +567,16 @@ export class HUDController {
     } else {
       node.removeAttribute?.("data-severity");
     }
-    const loopText = loopTextOverride ?? (isIdle
+    const planBody = loopTextOverride ?? (isIdle
       ? (next.label ? `Next: ${next.label}` : "Next: hold")
       : [headline || "Next", action, outcome].filter(Boolean).join(" -> "));
+    const loopText = `${planOwnerLabel}: ${planBody}`;
     const titleParts = [next.whyNow, next.detail, next.expectedOutcome]
       .map((part) => String(part ?? "").trim())
       .filter(Boolean);
-    const title = titleParts.length > 0 ? titleParts.join(" ") : loopText;
+    const title = titleParts.length > 0
+      ? `${planOwnerLabel}. ${planBoundary} ${titleParts.join(" ")}`
+      : `${loopText}. ${planBoundary}`;
     node.textContent = loopText;
     node.setAttribute?.("title", title);
     // v0.8.2 Round-5b Wave-1 (01a Step 3) — data-full mirrors the full
@@ -576,6 +585,7 @@ export class HUDController {
     // expose the uncut string.
     node.setAttribute?.("data-full", title || loopText);
     node.setAttribute?.("data-priority", next.priority ?? "normal");
+    node.setAttribute?.("data-owner", planOwnerKey);
     node.setAttribute?.("data-tool", next.tool ?? "select");
     node.setAttribute?.("data-reason", next.reason ?? "");
     node.setAttribute?.("data-headline", headline);
@@ -703,6 +713,7 @@ export class HUDController {
       if (active) {
         this.state.ai.lastEnvironmentDecisionSec = -9999;
         this.state.ai.lastPolicyDecisionSec = -9999;
+        this.state.ai.forceStrategicDecision = true;
       }
       this.state.controls.actionMessage = describeAutopilotToggle(active).actionMessage;
       this.state.controls.actionKind = "info";

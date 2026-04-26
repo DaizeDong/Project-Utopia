@@ -5,7 +5,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
 import { BALANCE, CASUAL_UX } from "../config/balance.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
-import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
+import { explainBuildReason, summarizeBuildPreview } from "../simulation/construction/BuildAdvisor.js";
 import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
@@ -78,9 +78,14 @@ export function formatToastText(buildResult, resources = null) {
       const gap = need - have;
       if (gap > 0) shortfalls.push(`${gap} more ${k}`);
     }
-    if (shortfalls.length > 0) return `Need ${shortfalls.join(", ")}`;
+    if (shortfalls.length > 0) {
+      const recovery = String(buildResult.recoveryText ?? "").trim();
+      return recovery ? `Need ${shortfalls.join(", ")}. ${recovery}` : `Need ${shortfalls.join(", ")}`;
+    }
   }
-  return String(buildResult.reasonText ?? "blocked");
+  const reason = String(buildResult.reasonText ?? "blocked");
+  const recovery = String(buildResult.recoveryText ?? "").trim();
+  return recovery && reason !== "blocked" ? `${reason} ${recovery}` : reason;
 }
 
 const MAT_TMP = new THREE.Matrix4();
@@ -2779,7 +2784,7 @@ export class SceneRenderer {
           state, state.controls.tool, this.hoverTile.ix, this.hoverTile.iz,
         );
         if (preview && preview.ok === false) {
-          const tip = String(preview.reasonText || "");
+          const tip = summarizeBuildPreview(preview);
           const undoHint = Array.isArray(state.controls?.undoStack) && state.controls.undoStack.length > 0
             ? " (Ctrl+Z to undo last build.)"
             : "";
@@ -2885,7 +2890,9 @@ export class SceneRenderer {
       const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
       this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
     } else {
-      this.state.controls.actionMessage = buildResult.reasonText ?? explainBuildReason(buildResult.reason, buildResult);
+      this.state.controls.actionMessage = summarizeBuildPreview(buildResult)
+        || buildResult.reasonText
+        || explainBuildReason(buildResult.reason, buildResult);
       this.state.controls.actionKind = "error";
       const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
       const text = formatToastText(buildResult, this.state.resources);

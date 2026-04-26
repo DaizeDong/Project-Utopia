@@ -169,6 +169,28 @@ test("world explain surfaces ecology pressure on tiles and animals", () => {
   assert.ok(predatorInsights.some((line) => /patrolling/i.test(line)));
 });
 
+test("world explain prioritizes visible food crisis over slower frontier objectives", () => {
+  const state = createInitialGameState({ seed: 1337 });
+  state.session.phase = "active";
+  state.resources.food = 0;
+  state.metrics.resourceEmptySec.food = 4;
+  state.metrics.starvationRiskCount = 2;
+  state.metrics.logistics = {
+    isolatedWorksites: 3,
+    overloadedWarehouses: 0,
+    stretchedWorksites: 1,
+    summary: "Logistics: 3 isolated worksites need depot access.",
+  };
+
+  const digest = getCausalDigest(state);
+
+  assert.equal(digest.severity, "error");
+  assert.equal(digest.headline, "Recover food now");
+  assert.match(digest.action, /Food is 0/);
+  assert.match(digest.action, /Reconnect depot access/);
+  assert.match(digest.warning, /2 workers at starvation risk/);
+});
+
 test("world explain builds a shared causal digest from frontier pressure and AI focus", () => {
   const state = createInitialGameState({ seed: 1337 });
   state.metrics.logistics = {

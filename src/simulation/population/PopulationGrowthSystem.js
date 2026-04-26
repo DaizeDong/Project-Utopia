@@ -4,6 +4,8 @@ import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const CHECK_INTERVAL_SEC = 10;
+const MEMORY_RECENT_LIMIT = 6;
+const MEMORY_HISTORY_LIMIT = 24;
 // v0.8.1 Phase 8.C iteration 2: 6 → 10. Phase 8.A fixes (yieldPool/kitchen/
 // fog/salinization) opened food production, but DevIndex stayed at 44 because
 // demand-side growth was runaway — cheap 6-food births + generous pop-cap
@@ -16,6 +18,28 @@ const FOOD_COST_PER_COLONIST = 10;
 // so growth requires a modest buffer, but not the 40 (→ collapse) we tried
 // first. Exported so AI perceiver/summary sites stay in sync.
 export const MIN_FOOD_FOR_GROWTH = 30;
+
+function pushMemoryLine(agent, line, key, nowSec, type = "event") {
+  agent.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
+  if (!Array.isArray(agent.memory.history)) agent.memory.history = [];
+  if (!(agent.memory.recentKeys instanceof Map)) agent.memory.recentKeys = new Map();
+  if (agent.memory.recentKeys.has(key)) return false;
+
+  agent.memory.recentKeys.set(key, nowSec);
+  agent.memory.recentEvents.unshift(line);
+  agent.memory.recentEvents = agent.memory.recentEvents.slice(0, MEMORY_RECENT_LIMIT);
+  if (!agent.memory.history.some((entry) => entry?.key === key)) {
+    agent.memory.history.unshift({
+      simSec: Number(nowSec ?? 0),
+      type,
+      label: String(line ?? ""),
+      key: String(key ?? ""),
+    });
+    agent.memory.history = agent.memory.history.slice(0, MEMORY_HISTORY_LIMIT);
+  }
+  return true;
+}
 
 export class PopulationGrowthSystem {
   constructor() {
@@ -138,18 +162,12 @@ export class PopulationGrowthSystem {
     const birthLine = parents.length > 0
       ? `[${nowSec.toFixed(0)}s] ${newbornName} was born to ${parentNames.join(" and ")}`
       : `[${nowSec.toFixed(0)}s] ${newbornName} arrived at the colony`;
+    pushMemoryLine(newWorker, birthLine, `birth:${newWorker.id}`, nowSec, "birth");
     for (const agent of state.agents) {
       if (agent === newWorker || agent.type !== "WORKER" || agent.alive === false) continue;
       const dist = Math.abs(agent.x - pos.x) + Math.abs(agent.z - pos.z);
       if (dist > 10) continue;
-      agent.memory ??= { recentEvents: [], dangerTiles: [] };
-      if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
-      if (!(agent.memory.recentKeys instanceof Map)) agent.memory.recentKeys = new Map();
-      const key = `birth:${newWorker.id}`;
-      if (agent.memory.recentKeys.has(key)) continue;
-      agent.memory.recentKeys.set(key, nowSec);
-      agent.memory.recentEvents.unshift(birthLine);
-      agent.memory.recentEvents = agent.memory.recentEvents.slice(0, 6);
+      pushMemoryLine(agent, birthLine, `birth:${newWorker.id}`, nowSec, "birth");
     }
     // Surface birth onto the player-visible log so storytellerStrip's beat
     // extractor can lift it (SALIENT pattern in Step 7). objectiveLog uses

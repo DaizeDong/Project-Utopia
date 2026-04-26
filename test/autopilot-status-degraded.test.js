@@ -6,7 +6,7 @@
 //   (b) LLM offline — banner appends " | LLM offline — DIRECTOR steering" and
 //                     the compound mode "fallback/fallback" collapses to
 //                     "rule-based"
-//   (c) Autopilot off — banner preserves the legacy manual-control copy,
+//   (c) Autopilot off — banner preserves manual-guidance boundary copy,
 //                       unaffected by the new suffix / rule-based rewrite.
 
 import test from "node:test";
@@ -60,7 +60,7 @@ test("getAutopilotStatus: LLM offline shape (dev-mode) — appends 'LLM offline'
   assert.match(status.title, /LLM unavailable/);
 });
 
-test("getAutopilotStatus: autopilot OFF shape — unchanged copy, no suffix", () => {
+test("getAutopilotStatus: autopilot OFF shape carries manual-guidance boundary", () => {
   const status = getAutopilotStatus({
     ai: {
       enabled: false,
@@ -73,7 +73,6 @@ test("getAutopilotStatus: autopilot OFF shape — unchanged copy, no suffix", ()
     metrics: { timeSec: 0, proxyHealth: "error" },
   });
   assert.equal(status.enabled, false);
-  // Autopilot-off copy is preserved verbatim.
-  assert.equal(status.text, "Autopilot off. Manual control is active; fallback is ready.");
+  assert.equal(status.text, "Autopilot off. Manual guidance active; director may still react.");
   assert.ok(!/LLM offline/.test(status.text));
 });

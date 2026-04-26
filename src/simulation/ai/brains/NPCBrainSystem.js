@@ -319,10 +319,13 @@ export class NPCBrainSystem {
 
       const debugExchange = this.pendingResult.debug ?? {};
       const baseExchange = {
+        category: "npc-brain",
+        label: "NPC Brain",
         simSec: now,
         source: usedFallback ? "fallback" : "llm",
         fallback: usedFallback,
         model: this.pendingResult.model ?? state.ai.lastPolicyModel ?? "",
+        latencyMs: this.pendingResult.latencyMs ?? null,
         endpoint: debugExchange.endpoint ?? "/api/ai/policy",
         requestedAtIso: debugExchange.requestedAtIso ?? "",
         requestSummary: debugExchange.requestSummary ?? null,
@@ -332,12 +335,16 @@ export class NPCBrainSystem {
         rawModelContent: debugExchange.rawModelContent ?? "",
         parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
+        decisionResult: { policies, stateTargets },
         error: this.pendingResult.error ?? debugExchange.error ?? "",
       };
       state.ai.lastPolicyExchange = baseExchange;
       state.ai.policyExchanges ??= [];
       state.ai.policyExchanges.unshift(baseExchange);
       state.ai.policyExchanges = state.ai.policyExchanges.slice(0, 8);
+      state.ai.llmCallLog ??= [];
+      state.ai.llmCallLog.unshift(baseExchange);
+      state.ai.llmCallLog = state.ai.llmCallLog.slice(0, 24);
       state.ai.lastPolicyExchangeByGroup ??= {};
       for (const policy of policies) {
         state.ai.lastPolicyExchangeByGroup[policy.groupId] = {
@@ -353,7 +360,7 @@ export class NPCBrainSystem {
       // so the Timeline panel / future debug surface reads bounded history
       // without modifying sim outputs (benchmark bit-identical).
       const firstWorker = policies.find((p) => String(p.groupId ?? "").toLowerCase() === "workers") ?? policies[0] ?? null;
-      const focusTag = String(firstWorker?.data?.focus ?? "");
+      const focusTag = String(firstWorker?.focus ?? firstWorker?.data?.focus ?? "");
       const errorKind = this.pendingResult.errorKind ?? (this.pendingResult.error ? "unknown" : "none");
       state.ai.policyHistory ??= [];
       const prev = state.ai.policyHistory[0] ?? null;

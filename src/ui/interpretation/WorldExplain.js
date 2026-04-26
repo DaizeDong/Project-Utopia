@@ -289,13 +289,29 @@ export function getCausalDigest(state) {
   const overloadedWarehouses = Number(logistics.overloadedWarehouses ?? 0);
   const stretchedWorksites = Number(logistics.stretchedWorksites ?? 0);
   const pressuredFarms = Number(ecology.pressuredFarms ?? 0);
+  const foodAvailable = Number(state.resources?.food ?? 0);
+  const foodEmergency = Number(BALANCE.foodEmergencyThreshold ?? 18);
+  const foodEmptySec = Number(state.metrics?.resourceEmptySec?.food ?? 0);
+  const starvationRisk = Number(state.metrics?.starvationRiskCount ?? 0);
+  const foodCrisis = (state.session?.phase ?? "active") === "active"
+    && (foodAvailable <= foodEmergency || foodEmptySec > 0 || starvationRisk > 0);
 
   let severity = "info";
   let headline = "Hold the colony together";
   let action = "Observe the current pressure and keep the colony stable.";
   let warning = "";
 
-  if (isolatedWorksites > 0) {
+  if (foodCrisis) {
+    severity = "error";
+    headline = "Recover food now";
+    const accessHint = isolatedWorksites > 0 || stretchedWorksites > 0
+      ? " Reconnect depot access to existing fields before adding more distant sites."
+      : " Place another farm on green terrain or reconnect field access.";
+    action = `Food is ${Math.max(0, Math.floor(foodAvailable))} (safe line ${foodEmergency});${accessHint}`;
+    warning = starvationRisk > 0
+      ? `${starvationRisk} worker${starvationRisk === 1 ? "" : "s"} at starvation risk.`
+      : action;
+  } else if (isolatedWorksites > 0) {
     severity = "error";
     headline = `Reconnect ${isolatedWorksites} isolated worksite${isolatedWorksites === 1 ? "" : "s"}`;
     action = "At least one worksite is outside depot reach, so route repair should outrank more expansion.";

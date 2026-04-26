@@ -59,4 +59,9 @@ test("PopulationGrowthSystem wires lineage parents/children on birth", () => {
   assert.match(witnessMemory, /born to /i, "witness memory uses 'born to' copy");
   assert.ok(!/warehouse/i.test(witnessMemory),
     "witness memory must not contain 'warehouse' literal");
+  const witnessHistory = parentA.memory?.history?.[0];
+  assert.equal(witnessHistory?.type, "birth", "birth memory mirrored to durable history");
+  assert.match(witnessHistory?.label ?? "", /born to /i);
+  assert.doesNotThrow(() => JSON.stringify(parentA.memory.history),
+    "memory.history stays serializable");
 });

@@ -173,6 +173,45 @@ export class AIDecisionPanel {
     `;
   }
 
+  #renderStrategicBlock() {
+    const ai = this.state.ai;
+    const strategy = ai.strategy ?? null;
+    const source = ai.lastStrategySource ?? "none";
+    const model = ai.lastStrategyModel || this.state.metrics.proxyModel || "-";
+    const resultSec = fmtSec(ai.lastStrategySec);
+    const err = ai.lastStrategyError ? escapeHtml(ai.lastStrategyError) : "";
+
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
+    if (!strategy) {
+      return `
+        <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
+        <div class="small muted">No strategic decision applied yet.</div>
+        ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
+      `;
+    }
+
+    const budget = strategy.resourceBudget ?? {};
+    const constraints = Array.isArray(strategy.constraints) && strategy.constraints.length > 0
+      ? strategy.constraints.map((line) => escapeHtml(line)).join("<br/>")
+      : "none";
+
+    return `
+      <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
+      <div class="small"><b>source:</b> ${escapeHtml(source)} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
+      <div class="small"><b>priority:</b> ${escapeHtml(strategy.priority ?? "-")} | <b>phase:</b> ${escapeHtml(strategy.phase ?? "-")} | <b>risk:</b> ${fmtNum(strategy.riskTolerance, 2)}</div>
+      <div class="small"><b>resourceFocus:</b> ${escapeHtml(strategy.resourceFocus ?? "-")} | <b>workerFocus:</b> ${escapeHtml(strategy.workerFocus ?? "-")} | <b>defense:</b> ${escapeHtml(strategy.defensePosture ?? "-")}</div>
+      <div class="small"><b>goal:</b> ${escapeHtml(strategy.primaryGoal ?? "none")}</div>
+      <div class="small"><b>reserve:</b> wood=${fmtNum(budget.reserveWood, 0)} food=${fmtNum(budget.reserveFood, 0)}</div>
+      <div class="small"><b>constraints:</b><br/>${constraints}</div>
+      ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
+    `;
+  }
+
   #renderPolicyBlock(groupId) {
     const ai = this.state.ai;
     const latestBatch = Array.isArray(ai.lastPolicyBatch) ? ai.lastPolicyBatch : [];
@@ -240,6 +279,10 @@ export class AIDecisionPanel {
       <div>
         <div class="small" style="font-weight:700;">World Directive (Parsed)</div>
         <div style="margin-top:6px;">${this.#renderEnvironmentBlock()}</div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="small" style="font-weight:700;">Strategic Director (Parsed)</div>
+        <div style="margin-top:6px;">${this.#renderStrategicBlock()}</div>
       </div>
       <div style="margin-top:10px;">
         <div class="small" style="font-weight:700;">Group Policies (Parsed)</div>

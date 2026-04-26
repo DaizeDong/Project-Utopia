@@ -13,8 +13,8 @@ function buildAutopilotToggleCopy(enabled) {
     };
   }
   return {
-    actionMessage: "Autopilot off. You are steering manually; fallback is ready.",
-    title: "Autopilot is off. Manual control is active and fallback is ready.",
+    actionMessage: "Autopilot off. Manual guidance active; background director may still react.",
+    title: "Autopilot is off. You choose actions; background director systems may still react.",
   };
 }
 
@@ -88,17 +88,17 @@ export function getAutopilotStatus(state, options = {}) {
   // Dev banner keeps the verbose engineer copy: countdown + offline tag.
   const devBaseText = enabled
     ? `Autopilot ON - ${combinedModeLabel} - next policy in ${remainingSec.toFixed(1)}s`
-    : "Autopilot off. Manual control is active; fallback is ready.";
+    : "Autopilot off. Manual guidance active; director may still react.";
   // Casual banner: short, no countdown. Strips the engineer cadence
   // (per reviewer feedback #2 "Autopilot ON - rule-based - next policy in
   // 9.8s ..." was visually overwhelming on the 1024×768 chip).
   const casualBaseText = enabled
     ? `Autopilot ON \u00b7 ${casualMode}`
-    : "Autopilot off. Manual control is active; fallback is ready.";
+    : "Autopilot off. Manual guidance active; director may still react.";
   const baseText = devMode ? devBaseText : casualBaseText;
   const baseTitle = enabled
     ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
-    : "Autopilot off. Manual control is active and fallback is ready.";
+    : "Autopilot off. You choose actions; background director systems may still react.";
   // Dev-only: append the LLM-offline → DIRECTOR steering tag to the chip.
   // Casual players already see the ⚠ Storyteller badge for that signal.
   const llmText = (devMode && enabled && llmOffline)

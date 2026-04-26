@@ -6,7 +6,7 @@
 // THREE.Raycaster hit on the InstancedMesh workers (geometry radius ≈ 0.35
 // world units, ≈ 8-12 screen pixels) is nearly unreachable by manual
 // aiming. SceneRenderer.#pickEntity now falls back to a screen-space
-// proximity search within 16 px, delegating the geometry to a pure helper
+// proximity search within the configured fallback radius, delegating the geometry to a pure helper
 // (`findProximityEntity`) so the semantics can be unit-tested without
 // booting Three.js.
 //
@@ -15,7 +15,7 @@
 //   2. 40 px offset → nothing selected (avoid mis-select across tiles)
 //   3. Multi-entity cluster → nearest within radius wins
 //   4. Dead entity (alive === false) is skipped
-//   5. Guard radius (24 px) still catches workers the 16 px fallback missed,
+//   5. Guard radius still catches workers the fallback radius missed,
 //      which #onPointerDown uses to suppress build placement.
 
 import test from "node:test";
@@ -156,8 +156,8 @@ test("SceneRenderer source wires proximity fallback into #pickEntity and a build
   // Defensive regression: if a future refactor removes the fallback call
   // or the guard branch, Entity Focus reverts to the broken baseline.
   const src = fs.readFileSync("src/render/SceneRenderer.js", "utf8");
-  assert.match(src, /ENTITY_PICK_FALLBACK_PX\s*=\s*16/, "fallback constant missing / changed");
-  assert.match(src, /ENTITY_PICK_GUARD_PX\s*=\s*24/, "guard constant missing / changed");
+  assert.match(src, /ENTITY_PICK_FALLBACK_PX\s*=\s*Number\(BALANCE\.renderHitboxPixels\?\.entityPickFallback\s*\?\?\s*24\)/, "fallback constant missing / changed");
+  assert.match(src, /ENTITY_PICK_GUARD_PX\s*=\s*Number\(BALANCE\.renderHitboxPixels\?\.entityPickGuard\s*\?\?\s*36\)/, "guard constant missing / changed");
   assert.match(src, /#proximityNearestEntity\s*\(/, "proximity helper method missing");
   assert.match(
     src,

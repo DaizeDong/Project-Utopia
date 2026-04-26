@@ -276,6 +276,64 @@ export function applyPhase5StrategicAdaptations(state, dt) {
   updateDevIndexRepairGoal(state, dt);
 }
 
+function pushAiCallLog(state, exchange) {
+  state.ai.llmCallLog ??= [];
+  state.ai.llmCallLog.unshift(exchange);
+  state.ai.llmCallLog = state.ai.llmCallLog.slice(0, 24);
+}
+
+function pushDebugAiTrace(state, exchange) {
+  state.debug ??= {};
+  state.debug.aiTrace ??= [];
+  state.debug.aiTrace.unshift({
+    atSec: Number(exchange.simSec ?? 0),
+    source: "strategic",
+    category: exchange.category,
+    fallback: Boolean(exchange.fallback),
+    error: exchange.error ?? "",
+    model: exchange.model ?? "",
+    decisionResult: exchange.decisionResult ?? null,
+  });
+  if (state.debug.aiTrace.length > 32) state.debug.aiTrace.length = 32;
+}
+
+function recordStrategicExchange(state, result, strategy, nowSec, promptContent = "") {
+  const usedFallback = Boolean(result?.fallback);
+  const debugExchange = result?.debug ?? {};
+  const requestSummary = debugExchange.requestSummary ?? (() => {
+    try {
+      return promptContent ? JSON.parse(promptContent) : null;
+    } catch {
+      return promptContent ? { channel: "strategic-director", rawPrompt: promptContent } : null;
+    }
+  })();
+  const exchange = {
+    category: "strategic-director",
+    label: "Strategic Director",
+    simSec: nowSec,
+    source: usedFallback ? "fallback" : "llm",
+    fallback: usedFallback,
+    model: result?.model ?? state.ai.lastStrategyModel ?? "",
+    endpoint: debugExchange.endpoint ?? "/api/ai/environment",
+    requestedAtIso: debugExchange.requestedAtIso ?? "",
+    requestSummary,
+    promptSystem: debugExchange.promptSystem ?? "",
+    promptUser: debugExchange.promptUser ?? promptContent,
+    requestPayload: debugExchange.requestPayload ?? { endpoint: "/api/ai/environment", channel: "strategic-director" },
+    rawModelContent: debugExchange.rawModelContent ?? "",
+    parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? result?.data ?? null,
+    guardedOutput: debugExchange.guardedOutput ?? result?.data ?? null,
+    decisionResult: strategy ?? null,
+    error: result?.error ?? debugExchange.error ?? "",
+  };
+  state.ai.lastStrategicExchange = exchange;
+  state.ai.strategicExchanges ??= [];
+  state.ai.strategicExchanges.unshift(exchange);
+  state.ai.strategicExchanges = state.ai.strategicExchanges.slice(0, 8);
+  pushAiCallLog(state, exchange);
+  pushDebugAiTrace(state, exchange);
+}
+
 export class StrategicDirector {
   /**
    * @param {import("../memory/MemoryStore.js").MemoryStore} memoryStore
@@ -532,31 +590,65 @@ Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI
       state.ai.strategy = strategy;
       state.ai.lastStrategySource = usedFallback ? "fallback" : "llm";
       state.ai.lastStrategySec = now;
+      state.ai.lastStrategyError = this.pendingResult.error ?? "";
+      state.ai.lastStrategyModel = this.pendingResult.model ?? state.ai.lastStrategyModel ?? "";
       state.ai.strategyDecisionCount = (state.ai.strategyDecisionCount ?? 0) + 1;
+      recordStrategicExchange(state, this.pendingResult, strategy, now);
       this.scheduler.recordDecision(state);
       this.pendingResult = null;
     }
 
     // 3. Check if a new decision should be made
     if (this.pendingPromise) return;
-    if (!this.scheduler.shouldTrigger(state)) return;
+    const forceStrategicDecision = Boolean(state.ai.forceStrategicDecision);
+    if (!forceStrategicDecision && !this.scheduler.shouldTrigger(state)) return;
+    state.ai.forceStrategicDecision = false;
 
     // AI disabled: synchronous fallback
     if (!state.ai.enabled) {
       const strategy = this.buildFallbackStrategy(state);
       const now = state.metrics.timeSec;
+      const promptContent = this.buildPromptContent(state);
       state.ai.strategy = strategy;
       state.ai.lastStrategySource = "fallback";
       state.ai.lastStrategySec = now;
+      state.ai.lastStrategyError = "";
+      state.ai.lastStrategyModel = "fallback";
       state.ai.strategyDecisionCount = (state.ai.strategyDecisionCount ?? 0) + 1;
+      recordStrategicExchange(state, {
+        fallback: true,
+        data: { strategy },
+        error: "",
+        model: "fallback",
+        debug: {
+          requestedAtIso: new Date().toISOString(),
+          endpoint: "/api/ai/environment",
+          requestSummary: JSON.parse(promptContent),
+          promptSystem: "(local fallback: strategic proxy call skipped)",
+          promptUser: promptContent,
+          requestPayload: { endpoint: "/api/ai/environment", channel: "strategic-director", mode: "fallback-local" },
+          rawModelContent: JSON.stringify({ strategy }, null, 2),
+          parsedBeforeValidation: { strategy },
+          guardedOutput: { strategy },
+          error: "",
+        },
+      }, strategy, now, promptContent);
       this.scheduler.recordDecision(state);
       return;
     }
 
     // AI enabled: async LLM call
     const promptContent = this.buildPromptContent(state);
-    this.pendingPromise = services.llmClient
-      .requestEnvironment(promptContent, state.ai.enabled)
+    const fallbackStrategy = this.buildFallbackStrategy(state);
+    const requestStrategic = typeof services?.llmClient?.requestStrategic === "function"
+      ? services.llmClient.requestStrategic.bind(services.llmClient)
+      : async () => ({
+        fallback: true,
+        data: { strategy: fallbackStrategy },
+        error: "requestStrategic unavailable",
+        model: "fallback",
+      });
+    this.pendingPromise = requestStrategic(promptContent, state.ai.enabled, { strategy: fallbackStrategy })
       .then((result) => {
         this.pendingResult = result;
       })

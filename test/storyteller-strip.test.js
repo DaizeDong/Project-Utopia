@@ -49,8 +49,8 @@ test("computeStorytellerStripModel: llm source → WHISPER prefix with humanised
 
 test("computeStorytellerStripModel: fallback source + policy → DIRECTOR prefix", () => {
   // Round-5 Wave-3 golden update (01e + 02e):
-  //  - focusText now gains the "DIRECTOR picks " prefix in fallback mode
-  //    (01e Step 3) so the decision-maker is explicit in the strip.
+  //  - focusText now gains the "picks " verb in fallback mode; the adjacent
+  //    badge already says DIRECTOR, so the live strip must not duplicate it.
   //  - summaryText is now sourced from AUTHOR_VOICE_PACK when the template +
   //    focusTag match (02e Step 3). For temperate_plains + frontier focus
   //    we expect the openingPressure line lifted from ScenarioFactory.js.
@@ -78,7 +78,7 @@ test("computeStorytellerStripModel: fallback source + policy → DIRECTOR prefix
   assert.equal(model.prefix, "DIRECTOR");
   assert.equal(model.badgeState, "fallback-healthy");
   assert.equal(model.templateTag, "Broken Frontier - Temperate Plains");
-  assert.match(model.focusText, /^DIRECTOR picks /);
+  assert.match(model.focusText, /^picks /);
   assert.match(model.focusText, /push the frontier outward/);
   assert.equal(model.voicePackHit, true);
   // Voice-pack hit: summary reads like the author's opening pressure line.
@@ -128,7 +128,7 @@ test("computeStorytellerStripModel: none source BUT populated policy → DIRECTO
 
 test("computeStorytellerStripModel: plain-object groupPolicies stub is tolerated", () => {
   // Round-5 Wave-3 golden update: focusText now prefixed with
-  // "DIRECTOR picks " in fallback mode (01e Step 3). With no mapTemplateId
+  // "picks " in fallback mode (the badge provides DIRECTOR). With no mapTemplateId
   // set, the voice-pack falls through to the `*` default bucket, so
   // summaryText is the "stocked warehouse" line from BuildAdvisor. We only
   // assert the prefix + voice-pack hit marker; the exact text is governed
@@ -142,7 +142,7 @@ test("computeStorytellerStripModel: plain-object groupPolicies stub is tolerated
   const model = computeStorytellerStripModel(state);
   assert.equal(model.mode, "fallback");
   assert.equal(model.prefix, "DIRECTOR");
-  assert.match(model.focusText, /^DIRECTOR picks /);
+  assert.match(model.focusText, /^picks /);
   assert.match(model.focusText, /stockpile food/);
   assert.equal(model.voicePackHit, true);
   assert.ok(model.summaryText.length > 0);
