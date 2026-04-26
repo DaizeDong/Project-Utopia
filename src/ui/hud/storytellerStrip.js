@@ -35,6 +35,7 @@
 // Anything else (routine event lifecycle transitions, raid cooldown drops,
 // spawn/drop bookkeeping) stays buried in the DeveloperPanel.
 import { describeMapTemplate } from "../../world/grid/Grid.js";
+import { pickVoicePackEntry } from "../interpretation/EntityVoice.js";
 
 // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 7) — kinship & rivalry beats.
 // Three new patterns plumbed in: obituary line ("X, farming specialist,
@@ -247,37 +248,179 @@ function humaniseSummary(raw) {
 //   - Default "Kitchen" line is from src/simulation/construction/
 //     BuildAdvisor.js:61 ("the difference between a stocked warehouse and
 //     workers starving beside it").
+// v0.8.2 Round-6 Wave-3 (01e-innovation Step 3) — voice pack expanded from
+// 1-3 entries per (template, tag) bucket up to 4-6 to defeat the "every
+// colony hears the same line" repetition reviewers flagged. Each bucket is
+// now a frozen `string[]`; `pickVoicePackEntry` rotates by a clock-derived
+// seed (Math.floor(timeSec / 30)) so the strip refreshes every ~30s of
+// game time. **bucket[0] of every existing key MUST keep the original
+// authored line** so the storyteller-strip.test.js + hud-storyteller.test.js
+// regex assertions (which call into the model with no `metrics.timeSec` →
+// seed=0 → idx=0) stay green.
 const AUTHOR_VOICE_PACK = Object.freeze({
   temperate_plains: Object.freeze({
-    "broken-routes": "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
-    "cargo-stall": "The difference between a stocked warehouse and workers starving beside it — clear the cargo before that gap opens.",
-    default: "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+    "broken-routes": Object.freeze([
+      "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+      "Reconnect the lumber line before the east depot runs dry — the plains forgive distance, not silence.",
+      "Out here a broken route is a slow famine; the frontier doesn't punish you all at once.",
+      "The grass hides every shortcut you missed cutting last week — keep the haul lines alive.",
+    ]),
+    "cargo-stall": Object.freeze([
+      "The difference between a stocked warehouse and workers starving beside it — clear the cargo before that gap opens.",
+      "Backed-up haulers turn a good harvest into rotting piles; pull a worker off harvest and onto delivery.",
+      "Cargo is meaningless until it's behind warehouse walls — push it through.",
+      "Every minute a load sits on a worker's back is a minute the larder doesn't see it.",
+    ]),
+    stockpile: Object.freeze([
+      "The plains fill the larder generously; the trick is moving it before the next storm.",
+      "Stockpile depth buys you forgiveness later — keep the warehouse full while the weather holds.",
+      "A stocked warehouse is the only buffer between a good day and a bad one.",
+      "Eat the surplus the plains give you now; you'll need it when the rain breaks the routes.",
+    ]),
+    frontier: Object.freeze([
+      "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+      "Push the frontier outward only as fast as the haul lines can follow.",
+      "Every new tile cleared is one more haul leg to keep alive — measure your reach.",
+      "The plains will let you over-extend; the warehouse will not.",
+    ]),
+    safety: Object.freeze([
+      "Out here the wall is not a fortress — it is a buffer for the next shortage.",
+      "The plains have no choke points; defense means keeping the warehouse close.",
+      "Frontier safety is paid in stockpile, not stone.",
+      "A breached gate is fixable; an empty larder is not.",
+    ]),
+    default: Object.freeze([
+      "The frontier is wide open, but the colony stalls fast if the west lumber line and east depot stay disconnected.",
+      "The plains reward steady throughput — keep the lumber and depot lines speaking to each other.",
+      "Out here, the colony breathes in haul cycles. Hold the rhythm.",
+      "Every directive on the plains comes back to the same question: is the warehouse filling?",
+    ]),
   }),
   fertile_riverlands: Object.freeze({
-    "broken-routes": "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
-    default: "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+    "broken-routes": Object.freeze([
+      "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+      "The river feeds you only after the bridges hold — patch the cargo loop before the silt does.",
+      "Floods reroute haul lanes overnight; rebuild whatever the water moved.",
+      "The valley is generous, but only to the patient with a working supply chain.",
+    ]),
+    "cargo-stall": Object.freeze([
+      "Riverlands ferry their wealth through carts, not currents — clear the cargo or the harvest spoils on the bank.",
+      "A jammed haul line in the valley turns abundance into rot within days.",
+      "The river won't carry your wood — your workers will. Keep them moving.",
+    ]),
+    stockpile: Object.freeze([
+      "Riverlands abundance is a trap if the warehouse can't keep up — overhaul before overharvesting.",
+      "Stockpile faster than the valley produces, or watch the surplus drown.",
+    ]),
+    default: Object.freeze([
+      "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+      "The valley pays in volume; you pay in route maintenance.",
+      "Riverlands always look easy until the silt arrives — keep one hand on the haul lines.",
+    ]),
   }),
   rugged_highlands: Object.freeze({
-    frontier: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
-    "broken-routes": "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
-    default: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+    frontier: Object.freeze([
+      "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+      "Up here the path you cut is the path raiders take next; clear deliberately.",
+      "Highland frontier expansion buys ground at the cost of defense — measure both.",
+      "Every switchback is a chokepoint; treat them like part of the wall.",
+    ]),
+    "broken-routes": Object.freeze([
+      "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+      "A broken highland route doesn't just delay haul — it leaves the gate open.",
+      "Repair the cut path before something else finds it.",
+    ]),
+    safety: Object.freeze([
+      "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+      "Hold the high ground — every cleared switchback is a defensive shelf.",
+      "Up here defense and logistics share the same path. Keep both moving.",
+    ]),
+    default: Object.freeze([
+      "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+      "Highland decisions compound — every cut path is a future gate.",
+      "Slow expansion, deliberate haul lines. The cliff doesn't forgive haste.",
+    ]),
   }),
   fortified_basin: Object.freeze({
-    "broken-routes": "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
-    safety: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
-    default: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+    "broken-routes": Object.freeze([
+      "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+      "The basin's walls are only as strong as the shortest haul-line gap.",
+      "A broken route inside the basin is a hole pointed inward — patch it fast.",
+      "Pressure here builds at the open gate, not the empty larder.",
+    ]),
+    safety: Object.freeze([
+      "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+      "Every gate that stays open is a contract with whatever's outside.",
+      "The basin trades range for safety — defend what you've already enclosed.",
+    ]),
+    "cargo-stall": Object.freeze([
+      "The basin will not starve from output — it will starve from exposure if the haul stalls at the gate.",
+      "Stalled cargo at a basin gate is the worst kind of stall — eyes outside notice.",
+    ]),
+    default: Object.freeze([
+      "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+      "Inside the basin every directive comes back to one question: which gate is open?",
+      "The walls protect the throughput; the throughput pays for the walls.",
+    ]),
   }),
   archipelago_isles: Object.freeze({
-    stockpile: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
-    "broken-routes": "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
-    default: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+    stockpile: Object.freeze([
+      "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+      "An island stockpile is a bet that the next bridge holds — keep both healthy.",
+      "Surplus on one isle is famine on the next without a working span.",
+    ]),
+    "broken-routes": Object.freeze([
+      "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+      "Bridge first, bank second — a broken span isolates the harvest.",
+      "Out here a route is a bridge — when it breaks, the whole chain idles.",
+    ]),
+    "cargo-stall": Object.freeze([
+      "Isles drown their own cargo if the bridges stall — clear the span before the tide rises.",
+      "A stalled load on a bridge is a held breath; clear it before the chain breaks.",
+    ]),
+    default: Object.freeze([
+      "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+      "Every island decision starts with: which bridge holds tonight?",
+      "The isles reward connectivity over expansion. Build the spans first.",
+    ]),
   }),
   coastal_ocean: Object.freeze({
-    "broken-routes": "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
-    default: "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+    "broken-routes": Object.freeze([
+      "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+      "A broken causeway is a coastal famine in slow motion.",
+      "The harbor and the larder don't talk until the causeway is intact — restore the link.",
+    ]),
+    "cargo-stall": Object.freeze([
+      "Coastal cargo stalls fast — the harbor refuses what the depot can't accept.",
+      "A stalled load by the shore is half a tide from spoiling. Move it.",
+    ]),
+    stockpile: Object.freeze([
+      "Stockpile what the coast offers; the next storm will end the generosity.",
+      "Coastal abundance is a window; close it before the weather does.",
+    ]),
+    default: Object.freeze([
+      "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+      "The shore decides the tempo; the colony decides whether to keep up.",
+      "Coastal directives all rhyme: connect before you collect.",
+    ]),
   }),
+  // v0.8.2 Round-6 Wave-3 (01e-innovation Step 3) — global fallback bucket.
+  // Used when (a) the mapTemplateId is unknown and (b) when a template's
+  // bucket has no entry for the focusTag and no `default` either.
   "*": Object.freeze({
-    default: "The difference between a stocked warehouse and workers starving beside it — keep the chain reinforcing itself.",
+    default: Object.freeze([
+      "The difference between a stocked warehouse and workers starving beside it — keep the chain reinforcing itself.",
+      "Every directive eventually answers the same question: is the larder filling faster than it empties?",
+      "The colony breathes in haul cycles — hold the rhythm.",
+      "A working supply chain is the only thing that turns intent into food.",
+    ]),
+    sabotage: Object.freeze([
+      "Hooded riders left tracks near the southern depot — keep eyes on the wall.",
+      "Smoke from a forward cache before dawn — someone is staging closer than the patrol thinks.",
+      "Saboteurs are circling the soft side of the frontier; pull a worker to defense before the next push.",
+      "Tools went missing from the lumber line overnight — the third party is testing the fence.",
+      "An outsider walked the depot's blind spot today; consider it a warning shot.",
+    ]),
   }),
 });
 
@@ -301,30 +444,38 @@ function deriveFocusTag(focus) {
 }
 
 /**
- * Look up an author-voice line by (mapTemplateId, focusTag). Returns
- * `{ text, hit: true }` on success (template → focusTag match, with
- * default-bucket + global-fallback cascades) or `{ text: "", hit: false }`
+ * v0.8.2 Round-6 Wave-3 (01e-innovation Step 3) — bucket-mode lookup.
+ *
+ * Returns the matched string[] for (mapTemplateId, focusTag) following the
+ * same template→default→global cascade as before. The caller picks one
+ * entry via `pickVoicePackEntry(bucket, seed)` so the strip can rotate the
+ * authored voice every ~30s of game time. Returns `{ bucket: [], hit: false }`
  * when nothing in the pack is applicable.
  *
  * @param {string} mapTemplateId
  * @param {string} focusTag
- * @returns {{ text: string, hit: boolean }}
+ * @returns {{ bucket: string[], hit: boolean }}
  */
 function lookupAuthorVoice(mapTemplateId, focusTag) {
   const tplBucket = AUTHOR_VOICE_PACK[String(mapTemplateId ?? "")] ?? null;
   if (tplBucket && typeof tplBucket === "object") {
-    if (typeof tplBucket[focusTag] === "string" && tplBucket[focusTag]) {
-      return { text: tplBucket[focusTag], hit: true };
+    if (Array.isArray(tplBucket[focusTag]) && tplBucket[focusTag].length > 0) {
+      return { bucket: tplBucket[focusTag], hit: true };
     }
-    if (typeof tplBucket.default === "string" && tplBucket.default) {
-      return { text: tplBucket.default, hit: true };
+    if (Array.isArray(tplBucket.default) && tplBucket.default.length > 0) {
+      return { bucket: tplBucket.default, hit: true };
     }
   }
   const globalBucket = AUTHOR_VOICE_PACK["*"];
-  if (globalBucket && typeof globalBucket.default === "string" && globalBucket.default) {
-    return { text: globalBucket.default, hit: true };
+  if (globalBucket) {
+    if (Array.isArray(globalBucket[focusTag]) && globalBucket[focusTag].length > 0) {
+      return { bucket: globalBucket[focusTag], hit: true };
+    }
+    if (Array.isArray(globalBucket.default) && globalBucket.default.length > 0) {
+      return { bucket: globalBucket.default, hit: true };
+    }
   }
-  return { text: "", hit: false };
+  return { bucket: [], hit: false };
 }
 
 function buildTemplateTag(state) {
@@ -467,12 +618,22 @@ export function computeStorytellerStripModel(state) {
   // by HUDController). summaryText remains the humanised LLM output unchanged.
   let voicePrefixText = "";
   let voicePackOverlayHit = false;
+  // v0.8.2 Round-6 Wave-3 (01e-innovation Step 3) — round-robin seed derived
+  // from game time so the voice rotates every ~30s. State stubs without
+  // metrics.timeSec collapse to seed=0 → bucket[0], preserving existing
+  // unit-test text matchers.
+  const voicePackSeed = Math.floor(Math.max(0, Number(state?.metrics?.timeSec ?? 0)) / 30);
   if (hasPolicy) {
     if (mode === "fallback") {
       const vp = lookupAuthorVoice(mapTemplateId, focusTag);
       if (vp.hit) {
-        summaryText = vp.text;
-        voicePackHit = true;
+        const picked = pickVoicePackEntry(vp.bucket, voicePackSeed);
+        if (picked) {
+          summaryText = picked;
+          voicePackHit = true;
+        } else {
+          summaryText = humaniseSummary(summary || "colony on autopilot");
+        }
       } else {
         summaryText = humaniseSummary(summary || "colony on autopilot");
       }
@@ -482,8 +643,11 @@ export function computeStorytellerStripModel(state) {
       if (mode === "llm" && focusTag && focusTag !== "default") {
         const vp = lookupAuthorVoice(mapTemplateId, focusTag);
         if (vp.hit) {
-          voicePrefixText = vp.text;
-          voicePackOverlayHit = true;
+          const picked = pickVoicePackEntry(vp.bucket, voicePackSeed);
+          if (picked) {
+            voicePrefixText = picked;
+            voicePackOverlayHit = true;
+          }
         }
       }
     }
@@ -523,26 +687,32 @@ export function computeStorytellerStripModel(state) {
   const policyTotalCount = Number(state?.ai?.policyDecisionCount ?? 0);
   let whisperBlockedReason;
   let whisperBlockedReasonDev;
+  // v0.8.2 Round-6 Wave-3 (01e-innovation Step 4) — richer in-world copy.
+  // Player-facing strings stay free of "LLM"/"WHISPER"/"errored"/"proxy"/"http"
+  // tokens (locked by storyteller-llm-diagnostic-hidden.test.js) AND keep the
+  // "Story Director" lead so existing storyteller-strip-whisper-diagnostic
+  // assertions stay green. Engineer copy is preserved verbatim on
+  // `whisperBlockedReasonDev` per Wave-1 contract.
   if (badgeState === "llm-live") {
-    whisperBlockedReason = "Story Director: speaking";
+    whisperBlockedReason = "Story Director: on air, the storyteller is listening.";
     whisperBlockedReasonDev = "LLM live \u2014 WHISPER active";
   } else if (badgeState === "llm-stale") {
-    whisperBlockedReason = "Story Director: catching breath";
+    whisperBlockedReason = "Story Director: catching breath \u2014 the last word didn't land cleanly.";
     whisperBlockedReasonDev = "LLM stale \u2014 last tick failed guardrail";
   } else if (badgeState === "fallback-degraded") {
     const errKind = proxyHealth === "error" ? "http" : (lastPolicyError ? "error" : "unknown");
-    whisperBlockedReason = "Story Director: relying on rule-set";
+    whisperBlockedReason = "Story Director: line dropped \u2014 the rule-book is taking the wheel.";
     whisperBlockedReasonDev = `LLM errored (${errKind})`;
   } else if (badgeState === "fallback-healthy") {
     if (policyLlmCount === 0) {
-      whisperBlockedReason = "Story Director: settling in";
+      whisperBlockedReason = "Story Director: asleep \u2014 the rule-book has held the floor since the colony woke.";
       whisperBlockedReasonDev = "LLM never reached";
     } else {
-      whisperBlockedReason = "Story Director: pondering";
+      whisperBlockedReason = "Story Director: pondering \u2014 the rule-book is calling shots from the page tonight.";
       whisperBlockedReasonDev = "LLM quiet \u2014 fallback steering";
     }
   } else {
-    whisperBlockedReason = "Story Director: warming up";
+    whisperBlockedReason = "Story Director: warming up \u2014 the colony hasn't drawn its first breath yet.";
     whisperBlockedReasonDev = "No policy yet";
   }
 
