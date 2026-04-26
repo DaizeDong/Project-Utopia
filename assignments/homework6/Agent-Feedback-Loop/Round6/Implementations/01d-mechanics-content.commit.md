@@ -5,7 +5,7 @@ round: 6
 wave: 2
 date: 2026-04-25
 parent_commit: 8604240
-head_commit: <pending>
+head_commit: c099b4c
 status: DONE
 steps_done: 9/9
 tests_passed: 1355/1361 (4 pre-existing baseline failures + 2 skips, +18 new tests all passing)
