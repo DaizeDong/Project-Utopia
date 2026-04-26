@@ -1,6 +1,52 @@
 
 import { MAP_TEMPLATES, describeMapTemplate } from "../../world/grid/Grid.js";
 import { getScenarioVoiceForTemplate } from "../../world/scenarios/ScenarioFactory.js";
+import { deriveDevTier } from "../../app/runOutcome.js";
+
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5) — finale title bank,
+// keyed by devTier. Each line draws on existing authored copy from the
+// project's scenario voice + Help/storyteller prose pool so no new authored
+// strings are introduced (the design ethos is "transport, not invent").
+//
+// devTier comes from runOutcome.deriveDevTier(state.gameplay.devIndex):
+//   low   (<25)   — "scrappy outpost" tier
+//   mid   (25-49) — "frontier ate them" tier
+//   high  (50-74) — "routes compounded" tier
+//   elite (>=75)  — "chain reinforced itself" tier
+const END_TITLE_BY_TIER = Object.freeze({
+  low:   "The colony stalled.",
+  mid:   "The frontier ate them.",
+  high:  "Routes compounded into rest.",
+  elite: "The chain reinforced itself.",
+});
+
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5/6) — finale signature
+// resolver. Picks the scenario's openingPressure prose so the run closes on
+// a sentence the player saw on the menu briefing. Returns "" when the
+// template has no resolvable voice.
+function resolveEndAuthorLine(state) {
+  const templateId = String(
+    state?.controls?.mapTemplateId
+    ?? state?.world?.mapTemplateId
+    ?? "",
+  ).trim();
+  if (!templateId) return "";
+  const voice = getScenarioVoiceForTemplate(templateId);
+  const opening = String(voice?.openingPressure ?? "").trim();
+  return opening;
+}
+
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5) — devTier resolver.
+// Prefers the explicit field on the runOutcome session payload (set by
+// runOutcome.evaluateRunOutcomeState since 02e Step 7); falls back to the
+// pure deriveDevTier helper if the session predates the schema bump.
+function resolveDevTier(state, session) {
+  const fromSession = String(session?.devTier ?? "").trim().toLowerCase();
+  if (fromSession === "low" || fromSession === "mid" || fromSession === "high" || fromSession === "elite") {
+    return fromSession;
+  }
+  return deriveDevTier(state?.gameplay?.devIndex);
+}
 
 function formatOverlayMeta(state) {
   const templateId = String(state?.controls?.mapTemplateId ?? state?.world?.mapTemplateId ?? "").trim();
@@ -118,6 +164,10 @@ export class GameStateOverlay {
     this.endTitle = document.getElementById("overlayEndTitle");
     this.endReason = document.getElementById("overlayEndReason");
     this.endStats = document.getElementById("overlayEndStats");
+    // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 6) — author signature line
+    // appended to the end-panel. Optional element; render() short-circuits
+    // when the node is absent (test rigs that mount a partial overlay DOM).
+    this.endAuthorLine = document.getElementById("overlayEndAuthorLine");
     this.mapWidthInput = document.getElementById("overlayMapWidth");
     this.mapHeightInput = document.getElementById("overlayMapHeight");
     this.mapTemplateSelect = document.getElementById("overlayMapTemplate");
@@ -476,8 +526,16 @@ export class GameStateOverlay {
     if (isEnd) {
       // v0.8.0 Phase 4 — Survival Mode only produces "loss" (or "none" before
       // evaluation). The legacy "win" branch has been removed.
+      // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5) — devTier-aware
+      // finale title. Branches on runOutcome.deriveDevTier(devIndex) so the
+      // "Colony Lost" header reads as one of four authored lines aligned to
+      // how far the colony actually got. Falls back to "Colony Lost" only
+      // when the tier resolver returns nothing recognised (defence in depth).
+      const devTier = resolveDevTier(this.state, session);
+      const finaleTitle = END_TITLE_BY_TIER[devTier] ?? "Colony Lost";
       if (this.endTitle) {
-        this.endTitle.textContent = "Colony Lost";
+        this.endTitle.textContent = finaleTitle;
+        this.endTitle.setAttribute?.("data-dev-tier", devTier);
         this.endTitle.style.background = "linear-gradient(135deg, #922b21, #e74c3c)";
         this.endTitle.style.webkitBackgroundClip = "text";
         this.endTitle.style.webkitTextFillColor = "transparent";
@@ -514,6 +572,27 @@ export class GameStateOverlay {
         ];
         if (survivalLine) lines.splice(3, 0, survivalLine);
         this.endStats.textContent = lines.join("\n");
+      }
+      // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 6) — author signature
+      // line. Surfaces the scenario openingPressure (the same prose the
+      // player saw on the menu briefing) so the run closes on a sentence
+      // they recognise. When no scenario voice resolves we hide the node
+      // entirely rather than render an empty paragraph.
+      if (this.endAuthorLine) {
+        const authorLine = resolveEndAuthorLine(this.state);
+        if (authorLine) {
+          if (this.endAuthorLine.textContent !== authorLine) {
+            this.endAuthorLine.textContent = authorLine;
+          }
+          if (this.endAuthorLine.hasAttribute?.("hidden")) {
+            this.endAuthorLine.removeAttribute?.("hidden");
+          }
+          if (this.endAuthorLine.style) this.endAuthorLine.style.display = "";
+        } else {
+          if (this.endAuthorLine.textContent !== "") this.endAuthorLine.textContent = "";
+          this.endAuthorLine.setAttribute?.("hidden", "");
+          if (this.endAuthorLine.style) this.endAuthorLine.style.display = "none";
+        }
       }
       // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3c) — seed chip + rank
       // suffix. Reads seed from state.world.mapSeed and the rank from the

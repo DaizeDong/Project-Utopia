@@ -1693,11 +1693,97 @@
       .runout-hint.warn-critical { animation: none; }
     }
 
+    /* v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 3) — Author Voice ticker.
+       Single-line ribbon pinned just below the HUD topbar. Ring-buffered by
+       HUDController.renderAuthorTicker(state) — see ./src/ui/hud/HUDController.js.
+       Hidden in dev-mode (the DeveloperPanel surfaces eventTrace directly);
+       hidden whenever no salient beat is queued so it never claims pixels at
+       idle. Casual-mode shrinks the typography because that profile already
+       has 7+ blocks competing for the topbar row above. */
+    #authorTickerStrip {
+      position: fixed;
+      top: calc(var(--hud-height, 40px) - 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: min(620px, calc(100vw - 64px));
+      height: 22px;
+      line-height: 22px;
+      padding: 0 12px;
+      background: rgba(8, 14, 24, 0.78);
+      color: #d0e8ff;
+      border: 1px solid rgba(80, 120, 180, 0.32);
+      border-radius: 11px;
+      font-size: 12px;
+      font-style: italic;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      z-index: 60;
+      opacity: 0;
+      transition: opacity 320ms ease;
+    }
+    #authorTickerStrip[hidden] { display: none !important; }
+    #authorTickerStrip.visible { opacity: 1; }
+    #authorTickerStrip .ticker-icon {
+      margin-right: 6px;
+      font-style: normal;
+      opacity: 0.85;
+    }
+    #authorTickerStrip .ticker-text { font-style: italic; }
+    #authorTickerStrip[data-kind="death"] { border-color: rgba(231, 76, 60, 0.55); }
+    #authorTickerStrip[data-kind="birth"] { border-color: rgba(110, 235, 131, 0.55); }
+    #authorTickerStrip[data-kind="friendship"] { border-color: rgba(176, 196, 222, 0.55); }
+    #authorTickerStrip[data-kind="weather"] { border-color: rgba(123, 175, 220, 0.55); }
+    #authorTickerStrip[data-kind="sabotage"] { border-color: rgba(255, 163, 92, 0.55); }
+    body.casual-mode #authorTickerStrip { font-size: 11px; }
+    body.dev-mode #authorTickerStrip { display: none !important; }
+    @media (max-width: 800px) {
+      #authorTickerStrip { display: none !important; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #authorTickerStrip { transition: none; }
+    }
+
+    /* v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5/6) — finale ceremony.
+       overlayEndPanel fades in over 2.5s with a small upward slide; CSS only.
+       prefers-reduced-motion shortens the duration to 0.2s so screen readers
+       and motion-sensitive players still see the panel without delay. */
+    @keyframes endFadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: none; }
+    }
+    #overlayEndPanel:not([hidden]) {
+      animation: endFadeIn 2.5s ease-out both;
+    }
+    #overlayEndAuthorLine {
+      margin-top: 14px;
+      font-style: italic;
+      color: rgba(208, 232, 255, 0.78);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #overlayEndPanel:not([hidden]) { animation-duration: 0.2s !important; }
+    }
+
   </style>
 </head>
 <body>
   <!-- Boot splash — fades out after first render frame (Step 1, Round 5b 01c-ui) -->
   <div id="bootSplash">Loading Project Utopia…</div>
+  <!-- v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 3) — Author Voice ticker.
+       Single-line ribbon below the HUD topbar that surfaces salient
+       narrative beats (friendships / births / sabotage / weather / death)
+       with a 4-second dwell ring buffer. HUDController.renderAuthorTicker()
+       owns content + visibility; default `hidden` keeps it out of the
+       layout until at least one beat is queued. Hidden in dev-mode (the
+       DeveloperPanel surfaces eventTrace directly) and on viewports below
+       800px wide (handled by CSS). -->
+  <div id="authorTickerStrip" aria-live="polite" aria-atomic="true" data-kind="generic" hidden>
+    <span class="ticker-icon" aria-hidden="true"></span><span class="ticker-text"></span>
+  </div>
   <!-- Legacy layout controls (hidden, JS still references) -->
   <div id="layoutControls" aria-label="Layout Controls">
     <button id="toggleSidebarBtn" type="button">Menu</button>
@@ -1938,6 +2024,13 @@
           <div id="overlayEndMeta" class="overlay-scenario-badge">Scenario</div>
           <p id="overlayEndReason" class="overlay-lead">-</p>
           <div id="overlayEndStats" class="overlay-end-stats">-</div>
+          <!-- v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 6) — author
+               signature line. GameStateOverlay.showEndPanel() / render()
+               populates this with the current scenario's openingPressure
+               prose so the run closes on a sentence the player has only
+               seen on the menu briefing. Hidden via empty textContent +
+               inline display:none when no scenario voice resolves. -->
+          <p id="overlayEndAuthorLine" class="overlay-author-line"></p>
           <!-- v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3a) — copy-able
                seed chip so a speedrunner can paste their seed into chat
                or a forum without scraping the boot screen. -->

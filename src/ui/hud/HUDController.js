@@ -6,7 +6,7 @@ import { describeAutopilotToggle, getAutopilotStatus } from "./autopilotStatus.j
 import { isDevMode } from "../../app/devModeGate.js";
 import { explainTerm } from "./glossary.js";
 import { getNextActionAdvice } from "./nextActionAdvisor.js";
-import { computeStorytellerStripModel, computeStorytellerStripText } from "./storytellerStrip.js";
+import { computeStorytellerStripModel, computeStorytellerStripText, extractLatestNarrativeBeat, formatBeatTextWithKind } from "./storytellerStrip.js";
 import { EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 // v0.8.2 Round-5 Wave-2 (02b-casual Step 2): resource-chain stall summary
 // for 7-row rate badges. Cached per-RATE_WINDOW_SEC in render() to avoid
@@ -167,6 +167,22 @@ export class HUDController {
     this._milestoneFlashText = "";
     this._milestoneFlashEventKey = "";
     this._milestoneFlashUntilMs = 0;
+    // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 4) — Author Voice ticker.
+    // Ring buffer of recent salient beats (capacity 3) surfaced into
+    // #authorTickerStrip below the HUD topbar. dwell ≥ 4s/entry per Stage B
+    // Risk #2 (friendship beats fire 5-10× more often than sabotage; without
+    // dwell the strip becomes a "friendship spam wall"). dev-mode hides the
+    // strip entirely (see CSS in index.html — DeveloperPanel surfaces
+    // eventTrace directly so the ticker would be redundant).
+    this.authorTickerStrip = document.getElementById("authorTickerStrip");
+    this.authorTickerIcon = this.authorTickerStrip?.querySelector?.(".ticker-icon") ?? null;
+    this.authorTickerText = this.authorTickerStrip?.querySelector?.(".ticker-text") ?? null;
+    this._tickerRing = [];
+    this._tickerRingCap = 3;
+    this._tickerLastShownAt = 0;
+    this._tickerCurrentText = "";
+    this._tickerCurrentKind = "generic";
+    this._tickerDwellMs = 4000;
     this.deathVal = document.getElementById("deathVal");
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
@@ -1567,6 +1583,94 @@ export class HUDController {
     this.#renderRunoutHints(state);
     // Colony Health Card — live status summary at top of Colony panel.
     this.#updateColonyHealthCard(state);
+    // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 4) — Author Voice ticker.
+    // Pinned below the HUD topbar; renders the latest salient eventTrace beat
+    // from `extractLatestNarrativeBeat` with a 4-second dwell + ring-buffer.
+    this.#renderAuthorTicker(state);
+  }
+
+  // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 4) — Author Voice ticker.
+  //
+  // Reads the latest salient narrative beat from `state.debug.eventTrace`
+  // (via the existing extractor — same data source as #storytellerBeat) and
+  // pushes it into a 3-entry ring buffer. The visible entry rotates only
+  // after `_tickerDwellMs` (4s) has elapsed, so friendship beats — which
+  // fire 5-10× more often than sabotage — don't spam the strip.
+  //
+  // Hides the strip element entirely (`hidden` attr + `display:none` CSS)
+  // when (a) no beat is available, (b) dev-mode is on (DeveloperPanel
+  // surfaces eventTrace directly so the ticker is redundant), or (c) the
+  // strip element is missing from the DOM (test rigs).
+  #renderAuthorTicker(state) {
+    const strip = this.authorTickerStrip;
+    if (!strip) return;
+    const inDevMode = isDevMode(state);
+    if (inDevMode) {
+      // dev-mode also hides via CSS, but eagerly drop the visible class +
+      // clear text so a transition from casual→dev mid-session doesn't leave
+      // a stale beat painted under DeveloperPanel.
+      strip.classList?.remove?.("visible");
+      strip.setAttribute?.("hidden", "");
+      return;
+    }
+    const beat = extractLatestNarrativeBeat(state);
+    const formatted = formatBeatTextWithKind(beat);
+    if (!formatted) {
+      strip.classList?.remove?.("visible");
+      strip.setAttribute?.("hidden", "");
+      return;
+    }
+    const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+    // Ring-buffer push: only enqueue when the incoming text differs from the
+    // most recent ring entry (so the same beat doesn't fill all 3 slots).
+    if (this._tickerRing[0] !== formatted.text) {
+      this._tickerRing.unshift(formatted.text);
+      if (this._tickerRing.length > this._tickerRingCap) {
+        this._tickerRing.length = this._tickerRingCap;
+      }
+    }
+    // Dwell gate: hold the current rendered text for `_tickerDwellMs` before
+    // accepting a new one. First-paint (lastShownAt === 0) bypasses the gate
+    // so the player sees the very first beat immediately.
+    let nextText = this._tickerCurrentText;
+    let nextKind = this._tickerCurrentKind;
+    if (!nextText) {
+      nextText = formatted.text;
+      nextKind = formatted.kind;
+      this._tickerCurrentText = nextText;
+      this._tickerCurrentKind = nextKind;
+      this._tickerLastShownAt = nowMs;
+    } else if (formatted.text !== this._tickerCurrentText
+        && (nowMs - this._tickerLastShownAt) >= this._tickerDwellMs) {
+      nextText = formatted.text;
+      nextKind = formatted.kind;
+      this._tickerCurrentText = nextText;
+      this._tickerCurrentKind = nextKind;
+      this._tickerLastShownAt = nowMs;
+    }
+    if (this.authorTickerIcon) {
+      const icon = formatted.icon;
+      if (this.authorTickerIcon.textContent !== icon) {
+        this.authorTickerIcon.textContent = icon;
+      }
+    }
+    if (this.authorTickerText) {
+      if (this.authorTickerText.textContent !== nextText) {
+        this.authorTickerText.textContent = nextText;
+      }
+    } else if (strip.textContent !== nextText) {
+      // Fallback when the test DOM didn't include the icon/text spans.
+      strip.textContent = nextText;
+    }
+    if (strip.dataset) {
+      if (strip.dataset.kind !== nextKind) strip.dataset.kind = nextKind;
+    } else {
+      strip.setAttribute?.("data-kind", nextKind);
+    }
+    if (strip.hasAttribute?.("hidden")) strip.removeAttribute?.("hidden");
+    strip.classList?.add?.("visible");
   }
 
   /**
