@@ -42,20 +42,62 @@ function withLabel(id, fallback) {
 // numeric suffix from the id is retained to avoid name collisions in the UI
 // when two workers share the same drawn name. 02d will extend a similar bank
 // to visitors/saboteurs — this first landing covers WORKERS only.
+//
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 1) — bank expanded from 40 → 84
+// (deduped) so the 13 initial colonists no longer collide on "3 Mose" picks.
+// `pickWorkerName` accepts an optional `excludeSet`: if a draw lands on a
+// name already in the set we **reroll up to 3 times** before falling back to
+// the original draw. The 3-retry cap bounds RNG offset drift to a small,
+// constant window so the long-horizon-determinism contract still holds —
+// later workers (post-spawn births) almost never trigger reroll because the
+// excludeSet is small compared to bank size, so the 4-seed bench stays
+// near-baseline.
 export const WORKER_NAME_BANK = Object.freeze([
   "Aila", "Ren", "Bram", "Ivo", "Nell", "Cato", "Mira", "Joss",
   "Kira", "Tam", "Ora", "Vela", "Hale", "Ris", "Fen", "Luka",
   "Sora", "Dax", "Yara", "Evan", "Pia", "Mose", "Nira", "Ody",
   "Reva", "Talon", "Kess", "Lio", "Nori", "Vian", "Saro", "Beck",
   "Tess", "Remy", "Juno", "Anse", "Dova", "Ilia", "Cora", "Marek",
+  // Round-6 Wave-3 02d expansion (44 additional unique first-names).
+  "Bora", "Eira", "Garek", "Halo", "Inza", "Jora", "Kael", "Lira",
+  "Mael", "Niko", "Olen", "Pell", "Quin", "Rhea", "Senn", "Toma",
+  "Una", "Vail", "Wren", "Xara", "Yvo", "Zara", "Brae", "Calla",
+  "Dace", "Esha", "Faye", "Gren", "Hova", "Ives", "Joran", "Karis",
+  "Liva", "Maro", "Nessa", "Orin", "Polla", "Riven", "Sela", "Tova",
+  "Ula", "Veska", "Wynn", "Zora",
 ]);
 
-function pickWorkerName(random) {
-  const idx = Math.floor(random() * WORKER_NAME_BANK.length);
-  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < WORKER_NAME_BANK.length
-    ? idx
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 1) — lineage relation tags
+// reserved for future kinship rendering (parent / child / sibling). Currently
+// only `parent` and `child` are populated in PopulationGrowthSystem, but the
+// tag set is exported for downstream UI/voice-pack consumers.
+export const LINEAGE_RELATION = Object.freeze({
+  PARENT: "parent",
+  CHILD: "child",
+  SIBLING: "sibling",
+});
+
+function pickWorkerName(random, excludeSet = null) {
+  const bank = WORKER_NAME_BANK;
+  const baseIdx = Math.floor(random() * bank.length);
+  const safeBaseIdx = Number.isFinite(baseIdx) && baseIdx >= 0 && baseIdx < bank.length
+    ? baseIdx
     : 0;
-  return WORKER_NAME_BANK[safeIdx];
+  const baseName = bank[safeBaseIdx];
+  if (!excludeSet || typeof excludeSet.has !== "function" || !excludeSet.has(baseName)) {
+    return baseName;
+  }
+  // Reroll up to 3 times — capped to bound RNG offset drift for benchmarks.
+  // If the bank is exhausted (excludeSet covers ≥ bank.length entries) the
+  // reroll is impossible to satisfy, so we fall through to the base draw.
+  if (excludeSet.size >= bank.length) return baseName;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const idx = Math.floor(random() * bank.length);
+    const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < bank.length ? idx : 0;
+    const candidate = bank[safeIdx];
+    if (!excludeSet.has(candidate)) return candidate;
+  }
+  return baseName;
 }
 
 // v0.8.2 Round-5b (02e Step 4) — 40 ASCII neutral surnames for casual profile.
@@ -199,7 +241,7 @@ function generateSkills(random) {
   };
 }
 
-export function createWorker(x, z, random = Math.random) {
+export function createWorker(x, z, random = Math.random, options = null) {
   const id = nextId("worker");
   // v0.8.2 Round-0 01e-innovation (Step 1). Draw the name BEFORE the other
   // random()-consuming constructors so the selection stays on a stable
@@ -209,7 +251,14 @@ export function createWorker(x, z, random = Math.random) {
   // v0.8.2 Round-5b (02e Step 4): casual profile adds SURNAME_BANK pick
   // here (1 extra random() call, before pickTraits to keep RNG offset stable).
   // full/dev profile skips surname to preserve benchmark RNG sequence.
-  const workerName = pickWorkerName(random);
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 1+2) — `options.excludeSet`
+  // (Set<string>) lets initial-population creation avoid name collisions
+  // without changing the RNG stream offset on the common (no-collision) path.
+  // The reroll cap inside pickWorkerName bounds drift to ≤3 extra calls/per
+  // collision; long-horizon-determinism still passes because mid-game births
+  // pass `excludeSet=null` (the colony rarely re-enters initial-pop pressure).
+  const excludeSet = options?.excludeSet ?? null;
+  const workerName = pickWorkerName(random, excludeSet);
   const uiProfile = getActiveUiProfile();
   const surname = uiProfile === "casual" ? pickSurname(random) : null;
   const displayName = uiProfile === "casual"
@@ -244,6 +293,18 @@ export function createWorker(x, z, random = Math.random) {
       workDurationMultiplier: traits.includes("efficient") ? 0.8 : (traits.includes("careful") ? 1.2 : 1.0),
     },
     relationships: {},                // { otherWorkerId: opinion (-1 to 1) }
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 2) — kinship hooks. Initial
+    // population workers spawn with empty parents/children arrays; growth-
+    // path births populate `parents` with 1-2 nearby living worker ids and
+    // append the newborn id into each parent's `children`. `deathSec` mirrors
+    // the existing top-level `deathSec` field but is scoped to the lineage
+    // subtree so future obituary/voice-pack consumers can read it without
+    // walking back to the agent root. Snapshot determinism: SnapshotSystem
+    // uses deepReplace which is schema-tolerant — old saves with no
+    // `lineage` field roundtrip into a defaulted shape on read; see Risks
+    // R1 in 02d-roleplayer.md for the loadSnapshot guard. Frozen via
+    // baseAgent's plain-object pattern.
+    lineage: { parents: [], children: [], deathSec: -1 },
     // Work progress tracking
     progress: 0,                      // 0-1 progress toward current action completion
     workRemaining: 0,                 // seconds remaining on current work action
@@ -475,10 +536,20 @@ function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   const anchors = scenario?.anchors ?? {};
   const wildlifeRadiusBonus = Number(BALANCE.wildlifeSpawnRadiusBonus ?? 3);
 
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 1+2) — drive initial
+  // colonist names with a no-replacement excludeSet so the 13 initial picks
+  // never collide on "3 Mose"-type duplicates. Bank size (84) >> 13 so the
+  // reroll cap inside pickWorkerName almost never fires for initial pop.
+  const initialNameExcludeSet = new Set();
   for (let i = 0; i < INITIAL_POPULATION.workers; i += 1) {
     const tile = randomTileOfTypes(grid, [TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    agents.push(createWorker(p.x, p.z, random));
+    const worker = createWorker(p.x, p.z, random, { excludeSet: initialNameExcludeSet });
+    // Only the bare given-name (without numeric suffix / surname) is added —
+    // collision check inside pickWorkerName operates on the BANK token.
+    const tok = String(worker.displayName ?? "").split(/[\s\-]/)[0];
+    if (tok) initialNameExcludeSet.add(tok);
+    agents.push(worker);
   }
 
   for (let i = 0; i < INITIAL_POPULATION.visitors; i += 1) {
