@@ -5,6 +5,24 @@ import { BALANCE } from "../config/balance.js";
 // wiped (no remaining agents) or the collapse spiral fires. Outcomes here
 // return one of { outcome: "loss", ... } | null. Callers map "in progress"
 // to session.outcome === "none".
+
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 7) — devTier bucket. Pure
+// function on the gameplay.devIndex scalar so GameStateOverlay's finale
+// title can branch on a stable enum without re-deriving thresholds at the
+// render site. Buckets match the plan's 4-band split (low/mid/high/elite).
+//
+// This function intentionally returns a string and accepts ANY input so the
+// outcome schema stays additive (Risk #3 — no break to existing
+// snapshot/Object.keys consumers; new field, no rewrite).
+export function deriveDevTier(devIndex) {
+  const v = Number(devIndex);
+  if (!Number.isFinite(v)) return "low";
+  if (v < 25) return "low";
+  if (v < 50) return "mid";
+  if (v < 75) return "high";
+  return "elite";
+}
+
 export function evaluateRunOutcomeState(state) {
   const workers = Number(
     state.metrics?.populationStats?.workers
@@ -21,6 +39,9 @@ export function evaluateRunOutcomeState(state) {
       reason: "Colony wiped — no surviving colonists.",
       actionMessage: "Run ended: the colony was wiped out.",
       actionKind: "error",
+      // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 7) — devTier additive
+      // field. Read by GameStateOverlay finale ceremony to branch the title.
+      devTier: deriveDevTier(state?.gameplay?.devIndex),
     };
   }
 
@@ -54,5 +75,7 @@ export function evaluateRunOutcomeState(state) {
     reason,
     actionMessage: `Run ended: ${reason}`,
     actionKind: "error",
+    // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 7) — devTier additive field.
+    devTier: deriveDevTier(state?.gameplay?.devIndex),
   };
 }
