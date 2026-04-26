@@ -88,7 +88,7 @@ function renderExchange(label, exchange, emptyText = "No exchange captured yet."
   const rawContent = String(normalized.rawModelContent ?? "");
 
   return `
-    <details data-focus-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:6px;" open>
+    <details data-focus-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:6px;">
       <summary class="small"><b>${escapeHtml(label)}</b></summary>
       <div class="small" style="margin-top:6px;"><b>Status:</b> ${hasExchange ? "captured" : "not-captured"}</div>
       <div class="small"><b>Time:</b> sim=${fmtSec(normalized.simSec)} | reqAt=${escapeHtml(normalized.requestedAtIso || "-")}</div>
@@ -98,7 +98,7 @@ function renderExchange(label, exchange, emptyText = "No exchange captured yet."
         <summary class="small"><b>Prompt Input: System</b></summary>
         <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:prompt-system:pre`)}">${escapeHtml(promptSystemText || "(system prompt unavailable)")}</pre>
       </details>
-      <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-user`)}" style="margin-top:6px;" open>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:prompt-user`)}" style="margin-top:6px;">
         <summary class="small"><b>Prompt Input: User</b></summary>
         <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:prompt-user:pre`)}">${escapeHtml(promptUserText || "(user prompt unavailable)")}</pre>
       </details>
@@ -110,7 +110,7 @@ function renderExchange(label, exchange, emptyText = "No exchange captured yet."
         <summary class="small"><b>Request Summary (full)</b></summary>
         <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:request:pre`)}">${escapeHtml(requestText || "(empty)")}</pre>
       </details>
-      <details data-focus-key="${escapeHtml(`${keyPrefix}:raw`)}" style="margin-top:6px;" open>
+      <details data-focus-key="${escapeHtml(`${keyPrefix}:raw`)}" style="margin-top:6px;">
         <summary class="small"><b>Raw Model Content (full)</b></summary>
         <pre class="entity-exchange-pre" data-focus-scroll="${escapeHtml(`${keyPrefix}:raw:pre`)}">${escapeHtml(rawContent || "(no raw model content captured)")}</pre>
       </details>
@@ -557,7 +557,7 @@ export class EntityFocusPanel {
       familyLine = `<div class="small"><b>Family:</b> ${segs.join(" \u00B7 ")}</div>`;
     }
     const characterBlock = `
-      <details data-focus-key="focus:character" open style="margin-top:6px;">
+      <details data-focus-key="focus:character" style="margin-top:6px;">
         <summary class="small"><b>Character</b></summary>
         <div class="small" style="margin-top:4px;"><b>Traits:</b> ${escapeHtml(traitsText)}</div>
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
@@ -576,7 +576,7 @@ export class EntityFocusPanel {
     // Velocity / Path / Target Selection / Path Nodes / AI Exchange remain
     // dev-only.
     const whyBlock = `
-      <details data-focus-key="focus:why" open style="margin-top:6px;">
+      <details data-focus-key="focus:why" style="margin-top:6px;">
         <summary class="small"><b>Why is this worker doing this?</b></summary>
         <div class="small" style="margin-top:4px;"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
         <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
@@ -620,7 +620,7 @@ export class EntityFocusPanel {
         <summary class="small"><b>Path Nodes</b></summary>
         <div class="small" style="margin-top:6px; white-space:normal;">${entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none"}</div>
       </details>
-      <details data-focus-key="focus:last-ai-exchange" class="${engClasses}" style="margin-top:8px;" open>
+      <details data-focus-key="focus:last-ai-exchange" class="${engClasses}" style="margin-top:8px;">
         <summary class="small"><b>Last AI Exchange (Full)</b></summary>
         ${renderExchange(`Policy Exchange for ${entity.groupId ?? "unknown"}`, policyExchange, "No policy exchange for this group yet.", "focus:policy")}
         ${renderExchange("Environment Exchange (Global)", environmentExchange, "No environment exchange yet.", "focus:environment")}
