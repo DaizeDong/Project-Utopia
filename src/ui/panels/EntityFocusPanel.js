@@ -1,5 +1,6 @@
 import { worldToTile } from "../../world/grid/Grid.js";
 import { getCausalDigest, getEntityInsight } from "../interpretation/WorldExplain.js";
+import { humaniseInsightLine, humaniseGroupVoice } from "../interpretation/EntityVoice.js";
 
 function fmtNum(value, digits = 2) {
   const n = Number(value);
@@ -384,7 +385,14 @@ export class EntityFocusPanel {
     const policyNotes = Array.isArray(groupPolicy?.steeringNotes) && groupPolicy.steeringNotes.length > 0
       ? groupPolicy.steeringNotes.join(" | ")
       : "none";
-    const entityInsights = getEntityInsight(this.state, entity);
+    const rawEntityInsights = getEntityInsight(this.state, entity);
+    // v0.8.2 Round-6 Wave-3 (01e-innovation Step 2) — humanise the
+    // WorldExplain decision-context lines into first-person worker
+    // monologue when the player is in casual / default profile. Dev
+    // profile (`uiProfile === "dev"`/"full") preserves verbatim text so
+    // engineers keep their diagnostic surface.
+    const uiProfile = String(this.state?.controls?.uiProfile ?? "casual").toLowerCase();
+    const entityInsights = rawEntityInsights.map((line) => humaniseInsightLine(line, entity, { profile: uiProfile }));
     const digest = getCausalDigest(this.state);
     const simSec = fmtSec(this.state.metrics.timeSec);
     const policySec = fmtSec(this.state.ai.lastPolicyResultSec);
