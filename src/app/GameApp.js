@@ -60,6 +60,7 @@ import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
+import { ensurePerformanceTelemetry, recordPerformanceSample } from "./performanceTelemetry.js";
 import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
 import { setActiveUiProfile } from "./uiProfileState.js";
 import { audioSystem } from "../audio/AudioSystem.js";
@@ -126,6 +127,15 @@ function buildSelectedTileState(state, ix, iz) {
   };
 }
 
+function readOfflineAiFallbackFlag() {
+  try {
+    const params = new URLSearchParams(globalThis?.location?.search ?? "");
+    return params.get("offlineAi") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export class GameApp {
   constructor(canvas) {
     this.state = createInitialGameState();
@@ -139,7 +149,10 @@ export class GameApp {
     // and html[data-ui-profile] so CSS / panels can adapt. Orthogonal to
     // body.dev-mode (both may be set). Default = "casual" for first-timers.
     this.#initUiProfileGate();
-    this.services = createServices(this.state.world.mapSeed);
+    this.offlineAiFallback = readOfflineAiFallbackFlag();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
 
     this.buildSystem = new BuildSystem({
       onAction: (event) => {
@@ -274,6 +287,9 @@ export class GameApp {
       sampleCount: 0,
       sumFps: 0,
       sumFrameMs: 0,
+      frameSamplesMs: [],
+      actualScaleSamples: [],
+      cappedSamples: 0,
       results: [],
       csv: "",
     };
@@ -282,8 +298,8 @@ export class GameApp {
     this.services.memoryStore = this.memoryStore;
 
     this.loop = new GameLoop(
-      (dt) => this.update(dt),
-      (dt) => this.render(dt),
+      (dt, frameInfo) => this.update(dt, frameInfo),
+      (dt, frameInfo) => this.render(dt, frameInfo),
       {
         maxFps: 60,
         onError: (err) => {
@@ -295,7 +311,7 @@ export class GameApp {
     // v0.8.2 Round-5b (02a Step 1) — raise from 6 to 12 to deliver real 4×
     // fast-forward. Phase 10 long-horizon hardening validated 12 steps/frame
     // holds determinism.
-    this.maxSimulationStepsPerFrame = 12;
+    this.maxSimulationStepsPerFrame = 24;
     this.uiRefreshIntervalSec = 1 / 8;
     this.uiRefreshAccumulator = this.uiRefreshIntervalSec;
     this.systemProfileInterval = 4;
@@ -314,7 +330,15 @@ export class GameApp {
       lastStatus: "unknown",
       lastHasApiKey: null,
     };
-    this.#queueAiHealthProbe("startup");
+    if (this.offlineAiFallback) {
+      this.aiHealthMonitor.lastStatus = "offline-fallback";
+      this.aiHealthMonitor.lastHasApiKey = false;
+      this.state.metrics.proxyHealth = "offline-fallback";
+      this.state.metrics.proxyHasApiKey = false;
+      this.state.ai.coverageTarget = "fallback";
+    } else {
+      this.#queueAiHealthProbe("startup");
+    }
     this.#recomputePopulationBreakdown();
     this.#setRunPhase("menu", {
       actionMessage: "Ready. Press Start Run, expand the starter network, and watch the colony reroute around your edits.",
@@ -396,6 +420,7 @@ export class GameApp {
     // events emitted by ResourceSystem. Clamps speed and sets the pausedByCrisis
     // flag so the HUD can render a teaching-style failure contract instead of
     // the optimistic "Autopilot ON - fallback/fallback" lie.
+    this.#maybeAutopilotFoodPreCrisis();
     this.#maybeAutopauseOnFoodCrisis();
 
     this.updateBenchmark(simDt);
@@ -440,11 +465,105 @@ export class GameApp {
     }
   }
 
-  update(frameDt) {
+  #maybeAutopilotFoodPreCrisis() {
+    const state = this.state;
+    if (state.benchmarkMode === true) return;
+    state.ai ??= {};
+    const ai = state.ai;
+    if (!ai.enabled) return;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const events = state.events?.log ?? [];
+    let preCrisisEvent = null;
+    const cutoff = nowSec - 1;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || typeof ev.t !== "number") continue;
+      if (ev.t < cutoff) break;
+      if (ev.type === "food_precrisis_detected") { preCrisisEvent = ev; break; }
+    }
+
+    if (preCrisisEvent && ai.foodRecoveryMode !== true) {
+      ai.foodRecoveryMode = true;
+      ai.foodRecoveryStartedSec = nowSec;
+      ai.foodRecoveryReason = "food runway unsafe";
+      const d = preCrisisEvent.detail ?? {};
+      const net = Number(d.netPerMin ?? 0);
+      const risk = Number(d.starvationRisk ?? 0);
+      state.controls.actionKind = "warning";
+      state.controls.actionMessage = `Autopilot recovery: food runway unsafe (net ${net.toFixed(1)}/min, risk ${risk}). Expansion paused; farms, warehouses, and roads take priority.`;
+    }
+
+    if (ai.foodRecoveryMode === true) {
+      const food = Number(state.resources?.food ?? 0);
+      const produced = Number(state.metrics?.foodProducedPerMin ?? 0);
+      const consumed = Number(state.metrics?.foodConsumedPerMin ?? 0);
+      const risk = Number(state.metrics?.starvationRiskCount ?? 0);
+      const startedAt = Number(ai.foodRecoveryStartedSec ?? nowSec);
+      if (food >= 24 && produced >= consumed && risk <= 0 && nowSec - startedAt >= 20) {
+        ai.foodRecoveryMode = false;
+        ai.foodRecoveryReason = "";
+        state.controls.actionKind = "info";
+        state.controls.actionMessage = "Autopilot recovery cleared: food runway is stable.";
+      }
+    }
+  }
+
+  #tunePathBudgetForLoad(targetScale, entityCount) {
+    const budget = this.services?.pathBudget;
+    if (budget && Number.isFinite(Number(budget.maxMs))) {
+      budget.baseMaxMs ??= Number(budget.maxMs ?? 3);
+      const base = Math.max(0, Number(budget.baseMaxMs ?? 3));
+      const desired = targetScale >= 7 && entityCount >= 1000 ? 32
+        : targetScale >= 7 && entityCount >= 700 ? 24
+          : entityCount >= 1000 ? 18
+            : entityCount >= 700 ? 12
+              : base;
+      budget.maxMs = Math.max(base, desired);
+    }
+    const workerStats = this.services?.pathWorkerPool?.getStats?.();
+    if (workerStats && this.state.debug?.astar) {
+      this.state.debug.astar.workerPool = workerStats;
+    }
+  }
+
+  update(frameDt, frameInfo = null) {
     const frameStart = performance.now();
     const controls = this.state.controls;
     const runLocked = this.state.session.phase !== "active";
-    const fixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
+    const rawFrameDt = Math.max(0.0001, Number(frameInfo?.rawDt ?? frameDt) || frameDt || 0.0001);
+    const rawFrameMs = Math.max(0, Number(frameInfo?.elapsedMs ?? rawFrameDt * 1000) || 0);
+    this.state.metrics.wallTimeSec = Number(this.state.metrics.wallTimeSec ?? 0) + rawFrameDt;
+    const targetScale = Math.max(0.1, Number(controls.timeScale ?? 1) || 1);
+    const entityCount = this.state.agents.length + this.state.animals.length;
+    this.#tunePathBudgetForLoad(targetScale, entityCount);
+    const perf = ensurePerformanceTelemetry(this.state.metrics);
+    const previousCap = Boolean(this.state.metrics.performanceCap?.active);
+    const lastSimMs = Number(this.state.metrics.simCostMs ?? 0);
+    const lastFrameSimMs = Number(this.state.metrics.simCpuFrameMs ?? lastSimMs);
+    const lastWorkMs = Number(this.state.metrics.workFrameMs ?? this.state.metrics.frameMs ?? 0);
+    const lastRenderMs = Number(this.state.metrics.renderCpuMs ?? 0);
+    const severeFramePressure = lastWorkMs > 90 || lastFrameSimMs > 34 || lastRenderMs > 35;
+    const moderateFramePressure = lastWorkMs > 45
+      || lastFrameSimMs > 22
+      || lastRenderMs > 20
+      || Number(perf.workFrameP95Ms ?? 0) > 45;
+    const previousSlowFrame = severeFramePressure || moderateFramePressure;
+    let effectiveMaxSteps = this.maxSimulationStepsPerFrame;
+    const maxCpuThroughputMode = !controls.isPaused && !runLocked && targetScale >= 7 && entityCount >= 700;
+    if (!maxCpuThroughputMode && !controls.isPaused && !runLocked && (targetScale >= 7 || entityCount >= 700) && (previousCap || previousSlowFrame)) {
+      if (severeFramePressure) {
+        effectiveMaxSteps = entityCount >= 1000 ? 3 : entityCount >= 700 ? 4 : 6;
+      } else if (moderateFramePressure) {
+        effectiveMaxSteps = entityCount >= 1000 ? 4 : entityCount >= 700 ? 6 : 8;
+      }
+    }
+    const baseFixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
+    const highLoadFixedStepSec = targetScale >= 7 && entityCount >= 1000
+      ? 1 / 10
+      : targetScale >= 7 && entityCount >= 700
+        ? 1 / 12
+        : baseFixedStepSec;
+    const fixedStepSec = Math.max(baseFixedStepSec, highLoadFixedStepSec);
     const stepPlan = computeSimulationStepPlan({
       frameDt,
       accumulatorSec: this.accumulatorSec,
@@ -452,15 +571,19 @@ export class GameApp {
       stepFramesPending: controls.stepFramesPending,
       fixedStepSec,
       timeScale: controls.timeScale,
-      maxSteps: this.maxSimulationStepsPerFrame,
+      maxSteps: effectiveMaxSteps,
     });
 
     this.accumulatorSec = stepPlan.nextAccumulatorSec;
     controls.stepFramesPending = Math.max(0, controls.stepFramesPending - stepPlan.consumedStepFrames);
 
+    let frameSimCpuMs = 0;
     for (let i = 0; i < stepPlan.steps; i += 1) {
+      const simStepStart = performance.now();
       this.stepSimulation(fixedStepSec);
+      frameSimCpuMs += performance.now() - simStepStart;
     }
+    this.state.metrics.simCpuFrameMs = frameSimCpuMs;
 
     this.#evaluateRunOutcome();
 
@@ -469,20 +592,26 @@ export class GameApp {
     }
 
     this.state.metrics.frameMs = performance.now() - frameStart;
+    this.state.metrics.workFrameMs = this.state.metrics.frameMs + Number(this.state.metrics.uiCpuMs ?? 0) + Number(this.state.metrics.renderCpuMs ?? 0);
+    this.state.metrics.rawFrameMs = rawFrameMs;
     this.state.metrics.simDt = stepPlan.simDt;
     this.state.metrics.simStepsThisFrame = stepPlan.steps;
     const actualScale = frameDt > 0 ? stepPlan.simDt / frameDt : 0;
+    const actualWallScale = rawFrameDt > 0 ? stepPlan.simDt / rawFrameDt : 0;
     this.state.metrics.timeScaleActual = (this.state.metrics.timeScaleActual ?? actualScale) * 0.85 + actualScale * 0.15;
+    this.state.metrics.timeScaleActualWall = (this.state.metrics.timeScaleActualWall ?? actualWallScale) * 0.85 + actualWallScale * 0.15;
     this.state.metrics.isDebugStepping = Boolean(controls.isPaused);
 
-    const instantFps = 1 / Math.max(0.0001, frameDt);
+    const instantFps = 1 / Math.max(0.0001, rawFrameDt);
     this.state.metrics.averageFps = this.state.metrics.averageFps * 0.95 + instantFps * 0.05;
+    this.state.metrics.observedFps = instantFps;
 
-    const entityCount = this.state.agents.length + this.state.animals.length;
-    if (entityCount >= 700) {
-      this.uiRefreshIntervalSec = 1 / 3;
+    if (entityCount >= 1000 || rawFrameMs > 90) {
+      this.uiRefreshIntervalSec = 1;
+    } else if (entityCount >= 700 || rawFrameMs > 55) {
+      this.uiRefreshIntervalSec = 1 / 2;
     } else if (entityCount >= 350) {
-      this.uiRefreshIntervalSec = 1 / 5;
+      this.uiRefreshIntervalSec = 1 / 4;
     } else {
       this.uiRefreshIntervalSec = 1 / 8;
     }
@@ -495,6 +624,38 @@ export class GameApp {
     if (performance.memory?.usedJSHeapSize) {
       this.state.metrics.memoryMb = performance.memory.usedJSHeapSize / (1024 * 1024);
     }
+    const smoothedActualWall = Number(this.state.metrics.timeScaleActualWall ?? actualWallScale);
+    const diverged = targetScale >= 4 && smoothedActualWall < targetScale * 0.85;
+    const currentFramePressure = Number(this.state.metrics.workFrameMs ?? this.state.metrics.frameMs ?? 0) > 45
+      || Number(this.state.metrics.simCpuFrameMs ?? this.state.metrics.simCostMs ?? 0) > 22
+      || Number(this.state.metrics.renderCpuMs ?? 0) > 24;
+    const capActive = !controls.isPaused && !runLocked && targetScale >= 4
+      && (diverged || effectiveMaxSteps < this.maxSimulationStepsPerFrame || currentFramePressure);
+    const capReason = capActive
+      ? (effectiveMaxSteps < this.maxSimulationStepsPerFrame
+        ? `frame-pressure step cap ${effectiveMaxSteps}/${this.maxSimulationStepsPerFrame}`
+        : "target speed above measured wall-clock throughput")
+      : "";
+    this.state.metrics.performanceCap = {
+      active: capActive,
+      reason: capReason,
+      targetScale,
+      actualScale: smoothedActualWall,
+      effectiveMaxSteps,
+      fixedStepSec,
+      workFrameMs: this.state.metrics.workFrameMs,
+    };
+    this._pendingFrameTelemetry = {
+      rawFrameMs,
+      simMs: frameSimCpuMs,
+      targetScale,
+      actualScale: smoothedActualWall,
+      entityCount,
+      capActive,
+      capReason,
+      effectiveMaxSteps,
+      fixedStepSec,
+    };
     this.#applyMemoryPressureGuard();
     this.aiHealthMonitor.elapsedSec += frameDt;
     if (this.aiHealthMonitor.elapsedSec >= this.aiHealthMonitor.intervalSec) {
@@ -538,10 +699,19 @@ export class GameApp {
     const renderStart = performance.now();
     this.#safeRenderPanel("SceneRenderer", () => this.renderer.render(dt));
     this.state.metrics.renderCpuMs = performance.now() - renderStart;
+    recordPerformanceSample(this.state.metrics, {
+      ...(this._pendingFrameTelemetry ?? {}),
+      simMs: this.state.metrics.simCpuFrameMs,
+      simLastStepMs: this.state.metrics.simCostMs,
+      workFrameMs: Number(this.state.metrics.frameMs ?? 0) + Number(this.state.metrics.uiCpuMs ?? 0) + Number(this.state.metrics.renderCpuMs ?? 0),
+      uiMs: this.state.metrics.uiCpuMs,
+      renderMs: this.state.metrics.renderCpuMs,
+    });
+    this._pendingFrameTelemetry = null;
   }
 
   setExtraWorkers(extraCount) {
-    const safeCount = Math.max(0, Math.min(500, extraCount | 0));
+    const safeCount = Math.max(0, Math.min(1000, extraCount | 0));
     const baseWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && !a.isStressWorker);
     const stressWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && a.isStressWorker);
     const nonWorkers = this.state.agents.filter((a) => a.type !== ENTITY_TYPE.WORKER);
@@ -553,6 +723,11 @@ export class GameApp {
         const p = tileToWorld(tile.ix, tile.iz, this.state.grid);
         const worker = createWorker(p.x, p.z, () => this.services.rng.next());
         worker.isStressWorker = true;
+        worker.hunger = 1;
+        worker.rest = 1;
+        worker.morale = 1;
+        worker.mood = 1;
+        worker.stateLabel = "Stress patrol";
         stressWorkers.push(worker);
       }
     } else if (stressWorkers.length > safeCount) {
@@ -693,6 +868,9 @@ export class GameApp {
     this.benchmark.sampleCount = 0;
     this.benchmark.sumFps = 0;
     this.benchmark.sumFrameMs = 0;
+    this.benchmark.frameSamplesMs = [];
+    this.benchmark.actualScaleSamples = [];
+    this.benchmark.cappedSamples = 0;
     this.benchmark.results = [];
     this.benchmark.csv = "";
     this.state.metrics.benchmarkCsvReady = false;
@@ -730,7 +908,10 @@ export class GameApp {
     if (this.benchmark.stageElapsedSec >= config.sampleStartSec) {
       this.benchmark.sampleCount += 1;
       this.benchmark.sumFps += this.state.metrics.averageFps;
-      this.benchmark.sumFrameMs += this.state.metrics.frameMs;
+      this.benchmark.sumFrameMs += this.state.metrics.rawFrameMs || this.state.metrics.frameMs;
+      this.benchmark.frameSamplesMs.push(Number(this.state.metrics.rawFrameMs || this.state.metrics.frameMs || 0));
+      this.benchmark.actualScaleSamples.push(Number(this.state.metrics.timeScaleActualWall ?? this.state.metrics.timeScaleActual ?? 0));
+      if (this.state.metrics.performanceCap?.active) this.benchmark.cappedSamples += 1;
     }
 
     if (this.benchmark.stageElapsedSec < config.stageDurationSec) {
@@ -752,6 +933,13 @@ export class GameApp {
       totalEntities: this.state.agents.length + this.state.animals.length,
       avgFps,
       avgFrameMs,
+      p95FrameMs: this.#benchmarkPercentile(this.benchmark.frameSamplesMs, 95),
+      p99FrameMs: this.#benchmarkPercentile(this.benchmark.frameSamplesMs, 99),
+      avgActualScale: this.benchmark.actualScaleSamples.length > 0
+        ? this.benchmark.actualScaleSamples.reduce((sum, value) => sum + value, 0) / this.benchmark.actualScaleSamples.length
+        : Number(this.state.metrics.timeScaleActualWall ?? 0),
+      cappedPct: this.benchmark.sampleCount > 0 ? (this.benchmark.cappedSamples / this.benchmark.sampleCount) * 100 : 0,
+      bottleneck: this.state.metrics.performance?.bottleneck ?? "unknown",
     });
 
     this.benchmark.stageIndex += 1;
@@ -759,13 +947,27 @@ export class GameApp {
     this.benchmark.sampleCount = 0;
     this.benchmark.sumFps = 0;
     this.benchmark.sumFrameMs = 0;
+    this.benchmark.frameSamplesMs = [];
+    this.benchmark.actualScaleSamples = [];
+    this.benchmark.cappedSamples = 0;
 
     if (this.benchmark.stageIndex >= config.schedule.length) {
       this.benchmark.running = false;
       this.benchmark.activeConfig = null;
       this.benchmark.csv = this.buildBenchmarkCsv();
       this.state.metrics.benchmarkCsvReady = true;
-      this.state.metrics.benchmarkStatus = "done (csv ready)";
+      const worst = this.benchmark.results.reduce((acc, row) => (
+        !acc || row.p95FrameMs > acc.p95FrameMs ? row : acc
+      ), null);
+      const failed = this.benchmark.results.some((row) => row.p95FrameMs > 66 || row.avgFps < 15);
+      this.state.metrics.benchmarkLastRun = {
+        status: failed ? "fail" : "pass",
+        stages: this.benchmark.results.length,
+        worstLoad: worst?.load ?? 0,
+        worstP95FrameMs: worst?.p95FrameMs ?? 0,
+        worstBottleneck: worst?.bottleneck ?? "unknown",
+      };
+      this.state.metrics.benchmarkStatus = failed ? "done: needs optimization (csv ready)" : "done: pass (csv ready)";
       return;
     }
 
@@ -773,8 +975,18 @@ export class GameApp {
     this.setExtraWorkers(nextLoad);
   }
 
+  #benchmarkPercentile(samples = [], p = 95) {
+    if (!Array.isArray(samples) || samples.length === 0) return 0;
+    const sorted = samples
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+    if (sorted.length === 0) return 0;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((Math.max(0, Math.min(100, p)) / 100) * sorted.length) - 1));
+    return sorted[idx];
+  }
+
   buildBenchmarkCsv() {
-    const header = "load,workers,total_entities,avg_fps,avg_frame_ms";
+    const header = "load,workers,total_entities,avg_fps,avg_frame_ms,p95_frame_ms,p99_frame_ms,avg_actual_scale,capped_pct,bottleneck";
     const rows = this.benchmark.results.map((r) => {
       return [
         r.load,
@@ -782,6 +994,11 @@ export class GameApp {
         r.totalEntities,
         r.avgFps.toFixed(2),
         r.avgFrameMs.toFixed(3),
+        r.p95FrameMs.toFixed(3),
+        r.p99FrameMs.toFixed(3),
+        r.avgActualScale.toFixed(2),
+        r.cappedPct.toFixed(1),
+        r.bottleneck,
       ].join(",");
     });
     return `${header}\n${rows.join("\n")}\n`;
@@ -1141,7 +1358,10 @@ export class GameApp {
     this.#sanitizeControls(false);
 
     this.systems = this.createSystems();
-    this.services = createServices(this.state.world.mapSeed);
+    this.services?.dispose?.();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
     this.services.memoryStore = this.memoryStore;
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
@@ -1216,7 +1436,10 @@ export class GameApp {
     }
     deepReplaceObject(this.state, restored);
     this.#sanitizeControls(false);
-    this.services = createServices(this.state.world.mapSeed);
+    this.services?.dispose?.();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
     if (restored.meta?.rng) this.services.rng.restore(restored.meta.rng);
     this.systems = this.createSystems();
     this.services.memoryStore = this.memoryStore;
@@ -1367,6 +1590,7 @@ export class GameApp {
   }
 
   #queueAiHealthProbe(reason = "poll") {
+    if (this.offlineAiFallback) return;
     if (this.aiHealthMonitor.inFlight) return;
     this.aiHealthMonitor.inFlight = true;
     const manualModeLocked = Boolean(this.state.ai.manualModeLocked);
@@ -2083,6 +2307,7 @@ export class GameApp {
     if (this.heatLensBtn && this.boundOnHeatLensClick) {
       this.heatLensBtn.removeEventListener("click", this.boundOnHeatLensClick);
     }
+    this.services?.dispose?.();
     this.renderer?.dispose?.();
   }
 }

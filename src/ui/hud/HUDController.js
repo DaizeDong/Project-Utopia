@@ -527,7 +527,7 @@ export class HUDController {
     const planOwnerKey = autopilotEnabled ? "autopilot" : "manual";
     const planBoundary = autopilotEnabled
       ? "Autopilot may execute this plan on the next policy tick."
-      : "Guidance only: you choose actions; background director systems may still react.";
+      : "Guidance only: you choose actions; builders/directors are idle while Autopilot is off.";
     if (!autopilotEnabled && typeof ColonyPlanner?.getAdvisoryRecommendation === "function") {
       const advisory = ColonyPlanner.getAdvisoryRecommendation(state);
       if (advisory && advisory.text) {
@@ -1687,10 +1687,16 @@ export class HUDController {
     this.speedUltraBtn?.classList.toggle("active", ultra && !paused);
     if (this.timeScaleActualLabel) {
       const requested = Number(state.controls.timeScale ?? 1);
-      const actual = Number(state.metrics.timeScaleActual ?? requested);
-      const showLabel = fast && !paused && Math.abs(actual - requested) > 0.2;
+      const actual = Number(state.metrics.timeScaleActualWall ?? state.metrics.timeScaleActual ?? requested);
+      const cap = state.metrics.performanceCap ?? {};
+      const showLabel = fast && !paused && (cap.active || Math.abs(actual - requested) > 0.2);
       this.timeScaleActualLabel.style.display = showLabel ? "" : "none";
-      if (showLabel) this.timeScaleActualLabel.textContent = `actual ×${actual.toFixed(1)}`;
+      if (showLabel) {
+        this.timeScaleActualLabel.textContent = cap.active
+          ? `target ×${requested.toFixed(1)} / running ×${actual.toFixed(1)} (capped)`
+          : `target ×${requested.toFixed(1)} / running ×${actual.toFixed(1)}`;
+        this.timeScaleActualLabel.title = cap.reason || "Actual wall-clock simulation speed.";
+      }
     }
 
     // v0.8.2 Round-1 01a-onboarding — append glossary tooltips to abbreviated

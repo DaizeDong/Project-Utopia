@@ -91,11 +91,15 @@ export class BuildSystem {
         cost: preview.cost,
         refund: preview.refund,
         summary: preview.summary,
+        owner: options.owner ?? "player",
+        reason: options.reason ?? "",
       });
     }
-    this.onAction?.({ kind: "build", tool, ix, iz, oldType: preview.oldType, newType: preview.newType });
+    const owner = options.owner ?? "player";
+    const reason = options.reason ?? "";
+    this.onAction?.({ kind: "build", tool, ix, iz, oldType: preview.oldType, newType: preview.newType, owner, reason });
     const eventType = tool === "erase" ? EVENT_TYPES.BUILDING_DESTROYED : EVENT_TYPES.BUILDING_PLACED;
-    emitEvent(state, eventType, { tool, ix, iz, oldType: preview.oldType, newType: preview.newType });
+    emitEvent(state, eventType, { tool, ix, iz, oldType: preview.oldType, newType: preview.newType, owner, reason });
     // Phase 3 M1c: emit DEMOLITION_RECYCLED when erase produced a non-zero refund.
     // Payload is { ix, iz, refund: { wood, stone } } per spec. Extras (food/herbs)
     // are included when non-zero so downstream listeners get the full picture.
@@ -119,6 +123,8 @@ export class BuildSystem {
       reason: "",
       reasonText: "",
       message: summarizeBuildPreview(preview),
+      owner,
+      ownerReason: reason,
     };
   }
 

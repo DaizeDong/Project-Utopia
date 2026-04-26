@@ -11,6 +11,7 @@ const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
 const WORKER_MEMORY_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
 const WITNESS_NEARBY_DISTANCE = 12;
+const NUTRITION_REACHABILITY_REFRESH_HUNGER = 0.22;
 
 function deathThresholdFor(entity) {
   if (entity.type === ENTITY_TYPE.WORKER) return { hunger: 0.045, holdSec: 34 };
@@ -291,7 +292,7 @@ function resolveReachability(entity, state, services, fromTile, target, sourceTy
       penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
     });
     if (path) {
-      services?.pathCache?.set?.(state.grid.version, fromTile, target, path);
+      services?.pathCache?.set?.(state.grid.version, fromTile, target, 0, path);
     }
   }
 
@@ -359,6 +360,17 @@ function shouldStarve(entity, dt, state, services, nowSec) {
   const current = Number(entity.hunger ?? 1);
 
   if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
+    const reachabilityRefreshThreshold = Math.max(hunger, NUTRITION_REACHABILITY_REFRESH_HUNGER);
+    if (current > reachabilityRefreshThreshold && Number(entity.starvationSec ?? 0) <= 0) {
+      entity.starvationSec = 0;
+      return {
+        shouldDie: false,
+        reachableFood: Boolean(entity.debug?.reachableFood),
+        nutritionSourceType: String(entity.debug?.nutritionSourceType ?? "none"),
+        isStarvationRisk: false,
+      };
+    }
+
     const nutrition = hasReachableNutritionSource(entity, state, services, nowSec);
     entity.debug ??= {};
     entity.debug.reachableFood = nutrition.reachable;
@@ -541,6 +553,15 @@ export class MortalitySystem {
         if (!entity.deathRecorded) {
           recordDeath(state, entity, Boolean(entity.debug?.reachableFood), String(entity.debug?.nutritionSourceType ?? "none"), deathEvents);
         }
+        continue;
+      }
+
+      if (entity.isStressWorker) {
+        entity.hunger = 1;
+        entity.rest = 1;
+        entity.morale = 1;
+        entity.mood = 1;
+        entity.starvationSec = 0;
         continue;
       }
 

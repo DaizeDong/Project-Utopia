@@ -44,6 +44,14 @@ function countNearbyTiles(state, center, tileTypes, radius = 1) {
   return count;
 }
 
+function getSabotageGridChangeCooldownSec(state) {
+  const runtimeProfile = String(state.ai?.runtimeProfile ?? "");
+  const totalEntities = Number(state.agents?.length ?? 0) + Number(state.animals?.length ?? 0);
+  const timeScale = Number(state.controls?.timeScale ?? 1);
+  if (runtimeProfile === "long_run" || totalEntities >= 650 || timeScale >= 7) return 10;
+  return 0;
+}
+
 function findScenarioZoneLabel(candidates, tile) {
   for (const candidate of candidates) {
     if (candidate.tiles.some((entry) => entry.ix === tile.ix && entry.iz === tile.iz)) {
@@ -238,12 +246,16 @@ function applySabotage(state, target, context, rng) {
   const sabotageCapReached = activeSabotageCount >= Number(eventTuning.maxConcurrentByType?.sabotage ?? Infinity);
   const defenseScore = Number(context?.wallCoverage ?? countNearbyTiles(state, target, [TILE.WALL], 1));
   const resistance = Math.max(0, Number(state.gameplay?.modifiers?.sabotageResistance ?? 1) - 1);
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const gridChangeCooldownSec = getSabotageGridChangeCooldownSec(state);
+  const lastGridChangeSec = Number(state.gameplay?.lastSabotageGridChangeSec ?? -Infinity);
+  const gridChangeRateLimited = gridChangeCooldownSec > 0 && nowSec - lastGridChangeSec < gridChangeCooldownSec;
   const blockChance = clamp(
     defenseScore * BALANCE.sabotageDefenseBlockPerWall + resistance * BALANCE.sabotageResistanceBlockWeight,
     0,
     0.85,
   );
-  const blocked = protectsLastWarehouse || sabotageCapReached || rng.next() < blockChance;
+  const blocked = protectsLastWarehouse || sabotageCapReached || gridChangeRateLimited || rng.next() < blockChance;
 
   if (!sabotageCapReached && !protectsLastWarehouse) {
     state.events.active.push({
@@ -261,6 +273,7 @@ function applySabotage(state, target, context, rng) {
         blockedByWalls: blocked,
         protectedWarehouse: protectsLastWarehouse,
         suppressedByAlert: sabotageCapReached,
+        gridChangeRateLimited,
       },
     });
   }
@@ -276,6 +289,8 @@ function applySabotage(state, target, context, rng) {
 
   state.grid.tiles[idx] = TILE.RUINS;
   state.grid.version += 1;
+  state.gameplay ??= {};
+  state.gameplay.lastSabotageGridChangeSec = nowSec;
 
   if (tile === TILE.WAREHOUSE) {
     state.resources.food = Math.max(0, state.resources.food - (3 + rng.next() * 6));
@@ -519,10 +534,40 @@ export class VisitorAISystem {
   }
 
   update(dt, state, services) {
+    const totalEntities = (state.agents?.length ?? 0) + (state.animals?.length ?? 0);
+    const requestedScale = Number(state.controls?.timeScale ?? 1);
+    const highLoad = totalEntities >= 650 || requestedScale >= 7;
+    const stride = highLoad
+      ? requestedScale >= 7
+        ? (totalEntities >= 1000 ? 3 : totalEntities >= 650 ? 2 : 1)
+        : (totalEntities >= 1000 ? 4 : totalEntities >= 650 ? 3 : 2)
+      : 1;
+    const phase = stride > 1 ? (Number(state.metrics?.tick ?? 0) % stride) : 0;
+    let visitorIndex = 0;
+    let processed = 0;
+    let skipped = 0;
+
     for (const visitor of state.agents) {
       if (visitor.type !== "VISITOR") continue;
       if (visitor.alive === false) continue;
+      const currentVisitorIndex = visitorIndex;
+      visitorIndex += 1;
       updateVisitorHunger(visitor, dt);
+
+      if (stride > 1 && (currentVisitorIndex % stride) !== phase) {
+        visitor._visitorAiAccumDt = Number(visitor._visitorAiAccumDt ?? 0) + dt;
+        if (hasActivePath(visitor, state)) {
+          visitor.desiredVel = followPath(visitor, state, dt).desired;
+        } else {
+          setIdleDesired(visitor);
+        }
+        skipped += 1;
+        continue;
+      }
+
+      const logicDt = Math.min(0.75, Number(visitor._visitorAiAccumDt ?? 0) + dt);
+      visitor._visitorAiAccumDt = 0;
+      processed += 1;
 
       const groupId = visitor.kind === VISITOR_KIND.TRADER ? "traders" : "saboteurs";
       const plan = planEntityDesiredState(visitor, state);
@@ -534,18 +579,28 @@ export class VisitorAISystem {
       visitor.debug.lastStateNode = stateNode;
 
       if (stateNode === "seek_food" || stateNode === "eat") {
-        runEatBehavior(visitor, state, dt, services);
+        runEatBehavior(visitor, state, logicDt, services);
       } else if (groupId === "traders" && (stateNode === "seek_trade" || stateNode === "trade")) {
-        traderTick(visitor, state, dt, services);
+        traderTick(visitor, state, logicDt, services);
       } else if (groupId === "saboteurs" && (stateNode === "scout" || stateNode === "sabotage" || stateNode === "evade")) {
-        saboteurTick(visitor, state, dt, services, stateNode);
+        saboteurTick(visitor, state, logicDt, services, stateNode);
       } else if (stateNode === "wander") {
-        runWander(visitor, state, dt, services);
+        runWander(visitor, state, logicDt, services);
       } else {
         setIdleDesired(visitor);
       }
 
-      updateIdleWithoutReasonMetric(visitor, stateNode, dt, state);
+      updateIdleWithoutReasonMetric(visitor, stateNode, logicDt, state);
+    }
+
+    if (state.debug) {
+      state.debug.visitorAiLod = {
+        stride,
+        processed,
+        skipped,
+        totalVisitors: visitorIndex,
+        reason: stride > 1 ? "high-load cadence" : "full-rate",
+      };
     }
   }
 }

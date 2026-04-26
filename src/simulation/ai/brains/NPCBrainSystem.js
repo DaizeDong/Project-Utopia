@@ -419,18 +419,17 @@ export class NPCBrainSystem {
       }
     }
 
+    const predators = state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [];
+    const herbivores = state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [];
+    const targetContext = { predators, herbivores };
     for (const e of [...state.agents, ...state.animals]) {
       e.policy = state.ai.groupPolicies.get(e.groupId)?.data ?? null;
       const groupTarget = state.ai.groupStateTargets?.get?.(e.groupId) ?? null;
       let targetForEntity = groupTarget;
       if (groupTarget) {
-        const context = {
-          predators: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [],
-          herbivores: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [],
-        };
-        const feasibilityContext = buildFeasibilityContext(e, String(e.groupId ?? ""), state, context);
+        const feasibilityContext = buildFeasibilityContext(e, String(e.groupId ?? ""), state, targetContext);
         const feasible = isStateFeasible(e, String(e.groupId ?? ""), groupTarget.targetState, state, {
-          ...context,
+          ...targetContext,
           feasibilityContext,
         });
         if (!feasible.ok) {
@@ -466,12 +465,13 @@ export class NPCBrainSystem {
       );
       if (memCtx) summary._memoryContext = memCtx;
     }
+    const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
-        source: state.ai.enabled ? "llm" : "fallback",
+        source: wantsLlm ? "llm" : "fallback",
         channel: "policy-request",
-        fallback: !state.ai.enabled,
+        fallback: !wantsLlm,
         model: state.metrics.proxyModel ?? services.llmClient.lastModel ?? "",
         weather: summary.world.weather.current,
         events: Object.keys(summary.groups).join(", "),
@@ -480,7 +480,7 @@ export class NPCBrainSystem {
       state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
     }
     this.pendingPromise = services.llmClient
-      .requestPolicies(summary, state.ai.enabled)
+      .requestPolicies(summary, wantsLlm)
       .then((result) => {
         this.pendingResult = result;
       })

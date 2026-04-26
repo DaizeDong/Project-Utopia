@@ -2426,7 +2426,7 @@
               <summary>Load &amp; Benchmark</summary>
               <div class="subpanel-body">
                 <div class="small muted">Extra Workers: <span id="extraWorkersLabel">0</span></div>
-                <input id="extraWorkers" type="range" min="0" max="500" value="0" />
+                <input id="extraWorkers" type="range" min="0" max="1000" value="0" />
                 <div class="benchmark-grid">
                   <button type="button" id="applyStressBtn" title="Spawn extra workers to stress-test performance">Apply Load</button>
                   <button type="button" id="runBenchmarkBtn" title="Start automated benchmark measurement">Run Benchmark</button>
@@ -2439,7 +2439,7 @@
               <summary>Time Controls</summary>
               <div class="subpanel-body">
                 <div class="small muted">Time Scale: <span id="timeScaleLabel">1.00x</span></div>
-                <input id="timeScale" type="range" min="25" max="400" value="100" />
+                <input id="timeScale" type="range" min="25" max="800" value="100" />
                 <div class="time-grid">
                   <button type="button" id="pauseBtn" title="Pause or resume the simulation">Pause</button>
                   <button type="button" id="step1Btn" title="Advance simulation by 1 tick while paused">Step x1</button>
@@ -2469,6 +2469,8 @@
               </div>
             </details>
             <div class="small muted" id="benchmarkStatusVal" style="margin-top:6px">Benchmark: idle</div>
+            <div class="small muted" id="performanceSummaryVal" style="margin-top:3px">Performance: sampling</div>
+            <div class="small muted" id="benchmarkLastRunVal" style="margin-top:3px">Last benchmark: none</div>
             <div class="small muted" id="simControlVal" style="margin-top:3px">Sim: running | simDt=0.000 | steps=0</div>
             <div class="small muted" id="workerBreakdownVal" style="margin-top:3px">Workers: base=0 stress=0 total=0</div>
           </div>
@@ -2693,21 +2695,18 @@
         <button id="helpModalCloseBtn" class="help-close" type="button" title="Close (ESC)" aria-label="Close help">&times;</button>
       </div>
       <div class="help-tabs" role="tablist">
-        <button class="help-tab" type="button" data-help-tab="controls" role="tab">Controls</button>
-        <button class="help-tab active" type="button" data-help-tab="chain" role="tab">Resource Chain</button>
+        <button class="help-tab active" type="button" data-help-tab="controls" role="tab">Controls</button>
+        <button class="help-tab" type="button" data-help-tab="chain" role="tab">Resource Chain</button>
         <button class="help-tab" type="button" data-help-tab="threat" role="tab">Threat &amp; Prosperity</button>
         <!-- Differentiation tab: LLM AI Director, Heat Lens, and map templates. -->
         <button class="help-tab" type="button" data-help-tab="different" role="tab">What makes Utopia different</button>
       </div>
       <div class="help-body">
-        <!-- v0.8.2 Round-6 Wave-1 01a-onboarding (Step 5): default open tab
-             switched from "controls" to "chain". First-time players were
-             greeted by a wall of hotkeys; the Resource Chain page is the
-             actually useful primer. Help is reopened with F1/?, so power
-             users can still reach Controls in one click. Hotkey copy below
-             also updated: "0 resets camera" was a lie (Digit0 is the
+        <!-- v0.8.2 Round-9 W6: default open tab restored to Controls so
+             F1/? and first open land on the same page as the first tab.
+             Hotkey copy below also notes that "0 resets camera" was a lie (Digit0 is the
              kitchen tool binding); reset camera is R or Home. -->
-        <section class="help-page" data-help-page="controls">
+        <section class="help-page active" data-help-page="controls">
           <h3>Basic Controls</h3>
           <ul>
             <li><b>Left click</b> — build the selected tool on a tile, or select a worker/visitor/animal.</li>
@@ -2726,7 +2725,7 @@
             <li>Connect buildings with <b>Roads</b> — they speed hauling significantly.</li>
           </ul>
         </section>
-        <section class="help-page active" data-help-page="chain">
+        <section class="help-page" data-help-page="chain">
           <h3>Resource Chain</h3>
           <p>Raw resources become refined goods through processing buildings. Workers haul resources to warehouses; processors pull from storage.</p>
           <ul>
@@ -2774,7 +2773,21 @@
       const tabs = modal.querySelectorAll('.help-tab');
       const pages = modal.querySelectorAll('.help-page');
 
-      function openHelp() {
+      function setHelpTab(key = 'controls') {
+        const targetKey = typeof key === 'string' ? key : 'controls';
+        tabs.forEach((btn) => {
+          const active = btn.dataset.helpTab === targetKey;
+          btn.classList.toggle('active', active);
+        });
+        pages.forEach((p) => {
+          const active = p.dataset.helpPage === targetKey;
+          p.classList.toggle('active', active);
+          p.style.display = active ? '' : 'none';
+        });
+      }
+
+      function openHelp(tabKey = 'controls') {
+        setHelpTab(tabKey);
         modal.removeAttribute('hidden');
         try { localStorage.setItem('utopia:helpSeen', '1'); } catch {}
       }
@@ -2800,13 +2813,7 @@
       // Tab switching
       tabs.forEach((btn) => {
         btn.addEventListener('click', () => {
-          const key = btn.dataset.helpTab;
-          tabs.forEach((b) => b.classList.toggle('active', b === btn));
-          pages.forEach((p) => {
-            const active = p.dataset.helpPage === key;
-            p.classList.toggle('active', active);
-            p.style.display = active ? '' : 'none';
-          });
+          setHelpTab(btn.dataset.helpTab);
         });
       });
       // Init: ensure all non-active pages are hidden via style.display

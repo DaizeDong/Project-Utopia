@@ -13,8 +13,8 @@ function buildAutopilotToggleCopy(enabled) {
     };
   }
   return {
-    actionMessage: "Autopilot off. Manual guidance active; background director may still react.",
-    title: "Autopilot is off. You choose actions; background director systems may still react.",
+    actionMessage: "Autopilot off. Manual guidance active; rule builders and directors are idle.",
+    title: "Autopilot is off. You choose actions; automatic phase builders and connector builders are idle.",
   };
 }
 
@@ -28,6 +28,29 @@ export function getAutopilotRemainingSec(state) {
   const last = Number(state?.ai?.lastPolicyResultSec ?? NaN);
   if (!Number.isFinite(last) || last < 0) return intervalSec;
   return Math.max(0, intervalSec - Math.max(0, now - last));
+}
+
+export function getAutomationModeSummary(state) {
+  const enabled = Boolean(state?.ai?.enabled);
+  const allowRepair = Boolean(state?.ai?.allowScenarioRepairWhenAutopilotOff);
+  const liveLlm = String(state?.ai?.lastPolicySource ?? "").toLowerCase() === "llm"
+    || String(state?.ai?.lastEnvironmentSource ?? "").toLowerCase() === "llm";
+  const proxyHealth = String(state?.metrics?.proxyHealth ?? "").toLowerCase();
+  const lastError = String(state?.ai?.lastError ?? state?.ai?.lastPolicyError ?? "").trim();
+  const llmLabel = liveLlm && proxyHealth !== "error" ? "LLM live" : "rules/fallback";
+  const directorLabel = enabled
+    ? "director active"
+    : allowRepair ? "scenario repair only" : "director idle";
+  const builderLabel = enabled ? "builders active" : "builders idle";
+  const recoveryLabel = state?.ai?.foodRecoveryMode ? "food recovery" : "normal";
+  return {
+    llmLabel,
+    directorLabel,
+    builderLabel,
+    recoveryLabel,
+    text: `${builderLabel}; ${directorLabel}; ${llmLabel}`,
+    title: `Automation subsystems: Autopilot=${enabled ? "on" : "off"}, ${builderLabel}, ${directorLabel}, NPC policy=${llmLabel}, recovery=${recoveryLabel}${lastError ? `, last AI error=${lastError}` : ""}.`,
+  };
 }
 
 export function getAutopilotStatus(state, options = {}) {
@@ -49,6 +72,7 @@ export function getAutopilotStatus(state, options = {}) {
   // the colony, return a hard-stop teaching string instead of the
   // optimistic "Autopilot ON · rule-based" banner.
   const pausedByCrisis = Boolean(state?.ai?.pausedByCrisis);
+  const automationSummary = getAutomationModeSummary(state);
   if (pausedByCrisis) {
     return {
       enabled,
@@ -59,7 +83,7 @@ export function getAutopilotStatus(state, options = {}) {
       remainingSec,
       pausedByCrisis: true,
       text: "Autopilot PAUSED \u00b7 food crisis \u2014 press Space or toggle to resume",
-      title: "Autopilot paused: food crisis. Check Farm/Warehouse connectivity and resume when food is steady.",
+      title: `Autopilot paused: food crisis. Check Farm/Warehouse connectivity and resume when food is steady. ${automationSummary.title}`,
     };
   }
   // v0.8.2 Round-5 Wave-3 (01e Step 4) — render "fallback/fallback" as the
@@ -88,17 +112,17 @@ export function getAutopilotStatus(state, options = {}) {
   // Dev banner keeps the verbose engineer copy: countdown + offline tag.
   const devBaseText = enabled
     ? `Autopilot ON - ${combinedModeLabel} - next policy in ${remainingSec.toFixed(1)}s`
-    : "Autopilot off. Manual guidance active; director may still react.";
+    : "Autopilot OFF - manual; builders/director idle.";
   // Casual banner: short, no countdown. Strips the engineer cadence
   // (per reviewer feedback #2 "Autopilot ON - rule-based - next policy in
   // 9.8s ..." was visually overwhelming on the 1024×768 chip).
   const casualBaseText = enabled
     ? `Autopilot ON \u00b7 ${casualMode}`
-    : "Autopilot off. Manual guidance active; director may still react.";
+    : "Autopilot OFF \u00b7 manual; builders/director idle";
   const baseText = devMode ? devBaseText : casualBaseText;
   const baseTitle = enabled
-    ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s.`
-    : "Autopilot off. You choose actions; background director systems may still react.";
+    ? `Autopilot ON: mode=${aiMode}, coverage=${coverageTarget}, next policy in ${remainingSec.toFixed(1)}s. ${automationSummary.title}`
+    : `Autopilot off. You choose actions; automatic phase builders are idle. ${automationSummary.title}`;
   // Dev-only: append the LLM-offline → DIRECTOR steering tag to the chip.
   // Casual players already see the ⚠ Storyteller badge for that signal.
   const llmText = (devMode && enabled && llmOffline)
@@ -119,9 +143,12 @@ export function getAutopilotStatus(state, options = {}) {
     && (food <= struggleFoodFloor || starvRisk > 0)
     && (nowSec - enableSec) >= graceSec;
 
-  const text = struggling
-    ? `${llmText} | Autopilot struggling \u2014 manual takeover recommended`
+  const recoveryText = enabled && state?.ai?.foodRecoveryMode
+    ? `${llmText} | Recovery: food runway - expansion paused`
     : llmText;
+  const text = struggling
+    ? `${recoveryText} | Autopilot struggling \u2014 manual takeover recommended`
+    : recoveryText;
   const title = struggling
     ? `${llmTitle} \u2014 colony food is below emergency line; consider disabling autopilot and rebuilding farms manually.`
     : llmTitle;

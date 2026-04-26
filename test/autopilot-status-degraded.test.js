@@ -73,6 +73,6 @@ test("getAutopilotStatus: autopilot OFF shape carries manual-guidance boundary",
     metrics: { timeSec: 0, proxyHealth: "error" },
   });
   assert.equal(status.enabled, false);
-  assert.equal(status.text, "Autopilot off. Manual guidance active; director may still react.");
+  assert.equal(status.text, "Autopilot OFF · manual; builders/director idle");
   assert.ok(!/LLM offline/.test(status.text));
 });

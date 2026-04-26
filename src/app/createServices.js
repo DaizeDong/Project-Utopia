@@ -1,4 +1,5 @@
 import { PathCache } from "../simulation/navigation/PathCache.js";
+import { PathWorkerPool } from "../simulation/navigation/PathWorkerPool.js";
 import { LLMClient } from "../simulation/ai/llm/LLMClient.js";
 import { buildEnvironmentFallback, buildPolicyFallback } from "../simulation/ai/llm/PromptBuilder.js";
 import { SeededRng, deriveRngSeed } from "./rng.js";
@@ -101,8 +102,12 @@ export function createServices(seed = 1337, options = {}) {
   // still use the 3ms budget (real FPS matters on slow devices); bench
   // harnesses pay the wall-clock cost but get bit-identical outcomes.
   const pathBudgetMaxMs = options.deterministic ? Infinity : 3;
+  const pathWorkerPool = !options.deterministic && options.enablePathWorkers !== false
+    ? new PathWorkerPool(options.pathWorkers ?? {})
+    : null;
   return {
     pathCache: new PathCache(700),
+    pathWorkerPool,
     pathBudget: {
       tick: -1,
       usedMs: 0,
@@ -122,5 +127,8 @@ export function createServices(seed = 1337, options = {}) {
     leaderboardService: createLeaderboardService(
       typeof localStorage !== "undefined" ? localStorage : null,
     ),
+    dispose() {
+      pathWorkerPool?.dispose?.();
+    },
   };
 }

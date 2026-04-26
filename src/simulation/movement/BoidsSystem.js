@@ -220,37 +220,81 @@ export class BoidsSystem {
     return this.entityBuffer;
   }
 
+  #integrateSimple(entities, state, simDt, boundsX, boundsZ) {
+    for (let i = 0; i < entities.length; i += 1) {
+      const e = entities[i];
+      if (e.alive === false) continue;
+      const desired = e.desiredVel;
+      const desiredX = desired ? Number(desired.x ?? 0) : 0;
+      const desiredZ = desired ? Number(desired.z ?? 0) : 0;
+      e.vx = e.vx + (desiredX - e.vx) * 0.18;
+      e.vz = e.vz + (desiredZ - e.vz) * 0.18;
+      const prevX = e.x;
+      const prevZ = e.z;
+      e.x = clamp(e.x + e.vx * simDt, -boundsX, boundsX);
+      e.z = clamp(e.z + e.vz * simDt, -boundsZ, boundsZ);
+      const newTile = worldToTile(e.x, e.z, state.grid);
+      if (inBounds(newTile.ix, newTile.iz, state.grid)) {
+        const tileType = state.grid.tiles[newTile.ix + newTile.iz * state.grid.width];
+        const tileInfo = TILE_INFO[tileType];
+        if (tileInfo && !tileInfo.passable) {
+          e.x = prevX;
+          e.z = prevZ;
+          e.vx *= 0.1;
+          e.vz *= 0.1;
+        }
+      }
+    }
+  }
+
   update(dt, state) {
     const entities = this.#collectEntities(state);
     if (entities.length === 0) return;
 
+    const boundsX = (state.grid.width * state.grid.tileSize) / 2 - 0.5;
+    const boundsZ = (state.grid.height * state.grid.tileSize) / 2 - 0.5;
     let simDt = dt;
     let updateIntervalSec = dt;
     if (entities.length >= this.highLoadEntityThreshold) {
+      const requestedScale = Math.max(1, Number(state.controls?.timeScale ?? 1) || 1);
+      const targetWallHz = requestedScale >= 7
+        ? (entities.length >= 1000 ? 10 : entities.length >= 650 ? 12 : 15)
+        : (entities.length >= 1000 ? 5 : entities.length >= 650 ? 8 : 15);
+      const highLoadStepSec = Math.max(this.highLoadStepSec, requestedScale / targetWallHz);
       this.highLoadAccumulator += dt;
-      updateIntervalSec = this.highLoadStepSec;
-      if (this.highLoadAccumulator < this.highLoadStepSec) {
+      updateIntervalSec = highLoadStepSec;
+      if (this.highLoadAccumulator < highLoadStepSec) {
+        this.#integrateSimple(entities, state, dt, boundsX, boundsZ);
+        if (state.debug) {
+          state.debug.boids = {
+            ...(state.debug.boids ?? {}),
+            entities: entities.length,
+            lod: `simple-move ${entities.length} entities; flock solve ${targetWallHz.toFixed(1)}Hz target`,
+            updateIntervalSec,
+          };
+        }
         return;
       }
-      simDt = this.highLoadAccumulator;
+      simDt = dt;
       this.highLoadAccumulator = 0;
     } else {
       this.highLoadAccumulator = 0;
     }
 
     const hash = buildSpatialHash(entities, 2.0, this.hash);
-    const boundsX = (state.grid.width * state.grid.tileSize) / 2 - 0.5;
-    const boundsZ = (state.grid.height * state.grid.tileSize) / 2 - 0.5;
     let totalNeighbors = 0;
     let totalSpeed = 0;
     let maxSpeed = 0;
+    const maxNeighborSamples = entities.length >= 1000 ? 12
+      : entities.length >= 650 ? 24
+        : 72;
 
     for (let i = 0; i < entities.length; i += 1) {
       const e = entities[i];
       const desired = e.desiredVel;
       const desiredX = desired ? desired.x : 0;
       const desiredZ = desired ? desired.z : 0;
-      const neighbors = queryNeighbors(hash, e, this.neighborBuffer, 72);
+      const neighbors = queryNeighbors(hash, e, this.neighborBuffer, maxNeighborSamples);
       totalNeighbors += Math.max(0, neighbors.length - 1);
       boidsSteer(e, neighbors, desiredX, desiredZ, this.steerOut);
 
