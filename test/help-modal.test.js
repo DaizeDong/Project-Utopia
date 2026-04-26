@@ -34,7 +34,7 @@ test("index.html exposes helpBtn and overlayHelpBtn entry points", () => {
   );
   assert.match(
     HTML,
-    /document\.getElementById\('overlayHelpBtn'\)\?\.addEventListener\('click', openHelp\)/,
+    /document\.getElementById\('overlayHelpBtn'\)\?\.addEventListener\('click'/,
     "overlay How-to-Play button should open the modal",
   );
   assert.match(HTML, /Open the strategic briefing on demand - template differences, heat lens, survival score\./);
@@ -99,4 +99,29 @@ test("Help modal decision pages mention the opening contract, heat lens, and sur
   assert.match(differentPage[0], /Supply-Chain Heat Lens/);
   assert.match(differentPage[0], /Templates change the whole run/);
   assert.match(differentPage[0], /opening pressure changes immediately/i);
+});
+
+test("overlayHelpBtn binding uses stopPropagation (v0.8.2 Round-7 01a regression)", () => {
+  assert.match(
+    HTML,
+    /overlayHelpBtn[\s\S]{0,200}stopPropagation/,
+    "overlayHelpBtn click handler should call stopPropagation",
+  );
+});
+
+test("Help tab JS uses style.display assignment (v0.8.2 Round-7 01a regression)", () => {
+  assert.match(
+    HTML,
+    /style\.display\s*=/,
+    "Help tab switching JS should use style.display assignment for double-insurance",
+  );
+});
+
+test("Help tab init hides non-active pages via style.display (v0.8.2 Round-7 01a regression)", () => {
+  // The init block sets style.display = 'none' on non-active pages at script startup
+  assert.match(
+    HTML,
+    /style\.display\s*=\s*['"]none['"]/,
+    "Init block should set style.display='none' on non-active help pages",
+  );
 });
