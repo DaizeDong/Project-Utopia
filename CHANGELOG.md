@@ -1,5 +1,64 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-7 Stage C Wave 1 (01a/01b/02a)
+
+### New Features (Round-7 01a — overlayHelpBtn + Help Tab + HUD digest)
+- **overlayHelpBtn stopPropagation** (`index.html`): The "How to Play" overlay button now wraps its click handler in an arrow function calling `e.stopPropagation()` + `e.preventDefault()` to prevent the menu backdrop click-outside-close from swallowing the button click.
+- **Help Tab CSS specificity fix** (`index.html`): `.help-page { display: none }` / `.help-page.active { display: block }` selectors promoted to `#helpModal .help-body .help-page` with `!important` so generic stylesheet overrides can no longer ghost-show inactive tabs.
+- **Help Tab JS double-insurance** (`index.html`): Tab click handler now also sets `p.style.display` directly (empty string for active, `'none'` for inactive); init block hides all non-active pages via `style.display = 'none'` at script startup.
+- **causalDigest HUD chip** (`src/ui/hud/HUDController.js`): `#renderNextAction` now reads `getCausalDigest(state)` and, when `digest.severity === 'error'` and advice priority is not already `'critical'`, overrides `loopText` with `digest.action` and sets `data-severity="critical"` on the chip.
+- **Food crisis pulse** (`src/ui/hud/HUDController.js` + `index.html`): `render()` adds/removes `.hud-critical-pulse` class on `statusFood` when `resourceEmptySec.food` is between 0 and 120 seconds; `@keyframes hud-critical-pulse` + `.hud-critical-pulse` CSS rule added.
+- **EntityFocus default-collapsed** (`src/ui/panels/EntityFocusPanel.js`): Removed `open` attribute from `focus:character`, `focus:why`, `focus:last-ai-exchange`, and the exchange root `<details>` so AI exchange / blackboard / path nodes all start collapsed.
+
+### New Tests (Round-7 01a)
+- `test/help-modal.test.js` (+3 regression cases): overlayHelpBtn binding uses stopPropagation; Help tab JS uses `style.display` assignment; init block sets `style.display='none'` on non-active pages.
+
+### Files Changed (Round-7 01a)
+- `index.html` — overlayHelpBtn arrow fn wrapper; `.help-page` CSS specificity + `!important`; tab-switch `style.display` dual write + init hide; `@keyframes hud-critical-pulse` + `.hud-critical-pulse` CSS.
+- `src/ui/hud/HUDController.js` — `#renderNextAction`: causalDigest override (non-critical only); `render()`: food-ETA pulse add/remove.
+- `src/ui/panels/EntityFocusPanel.js` — removed `open` from character/why/last-ai-exchange/exchange-root `<details>`.
+- `test/help-modal.test.js` — updated overlayHelpBtn assertion pattern; +3 regression tests.
+
+---
+
+### New Features (Round-7 01b — type=button + preventDefault + food 400 + rate sign + advisor)
+- **type="button" audit** (`index.html`): All 54 `<button>` elements without an explicit `type` attribute now carry `type="button"`, preventing accidental form submission in nested-form contexts.
+- **canvas preventDefault** (`src/render/SceneRenderer.js`): `#onPointerDown` calls `event.preventDefault()` immediately after the `button !== 0` guard, preventing text-selection/context-menu side effects on left-click drag.
+- **Toast 2s message dedup** (`src/render/SceneRenderer.js`): `#spawnFloatingToast` now maintains a `_lastToastTextMap` that suppresses identical toast messages within 2 seconds, eliminating repetitive "Selected X" storms.
+- **Initial food 200 → 400** (`src/config/balance.js`): `INITIAL_RESOURCES.food` raised from 200 to 400 to extend the early-game food runway and reduce day-1 starvation rate.
+- **Rate sign cross-check** (`src/ui/hud/HUDController.js`): `formatRate` now accepts an optional `stockSec` parameter; when stock < 120s but rate shows positive (measurement window lag), displays `≈ 0/min` instead of false `+X/min`. Applied to food and meals rate badges.
+- **Suppress repeated error flicker** (`src/ui/hud/HUDController.js`): `render()` skips DOM update for `statusAction` when `actionKind === 'error'` and the new message equals the last rendered message.
+- **No-farms emergency advisor** (`src/ui/hud/nextActionAdvisor.js`): New highest-priority rule fires when `food < 80`, `buildings.farms === 0`, and `timeSec > 10`, returning a critical `"No farms — place a Farm on green terrain"` advisory.
+
+### Files Changed (Round-7 01b)
+- `index.html` — `type="button"` added to 54 buttons.
+- `src/render/SceneRenderer.js` — `#onPointerDown` `event.preventDefault()`; `#spawnFloatingToast` 2s text dedup.
+- `src/config/balance.js` — `INITIAL_RESOURCES.food` 200 → 400.
+- `src/ui/hud/HUDController.js` — `formatRate` stockSec param + cross-check; repeated error DOM skip.
+- `src/ui/hud/nextActionAdvisor.js` — no-farms emergency rule (priority: critical).
+
+---
+
+### New Features (Round-7 02a — starving preempt + carry-eat + event visibility)
+- **Starving preempt constants** (`src/config/balance.js`): Added `workerStarvingPreemptThreshold: 0.22` and `workerCarryEatInEmergency: true` to `BALANCE`.
+- **starving-preempt rule** (`src/simulation/npc/state/StatePlanner.js`): `deriveWorkerDesiredState` now checks hunger against `workerStarvingPreemptThreshold` at the very top of the function (before hysteresis). If hunger is critically low and a food source (warehouse or carry) is available, immediately returns `seek_food` / `eat`.
+- **seek_food / eat protected states** (`src/simulation/npc/state/StatePlanner.js`): `isProtectedLocalState` now also protects `seek_food` and `eat` for the workers group, preventing policy override from interrupting an in-progress eating action.
+- **carry-eat emergency ration** (`src/simulation/npc/WorkerAISystem.js`): `consumeEmergencyRation` now falls back to `worker.carry.food` when `state.resources.food <= 0`, deducting from carry instead of returning early. Workers no longer silently skip emergency eating just because the warehouse pool is dry.
+- **WAREHOUSE_FIRE → objectiveLog** (`src/world/events/WorldEventSystem.js`): After each `WAREHOUSE_FIRE` event, a dedup-guarded (30s per tile) entry is pushed to `state.gameplay.objectiveLog` with the tile coords and total loss. Log is capped at 24 entries.
+- **VERMIN_SWARM → objectiveLog** (`src/world/events/WorldEventSystem.js`): Same pattern for vermin events, reporting food loss.
+- **runout warn-critical → objectiveLog** (`src/ui/hud/HUDController.js`): `#renderRunoutHints` now pushes a `"Warning: <resource> nearly depleted (< 60s)"` entry to `objectiveLog` when runout smoothed is below 60s, with a 45s per-resource dedup window.
+- **EventPanel 3 → 6 entries + keyword coloring** (`src/ui/panels/EventPanel.js`): Recent log block now shows up to 6 entries instead of 3. Each entry is colored: `warn-critical` class for lines containing `fire`, `died`, or `depleted`; `warn-soon` for lines containing `Warning`.
+
+### Files Changed (Round-7 02a)
+- `src/config/balance.js` — `workerStarvingPreemptThreshold` + `workerCarryEatInEmergency` constants.
+- `src/simulation/npc/state/StatePlanner.js` — starving-preempt block in `deriveWorkerDesiredState`; `seek_food`/`eat` added to `isProtectedLocalState`.
+- `src/simulation/npc/WorkerAISystem.js` — `consumeEmergencyRation` carry-food fallback path.
+- `src/world/events/WorldEventSystem.js` — module-level `_warehouseObjLogDedup` map; fire + vermin event → objectiveLog push.
+- `src/ui/hud/HUDController.js` — `#renderRunoutHints` objectiveLog push (45s dedup).
+- `src/ui/panels/EventPanel.js` — `slice(0,3)` → `slice(0,6)`; keyword-based CSS class for severity.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-6 Wave-3 02e-indie-critic: author voice channel + finale ceremony
 
 **Scope:** Reviewer 02e-indie-critic scored 4/10. The single biggest unsatisfied promise was author voice penetration ~30% — i.e. prose was already written elsewhere in the repo (Worker memory streams, BuildAdvisor tooltips, ScenarioFactory openingPressure) but never reached the player's eye during play. This plan opens three new transport channels (no new prose authored): (a) extends `SALIENT_BEAT_PATTERNS` from 10 → 15 to include friendship / birth-of / named-after / dream / grieving so kinship beats finally reach `#storytellerBeat` + the new ticker; (b) adds `#authorTickerStrip` below the HUD topbar — a 4-second-dwell ring buffer surfacing those beats with a coloured icon by kind; (c) adds a `#overlayEndAuthorLine` paragraph to the end panel and a 4-band devTier-aware finale title so the run closes with a sentence the player saw on the menu briefing. UI-only changes; no sim-system edits, no LLM dependency, no new mechanic.
