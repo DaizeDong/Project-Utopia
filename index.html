@@ -81,6 +81,10 @@
       flex-shrink: 1; min-width: 0;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    /* Scenario headline in scoreboard can shrink to give priority to Survived + Autopilot */
+    #statusScoreboard #statusScenarioHeadline {
+      flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     /* Scenario headline — keep single line */
     .hud-scenario {
       -webkit-line-clamp: unset;
@@ -95,12 +99,13 @@
     #statusScoreboard #statusScoreBreak { display: none !important; }
     /* Crisis alert — keep visible but constrained */
     #statusAutopilotCrisis { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* Autopilot chip — widened to fit status text */
-    #aiAutopilotChip { flex-shrink: 1; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    /* Autopilot chip — never shrink below legibility; priority over middle content */
+    #aiAutopilotChip { flex-shrink: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
     /* Objective — show only survival time; hide score and dev (they live in Debug panel) */
     #statusObjective {
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       display: inline-flex; flex-wrap: nowrap; gap: 4px;
+      flex-shrink: 0;
     }
     #statusObjective span { white-space: nowrap; }
     #statusBar #statusObjectiveScore,
@@ -141,6 +146,7 @@
     .hud-meter { display: flex; flex-direction: column; gap: 0; min-width: 26px; }
     .hud-label { font-size: 11px; font-weight: 800; line-height: 1.1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
     .hud-sublabel { font-size: 8px; font-weight: 700; line-height: 1; opacity: 0.65; color: var(--text-muted, #9cb3c9); }
+    .hud-label-sm { font-size: 9px; color: rgba(200,224,248,0.55); margin-right: 2px; letter-spacing: 0.02em; line-height: 1; }
     /* Hide progress bars in status bar — too tall for 32px bar */
     #statusBar .hud-bar { display: none; }
     .hud-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
@@ -565,6 +571,10 @@
       box-shadow: 0 0 24px rgba(255, 193, 7, 0.42), 0 2px 14px rgba(0, 0, 0, 0.45);
       font-size: 14px;
       font-weight: 900;
+      /* Keep milestone toasts compact — they previously spanned ~40% screen width */
+      max-width: 320px;
+      white-space: normal;
+      word-break: break-word;
     }
     @keyframes toastFloat {
       0%   { opacity: 0; transform: translate(-50%, -40%); }
@@ -1389,7 +1399,7 @@
       user-select: none;
     }
     .hud-warn-badge[hidden] { display: none !important; }
-    /* Responsive status bar */
+    /* Responsive status bar + sidebar at 1024px */
     @media (max-width: 1024px) {
       #statusBar {
         height: auto; max-height: none; flex-wrap: wrap;
@@ -1401,6 +1411,28 @@
       #statusScenario,
       #statusScoreBreak { display: none; }
       #alertStack { top: 38px; right: 44px; max-width: min(280px, calc(100vw - 52px)); }
+      /* Sidebar collapses to a bottom bar so game canvas stays playable */
+      #sidebar {
+        position: fixed; bottom: 0; left: 0; right: 0; top: auto;
+        width: 100%; height: auto; flex-direction: column;
+        border-top: 1px solid rgba(61,155,233,0.3);
+        transform: none !important;
+        overflow: visible;
+      }
+      #wrap:not(.sidebar-open) #sidebar { transform: none !important; }
+      #sidebarTabStrip {
+        order: 0; width: 100%; flex-direction: row;
+        height: 36px; overflow-x: auto; overflow-y: hidden;
+        padding: 2px 4px; gap: 3px;
+        border-right: none; border-top: none;
+      }
+      .sidebar-tab-btn {
+        writing-mode: horizontal-tb; transform: none;
+        min-height: 28px; padding: 4px 10px; font-size: 10px;
+        white-space: nowrap; flex-shrink: 0;
+      }
+      #sidebarPanelArea { padding-top: 0; max-height: 40vh; overflow-y: auto; }
+      #wrap.sidebar-open #statusBar { right: 0; }
     }
     @media (min-width: 1025px) and (max-width: 1200px) {
       .hud-scenario { max-width: 160px; }
@@ -1838,20 +1870,21 @@
         <div class="hud-divider" data-resource-tier="secondary"></div>
         <div class="hud-resource" id="hudMeals" data-resource-tier="secondary" title="Meals — cooked in kitchens from food, boosts prosperity">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="Meals" class="hud-icon" />
-          <div class="hud-meter"><span class="hud-label" id="statusMeals">0</span></div>
+          <div class="hud-meter"><span class="hud-label-sm">Meals</span><span class="hud-label" id="statusMeals">0</span></div>
         </div>
         <div class="hud-resource" id="hudTools" data-resource-tier="secondary" title="Tools — forged in smithies from stone+wood, boosts production">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="Tools" class="hud-icon" />
-          <div class="hud-meter"><span class="hud-label" id="statusTools">0</span></div>
+          <div class="hud-meter"><span class="hud-label-sm">Tools</span><span class="hud-label" id="statusTools">0</span></div>
         </div>
         <div class="hud-resource" id="hudMedicine" data-resource-tier="secondary" title="Medicine — produced in clinics from herbs, heals injured workers">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="Medicine" class="hud-icon" />
-          <div class="hud-meter"><span class="hud-label" id="statusMedicine">0</span></div>
+          <div class="hud-meter"><span class="hud-label-sm">Med</span><span class="hud-label" id="statusMedicine">0</span></div>
         </div>
         <div class="hud-divider" data-resource-tier="secondary"></div>
         <div class="hud-resource" id="hudProsperity" data-resource-tier="secondary" title="Prosperity — higher is better. Colony well-being score. Rising prosperity attracts new settlers and unlocks growth.">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Misc/Golden Coin.png" alt="Prosperity" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-label-sm">Prosp</span>
             <span class="hud-label" id="statusProsperity">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-prosperity" id="statusProsperityBar"></div></div>
           </div>
@@ -1859,6 +1892,7 @@
         <div class="hud-resource" id="hudThreat" data-resource-tier="secondary" title="Threat — lower is safer. Danger level from hunger, injuries, raids. High threat triggers raids and worker losses.">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Monster Part/Skull.png" alt="Threat" class="hud-icon" />
           <div class="hud-meter">
+            <span class="hud-label-sm">Threat</span>
             <span class="hud-label" id="statusThreat">0</span>
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-threat" id="statusThreatBar"></div></div>
           </div>

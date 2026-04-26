@@ -252,6 +252,7 @@ export class GameStateOverlay {
       this.handlers.onStart?.();
     });
     resetFromMenuBtn?.addEventListener("click", () => {
+      if (!confirm("Start a new map? Your current colony progress will be lost.")) return;
       if (resetFromMenuBtn) {
         resetFromMenuBtn.textContent = "Generating...";
         resetFromMenuBtn.disabled = true;
@@ -271,6 +272,7 @@ export class GameStateOverlay {
     });
     resetBtn?.addEventListener("click", () => {
       if (this.#isEndGateActive()) return;
+      if (!confirm("Start a new map? Your current colony progress will be lost.")) return;
       this.handlers.onReset?.();
     });
 
