@@ -2809,6 +2809,7 @@ export class SceneRenderer {
 
   #onPointerDown(event) {
     if (event.button !== 0) return;
+    event.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
@@ -2946,8 +2947,12 @@ export class SceneRenderer {
       if (!this.toastLayer) return;
     }
     if (!this.toastLayer || !this.camera) return;
-    // Throttle: ignore duplicate clicks on the same tile within 100ms.
+    // 2s message-text dedup: suppress identical toast messages within 2 seconds.
+    this._lastToastTextMap ??= new Map();
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (this._lastToastTextMap.has(text) && now - this._lastToastTextMap.get(text) < 2000) return;
+    this._lastToastTextMap.set(text, now);
+    // Throttle: ignore duplicate clicks on the same tile within 100ms.
     const key = `${tileIx},${tileIz}`;
     if (key === this.lastToastTileKey && (now - this.lastToastTimeMs) < 100) return;
     this.lastToastTileKey = key;
