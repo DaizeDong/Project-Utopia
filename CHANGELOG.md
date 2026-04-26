@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-7 02c: COOK deadlock fix + settings quota floor + ColonyPlanner advisory
+
+### Bug Fixes (Round-7 02c)
+- **COOK=0 deadlock root fix** (`src/simulation/ai/colony/ColonyPlanner.js`): Removed the `food >= idleChainThreshold` gate from the Priority 3.75 COOK reassign_role step. Previously the planner would only request a COOK when food was above a threshold — but with no COOK, the kitchen never ran, so food never accumulated, so the threshold was never met (chicken-egg). Correct logic: if `kitchens >= 1 && cookWorkers === 0`, always emit `reassign_role COOK` regardless of food level. Priority promoted from `"high"` to `"critical"`.
+- **Settings quota floor** (`src/simulation/ai/colony/ColonyPlanner.js`): The fallback planner now reads `state.settings?.roleQuotaCook`, `state.settings?.roleQuotaSmith`, and `state.settings?.roleQuotaHerbalist` (plus `state.controls.roleQuotas.*` sentinel-99 aware) as hard lower bounds. If the player has set a minimum quota and fewer workers are assigned than that quota, a `reassign_role` step is emitted. For SMITH/HERBALIST, the existing stone/herbs resource gates are retained; for COOK, any positive quota beats the no-food-gate fix.
+
+### New Features (Round-7 02c)
+- **`ColonyPlanner.getAdvisoryRecommendation(state)`** — new static method (pure read, no side effects) for the manual-mode HUD advisory chip. Priority order: (1) Kitchen idle + COOK=0 → critical; (2) Food ETA < 90s + no farms → critical; (3) Food ETA < 60s → high; (4) devIndex < 20 → medium; (5) stable → low. Returns `{ text: string, urgency: 'critical'|'high'|'medium'|'low' }`.
+
+### Test Changes (Round-7 02c)
+- `test/colony-planner-idle-chain.test.js`: Updated the "food=5 below lowPopThreshold → NO reassign" test to assert the opposite (reassign IS emitted), because the food-gate removal is the intentional deadlock fix. Test renamed and comment explains the root-cause change.
+
+### Files Changed (Round-7 02c)
+- `src/simulation/ai/colony/ColonyPlanner.js` — Priority 3.75 COOK deadlock fix (remove food gate); settings quota floor (COOK/SMITH/HERBALIST); `ColonyPlanner.getAdvisoryRecommendation` static method.
+- `test/colony-planner-idle-chain.test.js` — updated low-pop food=5 test to reflect correct post-fix behaviour.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 Stage C Wave 1 (01a/01b/02a)
 
 ### New Features (Round-7 01a — overlayHelpBtn + Help Tab + HUD digest)
