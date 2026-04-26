@@ -36,7 +36,19 @@
 // spawn/drop bookkeeping) stays buried in the DeveloperPanel.
 import { describeMapTemplate } from "../../world/grid/Grid.js";
 
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 7) — kinship & rivalry beats.
+// Three new patterns plumbed in: obituary line ("X, farming specialist,
+// died of starvation near the west lumber route"), birth-with-parent ("Y was
+// born to Z"), and rival relief ("Felt grim relief at …'s death"). 01e &
+// 02e Wave-3 plans append more patterns to this array AFTER 02d lands; the
+// frozen-array pattern means each subsequent commit replaces (not mutates)
+// the export — see Stage B §8 sequencing in Round6/Plans/summary.md.
 const SALIENT_BEAT_PATTERNS = Object.freeze([
+  // Obituary form (richest — must be checked first by the priority pass).
+  /^.+, .+, died of /i,
+  /\bborn to\b/i,
+  /\bmother of\b/i,
+  /Felt grim relief/i,
   /\[SABOTAGE\]/i,
   /\[SHORTAGE\]/i,
   /\[VISITOR\]/i,
@@ -45,8 +57,21 @@ const SALIENT_BEAT_PATTERNS = Object.freeze([
   /warehouse fire/i,
 ]);
 
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 7) — obituary > birth > rivalry
+// > friendship > fire/vermin > visitor priority bands. The first matching
+// band wins, so a fresh death always trumps a same-tick warehouse fire.
+const HIGH_PRIORITY_PATTERNS = Object.freeze([
+  /^.+, .+, died of /i,           // obituary
+  /\bborn to\b/i,                  // birth-with-parent
+  /Felt grim relief/i,             // rivalry beat
+]);
+
 const NARRATIVE_BEAT_MAX_AGE_SEC = 15;
-const NARRATIVE_BEAT_MAX_LEN = 140;
+// Raised from 140 → 180 for obituary lines that include both backstory and
+// scenario-anchor labels ("Aila-2, farming specialist swift temperament,
+// died of starvation near the west lumber route" — typical 90-110 chars but
+// long-anchor scenarios push above the previous cap).
+const NARRATIVE_BEAT_MAX_LEN = 180;
 
 /**
  * Strip the leading `[12.3s]` timestamp prefix from an eventTrace line so
@@ -91,6 +116,20 @@ export function extractLatestNarrativeBeat(state, nowSec) {
   const clockSec = Number.isFinite(nowSec)
     ? Number(nowSec)
     : Number(state?.metrics?.timeSec ?? 0);
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 7) — two-pass scan with
+  // priority. First pass picks the latest within-horizon HIGH_PRIORITY beat
+  // (obituary > birth > rivalry). If none, fall through to the legacy
+  // single-pass scan that returns the first salient beat in arrival order.
+  // Trace is newest-first via unshift; index 0 is the most recent entry.
+  for (let i = 0; i < trace.length; i += 1) {
+    const parsed = parseBeatLine(trace[i], clockSec);
+    if (parsed.ageSec > NARRATIVE_BEAT_MAX_AGE_SEC) continue;
+    let highPriority = false;
+    for (const pat of HIGH_PRIORITY_PATTERNS) {
+      if (pat.test(parsed.line)) { highPriority = true; break; }
+    }
+    if (highPriority) return parsed;
+  }
   // Scan oldest index=0 first (which is actually newest given unshift()).
   for (let i = 0; i < trace.length; i += 1) {
     const parsed = parseBeatLine(trace[i], clockSec);

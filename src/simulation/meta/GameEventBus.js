@@ -37,6 +37,17 @@ const EVENT_TYPES = Object.freeze({
   // Surfaces silent scenario-objective regression (e.g. warehouses 7→3 with
   // no event log). Cause inferred from recent BUILDING_DESTROYED events.
   OBJECTIVE_REGRESSED: "objective_regressed",
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 4) — birth & rivalry beats.
+  // WORKER_BORN: emitted by PopulationGrowthSystem alongside the legacy
+  // VISITOR_ARRIVED reuse (kept for downstream-listener compatibility) so
+  // narrative consumers can subscribe to a dedicated channel without
+  // colour-filtering the legacy bus. Payload includes `parentNames: string[]`
+  // and `lineageParentIds: string[]`.
+  // WORKER_RIVALRY: emitted by WorkerAISystem when a relationship crosses the
+  // -0.15 (Strained) or -0.45 (Rival) negative band. Payload mirrors the
+  // existing positive WORKER_SOCIALIZED shape (`band`, `opinion`).
+  WORKER_BORN: "worker_born",
+  WORKER_RIVALRY: "worker_rivalry",
 });
 
 export { EVENT_TYPES };

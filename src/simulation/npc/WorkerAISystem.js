@@ -1129,11 +1129,32 @@ export class WorkerAISystem {
           const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
           if (dist < 3) {
             const oldOp = Number(worker.relationships[other.id] ?? 0);
-            const newOp = clamp(oldOp + 0.05, -1, 1);
+            // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 6) — negative
+            // delta path. Two workers colliding on the same tile while
+            // both empty-handed reads as "competing for nothing": small
+            // -0.02 penalty (kept ≤ 0.4× the +0.05 positive delta so the
+            // long-horizon-bench social CI still trends net-up). All other
+            // proximity ticks keep the legacy +0.05 friendship drift.
+            const aCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0)
+              + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
+            const bCarry = Number(other.carry?.food ?? 0) + Number(other.carry?.wood ?? 0)
+              + Number(other.carry?.stone ?? 0) + Number(other.carry?.herbs ?? 0);
+            const isResourceCollision = aCarry <= 0 && bCarry <= 0
+              && String(worker.stateLabel ?? "").toLowerCase().includes("deliver")
+              && String(other.stateLabel ?? "").toLowerCase().includes("deliver");
+            const delta = isResourceCollision ? -0.02 : 0.05;
+            const newOp = clamp(oldOp + delta, -1, 1);
             worker.relationships[other.id] = newOp;
             // v0.8.2 Round-5b (02d Step 2b) — emit memory on Friend / Close friend band crossing.
             const crossedClose = oldOp < 0.45 && newOp >= 0.45;
             const crossedFriend = !crossedClose && oldOp < 0.15 && newOp >= 0.15;
+            // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 6) — negative
+            // band-crossings (Strained at -0.15, Rival at -0.45) emit
+            // memory + WORKER_RIVALRY event so the storyteller / Entity
+            // Focus surfaces friction. Mirrors the positive WORKER_SOCIALIZED
+            // payload shape so consumers don't need a new schema.
+            const crossedRival = oldOp > -0.45 && newOp <= -0.45;
+            const crossedStrained = !crossedRival && oldOp > -0.15 && newOp <= -0.15;
             if (crossedFriend || crossedClose) {
               const label = crossedClose ? "Close friend" : "Friend";
               const otherName = other.displayName ?? other.id;
@@ -1144,6 +1165,18 @@ export class WorkerAISystem {
               worker.relationships[`__reason__${other.id}`] = reason;
               other.relationships[`__reason__${worker.id}`] = reason;
               emitEvent(state, EVENT_TYPES.WORKER_SOCIALIZED, {
+                entityId: worker.id, otherId: other.id, band: label, opinion: newOp,
+              });
+            } else if (crossedStrained || crossedRival) {
+              const label = crossedRival ? "Rival" : "Strained";
+              const otherName = other.displayName ?? other.id;
+              const workerName = worker.displayName ?? worker.id;
+              const reason = `clashed at (${Math.round(worker.x)},${Math.round(worker.z)})`;
+              pushFriendshipMemory(worker, `[${relNowSec.toFixed(0)}s] Became ${label} with ${otherName}`, `rival:${label}:${other.id}`, 9999, relNowSec);
+              pushFriendshipMemory(other, `[${relNowSec.toFixed(0)}s] Became ${label} with ${workerName}`, `rival:${label}:${worker.id}`, 9999, relNowSec);
+              worker.relationships[`__reason__${other.id}`] = reason;
+              other.relationships[`__reason__${worker.id}`] = reason;
+              emitEvent(state, EVENT_TYPES.WORKER_RIVALRY, {
                 entityId: worker.id, otherId: other.id, band: label, opinion: newOp,
               });
             }
