@@ -213,3 +213,60 @@ test("update() initializes state.ai.strategy if missing", () => {
   assert.ok(state.ai.strategy);
   assert.equal(typeof state.ai.strategy.priority, "string");
 });
+
+test("update() honors forceStrategicDecision after autopilot is enabled", async () => {
+  const mem = new MemoryStore();
+  const director = new StrategicDirector(mem);
+  const state = makeState({ aiEnabled: false, timeSec: 0 });
+
+  director.update(0, state, {});
+  assert.equal(state.ai.lastStrategySource, "fallback");
+
+  let requestCount = 0;
+  state.ai.enabled = true;
+  state.ai.forceStrategicDecision = true;
+  state.metrics.timeSec = 1;
+  const services = {
+    llmClient: {
+      requestStrategic: async () => {
+        requestCount += 1;
+        return {
+          fallback: false,
+          data: {
+            strategy: {
+              priority: "defend",
+              resourceFocus: "stone",
+              defensePosture: "defensive",
+              expansionDirection: "none",
+              workerFocus: "wood",
+              environmentPreference: "pressure",
+              phase: "fortify",
+              riskTolerance: 0.4,
+              primaryGoal: "Force strategic replan",
+            },
+          },
+          model: "gpt-test",
+          debug: {
+            endpoint: "/api/ai/environment",
+            promptSystem: "strategic system",
+            promptUser: "{}",
+            requestPayload: { channel: "strategic-director" },
+            parsedBeforeValidation: { strategy: { priority: "defend" } },
+            guardedOutput: { strategy: { priority: "defend" } },
+          },
+        };
+      },
+    },
+  };
+
+  director.update(0, state, services);
+  assert.equal(requestCount, 1);
+  assert.equal(state.ai.forceStrategicDecision, false);
+
+  await director.pendingPromise;
+  director.update(0, state, services);
+
+  assert.equal(state.ai.lastStrategySource, "llm");
+  assert.equal(state.ai.strategy.primaryGoal, "Force strategic replan");
+  assert.ok(state.ai.lastStrategicExchange);
+});

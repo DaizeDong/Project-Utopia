@@ -7,6 +7,7 @@ import { HUDController } from "../ui/hud/HUDController.js";
 import { GameStateOverlay } from "../ui/hud/GameStateOverlay.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
 import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
+import { AIAutomationPanel } from "../ui/panels/AIAutomationPanel.js";
 import { AIExchangePanel } from "../ui/panels/AIExchangePanel.js";
 import { AIPolicyTimelinePanel } from "../ui/panels/AIPolicyTimelinePanel.js";
 import { EventPanel } from "../ui/panels/EventPanel.js";
@@ -176,6 +177,7 @@ export class GameApp {
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);
     this.aiDecisionPanel = new AIDecisionPanel(this.state);
+    this.aiAutomationPanel = new AIAutomationPanel(this.state);
     this.aiExchangePanel = new AIExchangePanel(this.state);
     // v0.8.2 Round-5b Wave-1 (01e Step 4) — Director Timeline panel. Renders
     // state.ai.policyHistory as a reverse-chronological list in the Debug
@@ -236,7 +238,7 @@ export class GameApp {
       document.addEventListener("utopia:toolChange", this.boundOnToolChange);
     }
 
-    // AI Debug button — opens right sidebar on the Debug tab so players can
+    // AI Debug button opens the player-facing AI Log tab so players can
     // inspect LLM call logs without hunting through the sidebar tabs manually.
     if (typeof document !== "undefined") {
       const aiDebugBtn = document.getElementById("aiDebugBtn");
@@ -251,11 +253,15 @@ export class GameApp {
             if (toggleBtn) toggleBtn.textContent = "\u2190";
             try { localStorage.setItem("utopiaSidebarOpen", "1"); } catch {}
           }
-          // Switch to the Debug tab by simulating a click on its tab button.
-          const debugTabBtn = document.querySelector(".sidebar-tab-btn[data-sidebar-target='debug']");
-          if (debugTabBtn) {
-            debugTabBtn.click();
+          const aiLogTabBtn = document.querySelector(".sidebar-tab-btn[data-sidebar-target='ai-log']");
+          if (aiLogTabBtn) {
+            aiLogTabBtn.click();
           }
+          document
+            .querySelectorAll("[data-sidebar-panel='ai-log'] details.card[data-panel-key]")
+            .forEach((panel) => {
+              panel.open = true;
+            });
         });
       }
     }
@@ -508,6 +514,7 @@ export class GameApp {
       const isTextInteractionActive = this.#isUiTextInteractionActive();
       if (!isTextInteractionActive) {
         this.#safeRenderPanel("HUD", () => this.hud.render());
+        this.#safeRenderPanel("AIAutomationPanel", () => this.aiAutomationPanel.render());
         this.#safeRenderPanel("AIDecisionPanel", () => this.aiDecisionPanel.render());
         this.#safeRenderPanel("AIExchangePanel", () => this.aiExchangePanel.render());
         this.#safeRenderPanel("AIPolicyTimelinePanel", () => this.aiPolicyTimelinePanel.render());
@@ -1483,7 +1490,10 @@ export class GameApp {
     const active = document.activeElement;
     if (active) {
       const tag = String(active.tagName ?? "").toUpperCase();
-      if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && !active.disabled) {
+      const inputType = String(active.getAttribute?.("type") ?? "text").toLowerCase();
+      const textLikeInput = tag === "INPUT"
+        && ["", "text", "number", "search", "email", "url", "password", "tel"].includes(inputType);
+      if ((textLikeInput || tag === "TEXTAREA" || tag === "SELECT") && !active.disabled) {
         return true;
       }
       if (active.isContentEditable) {

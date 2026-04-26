@@ -22,6 +22,8 @@ const WANDER_REFRESH_JITTER_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 export const TASK_LOCK_STATES = new Set(["harvest", "deliver", "eat", "process", "seek_task"]);
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
+const WORKER_MEMORY_RECENT_LIMIT = 6;
+const WORKER_MEMORY_HISTORY_LIMIT = 24;
 
 function tileKey(tile) {
   return `${tile.ix},${tile.iz}`;
@@ -218,6 +220,27 @@ function getWorkerRecoveryPerFoodUnit(worker) {
 // v0.8.2 Round-5b (02d Step 2b) — memory helper mirroring MortalitySystem pattern.
 // Pushes a human-readable line with dedup guard; windowSec=9999 ensures band-crossings
 // (once-per-lifetime) are never duplicated within a session.
+function inferMemoryType(dedupKey) {
+  const key = String(dedupKey ?? "");
+  if (key.startsWith("friend:") || key.startsWith("rival:")) return "relationship";
+  if (key.startsWith("birth:")) return "birth";
+  if (key.startsWith("death:")) return "death";
+  return "event";
+}
+
+function pushMemoryHistory(agent, line, dedupKey, nowSec) {
+  agent.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(agent.memory.history)) agent.memory.history = [];
+  if (dedupKey && agent.memory.history.some((entry) => entry?.key === dedupKey)) return;
+  agent.memory.history.unshift({
+    simSec: Number(nowSec ?? 0),
+    type: inferMemoryType(dedupKey),
+    label: String(line ?? ""),
+    key: dedupKey ? String(dedupKey) : null,
+  });
+  agent.memory.history = agent.memory.history.slice(0, WORKER_MEMORY_HISTORY_LIMIT);
+}
+
 function pushFriendshipMemory(agent, line, dedupKey, windowSec, nowSec) {
   agent.memory ??= { recentEvents: [], dangerTiles: [] };
   if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
@@ -225,7 +248,8 @@ function pushFriendshipMemory(agent, line, dedupKey, windowSec, nowSec) {
   if (agent.memory.recentKeys.has(dedupKey)) return;
   agent.memory.recentKeys.set(dedupKey, nowSec);
   agent.memory.recentEvents.unshift(line);
-  agent.memory.recentEvents = agent.memory.recentEvents.slice(0, 6);
+  agent.memory.recentEvents = agent.memory.recentEvents.slice(0, WORKER_MEMORY_RECENT_LIMIT);
+  pushMemoryHistory(agent, line, dedupKey, nowSec);
 }
 
 // v0.8.2 Round-7 (01e+02b) — Worker trait behavioral wiring.

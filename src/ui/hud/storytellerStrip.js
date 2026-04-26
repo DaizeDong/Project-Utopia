@@ -795,13 +795,12 @@ export function computeStorytellerStripModel(state) {
   }
 
   // v0.8.2 Round-5 Wave-3 (01e Step 3) — in the fallback path, prefix the
-  // focusText with "DIRECTOR picks " so the HUD strip makes the decision-
-  // maker explicit. Only applies when the focus is not already "autopilot"
-  // and does not already lead with "DIRECTOR"; the llm path is untouched so
-  // WHISPER text stays coherent (R4 in the Plan Risks section).
+  // focusText now carries only "picks ..." because the adjacent badge already
+  // renders DIRECTOR. This keeps the live strip from reading
+  // "DIRECTORDIRECTOR picks ..." while preserving the decision-maker cue.
   if (mode === "fallback" && focusText && focusText !== "autopilot"
-      && !/^DIRECTOR\s+/i.test(focusText)) {
-    focusText = `DIRECTOR picks ${focusText}`;
+      && !/^(?:DIRECTOR\s+)?picks\s+/i.test(focusText)) {
+    focusText = `picks ${focusText.replace(/^DIRECTOR\s+/i, "").trim()}`;
   }
 
   // v0.8.2 Round-1 02d-roleplayer — fan-out salient event-trace beats into

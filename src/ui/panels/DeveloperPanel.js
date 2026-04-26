@@ -73,14 +73,9 @@ export function formatGameEventForLog(event) {
     }
     case EVENT_TYPES.COLONY_MILESTONE:
       return `${tsPrefix} [MILESTONE] ${detail.label ?? detail.name ?? "milestone"}`;
-    case EVENT_TYPES.BUILDING_DESTROYED: {
-      const kind = detail.kind ?? "building";
-      const delta = Number(detail.delta ?? 1);
-      const cause = detail.cause ? ` (${detail.cause})` : "";
-      return `${tsPrefix} [DESTROYED] ${delta}× ${kind}${cause}`;
-    }
     // Too noisy to render in a 12-line tail: skip.
     case EVENT_TYPES.BUILDING_PLACED:
+    case EVENT_TYPES.BUILDING_DESTROYED:
     case EVENT_TYPES.WORKER_RESTING:
     case EVENT_TYPES.WORKER_SOCIALIZED:
     case EVENT_TYPES.WORKER_MOOD_LOW:

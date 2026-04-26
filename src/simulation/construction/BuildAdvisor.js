@@ -129,6 +129,13 @@ const LOGISTICS_PRODUCER_TOOLS = new Set([
   "clinic",
 ]);
 
+const RESOURCE_LABELS = Object.freeze({
+  food: "food",
+  wood: "wood",
+  stone: "stone",
+  herbs: "herbs",
+});
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
@@ -158,6 +165,17 @@ function formatCost(cost = {}) {
   if ((cost.stone ?? 0) > 0) parts.push(`${cost.stone}s`);
   if ((cost.herbs ?? 0) > 0) parts.push(`${cost.herbs}h`);
   return parts.length > 0 ? parts.join(" ") : "free";
+}
+
+function formatResourceShortfalls(cost = {}, resources = {}) {
+  const parts = [];
+  for (const [key, label] of Object.entries(RESOURCE_LABELS)) {
+    const need = Number(cost[key] ?? 0);
+    const have = Number(resources?.[key] ?? 0);
+    const gap = need - have;
+    if (gap > 0) parts.push(`${gap} more ${label}`);
+  }
+  return parts;
 }
 
 // v0.8.2 Round0 02b-casual — expanded, human-friendly cost label. The
@@ -337,11 +355,16 @@ function getTileRefund(oldType, rngFn = Math.random) {
   };
 }
 
-function buildFailure(reason, oldType, newType, cost, refund, tool, ix, iz, info, effects = [], warnings = []) {
+function buildFailure(reason, oldType, newType, cost, refund, tool, ix, iz, info, effects = [], warnings = [], context = {}) {
+  const recoveryContext = { ...context, oldType, newType, cost, refund, tool, ix, iz, info };
   return {
     ok: false,
     reason,
     reasonText: explainBuildReason(reason, { oldType, tool }),
+    recoveryText: explainBuildRecovery(reason, recoveryContext),
+    shortfalls: reason === "insufficientResource"
+      ? formatResourceShortfalls(cost, context.resources)
+      : [],
     oldType,
     newType,
     cost,
@@ -392,6 +415,7 @@ export function explainBuildReason(reason, context = {}) {
   if (reason === "insufficientResource") return "Insufficient resources.";
   if (reason === "warehouseTooClose") return "Warehouses are too close together. Spread depots to widen logistics coverage.";
   if (reason === "hidden_tile") return "Cannot build on unexplored terrain. Scout this area first.";
+  if (reason === "hardCap") return "Build limit reached for this structure type.";
   if (reason === "missing_resource_node") {
     if (context.tool === "lumber") return "No forest node on this tile. Lumber camps must be sited on a forest.";
     if (context.tool === "quarry") return "No stone node on this tile. Quarries must be sited on a stone deposit.";
@@ -399,6 +423,41 @@ export function explainBuildReason(reason, context = {}) {
     return "Required resource node is missing on this tile.";
   }
   return "Build action failed.";
+}
+
+export function explainBuildRecovery(reason, context = {}) {
+  if (reason === "unchanged") {
+    return "Pick a different tile or extend toward the highlighted route/depot instead.";
+  }
+  if (reason === "waterBlocked") {
+    return "Use Bridge on water, or move this build onto grass, road, or ruins.";
+  }
+  if (reason === "occupiedTile") {
+    return "Use Erase first, or place the new structure on open grass, road, or ruins.";
+  }
+  if (reason === "insufficientResource") {
+    const shortfalls = formatResourceShortfalls(context.cost, context.resources);
+    if (shortfalls.length > 0) {
+      return `Recover ${shortfalls.join(", ")} before placing this. Reclaim ruins or build the cheaper route first.`;
+    }
+    return "Wait for production or reclaim ruins for salvage before placing this.";
+  }
+  if (reason === "warehouseTooClose") {
+    return "Move the warehouse farther from the existing depot unless the target is inside a marked depot zone.";
+  }
+  if (reason === "hidden_tile") {
+    return "Build roads from visible ground toward this area to scout it first.";
+  }
+  if (reason === "missing_resource_node") {
+    if (context.tool === "lumber") return "Find a forest-marked tile first; roads can connect it back after placement.";
+    if (context.tool === "quarry") return "Find a stone deposit first; roads or depots can shorten the haul after placement.";
+    if (context.tool === "herb_garden") return "Find an herb patch first; roads or depots can shorten the medicine chain.";
+    return "Move this building onto the matching resource node.";
+  }
+  if (reason === "hardCap") {
+    return "Improve the existing network or erase an older copy before building another.";
+  }
+  return "Try another nearby tile or inspect the route/stockpile requirement before placing again.";
 }
 
 // Phase 3 / M1b — reject placement on fog-HIDDEN tiles.
@@ -462,7 +521,9 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
     }
   }
   if (tool !== "erase" && !canAfford(state.resources, cost)) {
-    return buildFailure("insufficientResource", oldType, newType, cost, activeRefund, tool, ix, iz, info);
+    return buildFailure("insufficientResource", oldType, newType, cost, activeRefund, tool, ix, iz, info, [], [], {
+      resources: state.resources,
+    });
   }
 
   const tags = getScenarioTileTags(state, tile);
@@ -560,7 +621,11 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
 
 export function summarizeBuildPreview(preview) {
   if (!preview) return "";
-  if (!preview.ok) return preview.reasonText || explainBuildReason(preview.reason, preview);
+  if (!preview.ok) {
+    const reason = preview.reasonText || explainBuildReason(preview.reason, preview);
+    const recovery = String(preview.recoveryText ?? "").trim();
+    return [reason, recovery].filter(Boolean).join(" ");
+  }
   const parts = [preview.summary];
   if (preview.effects?.length > 1) parts.push(preview.effects[1]);
   if (preview.warnings?.length > 0) parts.push(`Warning: ${preview.warnings[0]}`);

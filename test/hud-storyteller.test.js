@@ -134,12 +134,12 @@ test("computeStorytellerStripModel: salient SABOTAGE beat surfaces with age (s a
   assert.ok(model.beatText, `expected a beatText but got ${model.beatText}`);
   // 121.2 - 120.5 = 0.7 → rounds to 1 → "1s ago".
   assert.match(model.beatText, /Last:\s*\[SABOTAGE\] visitor_16 sabotaged colony \(1s ago\)/);
-  // Round-5 Wave-3 golden update: focusText now carries the "DIRECTOR picks "
-  // prefix in fallback mode (01e Step 3); the rear-supplied tail was removed
+  // Round-9 golden update: focusText now carries "picks " because the badge
+  // already says DIRECTOR; the rear-supplied tail was removed
   // from humaniseSummary (02e Step 1). The summary is filled from the `*`
   // voice-pack default bucket (no mapTemplateId set), so `Stone is low` is
   // not expected to leak through — we assert the voice-pack marker instead.
-  assert.match(model.focusText, /^DIRECTOR picks /);
+  assert.match(model.focusText, /^picks /);
   assert.match(model.focusText, /push the frontier outward/);
   assert.equal(model.voicePackHit, true);
 });

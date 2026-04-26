@@ -9,6 +9,7 @@ import { audioSystem } from "../../audio/AudioSystem.js";
 
 const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
 const WORKER_MEMORY_LIMIT = 6;
+const WORKER_MEMORY_HISTORY_LIMIT = 24;
 const WITNESS_NEARBY_DISTANCE = 12;
 
 function deathThresholdFor(entity) {
@@ -43,6 +44,27 @@ function relationLabelForMemory(opinion) {
  * @param {number} [windowSec]
  * @param {number} [nowSec]
  */
+function inferMemoryType(dedupKey) {
+  const key = String(dedupKey ?? "");
+  if (key.startsWith("death:")) return "death";
+  if (key.startsWith("birth:")) return "birth";
+  if (key.startsWith("friend:") || key.startsWith("rival:")) return "relationship";
+  return "event";
+}
+
+function pushWorkerMemoryHistory(worker, label, dedupKey = null, nowSec = 0) {
+  worker.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(worker.memory.history)) worker.memory.history = [];
+  if (dedupKey && worker.memory.history.some((entry) => entry?.key === dedupKey)) return;
+  worker.memory.history.unshift({
+    simSec: Number(nowSec ?? 0),
+    type: inferMemoryType(dedupKey),
+    label: String(label ?? ""),
+    key: dedupKey ? String(dedupKey) : null,
+  });
+  worker.memory.history = worker.memory.history.slice(0, WORKER_MEMORY_HISTORY_LIMIT);
+}
+
 function pushWorkerMemory(worker, label, dedupKey = null, windowSec = 30, nowSec = 0) {
   worker.memory ??= { recentEvents: [], dangerTiles: [] };
   if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
@@ -60,6 +82,7 @@ function pushWorkerMemory(worker, label, dedupKey = null, windowSec = 30, nowSec
   }
   worker.memory.recentEvents.unshift(label);
   worker.memory.recentEvents = worker.memory.recentEvents.slice(0, WORKER_MEMORY_LIMIT);
+  pushWorkerMemoryHistory(worker, label, dedupKey, nowSec);
 }
 
 function readRelationshipOpinion(deceased, witness) {

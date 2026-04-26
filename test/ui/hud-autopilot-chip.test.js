@@ -99,11 +99,12 @@ test("HUDController renders Autopilot OFF chip as player-controlled", () => {
     const hud = new HUDController(state);
     hud.render();
 
-    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot OFF - manual - coverage fallback");
+    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot off. Manual guidance active; director may still react.");
     assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], "off");
     assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], "fallback");
     assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], "fallback");
-    assert.match(nodes.aiAutopilotChip.attrs.title, /Autopilot OFF/);
+    assert.match(nodes.aiAutopilotChip.attrs.title, /Autopilot off/);
+    assert.match(nodes.aiAutopilotChip.attrs.title, /You choose actions/);
   });
 });
 
@@ -117,11 +118,11 @@ test("HUDController renders Autopilot ON chip with next policy countdown", () =>
     const hud = new HUDController(state);
     hud.render();
 
-    assert.match(nodes.aiAutopilotChip.textContent, /^Autopilot ON - fallback\/fallback - next policy in \d+\.\ds$/);
-    assert.match(nodes.aiAutopilotChip.textContent, /8\.7s$/);
+    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot ON · rules");
     assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], "on");
     assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], "fallback");
     assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], "fallback");
     assert.match(nodes.aiAutopilotChip.attrs.title, /Autopilot ON/);
+    assert.match(nodes.aiAutopilotChip.attrs.title, /next policy in 8\.7s/);
   });
 });

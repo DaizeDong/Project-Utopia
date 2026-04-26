@@ -46,9 +46,29 @@ test("next action prioritizes food recovery during starvation risk", () => {
   assert.equal(advice.tool, "farm");
   assert.equal(advice.reason, "food_crisis");
   assert.equal(advice.headline, "Food bottleneck");
+  assert.equal(advice.label, "Stabilize food supply");
   assert.match(advice.whyNow, /Food is below the emergency line/);
-  assert.match(advice.expectedOutcome, /Reconnecting farms keeps workers fed/);
-  assert.match(advice.detail, /farms/i);
+  assert.match(advice.expectedOutcome, /reachable farms keep workers fed/i);
+  assert.match(advice.detail, /Place another farm/i);
+});
+
+test("next action turns food crisis into concrete farm access repair when fields are isolated", () => {
+  const state = makeState();
+  setTile(state, 1, 1, TILE.WAREHOUSE);
+  setTile(state, 11, 11, TILE.FARM);
+  state.resources.food = 5;
+  state.metrics.starvationRiskCount = 2;
+  state.metrics.logistics = { isolatedWorksites: 1, stretchedWorksites: 0 };
+
+  const advice = getNextActionAdvice(state);
+  assert.equal(advice.priority, "critical");
+  assert.equal(advice.tool, "warehouse");
+  assert.equal(advice.reason, "food_access_crisis");
+  assert.deepEqual(advice.target, { ix: 11, iz: 11 });
+  assert.equal(advice.label, "Reconnect farm at (11,11)");
+  assert.match(advice.headline, /Food access gap at \(11,11\)/);
+  assert.match(advice.detail, /warehouse or road link near \(11,11\)/);
+  assert.match(advice.expectedOutcome, /Reachable farms restore food intake/);
 });
 
 test("next action chooses a concrete road gap for broken routes", () => {
@@ -103,6 +123,22 @@ test("next action asks for warehouse when a depot zone is missing", () => {
   assert.match(advice.whyNow, /east ruined depot is still offline/);
   assert.match(advice.expectedOutcome, /reopens stockpile coverage/);
   assert.match(advice.detail, /Warehouse near \(8,6\) reopens east ruined depot/);
+});
+
+test("next action repairs isolated worksite coverage before generic build targets", () => {
+  const state = makeState();
+  setTile(state, 1, 1, TILE.WAREHOUSE);
+  setTile(state, 11, 11, TILE.LUMBER);
+  state.metrics.logistics = { isolatedWorksites: 1, stretchedWorksites: 0 };
+
+  const advice = getNextActionAdvice(state);
+  assert.equal(advice.priority, "high");
+  assert.equal(advice.tool, "warehouse");
+  assert.equal(advice.reason, "worksite_coverage");
+  assert.deepEqual(advice.target, { ix: 11, iz: 11 });
+  assert.equal(advice.label, "Reconnect 1 isolated worksite");
+  assert.match(advice.detail, /lumber camp/);
+  assert.match(advice.expectedOutcome, /Depot coverage shortens hauls/);
 });
 
 test("next action falls back to unmet logistics targets", () => {

@@ -33,14 +33,14 @@ test("mood→output: mood=0.5 yields the midpoint between min and 1", () => {
   assert.equal(Number(m.toFixed(4)), Number(expected.toFixed(4)));
 });
 
-test("mood→output: low-mood worker (0.1) yields ≥40% less than high-mood (0.9)", () => {
+test("mood→output: low-mood worker (0.1) yields meaningfully less than high-mood (0.9)", () => {
   const lo = computeMoodMultiplier(0.1);
   const hi = computeMoodMultiplier(0.9);
   const ratio = lo / hi;
-  // mood=0.1 → 0.5 + 0.5*0.1 = 0.55; mood=0.9 → 0.5 + 0.5*0.9 = 0.95.
-  // ratio 0.55/0.95 ≈ 0.579, i.e. lo is ~42% smaller. Assert lo/hi <= 0.6.
-  assert.ok(ratio <= 0.6,
-    `expected lo/hi <= 0.6 (>=40% reduction), got ratio=${ratio.toFixed(3)}`);
+  // Current balance keeps a 0.7 floor to avoid early-game death spirals, but
+  // low mood must still be visible in production output.
+  assert.ok(ratio <= 0.8,
+    `expected lo/hi <= 0.8 (>=20% reduction), got ratio=${ratio.toFixed(3)}`);
 });
 
 test("mood→output: BALANCE keys exist with expected defaults", () => {

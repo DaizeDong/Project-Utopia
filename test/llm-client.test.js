@@ -29,6 +29,47 @@ describe("LLMClient", () => {
     assert.ok(result.data);
   });
 
+  it("returns fallback when enabled=false for strategic requests", async () => {
+    const client = new LLMClient();
+    const result = await client.requestStrategic(
+      JSON.stringify({ channel: "strategic-director", summary: { workers: 4 } }),
+      false,
+      { strategy: { priority: "grow", phase: "growth" } },
+    );
+    assert.equal(result.fallback, true);
+    assert.equal(result.model, "fallback");
+    assert.equal(result.debug.requestSummary.channel, "strategic-director");
+  });
+
+  it("falls back when strategic proxy response fails schema validation", async () => {
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        fallback: false,
+        model: "gpt-test",
+        data: { strategy: { phase: "invalid_phase" } },
+        debug: { parsedBeforeValidation: { strategy: { phase: "invalid_phase" } } },
+      }),
+    });
+
+    try {
+      const fallbackData = { strategy: { priority: "grow", phase: "growth" } };
+      const client = new LLMClient({ baseUrl: "http://127.0.0.1:8787" });
+      const result = await client.requestStrategic(
+        JSON.stringify({ channel: "strategic-director", summary: { workers: 4 } }),
+        true,
+        fallbackData,
+      );
+      assert.equal(result.fallback, true);
+      assert.match(result.error, /schema/);
+      assert.deepEqual(result.data, fallbackData);
+      assert.deepEqual(result.debug.guardedOutput, fallbackData);
+    } finally {
+      globalThis.fetch = prevFetch;
+    }
+  });
+
   it("postJson resolves relative endpoint with baseUrl", async () => {
     // We can't easily test the actual network call, but we can verify
     // the URL resolution logic by checking that LLMClient with a valid

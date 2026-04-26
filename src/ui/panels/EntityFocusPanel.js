@@ -32,6 +32,135 @@ export function formatRelationOpinion(opinion) {
   return `${relationLabel(value)} (${value >= 0 ? "+" : ""}${fmtNum(value, 2)})`;
 }
 
+export const TRAIT_DESC = Object.freeze({
+  hardy: "bad weather morale loss is reduced",
+  social: "rest drains slower; close friends restore rest",
+  efficient: "shorter work cycles",
+  resilient: "extra survival margin in crises",
+  swift: "15% faster movement",
+  careful: "slower travel; more deliberate work cycles",
+});
+
+function finiteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function foodSourceLabel(sourceType) {
+  switch (String(sourceType ?? "none")) {
+    case "carry":
+      return "carried food";
+    case "warehouse":
+      return "warehouse food";
+    case "nearby-farm":
+      return "nearby farm food";
+    case "none":
+      return "no source";
+    default:
+      return String(sourceType ?? "unknown");
+  }
+}
+
+function formatFoodReject(reject) {
+  if (!reject || typeof reject !== "object") return "";
+  const requested = String(reject.requestedState ?? "state");
+  const reason = String(reject.reason ?? "not feasible");
+  const source = String(reject.source ?? "planner");
+  return `${source} rejected ${requested}: ${reason}`;
+}
+
+export function buildFoodDiagnosis(entity, state = {}) {
+  const deathContext = entity?.deathContext && typeof entity.deathContext === "object"
+    ? entity.deathContext
+    : null;
+  const debug = entity?.debug ?? {};
+  const reject = deathContext?.lastFeasibilityReject
+    ?? entity?.blackboard?.lastFeasibilityReject
+    ?? debug.feasibilityReject
+    ?? null;
+  const reachableFood = typeof deathContext?.nutritionReachable === "boolean"
+    ? deathContext.nutritionReachable
+    : (typeof deathContext?.reachableFood === "boolean"
+      ? deathContext.reachableFood
+      : (typeof debug.reachableFood === "boolean" ? debug.reachableFood : null));
+  const sourceType = String(deathContext?.nutritionSourceType ?? debug.nutritionSourceType ?? "unknown");
+  const storedFood = finiteNumber(state?.resources?.food, 0);
+  const storedMeals = finiteNumber(state?.resources?.meals, 0);
+  const carryFood = finiteNumber(entity?.carry?.food, 0);
+  const warehouses = finiteNumber(state?.buildings?.warehouses, 0);
+  const farms = finiteNumber(state?.buildings?.farms, 0);
+  const hunger = Number(entity?.hunger);
+  const starvationSec = finiteNumber(
+    deathContext?.starvationSecAtDeath ?? entity?.starvationSec,
+    0,
+  );
+  const isStarvationDeath = entity?.alive === false
+    && String(deathContext?.reason ?? entity?.deathReason ?? "") === "starvation";
+  const hasFoodStock = storedFood + storedMeals > 0;
+  const rejectText = formatFoodReject(reject);
+  const rejectMentionsFood = /food|eat|ration|nutrition/i.test(rejectText);
+
+  let cause = "Food status is stable.";
+  let next = "No action needed unless hunger starts falling.";
+  let severity = "ok";
+
+  if (isStarvationDeath) {
+    severity = "critical";
+    cause = reachableFood === false
+      ? `Died of starvation with ${foodSourceLabel(sourceType)} reachable=false.`
+      : `Died of starvation after ${fmtSec(starvationSec)} below the survival line.`;
+    next = hasFoodStock && warehouses > 0
+      ? "Repair the route to a warehouse or add a closer warehouse before this happens again."
+      : "Restore stored food first, then connect farms and warehouses so workers can reach it.";
+  } else if (carryFood > 0 && Number.isFinite(hunger) && hunger < 0.2) {
+    severity = "warn";
+    cause = `Carrying ${fmtNum(carryFood, 1)} food, but hunger is still critical.`;
+    next = "Let the worker finish or interrupt into eating; check task locks if hunger keeps falling.";
+  } else if (!hasFoodStock && carryFood <= 0) {
+    severity = Number.isFinite(hunger) && hunger < 0.35 ? "critical" : "warn";
+    cause = farms > 0
+      ? "Stored food is 0; farms exist but food is not in the stockpile."
+      : "Stored food is 0 and there is no carried food.";
+    next = farms > 0
+      ? "Assign/unstick farmers and haulers, then connect farms to a warehouse."
+      : "Build or recover food production before adding more population.";
+  } else if (warehouses <= 0 && hasFoodStock) {
+    severity = "critical";
+    cause = "Food exists, but there is no warehouse access point.";
+    next = "Build or reconnect a warehouse so workers have a reachable eating target.";
+  } else if (reachableFood === false) {
+    severity = "critical";
+    cause = hasFoodStock
+      ? "Food exists, but this worker has no reachable nutrition source."
+      : "No reachable nutrition source was found.";
+    next = warehouses > 0
+      ? "Repair roads/bridges or remove blockers between the worker and warehouse."
+      : "Add a warehouse or a close farm source near the worker.";
+  } else if (rejectMentionsFood) {
+    severity = "warn";
+    cause = rejectText;
+    next = "Fix that precondition, then watch whether the worker enters eat/seek food.";
+  } else if (reachableFood === true) {
+    severity = Number.isFinite(hunger) && hunger < 0.25 ? "warn" : "ok";
+    cause = `${foodSourceLabel(sourceType)} is reachable.`;
+    next = Number.isFinite(hunger) && hunger < 0.25
+      ? "Wait for the eat task; if hunger keeps falling, inspect task lock and threshold timing."
+      : "No immediate food-routing action needed.";
+  } else if (Number.isFinite(hunger) && hunger < 0.35) {
+    severity = "warn";
+    cause = "Hunger is low, but reachability has not been checked yet.";
+    next = "Confirm warehouse/farm reachability if this worker does not switch to eating soon.";
+  }
+
+  return {
+    severity,
+    cause,
+    next,
+    facts: `stock food=${fmtNum(storedFood, 1)}, meals=${fmtNum(storedMeals, 1)}, carry=${fmtNum(carryFood, 1)}, warehouses=${fmtNum(warehouses, 0)}, farms=${fmtNum(farms, 0)}, source=${foodSourceLabel(sourceType)}, reachable=${reachableFood === null ? "unknown" : String(reachableFood)}, starvation=${fmtSec(starvationSec)}`,
+    reject: rejectText,
+  };
+}
+
 function escapeHtml(input) {
   return String(input ?? "")
     .replaceAll("&", "&amp;")
@@ -146,6 +275,7 @@ export class EntityFocusPanel {
     this.pointerActive = false;
     this.#bindInteractionGuards();
     this.#bindWorkerListDelegate();
+    this.#bindFamilyChipDelegate();
   }
 
   #bindWorkerListDelegate() {
@@ -156,6 +286,22 @@ export class EntityFocusPanel {
       const btn = target.closest("button[data-entity-id]");
       if (!btn) return;
       const entityId = btn.dataset.entityId;
+      if (!entityId) return;
+      event.preventDefault();
+      this.state.controls.selectedEntityId = entityId;
+      this.state.controls.selectedTile = null;
+      if (this.state.debug) this.state.debug.selectedTile = null;
+    });
+  }
+
+  #bindFamilyChipDelegate() {
+    if (!this.root) return;
+    this.root.addEventListener("click", (event) => {
+      const target = event?.target;
+      if (!target || typeof target.closest !== "function") return;
+      const btn = target.closest("button[data-family-entity-id]");
+      if (!btn) return;
+      const entityId = btn.dataset.familyEntityId;
       if (!entityId) return;
       event.preventDefault();
       this.state.controls.selectedEntityId = entityId;
@@ -203,11 +349,11 @@ export class EntityFocusPanel {
       // the worker-list rollup is rewritten here.
       const hungerLabel = !Number.isFinite(hungerN)
         ? "?"
-        : hungerN < 0.2
+        : hungerN >= 0.8
           ? "well-fed"
-          : hungerN < 0.5
+          : hungerN >= 0.5
             ? "a bit hungry"
-            : hungerN < 0.8
+            : hungerN >= 0.2
               ? "hungry"
               : "starving";
       const selectedClass = w.id === selectedId ? " selected" : "";
@@ -443,16 +589,28 @@ export class EntityFocusPanel {
     const hungerN = Number(entity.hunger);
     const hungerLabel = !Number.isFinite(hungerN)
       ? "Unknown"
-      : hungerN < 0.2
+      : hungerN >= 0.8
         ? "Well-fed"
-        : hungerN < 0.5
+        : hungerN >= 0.5
           ? "Peckish"
-          : hungerN < 0.8
+          : hungerN >= 0.2
             ? "Hungry"
             : "Starving";
     const hungerPct = Number.isFinite(hungerN)
-      ? Math.round(Math.max(0, Math.min(1, 1 - hungerN)) * 100)
+      ? Math.round(Math.max(0, Math.min(1, hungerN)) * 100)
       : null;
+    const foodDiagnosis = buildFoodDiagnosis(entity, this.state);
+    const foodTone = foodDiagnosis.severity === "critical"
+      ? "#e07070"
+      : (foodDiagnosis.severity === "warn" ? "#c9a94e" : "#8ebf8e");
+    const foodDiagnosisBlock = `
+      <div class="small" style="color:${foodTone};"><b>Food Diagnosis:</b> ${escapeHtml(foodDiagnosis.cause)} <span class="muted">Next: ${escapeHtml(foodDiagnosis.next)}</span></div>
+      <details data-focus-key="focus:food-diagnosis" style="margin-top:4px;">
+        <summary class="small"><b>Food Route Facts</b></summary>
+        <div class="small muted" style="margin-top:4px;">${escapeHtml(foodDiagnosis.facts)}</div>
+        ${foodDiagnosis.reject ? `<div class="small muted">Last AI reject: ${escapeHtml(foodDiagnosis.reject)}</div>` : ""}
+      </details>
+    `;
 
     // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 6): humanise the Vitals row.
     // Reviewer 01a-onboarding called out "hp=100.0/100.0 | hunger=0.639 |
@@ -484,13 +642,6 @@ export class EntityFocusPanel {
     // still see the narrative first; the `<details>` wrapper lets power
     // users collapse it alongside everything else.
     // v0.8.2 Round-7 (01e+02b) — trait descriptions and grief notice.
-    const TRAIT_DESC = {
-      hardy: "weather resistant",
-      social: "bonds easily",
-      efficient: "quick task switching",
-      resilient: "harder to break",
-      careful: "precise work",
-    };
     const traitsText = Array.isArray(entity.traits) && entity.traits.length > 0
       ? entity.traits.map((t) => {
           const desc = TRAIT_DESC[t];
@@ -539,9 +690,13 @@ export class EntityFocusPanel {
       });
     // Reason suffixes contain HTML — do not double-escape; per-piece escaping above already sanitises.
     const relationsLine = topRelations.length > 0 ? topRelations.join(" | ") : "(no relationships yet)";
-    const recentMemories = Array.isArray(entity.memory?.recentEvents)
-      ? entity.memory.recentEvents.slice(0, 3)
+    const historyMemories = Array.isArray(entity.memory?.history)
+      ? entity.memory.history.slice(0, 5)
       : [];
+    const recentMemories = historyMemories.length > 0
+      ? historyMemories
+      : (Array.isArray(entity.memory?.recentEvents) ? entity.memory.recentEvents.slice(0, 3) : []);
+    const memorySourceLabel = historyMemories.length > 0 ? "Memory History" : "Recent Memory";
     // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 9) — narrative beat CSS
     // tagging. Lines whose body matches obituary / birth / rivalry markers
     // get a `mem-obituary` / `mem-birth` / `mem-rivalry` class so styles can
@@ -558,23 +713,31 @@ export class EntityFocusPanel {
       ? recentMemories.map((m) => {
         const text = String(m?.label ?? m?.summary ?? m?.type ?? m ?? "");
         const cls = classifyMemoryLine(text);
-        return `<div class="small muted ${cls}">- ${escapeHtml(text)}</div>`;
+        const type = m && typeof m === "object" && m.type ? ` <span class="muted">[${escapeHtml(String(m.type))}]</span>` : "";
+        return `<div class="small muted ${cls}">- ${escapeHtml(text)}${type}</div>`;
       }).join("")
-      : `<div class="small muted">(no recent memories)</div>`;
+      : `<div class="small muted">(no memories yet)</div>`;
     // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 9) — Family line. Renders
     // lineage.parents / lineage.children counts so players see the colony
     // family tree at a glance. Hidden when no kinship is wired (initial
     // population's empty arrays — keeps the panel uncluttered).
     const lineageParents = Array.isArray(entity.lineage?.parents) ? entity.lineage.parents : [];
     const lineageChildren = Array.isArray(entity.lineage?.children) ? entity.lineage.children : [];
+    const renderFamilyChip = (id) => {
+      const name = escapeHtml(lookupDisplayNameById(id));
+      const isKnown = this.state.agents?.some?.((a) => a.id === id);
+      if (!isKnown) return `<span class="entity-family-chip muted">${name}</span>`;
+      return `<button type="button" class="entity-family-chip" data-family-entity-id="${escapeHtml(id)}">${name}</button>`;
+    };
     let familyLine = "";
     if (lineageParents.length > 0 || lineageChildren.length > 0) {
       const segs = [];
-      if (lineageChildren.length > 0) segs.push(`parent of ${lineageChildren.length}`);
+      if (lineageChildren.length > 0) {
+        const childNames = lineageChildren.map((id) => renderFamilyChip(id)).join(", ");
+        segs.push(`parent of ${childNames}`);
+      }
       if (lineageParents.length > 0) {
-        const parentNames = lineageParents
-          .map((id) => escapeHtml(lookupDisplayNameById(id)))
-          .join(", ");
+        const parentNames = lineageParents.map((id) => renderFamilyChip(id)).join(", ");
         segs.push(`child of ${parentNames}`);
       }
       familyLine = `<div class="small"><b>Family:</b> ${segs.join(" \u00B7 ")}</div>`;
@@ -587,7 +750,7 @@ export class EntityFocusPanel {
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
         <div class="small"><b>Relationships:</b> ${relationsLine}</div>
         ${familyLine}
-        <div class="small" style="margin-top:4px;"><b>Recent Memory:</b></div>
+        <div class="small" style="margin-top:4px;"><b>${memorySourceLabel}:</b></div>
         ${memoryLines}
       </details>
     `;
@@ -620,7 +783,8 @@ export class EntityFocusPanel {
       <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}${entity.debug?.lastIntentReason ? ` <span class="muted">(because: ${escapeHtml(entity.debug.lastIntentReason)})</span>` : ""}</div>
-      <div class="small"><b>Hunger:</b> ${escapeHtml(hungerLabel)}${hungerPct === null ? "" : ` (${hungerPct}% well-fed)`}</div>
+      <div class="small"><b>Hunger:</b> ${escapeHtml(hungerLabel)}${hungerPct === null ? "" : ` (${hungerPct}% fed)`}</div>
+      ${foodDiagnosisBlock}
       ${engBlockOpen}
       <div class="small"><b>FSM:</b> current=${escapeHtml(fsmState)} prev=${escapeHtml(fsmPrev)} | nextPath=${escapeHtml(fsmPath || "-")}</div>
       <div class="small"><b>AI Target:</b> ${escapeHtml(aiTargetState)} | <b>TTL:</b> ${fmtSec(aiTargetTtl)} | <b>Priority:</b> ${fmtNum(aiTargetMeta?.priority ?? 0, 2)} | <b>Source:</b> ${escapeHtml(aiTargetMeta?.source ?? "-")}</div>

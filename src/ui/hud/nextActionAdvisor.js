@@ -1,9 +1,10 @@
 import { BALANCE } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
-import { getTile } from "../../world/grid/Grid.js";
+import { getTile, listTilesByType } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
 const NETWORK_TILES = new Set([TILE.ROAD, TILE.WAREHOUSE, TILE.LUMBER, TILE.BRIDGE]);
+const WORKSITE_TILES = Object.freeze([TILE.FARM, TILE.LUMBER]);
 
 const TARGETS = Object.freeze([
   { key: "warehouses", tool: "warehouse", label: "Anchor stockpile" },
@@ -22,6 +23,40 @@ function tileLabel(tile) {
   return tile && Number.isFinite(Number(tile.ix)) && Number.isFinite(Number(tile.iz))
     ? `(${tile.ix},${tile.iz})`
     : "";
+}
+
+function worksiteLabel(tileType) {
+  if (tileType === TILE.FARM) return "farm";
+  if (tileType === TILE.LUMBER) return "lumber camp";
+  return "worksite";
+}
+
+function nearestDistance(from, targets) {
+  if (!from || !Array.isArray(targets) || targets.length <= 0) return Infinity;
+  let best = Infinity;
+  for (const target of targets) {
+    const d = Math.abs(Number(from.ix) - Number(target.ix)) + Math.abs(Number(from.iz) - Number(target.iz));
+    if (Number.isFinite(d) && d < best) best = d;
+  }
+  return best;
+}
+
+function findCoverageWorksite(state, preferredTypes = WORKSITE_TILES) {
+  if (!state?.grid) return null;
+  const sites = listTilesByType(state.grid, preferredTypes);
+  if (!Array.isArray(sites) || sites.length <= 0) return null;
+  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  const softRadius = Number(BALANCE.worksiteCoverageSoftRadius ?? 10);
+  const hardRadius = Number(BALANCE.worksiteCoverageHardRadius ?? 16);
+  let stretched = null;
+  for (const site of sites) {
+    const depotDistance = nearestDistance(site, warehouses);
+    const tileType = getTile(state.grid, site.ix, site.iz);
+    const candidate = { ix: site.ix, iz: site.iz, tileType, depotDistance };
+    if (!Number.isFinite(depotDistance) || depotDistance > hardRadius) return candidate;
+    if (!stretched && depotDistance > softRadius) stretched = candidate;
+  }
+  return stretched;
 }
 
 function advice({ priority = "normal", label, detail, tool = "select", target = null, reason }) {
@@ -72,16 +107,57 @@ function findOpenRouteGap(state, route) {
   return gaps[0] ? { ix: gaps[0].ix, iz: gaps[0].iz } : null;
 }
 
-function getFoodCrisisAdvice(state, context) {
+function getWorksiteCoverageAdvice(state, { crisis = false, preferredTypes = WORKSITE_TILES } = {}) {
+  const logistics = state.metrics?.logistics ?? {};
+  const isolated = finiteCount(logistics.isolatedWorksites);
+  const stretched = finiteCount(logistics.stretchedWorksites);
+  const issueCount = isolated > 0 ? isolated : stretched;
+  if (issueCount <= 0) return null;
+
+  const target = findCoverageWorksite(state, preferredTypes);
+  if (crisis && !target) return null;
+
+  const place = tileLabel(target);
+  const site = target ? worksiteLabel(target.tileType) : "worksite";
+  const issueKind = isolated > 0 ? "outside depot reach" : "beyond efficient depot reach";
+  const label = crisis
+    ? `Reconnect ${site}${place ? ` at ${place}` : ""}`
+    : `Reconnect ${issueCount} ${isolated > 0 ? "isolated" : "stretched"} worksite${issueCount === 1 ? "" : "s"}`;
+  const detail = target
+    ? `Place a warehouse or road link near ${place}; this ${site} is ${issueKind}.`
+    : "Add a warehouse or road link near the uncovered worksite cluster.";
+  return withCauseFields(advice({
+    priority: crisis ? "critical" : "high",
+    label,
+    detail,
+    tool: "warehouse",
+    target: target ? { ix: target.ix, iz: target.iz } : null,
+    reason: crisis ? "food_access_crisis" : "worksite_coverage",
+  }), {
+    headline: crisis
+      ? `Food access gap${place ? ` at ${place}` : ""}`
+      : `Reconnect ${issueCount} ${isolated > 0 ? "isolated" : "stretched"} worksite${issueCount === 1 ? "" : "s"}`,
+    whyNow: crisis
+      ? `Food is critical and a ${site} is ${issueKind}${place ? ` at ${place}` : ""}.`
+      : `${issueCount} worksite${issueCount === 1 ? " is" : "s are"} ${issueKind}.`,
+    expectedOutcome: crisis
+      ? "Reachable farms restore food intake before hunger collapses hauling."
+      : "Depot coverage shortens hauls and lets workers deliver output reliably.",
+  });
+}
+
+function getFoodCrisisAdvice(state) {
   const food = Number(state.resources?.food ?? 0);
   const emptySec = Number(state.metrics?.resourceEmptySec?.food ?? 0);
   const starvationRisk = finiteCount(state.metrics?.starvationRiskCount);
   const emergencyFood = Number(BALANCE.foodEmergencyThreshold ?? 18);
   if (food > emergencyFood && emptySec <= 0 && starvationRisk <= 0) return null;
+  const farmAccessAdvice = getWorksiteCoverageAdvice(state, { crisis: true, preferredTypes: [TILE.FARM] });
+  if (farmAccessAdvice) return farmAccessAdvice;
   return withCauseFields(advice({
     priority: "critical",
-    label: "Recover food now",
-    detail: "Reconnect farms before workers enter starvation recovery.",
+    label: "Stabilize food supply",
+    detail: "Place another farm on green terrain or reconnect field access before starvation recovery starts.",
     tool: "farm",
     reason: "food_crisis",
   }), {
@@ -89,7 +165,7 @@ function getFoodCrisisAdvice(state, context) {
     whyNow: food <= emergencyFood
       ? `Food is below the emergency line (${food} available, target ${emergencyFood}).`
       : "Food recovery is stalling and starvation risk is rising.",
-    expectedOutcome: "Reconnecting farms keeps workers fed and preserves haul capacity.",
+    expectedOutcome: "More reachable farms keep workers fed and preserve haul capacity.",
   });
 }
 
@@ -222,6 +298,7 @@ export function getNextActionAdvice(state) {
   return getFoodCrisisAdvice(state)
     ?? getRouteAdvice(state, runtime, context)
     ?? getDepotAdvice(runtime, context)
+    ?? getWorksiteCoverageAdvice(state)
     ?? getTargetAdvice(runtime, context)
     ?? withCauseFields(advice({
       priority: "done",

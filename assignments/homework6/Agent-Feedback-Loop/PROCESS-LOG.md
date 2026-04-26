@@ -284,3 +284,75 @@ Round 7 should pick up:
 7. Per stop-condition check: if Round 7 reviewers report **0 P0** and bench shows **4/4 max_days_reached** with **min ≥ 32**, the iteration loop can wind down. Otherwise iterate.
 
 Round 7 reviewer inputs MUST stay blind per the unchanged Anti-Echo-Chamber contract: do not feed this PROCESS-LOG, the Round 6 validation report, or any cumulative score commentary into reviewer prompts or runtime context.
+
+---
+
+## Round 8
+
+### Timeline
+
+- Stage A: 10 blind reviewer agents dispatched with isolated prompts and staggered starts.
+- Stage A score: 5.42 / 10 raw; 5.91 / 10 excluding one likely reviewer runtime/tool isolation anomaly (`01c-ui` blank/unreachable report while 9/10 loaded the same URL).
+- Stage B: four accepted implementation slices: manual objective feedback, autopilot plan card, starvation diagnostics, character memory/traits.
+- Stage C: main thread implemented build/objective/autopilot work while one worker subagent implemented character/starvation work in parallel.
+- Stage D: targeted tests + build + diff check completed; full `npm test` timed out.
+
+### What Landed
+
+- Build failures now include recovery guidance without changing existing `reasonText` contracts.
+- Hover hints, click failure action messages, and floating toasts now say why placement failed and what to try next.
+- Scenario route/depot completion now emits visible milestone/action/objective-log confirmation.
+- Next Action HUD now distinguishes `Manual guide` from `Autopilot plan`, with explicit manual-boundary copy.
+- Worker focus panel now explains food-route failures with stock, carry, warehouse, farm, reachability, and last reject facts.
+- Character panel now shows behavior-facing trait descriptions, child/parent names, selectable family chips, and durable `memory.history`.
+- Birth, death-witness, and friendship/rivalry memories now mirror into capped serializable history arrays.
+
+### Validation
+
+- targeted node test set: 50/50 passing
+- `git diff --check`: passing
+- `npm run build`: passing
+- `npm test`: timed out after 244 seconds, no failure details emitted before timeout
+
+### Main Lesson
+
+Round 8 addressed the repeated reviewer complaint that the simulation was more watchable than controllable. The important shift was not adding new systems; it was closing player-facing diagnosis loops: failed action -> reason -> recovery, route/depot objective -> confirmation, AI advice -> ownership boundary, starving worker -> cause -> fix, named worker -> persistent memory.
+
+The remaining risk is still breadth validation. Targeted tests and build are green, but this round should not be counted as full-suite green until `npm test` can finish or be split into timed shards.
+
+---
+
+## Round 9
+
+### Timeline
+
+- Stage A: strict orchestrator review using a visible headed browser, AI proxy health check, AI Log inspection, and a 180s long run.
+- Stage B: four accepted slices: Storyteller readability, AI automation boundary, food-crisis specificity, and full-suite contract cleanup.
+- Stage C: implemented the accepted slices, then resolved full-suite failures by separating stale test expectations from product regressions.
+- Stage D: targeted tests, full `npm test`, production build, diff hygiene, and visible browser verification all passed.
+
+### What Landed
+
+- Storyteller text no longer collapses into joined strings such as `MILESTONEDepot`, and Director copy no longer repeats as `DIRECTORDIRECTOR`.
+- AI automation copy now states the Autopilot/LLM boundary explicitly: Autopilot OFF means live LLM calls are disabled, while rule-based directors and fallback summaries may still be visible.
+- Food-crisis guidance now checks farm/worksite reachability and gives concrete recovery actions such as reconnecting farms, extending roads, adding warehouses, or placing reachable farms.
+- Non-dev browser smoke can still access `window.__utopiaLongRun`, while the broader dev app handle remains dev-gated.
+- Full-suite blockers were resolved: Autopilot copy tests, hitbox source guard tests, build-spam cap expectations, mood-output coupling expectations, noisy destroyed-building logs, and progression emergency priority.
+
+### Validation
+
+- targeted node tests: 40/40 passing
+- full `npm test`: 1449 tests, 1447 pass, 0 fail, 2 skipped, 240711.2425 ms
+- `npm run build`: passing
+- `git diff --check`: passing
+- visible headed-browser verification:
+  - initial 180s review reproduced Storyteller and AI Log boundary issues
+  - post-fix 120s ultra-speed run reached sim clock `1000.3s`
+  - final AI Log smoke confirmed `llmBoundary=true`, `hasLongRun=true`, `hasDevApp=false`, `duplicateDirector=false`, and `milestoneJoined=false`
+  - raw screenshots/logs were local temporary artifacts and were cleaned before push
+
+### Main Lesson
+
+Round 9 closed the Round 8 validation gap and made the AI/autopilot surfaces inspectable rather than merely present. The key product correction is the automation boundary: players can now distinguish manual guidance, rule-based fallback directors, Autopilot execution, and disabled live LLM calls without guessing from an empty or ambiguous AI log.
+
+The remaining risk is balance depth. Food recovery is now much clearer to the player, but Round 9 did not retune the economy or run a multi-seed benchmark.

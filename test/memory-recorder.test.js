@@ -37,6 +37,9 @@ test("MortalitySystem records related worker death into witness memory", () => {
   assert.match(witness.memory.recentEvents[0], /\[42s\] Friend /);
   assert.match(witness.memory.recentEvents[0], new RegExp(deceased.displayName));
   assert.match(witness.memory.recentEvents[0], /died \(starvation\)/);
+  assert.equal(witness.memory.history?.[0]?.type, "death");
+  assert.match(witness.memory.history?.[0]?.label ?? "", /died \(starvation\)/);
+  assert.doesNotThrow(() => JSON.stringify(witness.memory.history));
 });
 
 test("MortalitySystem falls back to nearby colleagues when no relationship exists", () => {
@@ -51,6 +54,8 @@ test("MortalitySystem falls back to nearby colleagues when no relationship exist
 
   assert.match(witnessA.memory.recentEvents[0], /Colleague .* died \(starvation\)/);
   assert.match(witnessB.memory.recentEvents[0], /Colleague .* died \(starvation\)/);
+  assert.equal(witnessA.memory.history?.[0]?.type, "death");
+  assert.equal(witnessB.memory.history?.[0]?.type, "death");
 });
 
 function prepareWarehouseRiskState(rng) {

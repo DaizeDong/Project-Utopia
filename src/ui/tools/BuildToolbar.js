@@ -34,7 +34,18 @@ function getBuildDeficitHint(state, preview) {
 }
 
 const SIDEBAR_PANELS_STORAGE_KEY = "utopiaSidebarPanels:v2";
-const CORE_PANEL_KEYS = Object.freeze(["build", "costs", "resources", "population", "management", "world"]);
+const CORE_PANEL_KEYS = Object.freeze([
+  "build",
+  "costs",
+  "resources",
+  "population",
+  "management",
+  "world",
+  "ai-automation",
+  "ai-timeline",
+  "ai-insights",
+  "ai-exchange",
+]);
 const POPULATION_TARGET_LIMITS = Object.freeze({
   workers: { min: 0, max: 500 },
   traders: { min: 0, max: 300 },
@@ -503,6 +514,7 @@ export class BuildToolbar {
         // simulation tick rather than waiting for the full interval to elapse.
         this.state.ai.lastEnvironmentDecisionSec = -9999;
         this.state.ai.lastPolicyDecisionSec = -9999;
+        this.state.ai.forceStrategicDecision = true;
         this.state.controls.actionMessage = "AI enabled. Waiting for next decision cycle.";
       }
       this.state.controls.actionKind = "info";

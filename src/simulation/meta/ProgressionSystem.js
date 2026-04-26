@@ -282,6 +282,68 @@ function detectMilestones(state) {
   }
 }
 
+function scenarioObjectiveId(entry, fallback) {
+  return String(entry?.id ?? entry?.label ?? fallback).trim() || fallback;
+}
+
+function ensureScenarioObjectiveState(state, runtime) {
+  const scenarioId = String(runtime?.scenario?.id ?? "default");
+  const current = state.gameplay.scenarioObjectiveSeen;
+  if (!current || current.scenarioId !== scenarioId) {
+    state.gameplay.scenarioObjectiveSeen = {
+      scenarioId,
+      routes: (runtime?.routes ?? [])
+        .filter((route) => route.connected)
+        .map((route, idx) => scenarioObjectiveId(route, `route-${idx}`)),
+      depots: (runtime?.depots ?? [])
+        .filter((depot) => depot.ready)
+        .map((depot, idx) => scenarioObjectiveId(depot, `depot-${idx}`)),
+    };
+  }
+  return state.gameplay.scenarioObjectiveSeen;
+}
+
+function emitScenarioObjectiveMilestone(state, detail) {
+  emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, detail);
+  logObjective(state, detail.message);
+  if (state.controls) {
+    state.controls.actionMessage = detail.message;
+    state.controls.actionKind = "milestone";
+  }
+}
+
+function detectScenarioObjectiveMilestones(state, runtime) {
+  const seen = ensureScenarioObjectiveState(state, runtime);
+  for (const [idx, route] of (runtime?.routes ?? []).entries()) {
+    const id = scenarioObjectiveId(route, `route-${idx}`);
+    if (!route.connected || seen.routes.includes(id)) continue;
+    seen.routes.push(id);
+    const label = String(route.label ?? "supply route").trim();
+    emitScenarioObjectiveMilestone(state, {
+      kind: "scenario_route_connected",
+      key: id,
+      label: `Route online: ${label}`,
+      message: `Route online: ${label}. Workers can haul through the repaired line.`,
+      current: seen.routes.length,
+      baseline: 0,
+    });
+  }
+  for (const [idx, depot] of (runtime?.depots ?? []).entries()) {
+    const id = scenarioObjectiveId(depot, `depot-${idx}`);
+    if (!depot.ready || seen.depots.includes(id)) continue;
+    seen.depots.push(id);
+    const label = String(depot.label ?? "depot").trim();
+    emitScenarioObjectiveMilestone(state, {
+      kind: "scenario_depot_ready",
+      key: id,
+      label: `Depot reclaimed: ${label}`,
+      message: `Depot reclaimed: ${label}. Warehouse coverage now reaches this objective zone.`,
+      current: seen.depots.length,
+      baseline: 0,
+    });
+  }
+}
+
 function buildCoverageStatus(state) {
   const logistics = state.metrics?.logistics ?? null;
   if (!logistics) {
@@ -563,6 +625,7 @@ export class ProgressionSystem {
 
     const runtime = getScenarioRuntime(state);
     const coverage = buildCoverageStatus(state);
+    detectScenarioObjectiveMilestones(state, runtime);
     maybeTriggerRecovery(state, runtime, coverage, dt);
     // v0.8.0 Phase 4 — Survival Mode. Survival score is the primary per-tick
     // scoring path; the legacy per-objective progression pipeline has been

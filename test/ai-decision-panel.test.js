@@ -46,6 +46,20 @@ test("AIDecisionPanel renders a live causal chain alongside parsed directives", 
     state.ai.lastPolicySource = "fallback";
     state.ai.lastPolicyModel = "gpt-4.1-mini";
     state.ai.lastPolicyResultSec = 0.2;
+    state.ai.lastStrategySource = "llm";
+    state.ai.lastStrategyModel = "gpt-4.1-mini";
+    state.ai.lastStrategySec = 1.2;
+    state.ai.strategy = {
+      priority: "grow",
+      phase: "industrialize",
+      riskTolerance: 0.55,
+      resourceFocus: "stone",
+      workerFocus: "wood",
+      defensePosture: "neutral",
+      primaryGoal: "Build quarry and smithy chain",
+      constraints: ["reserve food while industrializing"],
+      resourceBudget: { reserveWood: 12, reserveFood: 20 },
+    };
     state.ai.lastEnvironmentDirective = {
       weather: "rain",
       durationSec: 14,
@@ -80,6 +94,9 @@ test("AIDecisionPanel renders a live causal chain alongside parsed directives", 
     assert.match(nodes.aiDecisionPanelBody.innerHTML, /Live Causal Chain/);
     assert.match(nodes.aiDecisionPanelBody.innerHTML, /Reconnect 1 isolated worksite/);
     assert.match(nodes.aiDecisionPanelBody.innerHTML, /contested logistics lane/);
+    assert.match(nodes.aiDecisionPanelBody.innerHTML, /Strategic Director \(Parsed\)/);
+    assert.match(nodes.aiDecisionPanelBody.innerHTML, /industrialize/);
+    assert.match(nodes.aiDecisionPanelBody.innerHTML, /Build quarry and smithy chain/);
     assert.match(nodes.aiDecisionPanelBody.innerHTML, /depot throughput/);
   } finally {
     globalThis.document = prevDocument;

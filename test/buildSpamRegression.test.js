@@ -25,6 +25,7 @@ import {
   BUILD_COST,
   BUILD_COST_ESCALATOR,
   computeEscalatedBuildCost,
+  isBuildKindHardCapped,
 } from "../src/config/balance.js";
 
 function cumulativeWood(kind, n) {
@@ -59,14 +60,15 @@ test("build-spam: per-copy wood cost is monotonically non-decreasing across ware
   }
 });
 
-test("build-spam: per-copy wood cost is capped by BUILD_COST_ESCALATOR.warehouse.cap", () => {
-  const baseWood = Number(BUILD_COST.warehouse.wood ?? 0);
-  const cap = Number(BUILD_COST_ESCALATOR.warehouse.cap ?? 0);
-  const expectedMax = Math.ceil(baseWood * cap);
+test("build-spam: warehouse spam is bounded by hardCap while beyond-cap costs keep rising", () => {
+  const atCap = Number(computeEscalatedBuildCost("warehouse", 9).wood ?? 0);
+  const beyondCap = Number(computeEscalatedBuildCost("warehouse", 20).wood ?? 0);
+  assert.ok(beyondCap > atCap,
+    `warehouse beyond-cap cost should keep rising to discourage plateau cheese (${beyondCap} <= ${atCap})`);
   for (const count of [30, 60, 120]) {
-    const c = Number(computeEscalatedBuildCost("warehouse", count).wood ?? 0);
-    assert.ok(c <= expectedMax,
-      `warehouse cost at count=${count} exceeded cap ${expectedMax}: ${c}`);
+    const capState = isBuildKindHardCapped("warehouse", count);
+    assert.equal(capState.capped, true, `warehouse count=${count} should be placement-capped`);
+    assert.equal(capState.hardCap, BUILD_COST_ESCALATOR.warehouse.hardCap);
   }
 });
 
