@@ -228,6 +228,51 @@ function pushFriendshipMemory(agent, line, dedupKey, windowSec, nowSec) {
   agent.memory.recentEvents = agent.memory.recentEvents.slice(0, 6);
 }
 
+// v0.8.2 Round-7 (01e+02b) — Worker trait behavioral wiring.
+// Returns a modifier bundle read by WorkerAISystem.update to adjust decay
+// rates, intent scores, and thresholds per trait.  When the master toggle
+// `BALANCE.workerTraitEffectsEnabled` is false this is a zero-overhead no-op
+// (all modifiers at neutral values).
+function getWorkerTraitModifiers(worker) {
+  if (!BALANCE.workerTraitEffectsEnabled) {
+    return {
+      weatherCostMult: 1.0,
+      moraleDecayMult: 1.0,
+      restDecayMult: 1.0,
+      friendRestBonus: 0,
+      taskCooldownMult: 1.0,
+      deathThresholdDelta: 0,
+    };
+  }
+  const traits = worker.traits ?? [];
+  return {
+    weatherCostMult: traits.includes("hardy") ? BALANCE.traitHardyWeatherMult : 1.0,
+    moraleDecayMult: traits.includes("hardy") ? BALANCE.traitHardyMoraleDecayMult : 1.0,
+    restDecayMult: traits.includes("social") ? BALANCE.traitSocialRestDecayMult : 1.0,
+    friendRestBonus: traits.includes("social") ? BALANCE.traitSocialFriendBonus : 0,
+    taskCooldownMult: traits.includes("efficient") ? BALANCE.traitEfficientTaskMult : 1.0,
+    deathThresholdDelta: traits.includes("resilient") ? BALANCE.traitResilientDeathThresholdDelta : 0,
+  };
+}
+
+// v0.8.2 Round-7 (01e+02b) — Emotional decision-context prefix.
+// Prepends a short first-person line that reflects the worker's immediate
+// emotional state before the standard decision-context text.  The grief
+// branch surfaces blackboard.griefFriendName / griefUntilSec written by
+// the colony's memorial system (not yet live as of Round-7, so the branch
+// is a no-op unless future systems populate it).
+function addEmotionalPrefix(worker, state, text) {
+  const hunger = Number(worker.hunger ?? 1);
+  const morale = Number(worker.morale ?? 1);
+  if (hunger < 0.25) return `Running low — ${text}`;
+  if (morale < 0.3) return `Barely holding — ${text}`;
+  const griefName = worker.blackboard?.griefFriendName;
+  const griefUntil = Number(worker.blackboard?.griefUntilSec ?? -Infinity);
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  if (griefName && nowSec < griefUntil) return `${griefName} is gone. ${text}`;
+  return text;
+}
+
 export function chooseWorkerIntent(worker, state) {
   const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
   const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0) > 0;
@@ -443,7 +488,7 @@ function consumeEmergencyRation(worker, state, dt, nowSec) {
   if (hungerNow >= WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD) return;
   const warehouseFood = Number(state.resources.food ?? 0);
   const carryFood = Number(worker.carry?.food ?? 0);
-  // v0.8.2 Round-7 02a — fall back to carry.food when warehouse is empty
+  // v0.8.2 Round-7 01e+02b — fall back to carry.food when warehouse is empty
   if (warehouseFood <= 0 && carryFood <= 0) return;
   if (worker.debug?.reachableFood) return;
   worker.blackboard ??= {};
@@ -1016,6 +1061,9 @@ export class WorkerAISystem {
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
 
+      // v0.8.2 Round-7 (01e+02b) — trait modifiers loaded once per worker per tick.
+      const _traitMods = getWorkerTraitModifiers(worker);
+
       // M3a — Carry fatigue: a loaded worker tires faster. Multiplier stacks with night modifier.
       const _carryTotal = Number(worker.carry?.food ?? 0)
         + Number(worker.carry?.wood ?? 0)
@@ -1029,7 +1077,8 @@ export class WorkerAISystem {
       const isNight = Boolean(state.environment?.isNight);
       const restDecay = Number(BALANCE.workerRestDecayPerSecond ?? 0.004)
         * (isNight ? Number(BALANCE.workerRestNightDecayMultiplier ?? 2.4) : 1)
-        * _fatigueMult;
+        * _fatigueMult
+        * _traitMods.restDecayMult;  // social trait: rest decays slower (bonds regenerate rest)
       worker.rest = clamp(Number(worker.rest ?? 1) - restDecay * dt, 0, 1);
 
       // M3b — In-transit spoilage: perishables (food, herbs) decay off-road.
@@ -1055,20 +1104,31 @@ export class WorkerAISystem {
           worker.blackboard.carryTicks = _ticks + 1;
         }
       }
-      // Morale decay: faster during adverse weather
+      // Morale decay: faster during adverse weather.
+      // hardy trait: adverse-weather morale penalty reduced by traitHardyMoraleDecayMult.
       const weatherMoraleMult = (state.weather?.current === "storm") ? 2.5
         : (state.weather?.current === "drought" || state.weather?.current === "rain") ? 1.5 : 1.0;
-      worker.morale = clamp(Number(worker.morale ?? 1) - Number(BALANCE.workerMoraleDecayPerSecond ?? 0.001) * weatherMoraleMult * dt, 0, 1);
+      const effectiveWeatherMoraleMult = weatherMoraleMult <= 1.0
+        ? weatherMoraleMult  // neutral / clear: trait has no effect
+        : 1.0 + (weatherMoraleMult - 1.0) * _traitMods.moraleDecayMult;
+      worker.morale = clamp(Number(worker.morale ?? 1) - Number(BALANCE.workerMoraleDecayPerSecond ?? 0.001) * effectiveWeatherMoraleMult * dt, 0, 1);
 
       // Social need: decays when isolated, recovers when near other workers
       let nearbyWorkers = 0;
+      let hasNearbyCloseFriend = false;
       if (state.metrics.tick % 30 === 0) {
         for (const other of state.agents) {
           if (other === worker || other.type !== "WORKER" || other.alive === false) continue;
           const dist = Math.abs(worker.x - other.x) + Math.abs(worker.z - other.z);
           if (dist < 4) nearbyWorkers++;
+          // v0.8.2 Round-7 (01e+02b): detect Close Friend within 3 tiles for social trait rest bonus
+          if (_traitMods.friendRestBonus > 0 && dist < 3) {
+            const opinionOfOther = Number(worker.relationships?.[other.id] ?? 0);
+            if (opinionOfOther >= 0.45) hasNearbyCloseFriend = true;
+          }
         }
         worker._nearbyWorkers = nearbyWorkers;
+        worker._hasNearbyCloseFriend = hasNearbyCloseFriend;
         // Emit social interaction events periodically when workers are near each other
         if (nearbyWorkers > 0 && state.metrics.tick % 300 === 0) {
           emitEvent(state, EVENT_TYPES.WORKER_SOCIALIZED, {
@@ -1078,8 +1138,13 @@ export class WorkerAISystem {
         }
       }
       nearbyWorkers = worker._nearbyWorkers ?? 0;
+      hasNearbyCloseFriend = worker._hasNearbyCloseFriend ?? false;
       const socialDelta = nearbyWorkers > 0 ? 0.005 * nearbyWorkers : -0.003;
       worker.social = clamp(Number(worker.social ?? 0.5) + socialDelta * dt, 0, 1);
+      // social trait + Close Friend nearby: apply rest bonus (accelerate rest recovery)
+      if (_traitMods.friendRestBonus > 0 && hasNearbyCloseFriend) {
+        worker.rest = clamp(Number(worker.rest ?? 1) + _traitMods.friendRestBonus * dt, 0, 1);
+      }
 
       // Mood composite: weighted average of hunger, rest, morale, social
       const prevMood = worker.mood ?? 0.5;
@@ -1306,6 +1371,11 @@ export class WorkerAISystem {
 
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
+      // v0.8.2 Round-7 (01e+02b) — emotional decision-context prefix stored on
+      // blackboard so EntityFocusPanel can render it alongside the intent reason.
+      if (worker.debug?.lastIntentReason) {
+        worker.blackboard.emotionalContext = addEmotionalPrefix(worker, state, worker.debug.lastIntentReason);
+      }
       worker.debug ??= {};
       const prevStateNode = worker.debug.lastStateNode;
       // Map role to intent name for eval tracking (eval expects "farm"/"lumber" etc., not FSM states)

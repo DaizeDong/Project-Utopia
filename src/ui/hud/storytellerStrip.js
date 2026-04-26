@@ -574,6 +574,51 @@ function buildTemplateTag(state) {
 }
 
 /**
+ * v0.8.2 Round-7 (01e+02b) — Local WHISPER narrative builder.
+ * Generates a state-aware, personalised story line for the fallback path
+ * (no live LLM).  Returns null when no state signal warrants an override,
+ * in which case the caller should fall through to the standard DIRECTOR
+ * text.  When a non-null string is returned the HUD strip uses "WHISPER"
+ * as the badge label to signal that the narrative is data-driven even
+ * without a live model.
+ *
+ * Pure function — no DOM, no side effects.
+ *
+ * @param {object} state GameState-like
+ * @returns {string | null}
+ */
+export function buildLocalWhisperNarrative(state) {
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
+  const food = Number(state?.resources?.food ?? 0);
+  const workers = (state?.agents ?? []).filter(
+    (a) => a && a.type === "WORKER" && a.alive !== false,
+  ).length || (state?.colony?.workers?.length ?? 0);
+  const kitchens = Number(state?.buildings?.kitchens ?? 0);
+  const cooks = (state?.agents ?? []).filter(
+    (a) => a && a.type === "WORKER" && a.alive !== false && a.role === "COOK",
+  ).length;
+  const deathLog = state?.gameplay?.deathLog ?? [];
+  const recentDeath = Array.isArray(deathLog) ? deathLog[0] : null;
+  if (recentDeath) {
+    const deathSec = Number(recentDeath.timeSec ?? 0);
+    if ((nowSec - deathSec) < 90) {
+      const name = String(recentDeath.name ?? recentDeath.displayName ?? "Someone").split(" ")[0];
+      if (food < 50) {
+        return `${name} is gone — the rest press on. The colony cannot afford another loss.`;
+      }
+      return `${name} fell, but the colony holds. Steady the line.`;
+    }
+  }
+  if (food < 30 && workers > 0) {
+    return `${workers} mouth${workers === 1 ? "" : "s"}, no margin. Every second without harvest is a debt paid in lives.`;
+  }
+  if (kitchens > 0 && cooks === 0) {
+    return "The kitchen stands cold. Raw food won\u2019t save them \u2014 someone needs to cook.";
+  }
+  return null;
+}
+
+/**
  * @param {object} state GameState or minimal shape with `ai.groupPolicies`
  *   (a Map keyed by group id) and `ai.lastPolicySource` (string).
  * @returns {string} Single-line human-readable storyteller ribbon text.
@@ -711,17 +756,25 @@ export function computeStorytellerStripModel(state) {
   const voicePackSeed = Math.floor(Math.max(0, Number(state?.metrics?.timeSec ?? 0)) / 30);
   if (hasPolicy) {
     if (mode === "fallback") {
-      const vp = lookupAuthorVoice(mapTemplateId, focusTag);
-      if (vp.hit) {
-        const picked = pickVoicePackEntry(vp.bucket, voicePackSeed);
-        if (picked) {
-          summaryText = picked;
-          voicePackHit = true;
+      // v0.8.2 Round-7 (01e+02b) — local WHISPER narrative: try state-aware
+      // personalised text first; fall through to voice-pack if no signal.
+      const localWhisper = buildLocalWhisperNarrative(state);
+      if (localWhisper) {
+        summaryText = localWhisper;
+        voicePackHit = true; // repurpose flag: this text replaces the static pack
+      } else {
+        const vp = lookupAuthorVoice(mapTemplateId, focusTag);
+        if (vp.hit) {
+          const picked = pickVoicePackEntry(vp.bucket, voicePackSeed);
+          if (picked) {
+            summaryText = picked;
+            voicePackHit = true;
+          } else {
+            summaryText = humaniseSummary(summary || "colony on autopilot");
+          }
         } else {
           summaryText = humaniseSummary(summary || "colony on autopilot");
         }
-      } else {
-        summaryText = humaniseSummary(summary || "colony on autopilot");
       }
     } else {
       summaryText = humaniseSummary(summary || "colony on autopilot");
