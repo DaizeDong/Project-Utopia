@@ -688,6 +688,10 @@ function advanceLifecycle(event, dt) {
   return false;
 }
 
+// v0.8.2 Round-7 02a — module-level dedup map for objectiveLog entries
+// (fire/vermin events should not flood the log within 30s windows).
+const _warehouseObjLogDedup = new Map();
+
 // v0.8.0 Phase 2 M2: per-tick density-risk roll for warehouses above threshold.
 // Spec § 3: high resource density around a warehouse probabilistically ignites
 // WAREHOUSE_FIRE or VERMIN_SWARM. A given warehouse emits at most one event
@@ -754,6 +758,20 @@ function applyWarehouseDensityRisk(dt, state, services) {
         30,
       );
       pushWarning(state, `Warehouse fire at (${loc.ix},${loc.iz}) — stored goods damaged`, "warning", "WorldEventSystem");
+      // v0.8.2 Round-7 02a — push fire event to objectiveLog for player visibility.
+      if (state.gameplay) {
+        if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+        const nowSec = Number(state.metrics?.timeSec ?? 0);
+        const dedupeKey = `fire:${loc.ix},${loc.iz}`;
+        if (!_warehouseObjLogDedup.has(dedupeKey) || nowSec - _warehouseObjLogDedup.get(dedupeKey) > 30) {
+          _warehouseObjLogDedup.set(dedupeKey, nowSec);
+          const lossTotal = Math.round(lossFood + lossWood + lossStone + lossHerbs);
+          state.gameplay.objectiveLog.unshift(
+            `[${nowSec.toFixed(1)}s] Warehouse fire at (${loc.ix},${loc.iz}) — ${lossTotal} resources lost`,
+          );
+          state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+        }
+      }
       continue; // at most one density-risk event per warehouse per tick
     }
 
@@ -775,6 +793,20 @@ function applyWarehouseDensityRisk(dt, state, services) {
         30,
       );
       pushWarning(state, `Vermin swarm at warehouse (${loc.ix},${loc.iz}) — food stores gnawed`, "warning", "WorldEventSystem");
+      // v0.8.2 Round-7 02a — push vermin event to objectiveLog for player visibility.
+      if (state.gameplay) {
+        if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+        const nowSec = Number(state.metrics?.timeSec ?? 0);
+        const dedupeKey = `vermin:${loc.ix},${loc.iz}`;
+        if (!_warehouseObjLogDedup.has(dedupeKey) || nowSec - _warehouseObjLogDedup.get(dedupeKey) > 30) {
+          _warehouseObjLogDedup.set(dedupeKey, nowSec);
+          const lossRounded = Math.round(lossFood);
+          state.gameplay.objectiveLog.unshift(
+            `[${nowSec.toFixed(1)}s] Vermin swarm at (${loc.ix},${loc.iz}) — ${lossRounded} food gnawed`,
+          );
+          state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+        }
+      }
     }
   }
 }
