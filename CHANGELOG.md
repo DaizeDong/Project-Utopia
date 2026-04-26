@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-7 01c+02e+02b: HUD labels + responsive 1024px + milestone toast + Space guard + Dev gate + New Map confirm + Help fix
+
+### New Features (Round-7 01c+02e+02b — UI information architecture)
+
+- **HUD secondary resource labels** (`index.html`): Added `<span class="hud-label-sm">` text labels (Meals / Tools / Med / Prosp / Threat) to the 5 secondary HUD resources that previously displayed only bare numbers. New CSS class `.hud-label-sm` (9px, muted blue, `letter-spacing: 0.02em`) keeps the labels unobtrusive in the compact status bar while giving first-time players context for unlabelled digits.
+- **HUD 1280px overflow fix** (`index.html`): `#aiAutopilotChip` changed from `flex-shrink: 1` to `flex-shrink: 0` (never compress) and `#statusObjective` gains `flex-shrink: 0` so the Survived timer and Autopilot chip are never truncated at 1280px. Scenario headline in scoreboard retains `flex-shrink: 1` so the middle section absorbs excess compression instead.
+- **Responsive 1024px sidebar** (`index.html`): Extended `@media (max-width: 1024px)` block with sidebar-becomes-bottom-bar rules: `#sidebar` repositions to `position: fixed; bottom: 0; left: 0; right: 0;`, `#sidebarTabStrip` switches to horizontal row, `.sidebar-tab-btn` reverts to horizontal writing mode. `#sidebarPanelArea` gets `max-height: 40vh; overflow-y: auto` so content remains scrollable. This restores playability at tablet widths.
+- **Milestone toast size cap** (`index.html`): `.build-toast--milestone` gains `max-width: 320px; white-space: normal; word-break: break-word` to prevent milestone toasts from spanning ~40% screen width and blocking the map view.
+- **New Map confirmation dialog** (`src/ui/hud/GameStateOverlay.js`): Both New Map button handlers (main menu `overlayResetFromMenuBtn` and end-panel `overlayResetBtn`) now call `confirm("Start a new map? Your current colony progress will be lost.")` before triggering the reset. Prevents accidental colony wipes on mis-click.
+
+### Notes (Round-7 01c+02e+02b)
+
+- **Space key guard**: Already handled by `src/app/shortcutResolver.js` (`if (context.phase !== "active") return null`). Space cannot trigger menu behaviour during active play — confirmed pre-existing.
+- **Dev panel gate**: `.dev-only` CSS gate (`body:not(.dev-mode) .dev-only { display: none !important }`) already hides the entire Debug sidebar panel and all Benchmark/Export buttons from non-dev players. `devModeGate.js` reads `?dev=1` URL param + `localStorage.utopia:devMode`. No additional gating needed.
+- **Help button**: `#helpBtn` already correctly calls `openHelp()` (opens Help modal), not Build panel. Confirmed correct — no change needed.
+
+### Files Changed (Round-7 01c+02e+02b)
+
+- `index.html` — `.hud-label-sm` CSS rule; Meals/Tools/Med/Prosp/Threat label spans; `#aiAutopilotChip`/`#statusObjective` flex-shrink fix; 1024px sidebar bottom-bar media query; milestone toast `max-width`.
+- `src/ui/hud/GameStateOverlay.js` — `confirm()` guard on both New Map button handlers.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 02c: COOK deadlock fix + settings quota floor + ColonyPlanner advisory
 
 ### Bug Fixes (Round-7 02c)
