@@ -441,7 +441,10 @@ function consumeEmergencyRation(worker, state, dt, nowSec) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   const hungerNow = Number(worker.hunger ?? 0);
   if (hungerNow >= WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD) return;
-  if (Number(state.resources.food ?? 0) <= 0) return;
+  const warehouseFood = Number(state.resources.food ?? 0);
+  const carryFood = Number(worker.carry?.food ?? 0);
+  // v0.8.2 Round-7 02a — fall back to carry.food when warehouse is empty
+  if (warehouseFood <= 0 && carryFood <= 0) return;
   if (worker.debug?.reachableFood) return;
   worker.blackboard ??= {};
   const nextAllowed = Number(worker.blackboard.emergencyRationCooldownSec ?? -Infinity);
@@ -450,10 +453,19 @@ function consumeEmergencyRation(worker, state, dt, nowSec) {
   const eatRate = Number(BALANCE.hungerEatRatePerSecond ?? 5) * 0.22;
   const gainCap = Math.max(0, eatRecoveryTarget - hungerNow);
   const desiredFood = Math.min(eatRate * dt, gainCap / recoveryPerFood);
-  const eat = Math.min(desiredFood, Number(state.resources.food ?? 0));
-  if (eat <= 0) return;
-  state.resources.food -= eat;
-  worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  if (warehouseFood > 0) {
+    // Prefer warehouse food
+    const eat = Math.min(desiredFood, warehouseFood);
+    if (eat <= 0) return;
+    state.resources.food -= eat;
+    worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  } else {
+    // Fall back to carry food when warehouse is depleted
+    const eat = Math.min(desiredFood, carryFood);
+    if (eat <= 0) return;
+    worker.carry.food = Math.max(0, carryFood - eat);
+    worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  }
   worker.blackboard.emergencyRationCooldownSec = nowSec + WORKER_EMERGENCY_RATION_COOLDOWN_SEC;
 }
 

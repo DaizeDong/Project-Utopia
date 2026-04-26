@@ -97,6 +97,20 @@ function deriveWorkerDesiredState(worker, state) {
   const currentFsmState = worker.blackboard?.fsm?.state;
   const hunger = worker.hunger ?? 1;
 
+  // v0.8.2 Round-7 02a — starving preempt: if hunger is critically low,
+  // override to seek_food immediately regardless of current task.
+  const starvingThreshold = Number(BALANCE.workerStarvingPreemptThreshold ?? 0.22);
+  const hasFoodSource = (state.resources.food > 0 && state.buildings.warehouses > 0)
+    || Number(worker.carry?.food ?? 0) > 0;
+  if (hunger < starvingThreshold && hasFoodSource) {
+    return {
+      desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
+        ? "eat"
+        : "seek_food",
+      reason: "rule:starving-preempt",
+    };
+  }
+
   // Eat hysteresis: if already eating/seeking food, stay until hunger recovers past recover threshold
   if ((currentFsmState === "eat" || currentFsmState === "seek_food")
     && hunger < Number(BALANCE.workerHungerRecoverThreshold ?? 0.35)
@@ -341,6 +355,7 @@ function isCriticalLocalState(groupId, localState) {
 
 function isProtectedLocalState(groupId, localState) {
   if (groupId === "workers" && localState === "deliver") return true;
+  if (groupId === "workers" && (localState === "seek_food" || localState === "eat")) return true;
   return isCriticalLocalState(groupId, localState);
 }
 
