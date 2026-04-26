@@ -44,6 +44,14 @@ import { pickVoicePackEntry } from "../interpretation/EntityVoice.js";
 // 02e Wave-3 plans append more patterns to this array AFTER 02d lands; the
 // frozen-array pattern means each subsequent commit replaces (not mutates)
 // the export — see Stage B §8 sequencing in Round6/Plans/summary.md.
+//
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 1) — Author Voice Channel
+// expansion. Five new beat families surface friendship / birth-of /
+// named-after / dream / grieving prose that was previously locked inside
+// Worker memory streams. Patterns layered ON TOP of the 02d kinship beats
+// per Stage B summary.md §3 D2 (15-rule SALIENT union). NARRATIVE_BEAT_MAX_AGE_SEC
+// raised 15 → 20 because friendship/dream lines aren't urgent and players
+// are happy to "delay-consume" them via the strip's dwell window.
 const SALIENT_BEAT_PATTERNS = Object.freeze([
   // Obituary form (richest — must be checked first by the priority pass).
   /^.+, .+, died of /i,
@@ -56,6 +64,14 @@ const SALIENT_BEAT_PATTERNS = Object.freeze([
   /\[WEATHER\]/i,
   /\bdied \(/i,
   /warehouse fire/i,
+  // 02e-indie-critic Step 1 — friendship / birth-of / named-after / dream /
+  // grieving. Each is anchored on a stable verb/noun phrase so noisy event-
+  // trace lines (e.g. "intent: friend-checkin") don't false-match.
+  /\bbecame\b.*\bfriend\b/i,
+  /\bbirth of\b/i,
+  /\bnamed after\b/i,
+  /\bdream\b/i,
+  /\bgrieving\b/i,
 ]);
 
 // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 7) — obituary > birth > rivalry
@@ -67,7 +83,11 @@ const HIGH_PRIORITY_PATTERNS = Object.freeze([
   /Felt grim relief/i,             // rivalry beat
 ]);
 
-const NARRATIVE_BEAT_MAX_AGE_SEC = 15;
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 1) — raised 15 → 20s so the
+// friendship / birth / dream / grieving beats added below stay on the strip
+// long enough to actually be read (these aren't sabotage-urgent; players
+// happily delay-consume them via the dwell window).
+const NARRATIVE_BEAT_MAX_AGE_SEC = 20;
 // Raised from 140 → 180 for obituary lines that include both backstory and
 // scenario-anchor labels ("Aila-2, farming specialist swift temperament,
 // died of starvation near the west lumber route" — typical 90-110 chars but
@@ -170,6 +190,72 @@ function formatBeatText(beat) {
   const ageRounded = Math.max(0, Math.round(ageSec));
   const ageFrag = ageRounded <= 0 ? "just now" : `${ageRounded}s ago`;
   return `Last: ${body} (${ageFrag})`;
+}
+
+// v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 2) — beat kind classification.
+// Used by the new #authorTickerStrip + tests so each ring-buffer entry can be
+// rendered with a leading icon. Legacy `formatBeatText` is kept verbatim so
+// `#storytellerBeat` and existing snapshot tests are untouched.
+//
+// Kind priority:
+//   death      — obituary line ("X, …, died of …") OR plain "died ("
+//   birth      — "born to" / "birth of" / "named after"
+//   friendship — "became <…> friend" / "grieving" / "felt grim relief"
+//   weather    — "[WEATHER]"
+//   sabotage   — "[SABOTAGE]" / "[SHORTAGE]" / warehouse fire
+//   visitor    — "[VISITOR]"
+//   dream      — "dream"
+//   generic    — fallback for anything matched by SALIENT_BEAT_PATTERNS but
+//                not classified above.
+const KIND_ICONS = Object.freeze({
+  death: "\u{1F480}",       // skull
+  birth: "\u2728",           // sparkles
+  friendship: "\u{1F91D}",   // handshake
+  weather: "\u{1F327}",      // cloud-with-rain
+  sabotage: "\u26A0",        // warning sign
+  visitor: "\u{1F6B6}",      // walker
+  dream: "\u{1F319}",        // crescent moon
+  generic: "\u00B7",          // middle dot
+});
+
+function classifyBeatKind(line) {
+  const src = String(line ?? "");
+  if (!src) return "generic";
+  if (/^.+, .+, died of /i.test(src)) return "death";
+  if (/\bdied \(/i.test(src)) return "death";
+  if (/\bborn to\b/i.test(src)) return "birth";
+  if (/\bbirth of\b/i.test(src)) return "birth";
+  if (/\bnamed after\b/i.test(src)) return "birth";
+  if (/\bbecame\b.*\bfriend\b/i.test(src)) return "friendship";
+  if (/\bgrieving\b/i.test(src)) return "friendship";
+  if (/Felt grim relief/i.test(src)) return "friendship";
+  if (/\[WEATHER\]/i.test(src)) return "weather";
+  if (/warehouse fire/i.test(src)) return "sabotage";
+  if (/\[SABOTAGE\]/i.test(src)) return "sabotage";
+  if (/\[SHORTAGE\]/i.test(src)) return "sabotage";
+  if (/\[VISITOR\]/i.test(src)) return "visitor";
+  if (/\bdream\b/i.test(src)) return "dream";
+  return "generic";
+}
+
+/**
+ * v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 2) — structured beat output
+ * for the new #authorTickerStrip. Returns null when `beat` is null/empty.
+ *
+ * The returned `{ text, kind, icon }` triple is consumed only by HUDController's
+ * author-ticker render path; legacy `#storytellerBeat` keeps using the plain
+ * `formatBeatText` string so 02d obituary tests stay green.
+ *
+ * @param {{ line: string, ageSec: number } | null} beat
+ * @returns {{ text: string, kind: string, icon: string } | null}
+ */
+export function formatBeatTextWithKind(beat) {
+  if (!beat) return null;
+  const text = formatBeatText(beat);
+  if (!text) return null;
+  const kind = classifyBeatKind(beat.line);
+  const icon = KIND_ICONS[kind] ?? KIND_ICONS.generic;
+  return { text, kind, icon };
 }
 
 /**
