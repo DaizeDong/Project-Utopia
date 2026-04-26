@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-7 01e+02b: trait behavioral wiring + local WHISPER narrative + emotional decision prefix + manual advisory HUD chip
+
+### New Features (Round-7 01e+02b — trait systems + narrative intelligence)
+
+- **Worker trait constants** (`src/config/balance.js`): Six new `BALANCE` entries — `workerTraitEffectsEnabled` (master toggle), `traitHardyWeatherMult` (0.6), `traitHardyMoraleDecayMult` (0.75), `traitSocialRestDecayMult` (0.75), `traitSocialFriendBonus` (0.15), `traitEfficientTaskMult` (0.85), `traitResilientDeathThresholdDelta` (−0.05) — exposing trait multipliers as tunable balance values.
+- **Worker trait behavioral wiring** (`src/simulation/npc/WorkerAISystem.js`): New `getWorkerTraitModifiers(worker)` helper reads traits from `worker.traits[]` and returns a modifier bundle. Applied per-tick: `hardy` workers suffer 25% less adverse-weather morale penalty; `social` workers lose rest 25% slower and gain +0.15 rest/sec when a Close Friend (opinion ≥ 0.45) is within 3 tiles. The 3-tile Close Friend scan runs on the same 30-tick cadence as the social proximity check.
+- **Emotional decision prefix** (`src/simulation/npc/WorkerAISystem.js`): New `addEmotionalPrefix(worker, state, text)` function prepends state-aware first-person lines ("Running low —", "Barely holding —", or grief "[name] is gone.") to the intent reason. The prefixed string is stored on `worker.blackboard.emotionalContext` and surfaced in EntityFocusPanel.
+- **Trait descriptions in EntityFocusPanel** (`src/ui/panels/EntityFocusPanel.js`): Each trait tag now renders as `<span class="trait-tag">hardy<span class="trait-desc"> (weather resistant)</span></span>` for the five known traits (hardy / social / efficient / resilient / careful). Grief notice (`💔 Grieving [name]`) appears in the Character block header when `blackboard.griefFriendName` and `griefUntilSec` are active.
+- **Emotional context in Why block** (`src/ui/panels/EntityFocusPanel.js`): When `worker.blackboard.emotionalContext` is non-empty, a muted italic "Mood: [prefix text]" line is appended below Decision Context in the "Why is this worker doing this?" block.
+- **Local WHISPER narrative** (`src/ui/hud/storytellerStrip.js`): New exported `buildLocalWhisperNarrative(state)` pure function generates state-aware narrative overrides in the fallback path. Checks recent deaths (<90s), food shortage (<30), and kitchen-cold (kitchen exists but cooks=0). Returns a personalised sentence or null; the model builder calls it before the static voice-pack lookup so state-urgent text always surfaces first.
+- **Manual mode advisory chip** (`src/ui/hud/HUDController.js`): When autopilot is off (`state.ai.enabled === false`), `#renderNextAction` calls `ColonyPlanner.getAdvisoryRecommendation(state)` and renders the result with a 💡 prefix in `#statusNextAction` when the normal next-action priority is idle/done. Clears automatically when autopilot is re-enabled.
+- **Urgent resource ETA indicator** (`src/ui/hud/HUDController.js`): New `#renderUrgentResourceEta(state)` method appends a "⚠ [Resource] runs out in Xs" suffix to `#statusObjective` when any of food/wood/stone/herbs is within 120s of depletion. Cleanly restores the base text when no resource is critical.
+
+### Files Changed (Round-7 01e+02b)
+
+- `src/config/balance.js` — six trait-weight constants added to `BALANCE` object.
+- `src/simulation/npc/WorkerAISystem.js` — `getWorkerTraitModifiers`, `addEmotionalPrefix` helpers; per-tick morale/rest decay multipliers; Close Friend rest bonus; `blackboard.emotionalContext` population.
+- `src/ui/panels/EntityFocusPanel.js` — trait tag HTML with descriptions; grief notice; emotional context line in Why block.
+- `src/ui/hud/storytellerStrip.js` — `buildLocalWhisperNarrative` export; integrated into `computeStorytellerStripModel` fallback path.
+- `src/ui/hud/HUDController.js` — `ColonyPlanner` import; manual-mode advisory chip in `#renderNextAction`; `#renderUrgentResourceEta` method.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 01d+02d: rain particles + run-end chronicle summary + grief mechanic + Chronicles death log + salinization warning + scenario theme question
 
 ### New Features (Round-7 01d+02d — narrative depth + weather visualization)

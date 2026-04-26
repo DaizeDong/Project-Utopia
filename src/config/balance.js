@@ -697,6 +697,21 @@ export const BALANCE = Object.freeze({
   // Per-worker MORALE_BREAK enqueue cooldown so a chronically-low-mood
   // worker cannot spam the queue every tick.
   moraleBreakCooldownSec: 90,
+  // --- v0.8.2 Round-7 (01e+02b) — Worker trait behavioral constants ---
+  // Master toggle: set false to disable all trait effects without removing wiring.
+  workerTraitEffectsEnabled: true,
+  // hardy: weather-related path costs scaled down (move-cost multiplier applied inside WorkerAISystem)
+  traitHardyWeatherMult: 0.6,
+  // hardy: morale decay multiplier (applied to weatherMoraleMult)
+  traitHardyMoraleDecayMult: 0.75,
+  // social: rest decay multiplier (social workers recover rest faster via bonds)
+  traitSocialRestDecayMult: 0.75,
+  // social: bonus added to rest intent score when a Close Friend is within 3 tiles
+  traitSocialFriendBonus: 0.15,
+  // efficient: task-switch cooldown multiplier applied to workerIntentCooldownSec
+  traitEfficientTaskMult: 0.85,
+  // resilient: death threshold delta (negative = harder to die)
+  traitResilientDeathThresholdDelta: -0.05,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
