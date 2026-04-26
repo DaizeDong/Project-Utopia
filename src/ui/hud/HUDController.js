@@ -226,6 +226,9 @@ export class HUDController {
     this.speedPauseBtn = document.getElementById("speedPauseBtn");
     this.speedPlayBtn = document.getElementById("speedPlayBtn");
     this.speedFastBtn = document.getElementById("speedFastBtn");
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — ultra speed (8x)
+    // tier button. Optional element; setupSpeedControls tolerates absence.
+    this.speedUltraBtn = document.getElementById("speedUltraBtn");
     this.aiToggleTop = document.getElementById("aiToggleTop");
     this.aiToggleMirror = document.getElementById("aiToggle");
     this.gameTimer = document.getElementById("gameTimer");
@@ -580,10 +583,17 @@ export class HUDController {
       this.state.controls.isPaused = false;
       // v0.8.2 Round-0 02c-speedrunner — FF target 2.0 → 4.0 (x4). Coordinated
       // with simStepper's clamp widening from 3 → 4 so the button actually
-      // reaches the requested rate. Ceiling held at 4 per orchestrator
-      // arbitration (Phase 10 determinism: accumulatorSec 0.5s + capSteps still
-      // protect against spiral-of-death).
+      // reaches the requested rate.
       this.state.controls.timeScale = 4.0;
+    });
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — ultra speed (8x)
+    // tier button. Mirrors `speedFastBtn` semantics: unpause + raise
+    // timeScale. The honest ceiling at 8x is enforced inside simStepper
+    // (Step 5a). When sim cost saturates, HUDController.timeScaleActualLabel
+    // displays the *actual* rate so players see when the cap kicks in.
+    this.speedUltraBtn?.addEventListener("click", () => {
+      this.state.controls.isPaused = false;
+      this.state.controls.timeScale = 8.0;
     });
     const syncAutopilot = (enabled) => {
       const active = Boolean(enabled);
@@ -600,10 +610,28 @@ export class HUDController {
       if (this.aiToggleTop) this.aiToggleTop.checked = active;
       if (this.aiToggleMirror) this.aiToggleMirror.checked = active;
     };
-    this.aiToggleTop?.addEventListener("change", () => {
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — Autopilot decoupling.
+    // Reviewer Run 3 reported "Autopilot turned off after I clicked Fast
+    // Forward". Root cause: in some browsers a focus-stealing button click
+    // can dispatch a synthetic `change` event on a focused checkbox. We
+    // gate the change handler on `event.isTrusted` (true only for genuine
+    // user interaction), with a `detail.userInitiated` escape hatch for
+    // future programmatic toggles. A synthetic event from a button click
+    // bubbling to the checkbox will be `isTrusted: false` AND have no
+    // `detail.userInitiated`, so the handler will return early and the
+    // ai.enabled state will be preserved.
+    const isUserInitiated = (event) => {
+      if (!event) return false;
+      if (event.isTrusted === true) return true;
+      if (event.detail && event.detail.userInitiated === true) return true;
+      return false;
+    };
+    this.aiToggleTop?.addEventListener("change", (event) => {
+      if (!isUserInitiated(event)) return;
       syncAutopilot(Boolean(this.aiToggleTop.checked));
     });
-    this.aiToggleMirror?.addEventListener("change", () => {
+    this.aiToggleMirror?.addEventListener("change", (event) => {
+      if (!isUserInitiated(event)) return;
       syncAutopilot(Boolean(this.aiToggleMirror.checked));
     });
   }
@@ -1278,31 +1306,48 @@ export class HUDController {
       // simulation is still running behind them.
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
       const inActive = state.session?.phase === "active" && totalSec > 0;
+      // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 4) — keep the final
+      // score visible while the end overlay is up so reviewers can see
+      // their result before the boot screen takes over. `inEnd` flips on
+      // for the entire end-phase duration; the suffix " · final" makes the
+      // freeze-state explicit (no fake-running impression). statusBar is
+      // hidden by GameStateOverlay during overlay-visible frames anyway
+      // (see GameStateOverlay.render :statusBar.style.display="none") so
+      // this only matters in the brief gap before the overlay paints.
+      const inEnd = state.session?.phase === "end" && totalSec > 0;
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
       const s = totalSec % 60;
       const hh = String(h).padStart(2, "0");
       const mm = String(m).padStart(2, "0");
       const ss = String(s).padStart(2, "0");
-      const timeText = inActive ? `${hh}:${mm}:${ss}` : "--:--:--";
-      const score = inActive ? Math.floor(Number(state.metrics?.survivalScore ?? 0)) : "\u2014";
+      const timeText = (inActive || inEnd) ? `${hh}:${mm}:${ss}` : "--:--:--";
+      const finalScore = Math.floor(Number(state.metrics?.survivalScore ?? 0));
+      const score = inActive
+        ? finalScore
+        : inEnd ? finalScore : "\u2014";
       const devTicks = Number(state.gameplay?.devIndexTicksComputed ?? 0);
       const devScore = Math.round(Number(state.gameplay?.devIndexSmoothed ?? 0));
-      const devSuffix = inActive && devTicks > 0 ? `  ·  Dev ${devScore}/100` : "";
-      const objectiveText = `Survived ${timeText}  Score ${score}${devSuffix}`;
+      const devSuffix = (inActive || inEnd) && devTicks > 0 ? `  \u00b7  Dev ${devScore}/100` : "";
+      const finalSuffix = inEnd ? "  \u00b7  final" : "";
+      const objectiveText = `Survived ${timeText}  Score ${score}${devSuffix}${finalSuffix}`;
       const casualMode = isCasualMode();
       const scoreTitle = buildSurvivalScoreTooltip(state, casualMode);
       const devTitle = buildDevIndexTooltip(state, casualMode);
       if (this.statusObjectiveTime && this.statusObjectiveScore && this.statusObjectiveDev) {
         this.statusObjectiveTime.textContent = `Survived ${timeText}`;
-        this.statusObjectiveScore.textContent = `Score ${score}`;
+        // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 4) — append " · final"
+        // suffix on the Score chip when the run has ended so reviewers see
+        // their final number instead of an em-dash.
+        const scoreSuffix = inEnd && !casualMode ? " \u00b7 final" : "";
+        this.statusObjectiveScore.textContent = `Score ${score}${scoreSuffix}`;
         this.statusObjectiveScore.setAttribute?.("title", scoreTitle);
         // v0.8.2 Round-5 Wave-2 (01c-ui Step 4): append a `weakest: <dim>
         // <value>` suffix when Dev < 50 and one dimension lags > 8 points
         // below the overall score. Surfaces the "what do I fix next" signal
         // that was previously only visible in the tooltip. Casual-mode UI
         // falls back to pure `Dev N/100`.
-        let devText = inActive && devTicks > 0 ? `Dev ${devScore}/100` : "Dev --/100";
+        let devText = (inActive || inEnd) && devTicks > 0 ? `Dev ${devScore}/100` : "Dev --/100";
         if (!casualMode && inActive && devTicks > 0) {
           const dims = state.gameplay?.devIndexDims ?? {};
           let weakestKey = null;
@@ -1500,6 +1545,11 @@ export class HUDController {
     this.speedPauseBtn?.classList.toggle("active", paused);
     this.speedPlayBtn?.classList.toggle("active", !paused && !fast);
     this.speedFastBtn?.classList.toggle("active", fast && !paused);
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5e) — ultra (8x) tier
+    // active-class. Threshold 7 keeps a small dead-band so a 6x request
+    // still highlights speedFastBtn rather than splitting the highlight.
+    const ultra = (state.controls.timeScale ?? 1) >= 7;
+    this.speedUltraBtn?.classList.toggle("active", ultra && !paused);
     if (this.timeScaleActualLabel) {
       const requested = Number(state.controls.timeScale ?? 1);
       const actual = Number(state.metrics.timeScaleActual ?? requested);

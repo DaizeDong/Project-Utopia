@@ -194,6 +194,13 @@ export class GameApp {
       onStart: () => this.startSession(),
       onRestart: () => this.restartSession(),
       onReset: (opts) => this.resetSessionWorld(opts),
+      // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3d) — leaderboard
+      // handlers. The overlay never reaches into services directly so we
+      // can stub these in tests / null-out for benchmark mode.
+      getLeaderboard: () => this.services.leaderboardService?.listTopByScore?.(10) ?? [],
+      getLeaderboardRankForSeed: (seed) =>
+        this.services.leaderboardService?.findRankBySeed?.(seed) ?? { rank: 0, total: 0 },
+      onClearLeaderboard: () => this.services.leaderboardService?.clear?.(),
     });
     this.boundOnGlobalKeyDown = (event) => this.#onGlobalKeyDown(event);
     if (typeof window !== "undefined") {
@@ -815,11 +822,39 @@ export class GameApp {
   }
 
   setTimeScale(scale) {
-    const clamped = Math.max(0.25, Math.min(4.0, Number(scale) || 1));
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — ceiling raised
+    // 4.0 → 8.0 to match the new simStepper safeScale clamp. The downstream
+    // simStepper still does its own clamp at 8 (defence in depth) and
+    // HUDController.timeScaleActualLabel surfaces the real saturated
+    // rate when CPU-bound frames push actual back below requested.
+    const clamped = Math.max(0.25, Math.min(8.0, Number(scale) || 1));
     this.state.controls.timeScale = clamped;
     this.state.controls.actionMessage = `Time scale ${clamped.toFixed(2)}x`;
     this.state.controls.actionKind = "info";
     this.services.replayService.push({ channel: "time", kind: "timeScale", value: clamped, simSec: this.state.metrics.timeSec });
+  }
+
+  // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — speed-tier stepper.
+  // Tiers are the discrete speed grid players cycle through with `[` / `]`.
+  // Routed through `setTimeScale` so the actionMessage / replay-record
+  // path matches the existing speed-button click contract. Direction +1
+  // steps up, -1 steps down; clamped to the tier table's bounds.
+  stepSpeedTier(direction = 1) {
+    const TIERS = [0.5, 1, 2, 4, 8];
+    const dir = Number(direction) >= 0 ? 1 : -1;
+    const current = Number(this.state.controls.timeScale ?? 1);
+    // Find the closest tier index by absolute distance.
+    let bestIdx = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < TIERS.length; i += 1) {
+      const d = Math.abs(TIERS[i] - current);
+      if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+    }
+    const nextIdx = Math.max(0, Math.min(TIERS.length - 1, bestIdx + dir));
+    const nextScale = TIERS[nextIdx];
+    if (nextScale === current && nextIdx === bestIdx) return;
+    this.state.controls.isPaused = false;
+    this.setTimeScale(nextScale);
   }
 
   setFixedStepHz(hz) {
@@ -1575,6 +1610,14 @@ export class GameApp {
     if (action.type === "toggleTerrainLens") {
       this.toggleTerrainLens();
     }
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — `[` / `]` step the
+    // speed tier without involving the speed-button click handlers. Routed
+    // through `stepSpeedTier` so the actionMessage / replay-record path
+    // matches a button click.
+    if (action.type === "speedTierStep") {
+      this.stepSpeedTier(action.direction);
+      return;
+    }
     // v0.8.2 Round-6 Wave-1 02b-casual (Step 2) — F1 / ? open the in-game
     // Help modal. The modal itself is wired in index.html via
     // window.__utopiaHelp.open(); we delegate to that global so the modal
@@ -1835,6 +1878,33 @@ export class GameApp {
     if (this.state.session.phase !== "active") return;
     const outcome = evaluateRunOutcomeState(this.state);
     if (!outcome) return;
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 2b) — record the run into
+    // the local leaderboard BEFORE flipping to the end phase so the boot /
+    // end overlay reads the freshest entry on its first render. The
+    // benchmarkMode bypass mirrors ResourceSystem's pattern (see :462) so
+    // long-horizon-bench runs do not pollute the persistent leaderboard.
+    // ANY storage failure (QuotaExceededError, Safari private-mode, etc.)
+    // is swallowed by the service itself — try/catch here is a second safety
+    // net so a bad serialiser path can never block the end-phase transition.
+    if (this.state.benchmarkMode !== true) {
+      try {
+        this.services.leaderboardService?.recordRunResult({
+          ts: Date.now(),
+          seed: this.state.world?.mapSeed,
+          templateId: this.state.world?.mapTemplateId,
+          templateName: this.state.world?.mapTemplateName,
+          scenarioId: this.state.gameplay?.scenario?.id ?? "",
+          survivedSec: Math.floor(this.state.metrics?.timeSec ?? 0),
+          score: Math.floor(this.state.metrics?.survivalScore ?? 0),
+          devIndex: Math.round(this.state.gameplay?.devIndexSmoothed ?? this.state.gameplay?.devIndex ?? 0),
+          deaths: Number(this.state.metrics?.deathsTotal ?? 0),
+          workers: Number(this.state.metrics?.populationStats?.workers ?? 0),
+          cause: outcome.outcome ?? "loss",
+        });
+      } catch {
+        // intentional: leaderboard persistence must never block end-phase.
+      }
+    }
     this.#setRunPhase("end", {
       ...outcome,
     });

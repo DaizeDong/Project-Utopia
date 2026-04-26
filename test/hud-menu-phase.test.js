@@ -173,20 +173,27 @@ test("HUDController renders the live ticker once session.phase is 'active'", () 
   });
 });
 
-test("HUDController freezes the ticker on the 'end' phase too so post-loss overlays look quiet", () => {
+// v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 4) — the end phase now
+// preserves the frozen final time/score with a " · final" suffix instead of
+// blanking to "Survived --:--:--". Reviewer's "I can't see my final
+// score" complaint resolved. The previous freeze contract is replaced
+// (overlay still hides statusBar so visual collision risk is moot — see
+// GameStateOverlay.render :statusBar.style.display="none").
+test("HUDController preserves the final time + final suffix on end phase", () => {
   const nodes = makeNodeBag();
   withMockedDocument(nodes, () => {
     const state = createInitialGameState({ seed: 1337 });
     state.session.phase = "end";
     state.session.outcome = "loss";
     state.metrics.timeSec = 1234;
+    state.metrics.survivalScore = 4321;
 
     const hud = new HUDController(state);
     hud.render();
 
-    assert.ok(
-      nodes.statusObjective.textContent.startsWith("Survived --:--:--"),
-      `end phase should also freeze; got: ${nodes.statusObjective.textContent}`,
-    );
+    const text = nodes.statusObjective.textContent;
+    assert.match(text, /Survived 00:20:34/, `expected frozen time, got: ${text}`);
+    assert.match(text, /Score 4321/, `expected final score visible, got: ${text}`);
+    assert.match(text, /final/, `expected " · final" suffix, got: ${text}`);
   });
 });

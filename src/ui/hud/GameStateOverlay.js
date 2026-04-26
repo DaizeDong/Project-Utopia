@@ -122,6 +122,52 @@ export class GameStateOverlay {
     this.mapHeightInput = document.getElementById("overlayMapHeight");
     this.mapTemplateSelect = document.getElementById("overlayMapTemplate");
 
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3b) — leaderboard list +
+    // seed chip wiring. All four nodes are optional (the overlay tests
+    // mount a partial DOM); we tolerate missing elements by short-circuiting
+    // every access with `?.`.
+    this.leaderboardEl = document.getElementById("overlayLeaderboardList");
+    this.endSeedChip = document.getElementById("overlayEndSeedChip");
+    this.endSeedRank = document.getElementById("overlayEndSeedRank");
+    this.clearLeaderboardBtn = document.getElementById("overlayClearLeaderboardBtn");
+    this._lastLeaderboardSig = "";
+
+    this.endSeedChip?.addEventListener("click", () => {
+      const seed = this.endSeedChip?.textContent ?? "";
+      if (!seed || seed === "\u2014") return;
+      const writer = (typeof navigator !== "undefined" && navigator.clipboard?.writeText)
+        ? navigator.clipboard.writeText.bind(navigator.clipboard)
+        : null;
+      if (writer) {
+        // Promise — fire and forget; errors are surfaced via toast below.
+        writer(String(seed))
+          .then(() => {
+            if (this.state?.controls) {
+              this.state.controls.actionMessage = `Seed ${seed} copied to clipboard.`;
+              this.state.controls.actionKind = "info";
+            }
+          })
+          .catch(() => {
+            if (this.state?.controls) {
+              this.state.controls.actionMessage = `Seed: ${seed} (clipboard unavailable)`;
+              this.state.controls.actionKind = "info";
+            }
+          });
+      } else if (this.state?.controls) {
+        // No clipboard API — surface the seed in the toast so the player
+        // can copy it manually from the action-message bar.
+        this.state.controls.actionMessage = `Seed: ${seed} (clipboard unavailable)`;
+        this.state.controls.actionKind = "info";
+      }
+    });
+    this.clearLeaderboardBtn?.addEventListener("click", () => {
+      this.handlers.onClearLeaderboard?.();
+      this._lastLeaderboardSig = "";
+      // Eager re-render of the now-empty list without waiting for the next
+      // frame — the menu panel is interactive so we want immediate feedback.
+      this.#renderLeaderboard();
+    });
+
     // Populate map template dropdown
     if (this.mapTemplateSelect) {
       this.mapTemplateSelect.innerHTML = MAP_TEMPLATES.map((t) =>
@@ -259,6 +305,51 @@ export class GameStateOverlay {
     return { templateId, width, height };
   }
 
+  // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3c) — leaderboard renderer.
+  // Compares the rendered signature against the last frame to skip DOM
+  // mutation when the entry list has not changed. Empty list shows the CSS
+  // `:empty::before` placeholder.
+  #renderLeaderboard() {
+    if (!this.leaderboardEl) return;
+    const fetcher = this.handlers?.getLeaderboard;
+    const list = typeof fetcher === "function" ? fetcher() : [];
+    const safeList = Array.isArray(list) ? list.slice(0, 10) : [];
+    const sig = safeList.map((e) => `${e.id ?? ""}|${e.score ?? 0}|${e.ts ?? 0}`).join(";");
+    if (sig === this._lastLeaderboardSig) return;
+    this._lastLeaderboardSig = sig;
+    if (safeList.length === 0) {
+      this.leaderboardEl.innerHTML = "";
+      return;
+    }
+    this.leaderboardEl.innerHTML = safeList
+      .map((entry) => {
+        const score = Number.isFinite(Number(entry.score)) ? Math.floor(Number(entry.score)) : 0;
+        const dev = Number.isFinite(Number(entry.devIndex)) ? Math.round(Number(entry.devIndex)) : 0;
+        const survivedSec = Math.max(0, Math.floor(Number(entry.survivedSec) || 0));
+        const min = Math.floor(survivedSec / 60);
+        const sec = survivedSec % 60;
+        const survivedText = `${min}:${String(sec).padStart(2, "0")}`;
+        const tmpl = String(entry.templateName || entry.templateId || "").trim();
+        const seed = entry.seed === "" || entry.seed === undefined || entry.seed === null
+          ? ""
+          : String(entry.seed);
+        const cause = String(entry.cause ?? "loss");
+        const causeLabel = cause === "max_days_reached" ? "endured" : cause;
+        const escTmpl = tmpl.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+        const escSeed = seed.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+        const meta = [
+          `Score ${score}`,
+          `Dev ${dev}`,
+          `${survivedText} survived`,
+          escTmpl ? `${escTmpl}` : null,
+          escSeed ? `seed ${escSeed}` : null,
+          causeLabel,
+        ].filter(Boolean).join(" \u00b7 ");
+        return `<li>${meta}</li>`;
+      })
+      .join("");
+  }
+
   #renderMenuCopy() {
     if (!this.menuTitle && !this.menuLead && !this.menuMeta && !this.menuPressure && !this.menuPriority && !this.menuLens && !this.menuSizeHint) {
       return;
@@ -376,6 +467,10 @@ export class GameStateOverlay {
     if (isMenu) {
       this.#syncMenuInputsFromState();
       this.#renderMenuCopy();
+      // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3c) — boot-screen Best
+      // Runs list. Re-rendered each menu frame; the diff guard inside
+      // #renderLeaderboard short-circuits when the data is unchanged.
+      this.#renderLeaderboard();
     }
 
     if (isEnd) {
@@ -419,6 +514,30 @@ export class GameStateOverlay {
         ];
         if (survivalLine) lines.splice(3, 0, survivalLine);
         this.endStats.textContent = lines.join("\n");
+      }
+      // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3c) — seed chip + rank
+      // suffix. Reads seed from state.world.mapSeed and the rank from the
+      // injected handler so the panel never reaches into services directly.
+      if (this.endSeedChip) {
+        const seed = this.state?.world?.mapSeed;
+        const seedText = seed === null || seed === undefined || seed === ""
+          ? "\u2014"
+          : String(seed);
+        this.endSeedChip.textContent = seedText;
+      }
+      if (this.endSeedRank) {
+        const seed = this.state?.world?.mapSeed;
+        const rankFn = this.handlers?.getLeaderboardRankForSeed;
+        const result = typeof rankFn === "function" ? rankFn(seed) : { rank: 0, total: 0 };
+        const rank = Number(result?.rank ?? 0);
+        const total = Number(result?.total ?? 0);
+        if (rank > 0 && total > 0) {
+          this.endSeedRank.textContent = `#${rank} of ${total}`;
+        } else if (total > 0) {
+          this.endSeedRank.textContent = "no rank yet";
+        } else {
+          this.endSeedRank.textContent = "first run";
+        }
       }
     }
   }
