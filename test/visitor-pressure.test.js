@@ -190,3 +190,57 @@ test("Walls and sabotage resistance can block a sabotage run", () => {
   const insights = getEntityInsight(state, saboteur);
   assert.ok(insights.some((line) => /blocked/i.test(line)), "entity insight should explain the blocked sabotage");
 });
+
+test("High-load sabotage rate-limits destructive grid changes", () => {
+  const state = createInitialGameState();
+  const saboteur = getSaboteur(state);
+  assert.ok(saboteur, "expected a saboteur");
+  state.agents = [saboteur];
+  state.animals = [];
+  state.ai.runtimeProfile = "long_run";
+  state.controls.timeScale = 8;
+  state.metrics.timeSec = 100;
+
+  const firstTarget = { ix: 8, iz: 8 };
+  const secondTarget = { ix: 9, iz: 8 };
+  setTile(state, firstTarget.ix, firstTarget.iz, TILE.FARM);
+  setTile(state, secondTarget.ix, secondTarget.iz, TILE.FARM);
+  state.grid.version += 1;
+
+  const pos = tileToWorld(firstTarget.ix, firstTarget.iz, state.grid);
+  saboteur.x = pos.x;
+  saboteur.z = pos.z;
+  saboteur.hunger = 1;
+  saboteur.alive = true;
+  saboteur.sabotageCooldown = 0;
+  saboteur.targetTile = firstTarget;
+  saboteur.path = [firstTarget];
+  saboteur.pathIndex = 0;
+  saboteur.pathGridVersion = state.grid.version;
+  saboteur.blackboard = {
+    fsm: { state: "scout", previousState: "idle", changedAtSec: 0, reason: "test", history: [], path: [] },
+    sabotageTargetLabel: "farm belt",
+    sabotageTargetDefense: 0,
+  };
+
+  const system = new VisitorAISystem();
+  system.update(0.2, state, makeServices([0, 0, 0]));
+  assert.equal(state.grid.tiles[firstTarget.ix + firstTarget.iz * state.grid.width], TILE.RUINS);
+
+  state.events.active = [];
+  state.metrics.timeSec += 1;
+  const pos2 = tileToWorld(secondTarget.ix, secondTarget.iz, state.grid);
+  saboteur.x = pos2.x;
+  saboteur.z = pos2.z;
+  saboteur.sabotageCooldown = 0;
+  saboteur.targetTile = secondTarget;
+  saboteur.path = [secondTarget];
+  saboteur.pathIndex = 0;
+  saboteur.pathGridVersion = state.grid.version;
+  saboteur.blackboard.sabotageTargetDefense = 0;
+
+  system.update(0.2, state, makeServices([0, 0, 0]));
+  assert.equal(state.grid.tiles[secondTarget.ix + secondTarget.iz * state.grid.width], TILE.FARM);
+  const rateLimited = state.events.active.find((event) => event.type === "sabotage");
+  assert.equal(rateLimited?.payload?.gridChangeRateLimited, true);
+});

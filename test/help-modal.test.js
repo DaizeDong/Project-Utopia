@@ -52,6 +52,24 @@ test("Help modal contains the three documented tabs (Controls / Resource Chain /
   assert.ok(pages.length >= 3, `expected >=3 help pages, found ${pages.length}`);
 });
 
+test("Help modal defaults every open to Controls", () => {
+  assert.match(
+    HTML,
+    /<button class="help-tab active" type="button" data-help-tab="controls"/,
+    "Controls tab should be active in static HTML",
+  );
+  assert.match(
+    HTML,
+    /<section class="help-page active" data-help-page="controls"/,
+    "Controls page should be active in static HTML",
+  );
+  assert.match(
+    HTML,
+    /function openHelp\(tabKey = 'controls'\)[\s\S]{0,120}setHelpTab\(tabKey\)/,
+    "openHelp should explicitly default to the Controls tab",
+  );
+});
+
 test("F1 and ? keybindings are wired in the Help Modal script", () => {
   // Verify the capture-phase keydown listener references F1 and ?.
   assert.match(HTML, /e\.key === 'F1'/, "F1 keyboard shortcut missing");

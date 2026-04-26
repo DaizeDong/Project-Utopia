@@ -76,3 +76,40 @@ test("trade caravan reward drops when depot lane is weather-contested", () => {
   assert.ok(Number(clearCaravan.payload?.rewardMultiplier ?? 0) > Number(stormCaravan.payload?.rewardMultiplier ?? 0));
   assert.ok(Number(stormCaravan.payload?.hazardOverlapTiles ?? 0) > 0);
 });
+
+test("overlapping event pressure is rehydrated from base instead of compounding across ticks", () => {
+  const state = createInitialGameState({ seed: 1337 });
+  const system = new WorldEventSystem();
+  const target = state.gameplay.scenario.anchors.eastDepot;
+  const eventA = {
+    id: "event-a",
+    type: EVENT_TYPE.TRADE_CARAVAN,
+    status: "active",
+    elapsedSec: 1,
+    durationSec: 20,
+    intensity: 1,
+    payload: { targetTiles: [target], targetKind: "depot", targetRefId: "east-depot" },
+  };
+  const eventB = {
+    id: "event-b",
+    type: EVENT_TYPE.TRADE_CARAVAN,
+    status: "active",
+    elapsedSec: 1,
+    durationSec: 20,
+    intensity: 1,
+    payload: { targetTiles: [target], targetKind: "depot", targetRefId: "east-depot" },
+  };
+  state.events.active = [eventA, eventB];
+
+  system.update(0.1, state);
+  const firstReward = Number(eventA.payload.rewardMultiplier ?? 0);
+  const firstBase = Number(eventA.payload.baseRewardMultiplier ?? 0);
+
+  system.update(0.1, state);
+  const secondReward = Number(eventA.payload.rewardMultiplier ?? 0);
+  const secondBase = Number(eventA.payload.baseRewardMultiplier ?? 0);
+
+  assert.ok(firstReward < firstBase, "overlap should apply a reward penalty");
+  assert.equal(secondBase, firstBase, "base reward should stay stable across cache hits");
+  assert.equal(secondReward, firstReward, "overlap penalty should not compound each tick");
+});

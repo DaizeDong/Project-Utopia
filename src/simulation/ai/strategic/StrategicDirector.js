@@ -604,8 +604,10 @@ Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI
     if (!forceStrategicDecision && !this.scheduler.shouldTrigger(state)) return;
     state.ai.forceStrategicDecision = false;
 
-    // AI disabled: synchronous fallback
-    if (!state.ai.enabled) {
+    const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
+
+    // AI disabled or fallback coverage: synchronous local strategy.
+    if (!wantsLlm) {
       const strategy = this.buildFallbackStrategy(state);
       const now = state.metrics.timeSec;
       const promptContent = this.buildPromptContent(state);
@@ -648,7 +650,7 @@ Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI
         error: "requestStrategic unavailable",
         model: "fallback",
       });
-    this.pendingPromise = requestStrategic(promptContent, state.ai.enabled, { strategy: fallbackStrategy })
+    this.pendingPromise = requestStrategic(promptContent, wantsLlm, { strategy: fallbackStrategy })
       .then((result) => {
         this.pendingResult = result;
       })

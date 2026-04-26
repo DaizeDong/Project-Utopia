@@ -7,6 +7,36 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const HEAT_LABEL_ACTION_PRIORITY = Object.freeze({
+  "input starved": 100,
+  "stone input empty": 96,
+  "supply surplus": 82,
+  "warehouse idle": 62,
+});
+
+export function getPressureLabelRank(marker = {}) {
+  const kind = String(marker.kind ?? "");
+  const label = String(marker.label ?? marker.resolvedLabel ?? "").trim().toLowerCase();
+  const markerPriority = Number(marker.priority ?? 0);
+  const markerWeight = Number(marker.weight ?? 0);
+  if (kind.startsWith("heat_")) {
+    const actionPriority = Number.isFinite(Number(marker.labelPriority))
+      ? Number(marker.labelPriority)
+      : (HEAT_LABEL_ACTION_PRIORITY[label] ?? (kind === "heat_starved" ? 76 : 68));
+    return actionPriority * 100 + markerPriority + markerWeight;
+  }
+  return markerPriority * 100 + markerWeight;
+}
+
+export function heatLabelBudgetForZoom(zoom) {
+  const z = Number(zoom);
+  if (!Number.isFinite(z)) return 5;
+  if (z < 1.35) return 5;
+  if (z < 1.85) return 7;
+  if (z < 2.35) return 9;
+  return 12;
+}
+
 /**
  * v0.8.2 Round-6 Wave-1 (01c-ui Step 5) — Pressure-label screen-space dedup.
  *
@@ -454,7 +484,9 @@ export function buildHeatLens(state) {
             radius: 0.95,
             weight: 0.9,
             priority: 118,
+            labelPriority: 82,
             label: "supply surplus",
+            hoverTooltip: "producer beside saturated warehouse",
           });
         }
         continue;
@@ -472,7 +504,9 @@ export function buildHeatLens(state) {
             radius: 0.95,
             weight: 0.82,
             priority: 116,
+            labelPriority: 100,
             label: "input starved",
+            hoverTooltip: "processor input below safe threshold",
           });
         }
         continue;
@@ -494,7 +528,9 @@ export function buildHeatLens(state) {
               radius: 1.05,
               weight: 0.68,
               priority: 110,
+              labelPriority: 62,
               label: "warehouse idle",
+              hoverTooltip: "warehouse has little connected flow",
             });
           }
         }
@@ -517,7 +553,9 @@ export function buildHeatLens(state) {
       radius: 0.95,
       weight: 0.82,
       priority: 116,
+      labelPriority: 96,
       label: "stone input empty",
+      hoverTooltip: "smithy has no stone input",
     });
   }
 
@@ -558,6 +596,7 @@ export function buildHeatLens(state) {
         radius: Number(parent.radius ?? 0.95) * 0.75,
         weight: Number(parent.weight ?? 0.9) * 0.55,
         priority: Number(parent.priority ?? 100) - 10,
+        labelPriority: Number(parent.labelPriority ?? 0) - 12,
         label: "",
         hoverTooltip,
       }, seen);

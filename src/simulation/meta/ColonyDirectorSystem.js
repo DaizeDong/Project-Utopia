@@ -5,8 +5,10 @@ import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../
 import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
 import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
+import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
 
 const EVAL_INTERVAL_SEC = 2;
+const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
 const BASE_BUILDS_PER_TICK = 2;
 const MAX_BUILDS_PER_TICK = 4;
 
@@ -112,6 +114,27 @@ export function assessColonyNeeds(state) {
   const warehousesNeeded = Math.max(3, Math.floor(workers / 6) + 1, Math.floor(prodCount / 5) + 2);
   if (warehouseCount < warehousesNeeded) {
     needs.push({ type: "warehouse", priority: 92, reason: "logistics: warehouse coverage" });
+  }
+
+  const recoveryMode = Boolean(state.ai?.foodRecoveryMode) || isFoodRunwayUnsafe(state);
+  if (recoveryMode) {
+    if (currentFarms < maxFarmsEmergency) {
+      needs.push({ type: "farm", priority: 98, reason: "recovery: restore food runway" });
+    }
+    if (warehouseCount < Math.floor(workers / 5) + 2) {
+      needs.push({ type: "warehouse", priority: 96, reason: "recovery: restore food logistics" });
+    }
+    if ((buildings.roads ?? 0) < Math.max(6, workers)) {
+      needs.push({ type: "road", priority: 88, reason: "recovery: reconnect food routes" });
+    }
+    needs.sort((a, b) => b.priority - a.priority);
+    const recoveryAllowed = new Set(["farm", "warehouse", "road", "lumber"]);
+    const seenRecovery = new Set();
+    return needs.filter((n) => {
+      if (!recoveryAllowed.has(n.type) || seenRecovery.has(n.type)) return false;
+      seenRecovery.add(n.type);
+      return true;
+    });
   }
 
   // Bootstrap phase targets
@@ -481,12 +504,24 @@ function ensureDirectorState(state) {
   if (!state.ai.colonyDirector) {
     state.ai.colonyDirector = {
       lastEvalSec: -Infinity,
+      lastEvalWallSec: -Infinity,
       phase: "bootstrap",
       buildQueue: [],
       buildsPlaced: 0,
+      skippedByWallRate: 0,
     };
   }
   return state.ai.colonyDirector;
+}
+
+function getHighLoadPressure(state) {
+  const entityCount = (state.agents?.length ?? 0) + (state.animals?.length ?? 0);
+  const targetScale = Number(state.controls?.timeScale ?? 1);
+  return {
+    active: entityCount >= 700 || targetScale >= 7 || Boolean(state.controls?.longRunMode),
+    entityCount,
+    targetScale,
+  };
 }
 
 /**
@@ -509,7 +544,9 @@ function fulfillScenarioRequirements(state, buildSystem, services = null) {
 
     const tile = findPlacementNear(state, buildSystem, "warehouse", anchor, depot.radius ?? 2, services);
     if (tile) {
-      const result = buildSystem.placeToolAt(state, "warehouse", tile.ix, tile.iz, { recordHistory: false, services });
+      const result = buildSystem.placeToolAt(state, "warehouse", tile.ix, tile.iz, {
+        recordHistory: false, services, owner: "scenario_repair", reason: "scenario depot requirement",
+      });
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         placed += 1;
@@ -536,14 +573,18 @@ function fulfillScenarioRequirements(state, buildSystem, services = null) {
       if (currentTile !== TILE.GRASS && currentTile !== TILE.ROAD && !protectedTiles.has(currentTile)) {
         const erasePreview = buildSystem.previewToolAt(state, "erase", gap.ix, gap.iz, services);
         if (erasePreview.ok) {
-          buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, { recordHistory: false, services });
+          buildSystem.placeToolAt(state, "erase", gap.ix, gap.iz, {
+            recordHistory: false, services, owner: "scenario_repair", reason: "clear scenario route gap",
+          });
           state.buildings = rebuildBuildingStats(state.grid);
         }
       }
 
       const preview = buildSystem.previewToolAt(state, "road", gap.ix, gap.iz, services);
       if (preview.ok) {
-        const result = buildSystem.placeToolAt(state, "road", gap.ix, gap.iz, { recordHistory: false, services });
+        const result = buildSystem.placeToolAt(state, "road", gap.ix, gap.iz, {
+          recordHistory: false, services, owner: "scenario_repair", reason: "scenario route requirement",
+        });
         if (result.ok) {
           state.buildings = rebuildBuildingStats(state.grid);
           placed += 1;
@@ -579,7 +620,9 @@ function fulfillScenarioRequirements(state, buildSystem, services = null) {
           if (canAfford(resources, bridgeCost)) {
             const preview = buildSystem.previewToolAt(state, "bridge", nextIx, nextIz, services);
             if (preview.ok) {
-              const result = buildSystem.placeToolAt(state, "bridge", nextIx, nextIz, { recordHistory: false, services });
+              const result = buildSystem.placeToolAt(state, "bridge", nextIx, nextIz, {
+                recordHistory: false, services, owner: "scenario_repair", reason: "scenario route bridge",
+              });
               if (result.ok) {
                 state.buildings = rebuildBuildingStats(state.grid);
                 placed += 1;
@@ -593,13 +636,17 @@ function fulfillScenarioRequirements(state, buildSystem, services = null) {
           if (tile !== TILE.GRASS && tile !== TILE.RUINS && !protectedManhattan.has(tile)) {
             const erasePreview = buildSystem.previewToolAt(state, "erase", nextIx, nextIz, services);
             if (erasePreview.ok) {
-              buildSystem.placeToolAt(state, "erase", nextIx, nextIz, { recordHistory: false, services });
+              buildSystem.placeToolAt(state, "erase", nextIx, nextIz, {
+                recordHistory: false, services, owner: "scenario_repair", reason: "clear scenario route tile",
+              });
               state.buildings = rebuildBuildingStats(state.grid);
             }
           }
           const preview = buildSystem.previewToolAt(state, "road", nextIx, nextIz, services);
           if (preview.ok) {
-            const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, { recordHistory: false, services });
+            const result = buildSystem.placeToolAt(state, "road", nextIx, nextIz, {
+              recordHistory: false, services, owner: "scenario_repair", reason: "scenario route repair",
+            });
             if (result.ok) {
               state.buildings = rebuildBuildingStats(state.grid);
               placed += 1;
@@ -683,7 +730,9 @@ function connectWorksitesToWarehouses(state, buildSystem, services = null) {
         if (!canAfford(resources, cost)) break;
         const preview = buildSystem.previewToolAt(state, "road", cx, cz, services);
         if (preview.ok) {
-          const result = buildSystem.placeToolAt(state, "road", cx, cz, { recordHistory: false, services });
+          const result = buildSystem.placeToolAt(state, "road", cx, cz, {
+            recordHistory: false, services, owner: "rule_automation", reason: "connect isolated worksite",
+          });
           if (result.ok) {
             state.buildings = rebuildBuildingStats(state.grid);
             placed++;
@@ -707,23 +756,49 @@ export class ColonyDirectorSystem {
 
     const director = ensureDirectorState(state);
     const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const highLoad = getHighLoadPressure(state);
+    const wallSec = Number(state.metrics?.wallTimeSec ?? 0);
+    if (
+      highLoad.active
+      && Number.isFinite(wallSec)
+      && wallSec - Number(director.lastEvalWallSec ?? -Infinity) < HIGH_LOAD_WALL_EVAL_INTERVAL_SEC
+    ) {
+      director.skippedByWallRate = Number(director.skippedByWallRate ?? 0) + 1;
+      return;
+    }
 
     if (nowSec - director.lastEvalSec < EVAL_INTERVAL_SEC) return;
     director.lastEvalSec = nowSec;
+    director.lastEvalWallSec = wallSec;
 
     // Update phase
     director.phase = determinePhase(state.buildings ?? {});
+    const autopilotEnabled = Boolean(state.ai?.enabled);
+    const scenarioRepairAllowed = autopilotEnabled || Boolean(state.ai?.allowScenarioRepairWhenAutopilotOff);
+    director.automation = {
+      autopilotEnabled,
+      scenarioRepairAllowed,
+      phaseBuilder: autopilotEnabled ? "active" : "off",
+      connectorBuilder: autopilotEnabled ? "active" : "off",
+    };
 
     // Priority 1: fulfill scenario objectives (routes, depots)
-    const scenarioBuilds = fulfillScenarioRequirements(state, this._buildSystem, services);
+    const scenarioBuilds = scenarioRepairAllowed
+      ? fulfillScenarioRequirements(state, this._buildSystem, services)
+      : 0;
     director.buildsPlaced += scenarioBuilds;
+
+    if (!autopilotEnabled) return;
 
     // Priority 2: phase-based colony development (including expansion after complete)
     // Scale build rate with colony resources — build faster when resources are abundant
     const wood = state.resources?.wood ?? 0;
     const food = state.resources?.food ?? 0;
-    const buildsPerTick = (wood > 50 && food > 30) ? MAX_BUILDS_PER_TICK
+    const normalBuildsPerTick = (wood > 50 && food > 30) ? MAX_BUILDS_PER_TICK
       : (wood > 20 && food > 15) ? 3 : BASE_BUILDS_PER_TICK;
+    const buildsPerTick = highLoad.active
+      ? Math.min(2, normalBuildsPerTick)
+      : normalBuildsPerTick;
     const builds = selectNextBuilds(state, buildsPerTick, getObjectiveResourceBuffer(state));
     for (const build of builds) {
       let tile = null;
@@ -736,12 +811,14 @@ export class ColonyDirectorSystem {
       if (!tile) tile = findPlacementTile(state, this._buildSystem, build.type, services);
       if (!tile) continue;
 
-      const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, { recordHistory: false, services });
+      const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, {
+        recordHistory: false, services, owner: "autopilot", reason: build.reason,
+      });
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         director.buildsPlaced += 1;
         emitEvent(state, EVENT_TYPES.BUILDING_PLACED, {
-          buildingType: build.type, ix: tile.ix, iz: tile.iz, reason: build.reason,
+          buildingType: build.type, ix: tile.ix, iz: tile.iz, reason: build.reason, owner: "autopilot",
         });
       }
     }

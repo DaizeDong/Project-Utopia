@@ -31,6 +31,7 @@ const EVENT_TYPES = Object.freeze({
   // Emitted by ResourceSystem when food=0 + autopilot on + ≥1 starvation
   // death in the last 30s. ColonyDirectorSystem listens and clamps
   // state.controls.speed to 0 + sets pausedByCrisis flag for HUD surfaces.
+  FOOD_PRECRISIS_DETECTED: "food_precrisis_detected",
   FOOD_CRISIS_DETECTED: "food_crisis_detected",
   // v0.8.2 Round-5b (02a-rimworld-veteran Step 3) — Emitted by ResourceSystem
   // when state.buildings[category] decreases by ≥1 between grid rebuilds.

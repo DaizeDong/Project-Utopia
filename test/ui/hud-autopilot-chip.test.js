@@ -99,7 +99,7 @@ test("HUDController renders Autopilot OFF chip as player-controlled", () => {
     const hud = new HUDController(state);
     hud.render();
 
-    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot off. Manual guidance active; director may still react.");
+    assert.equal(nodes.aiAutopilotChip.textContent, "Autopilot OFF · manual; builders/director idle");
     assert.equal(nodes.aiAutopilotChip.attrs["data-mode"], "off");
     assert.equal(nodes.aiAutopilotChip.attrs["data-ai-mode"], "fallback");
     assert.equal(nodes.aiAutopilotChip.attrs["data-coverage"], "fallback");

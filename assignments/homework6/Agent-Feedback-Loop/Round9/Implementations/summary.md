@@ -2,37 +2,55 @@
 round: 9
 stage: C
 date: 2026-04-26
+commit: "pending final Round9 commit"
 status: IMPLEMENTED
 ---
 
 # Round 9 Stage C - Implementation Summary
 
+Source: `Round9/Plans/summary.md`
+
+Commit hash: pending final Round9 commit
+
+## Wave Logs
+
+| Wave | Plan | Status | Implementation log |
+| --- | --- | --- | --- |
+| W1 | performance-truth-and-lod | Implemented | `W1-performance-truth-and-lod.commit.md` |
+| W2 | autopilot-food-precrisis | Implemented | `W2-autopilot-food-precrisis.commit.md` |
+| W3 | automation-ownership | Implemented with panel-specific ordering still outside the current diff | `W3-automation-ownership.commit.md` |
+| W4 | performance-panel-and-benchmark-summary | Implemented | `W4-performance-panel-and-benchmark-summary.commit.md` |
+| W5 | entity-focus-high-load | Implemented | `W5-entity-focus-high-load.commit.md` |
+| W6 | help-and-heat-lens-polish | Implemented | `W6-help-and-heat-lens-polish.commit.md` |
+
 ## Scope Landed
 
-| Area | Files | Outcome |
-|------|-------|---------|
-| Storyteller readability | `src/ui/hud/storytellerStrip.js`, `index.html` | Removed duplicate `DIRECTOR` phrasing and added natural DOM text boundaries between badge, title, and summary. |
-| AI automation boundary | `src/ui/panels/AIAutomationPanel.js` | Autopilot OFF now explicitly says live LLM calls are disabled while fallback/director summaries can still be visible. |
-| Food-crisis guidance | `src/ui/hud/nextActionAdvisor.js`, `src/ui/interpretation/WorldExplain.js` | Advice now checks isolated farms/worksites and recommends reconnecting farm access, extending roads, adding warehouses, or placing reachable farms. |
-| Runtime API contract | `src/main.js` | `window.__utopiaLongRun` remains available for non-dev smoke tests while `window.__utopia` stays dev-gated. |
-| Event/progression cleanup | `src/ui/panels/DeveloperPanel.js`, `src/simulation/meta/ProgressionSystem.js` | Noisy building-destroyed log formatting is suppressed; emergency recovery messaging now has priority over same-tick depot milestones. |
-| Test contract cleanup | multiple `test/*.test.js` files | Updated stale expectations for Autopilot copy, entity hitbox source guards, build-cost hard caps, and mood-output coupling. |
+Round 9 landed the accepted high-speed review fixes as six implementation waves:
+
+- W1 added wall-clock speed truth, adaptive step caps, high-load AI/boids LOD, worker target caching, spatial neighbor queries, and pathfinding overhead reductions.
+- W1 was extended after performance review with total-entity LOD thresholds, high-load fast-forward macro-steps, Boids no-double-integration, and path-request budgets for mixed 1000-entity runs.
+- W2 added pre-starvation food runway detection, Autopilot food recovery mode, recovery-only director priorities, and population-growth blocking while runway is unsafe.
+- W3 made Autopilot OFF stop phase/connector builders, labeled scenario repair/rule/autopilot build owners, and changed HUD copy to distinguish builders, directors, and rules/fallback AI.
+- W4 added rolling p95/p99 performance telemetry, bottleneck inference, cap state, target-vs-actual speed display, benchmark pass/fail summary, and expanded stress controls.
+- W4 records frame-level aggregate sim CPU and exposes render/UI/sim costs in the Performance panel.
+- W5 replaced the high-load Entity Focus `+N more` dead end with role/status/crisis grouping, filter chips, crisis-first ordering, and selected-row preservation.
+- W6 restored Help to Controls by default and ranked/budgeted Heat Lens labels so clustered crisis markers surface the most actionable labels first.
+- W6 also hardened fallback instanced rendering for the expanded stress cap and throttled high-load entity matrix refresh.
+
+## Post-Review Performance Addendum
+
+After reviewer/user follow-up on low CPU utilization and mostly-idle entities, Round 9 added a focused high-load movement/pathing pass:
+
+- Added a browser `PathWorkerPool` and `pathWorker.js` so high-load A* requests run across up to 32 Web Workers.
+- Stabilized high-load traffic path versions so active paths are not invalidated every traffic sample.
+- Added per-entity async pending target binding so worker results apply to the entity that requested them instead of being discarded as stale.
+- Prevented main-thread sync A* fallback while the worker pool is pending/backpressured.
+- Converted dev stress workers into continuous patrol entities and excluded them from starvation/death economy, so stress tests keep 1000 moving workers alive.
+- Tuned high-load 8x macro-steps to preserve UI responsiveness while maintaining near-target wall-clock sim speed.
 
 ## Notes
 
-- The build-cost implementation was briefly investigated but restored to the current production contract: beyond-cap costs may continue rising, while hard caps block placement where configured.
-- Food guidance was kept inside existing advisor/explanation paths. No new building, tile, or economy mechanic was introduced.
-- The automation boundary is intentionally explicit: Autopilot OFF means no live LLM control, but rule-based simulation directors and fallback summaries can still be displayed.
-
-## Key Tests Added Or Updated
-
-- `test/storyteller-strip.test.js`
-- `test/hud-storyteller.test.js`
-- `test/ai-automation-panel.test.js`
-- `test/next-action-advisor.test.js`
-- `test/hud-next-action.test.js`
-- `test/world-explain.test.js`
-- `test/ui/hud-autopilot-chip.test.js`
-- `test/buildSpamRegression.test.js`
-- `test/entity-pick-hitbox.test.js`
-- `test/mood-output-coupling.test.js`
+- The final git commit has not been created, so every per-wave log records the commit hash as `pending final Round9 commit`.
+- W1 and W4 share telemetry plumbing: W1 uses it for runtime truth/caps, while W4 exposes it in the Performance panel and benchmark CSV.
+- W3 did not show current diffs for `AIAutomationPanel`, `AIExchangePanel`, `AIPolicyTimelinePanel`, or `EventPanel`; the landed ownership work is in build attribution, director gating, and HUD/autopilot status copy.
+- This log update did not run validation; it records implementation evidence from the current plan summary, `git diff`, and untracked Round9 source/test files.

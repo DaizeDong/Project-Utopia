@@ -170,6 +170,192 @@ function escapeHtml(input) {
     .replaceAll("'", "&#39;");
 }
 
+export const ENTITY_FOCUS_GROUP_ORDER = Object.freeze([
+  "starving",
+  "hungry",
+  "blocked",
+  "idle",
+  "hauling",
+  "combat",
+  "other",
+]);
+
+const ENTITY_FOCUS_ROW_SORT_ORDER = Object.freeze([
+  "starving",
+  "hungry",
+  "blocked",
+  "combat",
+  "hauling",
+  "idle",
+  "other",
+]);
+
+const ENTITY_FOCUS_GROUP_META = Object.freeze({
+  starving: Object.freeze({ label: "Starving", shortLabel: "Starving" }),
+  hungry: Object.freeze({ label: "Hungry", shortLabel: "Hungry" }),
+  blocked: Object.freeze({ label: "Blocked", shortLabel: "Blocked" }),
+  idle: Object.freeze({ label: "Idle", shortLabel: "Idle" }),
+  hauling: Object.freeze({ label: "Hauling", shortLabel: "Hauling" }),
+  combat: Object.freeze({ label: "Combat", shortLabel: "Combat" }),
+  other: Object.freeze({ label: "Other", shortLabel: "Other" }),
+});
+
+function entityFocusGroupMeta(groupId) {
+  return ENTITY_FOCUS_GROUP_META[groupId] ?? ENTITY_FOCUS_GROUP_META.other;
+}
+
+function normalizeSearchText(...parts) {
+  return parts
+    .filter((part) => part !== null && part !== undefined)
+    .map((part) => {
+      if (typeof part === "object") {
+        try { return JSON.stringify(part); } catch { return String(part); }
+      }
+      return String(part);
+    })
+    .join(" ")
+    .toLowerCase();
+}
+
+function entityCarryTotal(entity) {
+  const carry = entity?.carry ?? {};
+  return finiteNumber(carry.food, 0)
+    + finiteNumber(carry.wood, 0)
+    + finiteNumber(carry.stone, 0)
+    + finiteNumber(carry.herbs, 0);
+}
+
+function entityFocusStateNode(entity) {
+  return String(
+    entity?.blackboard?.fsm?.state
+      ?? entity?.debug?.lastStateNode
+      ?? entity?.blackboard?.intent
+      ?? entity?.debug?.lastIntent
+      ?? entity?.stateLabel
+      ?? "",
+  ).toLowerCase();
+}
+
+function entityFocusStateText(entity) {
+  return String(entity?.stateLabel ?? entity?.blackboard?.intent ?? entity?.debug?.lastIntent ?? "-");
+}
+
+function isEntityBlockedForFocus(entity) {
+  const reject = entity?.blackboard?.lastFeasibilityReject
+    ?? entity?.debug?.feasibilityReject
+    ?? entity?.deathContext?.lastFeasibilityReject
+    ?? null;
+  if (reject) return true;
+
+  const text = normalizeSearchText(
+    entity?.stateLabel,
+    entity?.debug?.lastIntentReason,
+    entity?.debug?.stateReason,
+    entity?.blackboard?.fsm?.reason,
+    entity?.blackboard?.emotionalContext,
+  );
+  return /\b(blocked|stuck|reject|rejected|unreachable|invalid)\b/.test(text)
+    || /no[- ]worksite|no reachable|no warehouse|deliver-stuck/.test(text);
+}
+
+function isEntityInCombatForFocus(entity) {
+  const hp = Number(entity?.hp);
+  const maxHp = Number(entity?.maxHp);
+  if (Number.isFinite(hp) && Number.isFinite(maxHp) && maxHp > 0 && hp < maxHp) return true;
+
+  const text = normalizeSearchText(
+    entity?.stateLabel,
+    entity?.debug?.lastIntent,
+    entity?.debug?.lastStateNode,
+    entity?.blackboard?.intent,
+    entity?.groupId,
+    entity?.kind,
+  );
+  return /\b(attack|combat|raid|hunt|stalk|flee|evade|sabotage)\b/.test(text);
+}
+
+function classifyEntityFocusGroup(entity) {
+  const hunger = Number(entity?.hunger);
+  if (Number.isFinite(hunger) && hunger < 0.2) return "starving";
+  if (Number.isFinite(hunger) && hunger < 0.5) return "hungry";
+  if (isEntityBlockedForFocus(entity)) return "blocked";
+  if (isEntityInCombatForFocus(entity)) return "combat";
+
+  const stateNode = entityFocusStateNode(entity);
+  const text = normalizeSearchText(entity?.stateLabel, entity?.debug?.lastIntent, stateNode);
+  if (entityCarryTotal(entity) > 0.05 || /\b(deliver|haul|hauling)\b/.test(text)) return "hauling";
+  if (stateNode === "idle" || stateNode === "wander" || /\b(idle|wander)\b/.test(text)) return "idle";
+  return "other";
+}
+
+function entityFocusSortValue(groupId) {
+  const idx = ENTITY_FOCUS_ROW_SORT_ORDER.indexOf(groupId);
+  return idx >= 0 ? idx : ENTITY_FOCUS_ROW_SORT_ORDER.length;
+}
+
+function compareEntityFocusRows(a, b) {
+  const groupDelta = entityFocusSortValue(a.groupId) - entityFocusSortValue(b.groupId);
+  if (groupDelta !== 0) return groupDelta;
+  const hungerA = Number.isFinite(a.hunger) ? a.hunger : 1;
+  const hungerB = Number.isFinite(b.hunger) ? b.hunger : 1;
+  if (Math.abs(hungerA - hungerB) > 0.0001) return hungerA - hungerB;
+  const carryDelta = Number(b.carryTotal ?? 0) - Number(a.carryTotal ?? 0);
+  if (Math.abs(carryDelta) > 0.0001) return carryDelta;
+  return String(a.entity?.id ?? "").localeCompare(String(b.entity?.id ?? ""));
+}
+
+export function deriveEntityFocusGroups(state = {}) {
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  const animals = Array.isArray(state.animals) ? state.animals : [];
+  const entities = [...agents, ...animals].filter((entity) => entity && entity.alive !== false);
+  const rows = entities.map((entity) => {
+    const groupId = classifyEntityFocusGroup(entity);
+    const hunger = Number(entity?.hunger);
+    return {
+      entity,
+      groupId,
+      groupLabel: entityFocusGroupMeta(groupId).shortLabel,
+      stateText: entityFocusStateText(entity),
+      hunger: Number.isFinite(hunger) ? hunger : null,
+      carryTotal: entityCarryTotal(entity),
+    };
+  }).sort(compareEntityFocusRows);
+
+  const groups = ENTITY_FOCUS_GROUP_ORDER.map((id) => ({
+    id,
+    label: entityFocusGroupMeta(id).label,
+    rows: rows.filter((row) => row.groupId === id),
+  }));
+  return {
+    entities,
+    rows,
+    groups,
+    total: rows.length,
+    groupCounts: Object.fromEntries(groups.map((group) => [group.id, group.rows.length])),
+  };
+}
+
+function formatFocusHungerLabel(entity) {
+  const hungerN = Number(entity?.hunger);
+  if (!Number.isFinite(hungerN)) return "?";
+  if (hungerN >= 0.8) return "well-fed";
+  if (hungerN >= 0.5) return "a bit hungry";
+  if (hungerN >= 0.2) return "hungry";
+  return "starving";
+}
+
+function summarizeHiddenFocusRows(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    counts.set(row.groupId, (counts.get(row.groupId) ?? 0) + 1);
+  }
+  return ENTITY_FOCUS_ROW_SORT_ORDER
+    .filter((id) => counts.has(id))
+    .slice(0, 4)
+    .map((id) => `${entityFocusGroupMeta(id).shortLabel.toLowerCase()} ${counts.get(id)}`)
+    .join(", ");
+}
+
 function summarizeTopWeights(weights = {}) {
   const rows = Object.entries(weights)
     .map(([k, v]) => [k, Number(v)])
@@ -283,6 +469,16 @@ export class EntityFocusPanel {
     this.workerListRoot.addEventListener("click", (event) => {
       const target = event?.target;
       if (!target || typeof target.closest !== "function") return;
+      const filterBtn = target.closest("button[data-entity-focus-filter]");
+      if (filterBtn) {
+        const filter = String(filterBtn.dataset.entityFocusFilter ?? "all");
+        event.preventDefault();
+        this.state.controls ??= {};
+        this.state.controls.entityFocusFilter = filter;
+        this.workerListSignature = "";
+        this.#renderWorkerList();
+        return;
+      }
       const btn = target.closest("button[data-entity-id]");
       if (!btn) return;
       const entityId = btn.dataset.entityId;
@@ -312,33 +508,62 @@ export class EntityFocusPanel {
 
   #renderWorkerList() {
     if (!this.workerListRoot) return;
-    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
-    const workers = agents.filter((a) => a && a.type === "WORKER" && a.alive !== false);
-    const selectedId = this.state.controls.selectedEntityId ?? "";
+    const focus = deriveEntityFocusGroups(this.state);
+    const selectedId = this.state.controls?.selectedEntityId ?? "";
+    const requestedFilter = String(this.state.controls?.entityFocusFilter ?? "all");
+    const activeFilter = requestedFilter === "all" || Object.hasOwn(ENTITY_FOCUS_GROUP_META, requestedFilter)
+      ? requestedFilter
+      : "all";
+    if (this.state.controls && this.state.controls.entityFocusFilter !== activeFilter) {
+      this.state.controls.entityFocusFilter = activeFilter;
+    }
     const PAGE_SIZE = 20;
-    const shown = workers.slice(0, PAGE_SIZE);
-    const overflow = Math.max(0, workers.length - PAGE_SIZE);
+    const activeGroup = focus.groups.find((group) => group.id === activeFilter);
+    const filteredRows = activeFilter === "all" ? focus.rows : (activeGroup?.rows ?? []);
+    let shown = filteredRows.slice(0, PAGE_SIZE);
+    const selectedInFilterIndex = filteredRows.findIndex((row) => row.entity?.id === selectedId);
+    if (selectedInFilterIndex >= PAGE_SIZE && PAGE_SIZE > 0) {
+      shown = [...filteredRows.slice(0, PAGE_SIZE - 1), filteredRows[selectedInFilterIndex]];
+    }
+    const shownIds = new Set(shown.map((row) => row.entity?.id));
+    const hiddenRows = filteredRows.filter((row) => !shownIds.has(row.entity?.id));
+    const overflow = hiddenRows.length;
     // Signature-based dirty-check: rebuild only when identity / role / state
     // / selection changes (plan "Risks: 50+ workers O(N) rebuild every tick").
     const signature = [
       selectedId,
-      workers.length,
+      activeFilter,
+      focus.total,
       overflow,
-      shown.map((w) => `${w.id}|${w.role ?? "-"}|${w.stateLabel ?? "-"}|${Number(w.hunger ?? 0).toFixed(2)}`).join(";"),
+      ENTITY_FOCUS_GROUP_ORDER.map((id) => `${id}:${focus.groupCounts[id] ?? 0}`).join("|"),
+      shown.map((row) => {
+        const w = row.entity;
+        return `${w.id}|${row.groupId}|${w.role ?? "-"}|${row.stateText}|${Number(w.hunger ?? 0).toFixed(2)}|${row.carryTotal.toFixed(2)}`;
+      }).join(";"),
     ].join("::");
     if (signature === this.workerListSignature) return;
     this.workerListSignature = signature;
 
-    if (workers.length === 0) {
-      this.workerListRoot.innerHTML = `<div class="entity-worker-list-footer">(no workers in colony yet)</div>`;
+    if (focus.total === 0) {
+      this.workerListRoot.innerHTML = `<div class="entity-worker-list-footer">(no focusable entities in colony yet)</div>`;
       return;
     }
 
-    const rows = shown.map((w) => {
+    const chipStyle = "font:inherit;font-size:10px;line-height:1.1;padding:3px 6px;border-radius:999px;border:1px solid rgba(80,140,200,0.28);background:rgba(80,140,200,0.08);color:rgba(208,232,255,0.82);cursor:pointer;";
+    const activeChipStyle = "background:rgba(120,180,220,0.25);border-color:rgba(120,180,220,0.65);color:var(--text);";
+    const chips = [
+      { id: "all", label: "All", count: focus.total },
+      ...focus.groups.map((group) => ({ id: group.id, label: group.label, count: group.rows.length })),
+    ].map((chip) => {
+      const pressed = chip.id === activeFilter;
+      return `<button type="button" data-entity-focus-filter="${escapeHtml(chip.id)}" aria-pressed="${pressed ? "true" : "false"}" style="${chipStyle}${pressed ? activeChipStyle : ""}">${escapeHtml(chip.label)} <b>${chip.count}</b></button>`;
+    }).join("");
+
+    const rows = shown.map((row) => {
+      const w = row.entity;
       const name = String(w.displayName ?? w.id);
-      const role = String(w.role ?? "-");
-      const stateLabel = String(w.stateLabel ?? "-");
-      const hungerN = Number(w.hunger);
+      const role = `${entityFocusGroupMeta(row.groupId).shortLabel} / ${String(w.role ?? "-")}`;
+      const stateLabel = String(row.stateText ?? "-");
       // v0.8.2 Round-6 Wave-1 02b-casual (Step 10) — swap the worker-list
       // mood label "peckish" for the casual-friendly "a bit hungry".
       // Reviewer reported "what is peckish? Looked it up: hungry but not
@@ -347,22 +572,17 @@ export class EntityFocusPanel {
       // template, line ~430) keeps "Peckish" capitalised because
       // entity-focus-player-view.test.js pins that label literal — only
       // the worker-list rollup is rewritten here.
-      const hungerLabel = !Number.isFinite(hungerN)
-        ? "?"
-        : hungerN >= 0.8
-          ? "well-fed"
-          : hungerN >= 0.5
-            ? "a bit hungry"
-            : hungerN >= 0.2
-              ? "hungry"
-              : "starving";
+      const hungerLabel = formatFocusHungerLabel(w);
       const selectedClass = w.id === selectedId ? " selected" : "";
       return `<button type="button" class="entity-worker-row${selectedClass}" data-entity-id="${escapeHtml(w.id)}">${escapeHtml(name)} · ${escapeHtml(role)} · ${escapeHtml(stateLabel)} · ${escapeHtml(hungerLabel)}</button>`;
     }).join("");
-    const footer = overflow > 0
-      ? `<div class="entity-worker-list-footer">+${overflow} more…</div>`
-      : "";
-    this.workerListRoot.innerHTML = rows + footer;
+    const hiddenSummary = overflow > 0 ? summarizeHiddenFocusRows(hiddenRows) : "";
+    const displayFooter = overflow > 0
+      ? `<div class="entity-worker-list-footer">+${overflow} more${hiddenSummary ? `: ${escapeHtml(hiddenSummary)}` : ""}</div>`
+      : (filteredRows.length === 0
+        ? `<div class="entity-worker-list-footer">(no ${escapeHtml(activeFilter === "all" ? "focusable" : entityFocusGroupMeta(activeFilter).shortLabel.toLowerCase())} entities now)</div>`
+        : "");
+    this.workerListRoot.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">${chips}</div>${rows}${displayFooter}`;
   }
 
   #nowMs() {

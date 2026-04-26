@@ -61,3 +61,34 @@ test("BoidsSystem publishes stable traffic hotspot metrics", () => {
 
   assert.notEqual(Number(state.metrics.traffic.version ?? 0), firstVersion);
 });
+
+test("BoidsSystem high-load LOD does not double-integrate skipped time", () => {
+  const grid = createGrid(80, 80, TILE.GRASS);
+  const agents = [];
+  for (let i = 0; i < 1000; i += 1) {
+    const worker = createWorker(`w${i}`, -20 + (i % 40) * 0.2, -10 + Math.floor(i / 40) * 0.2);
+    worker.desiredVel = { x: 1, z: 0 };
+    agents.push(worker);
+  }
+  const state = {
+    grid,
+    agents,
+    animals: [],
+    controls: { timeScale: 8 },
+    metrics: { timeSec: 0 },
+    debug: {},
+  };
+  const system = new BoidsSystem();
+  const tracked = state.agents[0];
+  const startX = tracked.x;
+
+  for (let i = 0; i < 20; i += 1) {
+    state.metrics.timeSec += 1 / 30;
+    system.update(1 / 30, state);
+  }
+
+  const displacement = tracked.x - startX;
+  assert.ok(displacement > 0.12, `expected forward movement, got ${displacement}`);
+  assert.ok(displacement < 0.75, `LOD should not double-integrate skipped time, got ${displacement}`);
+  assert.match(state.debug.boids?.lod ?? "", /flock solve/);
+});

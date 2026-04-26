@@ -14,6 +14,7 @@ import {
   describeMapTemplate,
 } from "../world/grid/Grid.js";
 import { buildScenarioBundle, seedResourceNodes } from "../world/scenarios/ScenarioFactory.js";
+import { createPerformanceTelemetry } from "../app/performanceTelemetry.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
   food: INITIAL_RESOURCES.food,
@@ -677,9 +678,23 @@ export function createInitialGameState(options = {}) {
       averageFps: 60,
       benchmarkStatus: "idle",
       benchmarkCsvReady: false,
+      benchmarkLastRun: null,
       simDt: 0,
       simStepsThisFrame: 0,
+      rawFrameMs: 0,
+      observedFps: 60,
+      timeScaleActualWall: 1,
+      performance: createPerformanceTelemetry(),
+      performanceCap: {
+        active: false,
+        reason: "",
+        targetScale: 1,
+        actualScale: 1,
+        effectiveMaxSteps: 12,
+        fixedStepSec: 1 / 30,
+      },
       simCostMs: 0,
+      simCpuFrameMs: 0,
       isDebugStepping: false,
       warnings: [],
       warningLog: [],

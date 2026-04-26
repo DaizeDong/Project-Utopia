@@ -40,6 +40,28 @@ function ensureResourceFlowState(state) {
   return state._resourceFlowAccum;
 }
 
+function countLivingWorkers(state) {
+  let count = 0;
+  for (const agent of state.agents ?? []) {
+    if (agent?.type === "WORKER" && agent.alive !== false) count += 1;
+  }
+  return count;
+}
+
+export function isFoodRunwayUnsafe(state) {
+  const workers = countLivingWorkers(state);
+  const foodStock = Number(state.resources?.food ?? 0);
+  const produced = Number(state.metrics?.foodProducedPerMin ?? 0);
+  const consumed = Number(state.metrics?.foodConsumedPerMin ?? 0);
+  const netPerMin = produced - consumed;
+  const starvationRisk = Number(state.metrics?.starvationRiskCount ?? 0);
+  const workerFloor = Math.max(12, workers * 0.32);
+  const runwayMinutes = consumed > 0 ? foodStock / consumed : Infinity;
+  return starvationRisk > 0
+    || foodStock <= workerFloor
+    || (workers >= 12 && netPerMin < -1 && runwayMinutes < 1.5);
+}
+
 /**
  * v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 3) — per-tile production
  * telemetry. WorkerAISystem's farm/lumber/quarry/herb harvest paths call
@@ -448,6 +470,8 @@ export class ResourceSystem {
       state._resourceFlowWindowSec = 0;
     }
 
+    this.#emitFoodPreCrisisIfNeeded(state);
+
     // v0.8.2 Round-5b Wave-1 (01a Step 1) — Autopilot food-crisis detector.
     // Emits FOOD_CRISIS_DETECTED when food=0 + autopilot enabled + at least
     // one starvation death in the last 30 seconds. ColonyDirectorSystem
@@ -456,6 +480,34 @@ export class ResourceSystem {
     // repeat emits within a single crisis. benchmarkMode bypass keeps
     // long-horizon-bench.mjs deterministic (headless harness never pauses).
     this.#emitFoodCrisisIfNeeded(state);
+  }
+
+  #emitFoodPreCrisisIfNeeded(state) {
+    if (state.benchmarkMode === true) return;
+    const autopilotOn = Boolean(state.ai?.enabled);
+    if (!autopilotOn) return;
+    if (!isFoodRunwayUnsafe(state)) return;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    state.ai ??= {};
+    const lastEmit = Number(state.ai._lastFoodPreCrisisEmitSec ?? -999);
+    if ((nowSec - lastEmit) < 10) return;
+    const workers = countLivingWorkers(state);
+    const foodStock = Number(state.resources?.food ?? 0);
+    const producedPerMin = Number(state.metrics?.foodProducedPerMin ?? 0);
+    const consumedPerMin = Number(state.metrics?.foodConsumedPerMin ?? 0);
+    const starvationRisk = Number(state.metrics?.starvationRiskCount ?? 0);
+    const runwayMinutes = consumedPerMin > 0 ? foodStock / consumedPerMin : Infinity;
+    state.ai._lastFoodPreCrisisEmitSec = nowSec;
+    emitEvent(state, EVENT_TYPES.FOOD_PRECRISIS_DETECTED, {
+      foodStock,
+      workers,
+      producedPerMin,
+      consumedPerMin,
+      netPerMin: producedPerMin - consumedPerMin,
+      starvationRisk,
+      runwayMinutes: Number.isFinite(runwayMinutes) ? Number(runwayMinutes.toFixed(2)) : null,
+      ts: nowSec,
+    });
   }
 
   #emitFoodCrisisIfNeeded(state) {

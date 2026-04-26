@@ -15,6 +15,7 @@ function makeMinimalState(overrides = {}) {
   state.buildings = rebuildBuildingStats(state.grid);
   state.metrics = state.metrics ?? {};
   state.metrics.timeSec = overrides.timeSec ?? 0;
+  state.ai.enabled = overrides.aiEnabled ?? true;
   if (overrides.buildings) {
     Object.assign(state.buildings, overrides.buildings);
   }
@@ -188,6 +189,22 @@ test("ColonyDirectorSystem skips update when session phase is not active", () =>
   assert.ok(!state.ai?.colonyDirector, "should not initialize director state in non-active session");
 });
 
+test("ColonyDirectorSystem keeps phase builders idle when Autopilot is off", () => {
+  const state = makeMinimalState({
+    aiEnabled: false,
+    resources: { food: 200, wood: 200, stone: 0, herbs: 0 },
+  });
+  state.metrics.timeSec = 0;
+  const beforeVersion = state.grid.version;
+  const system = new ColonyDirectorSystem();
+
+  system.update(1 / 30, state);
+
+  assert.equal(state.grid.version, beforeVersion, "autopilot-off director must not place automatic builds");
+  assert.equal(state.ai.colonyDirector.buildsPlaced, 0);
+  assert.equal(state.ai.colonyDirector.automation.phaseBuilder, "off");
+});
+
 test("ColonyDirectorSystem respects EVAL_INTERVAL_SEC rate limit", () => {
   const state = makeMinimalState();
   state.metrics.timeSec = 0;
@@ -203,6 +220,36 @@ test("ColonyDirectorSystem respects EVAL_INTERVAL_SEC rate limit", () => {
   system.update(1 / 30, state);
   const buildsAfter = state.ai.colonyDirector.buildsPlaced;
   assert.equal(buildsAfter, buildsBefore, "should not build again before EVAL_INTERVAL_SEC");
+});
+
+test("ColonyDirectorSystem wall-clock throttles high-load high-speed evaluations", () => {
+  const state = makeMinimalState({
+    resources: { food: 200, wood: 200, stone: 0, herbs: 0 },
+  });
+  state.controls.timeScale = 8;
+  state.metrics.timeSec = 0;
+  state.metrics.wallTimeSec = 0;
+  for (let i = 0; i < 720; i += 1) {
+    state.agents.push({ id: `stress-${i}`, type: "WORKER", alive: true });
+  }
+  const system = new ColonyDirectorSystem();
+
+  system.update(1 / 30, state);
+  const firstBuilds = state.ai.colonyDirector.buildsPlaced;
+  const firstEvalSec = state.ai.colonyDirector.lastEvalSec;
+
+  state.metrics.timeSec = 8;
+  state.metrics.wallTimeSec = 0.5;
+  system.update(1 / 30, state);
+
+  assert.equal(state.ai.colonyDirector.buildsPlaced, firstBuilds, "high-load director should not build again inside the wall-clock throttle");
+  assert.equal(state.ai.colonyDirector.lastEvalSec, firstEvalSec, "game-time eval cursor should not advance on wall-throttled frames");
+  assert.ok(state.ai.colonyDirector.skippedByWallRate > 0);
+
+  state.metrics.timeSec = 16;
+  state.metrics.wallTimeSec = 1.6;
+  system.update(1 / 30, state);
+  assert.ok(state.ai.colonyDirector.lastEvalSec >= 16, "director should evaluate after wall-clock throttle expires");
 });
 
 test("ColonyDirectorSystem evaluates again after EVAL_INTERVAL_SEC", () => {

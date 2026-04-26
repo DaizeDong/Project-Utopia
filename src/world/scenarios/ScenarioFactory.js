@@ -1,6 +1,6 @@
 import { EVENT_TYPE, NODE_FLAGS, TILE, WEATHER } from "../../config/constants.js";
 import { BALANCE } from "../../config/balance.js";
-import { countTilesByType, setTileField } from "../grid/Grid.js";
+import { setTileField } from "../grid/Grid.js";
 
 const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
   temperate_plains: "frontier_repair",
@@ -1006,32 +1006,39 @@ export function isInfrastructureNetworkTile(tileType) {
 
 export function hasInfrastructureConnection(grid, start, goal) {
   if (!start || !goal) return false;
-  const startTile = grid.tiles[start.ix + start.iz * grid.width];
-  const goalTile = grid.tiles[goal.ix + goal.iz * grid.width];
+  const width = Number(grid.width ?? 0);
+  const height = Number(grid.height ?? 0);
+  const tiles = grid.tiles ?? [];
+  const startIdx = start.ix + start.iz * width;
+  const goalIdx = goal.ix + goal.iz * width;
+  const startTile = tiles[startIdx];
+  const goalTile = tiles[goalIdx];
   if (!isInfrastructureNetworkTile(startTile) || !isInfrastructureNetworkTile(goalTile)) return false;
 
-  const queue = [start];
-  const visited = new Set([tileKey(start.ix, start.iz)]);
-  const neighbors = [
-    { x: 1, z: 0 },
-    { x: -1, z: 0 },
-    { x: 0, z: 1 },
-    { x: 0, z: -1 },
-  ];
+  const queueIx = [start.ix];
+  const queueIz = [start.iz];
+  const visited = new Uint8Array(width * height);
+  visited[startIdx] = 1;
+  let head = 0;
+  const dx = [1, -1, 0, 0];
+  const dz = [0, 0, 1, -1];
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current.ix === goal.ix && current.iz === goal.iz) return true;
-    for (const neighbor of neighbors) {
-      const ix = current.ix + neighbor.x;
-      const iz = current.iz + neighbor.z;
-      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
-      const key = tileKey(ix, iz);
-      if (visited.has(key)) continue;
-      const tile = grid.tiles[ix + iz * grid.width];
+  while (head < queueIx.length) {
+    const currentIx = queueIx[head];
+    const currentIz = queueIz[head];
+    head += 1;
+    if (currentIx === goal.ix && currentIz === goal.iz) return true;
+    for (let i = 0; i < 4; i += 1) {
+      const ix = currentIx + dx[i];
+      const iz = currentIz + dz[i];
+      if (ix < 0 || iz < 0 || ix >= width || iz >= height) continue;
+      const idx = ix + iz * width;
+      if (visited[idx]) continue;
+      const tile = tiles[idx];
       if (!isInfrastructureNetworkTile(tile)) continue;
-      visited.add(key);
-      queue.push({ ix, iz });
+      visited[idx] = 1;
+      queueIx.push(ix);
+      queueIz.push(iz);
     }
   }
 
@@ -1082,8 +1089,93 @@ export function getScenarioEventCandidates(state, eventType) {
   return getScenarioFocusZones(state, refs);
 }
 
+function countScenarioRuntimeTiles(grid) {
+  const counts = { warehouses: 0, farms: 0, lumbers: 0, roads: 0, walls: 0 };
+  for (const tile of grid.tiles ?? []) {
+    if (tile === TILE.WAREHOUSE) counts.warehouses += 1;
+    else if (tile === TILE.FARM) counts.farms += 1;
+    else if (tile === TILE.LUMBER) counts.lumbers += 1;
+    else if (tile === TILE.ROAD) counts.roads += 1;
+    else if (tile === TILE.WALL) counts.walls += 1;
+  }
+  return counts;
+}
+
+function setScenarioRuntimeCache(state, cache) {
+  Object.defineProperty(state, "_scenarioRuntimeCache", {
+    value: cache,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+}
+
+function buildScenarioRuntimeTileSignature(grid, scenario) {
+  const width = Number(grid?.width ?? 0);
+  const height = Number(grid?.height ?? 0);
+  const tiles = grid?.tiles ?? [];
+  if (width <= 0 || height <= 0 || !tiles.length) return "0:0";
+
+  const anchors = scenario?.anchors ?? {};
+  const seen = new Set();
+  let hash = 2166136261;
+
+  const addTile = (ix, iz) => {
+    const x = Number(ix);
+    const z = Number(iz);
+    if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0 || x >= width || z >= height) return;
+    const idx = x + z * width;
+    if (seen.has(idx)) return;
+    seen.add(idx);
+    hash = Math.imul(hash ^ (idx + 1), 16777619);
+    hash = Math.imul(hash ^ (Number(tiles[idx] ?? 0) + 31), 16777619);
+  };
+
+  const addRadius = (anchor, radius = 1) => {
+    if (!anchor) return;
+    const centerX = Number(anchor.ix);
+    const centerZ = Number(anchor.iz);
+    const r = Math.max(0, Math.floor(Number(radius ?? 1)));
+    for (let iz = centerZ - r; iz <= centerZ + r; iz += 1) {
+      for (let ix = centerX - r; ix <= centerX + r; ix += 1) {
+        if (Math.abs(ix - centerX) + Math.abs(iz - centerZ) > r) continue;
+        addTile(ix, iz);
+      }
+    }
+  };
+
+  for (const route of scenario?.routeLinks ?? []) {
+    addRadius(anchors[route.from], 1);
+    addRadius(anchors[route.to], 1);
+    for (const tile of route.gapTiles ?? []) addTile(tile.ix, tile.iz);
+  }
+  for (const depot of scenario?.depotZones ?? []) {
+    addRadius(anchors[depot.anchor], depot.radius ?? 2);
+  }
+
+  return `${seen.size}:${hash >>> 0}`;
+}
+
 export function getScenarioRuntime(state) {
   const scenario = state.gameplay?.scenario ?? {};
+  const gridVersion = Number(state.grid?.version ?? 0);
+  const tileSignature = buildScenarioRuntimeTileSignature(state.grid, scenario);
+  const cached = state._scenarioRuntimeCache;
+  if (
+    cached
+    && cached.scenario === scenario
+    && cached.grid === state.grid
+    && cached.gridVersion === gridVersion
+    && cached.routeLinks === scenario.routeLinks
+    && cached.depotZones === scenario.depotZones
+    && cached.targets === scenario.targets
+    && cached.anchors === scenario.anchors
+    && cached.nextActionContext === scenario.nextActionContext
+    && cached.tileSignature === tileSignature
+  ) {
+    return cached.runtime;
+  }
+
   const nextActionContext = scenario.nextActionContext ?? buildScenarioNextActionContext(scenario);
   const anchors = scenario.anchors ?? {};
   const routes = (scenario.routeLinks ?? []).map((route) => ({
@@ -1094,20 +1186,14 @@ export function getScenarioRuntime(state) {
     ...depot,
     ready: hasWarehouseNear(state.grid, anchors[depot.anchor], depot.radius ?? 2),
   }));
-  const counts = {
-    warehouses: countTilesByType(state.grid, [TILE.WAREHOUSE]),
-    farms: countTilesByType(state.grid, [TILE.FARM]),
-    lumbers: countTilesByType(state.grid, [TILE.LUMBER]),
-    roads: countTilesByType(state.grid, [TILE.ROAD]),
-    walls: countTilesByType(state.grid, [TILE.WALL]),
-  };
+  const counts = countScenarioRuntimeTiles(state.grid);
   const logisticsTargets = scenario.targets?.logistics ?? { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 0 };
   const stockpileTargets = scenario.targets?.stockpile ?? { food: 95, wood: 90 };
   const stabilityTargets = scenario.targets?.stability ?? { walls: 12, prosperity: 58, threat: 44, holdSec: 30 };
   const connectedRoutes = routes.filter((route) => route.connected).length;
   const readyDepots = depots.filter((depot) => depot.ready).length;
 
-  return {
+  const runtime = {
     scenario,
     nextActionContext,
     routes,
@@ -1119,4 +1205,17 @@ export function getScenarioRuntime(state) {
     connectedRoutes,
     readyDepots,
   };
+  setScenarioRuntimeCache(state, {
+    scenario,
+    grid: state.grid,
+    gridVersion,
+    routeLinks: scenario.routeLinks,
+    depotZones: scenario.depotZones,
+    targets: scenario.targets,
+    anchors: scenario.anchors,
+    nextActionContext: scenario.nextActionContext,
+    tileSignature,
+    runtime,
+  });
+  return runtime;
 }

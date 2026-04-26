@@ -92,3 +92,21 @@ test("food-crisis: 5s cooldown suppresses duplicate emits", () => {
   const second = state.events.log.filter((e) => e.type === EVENT_TYPES.FOOD_CRISIS_DETECTED);
   assert.equal(second.length, 1, "cooldown must keep emit count at 1 within 5 s");
 });
+
+test("food-precrisis: low runway emits before any starvation death", () => {
+  const state = freshState();
+  state.resources.food = 4;
+  state.ai.enabled = true;
+  state.metrics.foodProducedPerMin = 0;
+  state.metrics.foodConsumedPerMin = 18;
+  state.metrics.starvationRiskCount = 0;
+
+  const sys = new ResourceSystem();
+  sys.update(1 / 30, state);
+
+  const pre = state.events.log.find((e) => e.type === EVENT_TYPES.FOOD_PRECRISIS_DETECTED);
+  const crisis = state.events.log.find((e) => e.type === EVENT_TYPES.FOOD_CRISIS_DETECTED);
+  assert.ok(pre, "FOOD_PRECRISIS_DETECTED should warn on unsafe runway");
+  assert.ok(!crisis, "pre-crisis must not require or imply starvation deaths");
+  assert.equal(pre.detail.foodStock, 4);
+});

@@ -16,14 +16,29 @@
 - **Food-crisis next actions** (`src/ui/hud/nextActionAdvisor.js`, `src/ui/interpretation/WorldExplain.js`): starvation guidance now checks isolated farms/worksites and recommends concrete road, warehouse, reconnect, or reachable-farm actions before generic advice.
 - **Non-dev smoke API** (`src/main.js`): keeps `window.__utopiaLongRun` available for browser verification while leaving the broader `window.__utopia` handle dev-gated.
 - **Progression and event-log priority** (`src/simulation/meta/ProgressionSystem.js`, `src/ui/panels/DeveloperPanel.js`): emergency recovery messages now win over same-tick depot milestones, and noisy destroyed-building events are suppressed from formatted logs.
+- **Mortality path-cache write** (`src/simulation/lifecycle/MortalitySystem.js`): fixed the nutrition reachability cache write argument order so A* results are reusable instead of being stored as the wrong field.
+
+### Performance
+
+- **High-population AI optimization plan** (`docs/performance-optimization-plan.md`): added a detailed bottleneck analysis, measured before/after profiles, and a phased multithreading plan for pathfinding workers, animal AI workers, and adaptive scheduling.
+- **AnimalAI spatial sharding** (`src/simulation/npc/AnimalAISystem.js`): partitions animals once, uses predator/herbivore spatial hashes above 220 active animals, and applies high-load AI LOD while skipped animals still follow paths. Synthetic 1500-entity AnimalAI dropped from 33.986 ms/tick before this pass to 2.726 ms/tick.
+- **WorkerAI scan reduction** (`src/simulation/npc/WorkerAISystem.js`): caches target occupancy once per tick, uses worker spatial hashes for social/relationship proximity, removes duplicate nearest-warehouse debug scans, and enables worker AI LOD only at 800+ active workers.
+- **Nutrition reachability gating** (`src/simulation/lifecycle/MortalitySystem.js`): skips expensive worker/visitor food reachability checks until hunger is near the emergency band (0.22), below death threshold, or starvation is already accumulating; keeps `reachableFood` fresh before emergency ration logic starts.
+- **NPCBrain and AStar hot-path cleanup** (`src/simulation/ai/brains/NPCBrainSystem.js`, `src/simulation/navigation/AStar.js`): reuses predator/herbivore target context across entities and avoids per-neighbor dynamic string keys when hazard/traffic cost maps are empty.
+- **Final headless stress profile**: 901 entities improved from 36.128 ms/tick to 21.847 ms/tick; 1501 entities improved from 73.204 ms/tick to 23.839 ms/tick.
+- **Parallel high-load pathfinding** (`src/simulation/navigation/PathWorkerPool.js`, `src/simulation/navigation/pathWorker.js`, `src/simulation/navigation/Navigation.js`): added a browser Web Worker pool for A*, per-entity pending target binding, worker-queue backpressure, and high-load traffic-version stabilization so async path results are applied instead of discarded.
+- **Stress-worker movement load** (`src/simulation/npc/WorkerAISystem.js`, `src/simulation/lifecycle/MortalitySystem.js`, `src/app/GameApp.js`): dev stress workers now patrol continuously and skip starvation/death economy, keeping 1000-entity performance tests focused on movement/pathing instead of population collapse.
+- **High-load 8x throughput tuning** (`src/app/GameApp.js`): uses 1/10s-1/12s macro-steps under large 8x runs and raises the step ceiling to support catch-up without freezing the UI.
 
 ### Validation
 
-- Full `npm test`: 1449 tests, 1447 pass, 0 fail, 2 skipped.
+- Full `npm test`: 1473 tests, 1471 pass, 0 fail, 2 skipped.
 - Targeted Round 9 suite: 40/40 passing across Storyteller, AI automation, next-action, and world-explain tests.
 - `npm run build`: passing.
 - `git diff --check`: passing.
 - Visible headed-browser verification confirmed startup, AI Log visibility, explicit LLM/autopilot boundary copy, fixed Storyteller text, and concrete food-crisis advice. Local screenshots/logs were cleaned before push; key assertions are recorded in `assignments/homework6/Agent-Feedback-Loop/Round9/Validation/test-report.md`.
+- Performance validation: headless stress profile confirms 39.5% faster at 901 synthetic entities and 67.4% faster at 1501 synthetic entities.
+- Visible max-CPU browser validation: 1019-1020 entities, 1008/1012 workers moving at t+20s, 1003/1012 workers with active paths, target 8x delivered about 7.75x wall-clock, average FPS about 53.9, work p95 about 11.8 ms, 32 path workers, 37,539 completed path jobs, 0 dropped jobs.
 
 ---
 

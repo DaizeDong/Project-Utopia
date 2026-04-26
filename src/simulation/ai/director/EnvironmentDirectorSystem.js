@@ -174,12 +174,13 @@ export class EnvironmentDirectorSystem {
       );
       if (memCtx) summary._memoryContext = memCtx;
     }
+    const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
-        source: state.ai.enabled ? "llm" : "fallback",
+        source: wantsLlm ? "llm" : "fallback",
         channel: "environment-request",
-        fallback: !state.ai.enabled,
+        fallback: !wantsLlm,
         model: state.metrics.proxyModel ?? services.llmClient.lastModel ?? "",
         weather: summary.weather.current,
         events: summary.events.map((e) => e.type).join(", ") || "none",
@@ -188,7 +189,7 @@ export class EnvironmentDirectorSystem {
       state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
     }
     this.pendingPromise = services.llmClient
-      .requestEnvironment(summary, state.ai.enabled)
+      .requestEnvironment(summary, wantsLlm)
       .then((result) => {
         this.pendingResult = result;
       })
