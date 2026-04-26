@@ -483,9 +483,32 @@ export class EntityFocusPanel {
     // BEFORE the engineering block (FSM/policy/path) so casual-profile users
     // still see the narrative first; the `<details>` wrapper lets power
     // users collapse it alongside everything else.
+    // v0.8.2 Round-7 (01e+02b) — trait descriptions and grief notice.
+    const TRAIT_DESC = {
+      hardy: "weather resistant",
+      social: "bonds easily",
+      efficient: "quick task switching",
+      resilient: "harder to break",
+      careful: "precise work",
+    };
     const traitsText = Array.isArray(entity.traits) && entity.traits.length > 0
-      ? entity.traits.join(", ")
+      ? entity.traits.map((t) => {
+          const desc = TRAIT_DESC[t];
+          return desc
+            ? `<span class="trait-tag">${escapeHtml(t)}<span class="trait-desc"> (${escapeHtml(desc)})</span></span>`
+            : `<span class="trait-tag">${escapeHtml(t)}</span>`;
+        }).join(", ")
       : "(none)";
+    // Grief notice: rendered in character block header when grief is active.
+    const nowSec = Number(this.state.metrics?.timeSec ?? 0);
+    const griefFriendName = entity.blackboard?.griefFriendName;
+    const griefUntilSec = Number(entity.blackboard?.griefUntilSec ?? -1);
+    const isGrieving = Boolean(griefFriendName) && nowSec < griefUntilSec;
+    const griefNotice = isGrieving
+      ? `<div class="grief-notice" style="color:#e07070;font-size:11px;font-style:italic;margin-bottom:4px;">&#x1F494; Grieving ${escapeHtml(String(griefFriendName))}</div>`
+      : "";
+    // Emotional context: set by WorkerAISystem when addEmotionalPrefix produces a non-trivial string.
+    const emotionalContext = String(entity.blackboard?.emotionalContext ?? "").trim();
     const moodN = Number(entity.mood);
     const moraleN = Number(entity.morale);
     const socialN = Number(entity.social);
@@ -559,7 +582,8 @@ export class EntityFocusPanel {
     const characterBlock = `
       <details data-focus-key="focus:character" style="margin-top:6px;">
         <summary class="small"><b>Character</b></summary>
-        <div class="small" style="margin-top:4px;"><b>Traits:</b> ${escapeHtml(traitsText)}</div>
+        ${griefNotice}
+        <div class="small" style="margin-top:4px;"><b>Traits:</b> ${traitsText}</div>
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
         <div class="small"><b>Relationships:</b> ${relationsLine}</div>
         ${familyLine}
@@ -582,6 +606,7 @@ export class EntityFocusPanel {
         <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
         <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
         <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
+        ${emotionalContext ? `<div class="small" style="margin-top:2px;color:#c9a94e;font-style:italic;"><b>Mood:</b> ${escapeHtml(emotionalContext)}</div>` : ""}
       </details>
     `;
 

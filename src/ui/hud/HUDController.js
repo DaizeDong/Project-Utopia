@@ -1,4 +1,5 @@
 import { getAiInsight, getCausalDigest, getEventInsight, getFrontierStatus, getLogisticsInsight, getScenarioProgressCompact, getScenarioProgressCompactCasual, getSurvivalScoreBreakdown, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { ColonyPlanner } from "../../simulation/ai/colony/ColonyPlanner.js";
 import { BALANCE } from "../../config/balance.js";
 import { tileToWorld } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
@@ -515,6 +516,37 @@ export class HUDController {
   #renderNextAction(state) {
     const node = this.statusNextAction;
     if (!node) return;
+    // v0.8.2 Round-7 (01e+02b) — Manual mode advisory chip.
+    // When autopilot is disabled, supplement getNextActionAdvice with
+    // ColonyPlanner.getAdvisoryRecommendation so the HUD shows a
+    // ColonyPlanner-level priority hint (e.g. "Assign a COOK") in the
+    // Next Action slot.  The getNextActionAdvice result still wins at
+    // critical priority; advisory only shows when next-action is idle/done.
+    const autopilotEnabled = Boolean(state?.ai?.enabled);
+    if (!autopilotEnabled && typeof ColonyPlanner?.getAdvisoryRecommendation === "function") {
+      const advisory = ColonyPlanner.getAdvisoryRecommendation(state);
+      if (advisory && advisory.text) {
+        const advisoryPriority = String(advisory.urgency ?? "low");
+        // Only show advisory when the next-action chip would be idle or done
+        // (critical/high/normal from getNextActionAdvice take priority).
+        const currentNext = getNextActionAdvice(state);
+        const currentPriority = String(currentNext?.priority ?? "idle");
+        if (currentPriority === "idle" || currentPriority === "done") {
+          node.textContent = `\uD83D\uDCA1 ${advisory.text}`;
+          node.setAttribute?.("data-priority", advisoryPriority);
+          node.setAttribute?.("data-severity", advisoryPriority === "critical" ? "critical" : "");
+          node.setAttribute?.("data-tool", "select");
+          node.setAttribute?.("data-reason", "manual_advisory");
+          node.setAttribute?.("data-headline", advisory.text);
+          node.setAttribute?.("data-outcome", "");
+          node.setAttribute?.("data-why-now", "Manual mode — autopilot is off");
+          node.setAttribute?.("title", `Manual advisory: ${advisory.text}`);
+          node.setAttribute?.("data-full", advisory.text);
+          node.setAttribute?.("data-target", "");
+          return;
+        }
+      }
+    }
     const next = getNextActionAdvice(state);
     const digestNow = getCausalDigest(state);
     const isIdle = next.priority === "idle";
@@ -554,6 +586,46 @@ export class HUDController {
       node.setAttribute?.("data-target", `${target.ix},${target.iz}`);
     } else {
       node.setAttribute?.("data-target", "");
+    }
+  }
+
+  // v0.8.2 Round-7 (01e+02b) — Urgent resource ETA indicator.
+  // Reads state.metrics.resourceEmptySec for all key resources and appends a
+  // ⚠ banner to #statusObjective when the most-urgent resource runs out
+  // within 120s.  No-ops when the node is absent or no resource is critical.
+  #renderUrgentResourceEta(state) {
+    const node = this.statusObjective;
+    if (!node) return;
+    const eta = state?.metrics?.resourceEmptySec ?? {};
+    const RESOURCE_LABELS = { food: "Food", wood: "Wood", stone: "Stone", herbs: "Herbs" };
+    let mostUrgentLabel = null;
+    let mostUrgentSec = Infinity;
+    for (const [key, label] of Object.entries(RESOURCE_LABELS)) {
+      const sec = Number(eta[key] ?? 0);
+      if (sec > 0 && sec < mostUrgentSec) {
+        mostUrgentSec = sec;
+        mostUrgentLabel = label;
+      }
+    }
+    if (mostUrgentLabel && mostUrgentSec <= 120) {
+      const rounded = Math.round(mostUrgentSec);
+      const urgencyText = `\u26A0 ${mostUrgentLabel} runs out in ${rounded}s`;
+      const existing = String(node.dataset?.urgencyText ?? "");
+      if (existing !== urgencyText) {
+        node.dataset.urgencyText = urgencyText;
+        // Append/update urgency suffix without clobbering existing objective text
+        const base = String(node.dataset?.objectiveBase ?? node.textContent ?? "").split(" | \u26A0")[0];
+        node.dataset.objectiveBase = base;
+        node.textContent = base ? `${base} | ${urgencyText}` : urgencyText;
+      }
+    } else {
+      // No urgent resource — restore base objective text if we previously injected urgency.
+      if (node.dataset?.urgencyText) {
+        const base = String(node.dataset?.objectiveBase ?? "");
+        if (base) node.textContent = base;
+        delete node.dataset.urgencyText;
+        delete node.dataset.objectiveBase;
+      }
     }
   }
 
@@ -1488,6 +1560,11 @@ export class HUDController {
     // only touch the DOM when the text changes to avoid layout thrash, and
     // hide the node outright when there is no active scenario (Quick Start).
     this.#renderNextAction(state);
+    // v0.8.2 Round-7 (01e+02b) — Most-urgent resource ETA indicator.
+    // When any tracked resource will run out within 120s, show a warning
+    // in the storyteller strip (or #statusObjective if available) so manual
+    // players see the countdown even when autopilot is off.
+    this.#renderUrgentResourceEta(state);
     // v0.8.2 Round-7 01a — food crisis pulse on statusFood chip.
     const foodEta = state.metrics?.resourceEmptySec?.food;
     if (foodEta > 0 && foodEta <= 120) {
