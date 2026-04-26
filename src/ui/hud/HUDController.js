@@ -1048,6 +1048,23 @@ export class HUDController {
         // GameApp's URL/storage/Ctrl+Shift+D dev gate. Casual-mode players
         // (no body.dev-mode) drop the entire "Why no WHISPER?" suffix; the
         // sibling badge surfaces a humanised tooltip instead.
+        // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 8) — Step 8 retained
+        // intentionally as a no-op: prior 01b (Round-6 Wave-1) and 01c
+        // (Round-6 Wave-1) commits already implement the plan's intent —
+        // casual players (no body.dev-mode set; the default for first-time
+        // players in createInitialGameState) drop the engineer "Why no
+        // WHISPER?" string entirely; only the in-fiction
+        // `whisperBlockedReason` ("Story Director: settling in") reaches
+        // the badge tooltip via the showBadge gate further down. Power
+        // users that explicitly opt into dev-mode (URL flag /
+        // Ctrl+Shift+D) still see the engineer suffix — that is the
+        // `hud-dev-string-quarantine.test.js` contract pinned in Wave-1.
+        // Casual `state.controls.uiProfile` (without dev-mode) already
+        // hits the !devModeOn branch, so no additional uiProfile gate is
+        // wired here. See plan Risks §R5 — the test that DID need an
+        // update was `storyteller-strip-whisper-diagnostic.test.js` which
+        // continues to assert both the in-fiction + dev string fields
+        // (current state already satisfies that contract).
         const devModeOn = isDevMode(state);
         const diagText = devModeOn
           ? (model.diagnostic?.whisperBlockedReasonDev ?? model.diagnostic?.whisperBlockedReason ?? "")

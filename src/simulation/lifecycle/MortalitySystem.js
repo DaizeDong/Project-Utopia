@@ -74,6 +74,44 @@ function manhattanWorldDistance(a, b) {
     + Math.abs(Number(a.z ?? 0) - Number(b.z ?? 0));
 }
 
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5) — resolve a tile-coord into
+// a scenario-anchor label like "west ridge wilds" / "east depot gate", so
+// obituary lines read "died near the west lumber route" instead of the bare
+// "(32,18)" coords. Walks scenario.routeLinks → depotZones → chokePoints →
+// anchors and returns the closest match within `radiusTiles` (default 6).
+// Falls back to "(ix,iz)" when no anchor is in range — same behaviour as
+// before, just narratively richer when scenario data is available.
+function resolveAnchorLabel(state, tile) {
+  if (!tile || !Number.isFinite(tile.ix) || !Number.isFinite(tile.iz)) return "";
+  const scenario = state?.gameplay?.scenario;
+  if (!scenario) return `(${tile.ix},${tile.iz})`;
+  const radiusTiles = 6;
+  const anchors = scenario.anchors ?? {};
+  const labelled = [];
+  const pushIfAnchor = (anchorKey, label) => {
+    const a = anchors[anchorKey];
+    if (!a || !Number.isFinite(a.ix) || !Number.isFinite(a.iz)) return;
+    const dist = Math.abs(a.ix - tile.ix) + Math.abs(a.iz - tile.iz);
+    labelled.push({ label, dist });
+  };
+  for (const link of scenario.routeLinks ?? []) {
+    pushIfAnchor(link.from, String(link.label ?? ""));
+    pushIfAnchor(link.to, String(link.label ?? ""));
+  }
+  for (const zone of scenario.depotZones ?? []) {
+    pushIfAnchor(zone.anchor, String(zone.label ?? ""));
+  }
+  for (const choke of scenario.chokePoints ?? []) {
+    pushIfAnchor(choke.anchor, String(choke.label ?? ""));
+  }
+  for (const wild of scenario.wildlifeZones ?? []) {
+    pushIfAnchor(wild.anchor, String(wild.label ?? ""));
+  }
+  labelled.sort((a, b) => a.dist - b.dist);
+  const best = labelled.find((l) => l.label && l.dist <= radiusTiles);
+  return best ? best.label : `(${tile.ix},${tile.iz})`;
+}
+
 function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
   if (deceased.type !== ENTITY_TYPE.WORKER && deceased.type !== ENTITY_TYPE.VISITOR) return;
   const workers = (state.agents ?? [])
@@ -117,6 +155,14 @@ function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
   const deceasedName = deceased.displayName ?? deceased.id;
   const time = Math.max(0, Number(nowSec ?? 0)).toFixed(0);
   const deathKey = `death:${deceased.id}`;
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5+6) — kinship & rivalry
+  // variants. Family ties (lineage.parents/children) get an additional
+  // "my father / my child died" memory beat. Rival witnesses (opinion ≤
+  // -0.15) flip into the "felt grim relief" line and gain a small +0.05
+  // morale bump (the "enemy's funeral" cliché — bounded so the long-horizon
+  // bench's social CI doesn't collapse).
+  const deceasedParentSet = new Set(Array.isArray(deceased.lineage?.parents) ? deceased.lineage.parents : []);
+  const deceasedChildSet = new Set(Array.isArray(deceased.lineage?.children) ? deceased.lineage.children : []);
   for (const { worker, opinion } of witnessesById.values()) {
     const label = Number.isFinite(opinion) ? relationLabelForMemory(opinion) : "Colleague";
     pushWorkerMemory(
@@ -126,6 +172,40 @@ function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
       9999,
       Number(nowSec ?? 0),
     );
+    // Family witness variant: only fires for workers wired into the
+    // deceased's lineage tree (Step 3 in PopulationGrowthSystem populates
+    // both directions). Stays orthogonal to the relationship-band label
+    // above so the "Friend / Close friend" copy still surfaces.
+    if (deceasedChildSet.has(worker.id)) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] My parent ${deceasedName} died (${reason})`,
+        `${deathKey}:family-parent`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+    }
+    if (deceasedParentSet.has(worker.id)) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] My child ${deceasedName} died (${reason})`,
+        `${deathKey}:family-child`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+    }
+    // Rivalry "grim relief" variant — only fires when the witness has a
+    // clear-rival opinion of the deceased (≤ -0.15 Strained band onwards).
+    if (Number.isFinite(opinion) && opinion <= -0.15) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] Felt grim relief at ${deceasedName}'s death`,
+        `${deathKey}:rival-relief`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+      worker.morale = Math.max(0, Math.min(1, Number(worker.morale ?? 0.5) + 0.05));
+    }
   }
 }
 
@@ -329,6 +409,39 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
       if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
       state.gameplay.objectiveLog.unshift(line);
       state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+    }
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5) — obituary line: a
+    // richer "writer's voice" version of the bare death line. Includes the
+    // worker's backstory ("farming specialist, swift temperament") and the
+    // closest scenario-anchor label ("near the west lumber route") so the
+    // Storyteller strip and EntityFocusPanel obituary section can render a
+    // proper send-off rather than a coordinate dump. Stored on
+    // `entity.obituary` and unshifted into `state.gameplay.deathLog` (capped
+    // to 24, same policy as objectiveLog). The plain `line` above is kept
+    // unchanged for backward-compatible regression tests.
+    const backstory = String(entity.backstory ?? "").trim();
+    const anchorLabel = resolveAnchorLabel(state, tile);
+    const backstoryFrag = backstory ? `, ${backstory},` : "";
+    const locFrag = anchorLabel ? ` near ${anchorLabel}` : "";
+    const obituaryLine = `[${nowSec.toFixed(1)}s] ${name}${backstoryFrag} died of ${reason}${locFrag}`;
+    entity.obituary = obituaryLine;
+    if (entity.lineage && typeof entity.lineage === "object") {
+      entity.lineage.deathSec = nowSec;
+    }
+    if (state.gameplay) {
+      if (!Array.isArray(state.gameplay.deathLog)) state.gameplay.deathLog = [];
+      state.gameplay.deathLog.unshift(obituaryLine);
+      state.gameplay.deathLog = state.gameplay.deathLog.slice(0, 24);
+    }
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5+7) — surface the
+    // obituary line into state.debug.eventTrace so storytellerStrip's
+    // SALIENT pattern (Step 7 expanded `^\[.+\] .+, .+, died of/i`) can
+    // lift it into #storytellerBeat. Trace stays newest-first via unshift,
+    // capped at the same 36-entry bound the system uses elsewhere.
+    if (state.debug) {
+      if (!Array.isArray(state.debug.eventTrace)) state.debug.eventTrace = [];
+      state.debug.eventTrace.unshift(obituaryLine);
+      state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);
     }
     recordDeathIntoWitnessMemory(state, entity, nowSec);
   }

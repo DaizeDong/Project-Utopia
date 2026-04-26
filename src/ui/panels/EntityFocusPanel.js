@@ -511,15 +511,50 @@ export class EntityFocusPanel {
     const recentMemories = Array.isArray(entity.memory?.recentEvents)
       ? entity.memory.recentEvents.slice(0, 3)
       : [];
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 9) — narrative beat CSS
+    // tagging. Lines whose body matches obituary / birth / rivalry markers
+    // get a `mem-obituary` / `mem-birth` / `mem-rivalry` class so styles can
+    // gently emphasise them (italic, accent colour) without overhauling the
+    // memory list. Generic memories keep `mem-default`.
+    const classifyMemoryLine = (rawText) => {
+      const txt = String(rawText ?? "");
+      if (/died of |died \(/i.test(txt)) return "mem-obituary";
+      if (/born to |arrived at the colony/i.test(txt)) return "mem-birth";
+      if (/Felt grim relief|Became (Strained|Rival) with/i.test(txt)) return "mem-rivalry";
+      return "mem-default";
+    };
     const memoryLines = recentMemories.length > 0
-      ? recentMemories.map((m) => `<div class="small muted">- ${escapeHtml(String(m?.label ?? m?.summary ?? m?.type ?? m ?? ""))}</div>`).join("")
+      ? recentMemories.map((m) => {
+        const text = String(m?.label ?? m?.summary ?? m?.type ?? m ?? "");
+        const cls = classifyMemoryLine(text);
+        return `<div class="small muted ${cls}">- ${escapeHtml(text)}</div>`;
+      }).join("")
       : `<div class="small muted">(no recent memories)</div>`;
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 9) — Family line. Renders
+    // lineage.parents / lineage.children counts so players see the colony
+    // family tree at a glance. Hidden when no kinship is wired (initial
+    // population's empty arrays — keeps the panel uncluttered).
+    const lineageParents = Array.isArray(entity.lineage?.parents) ? entity.lineage.parents : [];
+    const lineageChildren = Array.isArray(entity.lineage?.children) ? entity.lineage.children : [];
+    let familyLine = "";
+    if (lineageParents.length > 0 || lineageChildren.length > 0) {
+      const segs = [];
+      if (lineageChildren.length > 0) segs.push(`parent of ${lineageChildren.length}`);
+      if (lineageParents.length > 0) {
+        const parentNames = lineageParents
+          .map((id) => escapeHtml(lookupDisplayNameById(id)))
+          .join(", ");
+        segs.push(`child of ${parentNames}`);
+      }
+      familyLine = `<div class="small"><b>Family:</b> ${segs.join(" \u00B7 ")}</div>`;
+    }
     const characterBlock = `
       <details data-focus-key="focus:character" open style="margin-top:6px;">
         <summary class="small"><b>Character</b></summary>
         <div class="small" style="margin-top:4px;"><b>Traits:</b> ${escapeHtml(traitsText)}</div>
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
         <div class="small"><b>Relationships:</b> ${relationsLine}</div>
+        ${familyLine}
         <div class="small" style="margin-top:4px;"><b>Recent Memory:</b></div>
         ${memoryLines}
       </details>
