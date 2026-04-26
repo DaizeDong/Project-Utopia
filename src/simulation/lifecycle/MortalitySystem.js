@@ -207,6 +207,15 @@ function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
       );
       worker.morale = Math.max(0, Math.min(1, Number(worker.morale ?? 0.5) + 0.05));
     }
+    // v0.8.2 Round-7 01d — grief mechanic: Close Friend witnesses (opinion ≥ 0.6)
+    // receive a morale debuff and a blackboard grief timer (90s) so WorkerAISystem
+    // can slow their efficiency. Bounded to not drop morale below 0.
+    if (Number.isFinite(opinion) && opinion >= 0.6) {
+      worker.blackboard ??= {};
+      worker.blackboard.griefUntilSec = Number(nowSec ?? 0) + 90;
+      worker.blackboard.griefFriendName = (deceasedName ?? "").split(" ")[0];
+      worker.morale = Math.max(0, Number(worker.morale ?? 0.5) - 0.15);
+    }
   }
 }
 
@@ -433,6 +442,19 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
       if (!Array.isArray(state.gameplay.deathLog)) state.gameplay.deathLog = [];
       state.gameplay.deathLog.unshift(obituaryLine);
       state.gameplay.deathLog = state.gameplay.deathLog.slice(0, 24);
+      // v0.8.2 Round-7 01d — structured death log for Chronicles panel.
+      // Stores rich per-death objects so EventPanel can render a formatted
+      // obituary without parsing the obituaryLine string.
+      if (!Array.isArray(state.gameplay.deathLogStructured)) state.gameplay.deathLogStructured = [];
+      state.gameplay.deathLogStructured.unshift({
+        name: name,
+        role: String(entity.role ?? entity.kind ?? "colonist"),
+        trait: entity.traits?.[0] ?? entity.trait ?? null,
+        cause: entity.deathReason || "event",
+        location: anchorLabel || (tile ? `(${tile.ix},${tile.iz})` : "the colony"),
+        timeSec: nowSec,
+      });
+      state.gameplay.deathLogStructured = state.gameplay.deathLogStructured.slice(0, 24);
     }
     // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5+7) — surface the
     // obituary line into state.debug.eventTrace so storytellerStrip's

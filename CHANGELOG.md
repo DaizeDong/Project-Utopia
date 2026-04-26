@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased] - v0.8.2 Round-7 01d+02d: rain particles + run-end chronicle summary + grief mechanic + Chronicles death log + salinization warning + scenario theme question
+
+### New Features (Round-7 01d+02d — narrative depth + weather visualization)
+
+- **Rain particle system** (`src/render/SceneRenderer.js`): Three private methods (`#createRainParticles`, `#removeRainParticles`, `#updateRainParticles`) render a 200-particle falling rain effect using `THREE.Points` when `state.weather.current` is `"rain"` or `"storm"`. Particles fall at 0.3 units/frame and respawn at the top. The `render(dt)` loop checks weather each frame and activates/deactivates the effect automatically. No performance impact when weather is clear.
+- **Grief mechanic** (`src/simulation/lifecycle/MortalitySystem.js`): Close Friend witnesses (relationship opinion ≥ 0.6) now receive a morale debuff (−0.15, floored at 0) and a `blackboard.griefUntilSec` timer (90s) when their close friend dies. This gives WorkerAISystem a hook to reduce productivity during grief. Piggybacks on the existing `recordDeathIntoWitnessMemory` witness loop to stay zero-overhead when no close friends exist.
+- **Structured death log** (`src/simulation/lifecycle/MortalitySystem.js`): `recordDeath` now also pushes `{ name, role, trait, cause, location, timeSec }` objects into `state.gameplay.deathLogStructured` (capped at 24, same policy as `deathLog`). This enables UI panels to render formatted obituaries without parsing the obituary string.
+- **Chronicles death log** (`src/ui/panels/EventPanel.js`): A `<details>` "Chronicles · N fallen" collapsible block is appended below the Recent Log section. Renders `state.gameplay.deathLogStructured` entries with name, trait, cause, location and Day number. CSS inlined into the rendered HTML (10px muted style, left-border accent, collapsible).
+- **Salinization early-warning** (`src/simulation/economy/TileStateSystem.js`): `_updateSoil` now pushes a player-visible advisory to `state.gameplay.objectiveLog` when a FARM tile exceeds 70% salinization. Deduplication via `_salinizationLogDedup` Map prevents repeated alerts for the same tile within 180s.
+- **Run-end Chronicle summary** (`src/ui/hud/GameStateOverlay.js`): When the end overlay is shown, the `render()` loop populates `#overlayEndChronicle` (if present in DOM) with: day survived, births/deaths/DevIndex, most common death cause, last fallen colonist name, and a scenario-themed closing question. Diff-guarded to avoid DOM thrash. Theme questions mapped per template ID (6 templates covered, generic fallback).
+
+### Files Changed (Round-7 01d+02d)
+
+- `src/render/SceneRenderer.js` — `#createRainParticles`, `#removeRainParticles`, `#updateRainParticles` private methods; rain activation guard in `render(dt)`.
+- `src/simulation/lifecycle/MortalitySystem.js` — grief debuff (morale −0.15, griefUntilSec +90) in `recordDeathIntoWitnessMemory`; `state.gameplay.deathLogStructured` push in `recordDeath`.
+- `src/ui/panels/EventPanel.js` — Chronicles `<details>` block with inlined CSS appended to `render()` output.
+- `src/simulation/economy/TileStateSystem.js` — `_salinizationLogDedup` Map in constructor; salinization >0.7 warning push in `_updateSoil`.
+- `src/ui/hud/GameStateOverlay.js` — `#overlayEndChronicle` summary block with death stats, last fallen, scenario theme question in `render()` isEnd branch.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 01c+02e+02b: HUD labels + responsive 1024px + milestone toast + Space guard + Dev gate + New Map confirm + Help fix
 
 ### New Features (Round-7 01c+02e+02b — UI information architecture)
