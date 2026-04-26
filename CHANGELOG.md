@@ -18,6 +18,24 @@
 
 ---
 
+## [Unreleased] - v0.8.2 Round-7 Stage C Wave 1 (01a/01b/02a/audio)
+
+### New Features (Round-7 audio — Web Audio OscillatorNode system)
+- **AudioSystem** (`src/audio/AudioSystem.js`): New zero-asset audio system using Web Audio API OscillatorNode. Lazy-initialized on first call so browser autoplay policy is respected. Silently no-ops in Node.js (tests). Singleton `audioSystem` exported for game-wide use.
+- **Building placed sound** (`src/app/GameApp.js`): `BuildSystem.onAction` callback now calls `audioSystem.onBuildingPlaced()` for non-erase tool placements — a rising two-note C5→G5 ping.
+- **Worker death sound** (`src/simulation/lifecycle/MortalitySystem.js`): `recordDeath` calls `audioSystem.onWorkerDeath()` for WORKER/VISITOR deaths only (not animals) — a low triangle-wave toll at 110 Hz.
+- **Food crisis sound** (`src/ui/hud/HUDController.js`): `#renderRunoutHints` calls `audioSystem.onFoodCritical(performance.now()/1000)` when food runout ETA drops below 60s — a two-pulse descending square-wave alarm, throttled to once per 3 real seconds inside AudioSystem.
+- **Milestone sound** (`src/ui/hud/HUDController.js`): `#currentMilestoneFlash` calls `audioSystem.onMilestone()` when a new COLONY_MILESTONE event is detected — a three-note ascending C5→E5→G5 fanfare.
+- **Game start sound** (`src/app/GameApp.js`): `regenerateWorld` calls `audioSystem.onGameStart()` after transitioning to the "active" run phase — a soft two-note E4→G4 rising tone.
+
+### Files Changed (Round-7 audio)
+- `src/audio/AudioSystem.js` — new file: AudioSystem class + `audioSystem` singleton export.
+- `src/app/GameApp.js` — import audioSystem; `onAction` building-placed hook; game-start hook after `#setRunPhase("active")`.
+- `src/simulation/lifecycle/MortalitySystem.js` — import audioSystem; worker/visitor death hook in `recordDeath`.
+- `src/ui/hud/HUDController.js` — import audioSystem; food-critical hook in `#renderRunoutHints`; milestone hook in `#currentMilestoneFlash`.
+
+---
+
 ## [Unreleased] - v0.8.2 Round-7 Stage C Wave 1 (01a/01b/02a)
 
 ### New Features (Round-7 01a — overlayHelpBtn + Help Tab + HUD digest)
