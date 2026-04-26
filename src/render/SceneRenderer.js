@@ -3250,6 +3250,41 @@ export class SceneRenderer {
     this.applyViewState(DEFAULT_CAMERA_VIEW);
   }
 
+  // v0.8.2 Round-7 01d — rain particle system. Three simple private methods
+  // so the render() loop stays readable. _rainParticles is null when dry.
+  #createRainParticles() {
+    const count = 200;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3]     = (Math.random() - 0.5) * 100;
+      pos[i * 3 + 1] = Math.random() * 30 + 5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 100;
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({ color: 0x88aacc, size: 0.15, transparent: true, opacity: 0.5 });
+    this._rainParticles = new THREE.Points(geo, mat);
+    this.scene.add(this._rainParticles);
+  }
+
+  #removeRainParticles() {
+    if (this._rainParticles) {
+      this.scene.remove(this._rainParticles);
+      this._rainParticles.geometry.dispose();
+      this._rainParticles.material.dispose();
+      this._rainParticles = null;
+    }
+  }
+
+  #updateRainParticles() {
+    const pos = this._rainParticles.geometry.attributes.position.array;
+    for (let i = 1; i < pos.length; i += 3) {
+      pos[i] -= 0.3;
+      if (pos[i] < 0) pos[i] = Math.random() * 30 + 10;
+    }
+    this._rainParticles.geometry.attributes.position.needsUpdate = true;
+  }
+
   render(dt) {
     this.#applyRuntimeControlSettings();
     this.#syncVisualAssetDebug();
@@ -3257,6 +3292,20 @@ export class SceneRenderer {
     this.controls.update();
     this.#updateTileLayerVisibilityByZoom();
     this.#applyAtmosphere(dt);
+
+    // v0.8.2 Round-7 01d — weather rain particles: activate when
+    // state.weather.current === "rain" (or "storm"), deactivate otherwise.
+    const weatherNow = String(this.state.weather?.current ?? "clear");
+    const isRaining = weatherNow === "rain" || weatherNow === "storm";
+    if (isRaining !== Boolean(this._weatherRain)) {
+      this._weatherRain = isRaining;
+      if (isRaining) {
+        this.#createRainParticles();
+      } else {
+        this.#removeRainParticles();
+      }
+    }
+    if (this._rainParticles) this.#updateRainParticles();
 
     this.#rebuildTilesIfNeeded();
     const entityRenderSignature = [
