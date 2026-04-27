@@ -253,6 +253,35 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - If "Last Plan Evaluation" is provided, address its issues — avoid repeating the same mistakes
 - If "Recurring Patterns" are listed, BREAK THE LOOP by choosing a different approach
 
+## Chain Planning (use depends_on!)
+A myopic 1-2-step plan is the fallback's job. Your job is to outpace it with
+4-8 step plans where later steps explicitly require earlier ones via
+\`depends_on\`. Examples of high-ROI chains worth declaring:
+- Tools chain (highest ROI):  road → quarry → smithy → tools-boosted producer
+- Meal chain:                 farm × 2 → kitchen (depends_on the farms) → COOK reassign
+- Defense composite:          GUARD reassign → wall → wall (depends_on the GUARD)
+- Logistics composite:        road (A* coord) → road → warehouse → producer
+A step's \`depends_on\` MUST list every earlier step id whose completion is a
+real precondition (resource, adjacency, or role). The executor will not
+attempt a step until its declared deps are completed.
+
+## Composite Ordering (logistics + threat)
+When BOTH "## Infrastructure Deficits" AND "## Threat Posture" sections are
+present in the user prompt, the order is:
+  1) reassign_role(GUARD) — emit FIRST so combat workers stop bleeding
+  2) road steps (use exact A* coord hints from the user prompt)
+  3) economy / chain steps depend_on the GUARD + road steps
+A starving colony (foodRate<0, food<30) overrides this — food first, then
+guards, then roads.
+
+## Reading the User Prompt
+- "## Last Plan Evaluation" — if present, the previous plan FAILED at a
+  specific step. Do NOT propose the same step type at the same hint; pick a
+  different chain or precondition first.
+- "## Learned Skills" — if present, those skills are PROVEN in this colony.
+  Prefer the listed skills over re-doing their primitive steps; reference
+  them as \`{ "type": "skill", "skill": "<exact-id>" }\`.
+
 ## Output Format
 {
   "goal": "short description (max 60 chars)",
@@ -270,7 +299,8 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
   ]
 }
 For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
-3-8 steps. Unique numeric ids from 1. Valid JSON only.`;
+For role boosts: "action": { "type": "reassign_role", "role": "GUARD|COOK|SMITH|HERBALIST" }
+3-8 steps. Aim for 4-6 with at least one \`depends_on\` chain. Unique numeric ids from 1. Valid JSON only.`;
 
 // ── Prompt Construction ──────────────────────────────────────────────
 
@@ -388,6 +418,33 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
   if (evaluationText) {
     sections.push("\n" + evaluationText);
   }
+
+  // Plan-strategy footer — reinforces the chain-planning + composite ordering
+  // directives from SYSTEM_PROMPT in the immediate context window so the LLM
+  // doesn't drift toward myopic 1-2-step plans on long sessions. The footer
+  // adapts to the prompt: when threat or logistics blocks are present we
+  // remind the model of the composite ordering; otherwise we just nudge it
+  // toward the canonical chain shapes.
+  const strategyHints = [
+    "Aim for 4-6 steps with at least one depends_on edge so later steps explicitly require earlier ones (chain).",
+    "Prefer chains over breadth: e.g. road → quarry → smithy → tools-boosted producer beats 4 unrelated builds.",
+  ];
+  if (logisticsHint && threatHint) {
+    strategyHints.push(
+      "Composite order (threat + logistics both active): GUARD reassign first, then road steps, then chain economy steps that depends_on those.",
+    );
+  } else if (threatHint) {
+    strategyHints.push("Threat is active: emit reassign_role(GUARD) early; later wall/economy steps should depends_on the GUARD step.");
+  } else if (logisticsHint) {
+    strategyHints.push("Logistics gap: emit road steps with the A* coords above; later builds should depends_on those roads.");
+  }
+  if (evaluationText) {
+    strategyHints.push("Last plan failed at a specific step — DO NOT repeat the same step+hint combination; pick a different precondition or chain.");
+  }
+  if (learnedSkillsText) {
+    strategyHints.push("Learned skills above are PROVEN in this colony — prefer them over their primitive equivalents.");
+  }
+  sections.push("\n## Plan Strategy\n" + strategyHints.map((h) => "- " + h).join("\n"));
 
   return sections.join("\n");
 }
