@@ -75,10 +75,235 @@ function sanitizePolicyWeights(source, allowedKeys, fallbackWeights = {}) {
   return out;
 }
 
-function sanitizePolicyForRuntime(policy, groupId, state) {
+/**
+ * NPC-Brain LLM tuning — derive a per-tick combat snapshot for the policy
+ * prompt + sanitization. Reads `state.metrics.combat` (populated by
+ * AnimalAISystem) and the most-recent `predator-hit` events on workers.
+ * Does NOT mutate state. Returns a flat object whose keys flow through the
+ * summary JSON to the LLM and double as a post-sanitization gate.
+ *
+ * Critical fields:
+ * - activeRaiders   — count of `raider_beast` predators (worker-targeting)
+ * - guardCount      — workers currently in GUARD role
+ * - workerCount     — alive workers
+ * - guardDeficit    — missing GUARDs vs. recommended (raiders * 1.5 - guards)
+ * - nearestThreatTiles — Manhattan-ish distance from nearest predator
+ * - workersUnderHit — workers whose recentEvents has "predator-hit" within 8 entries
+ * - raidActive      — derived boolean: any raiders in flight
+ */
+function buildCombatContext(state) {
+  const combat = state.metrics?.combat ?? {};
+  const activeRaiders = Number(combat.activeRaiders ?? 0);
+  const activePredators = Number(combat.activePredators ?? combat.activeThreats ?? 0);
+  const guardCount = Number(combat.guardCount ?? 0);
+  const workerCount = Number(combat.workerCount ?? 0);
+  const nearestThreatTiles = Number(combat.nearestThreatDistance ?? -1);
+  let workersUnderHit = 0;
+  let workersHungry = 0;
+  for (const w of state.agents ?? []) {
+    if (!w || w.alive === false || w.type !== "WORKER") continue;
+    const recent = w.memory?.recentEvents ?? [];
+    if (recent.length > 0 && recent.slice(0, 8).includes("predator-hit")) workersUnderHit += 1;
+    if (Number(w.hunger ?? 1) < 0.34) workersHungry += 1;
+  }
+  const recommendedGuards = Math.min(
+    Math.max(0, workerCount - 1),
+    Math.ceil(activeRaiders * 1.5 + (activePredators - activeRaiders) * 0.4),
+  );
+  const guardDeficit = Math.max(0, recommendedGuards - guardCount);
+  const deathsByReason = state.metrics?.deathsByReason ?? {};
+  const predationDeaths = Number(deathsByReason.predation ?? 0);
+  const raidActive = activeRaiders > 0;
+  return {
+    activeRaiders,
+    activePredators,
+    guardCount,
+    workerCount,
+    workersHungry,
+    workersUnderHit,
+    nearestThreatTiles: Number.isFinite(nearestThreatTiles) ? Number(nearestThreatTiles.toFixed(2)) : -1,
+    recommendedGuards,
+    guardDeficit,
+    predationDeaths,
+    raidActive,
+    pressureLevel:
+      activeRaiders >= 2 || workersUnderHit >= 2 ? "high"
+      : raidActive || activePredators >= 3 || workersUnderHit >= 1 ? "elevated"
+      : activePredators >= 1 ? "watch"
+      : "calm",
+  };
+}
+
+/**
+ * NPC-Brain LLM tuning — augment the per-tick policy summary with combat
+ * context BEFORE it is serialized to JSON for the proxy prompt. The proxy
+ * stringifies `summary` verbatim, so anything we add here flows directly to
+ * the LLM. We also keep a top-level `_combatContext` mirror so future
+ * PromptPayload changes can lift it into a labeled section without changing
+ * the wire shape today.
+ */
+function attachCombatContextToSummary(summary, combat) {
+  if (!summary || typeof summary !== "object") return summary;
+  summary.world = summary.world ?? {};
+  summary.world.combat = {
+    activeRaiders: combat.activeRaiders,
+    activePredators: combat.activePredators,
+    guardCount: combat.guardCount,
+    workerCount: combat.workerCount,
+    workersUnderHit: combat.workersUnderHit,
+    nearestThreatTiles: combat.nearestThreatTiles,
+    recommendedGuards: combat.recommendedGuards,
+    guardDeficit: combat.guardDeficit,
+    predationDeaths: combat.predationDeaths,
+    pressureLevel: combat.pressureLevel,
+  };
+  // Explicit textual directives — the LLM reads `summary` JSON in the prompt
+  // body and reliably follows imperative phrasing better than inferring from
+  // raw counts. These flow through `_strategyContext` (already lifted by
+  // PromptPayload.buildPolicyPromptUserContent into a labeled section) and
+  // a dedicated `_combatContext` mirror.
+  const directives = [];
+  if (combat.raidActive) {
+    directives.push(
+      `Active raid: ${combat.activeRaiders} raider-beast(s) targeting workers, ${combat.guardCount} guard(s) on watch (need ~${combat.recommendedGuards}).`,
+      "Workers must retreat: keep intentWeights.farm and intentWeights.wood at most 0.5; deliver carried cargo then idle near depot.",
+      "Workers: targetPriorities.safety and targetPriorities.warehouse should dominate; targetPriorities.frontier should drop below 0.4.",
+      "Predators: do not steer wolves/bears toward farms while raid is active; targetPriorities.farm should stay below 0.3.",
+      "Herbivores: intentWeights.flee must exceed intentWeights.graze.",
+    );
+    if (combat.workersUnderHit > 0) {
+      directives.push(`${combat.workersUnderHit} worker(s) hit recently — emphasise eat + safety; intentWeights.eat ≥ 1.8.`);
+    }
+  } else if (combat.activePredators >= 2) {
+    directives.push(
+      `Predator pressure: ${combat.activePredators} active predators near the colony. Bias workers toward safety targets and reduce open-frontier exposure.`,
+    );
+  }
+  summary._combatContext = { ...summary.world.combat, raidActive: combat.raidActive, directives };
+  // Merge into _strategyContext so PromptPayload surfaces the directives in
+  // the labeled `strategyContext` section without us touching PromptPayload.
+  summary._strategyContext = summary._strategyContext ?? {};
+  summary._strategyContext.combat = summary._combatContext;
+  if (directives.length > 0) {
+    summary._strategyContext.raidDirectives = directives;
+  }
+  return summary;
+}
+
+/**
+ * NPC-Brain LLM tuning — post-sanitization clamp that hardens any policy
+ * (LLM-sourced or fallback) when raiders are in the field. The LLM still
+ * "wins" because it sees the combat block in the prompt and produces
+ * better-shaped weights up-front; this clamp is a safety net so a flat or
+ * over-confident response cannot leave workers exposed. Pure function — never
+ * mutates the input fallback policy template.
+ *
+ * Rules:
+ * - workers: cap riskTolerance ≤ 0.30; ensure intentWeights.eat & deliver
+ *   stay ≥ 1.4 (retreat-to-depot doctrine); guarantee targetPriorities.safety
+ *   ≥ 1.4 and warehouse ≥ 1.5; lower intentWeights.wander to ≤ 0.15.
+ * - predators: when raiders co-active, push targetPriorities.farm ≤ 0.6 so
+ *   wolves/bears don't pile onto colony tiles where guards are already
+ *   committed; cap riskTolerance ≤ 0.7.
+ * - herbivores: ensure intentWeights.flee ≥ intentWeights.graze under raid
+ *   pressure so they don't keep grazing into a predator pack.
+ *
+ * Idempotent — running twice produces the same numbers.
+ */
+function applyRaidPosturePolicy(policy, combat) {
+  if (!policy || !combat || !combat.raidActive) return policy;
+  const groupId = policy.groupId;
+  // Iteration 3 — proximity-gated clamp. Earlier iterations applied the same
+  // strong retreat doctrine to every raid tick, which starved the colony
+  // when raiders were far away (large templates with persistent low-grade
+  // raid pressure). Now we scale the clamp by how close the threat actually
+  // is and how many guards are deployed: distant raiders + adequate guards
+  // = colony keeps producing; close raiders / guard deficit = full retreat.
+  const high = combat.pressureLevel === "high" || Number(combat.guardDeficit ?? 0) >= 2;
+  const nearestTiles = Number(combat.nearestThreatTiles ?? 999);
+  const proximate = nearestTiles >= 0 && nearestTiles <= 12;
+  // "imminent" = close threat AND we are short on guards. "manageable" =
+  // raid is technically active but distant or already covered by guards.
+  const imminent = proximate && (combat.guardDeficit > 0 || combat.workersUnderHit > 0);
+  const manageable = !imminent && !high;
+
+  if (groupId === GROUP_IDS.WORKERS) {
+    policy.riskTolerance = Math.min(
+      Number(policy.riskTolerance ?? 0.5),
+      imminent ? 0.18 : high ? 0.28 : 0.40,
+    );
+    policy.intentWeights = policy.intentWeights ?? {};
+    policy.intentWeights.eat = Math.max(
+      Number(policy.intentWeights.eat ?? 0),
+      imminent ? 1.8 : high ? 1.5 : 1.2,
+    );
+    // Manageable raid: leave farm/wood mostly alone so the colony keeps
+    // growing. Imminent: hard cap so workers stay near depot.
+    if (imminent) {
+      if (typeof policy.intentWeights.farm === "number") policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.5);
+      if (typeof policy.intentWeights.wood === "number") policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.5);
+      if (typeof policy.intentWeights.quarry === "number") policy.intentWeights.quarry = Math.min(policy.intentWeights.quarry, 0.4);
+      if (typeof policy.intentWeights.gather_herbs === "number") policy.intentWeights.gather_herbs = Math.min(policy.intentWeights.gather_herbs, 0.4);
+    } else if (high) {
+      if (typeof policy.intentWeights.farm === "number") policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.8);
+      if (typeof policy.intentWeights.wood === "number") policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.8);
+    }
+    // Deliver: keep cargo flowing but cap unbounded LLM aggression.
+    policy.intentWeights.deliver = Math.min(
+      Math.max(Number(policy.intentWeights.deliver ?? 0), imminent ? 1.4 : 1.0),
+      imminent ? 1.7 : 2.4,
+    );
+    policy.intentWeights.wander = Math.min(Number(policy.intentWeights.wander ?? 0), 0.20);
+    policy.targetPriorities = policy.targetPriorities ?? {};
+    policy.targetPriorities.safety = Math.max(
+      Number(policy.targetPriorities.safety ?? 0),
+      imminent ? 1.8 : high ? 1.5 : 1.2,
+    );
+    policy.targetPriorities.warehouse = Math.max(Number(policy.targetPriorities.warehouse ?? 0), 1.5);
+    if (typeof policy.targetPriorities.frontier === "number") {
+      policy.targetPriorities.frontier = Math.min(
+        policy.targetPriorities.frontier,
+        imminent ? 0.4 : manageable ? 0.95 : 0.7,
+      );
+    }
+  } else if (groupId === GROUP_IDS.PREDATORS) {
+    policy.riskTolerance = Math.min(Number(policy.riskTolerance ?? 0.8), 0.7);
+    policy.targetPriorities = policy.targetPriorities ?? {};
+    // Push wolves/bears OFF the farms while the raider beasts pressure the
+    // GUARDs — a clean separation that lets guards focus melee on raiders
+    // rather than a multi-front predator cluster.
+    if (typeof policy.targetPriorities.farm === "number") {
+      policy.targetPriorities.farm = Math.min(policy.targetPriorities.farm, 0.4);
+    }
+    if (typeof policy.targetPriorities.safety === "number") {
+      policy.targetPriorities.safety = Math.max(policy.targetPriorities.safety, 0.8);
+    }
+  } else if (groupId === GROUP_IDS.HERBIVORES) {
+    policy.intentWeights = policy.intentWeights ?? {};
+    const graze = Number(policy.intentWeights.graze ?? 0);
+    const flee = Number(policy.intentWeights.flee ?? 0);
+    if (flee < graze + 0.3) policy.intentWeights.flee = Math.min(3, graze + 0.4);
+  } else if (groupId === GROUP_IDS.TRADERS) {
+    // Traders: only pin under imminent threat. Distant raid leaves trade
+    // routes open so depot throughput keeps pace with growth.
+    if (imminent) {
+      policy.targetPriorities = policy.targetPriorities ?? {};
+      policy.targetPriorities.warehouse = Math.max(Number(policy.targetPriorities.warehouse ?? 0), 1.6);
+      if (typeof policy.targetPriorities.frontier === "number") {
+        policy.targetPriorities.frontier = Math.min(policy.targetPriorities.frontier, 0.5);
+      }
+      if (typeof policy.targetPriorities.safety === "number") {
+        policy.targetPriorities.safety = Math.max(policy.targetPriorities.safety, 1.3);
+      }
+    }
+  }
+  return policy;
+}
+
+function sanitizePolicyForRuntime(policy, groupId, state, combatContext = null) {
   const fallback = DEFAULT_GROUP_POLICIES[groupId] ?? {};
   const tuning = getLongRunAiTuning(state);
-  return {
+  const sanitized = {
     ...fallback,
     ...policy,
     groupId,
@@ -94,6 +319,12 @@ function sanitizePolicyForRuntime(policy, groupId, state) {
         ? [...fallback.steeringNotes]
         : [],
   };
+  // NPC-Brain LLM tuning — last-mile raid-posture clamp. Applied uniformly to
+  // LLM and fallback policies so the LLM can only "win" via better baseline
+  // weights, not by escaping the safety net. When no raid is active this is a
+  // pure pass-through.
+  if (combatContext?.raidActive) applyRaidPosturePolicy(sanitized, combatContext);
+  return sanitized;
 }
 
 function sanitizeStateTargetForRuntime(groupId, targetState) {
@@ -167,7 +398,7 @@ function splitLegacyVisitorsPolicy(policy) {
   ];
 }
 
-function normalizePoliciesForRuntime(policies = [], state) {
+function normalizePoliciesForRuntime(policies = [], state, combatContext = null) {
   const policyByGroup = new Map();
   let migratedLegacyVisitors = false;
 
@@ -179,7 +410,7 @@ function normalizePoliciesForRuntime(policies = [], state) {
       const groupId = canonicalizeAiGroupId(policy.groupId);
       if (!groupId) continue;
       if (!REQUIRED_POLICY_GROUPS.includes(groupId)) continue;
-      policyByGroup.set(groupId, sanitizePolicyForRuntime(policy, groupId, state));
+      policyByGroup.set(groupId, sanitizePolicyForRuntime(policy, groupId, state, combatContext));
     }
   }
 
@@ -189,7 +420,9 @@ function normalizePoliciesForRuntime(policies = [], state) {
 
   for (const groupId of REQUIRED_POLICY_GROUPS) {
     if (policyByGroup.has(groupId)) continue;
-    policyByGroup.set(groupId, clonePolicy(DEFAULT_GROUP_POLICIES[groupId]));
+    const injected = clonePolicy(DEFAULT_GROUP_POLICIES[groupId]);
+    if (combatContext?.raidActive) applyRaidPosturePolicy(injected, combatContext);
+    policyByGroup.set(groupId, injected);
     pushWarning(state, `Missing policy '${groupId}', fallback policy injected.`, "warn", "NPCBrainSystem");
   }
 
@@ -261,6 +494,17 @@ function isTargetFeasibleForGroup(state, target) {
   return false;
 }
 
+// NPC-Brain LLM tuning — exported for unit-test coverage. These are pure
+// functions (no state mutation beyond the policy/summary argument) and form
+// the contract surface the bench / tests pin to.
+export {
+  buildCombatContext,
+  attachCombatContextToSummary,
+  applyRaidPosturePolicy,
+  sanitizePolicyForRuntime,
+  normalizePoliciesForRuntime,
+};
+
 export class NPCBrainSystem {
   constructor() {
     this.name = "NPCBrainSystem";
@@ -271,7 +515,11 @@ export class NPCBrainSystem {
   update(_dt, state, services) {
     if (this.pendingResult) {
       const now = state.metrics.timeSec;
-      const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state);
+      // NPC-Brain LLM tuning — recompute raid posture at integration time so
+      // the clamp uses the current frame's combat snapshot, not whatever was
+      // visible when the request was queued (typically 8-30 s earlier).
+      const combatContext = buildCombatContext(state);
+      const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state, combatContext);
       const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
       const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets, state)
         .filter((target) => {
@@ -465,7 +713,25 @@ export class NPCBrainSystem {
       );
       if (memCtx) summary._memoryContext = memCtx;
     }
-    const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
+    // NPC-Brain LLM tuning — inject combat context into the policy summary so
+    // the LLM sees raid pressure (raider count, guard deficit, predation
+    // deaths, workers under hit). The proxy stringifies `summary` into the
+    // JSON user message verbatim, so this reaches the prompt without
+    // touching PromptPayload/ai-proxy.
+    const requestCombat = buildCombatContext(state);
+    attachCombatContextToSummary(summary, requestCombat);
+    // Phase-LLM-Tune (system-level fix): NPC-Brain LLM only fires when there
+    // is a real threat to react to. In calm scenarios the LLM produces
+    // policies that are slightly more defensive than the rule-based fallback
+    // (a known artifact of the trained tendency toward caution), which costs
+    // production output across long runs without saving any lives. Gate LLM
+    // on activeThreats|activeRaiders|workersUnderHit; otherwise use fallback.
+    const calmCombat = requestCombat.activeRaiders === 0
+      && Number(state.metrics?.combat?.activeThreats ?? 0) === 0
+      && Number(requestCombat.workersUnderHit ?? 0) === 0;
+    const wantsLlm = state.ai.enabled
+      && state.ai.coverageTarget !== "fallback"
+      && !calmCombat;
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
