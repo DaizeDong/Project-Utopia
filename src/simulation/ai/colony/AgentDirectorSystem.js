@@ -62,16 +62,29 @@ function ensureAgentDirectorState(state) {
 
 /**
  * Select operating mode based on AI state and LLM availability.
+ *
+ * Phase A wiring: an `llmClient` (proxy-routed) is now treated as equivalent
+ * to a local API key for mode purposes. The HUD Autopilot toggle writes
+ * `state.ai.coverageTarget` ("llm" or "fallback"); we honour that target as
+ * a gate on top of the legacy `state.ai.enabled` flag so flipping Autopilot
+ * deterministically switches between agent and algorithmic mode.
+ *
  * @param {object} state — game state
  * @param {object} agentState — state.ai.agentDirector
- * @param {boolean} hasApiKey — whether LLM API key is configured
+ * @param {boolean} hasLlm — whether an LLM channel (apiKey or proxy client) is available
  * @returns {"agent"|"hybrid"|"algorithmic"}
  */
-export function selectMode(state, agentState, hasApiKey) {
+export function selectMode(state, agentState, hasLlm) {
   if (!state.ai?.enabled) return "algorithmic";
 
-  // If no API key, can't use LLM at all
-  if (!hasApiKey) return "hybrid";
+  // Autopilot OFF → coverageTarget="fallback" → run rule-based director only.
+  // When the field is missing (older saves / tests) we fall through to the
+  // legacy enabled-driven behaviour for back-compat.
+  const coverageTarget = state.ai?.coverageTarget;
+  if (coverageTarget === "fallback") return "algorithmic";
+
+  // If no LLM channel available, can't use LLM at all
+  if (!hasLlm) return "hybrid";
 
   // If too many consecutive LLM failures, switch to hybrid temporarily
   const stats = agentState?.stats;
@@ -137,10 +150,18 @@ export class AgentDirectorSystem {
     const agentState = ensureAgentDirectorState(state);
     const nowSec = state.metrics?.timeSec ?? 0;
 
-    // Determine operating mode
-    const hasApiKey = !!this._planner._apiKey;
-    const mode = selectMode(state, agentState, hasApiKey);
+    // Determine operating mode. An LLM channel is present when either the
+    // planner has a baked-in API key (test/headless path) or services exposes
+    // a proxy-routed llmClient (browser runtime).
+    const hasLlmChannel = !!this._planner._apiKey
+      || (services && typeof services.llmClient?.requestPlan === "function");
+    const mode = selectMode(state, agentState, hasLlmChannel);
     agentState.mode = mode;
+    // Surface activePlan ref on agent state so HUD/panels can render plan
+    // metadata even before the next plan completes.
+    agentState.activePlan = this._activePlan
+      ? { goal: this._activePlan.goal, steps: this._activePlan.steps.length, source: this._activePlan.source ?? "llm" }
+      : (agentState.activePlan ?? null);
 
     // Algorithmic mode — delegate entirely to fallback
     if (mode === "algorithmic") {
@@ -158,12 +179,18 @@ export class AgentDirectorSystem {
       const postSnap = snapshotState(state);
 
       // Evaluate each executed step
+      const planSource = this._activePlan?.source ?? "fallback";
       for (const step of executed) {
         const evaluation = this._evaluator.evaluateStep(step, preSnap, postSnap, state);
         this._stepEvals.push(evaluation);
 
         if (step.status === "completed") {
           agentState.stats.totalBuildingsPlaced++;
+          // Phase B: attribute the placement to its plan source so panels can
+          // distinguish "llm" vs "fallback" placements without an event bus.
+          if (!state.ai.colonyDirector) state.ai.colonyDirector = {};
+          state.ai.colonyDirector.lastBuildSource = planSource;
+          state.ai.colonyDirector.lastBuildTimeSec = nowSec;
         }
       }
 
@@ -193,7 +220,13 @@ export class AgentDirectorSystem {
           const evalText = this._lastEvalText;
 
           this._lastEvalText = ""; // consume once
-          this._planner.requestPlan(observation, memText, state, learnedText, evalText, { memoryStore: this._memoryStore })
+          // Phase A: pass the proxy-routed llmClient when available so the
+          // browser path never holds an apiKey. ColonyPlanner falls back to
+          // its direct callLLM path only when no llmClient is provided.
+          this._planner.requestPlan(observation, memText, state, learnedText, evalText, {
+            memoryStore: this._memoryStore,
+            llmClient: services?.llmClient ?? null,
+          })
             .then(({ plan, source, error }) => {
               this._pendingLLM = false;
               if (plan && plan.steps.length > 0) {

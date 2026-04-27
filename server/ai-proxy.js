@@ -503,6 +503,121 @@ async function handlePolicies(summary) {
   }
 }
 
+async function handlePlan(body) {
+  const requestedAtIso = new Date().toISOString();
+  const systemPrompt = String(body?.systemPrompt ?? "").trim();
+  const userPrompt = String(body?.userPrompt ?? "").trim();
+  const requestSummary = {
+    channel: "colony-planner",
+    systemPromptLen: systemPrompt.length,
+    userPromptLen: userPrompt.length,
+  };
+
+  // Without prompts there is nothing for the LLM to act on; surface a
+  // structured fallback so the client falls back to its algorithmic planner.
+  if (!systemPrompt || !userPrompt) {
+    return {
+      fallback: true,
+      plan: null,
+      error: "missing systemPrompt/userPrompt",
+      model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/plan",
+        requestSummary,
+        promptSystem: systemPrompt,
+        promptUser: userPrompt,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+          channel: "colony-planner",
+        },
+        rawModelContent: "",
+        parsedBeforeValidation: null,
+        guardedOutput: null,
+        error: "missing systemPrompt/userPrompt",
+      }),
+    };
+  }
+
+  if (!OPENAI_API_KEY) {
+    return {
+      fallback: true,
+      plan: null,
+      error: "OPENAI_API_KEY missing",
+      model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/plan",
+        requestSummary,
+        promptSystem: systemPrompt,
+        promptUser: userPrompt,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+          channel: "colony-planner",
+        },
+        rawModelContent: "",
+        parsedBeforeValidation: null,
+        guardedOutput: null,
+        error: "OPENAI_API_KEY missing",
+      }),
+    };
+  }
+
+  try {
+    const result = await callOpenAIWithModelFallback(systemPrompt, userPrompt);
+    return {
+      fallback: false,
+      plan: result.parsed,
+      error: "",
+      model: result.model,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/plan",
+        requestSummary,
+        promptSystem: result.promptSystem,
+        promptUser: result.promptUser,
+        requestPayload: {
+          ...result.requestPayload,
+          channel: "colony-planner",
+        },
+        rawModelContent: result.rawModelContent,
+        parsedBeforeValidation: result.parsed,
+        guardedOutput: result.parsed,
+        error: "",
+      }),
+    };
+  } catch (err) {
+    const compact = compactError(err);
+    return {
+      fallback: true,
+      plan: null,
+      error: compact,
+      model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/plan",
+        requestSummary,
+        promptSystem: systemPrompt,
+        promptUser: userPrompt,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+          channel: "colony-planner",
+        },
+        rawModelContent: "",
+        parsedBeforeValidation: null,
+        guardedOutput: null,
+        error: compact,
+      }),
+    };
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     sendJson(res, 200, { ok: true });
@@ -545,6 +660,15 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === "/api/ai/policy") {
       const payload = await handlePolicies(summary);
+      sendJson(res, 200, payload);
+      return;
+    }
+
+    if (req.url === "/api/ai/plan") {
+      // Colony-planner endpoint takes systemPrompt + userPrompt directly
+      // (not wrapped in {summary}) since the prompts are assembled client-side
+      // from runtime observation + memory and don't share the policy schema.
+      const payload = await handlePlan(body);
       sendJson(res, 200, payload);
       return;
     }

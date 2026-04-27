@@ -37,6 +37,7 @@ import { ProcessingSystem } from "../simulation/economy/ProcessingSystem.js";
 import { TileStateSystem } from "../simulation/economy/TileStateSystem.js";
 import { WarehouseQueueSystem } from "../simulation/economy/WarehouseQueueSystem.js";
 import { ColonyDirectorSystem } from "../simulation/meta/ColonyDirectorSystem.js";
+import { AgentDirectorSystem } from "../simulation/ai/colony/AgentDirectorSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
 import { DevIndexSystem } from "../simulation/meta/DevIndexSystem.js";
 import { RaidEscalatorSystem } from "../simulation/meta/RaidEscalatorSystem.js";
@@ -381,8 +382,20 @@ export class GameApp {
       new BoidsSystem(),
       new ResourceSystem(),
       new ProcessingSystem(),
-      new ColonyDirectorSystem(),
+      // Phase A LLM Colony Planner: AgentDirectorSystem wraps the legacy
+      // ColonyDirectorSystem and routes through services.llmClient (proxy)
+      // when Autopilot/coverageTarget="llm". When coverageTarget="fallback"
+      // it short-circuits straight to the algorithmic ColonyDirectorSystem
+      // so manual mode behaviour is preserved.
+      new AgentDirectorSystem(this.memoryStore),
+      // Keep ColonyDirectorSystem import for back-compat; AgentDirectorSystem
+      // owns its own internal `_fallback` ColonyDirectorSystem instance.
+      // (No standalone ColonyDirectorSystem entry — would double-build.)
     ];
+    // Reference the import to keep linters happy if AgentDirector ever stops
+    // wrapping ColonyDirector internally; tests import ColonyDirectorSystem
+    // directly so the symbol must remain available at module level.
+    void ColonyDirectorSystem;
     // v0.8.0 Phase 4 iteration H3: the raid-escalation pipeline depends on
     // this exact triplet ordering — DevIndex computes the smoothed score,
     // RaidEscalator consumes it, and WorldEvent spawns raids using the tier.

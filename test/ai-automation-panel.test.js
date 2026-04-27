@@ -9,7 +9,7 @@ function makeRoot() {
   };
 }
 
-test("AIAutomationPanel distinguishes LLM, rule-based automation, and inactive planner", () => {
+test("AIAutomationPanel distinguishes LLM, rule-based automation, and live agent planner", () => {
   const nodes = {
     aiAutomationSummaryBody: makeRoot(),
   };
@@ -48,6 +48,21 @@ test("AIAutomationPanel distinguishes LLM, rule-based automation, and inactive p
         lastPolicyExchange: { source: "fallback", fallback: true },
         groupStateTargets: new Map([["workers", { targetState: "seek_task" }]]),
         colonyDirector: { phase: "bootstrap", buildsPlaced: 3, lastEvalSec: 12 },
+        agentDirector: {
+          mode: "agent",
+          activePlan: { goal: "Build quarry pair", steps: 4, source: "llm" },
+          planHistory: [],
+          stats: {
+            plansGenerated: 5,
+            plansCompleted: 3,
+            plansFailed: 1,
+            plansSuperseded: 0,
+            totalBuildingsPlaced: 7,
+            reflectionsGenerated: 2,
+            llmFailures: 0,
+            lastLlmFailureSec: -Infinity,
+          },
+        },
       },
     };
 
@@ -62,7 +77,11 @@ test("AIAutomationPanel distinguishes LLM, rule-based automation, and inactive p
     assert.match(html, /Build Automation/);
     assert.match(html, /rule-based active/);
     assert.match(html, /Colony Planner LLM/);
-    assert.match(html, /not wired/);
+    // Phase B: live AgentDirector data — goal, mode, counters render in the row.
+    assert.match(html, /Build quarry pair/);
+    assert.match(html, /mode=agent/);
+    assert.match(html, /plansGenerated=5/);
+    assert.match(html, /plansCompleted=3/);
   } finally {
     globalThis.document = prevDocument;
   }

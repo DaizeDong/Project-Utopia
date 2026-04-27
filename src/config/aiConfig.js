@@ -1,6 +1,7 @@
 ﻿export const AI_CONFIG = Object.freeze({
   environmentEndpoint: "/api/ai/environment",
   policyEndpoint: "/api/ai/policy",
+  planEndpoint: "/api/ai/plan",
   requestTimeoutMs: 120000,
   maxDirectiveDurationSec: 180,
   maxPolicyTtlSec: 120,
