@@ -4,6 +4,7 @@
 
 ### New Features
 
+- **Display & Graphics settings panel** (`index.html`, `src/ui/tools/BuildToolbar.js`, `src/app/controlSanitizers.js`, `src/render/SceneRenderer.js`): added a player-facing settings card for quality presets, render resolution scale, UI scale, 3D/2D render mode, shadows, anti-aliasing startup preference, texture quality, GPU power preference, effects, weather particles, fog, heat labels, entity animation, tile icons, and unit sprites. Live settings now feed the renderer state instead of being static UI.
 - **LLM runtime exchange visibility** (`server/ai-proxy.js`, `src/simulation/ai/llm/LLMClient.js`, `src/ui/panels/AIExchangePanel.js`): added request/response metadata, fallback status, and panel rendering so players can inspect whether live LLM calls are active, degraded, or replaced by local fallback decisions.
 - **AI automation boundary panel** (`src/ui/panels/AIAutomationPanel.js`): added explicit Autopilot OFF / LLM-disabled copy while still showing rule-based director and fallback summaries, reducing ambiguity around what the AI is actually controlling.
 - **Strategic/director decision summaries** (`src/simulation/ai/strategic/StrategicDirector.js`, `src/simulation/ai/director/EnvironmentDirectorSystem.js`, `src/simulation/ai/brains/NPCBrainSystem.js`): surfaced inputs, chosen action, fallback status, and decision outcomes across the existing LLM-agent categories.
@@ -32,10 +33,11 @@
 
 ### Validation
 
-- Full `npm test`: 1473 tests, 1471 pass, 0 fail, 2 skipped.
+- Full `npm test`: 1474 tests, 1472 pass, 0 fail, 2 skipped.
 - Targeted Round 9 suite: 40/40 passing across Storyteller, AI automation, next-action, and world-explain tests.
 - `npm run build`: passing.
 - `git diff --check`: passing.
+- Display settings smoke: Playwright opened the app, started a colony, switched to Settings, changed resolution/UI scale/render mode/shadows/weather particles, and verified the runtime renderer summary updated.
 - Visible headed-browser verification confirmed startup, AI Log visibility, explicit LLM/autopilot boundary copy, fixed Storyteller text, and concrete food-crisis advice. Local screenshots/logs were cleaned before push; key assertions are recorded in `assignments/homework6/Agent-Feedback-Loop/Round9/Validation/test-report.md`.
 - Performance validation: headless stress profile confirms 39.5% faster at 901 synthetic entities and 67.4% faster at 1501 synthetic entities.
 - Visible max-CPU browser validation: 1019-1020 entities, 1008/1012 workers moving at t+20s, 1003/1012 workers with active paths, target 8x delivered about 7.75x wall-clock, average FPS about 53.9, work p95 about 11.8 ms, 32 path workers, 37,539 completed path jobs, 0 dropped jobs.
