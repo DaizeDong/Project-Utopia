@@ -8,6 +8,7 @@ import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
 import { explainBuildReason, summarizeBuildPreview } from "../simulation/construction/BuildAdvisor.js";
 import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
+import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../app/controlSanitizers.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
 import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels, getPressureLabelRank, heatLabelBudgetForZoom } from "./PressureLens.js";
@@ -180,16 +181,25 @@ function lerpAngle(a, b, t) {
   return a + delta * t;
 }
 
-function createRendererWithFallback(canvas) {
-  const attempts = [
-    { antialias: true, powerPreference: "high-performance" },
-    { antialias: false, powerPreference: "high-performance" },
-    { antialias: false, powerPreference: "default" },
-  ];
+function createRendererWithFallback(canvas, displaySettings = DEFAULT_DISPLAY_SETTINGS) {
+  const { settings } = sanitizeDisplaySettings(displaySettings, DEFAULT_DISPLAY_SETTINGS);
+  const preferredPower = settings.powerPreference;
+  const attempts = settings.antialias === "off"
+    ? [
+        { antialias: false, powerPreference: preferredPower, compatibilityFallback: false },
+        { antialias: false, powerPreference: "default", compatibilityFallback: true },
+        { antialias: true, powerPreference: preferredPower, compatibilityFallback: false },
+      ]
+    : [
+        { antialias: true, powerPreference: preferredPower, compatibilityFallback: false },
+        { antialias: false, powerPreference: preferredPower, compatibilityFallback: true },
+        { antialias: false, powerPreference: "default", compatibilityFallback: true },
+      ];
   let lastError = null;
   for (const attempt of attempts) {
     try {
-      const renderer = new THREE.WebGLRenderer({ canvas, ...attempt });
+      const { compatibilityFallback, ...rendererOptions } = attempt;
+      const renderer = new THREE.WebGLRenderer({ canvas, ...rendererOptions });
       return { renderer, attempt };
     } catch (err) {
       lastError = err;
@@ -372,11 +382,13 @@ export class SceneRenderer {
     this.buildSystem = buildSystem;
     this.onSelectEntity = onSelectEntity;
     this.hoverTile = null;
+    this.state.controls.display = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS).settings;
 
-    const { renderer, attempt: rendererAttempt } = createRendererWithFallback(canvas);
+    const { renderer, attempt: rendererAttempt } = createRendererWithFallback(canvas, this.state.controls.display);
     this.renderer = renderer;
     this.rendererAttempt = rendererAttempt;
-    this.compatibilityRenderer = !rendererAttempt.antialias;
+    this.compatibilityRenderer = Boolean(rendererAttempt.compatibilityFallback);
+    this.rendererAntialias = Boolean(rendererAttempt.antialias);
     const deviceMemory = Number(globalThis?.navigator?.deviceMemory ?? 0);
     this.lowMemoryMode = Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 8;
     this.basePixelRatio = this.lowMemoryMode ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
@@ -388,8 +400,10 @@ export class SceneRenderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.28;
-    this.renderer.shadowMap.enabled = !this.compatibilityRenderer && !this.lowMemoryMode;
-    this.renderer.shadowMap.type = this.lowMemoryMode ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    this.activeShadowQuality = this.#effectiveShadowQuality();
+    this.renderer.shadowMap.enabled = this.activeShadowQuality !== "off";
+    this.renderer.shadowMap.type = this.#shadowMapType(this.activeShadowQuality);
+    this.appliedDisplaySignature = "";
 
     const initialAtmosphere = deriveAtmosphereProfile(state);
     this.scene = new THREE.Scene();
@@ -428,6 +442,10 @@ export class SceneRenderer {
     this.state.controls.cameraMinZoom ??= 0.55;
     this.state.controls.cameraMaxZoom ??= 3.2;
     this.state.controls.renderModelDisableThreshold ??= this.modelDisableThreshold;
+    this.state.controls.display = this.#displaySettings();
+    this.state.debug.rendererAntialias = this.rendererAntialias;
+    this.state.debug.rendererPowerPreference = rendererAttempt.powerPreference;
+    this.state.debug.shadowQuality = this.activeShadowQuality;
     this.state.debug.visualAssetPack = "loading";
     this.state.debug.iconAtlasLoaded = false;
     this.state.debug.unitSpriteLoaded = false;
@@ -538,6 +556,7 @@ export class SceneRenderer {
     this.#setupOverlayMeshes();
     this.#setupPressureLensMeshes();
     this.#loadWorldSimManifest();
+    this.#applyRendererDisplaySettings();
     if (this.compatibilityRenderer) {
       this.state.controls.actionMessage = "Compatibility renderer enabled (anti-alias off).";
       this.state.controls.actionKind = "info";
@@ -594,6 +613,133 @@ export class SceneRenderer {
     this.canvas.addEventListener("contextmenu", this.boundOnContextMenu);
     this.controls.addEventListener("start", this.boundOnControlsStart);
     this.controls.addEventListener("end", this.boundOnControlsEnd);
+  }
+
+  #displaySettings() {
+    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    return settings;
+  }
+
+  #effectiveShadowQuality(settings = this.#displaySettings()) {
+    if (settings.renderMode === "2d") return "off";
+    if (this.compatibilityRenderer) return "off";
+    const requested = settings.shadowQuality;
+    if (requested === "off") return "off";
+    if (requested === "low" || requested === "medium" || requested === "high") return requested;
+    return this.lowMemoryMode ? "low" : "medium";
+  }
+
+  #shadowMapType(quality) {
+    if (quality === "high" || quality === "medium") return THREE.PCFSoftShadowMap;
+    return THREE.BasicShadowMap;
+  }
+
+  #shadowMapSize(quality) {
+    if (quality === "high") return 2048;
+    if (quality === "medium") return 1536;
+    if (quality === "low") return 768;
+    return 0;
+  }
+
+  #textureQualityOptions(quality = this.#displaySettings().textureQuality) {
+    const maxAnisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
+    if (quality === "ultra") return { mipmaps: true, anisotropy: maxAnisotropy };
+    if (quality === "high") return { mipmaps: true, anisotropy: Math.min(8, maxAnisotropy) };
+    if (quality === "medium") return { mipmaps: true, anisotropy: Math.min(4, maxAnisotropy) };
+    return { mipmaps: false, anisotropy: 1 };
+  }
+
+  #applyTextureQuality() {
+    const options = this.#textureQualityOptions();
+    const apply = (texture, pixelated = false) => {
+      if (!texture) return;
+      if (pixelated) {
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.anisotropy = 1;
+      } else {
+        texture.minFilter = options.mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = options.mipmaps;
+        texture.anisotropy = options.anisotropy;
+      }
+      texture.needsUpdate = true;
+    };
+
+    for (const material of this.tileMaterialsByType.values()) {
+      apply(material?.map, false);
+    }
+    for (const material of this.tileIconMaterials.values()) {
+      apply(material?.map, true);
+    }
+    for (const texture of this.unitSpriteTextures.values()) {
+      apply(texture, true);
+    }
+  }
+
+  #applyShadowFlags(enabled) {
+    if (this.sunLight) this.sunLight.castShadow = enabled;
+    for (const mesh of this.tileMeshesByType?.values?.() ?? []) {
+      mesh.receiveShadow = enabled;
+    }
+    const entityMeshes = [this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh];
+    for (const mesh of entityMeshes) {
+      if (!mesh) continue;
+      mesh.castShadow = enabled;
+      mesh.receiveShadow = enabled;
+    }
+    this.entityModelRoot?.traverse?.((node) => {
+      if (node.userData?.entityShadow) node.visible = enabled;
+      if (!node.isMesh) return;
+      node.castShadow = enabled;
+      node.receiveShadow = enabled;
+    });
+    this.entitySpriteRoot?.traverse?.((node) => {
+      if (node.userData?.entityShadow) node.visible = enabled;
+    });
+  }
+
+  #applyRendererDisplaySettings() {
+    const settings = this.#displaySettings();
+    const shadowQuality = this.#effectiveShadowQuality(settings);
+    const signature = [
+      settings.textureQuality,
+      shadowQuality,
+      settings.renderMode,
+      settings.effectsEnabled ? 1 : 0,
+      settings.weatherParticles ? 1 : 0,
+      settings.fogEnabled ? 1 : 0,
+      settings.heatLabels ? 1 : 0,
+      settings.entityAnimations ? 1 : 0,
+    ].join("|");
+    if (signature === this.appliedDisplaySignature) return;
+    this.appliedDisplaySignature = signature;
+    this.activeShadowQuality = shadowQuality;
+    const shadowsEnabled = shadowQuality !== "off";
+    this.renderer.shadowMap.enabled = shadowsEnabled;
+    this.renderer.shadowMap.type = this.#shadowMapType(shadowQuality);
+    if (this.sunLight) {
+      this.sunLight.castShadow = shadowsEnabled;
+      const size = this.#shadowMapSize(shadowQuality);
+      if (size > 0) this.sunLight.shadow.mapSize.set(size, size);
+      this.sunLight.shadow.needsUpdate = true;
+    }
+    this.#applyShadowFlags(shadowsEnabled);
+    this.#applyTextureQuality();
+    this.lastEntityRenderSignature = "";
+    if (this.state.debug) {
+      this.state.debug.shadowQuality = shadowQuality;
+      this.state.debug.rendererAntialias = this.rendererAntialias;
+      this.state.debug.rendererPowerPreference = this.rendererAttempt?.powerPreference ?? "default";
+      this.state.debug.displaySettings = { ...settings, effectiveShadowQuality: shadowQuality };
+    }
+  }
+
+  applyDisplaySettings(settings = this.state.controls.display) {
+    this.state.controls.display = sanitizeDisplaySettings(settings, DEFAULT_DISPLAY_SETTINGS).settings;
+    this.#applyRendererDisplaySettings();
   }
 
   #hashAngle(ix, iz) {
@@ -762,7 +908,10 @@ export class SceneRenderer {
 
   #ensureModelTemplatesRequested() {
     if (this.modelTemplatesRequested) return;
-    const needsModels = this.state.controls.visualPreset !== "flat_worldsim"
+    const display = this.#displaySettings();
+    if (display.renderMode === "2d") return;
+    const needsModels = display.renderMode === "3d"
+      || this.state.controls.visualPreset !== "flat_worldsim"
       || !this.state.controls.showUnitSprites;
     if (!needsModels) return;
     this.#loadModelTemplates();
@@ -888,18 +1037,19 @@ export class SceneRenderer {
 
   #setTextureSampling(texture, options = {}) {
     const pixelated = Boolean(options.pixelated);
-    const useMipmaps = options.mipmaps ?? !pixelated;
-    const maxAnisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
+    const quality = this.#textureQualityOptions();
+    const useMipmaps = options.mipmaps ?? (pixelated ? false : quality.mipmaps);
     texture.colorSpace = THREE.SRGBColorSpace;
     if (pixelated) {
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
       texture.generateMipmaps = false;
+      texture.anisotropy = 1;
     } else {
       texture.minFilter = useMipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.generateMipmaps = useMipmaps;
-      texture.anisotropy = clamp(Number(options.anisotropy) || 4, 1, maxAnisotropy);
+      texture.anisotropy = clamp(Number(options.anisotropy) || quality.anisotropy, 1, quality.anisotropy);
     }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
@@ -1776,6 +1926,16 @@ export class SceneRenderer {
     const container = this.pressureLabelLayerEl;
     if (!container) return;
 
+    const display = this.#displaySettings();
+    if (!display.effectsEnabled || !display.heatLabels) {
+      for (const el of this.pressureLabelPool) {
+        el.style.display = "none";
+        el.title = "";
+      }
+      container.dataset.hiddenLabelCount = "0";
+      return;
+    }
+
     const markers = this.lensMode !== "off" ? this.pressureLensMarkers : [];
 
     // Grow pool as needed (max 24 to match buildPressureLens cap).
@@ -2336,6 +2496,7 @@ export class SceneRenderer {
   #syncEntitySprites(entities) {
     const alive = new Set();
     let removedAny = false;
+    const animateEntities = this.#displaySettings().entityAnimations;
 
     for (const entity of entities) {
       const binding = this.#entitySpriteBinding(entity);
@@ -2388,13 +2549,14 @@ export class SceneRenderer {
       }
 
       const speed = Math.hypot(entity.vx || 0, entity.vz || 0);
-      const bobAmp = speed > 0.2 ? binding.bobAmp : binding.bobIdleAmp;
+      const bobAmp = animateEntities ? (speed > 0.2 ? binding.bobAmp : binding.bobIdleAmp) : 0;
       const bobFreq = speed > 0.2 ? 9 : 3.4;
       const bob = Math.sin(this.state.metrics.timeSec * bobFreq + entry.phase) * bobAmp;
 
       entry.group.position.set(entity.x, 0, entity.z);
       entry.sprite.position.set(0, binding.y + bob, 0);
       entry.sprite.scale.set(binding.scale, binding.scale, 1);
+      entry.shadow.visible = this.renderer.shadowMap.enabled;
       entry.shadow.scale.set(binding.shadowRadius, binding.shadowRadius, binding.shadowRadius);
     }
 
@@ -2435,6 +2597,7 @@ export class SceneRenderer {
   #syncEntityModels(entities) {
     const alive = new Set();
     let removedAny = false;
+    const animateEntities = this.#displaySettings().entityAnimations;
 
     for (const entity of entities) {
       if (!this.#entityModelEnabled(entity)) continue;
@@ -2472,11 +2635,11 @@ export class SceneRenderer {
       const speed = Math.sqrt(speedSq);
       const targetYaw = speed > 0.03 ? Math.atan2(entity.vx, entity.vz) : entry.yaw;
       const turnSmooth = speed > 0.2 ? 0.26 : 0.11;
-      entry.yaw = lerpAngle(entry.yaw, targetYaw, turnSmooth);
-      const bobAmp = speed > 0.2 ? binding.bobAmp : binding.idleBobAmp;
+      entry.yaw = animateEntities ? lerpAngle(entry.yaw, targetYaw, turnSmooth) : targetYaw;
+      const bobAmp = animateEntities ? (speed > 0.2 ? binding.bobAmp : binding.idleBobAmp) : 0;
       const bobFreq = speed > 0.2 ? 10 : 3.6;
       const bob = Math.sin(this.state.metrics.timeSec * bobFreq + entry.phase) * bobAmp;
-      const lean = clamp(speed * binding.leanFactor, 0, 0.11);
+      const lean = animateEntities ? clamp(speed * binding.leanFactor, 0, 0.11) : 0;
 
       entry.object.position.set(entity.x, binding.y + bob, entity.z);
       entry.object.rotation.set(-lean, entry.yaw + binding.headingOffset, 0);
@@ -2533,7 +2696,11 @@ export class SceneRenderer {
   }
 
   #setRenderPixelRatio(targetPixelRatio) {
-    const clamped = Math.max(0.45, Math.min(this.basePixelRatio, targetPixelRatio));
+    const display = this.#displaySettings();
+    const resolutionScale = clamp(Number(display.resolutionScale) || 1, 0.5, 1.75);
+    const scaledTarget = targetPixelRatio * resolutionScale;
+    const maxPixelRatio = Math.min(2.5, Math.max(0.45, this.basePixelRatio * resolutionScale));
+    const clamped = Math.max(0.35, Math.min(maxPixelRatio, scaledTarget));
     if (Math.abs(clamped - this.currentPixelRatio) < 0.01) return;
     this.currentPixelRatio = clamped;
     this.renderer.setPixelRatio(clamped);
@@ -2551,8 +2718,12 @@ export class SceneRenderer {
   #updateEntityMeshes() {
     this.#collectEntityBuckets();
     const totalEntities = this.allEntities.length;
+    const display = this.#displaySettings();
     const spritesReady = this.unitSpriteTextures.size > 0;
-    const spriteMode = totalEntities < 650
+    const force2d = display.renderMode === "2d";
+    const force3d = display.renderMode === "3d";
+    const spriteMode = !force3d
+      && totalEntities < 650
       && Boolean(this.state.controls.showUnitSprites)
       && spritesReady
       && this.state.controls.visualPreset === "flat_worldsim";
@@ -2594,9 +2765,10 @@ export class SceneRenderer {
       this.#clearEntitySpriteInstances();
     }
 
-    let shouldUseEntityModels = this.useEntityModels;
-    if (shouldUseEntityModels && totalEntities > this.modelDisableThreshold) shouldUseEntityModels = false;
-    if (!shouldUseEntityModels && totalEntities < this.modelEnableThreshold) shouldUseEntityModels = true;
+    let shouldUseEntityModels = force3d ? true : this.useEntityModels;
+    if (force2d) shouldUseEntityModels = false;
+    if (!force2d && !force3d && shouldUseEntityModels && totalEntities > this.modelDisableThreshold) shouldUseEntityModels = false;
+    if (!force2d && !force3d && !shouldUseEntityModels && totalEntities < this.modelEnableThreshold) shouldUseEntityModels = true;
     if (shouldUseEntityModels !== this.useEntityModels) {
       this.useEntityModels = shouldUseEntityModels;
       if (!this.useEntityModels) {
@@ -3165,6 +3337,7 @@ export class SceneRenderer {
   }
 
   #applyRuntimeControlSettings() {
+    this.#applyRendererDisplaySettings();
     const minZoom = clamp(Number(this.state.controls.cameraMinZoom) || 0.55, 0.3, 5);
     const maxZoom = clamp(Number(this.state.controls.cameraMaxZoom) || 3.2, minZoom + 0.1, 6);
 
@@ -3354,6 +3527,7 @@ export class SceneRenderer {
 
   render(dt) {
     this.#applyRuntimeControlSettings();
+    const display = this.#displaySettings();
     this.#syncVisualAssetDebug();
     this.#ensureModelTemplatesRequested();
     this.controls.update();
@@ -3363,7 +3537,9 @@ export class SceneRenderer {
     // v0.8.2 Round-7 01d — weather rain particles: activate when
     // state.weather.current === "rain" (or "storm"), deactivate otherwise.
     const weatherNow = String(this.state.weather?.current ?? "clear");
-    const isRaining = weatherNow === "rain" || weatherNow === "storm";
+    const isRaining = display.effectsEnabled
+      && display.weatherParticles
+      && (weatherNow === "rain" || weatherNow === "storm");
     if (isRaining !== Boolean(this._weatherRain)) {
       this._weatherRain = isRaining;
       if (isRaining) {
@@ -3385,6 +3561,9 @@ export class SceneRenderer {
       this.state.controls.visualPreset,
       this.modelDisableThreshold,
       this.modelTemplates.size,
+      display.renderMode,
+      display.resolutionScale,
+      display.entityAnimations ? 1 : 0,
     ].join("|");
     const shouldUpdateEntities = entityRenderSignature !== this.lastEntityRenderSignature
       || entityUpdateIntervalSec <= 0
@@ -3401,7 +3580,9 @@ export class SceneRenderer {
       };
     }
     this.#updatePathLine();
-    this.fogOverlay?.update?.(this.state);
+    const fogVisible = display.effectsEnabled && display.fogEnabled;
+    if (this.fogOverlay?.mesh) this.fogOverlay.mesh.visible = fogVisible;
+    if (fogVisible) this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
     this.#updatePressureLensLabels();
     this.#updatePlacementLens();
