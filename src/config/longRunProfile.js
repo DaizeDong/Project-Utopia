@@ -10,7 +10,7 @@ const AI_LONG_RUN_TUNING = Object.freeze({
 const VISITOR_LONG_RUN_TUNING = Object.freeze({
   sabotageCooldownMultiplier: 1.4,
   warehousePriorityMultiplier: 0.5,
-  protectLastWarehousesCount: 1,
+  protectLastWarehousesCount: 3,
   protectedWarehouseLossScale: 0.45,
 });
 const EVENT_LONG_RUN_TUNING = Object.freeze({
@@ -18,6 +18,9 @@ const EVENT_LONG_RUN_TUNING = Object.freeze({
     banditRaid: 1,
     tradeCaravan: 1,
     animalMigration: 1,
+    diseaseOutbreak: 1,
+    wildfire: 1,
+    moraleBreak: 1,
     sabotage: 1,
   }),
   maxBanditRaidPressure: 1.75,

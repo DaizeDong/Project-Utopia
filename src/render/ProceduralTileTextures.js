@@ -82,6 +82,66 @@ export const PROCEDURAL_TILE_TEXTURE_PROFILES = Object.freeze({
     detail: "#8fd1f6",
     line: "#24597f",
   }),
+  [TILE.QUARRY]: Object.freeze({
+    size: 72,
+    repeatX: 1.15,
+    repeatY: 1.15,
+    pattern: "quarry",
+    base: "#8c7a62",
+    accent: "#a59478",
+    detail: "#6e5c48",
+    line: "#524030",
+  }),
+  [TILE.HERB_GARDEN]: Object.freeze({
+    size: 72,
+    repeatX: 1.2,
+    repeatY: 1.2,
+    pattern: "herb_garden",
+    base: "#5a8c4a",
+    accent: "#7bb86a",
+    detail: "#3d6b30",
+    line: "#2e5220",
+  }),
+  [TILE.KITCHEN]: Object.freeze({
+    size: 72,
+    repeatX: 1.1,
+    repeatY: 1.1,
+    pattern: "kitchen",
+    base: "#b8924a",
+    accent: "#d4a65a",
+    detail: "#8c6e32",
+    line: "#6e5424",
+  }),
+  [TILE.SMITHY]: Object.freeze({
+    size: 72,
+    repeatX: 1.1,
+    repeatY: 1.1,
+    pattern: "smithy",
+    base: "#6b5a4a",
+    accent: "#8c7a6b",
+    detail: "#4a3a2a",
+    line: "#3a2a1a",
+  }),
+  [TILE.CLINIC]: Object.freeze({
+    size: 72,
+    repeatX: 1.1,
+    repeatY: 1.1,
+    pattern: "clinic",
+    base: "#a8c4a0",
+    accent: "#c4d8c0",
+    detail: "#88a880",
+    line: "#6a8a62",
+  }),
+  [TILE.BRIDGE]: Object.freeze({
+    size: 72,
+    repeatX: 1.2,
+    repeatY: 1.2,
+    pattern: "bridge",
+    base: "#3a6e9a",
+    accent: "#9a7e5a",
+    detail: "#c4a878",
+    line: "#6e5434",
+  }),
 });
 
 export function resolveTileTextureMode(manifest = null) {
@@ -157,6 +217,13 @@ function drawRoad(ctx, profile) {
 }
 
 function drawFarm(ctx, profile) {
+  // TODO (Phase 7, M1 visual polish): overlay dry-soil crack pattern when
+  // `tileState.salinized > 0.5`. Textures are currently baked once per tile
+  // TYPE (not per tile instance) and returned as a shared CanvasTexture, so
+  // per-tile dynamic salinized-state cannot be threaded through without
+  // restructuring the renderer to a per-instance material/texture variant
+  // (e.g. an atlas + salinization overlay blended in-shader, or per-instance
+  // uniform). Deferred to the Phase 7 visuals pass per spec § 3 M1.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);
@@ -297,6 +364,212 @@ function drawWater(ctx, profile) {
   drawNoiseDots(ctx, size, profile.detail, 36, 0.8, 1.8, 0.16);
 }
 
+function drawQuarry(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  ctx.save();
+  ctx.fillStyle = profile.detail;
+  ctx.globalAlpha = 0.34;
+  for (let i = 0; i < 14; i += 1) {
+    const x = 3 + ((i * 19) % (size - 14));
+    const y = 4 + ((i * 23) % (size - 14));
+    const w = 6 + ((i * 11) % 12);
+    const h = 5 + ((i * 7) % 10);
+    ctx.fillRect(x, y, w, h);
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.26;
+  for (let i = 0; i < 8; i += 1) {
+    const x = 6 + ((i * 21) % (size - 16));
+    const y = 3 + ((i * 29) % (size - 16));
+    const w = 7 + ((i * 9) % 10);
+    const h = 4 + ((i * 5) % 8);
+    ctx.strokeRect(x, y, w, h);
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.accent, 40, 1.4, 3.2, 0.22);
+}
+
+function drawHerbGarden(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.2;
+  for (let y = 8; y < size; y += 14) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = profile.accent;
+  ctx.globalAlpha = 0.52;
+  for (let row = 0; row < Math.ceil(size / 14); row += 1) {
+    const y = 8 + row * 14;
+    const offset = row % 2 === 0 ? 0 : 6;
+    for (let x = 4 + offset; x < size; x += 12) {
+      ctx.beginPath();
+      ctx.arc(x, y, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.detail, 36, 0.8, 1.6, 0.18);
+}
+
+function drawKitchen(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.6;
+  ctx.globalAlpha = 0.3;
+  for (let y = 0; y <= size; y += 16) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+  for (let x = 0; x <= size; x += 16) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, size);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = profile.accent;
+  ctx.globalAlpha = 0.28;
+  for (let y = 2; y < size; y += 16) {
+    for (let x = 2; x < size; x += 16) {
+      ctx.fillRect(x, y, 12, 12);
+    }
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.detail, 28, 1, 2.4, 0.2);
+}
+
+function drawSmithy(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.32;
+  const rowHeight = 16;
+  const brickWidth = 20;
+  for (let row = 0; row < Math.ceil(size / rowHeight); row += 1) {
+    const y = row * rowHeight;
+    const offset = row % 2 === 0 ? 0 : brickWidth / 2;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+    for (let x = -offset; x < size + brickWidth; x += brickWidth) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x, Math.min(size, y + rowHeight));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = profile.detail;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.22;
+  for (let i = 0; i < 6; i += 1) {
+    const x1 = 4 + ((i * 23) % (size - 12));
+    const y1 = 3 + ((i * 31) % (size - 12));
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 + 10, y1 + 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1 + 10, y1);
+    ctx.lineTo(x1, y1 + 10);
+    ctx.stroke();
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.accent, 30, 1.2, 2.6, 0.18);
+}
+
+function drawClinic(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  const cx = size / 2;
+  const cy = size / 2;
+  const armW = size * 0.18;
+  const armH = size * 0.5;
+  ctx.save();
+  ctx.fillStyle = profile.accent;
+  ctx.globalAlpha = 0.48;
+  ctx.fillRect(cx - armW / 2, cy - armH / 2, armW, armH);
+  ctx.fillRect(cx - armH / 2, cy - armW / 2, armH, armW);
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.3;
+  ctx.strokeRect(cx - armW / 2, cy - armH / 2, armW, armH);
+  ctx.strokeRect(cx - armH / 2, cy - armW / 2, armH, armW);
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.detail, 40, 1, 2.2, 0.2);
+}
+
+function drawBridge(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  // Dark water base
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  // Wooden planks across the tile
+  ctx.save();
+  ctx.fillStyle = profile.accent;
+  ctx.globalAlpha = 0.82;
+  const plankH = 8;
+  const gap = 3;
+  for (let y = 2; y < size; y += plankH + gap) {
+    ctx.fillRect(4, y, size - 8, plankH);
+  }
+  ctx.restore();
+  // Plank grain lines
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.28;
+  for (let y = 2; y < size; y += plankH + gap) {
+    const mid = y + plankH / 2;
+    ctx.beginPath();
+    ctx.moveTo(4, mid);
+    ctx.lineTo(size - 4, mid);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // Highlight edges
+  ctx.save();
+  ctx.strokeStyle = profile.detail;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.3;
+  for (let y = 2; y < size; y += plankH + gap) {
+    ctx.beginPath();
+    ctx.moveTo(4, y);
+    ctx.lineTo(size - 4, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.detail, 20, 0.6, 1.4, 0.14);
+}
+
 function drawPattern(ctx, profile) {
   switch (profile.pattern) {
     case "road":
@@ -319,6 +592,24 @@ function drawPattern(ctx, profile) {
       return;
     case "water":
       drawWater(ctx, profile);
+      return;
+    case "quarry":
+      drawQuarry(ctx, profile);
+      return;
+    case "herb_garden":
+      drawHerbGarden(ctx, profile);
+      return;
+    case "kitchen":
+      drawKitchen(ctx, profile);
+      return;
+    case "smithy":
+      drawSmithy(ctx, profile);
+      return;
+    case "clinic":
+      drawClinic(ctx, profile);
+      return;
+    case "bridge":
+      drawBridge(ctx, profile);
       return;
     case "grass":
     default:

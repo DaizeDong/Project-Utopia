@@ -1,6 +1,8 @@
 import { BALANCE } from "../../config/balance.js";
-import { worldToTile, tileToWorld } from "../../world/grid/Grid.js";
+import { TILE } from "../../config/constants.js";
+import { worldToTile, tileToWorld, getTile } from "../../world/grid/Grid.js";
 import { aStar } from "./AStar.js";
+import { buildPathWorkerKey, snapshotDynamicCostsForPathWorker, snapshotGridForPathWorker } from "./PathWorkerPool.js";
 
 const PATH_RETRY_BUDGET_SKIP_BASE_SEC = 0.16;
 const PATH_RETRY_BUDGET_SKIP_JITTER_SEC = 0.08;
@@ -81,12 +83,62 @@ function getDynamicPathVersion(state) {
   return Number(getTrafficCostData(state).version ?? 0);
 }
 
+function getNavigationEntityCount(state) {
+  return Number(state?.agents?.length ?? 0) + Number(state?.animals?.length ?? 0);
+}
+
+function isHighLoadPathingState(state) {
+  const entityCount = getNavigationEntityCount(state);
+  const scale = Number(state.controls?.timeScale ?? 1);
+  return entityCount >= 350 || scale >= 4;
+}
+
+function getPathCostCacheVersion(state) {
+  const dynamicVersion = getDynamicPathVersion(state);
+  return isHighLoadPathingState(state) ? 0 : dynamicVersion;
+}
+
+function hasAcceptableTrafficVersion(entity, state) {
+  if (getPathTrafficVersion(entity) === getDynamicPathVersion(state)) return true;
+  // Dynamic crowd penalties should influence new paths, not invalidate hundreds
+  // of already-moving agents every traffic sample under high load.
+  return isHighLoadPathingState(state);
+}
+
+function shouldUsePathWorkers(entity, state, services) {
+  if (!services?.pathWorkerPool?.available) return false;
+  if (state.controls?.parallelPathing === false) return false;
+  const entityCount = getNavigationEntityCount(state);
+  const scale = Number(state.controls?.timeScale ?? 1);
+  return entityCount >= 350 || scale >= 4 || Boolean(entity?.isStressWorker);
+}
+
+function applyPathWorkerStats(state, services) {
+  const stats = services?.pathWorkerPool?.getStats?.();
+  if (!stats || !state.debug?.astar) return;
+  state.debug.astar.workerPool = stats;
+}
+
+function getPathWorkerGridSnapshot(state) {
+  const version = Number(state.grid?.version ?? 0);
+  const cached = state._pathWorkerGridSnapshot;
+  if (cached?.version === version && cached?.grid === state.grid) return cached.snapshot;
+  const snapshot = snapshotGridForPathWorker(state.grid, version);
+  Object.defineProperty(state, "_pathWorkerGridSnapshot", {
+    value: { version, grid: state.grid, snapshot },
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  return snapshot;
+}
+
 export function hasActivePath(entity, state) {
   return Boolean(
     entity?.path &&
       entity.pathIndex < entity.path.length &&
       entity.pathGridVersion === state.grid.version &&
-      getPathTrafficVersion(entity) === getDynamicPathVersion(state),
+      hasAcceptableTrafficVersion(entity, state),
   );
 }
 
@@ -94,6 +146,11 @@ export function canAttemptPath(entity, state) {
   const nowSec = Number(state.metrics?.timeSec ?? 0);
   const retryState = getPathRetryState(entity);
   return nowSec >= Number(retryState?.nextPathRetrySec ?? -Infinity);
+}
+
+export function hasPendingPathRequest(entity, services) {
+  const key = String(entity?.blackboard?.pendingPathWorkerKey ?? "");
+  return Boolean(key && services?.pathWorkerPool?.hasPending?.(key));
 }
 
 export function setTargetAndPath(entity, targetTile, state, services) {
@@ -134,7 +191,8 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   const astarStats = state.debug?.astar;
   const pathBudget = getPathBudget(services, state);
   const trafficData = getTrafficCostData(state);
-  const pathCostVersion = getDynamicPathVersion(state);
+  const currentTrafficVersion = getDynamicPathVersion(state);
+  const pathCostVersion = getPathCostCacheVersion(state);
   if (astarStats) {
     astarStats.requests += 1;
     astarStats.lastFrom = worldToTile(entity.x, entity.z, state.grid);
@@ -142,7 +200,8 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     astarStats.budgetUsedMs = pathBudget.usedMs;
     astarStats.budgetMaxMs = pathBudget.maxMs;
     astarStats.budgetSkips = Number(astarStats.budgetSkips ?? 0);
-    astarStats.trafficVersion = pathCostVersion;
+    astarStats.trafficVersion = currentTrafficVersion;
+    astarStats.pathCostVersion = pathCostVersion;
     astarStats.lastTrafficHotspots = trafficData.hotspotCount;
     astarStats.lastTrafficPeakLoad = trafficData.peakLoad;
   }
@@ -152,6 +211,94 @@ export function setTargetAndPath(entity, targetTile, state, services) {
 
   let path = cachedPath;
   let durationMs = 0;
+  let resolvedByWorker = false;
+  const workerKey = buildPathWorkerKey(state.grid.version, start, targetTile, pathCostVersion);
+  if (!path && shouldUsePathWorkers(entity, state, services)) {
+    const pendingKey = String(retryState?.pendingPathWorkerKey ?? "");
+    let workerResult = null;
+    if (pendingKey) {
+      if (pendingKey !== workerKey) {
+        services.pathWorkerPool.take(pendingKey);
+        retryState.pendingPathWorkerKey = "";
+        retryState.pendingPathTargetTile = null;
+      } else {
+        workerResult = services.pathWorkerPool.take(pendingKey);
+        if (workerResult) {
+          retryState.pendingPathWorkerKey = "";
+          retryState.pendingPathTargetTile = null;
+        } else if (services.pathWorkerPool.hasPending(pendingKey)) {
+          if (astarStats) {
+            astarStats.workerPendingSkips = Number(astarStats.workerPendingSkips ?? 0) + 1;
+            applyPathWorkerStats(state, services);
+          }
+          return false;
+        } else {
+          retryState.pendingPathWorkerKey = "";
+        }
+      }
+    }
+    if (!workerResult) {
+      workerResult = services.pathWorkerPool.take(workerKey);
+    }
+    if (workerResult) {
+      path = workerResult.path;
+      durationMs = Number(workerResult.durationMs ?? 0);
+      resolvedByWorker = true;
+      if (astarStats) {
+        astarStats.workerHits = Number(astarStats.workerHits ?? 0) + 1;
+        astarStats.lastDurationMs = durationMs;
+        astarStats.avgDurationMs = astarStats.avgDurationMs * 0.92 + durationMs * 0.08;
+      }
+    } else if (!resolvedByWorker) {
+      const accepted = services.pathWorkerPool.request({
+        key: workerKey,
+        gridVersion: Number(state.grid.version ?? 0),
+        costVersion: pathCostVersion,
+        start,
+        goal: targetTile,
+        weatherMoveCostMultiplier: state.weather.moveCostMultiplier,
+        dynamicCosts: snapshotDynamicCostsForPathWorker(state),
+        grid: getPathWorkerGridSnapshot(state),
+      });
+      if (astarStats) {
+        astarStats.workerRequests = Number(astarStats.workerRequests ?? 0) + 1;
+        if (accepted) astarStats.workerQueued = Number(astarStats.workerQueued ?? 0) + 1;
+        else astarStats.workerBackpressure = Number(astarStats.workerBackpressure ?? 0) + 1;
+        applyPathWorkerStats(state, services);
+      }
+      if (accepted) {
+        if (retryState) {
+          retryState.pendingPathWorkerKey = workerKey;
+          retryState.pendingPathTargetTile = { ix: targetTile.ix, iz: targetTile.iz };
+        }
+        entity.targetTile = targetTile;
+        return false;
+      }
+      if (retryState) {
+        const jitter = services?.rng?.next ? services.rng.next() * PATH_RETRY_BUDGET_SKIP_JITTER_SEC : PATH_RETRY_BUDGET_SKIP_JITTER_SEC * 0.5;
+        retryState.nextPathRetrySec = nowSec + PATH_RETRY_BUDGET_SKIP_BASE_SEC + jitter;
+      }
+      return false;
+    }
+  }
+
+  if (resolvedByWorker && !path) {
+    entity.path = null;
+    entity.pathIndex = 0;
+    entity.pathGridVersion = -1;
+    entity.pathTrafficVersion = 0;
+    entity.targetTile = null;
+    if (astarStats) astarStats.fail += 1;
+    if (retryState) {
+      const jitter = services?.rng?.next ? services.rng.next() * PATH_RETRY_FAIL_JITTER_SEC : PATH_RETRY_FAIL_JITTER_SEC * 0.5;
+      retryState.nextPathRetrySec = nowSec + PATH_RETRY_FAIL_BASE_SEC + jitter;
+      retryState.pendingPathWorkerKey = "";
+      retryState.pendingPathTargetTile = null;
+    }
+    applyPathWorkerStats(state, services);
+    return false;
+  }
+
   if (!path) {
     if (pathBudget.usedMs >= pathBudget.maxMs) {
       pathBudget.skipped += 1;
@@ -195,6 +342,8 @@ export function setTargetAndPath(entity, targetTile, state, services) {
     if (retryState) {
       const jitter = services?.rng?.next ? services.rng.next() * PATH_RETRY_FAIL_JITTER_SEC : PATH_RETRY_FAIL_JITTER_SEC * 0.5;
       retryState.nextPathRetrySec = nowSec + PATH_RETRY_FAIL_BASE_SEC + jitter;
+      retryState.pendingPathWorkerKey = "";
+      retryState.pendingPathTargetTile = null;
     }
     return false;
   }
@@ -202,6 +351,7 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   if (!cachedPath) {
     services.pathCache.set(state.grid.version, start, targetTile, pathCostVersion, path);
   }
+  applyPathWorkerStats(state, services);
 
   entity.path = path;
   entity.pathIndex = 0;
@@ -230,12 +380,51 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   logic.totalPathRecalcs = Number(logic.totalPathRecalcs ?? 0) + 1;
   const entityId = String(entity.id ?? "unknown");
   logic.pathRecalcByEntity[entityId] = Number(logic.pathRecalcByEntity[entityId] ?? 0) + 1;
-  if (retryState) retryState.nextPathRetrySec = -Infinity;
+  if (retryState) {
+    retryState.nextPathRetrySec = -Infinity;
+    retryState.pendingPathWorkerKey = "";
+    retryState.pendingPathTargetTile = null;
+  }
   return true;
 }
 
+/**
+ * M4 road compounding: per-worker consecutive-on-road-step counter.
+ * Tracks how many ticks in a row the worker has occupied a ROAD or BRIDGE
+ * tile. Caps at BALANCE.roadStackStepCap. Resets to 0 as soon as the worker
+ * steps off a road/bridge tile. Stored on entity.blackboard.roadStep.
+ */
+function updateRoadStep(entity, state) {
+  if (!entity || entity.type !== "WORKER" || !state?.grid) return;
+  const blackboard = entity.blackboard ?? (entity.blackboard = {});
+  const cur = worldToTile(entity.x, entity.z, state.grid);
+  const curTile = getTile(state.grid, cur.ix, cur.iz);
+  if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
+    const cap = Math.max(0, Number(BALANCE.roadStackStepCap ?? 0));
+    const prev = Math.max(0, Number(blackboard.roadStep ?? 0));
+    blackboard.roadStep = Math.min(cap, prev + 1);
+  } else {
+    blackboard.roadStep = 0;
+  }
+}
+
 export function followPath(entity, state, dt) {
+  // M4 road compounding: update per-tick roadStep BEFORE any early-return so the
+  // counter stays in sync with the worker's actual tile occupancy (including
+  // the final tick when the path completes).
+  updateRoadStep(entity, state);
+
   if (!entity.path || entity.pathIndex >= entity.path.length) {
+    // Gentle center pull when near map edge to prevent boids forces trapping entity at boundary
+    if (state?.grid) {
+      const boundsX = (state.grid.width * state.grid.tileSize) / 2 - 0.5;
+      const boundsZ = (state.grid.height * state.grid.tileSize) / 2 - 0.5;
+      const nearEdgeX = Math.abs(entity.x) > boundsX * 0.92;
+      const nearEdgeZ = Math.abs(entity.z) > boundsZ * 0.92;
+      if (nearEdgeX || nearEdgeZ) {
+        return { done: true, desired: { x: -entity.x * 0.08, z: -entity.z * 0.08 } };
+      }
+    }
     return { done: true, desired: { x: 0, z: 0 } };
   }
 
@@ -265,13 +454,33 @@ export function followPath(entity, state, dt) {
     }
   }
 
-  const speed = entity.type === "WORKER"
-    ? BALANCE.workerSpeed
+  let speed = entity.type === "WORKER"
+    ? BALANCE.workerSpeed * Number(entity.preferences?.speedMultiplier ?? 1)
     : entity.type === "VISITOR"
       ? BALANCE.visitorSpeed
       : entity.kind === "PREDATOR"
         ? BALANCE.predatorSpeed
         : BALANCE.herbivoreSpeed;
+
+  // Road speed bonus: workers on road/bridge tiles move faster, degraded by wear.
+  // M4 road compounding: the consecutive-step counter (roadStep) was already
+  // advanced at the top of followPath; here we apply the stacked multiplier.
+  if (entity.type === "WORKER" && state.grid) {
+    const cur = worldToTile(entity.x, entity.z, state.grid);
+    const curTile = getTile(state.grid, cur.ix, cur.iz);
+    if (curTile === TILE.ROAD || curTile === TILE.BRIDGE) {
+      const idx = cur.ix + cur.iz * state.grid.width;
+      const wear = state.grid.tileState?.get(idx)?.wear ?? 0;
+      const baseRoadBonus = (BALANCE.roadSpeedMultiplier ?? 1.35);
+      const cap = Math.max(0, Number(BALANCE.roadStackStepCap ?? 0));
+      const perStep = Math.max(0, Number(BALANCE.roadStackPerStep ?? 0));
+      const step = Math.min(cap, Math.max(0, Number(entity.blackboard?.roadStep ?? 0)));
+      const stackMultiplier = 1 + step * perStep;
+      const wearDegrade = 1 - wear;
+      // Stacking scales the bonus delta; wear-degradation still applies multiplicatively.
+      speed *= 1 + (baseRoadBonus - 1) * wearDegrade * stackMultiplier;
+    }
+  }
 
   const len = Math.hypot(dx, dz) || 1;
   return {
@@ -322,4 +531,8 @@ export function clearPath(entity) {
   entity.pathGridVersion = -1;
   entity.pathTrafficVersion = 0;
   entity.targetTile = null;
+  if (entity.blackboard) {
+    entity.blackboard.pendingPathWorkerKey = "";
+    entity.blackboard.pendingPathTargetTile = null;
+  }
 }

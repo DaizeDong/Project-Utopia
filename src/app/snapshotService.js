@@ -102,7 +102,8 @@ function migrateLegacySessionState(snapshot) {
   const outcome = String(session.outcome ?? "none");
   snapshot.session = {
     phase: phase === "active" || phase === "end" ? phase : "menu",
-    outcome: outcome === "win" || outcome === "loss" ? outcome : "none",
+    // v0.8.0 Phase 4 — "win" outcome retired; survival mode only persists "loss".
+    outcome: outcome === "loss" ? outcome : "none",
     reason: typeof session.reason === "string" ? session.reason : "",
     endedAtSec: Number.isFinite(Number(session.endedAtSec)) ? Number(session.endedAtSec) : -1,
   };
@@ -172,6 +173,9 @@ export function restoreSnapshotState(serialized) {
   migrateLegacySessionState(snapshot);
   ensureAiRuntimeDefaults(snapshot);
   snapshot.metrics.warningLog ??= [];
+  snapshot.metrics.resourceEmptySec ??= { food: 0, wood: 0 };
+  snapshot.metrics.resourceEmptySec.food = Number(snapshot.metrics.resourceEmptySec.food ?? 0);
+  snapshot.metrics.resourceEmptySec.wood = Number(snapshot.metrics.resourceEmptySec.wood ?? 0);
   snapshot.metrics.invalidTransitionCount ??= 0;
   snapshot.metrics.idleWithoutReasonSec ??= {};
   snapshot.metrics.pathRecalcPerEntityPerMin ??= 0;
@@ -233,6 +237,17 @@ export function restoreSnapshotState(serialized) {
   snapshot.weather.hazardFocusSummary ??= "";
   snapshot.weather.pressureScore ??= 0;
   snapshot.gameplay.wildlifeRuntime ??= createDefaultWildlifeRuntime();
+  snapshot.gameplay.milestonesSeen = Array.isArray(snapshot.gameplay.milestonesSeen)
+    ? snapshot.gameplay.milestonesSeen
+    : [];
+  snapshot.gameplay.milestoneBaseline ??= {
+    warehouses: Number(snapshot.buildings?.warehouses ?? 0),
+    farms: Number(snapshot.buildings?.farms ?? 0),
+    lumbers: Number(snapshot.buildings?.lumbers ?? 0),
+    kitchens: Number(snapshot.buildings?.kitchens ?? 0),
+    meals: Number(snapshot.resources?.meals ?? 0),
+    tools: Number(snapshot.resources?.tools ?? 0),
+  };
   snapshot.debug.logic ??= {
     invalidTransitions: 0,
     goalFlipCount: 0,

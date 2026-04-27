@@ -1,7 +1,7 @@
-import { BALANCE } from "../../config/balance.js";
-import { createWorker } from "../../entities/EntityFactory.js";
-import { randomPassableTile, tileToWorld } from "../../world/grid/Grid.js";
+import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
+import { TILE } from "../../config/constants.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
+import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 
 const DOCTRINE_PRESETS = Object.freeze({
   balanced: {
@@ -16,7 +16,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.0, farms: 1.0, lumbers: 1.0, roads: 1.0, walls: 1.0 },
     stockpileTargets: { food: 1.0, wood: 1.0, prosperityFloor: 36 },
     stabilityTargets: { walls: 1.0, holdSec: 1.0, prosperityOffset: 0, threatOffset: 0 },
-    recoveryPackage: { food: 12, wood: 10, threatRelief: 8, prosperityBoost: 6 },
+    recoveryPackage: { food: 20, wood: 14, threatRelief: 10, prosperityBoost: 8 },
   },
   agrarian: {
     id: "agrarian",
@@ -30,7 +30,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.0, farms: 1.18, lumbers: 0.82, roads: 1.0, walls: 0.92 },
     stockpileTargets: { food: 0.88, wood: 1.08, prosperityFloor: 38 },
     stabilityTargets: { walls: 0.94, holdSec: 1.06, prosperityOffset: 2, threatOffset: -2 },
-    recoveryPackage: { food: 16, wood: 8, threatRelief: 7, prosperityBoost: 8 },
+    recoveryPackage: { food: 24, wood: 12, threatRelief: 8, prosperityBoost: 10 },
   },
   industry: {
     id: "industry",
@@ -44,7 +44,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.08, farms: 0.86, lumbers: 1.18, roads: 1.15, walls: 1.0 },
     stockpileTargets: { food: 1.08, wood: 0.86, prosperityFloor: 34 },
     stabilityTargets: { walls: 1.04, holdSec: 0.96, prosperityOffset: -1, threatOffset: 2 },
-    recoveryPackage: { food: 8, wood: 16, threatRelief: 6, prosperityBoost: 6 },
+    recoveryPackage: { food: 16, wood: 20, threatRelief: 8, prosperityBoost: 8 },
   },
   fortress: {
     id: "fortress",
@@ -58,7 +58,7 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 0.96, farms: 0.96, lumbers: 1.0, roads: 0.94, walls: 1.3 },
     stockpileTargets: { food: 0.98, wood: 1.0, prosperityFloor: 33 },
     stabilityTargets: { walls: 1.22, holdSec: 0.88, prosperityOffset: -2, threatOffset: 6 },
-    recoveryPackage: { food: 10, wood: 10, threatRelief: 14, prosperityBoost: 5 },
+    recoveryPackage: { food: 18, wood: 14, threatRelief: 16, prosperityBoost: 6 },
   },
   trade: {
     id: "trade",
@@ -72,9 +72,116 @@ const DOCTRINE_PRESETS = Object.freeze({
     logisticsTargets: { warehouses: 1.2, farms: 0.92, lumbers: 0.92, roads: 1.12, walls: 0.84 },
     stockpileTargets: { food: 0.92, wood: 0.92, prosperityFloor: 40 },
     stabilityTargets: { walls: 0.84, holdSec: 1.05, prosperityOffset: 3, threatOffset: -3 },
-    recoveryPackage: { food: 11, wood: 12, threatRelief: 9, prosperityBoost: 7 },
+    recoveryPackage: { food: 18, wood: 16, threatRelief: 10, prosperityBoost: 8 },
   },
 });
+
+const MILESTONE_RULES = Object.freeze([
+  {
+    kind: "first_farm",
+    key: "firstFarm",
+    label: "First Farm raised",
+    message: "Your colony has a food foothold.",
+    baselineKey: "farms",
+    current: (state) => Number(state.buildings?.farms ?? 0),
+  },
+  {
+    kind: "first_lumber",
+    key: "firstLumber",
+    label: "First Lumber camp raised",
+    message: "Wood supply is online.",
+    baselineKey: "lumbers",
+    current: (state) => Number(state.buildings?.lumbers ?? 0),
+  },
+  {
+    kind: "first_warehouse",
+    key: "firstWarehouse",
+    label: "First extra Warehouse raised",
+    message: "The logistics net has a second anchor.",
+    baselineKey: "warehouses",
+    current: (state) => Number(state.buildings?.warehouses ?? 0),
+  },
+  {
+    kind: "first_kitchen",
+    key: "firstKitchen",
+    label: "First Kitchen raised",
+    message: "Meals can now turn raw food into stamina.",
+    baselineKey: "kitchens",
+    current: (state) => Number(state.buildings?.kitchens ?? 0),
+  },
+  {
+    kind: "first_meal",
+    key: "firstMeal",
+    label: "First Meal served",
+    message: "Prepared food is reaching the colony.",
+    baselineKey: "meals",
+    current: (state) => Number(state.resources?.meals ?? 0),
+  },
+  {
+    kind: "first_tool",
+    key: "firstTool",
+    label: "First Tool forged",
+    message: "Advanced production has started.",
+    baselineKey: "tools",
+    current: (state) => Number(state.resources?.tools ?? 0),
+  },
+  {
+    kind: "first_clinic",
+    key: "firstClinic",
+    label: "First Clinic opened",
+    message: "Herbs can now become medicine.",
+    baselineKey: "clinics",
+    current: (state) => Number(state.buildings?.clinics ?? 0),
+  },
+  {
+    kind: "first_smithy",
+    key: "firstSmithy",
+    label: "First Smithy lit",
+    message: "Stone + wood \u2192 tools is online.",
+    baselineKey: "smithies",
+    current: (state) => Number(state.buildings?.smithies ?? 0),
+  },
+  {
+    kind: "first_medicine",
+    key: "firstMedicine",
+    label: "First Medicine brewed",
+    message: "Injuries are no longer permanent.",
+    baselineKey: "medicine",
+    current: (state) => Number(state.resources?.medicine ?? 0),
+  },
+  {
+    kind: "dev_40",
+    key: "dev40",
+    label: "Dev 40 \u00b7 foothold",
+    message: "Your colony is surviving; widen the production chain.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 40 ? 1 : 0),
+  },
+  {
+    kind: "dev_60",
+    key: "dev60",
+    label: "Dev 60 \u00b7 thriving",
+    message: "Meals are flowing; consider Smithy for tool bonus.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 60 ? 1 : 0),
+  },
+  {
+    kind: "dev_80",
+    key: "dev80",
+    label: "Dev 80 \u00b7 prosperous",
+    message: "You can survive a raid; stockpile medicine and walls.",
+    baselineKey: "__devNever__",
+    current: (state) => (Number(state.gameplay?.devIndexSmoothed ?? 0) >= 80 ? 1 : 0),
+  },
+  {
+    kind: "first_haul_delivery",
+    key: "firstHaul",
+    label: "First warehouse delivery",
+    message: "Haulers are shortening your food trips.",
+    baselineKey: "haulDeliveredLife",
+    current: (state) => Number(state.metrics?.haulDeliveredLife ?? 0),
+  },
+]);
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -94,11 +201,6 @@ function improveModifier(value, mastery, direction = "higher") {
   return Number((base >= 1 ? 1 + (base - 1) * bonus : 1 - (1 - base) / bonus).toFixed(4));
 }
 
-function ceilScaled(value, scale, minimum = 1) {
-  if (value <= 0) return 0;
-  return Math.max(minimum, Math.ceil(value * scale));
-}
-
 function getDoctrineMastery(state) {
   const mastery = Number(state.gameplay?.doctrineMastery ?? 1);
   return Number.isFinite(mastery) ? Math.max(1, mastery) : 1;
@@ -106,7 +208,7 @@ function getDoctrineMastery(state) {
 
 function ensureRecoveryState(state) {
   const recovery = state.gameplay.recovery ?? (state.gameplay.recovery = {
-    charges: 1,
+    charges: 2,
     activeBoostSec: 0,
     lastTriggerSec: -Infinity,
     collapseRisk: 0,
@@ -118,11 +220,6 @@ function ensureRecoveryState(state) {
   recovery.collapseRisk = Math.max(0, Number(recovery.collapseRisk ?? 0));
   recovery.lastReason = String(recovery.lastReason ?? "");
   return recovery;
-}
-
-function addRecoveryCharge(state, amount = 1) {
-  const recovery = ensureRecoveryState(state);
-  recovery.charges = clamp(recovery.charges + amount, 0, BALANCE.recoveryChargeCap);
 }
 
 function getWorkerCount(state) {
@@ -140,39 +237,111 @@ function getDoctrinePreset(state) {
 function ensureProgressionState(state) {
   state.gameplay.doctrineMastery = getDoctrineMastery(state);
   if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+  if (!Array.isArray(state.gameplay.milestonesSeen)) {
+    state.gameplay.milestonesSeen = state.gameplay.milestonesSeen instanceof Set
+      ? Array.from(state.gameplay.milestonesSeen)
+      : [];
+  }
+  state.gameplay.milestoneBaseline ??= {
+    warehouses: Number(state.buildings?.warehouses ?? 0),
+    farms: Number(state.buildings?.farms ?? 0),
+    lumbers: Number(state.buildings?.lumbers ?? 0),
+    kitchens: Number(state.buildings?.kitchens ?? 0),
+    meals: Number(state.resources?.meals ?? 0),
+    tools: Number(state.resources?.tools ?? 0),
+    clinics: Number(state.buildings?.clinics ?? 0),
+    smithies: Number(state.buildings?.smithies ?? 0),
+    medicine: Number(state.resources?.medicine ?? 0),
+    haulDeliveredLife: Number(state.metrics?.haulDeliveredLife ?? 0),
+    __devNever__: 0,
+  };
   return ensureRecoveryState(state);
 }
 
-export function getDoctrineAdjustedTargets(state, runtime) {
-  const modifiers = state.gameplay.modifiers ?? {};
-  return {
-    logistics: {
-      warehouses: ceilScaled(runtime.logisticsTargets.warehouses, Number(modifiers.logisticsWarehouseScale ?? 1)),
-      farms: ceilScaled(runtime.logisticsTargets.farms, Number(modifiers.logisticsFarmScale ?? 1)),
-      lumbers: ceilScaled(runtime.logisticsTargets.lumbers, Number(modifiers.logisticsLumberScale ?? 1)),
-      roads: ceilScaled(runtime.logisticsTargets.roads, Number(modifiers.logisticsRoadScale ?? 1)),
-      walls: ceilScaled(runtime.logisticsTargets.walls, Number(modifiers.logisticsWallScale ?? 1), 0),
-    },
-    stockpile: {
-      food: Math.max(1, Math.round(runtime.stockpileTargets.food * Number(modifiers.stockpileFoodScale ?? 1))),
-      wood: Math.max(1, Math.round(runtime.stockpileTargets.wood * Number(modifiers.stockpileWoodScale ?? 1))),
-      prosperityFloor: Math.max(18, Math.round(Number(modifiers.stockpileProsperityFloor ?? 36))),
-    },
-    stability: {
-      walls: ceilScaled(runtime.stabilityTargets.walls, Number(modifiers.stabilityWallScale ?? 1)),
-      prosperity: clamp(
-        Math.round(runtime.stabilityTargets.prosperity + Number(modifiers.stabilityProsperityOffset ?? 0)),
-        18,
-        90,
-      ),
-      threat: clamp(
-        Math.round(runtime.stabilityTargets.threat + Number(modifiers.stabilityThreatOffset ?? 0)),
-        12,
-        92,
-      ),
-      holdSec: Math.max(10, Math.round(runtime.stabilityTargets.holdSec * Number(modifiers.stabilityHoldScale ?? 1))),
-    },
-  };
+function detectMilestones(state) {
+  const seen = state.gameplay.milestonesSeen;
+  const baseline = state.gameplay.milestoneBaseline ?? {};
+  for (const rule of MILESTONE_RULES) {
+    if (seen.includes(rule.kind)) continue;
+    const current = Number(rule.current(state));
+    const start = Number(baseline[rule.baselineKey] ?? 0);
+    if (!Number.isFinite(current) || current <= Math.max(start, 0)) continue;
+    seen.push(rule.kind);
+    emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, {
+      kind: rule.kind,
+      key: rule.key,
+      label: rule.label,
+      message: rule.message,
+      current,
+      baseline: start,
+    });
+    if (state.controls) {
+      state.controls.actionMessage = `${rule.label}: ${rule.message}`;
+      state.controls.actionKind = "milestone";
+    }
+  }
+}
+
+function scenarioObjectiveId(entry, fallback) {
+  return String(entry?.id ?? entry?.label ?? fallback).trim() || fallback;
+}
+
+function ensureScenarioObjectiveState(state, runtime) {
+  const scenarioId = String(runtime?.scenario?.id ?? "default");
+  const current = state.gameplay.scenarioObjectiveSeen;
+  if (!current || current.scenarioId !== scenarioId) {
+    state.gameplay.scenarioObjectiveSeen = {
+      scenarioId,
+      routes: (runtime?.routes ?? [])
+        .filter((route) => route.connected)
+        .map((route, idx) => scenarioObjectiveId(route, `route-${idx}`)),
+      depots: (runtime?.depots ?? [])
+        .filter((depot) => depot.ready)
+        .map((depot, idx) => scenarioObjectiveId(depot, `depot-${idx}`)),
+    };
+  }
+  return state.gameplay.scenarioObjectiveSeen;
+}
+
+function emitScenarioObjectiveMilestone(state, detail) {
+  emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, detail);
+  logObjective(state, detail.message);
+  if (state.controls) {
+    state.controls.actionMessage = detail.message;
+    state.controls.actionKind = "milestone";
+  }
+}
+
+function detectScenarioObjectiveMilestones(state, runtime) {
+  const seen = ensureScenarioObjectiveState(state, runtime);
+  for (const [idx, route] of (runtime?.routes ?? []).entries()) {
+    const id = scenarioObjectiveId(route, `route-${idx}`);
+    if (!route.connected || seen.routes.includes(id)) continue;
+    seen.routes.push(id);
+    const label = String(route.label ?? "supply route").trim();
+    emitScenarioObjectiveMilestone(state, {
+      kind: "scenario_route_connected",
+      key: id,
+      label: `Route online: ${label}`,
+      message: `Route online: ${label}. Workers can haul through the repaired line.`,
+      current: seen.routes.length,
+      baseline: 0,
+    });
+  }
+  for (const [idx, depot] of (runtime?.depots ?? []).entries()) {
+    const id = scenarioObjectiveId(depot, `depot-${idx}`);
+    if (!depot.ready || seen.depots.includes(id)) continue;
+    seen.depots.push(id);
+    const label = String(depot.label ?? "depot").trim();
+    emitScenarioObjectiveMilestone(state, {
+      kind: "scenario_depot_ready",
+      key: id,
+      label: `Depot reclaimed: ${label}`,
+      message: `Depot reclaimed: ${label}. Warehouse coverage now reaches this objective zone.`,
+      current: seen.depots.length,
+      baseline: 0,
+    });
+  }
 }
 
 function buildCoverageStatus(state) {
@@ -193,15 +362,20 @@ function buildCoverageStatus(state) {
   const overloaded = Number(logistics.overloadedWarehouses ?? 0);
   const stranded = Number(logistics.strandedCarryWorkers ?? 0);
   const depotDistance = Number(logistics.avgDepotDistance ?? 0);
-  const progress = Math.min(
-    clamp(1 - isolated * 0.55, 0, 1),
-    clamp(1 - stretched * 0.18, 0, 1),
-    clamp(1 - overloaded * 0.26, 0, 1),
-    clamp(1 - stranded * 0.55, 0, 1),
-    depotDistance > BALANCE.workerFarDepotDistance
-      ? clamp(1 - (depotDistance - BALANCE.workerFarDepotDistance) * 0.03, 0, 1)
-      : 1,
-  );
+  // Weighted average instead of Math.min — single logistics issue no longer zeros all progress
+  const penalties = [
+    { value: clamp(1 - isolated * 0.35, 0, 1), weight: 0.30 },
+    { value: clamp(1 - stretched * 0.12, 0, 1), weight: 0.15 },
+    { value: clamp(1 - overloaded * 0.20, 0, 1), weight: 0.20 },
+    { value: clamp(1 - stranded * 0.35, 0, 1), weight: 0.20 },
+    {
+      value: depotDistance > BALANCE.workerFarDepotDistance
+        ? clamp(1 - (depotDistance - BALANCE.workerFarDepotDistance) * 0.02, 0, 1)
+        : 1,
+      weight: 0.15,
+    },
+  ];
+  const progress = penalties.reduce((sum, p) => sum + p.value * p.weight, 0);
 
   let hint = "";
   if (isolated > 0) {
@@ -234,71 +408,10 @@ function computeCollapseRisk(state, runtime, coverage) {
   return Number(clamp((resourceRisk + prosperityRisk + threatRisk + networkRisk + frontierRisk) * 100, 0, 100).toFixed(1));
 }
 
-function getRecoveryHint(state, runtime, recovery) {
-  if (recovery.activeBoostSec > 0) {
-    return `Recovery window ${recovery.activeBoostSec.toFixed(0)}s: use the relief to rebuild routes and refill depots.`;
-  }
-  if (recovery.collapseRisk < BALANCE.recoveryHintRiskThreshold) return "";
-  const missingRoute = runtime.routes.find((route) => !route.connected);
-  if (recovery.charges > 0 && (runtime.connectedRoutes > 0 || runtime.readyDepots > 0)) {
-    return `Collapse risk ${recovery.collapseRisk.toFixed(0)}%. Keep a frontier route online to trigger emergency relief if the colony dips further.`;
-  }
-  if (missingRoute) {
-    return `Collapse risk ${recovery.collapseRisk.toFixed(0)}%. Reopen the ${missingRoute.label} first or the colony has no recovery path.`;
-  }
-  return `Collapse risk ${recovery.collapseRisk.toFixed(0)}%. Stabilize food, wood, and threat before the colony fails.`;
-}
-
-function getSpatialPressureHint(state) {
-  const spatial = state.metrics?.spatialPressure ?? {};
-  if (
-    Number(spatial.weatherPressure ?? 0) < 0.45
-    && Number(spatial.eventPressure ?? 0) < 0.85
-    && Number(spatial.contestedZones ?? 0) <= 0
-  ) {
-    return "";
-  }
-
-  const activeEvent = state.events.active?.[0] ?? null;
-  const targetLabel = String(activeEvent?.payload?.targetLabel ?? state.weather?.hazardFocusSummary ?? "").trim();
-  if (activeEvent?.type === "banditRaid") {
-    return `Spatial pressure is concentrated on ${targetLabel || "the frontier"}. Reopen a safer lane or add walls before holding objectives.`;
-  }
-  if (activeEvent?.type === "tradeCaravan" && Number(activeEvent.payload?.rewardMultiplier ?? 1) < 1.1) {
-    return `Trade lanes are weather-contested near ${targetLabel || "the depot corridor"}. Clear the route or place safer depot support before relying on caravan income.`;
-  }
-  return `Spatial pressure is spiking${targetLabel ? ` around ${targetLabel}` : ""}. Adjust roads, depots, or walls before waiting out the timer.`;
-}
-
-function applyPacingHint(state, runtime, coverage, recovery, baseHint) {
-  const recoveryHint = getRecoveryHint(state, runtime, recovery);
-  if (recoveryHint) return recoveryHint;
-  if (coverage.progress < 1 && coverage.hint) return coverage.hint;
-  const spatialHint = getSpatialPressureHint(state, runtime);
-  if (spatialHint) return spatialHint;
-  return baseHint;
-}
-
 function logObjective(state, text) {
   const msg = `[${state.metrics.timeSec.toFixed(1)}s] ${text}`;
   state.gameplay.objectiveLog.unshift(msg);
   state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
-}
-
-function applyObjectiveReward(state, objective) {
-  if (objective.id === "logistics-1") {
-    state.resources.food += 18;
-    state.resources.wood += 18;
-    addRecoveryCharge(state, 1);
-  } else if (objective.id === "stockpile-1") {
-    for (let i = 0; i < 4; i += 1) {
-      const tile = randomPassableTile(state.grid);
-      const p = tileToWorld(tile.ix, tile.iz, state.grid);
-      state.agents.push(createWorker(p.x, p.z));
-    }
-  } else if (objective.id === "stability-1") {
-    state.gameplay.doctrineMastery = Number((getDoctrineMastery(state) * BALANCE.doctrineMasteryRewardMultiplier).toFixed(4));
-  }
 }
 
 function maybeTriggerRecovery(state, runtime, coverage, dt) {
@@ -315,7 +428,9 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
       Number(state.gameplay.prosperity ?? 0) < BALANCE.recoveryCriticalProsperityThreshold
       && Number(state.gameplay.threat ?? 0) > BALANCE.recoveryCriticalThreatThreshold
     );
-  if (!networkReady || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0) {
+  // Network readiness is only required when resources aren't severely depleted
+  const desperateResources = Number(state.resources.food ?? 0) <= 3 || Number(state.resources.wood ?? 0) <= 3;
+  if ((!networkReady && !desperateResources) || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0) {
     return recovery;
   }
   if (nowSec - recovery.lastTriggerSec < BALANCE.recoveryCooldownSec) {
@@ -338,131 +453,70 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
   recovery.lastTriggerSec = nowSec;
   recovery.lastReason = criticalResources ? "resource collapse" : "threat spiral";
 
-  logObjective(state, `Emergency relief arrived: +${foodBoost} food, +${woodBoost} wood, threat -${threatRelief.toFixed(0)}.`);
-  state.controls.actionMessage = "Emergency relief stabilized the colony. Use the window to rebuild routes and depots.";
+  // v0.8.2 Round-1 02e-indie-critic — narrativize the emergency relief toast.
+  // Previous copy ("Emergency relief stabilized the colony. Use the window to
+  // rebuild routes and depots.") read as a commit-log entry; replaced with a
+  // scene-setting sentence so the event feels diegetic. Mechanics unchanged —
+  // same resources applied, same actionKind, same recovery charge consumed.
+  logObjective(state, `A relief caravan crested the ridge as the last grain ran out — +${foodBoost} food, +${woodBoost} wood, threat eased by ${threatRelief.toFixed(0)}.`);
+  state.controls.actionMessage = "The colony breathes again. Rebuild your routes before the next wave.";
   state.controls.actionKind = "success";
   return recovery;
 }
 
-function updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, recovery) {
-  const objectives = state.gameplay.objectives;
-  const idx = state.gameplay.objectiveIndex;
-  if (idx >= objectives.length) return;
-  const objective = objectives[idx];
-  if (objective.completed) {
-    state.gameplay.objectiveIndex += 1;
-    return;
+// v0.8.0 Phase 4 — Survival Mode. Replaces updateObjectiveProgress as the
+// primary per-tick scoring path. Accrues a running score on
+// `state.metrics.survivalScore`:
+//   +BALANCE.survivalScorePerSecond per in-game second survived
+//   +BALANCE.survivalScorePerBirth on each newly observed birth event
+//   -BALANCE.survivalScorePenaltyPerDeath on each newly observed colonist death
+// Births are surfaced by PopulationGrowthSystem setting
+// `state.metrics.lastBirthGameSec` = `state.metrics.timeSec` on spawn; this
+// function caches the previous value to detect new births. Deaths are
+// detected via delta on `state.metrics.deathsTotal`.
+export function updateSurvivalScore(state, dt) {
+  if (!state || !state.metrics) return;
+  const metrics = state.metrics;
+  metrics.survivalScore = Number.isFinite(Number(metrics.survivalScore))
+    ? Number(metrics.survivalScore)
+    : 0;
+
+  const perSec = Number(BALANCE.survivalScorePerSecond ?? 1);
+  const perBirth = Number(BALANCE.survivalScorePerBirth ?? 5);
+  const perDeath = Number(BALANCE.survivalScorePenaltyPerDeath ?? 10);
+  const ticks = Math.max(0, Number(dt) || 0);
+  metrics.survivalScore += perSec * ticks;
+
+  // Birth detection: PopulationGrowthSystem increments metrics.birthsTotal on
+  // each spawn. Diff against a cached cursor so every birth scores exactly
+  // once, even when multiple births land inside the same integer `timeSec`
+  // (silent-failure C2: the prior timestamp cursor dropped those).
+  //
+  // v0.8.0 Phase 4 iteration SR2: if a caller constructed `metrics` without
+  // `survivalLastBirthsSeen` but set `birthsTotal` to a non-zero baseline
+  // (tests that bypass createInitialGameState), seed the cursor to the
+  // current total so we don't retroactively score pre-existing births.
+  const birthsTotal = Number(metrics.birthsTotal ?? 0);
+  if (metrics.survivalLastBirthsSeen === undefined) {
+    metrics.survivalLastBirthsSeen = birthsTotal;
+  }
+  const prevBirthsSeen = Number(metrics.survivalLastBirthsSeen ?? 0);
+  if (Number.isFinite(birthsTotal) && birthsTotal > prevBirthsSeen) {
+    metrics.survivalScore += perBirth * (birthsTotal - prevBirthsSeen);
+    metrics.survivalLastBirthsSeen = birthsTotal;
   }
 
-  const routeP = runtime.routes.length > 0 ? runtime.connectedRoutes / runtime.routes.length : 1;
-  const depotP = runtime.depots.length > 0 ? runtime.readyDepots / runtime.depots.length : 1;
-
-  if (objective.id === "logistics-1") {
-    const targets = doctrineTargets.logistics;
-    const wP = clamp(runtime.counts.warehouses / Math.max(1, targets.warehouses), 0, 1);
-    const fP = clamp(runtime.counts.farms / Math.max(1, targets.farms), 0, 1);
-    const lP = clamp(runtime.counts.lumbers / Math.max(1, targets.lumbers), 0, 1);
-    const rP = clamp(runtime.counts.roads / Math.max(1, targets.roads), 0, 1);
-    const wallP = targets.walls > 0 ? clamp(runtime.counts.walls / Math.max(1, targets.walls), 0, 1) : 1;
-    objective.progress = Number((Math.min(routeP, depotP, wP, fP, lP, rP, wallP, coverage.progress) * 100).toFixed(1));
-
-    const missingRoute = runtime.routes.find((route) => !route.connected);
-    const missingDepot = runtime.depots.find((depot) => !depot.ready);
-    const doctrineName = getDoctrinePreset(state).name;
-    const baseHint = missingRoute
-      ? missingRoute.hint
-      : missingDepot
-        ? missingDepot.hint
-        : `Under ${doctrineName}, expand to ${targets.warehouses} warehouses, ${targets.farms} farms, ${targets.lumbers} lumbers, ${targets.roads} roads${targets.walls > 0 ? `, and ${targets.walls} walls` : ""}.`;
-
-    state.gameplay.objectiveHint = applyPacingHint(state, runtime, coverage, recovery, baseHint);
-
-    if (routeP >= 1 && depotP >= 1 && wP >= 1 && fP >= 1 && lP >= 1 && rP >= 1 && wallP >= 1 && coverage.progress >= 1) {
-      objective.completed = true;
-      logObjective(state, `Objective complete: ${objective.title}`);
-      applyObjectiveReward(state, objective);
-      state.gameplay.objectiveIndex += 1;
-      state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.afterLogistics ?? "Starter logistics online. Refill the stockpile.";
-      state.controls.actionMessage = `Objective complete: ${objective.title}`;
-      state.controls.actionKind = "success";
-    }
-    return;
+  // Death detection: MortalitySystem increments metrics.deathsTotal on every
+  // death. Diff against a cached baseline to apply the penalty exactly once
+  // per death. Same SR2 seeding rule as births above.
+  const deathsTotal = Number(metrics.deathsTotal ?? 0);
+  if (metrics.survivalLastDeathsSeen === undefined) {
+    metrics.survivalLastDeathsSeen = deathsTotal;
   }
-
-  if (objective.id === "stockpile-1") {
-    const targets = doctrineTargets.stockpile;
-    const foodP = clamp(state.resources.food / Math.max(1, targets.food), 0, 1);
-    const woodP = clamp(state.resources.wood / Math.max(1, targets.wood), 0, 1);
-    const prosperityP = clamp(state.gameplay.prosperity / Math.max(1, targets.prosperityFloor), 0, 1);
-    const networkP = Math.min(routeP, depotP, coverage.progress);
-    objective.progress = Number((Math.min(foodP, woodP, prosperityP, networkP) * 100).toFixed(1));
-
-    const missingRoute = runtime.routes.find((route) => !route.connected);
-    const missingDepot = runtime.depots.find((depot) => !depot.ready);
-    let baseHint = `Grow reserves to ${targets.food} food and ${targets.wood} wood while keeping prosperity above ${targets.prosperityFloor}.`;
-    if (missingRoute) {
-      baseHint = `Stockpile is blocked until the ${missingRoute.label} stays online.`;
-    } else if (missingDepot) {
-      baseHint = `Stockpile growth is unstable until ${missingDepot.label} is reclaimed.`;
-    } else if (coverage.progress < 1 && coverage.hint) {
-      baseHint = coverage.hint;
-    } else if (prosperityP < 1) {
-      baseHint = `Prosperity is too low for safe stockpiling. Stabilize the network before waiting for resources.`;
-    }
-
-    state.gameplay.objectiveHint = applyPacingHint(state, runtime, coverage, recovery, baseHint);
-    if (foodP >= 1 && woodP >= 1 && prosperityP >= 1 && networkP >= 1) {
-      objective.completed = true;
-      logObjective(state, `Objective complete: ${objective.title}`);
-      applyObjectiveReward(state, objective);
-      state.gameplay.objectiveIndex += 1;
-      state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.afterStockpile ?? "Fortify the colony and hold stability under pressure.";
-      state.controls.actionMessage = `Objective complete: ${objective.title}`;
-      state.controls.actionKind = "success";
-    }
-    return;
-  }
-
-  if (objective.id === "stability-1") {
-    const targets = doctrineTargets.stability;
-    const wallsReady = runtime.counts.walls >= targets.walls;
-    const frontierP = Math.min(routeP, depotP, coverage.progress);
-    const stable = wallsReady
-      && frontierP >= 1
-      && state.gameplay.prosperity >= targets.prosperity
-      && state.gameplay.threat <= targets.threat;
-    if (stable) {
-      state.gameplay.objectiveHoldSec += dt;
-    } else {
-      state.gameplay.objectiveHoldSec = Math.max(0, state.gameplay.objectiveHoldSec - dt * BALANCE.objectiveHoldDecayPerSecond);
-    }
-    const wallP = clamp(runtime.counts.walls / Math.max(1, targets.walls), 0, 1);
-    const holdP = clamp(state.gameplay.objectiveHoldSec / Math.max(1, targets.holdSec), 0, 1);
-    objective.progress = Number((Math.min(wallP, holdP, frontierP) * 100).toFixed(1));
-
-    let baseHint = !wallsReady
-      ? `Build ${targets.walls} walls under the current doctrine before starting the stability hold.`
-      : `Hold prosperity >= ${targets.prosperity} and threat <= ${targets.threat} for ${targets.holdSec} seconds while frontier routes remain online.`;
-    if (frontierP < 1) {
-      const missingRoute = runtime.routes.find((route) => !route.connected);
-      const missingDepot = runtime.depots.find((depot) => !depot.ready);
-      baseHint = missingRoute
-        ? `Stability hold is paused while the ${missingRoute.label} is broken.`
-        : missingDepot
-          ? `Stability hold is paused until ${missingDepot.label} is reclaimed.`
-          : coverage.hint || baseHint;
-    }
-
-    state.gameplay.objectiveHint = applyPacingHint(state, runtime, coverage, recovery, baseHint);
-    if (state.gameplay.objectiveHoldSec >= targets.holdSec && wallsReady && frontierP >= 1) {
-      objective.completed = true;
-      logObjective(state, `Objective complete: ${objective.title}`);
-      applyObjectiveReward(state, objective);
-      state.gameplay.objectiveIndex += 1;
-      state.gameplay.objectiveHint = runtime.scenario?.hintCopy?.completed ?? "All objectives completed.";
-      state.controls.actionMessage = `Objective complete: ${objective.title}`;
-      state.controls.actionKind = "success";
-    }
+  const prevDeathsSeen = Number(metrics.survivalLastDeathsSeen ?? 0);
+  if (Number.isFinite(deathsTotal) && deathsTotal > prevDeathsSeen) {
+    metrics.survivalScore -= perDeath * (deathsTotal - prevDeathsSeen);
+    metrics.survivalLastDeathsSeen = deathsTotal;
   }
 }
 
@@ -478,11 +532,28 @@ function computeProsperity(state) {
   return clamp(resScore + infraScore - weatherPenalty - eventPenalty + 18, 0, 100);
 }
 
+function computeWallMitigation(state) {
+  const grid = state.grid;
+  const wallCount = state.buildings.walls;
+  if (!wallCount || !grid.elevation) {
+    return clamp(wallCount / 24, 0, 1) * 18;
+  }
+  let weightedWalls = 0;
+  const tiles = grid.tiles;
+  const len = grid.width * grid.height;
+  for (let i = 0; i < len; i++) {
+    if (tiles[i] === TILE.WALL) {
+      weightedWalls += 1 + grid.elevation[i] * TERRAIN_MECHANICS.wallElevationDefenseBonus;
+    }
+  }
+  return clamp(weightedWalls / 24, 0, 1) * 18;
+}
+
 function computeThreat(state) {
   const predators = state.animals.filter((a) => a.kind === "PREDATOR").length;
   const sabotageEvents = state.events.active.filter((e) => e.type === "sabotage").length;
   const lowFoodPenalty = state.resources.food < 25 ? (25 - state.resources.food) * 0.8 : 0;
-  const wallMitigation = clamp(state.buildings.walls / 120, 0, 1) * 18;
+  const wallMitigation = computeWallMitigation(state);
   const chaos = clamp(state.debug.boids?.avgNeighbors ?? 0, 0, 4) * 6;
   const spatial = state.metrics?.spatialPressure ?? {};
   const weatherThreat = Number(spatial.weatherPressure ?? 0) * Number(BALANCE.weatherPressureThreat ?? 4.8);
@@ -531,6 +602,10 @@ export class ProgressionSystem {
     this.name = "ProgressionSystem";
   }
 
+  // v0.8.0 Phase 4: DevIndexSystem (runs next in SYSTEM_ORDER) owns the
+  // per-tick economy/colony aggregation into state.gameplay.devIndex* —
+  // do not aggregate economy signals here.
+
   update(dt, state) {
     applyDoctrine(state);
     ensureProgressionState(state);
@@ -549,10 +624,14 @@ export class ProgressionSystem {
     state.gameplay.threat = clamp(state.gameplay.threat, 0, 100);
 
     const runtime = getScenarioRuntime(state);
-    const doctrineTargets = getDoctrineAdjustedTargets(state, runtime);
     const coverage = buildCoverageStatus(state);
-    const updatedRecovery = maybeTriggerRecovery(state, runtime, coverage, dt);
-    updateObjectiveProgress(state, dt, runtime, doctrineTargets, coverage, updatedRecovery);
+    detectScenarioObjectiveMilestones(state, runtime);
+    maybeTriggerRecovery(state, runtime, coverage, dt);
+    // v0.8.0 Phase 4 — Survival Mode. Survival score is the primary per-tick
+    // scoring path; the legacy per-objective progression pipeline has been
+    // retired (objectives no longer drive win outcomes).
+    updateSurvivalScore(state, dt);
+    detectMilestones(state);
   }
 }
 
