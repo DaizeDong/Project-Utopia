@@ -37,8 +37,11 @@ const LLM_RETRY_DELAY_SEC = 60;
 /** Sim seconds an active plan may stall on `waiting_resources` before it's killed.
  *  Why: LLM plans often front-load expensive steps and rely on production to
  *  catch up; without a grace period `isPlanBlocked` kills them on the same
- *  tick they're grounded. */
-const PLAN_STALL_GRACE_SEC = 30;
+ *  tick they're grounded. Tightened from 30→10 (Phase-LLM-Tune): full-system
+ *  LLM benches showed plansCompleted=0/5 because plans hogged the slot for
+ *  30s each while the colony fell behind. 10s is enough for resources to
+ *  accumulate one production cycle. */
+const PLAN_STALL_GRACE_SEC = 10;
 
 // ── State Initialization ────────────────────────────────────────────
 
@@ -283,9 +286,26 @@ export class AgentDirectorSystem {
       }
     }
 
-    // ── Step 3: Fallback — if no active plan, use algorithmic system ──
+    // ── Step 3: Hybrid fallback — keep the rule-based ColonyDirector ticking
+    // alongside the active plan. Phase-LLM-Tune fix: previously fallback only
+    // ran when activePlan===null, but full-system LLM benches showed colony
+    // building output drops 25-40% during plan execution because the plan
+    // executes ~1 step per tick while fallback would have placed many. Run
+    // both: PlanExecutor handles LLM-targeted high-value placements, fallback
+    // handles routine infra. They share state.resources, so when the plan is
+    // resource-constrained the fallback naturally throttles. The throttle
+    // rate (every-3rd-tick when plan active) keeps fallback from outpacing
+    // the plan and consuming resources the plan reserved.
     if (!this._activePlan) {
       this._fallback.update(dt, state, services);
+    } else if (this._fallbackThrottle === undefined) {
+      this._fallbackThrottle = 0;
+    }
+    if (this._activePlan) {
+      this._fallbackThrottle = ((this._fallbackThrottle ?? 0) + 1) % 3;
+      if (this._fallbackThrottle === 0) {
+        this._fallback.update(dt, state, services);
+      }
     }
   }
 

@@ -276,6 +276,154 @@ export function applyPhase5StrategicAdaptations(state, dt) {
   updateDevIndexRepairGoal(state, dt);
 }
 
+/**
+ * Phase-aware preamble — emitted in the LLM prompt so the model gets a
+ * deterministic, structured signal about which phase the colony has
+ * already earned. The deterministic fallback is greedy and stays in
+ * bootstrap; this preamble is the LLM's lever for non-greedy phase
+ * progression and chain-investment decisions.
+ *
+ * Pure function — exported for unit tests.
+ *
+ * @param {object} ctx
+ * @returns {{stage:string, hint:string, bottleneck:string}}
+ */
+export function describePhasePreamble(ctx) {
+  const {
+    farms = 0, quarries = 0, smithies = 0, kitchens = 0,
+    clinics = 0, herbGardens = 0, warehouses = 0,
+    workers = 0, tools = 0, food = 0, threat = 0,
+    devSmoothed = 0, previousPhase = "bootstrap",
+  } = ctx ?? {};
+
+  // Survival overrides
+  if (food < 15 || workers <= 3) {
+    return {
+      stage: "bootstrap-survive",
+      hint: "Food/labor critical — stabilize before any chain investment.",
+      bottleneck: food < 15 ? "food" : "workers",
+    };
+  }
+  if (threat > 75) {
+    return {
+      stage: "fortify",
+      hint: "High threat — wall + defense before growth chains.",
+      bottleneck: "defense",
+    };
+  }
+
+  const bootstrapMet = farms >= 4 && warehouses >= 1;
+
+  if (!bootstrapMet) {
+    return {
+      stage: "bootstrap",
+      hint: "Establish 4 farms + 1 warehouse before chain investment.",
+      bottleneck: farms < 4 ? "farms" : "warehouses",
+    };
+  }
+
+  // Long-horizon investment opportunities ranked by ROI
+  if (quarries === 0) {
+    return {
+      stage: "industrialize",
+      hint: "Bootstrap met. Build quarry to unlock smithy→tools (+15% all production).",
+      bottleneck: "no_quarry",
+    };
+  }
+  if (smithies === 0) {
+    return {
+      stage: "industrialize",
+      hint: "Quarry online. Build smithy NEXT — tools multiply every production building.",
+      bottleneck: "no_smithy",
+    };
+  }
+  // Tool-deficit: if we have a smithy but tools per worker is below half,
+  // workers are bottlenecked by tools — DO NOT add more farms/workers yet.
+  if (tools > 0 && workers > 0 && tools < workers / 2) {
+    return {
+      stage: "industrialize",
+      hint: "Tools per worker low — keep smithy fed before scaling headcount.",
+      bottleneck: "tools_per_worker",
+    };
+  }
+  if (kitchens === 0 && farms >= 6) {
+    return {
+      stage: "process",
+      hint: "Farm surplus — build kitchen to convert food→meals 2x.",
+      bottleneck: "no_kitchen",
+    };
+  }
+  if (clinics === 0 && herbGardens > 0) {
+    return {
+      stage: "process",
+      hint: "Herbs available — clinic reduces mortality, free survival multiplier.",
+      bottleneck: "no_clinic",
+    };
+  }
+
+  // All chains in place — optimize/growth posture
+  if (devSmoothed >= 60) {
+    return {
+      stage: "optimize",
+      hint: "Chains complete and devIndex healthy — fine-tune density and roads.",
+      bottleneck: "none",
+    };
+  }
+  return {
+    stage: "growth",
+    hint: "Chains in place. Expand balanced production and add clusters.",
+    bottleneck: previousPhase === "bootstrap" ? "stuck_in_bootstrap" : "none",
+  };
+}
+
+/**
+ * If the LLM returns an empty/missing primaryGoal, synthesize a
+ * meaningful one from the current state. This guarantees the
+ * downstream `state.ai.strategy.primaryGoal` is never the empty
+ * string — fixing the "Decision shows goal=" UI bug.
+ *
+ * Exported for unit tests.
+ *
+ * @param {object} strategy — already-guarded strategy object
+ * @param {object} state
+ * @returns {string} non-empty primaryGoal under 80 chars
+ */
+export function synthesizePrimaryGoal(strategy, state) {
+  const existing = sanitizeString(strategy?.primaryGoal, 80);
+  if (existing) return existing;
+
+  const buildings = state?.buildings ?? {};
+  const farms = buildings.farms ?? 0;
+  const warehouses = buildings.warehouses ?? 0;
+  const quarries = buildings.quarries ?? 0;
+  const smithies = buildings.smithies ?? 0;
+  const kitchens = buildings.kitchens ?? 0;
+  const food = Number(state?.resources?.food ?? 0);
+  const workers = Number(state?.metrics?.populationStats?.workers ?? 0);
+  const threat = Number(state?.gameplay?.threat ?? 0);
+  const phase = strategy?.phase ?? "bootstrap";
+  const priority = strategy?.priority ?? "grow";
+
+  // Order matches the deterministic fallback's branch ordering, then phase.
+  if (food < 15 || workers <= 3) return "Stabilize food and worker count to prevent collapse";
+  if (threat > 75) return "Hold the line — walls and defense before further growth";
+  if (priority === "complete_objective") return "Push final objective with current chain output";
+  if (farms < 4 || warehouses < 1) return "Establish bootstrap: 4 farms and a warehouse";
+  if (quarries === 0) return "Build quarry to unlock the tool chain";
+  if (smithies === 0) return "Build smithy — tools multiply all production by 15%";
+  if (kitchens === 0 && farms >= 6) return "Build kitchen to convert food surplus into meals";
+
+  switch (phase) {
+    case "bootstrap": return "Establish bootstrap: farms, warehouse, and worker safety";
+    case "industrialize": return "Sustain quarry→smithy chain and feed tool demand";
+    case "process": return "Process raw goods into meals/medicine for multipliers";
+    case "fortify": return "Fortify perimeter and stabilize before resuming growth";
+    case "optimize": return "Optimize chain throughput and warehouse density";
+    case "growth":
+    default: return "Expand balanced production and add new clusters";
+  }
+}
+
 function pushAiCallLog(state, exchange) {
   state.ai.llmCallLog ??= [];
   state.ai.llmCallLog.unshift(exchange);
@@ -494,20 +642,48 @@ export class StrategicDirector {
    */
   buildPromptContent(state) {
     const buildings = state.buildings ?? {};
+    const farms = buildings.farms ?? 0;
+    const quarries = buildings.quarries ?? 0;
+    const smithies = buildings.smithies ?? 0;
+    const kitchens = buildings.kitchens ?? 0;
+    const clinics = buildings.clinics ?? 0;
+    const herbGardens = buildings.herbGardens ?? 0;
+    const warehouses = buildings.warehouses ?? 0;
+    const workers = state.metrics.populationStats?.workers ?? 0;
+    const tools = Math.round(state.resources.tools ?? 0);
+    const food = Math.round(state.resources.food);
+    const threat = Math.round(state.gameplay.threat);
+    const devIndex = Math.round(state.gameplay?.devIndex ?? 0);
+    const devSmoothed = Math.round(state.gameplay?.devIndexSmoothed ?? 0);
+    const previousPhase = state.ai?.strategy?.phase ?? "bootstrap";
+    const previousGoal = state.ai?.strategy?.primaryGoal ?? "";
+
+    // Phase-aware preamble: the deterministic fallback gets stuck in
+    // bootstrap because it requires `farms<4 OR no warehouse` strictly.
+    // The LLM should use this preamble as a tiebreaker when those
+    // hard thresholds are met but other multipliers (tools, kitchen)
+    // would yield more devIndex than another farm.
+    const preamble = describePhasePreamble({
+      farms, quarries, smithies, kitchens, clinics, herbGardens, warehouses,
+      workers, tools, food, threat, devSmoothed, previousPhase,
+    });
+
     const payload = {
       channel: "strategic-director",
       summary: {
         timeSec: state.metrics.timeSec,
-        workers: state.metrics.populationStats?.workers ?? 0,
+        workers,
         deaths: state.metrics.deathsTotal,
-        food: Math.round(state.resources.food),
+        food,
         wood: Math.round(state.resources.wood),
         stone: Math.round(state.resources.stone ?? 0),
         herbs: Math.round(state.resources.herbs ?? 0),
-        tools: Math.round(state.resources.tools ?? 0),
+        tools,
         meals: Math.round(state.resources.meals ?? 0),
         prosperity: Math.round(state.gameplay.prosperity),
-        threat: Math.round(state.gameplay.threat),
+        threat,
+        devIndex,
+        devIndexSmoothed: devSmoothed,
         objectiveIndex: state.gameplay.objectiveIndex,
         currentObjective: state.gameplay.objectives?.[state.gameplay.objectiveIndex]?.title ?? "",
         scenarioFamily: state.gameplay.scenario?.family ?? "",
@@ -516,26 +692,27 @@ export class StrategicDirector {
         season: state.weather?.season ?? null,
       },
       buildings: {
-        warehouses: buildings.warehouses ?? 0,
-        farms: buildings.farms ?? 0,
+        warehouses, farms,
         lumbers: buildings.lumbers ?? 0,
-        quarries: buildings.quarries ?? 0,
-        herbGardens: buildings.herbGardens ?? 0,
-        kitchens: buildings.kitchens ?? 0,
-        smithies: buildings.smithies ?? 0,
-        clinics: buildings.clinics ?? 0,
+        quarries, herbGardens, kitchens, smithies, clinics,
       },
       chainStatus: {
-        food: (buildings.kitchens ?? 0) > 0 ? "complete" : (buildings.farms ?? 0) >= 6 ? "ready_for_kitchen" : "building_farms",
-        tools: (buildings.smithies ?? 0) > 0 ? "complete" : (buildings.quarries ?? 0) > 0 ? "ready_for_smithy" : "no_quarry",
-        medical: (buildings.clinics ?? 0) > 0 ? "complete" : (buildings.herbGardens ?? 0) > 0 ? "ready_for_clinic" : "no_herbs",
+        food: kitchens > 0 ? "complete" : farms >= 6 ? "ready_for_kitchen" : "building_farms",
+        tools: smithies > 0 ? "complete" : quarries > 0 ? "ready_for_smithy" : "no_quarry",
+        medical: clinics > 0 ? "complete" : herbGardens > 0 ? "ready_for_clinic" : "no_herbs",
       },
-      instructions: `Determine the colony's strategic phase and set priorities.
-Output JSON with: strategy.phase (bootstrap|growth|industrialize|process|fortify|optimize),
-strategy.primaryGoal (max 80 chars), strategy.constraints (array of max 5 rules for the tactical planner),
-strategy.resourceBudget ({reserveWood, reserveFood} — minimums to keep in reserve),
-plus standard fields: priority, resourceFocus, defensePosture, riskTolerance, workerFocus.
-Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI.`,
+      previous: { phase: previousPhase, primaryGoal: previousGoal },
+      phasePreamble: preamble,
+      instructions: [
+        "You are a phase-aware strategic director. Pick THE single best phase and write a non-empty primaryGoal.",
+        "Phases: bootstrap < growth < industrialize < process < fortify | optimize. Progress monotonically unless threat>75 (fortify) or food<15 (bootstrap survive).",
+        "Bootstrap exit: farms>=4 AND warehouses>=1 — DO NOT remain in bootstrap once both are met. Move to industrialize if no quarry, else process if no kitchen, else growth.",
+        "Long-horizon multipliers beat greedy headcount: smithy (+15% all production), kitchen (food→meals 2x), clinic (mortality reduction). Recommend investing in these BEFORE adding more farms when chainStatus shows ready_for_X.",
+        "Worker bottleneck: if tools<workers/2 and quarries==0, the bottleneck is tools NOT headcount — primaryGoal should drive quarry→smithy chain.",
+        "Output strict JSON. strategy.primaryGoal MUST be a concrete imperative sentence under 80 chars (e.g., 'Build smithy to unlock tool multiplier' — not empty, not generic 'optimize colony').",
+        "strategy.constraints: 2-5 short rules the tactical planner will follow this tick.",
+        "Required strategy keys: priority, phase, primaryGoal, resourceFocus, defensePosture, riskTolerance, workerFocus, expansionDirection, environmentPreference, constraints, resourceBudget.",
+      ].join(" "),
     };
 
     const memoryText = this.memoryStore.formatForPrompt(
@@ -578,6 +755,15 @@ Key insight: tools (quarry→smithy) multiply ALL production by 15% — high ROI
       } else {
         const guarded = guardStrategy(this.pendingResult.data);
         strategy = guarded.strategy;
+
+        // Post-validation: ensure primaryGoal is non-empty. The
+        // strategic-director.md system prompt did not historically
+        // require primaryGoal, so the LLM frequently omitted it,
+        // leaving the UI to render `goal=` empty. Synthesize from
+        // current state when the model didn't supply one.
+        if (!sanitizeString(strategy.primaryGoal, 80)) {
+          strategy.primaryGoal = synthesizePrimaryGoal(strategy, state);
+        }
 
         // Store observations as reflections in memoryStore
         if (guarded.observations && guarded.observations.length > 0) {
