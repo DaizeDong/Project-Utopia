@@ -34,6 +34,12 @@ const LLM_FAILURE_THRESHOLD = 3;
 /** Seconds to wait before retrying LLM after failures */
 const LLM_RETRY_DELAY_SEC = 60;
 
+/** Sim seconds an active plan may stall on `waiting_resources` before it's killed.
+ *  Why: LLM plans often front-load expensive steps and rely on production to
+ *  catch up; without a grace period `isPlanBlocked` kills them on the same
+ *  tick they're grounded. */
+const PLAN_STALL_GRACE_SEC = 30;
+
 // ── State Initialization ────────────────────────────────────────────
 
 function ensureAgentDirectorState(state) {
@@ -136,6 +142,7 @@ export class AgentDirectorSystem {
     this._pendingLLM = false;
     this._stepEvals = [];
     this._lastEvalText = ""; // P4: formatted evaluation from last completed plan
+    this._planStalledSinceSec = null; // first sim sec the active plan was observed blocked
   }
 
   /**
@@ -194,11 +201,26 @@ export class AgentDirectorSystem {
         }
       }
 
+      // Any progress this tick resets the stall clock.
+      if (executed.length > 0) {
+        this._planStalledSinceSec = null;
+      }
+
       // Check plan completion
       if (isPlanComplete(this._activePlan)) {
         this._completePlan(agentState, state, nowSec);
       } else if (isPlanBlocked(this._activePlan, state)) {
-        this._failPlan(agentState, state, nowSec, "blocked");
+        // Grace period: a plan that's blocked because every remaining step is
+        // `waiting_resources` should get PLAN_STALL_GRACE_SEC of sim time to
+        // accumulate resources before we kill it. Plans whose steps lack a
+        // groundedTile or fail dependencies will stay stalled and be culled
+        // on the same schedule.
+        if (this._planStalledSinceSec === null) this._planStalledSinceSec = nowSec;
+        if (nowSec - this._planStalledSinceSec >= PLAN_STALL_GRACE_SEC) {
+          this._failPlan(agentState, state, nowSec, "blocked");
+        }
+      } else {
+        this._planStalledSinceSec = null;
       }
     }
 
@@ -332,6 +354,7 @@ export class AgentDirectorSystem {
     this._activePlan = null;
     this._planStartSnap = null;
     this._stepEvals = [];
+    this._planStalledSinceSec = null;
     agentState.activePlan = null;
   }
 
@@ -367,6 +390,7 @@ export class AgentDirectorSystem {
     this._activePlan = null;
     this._planStartSnap = null;
     this._stepEvals = [];
+    this._planStalledSinceSec = null;
     agentState.activePlan = null;
   }
 
