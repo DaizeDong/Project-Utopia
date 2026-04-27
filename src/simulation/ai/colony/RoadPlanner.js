@@ -11,9 +11,39 @@
 
 import { TILE, TILE_INFO, MOVE_DIRECTIONS_4 } from "../../../config/constants.js";
 import { inBounds, getTile, toIndex, listTilesByType } from "../../../world/grid/Grid.js";
-import { TERRAIN_MECHANICS } from "../../../config/balance.js";
+import { TERRAIN_MECHANICS, BALANCE } from "../../../config/balance.js";
+import { RoadNetwork } from "../../navigation/RoadNetwork.js";
 
 const ROAD_PASSABLE = new Set([TILE.GRASS, TILE.ROAD, TILE.BRIDGE, TILE.WAREHOUSE]);
+
+// Production-style buildings whose adjacency makes a road tile "compounding" —
+// roads serving multiple worksites are worth a small cost discount because
+// they share traffic. NOT a hard preference; see RESOURCE_RICH_WEIGHT below.
+const RESOURCE_RICH_TILES = new Set([
+  TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+]);
+
+// Multiplicative cost factor applied to GRASS step cost when a candidate road
+// tile sits within 1 Manhattan tile of a resource-producing building. <1
+// rewards the path; >1 would penalize. Tuned to "soft pull" — 0.85 gives the
+// A* a meaningful tie-breaker without redirecting paths that are clearly
+// shorter without the bonus.
+const RESOURCE_RICH_WEIGHT = 0.85;
+
+/**
+ * True iff the tile at (ix,iz) has a 4-neighbour resource-producing building.
+ * Used by `roadAStar` to apply the resource-richness discount.
+ */
+function isAdjacentToResourceTile(grid, ix, iz) {
+  for (const dir of MOVE_DIRECTIONS_4) {
+    const nx = ix + dir.dx;
+    const nz = iz + dir.dz;
+    if (!inBounds(nx, nz, grid)) continue;
+    const t = grid.tiles[toIndex(nx, nz, grid.width)];
+    if (RESOURCE_RICH_TILES.has(t)) return true;
+  }
+  return false;
+}
 
 /**
  * Lightweight A* for road planning — finds shortest path between two tiles
@@ -75,6 +105,15 @@ function roadAStar(grid, startIx, startIz, endIx, endIz) {
       // Elevation penalty for road building
       if (grid.elevation) {
         stepCost += (grid.elevation[nKey] ?? 0.5) * (TERRAIN_MECHANICS?.elevationMovePenalty ?? 0.3);
+      }
+
+      // Resource-richness bonus: prefer road tiles adjacent to other resource
+      // buildings so a single road compounds across multiple worksites.
+      // Only applies on GRASS (the tile we'd actually convert) — we don't want
+      // to discount stepping over an existing road (already cheap) or the
+      // endpoint warehouse. This is a SOFT pull, not a redirect.
+      if (nTile === TILE.GRASS && isAdjacentToResourceTile(grid, nx, nz)) {
+        stepCost *= RESOURCE_RICH_WEIGHT;
       }
 
       const tentativeG = currentG + stepCost;
@@ -213,4 +252,95 @@ export function roadPlansToSteps(plans, maxSteps = 12) {
     }
   }
   return steps;
+}
+
+// ── Logistics-driven road planning entrypoint ─────────────────────────
+
+/** Default trigger thresholds for `planLogisticsRoadSteps`. Tuned in v0.8.2
+ * Phase 8 to fire as soon as a single worksite is unreachable or two carriers
+ * are stranded — both states already block real production. */
+export const LOGISTICS_ROAD_TRIGGERS = Object.freeze({
+  isolatedThreshold: 1,
+  strandedThreshold: 2,
+  // Cap at 4 steps per plan: a single AgentDirector plan budgets ~8 steps and
+  // road-only plans starve other priorities; 4 keeps a 1-tile-wide gap closeable
+  // in one plan while leaving room for non-road steps.
+  maxRoadStepsPerPlan: 4,
+});
+
+/**
+ * Top-level helper: read `state.metrics.logistics` (computed by
+ * ResourceSystem) and, when isolated worksites or stranded carriers exceed
+ * the trigger thresholds, return an ordered list of road-build steps in the
+ * shape `{ type: "road", hint: "<ix>,<iz>", priority, reason }` ready to be
+ * spliced into a fallback plan or surfaced to the LLM.
+ *
+ * Returns `[]` when logistics signals don't warrant intervention OR when no
+ * warehouse anchors exist (nothing to connect to).
+ *
+ * Pure function: does NOT mutate state.
+ *
+ * @param {object} state - game state
+ * @param {object} [opts]
+ * @param {number} [opts.isolatedThreshold] - default 1
+ * @param {number} [opts.strandedThreshold] - default 2
+ * @param {number} [opts.maxRoadStepsPerPlan] - default 4
+ * @returns {Array<{type:"road", hint:string, priority:string, reason:string, ix:number, iz:number}>}
+ */
+export function planLogisticsRoadSteps(state, opts = {}) {
+  if (!state || !state.grid || !state.grid.tiles) return [];
+
+  const triggers = {
+    isolatedThreshold: opts.isolatedThreshold ?? LOGISTICS_ROAD_TRIGGERS.isolatedThreshold,
+    strandedThreshold: opts.strandedThreshold ?? LOGISTICS_ROAD_TRIGGERS.strandedThreshold,
+    maxRoadStepsPerPlan: opts.maxRoadStepsPerPlan ?? LOGISTICS_ROAD_TRIGGERS.maxRoadStepsPerPlan,
+  };
+
+  const logistics = state.metrics?.logistics ?? null;
+  const isolated = Number(logistics?.isolatedWorksites ?? 0);
+  const stranded = Number(logistics?.strandedCarryWorkers ?? 0);
+
+  // Trigger gate. When metrics haven't run yet (very early ticks) `logistics`
+  // may be null — fall back to a structural probe that just looks for
+  // disconnected production buildings, so the system is useful before the
+  // economy loop has had a chance to count carriers.
+  const metricTrigger =
+    isolated >= triggers.isolatedThreshold || stranded >= triggers.strandedThreshold;
+
+  if (logistics && !metricTrigger) return [];
+
+  // Reuse the shared RoadNetwork instance; create a transient one if missing
+  // (tests / harnesses that don't run the worker AI loop).
+  const roadNetwork = state._roadNetwork ?? new RoadNetwork();
+  const plans = planRoadConnections(state.grid, roadNetwork);
+  if (plans.length === 0) return [];
+
+  const rawSteps = roadPlansToSteps(plans, triggers.maxRoadStepsPerPlan);
+  return rawSteps.map((s) => ({
+    type: "road",
+    ix: s.ix,
+    iz: s.iz,
+    hint: `${s.ix},${s.iz}`,
+    priority: s.priority,
+    reason: s.reason,
+  }));
+}
+
+/**
+ * Format a one-line LLM hint summarising the current logistics deficit so
+ * the LLM can prefer connecting existing worksites over building new ones
+ * on top of an isolated cluster. Returns "" when nothing's wrong.
+ */
+export function formatLogisticsHintForLLM(state) {
+  const log = state?.metrics?.logistics;
+  if (!log) return "";
+  const isolated = Number(log.isolatedWorksites ?? 0);
+  const stranded = Number(log.strandedCarryWorkers ?? 0);
+  const stretched = Number(log.stretchedWorksites ?? 0);
+  if (isolated <= 0 && stranded <= 0 && stretched <= 0) return "";
+  const parts = [];
+  if (isolated > 0) parts.push(`${isolated} isolated worksite${isolated > 1 ? "s" : ""}`);
+  if (stranded > 0) parts.push(`${stranded} stranded carrier${stranded > 1 ? "s" : ""}`);
+  if (stretched > 0) parts.push(`${stretched} stretched worksite${stretched > 1 ? "s" : ""}`);
+  return `Infrastructure deficit: ${parts.join(", ")}. Prefer roads connecting existing producers over new buildings.`;
 }
