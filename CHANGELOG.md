@@ -16,6 +16,7 @@
 
 ### Bug Fixes
 
+- **AIAutomationPanel header still claimed Colony Planner LLM was "documented but not wired"** (`src/ui/panels/AIAutomationPanel.js`): Phase B updated the per-row body text to read live `state.ai.agentDirector`, but the panel's header `boundaryCopy` (shown above the row list when Autopilot is ON) still listed only the original three LLM directors and described the planner as documented-only. Updated the Autopilot-ON copy to include "Colony Planner LLM (AgentDirectorSystem)" alongside Environment/Strategic/NPC Brain and to describe Build Automation as AgentDirector's algorithmic fallback when the LLM is unavailable, matching the wiring landed in commit 5dd58d2.
 - **AI proxy not reached in preview mode** (`vite.config.js`): added `preview.proxy` mirroring the existing `server.proxy` so that `/api/ai/*` and `/health` are forwarded to the AI proxy when running `vite preview` (`npm run preview:full`); previously the proxy was only wired for the dev server, causing all AI calls to 404 and fall back in production builds.
 - **Storyteller DOM readability** (`src/ui/hud/storytellerStrip.js`, `index.html`): fixed joined extracted strings such as `MILESTONEDepot` and duplicate `DIRECTORDIRECTOR` wording while preserving the visual strip.
 - **Food-crisis next actions** (`src/ui/hud/nextActionAdvisor.js`, `src/ui/interpretation/WorldExplain.js`): starvation guidance now checks isolated farms/worksites and recommends concrete road, warehouse, reconnect, or reachable-farm actions before generic advice.
