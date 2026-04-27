@@ -26,6 +26,7 @@ import {
   suggestRelocateDepletedProducer,
 } from "./SkillLibrary.js";
 import { formatObservationForLLM } from "./ColonyPerceiver.js";
+import { planLogisticsRoadSteps, formatLogisticsHintForLLM } from "./RoadPlanner.js";
 
 // ── v0.8.0 Phase 5 (patches 9-10) constants ──────────────────────────
 // Depletion down-rank threshold + multiplier per spec 13.2 patch 9. The
@@ -322,6 +323,21 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
     sections.push("\n## Strategic State (Phase 5)\n" + strategicLines.join("\n"));
   }
 
+  // Phase 8 — Logistics deficit hint. Surfaces isolated/stranded counters and
+  // a list of concrete road-build coordinates that A* says will close the
+  // gap, so the LLM can prefer infrastructure over more buildings on top of
+  // an already-isolated cluster.
+  const logisticsHint = formatLogisticsHintForLLM(state);
+  if (logisticsHint) {
+    const roadSteps = planLogisticsRoadSteps(state);
+    const lines = [logisticsHint];
+    if (roadSteps.length > 0) {
+      const coordList = roadSteps.slice(0, 4).map((s) => `(${s.ix},${s.iz})`).join(", ");
+      lines.push(`A* road suggestions: ${coordList} — emit road steps with hint "<ix>,<iz>".`);
+    }
+    sections.push("\n## Infrastructure Deficits\n" + lines.join("\n"));
+  }
+
   // Recent reflections
   if (memoryText) {
     sections.push("\n## Recent Reflections\n" + memoryText);
@@ -514,6 +530,30 @@ export function generateFallbackPlan(observation, state) {
   const kitchens = buildings.kitchens ?? 0;
   const workerCount = observation.workforce?.total ?? 0;
   const threat = observation.defense?.threat ?? 0;
+
+  // Phase 8 — Logistics-driven roads (pathfinding). When isolated worksites
+  // or stranded carriers exceed their thresholds, splice A*-planned road
+  // build steps in front of every other priority. Each step costs 1 wood
+  // (BUILD_COST.road), so we only emit as many as we can afford this tick.
+  const logisticsHint = state?.metrics?.logistics ?? null;
+  const isolatedNow = Number(logisticsHint?.isolatedWorksites ?? 0);
+  const strandedNow = Number(logisticsHint?.strandedCarryWorkers ?? 0);
+  if (isolatedNow >= 1 || strandedNow >= 2) {
+    const roadSteps = planLogisticsRoadSteps(state);
+    const affordableRoads = Math.min(roadSteps.length, Math.max(0, Math.floor(wood)));
+    for (let i = 0; i < affordableRoads; i++) {
+      const rs = roadSteps[i];
+      const reasonLabel = isolatedNow >= 1 ? "isolated worksite" : "stranded carriers";
+      steps.push(_step(
+        nextId++,
+        "road",
+        `${rs.ix},${rs.iz}`,
+        "critical",
+        `Logistics: connect ${reasonLabel} via A* path tile (${rs.ix},${rs.iz})`,
+        { logistics: "isolated_resolved" },
+      ));
+    }
+  }
 
   // Escalator-aware affordability: the Nth farm/kitchen costs more than the
   // flat BUILD_COST value once over BUILD_COST_ESCALATOR[kind].softTarget.
@@ -875,7 +915,10 @@ export function generateFallbackPlan(observation, state) {
 
   // Determine goal from first step
   const goalParts = [];
-  if (steps.some(s => s.priority === "critical")) goalParts.push("crisis response");
+  if (steps.some(s => s.action.type === "road" && /Logistics/.test(s.thought ?? ""))) {
+    goalParts.push("connect isolated logistics");
+  }
+  if (steps.some(s => s.priority === "critical") && goalParts.length === 0) goalParts.push("crisis response");
   else if (steps.some(s => s.action.type === "farm")) goalParts.push("food production");
   if (steps.some(s => s.action.type === "warehouse")) goalParts.push("logistics");
   if (steps.some(s => s.action.skill)) goalParts.push("expansion");
