@@ -41,6 +41,7 @@ function normalizeConfiguredModel(rawModel) {
 }
 
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
+const OPENAI_BASE_URL = ((process.env.OPENAI_BASE_URL ?? "").trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
 const modelConfig = normalizeConfiguredModel(process.env.OPENAI_MODEL);
 const OPENAI_MODEL_RAW = modelConfig.configuredModel;
 const OPENAI_MODEL = modelConfig.model;
@@ -176,7 +177,7 @@ async function callOpenAI(systemPrompt, userPrompt, modelName) {
   const timeout = setTimeout(() => ctrl.abort("timeout"), OPENAI_REQUEST_TIMEOUT_MS);
   let resp;
   try {
-    resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    resp = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
