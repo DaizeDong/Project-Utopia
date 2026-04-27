@@ -1,5 +1,5 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
+import { ANIMAL_KIND, EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
@@ -678,6 +678,85 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   return hasActivePath(worker, state) || isAtTargetTile(worker, state);
 }
 
+/**
+ * v0.8.3 worker-vs-raider combat — GUARD-role AI driver.
+ *
+ * Scans `state.animals` for the nearest live PREDATOR within
+ * `BALANCE.guardAggroRadius`. If one exists, the GUARD pathfinds toward
+ * the predator's tile and lands a melee hit (`BALANCE.guardAttackDamage`)
+ * when within `BALANCE.meleeReachTiles` of it. Sidesteps the regular
+ * intent FSM exactly like `handleStressWorkerPatrol` does — guards do
+ * not farm/haul.
+ *
+ * Returns true when a target was acquired (caller should `continue` past
+ * the regular FSM); false when no target was found and the worker should
+ * fall through to the regular role handling (e.g. wander).
+ */
+function handleGuardCombat(worker, state, services, dt) {
+  const animals = Array.isArray(state?.animals) ? state.animals : [];
+  if (animals.length === 0) return false;
+
+  const aggroRadius = Number(BALANCE.guardAggroRadius ?? 4);
+  const aggro2 = aggroRadius * aggroRadius;
+  let target = null;
+  let bestD2 = Infinity;
+  for (const a of animals) {
+    if (!a || a.alive === false) continue;
+    if (a.kind !== ANIMAL_KIND.PREDATOR) continue;
+    const dx = a.x - worker.x;
+    const dz = a.z - worker.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= aggro2 && d2 < bestD2) {
+      bestD2 = d2;
+      target = a;
+    }
+  }
+  if (!target) return false;
+
+  worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
+  worker.debug ??= {};
+  worker.debug.lastIntent = "guard_engage";
+  worker.debug.lastIntentReason = `GUARD engaging ${target.species ?? "predator"} at d=${Math.sqrt(bestD2).toFixed(2)}`;
+  worker.stateLabel = "Engage";
+  worker.blackboard ??= {};
+  worker.blackboard.intent = "guard_engage";
+
+  const targetTile = worldToTile(target.x, target.z, state.grid);
+  const meleeReach = Number(BALANCE.meleeReachTiles ?? 1.0);
+
+  // Refresh path if stale or absent.
+  const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
+  const noPath = !hasActivePath(worker, state);
+  if ((pathStale || noPath) && canAttemptPath(worker, state)) {
+    setTargetAndPath(worker, targetTile, state, services);
+  }
+  if (hasActivePath(worker, state)) {
+    const step = followPath(worker, state, dt);
+    worker.desiredVel = step.desired;
+  } else {
+    setIdleDesired(worker);
+  }
+
+  // Melee hit when within reach.
+  const dist = Math.sqrt(bestD2);
+  if (dist <= meleeReach && Number(worker.attackCooldownSec ?? 0) <= 0
+      && Number(target.hp ?? 0) > 0) {
+    const dmg = Number(BALANCE.guardAttackDamage ?? 14);
+    target.hp = Math.max(0, Number(target.hp ?? 0) - dmg);
+    worker.attackCooldownSec = Number(BALANCE.workerAttackCooldownSec ?? 1.6);
+    target.memory ??= { recentEvents: [] };
+    target.memory.recentEvents ??= [];
+    target.memory.recentEvents.unshift("guard-hit");
+    target.memory.recentEvents.length = Math.min(target.memory.recentEvents.length, 6);
+    if (target.hp <= 0 && target.alive !== false) {
+      target.alive = false;
+      target.deathReason = "killed-by-worker";
+      target.deathSec = state.metrics.timeSec;
+    }
+  }
+  return true;
+}
+
 function handleEat(worker, state, services, dt) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
@@ -1310,7 +1389,39 @@ export class WorkerAISystem {
           continue;
         }
 
+        // v0.8.3 worker-vs-raider combat — GUARD pre-emption. GUARD-role
+        // workers actively engage predators within their aggro radius before
+        // any regular FSM intent (farm/haul/eat). When no target is in range
+        // they fall through to wander-style idle handling so they remain
+        // patrolling near home. Mirrors the `isStressWorker` patrol branch.
+        if (worker.role === ROLE.GUARD) {
+          // Always tick the worker's attack cooldown so it can land a hit
+          // once range closes; handleGuardCombat will reset it on hit.
+          worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
+          if (handleGuardCombat(worker, state, services, dt)) {
+            continue;
+          }
+          // No threat in range — keep guard near current position rather than
+          // running off to harvest. Idle desired velocity is fine; the
+          // counter-attack on the predator-attack site still fires if a
+          // predator wanders into reach.
+          worker.debug ??= {};
+          worker.debug.lastIntent = "guard_idle";
+          worker.debug.lastIntentReason = "GUARD on watch — no predator in aggro range";
+          worker.stateLabel = "Watch";
+          worker.blackboard ??= {};
+          worker.blackboard.intent = "guard_idle";
+          setIdleDesired(worker);
+          continue;
+        }
+
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
+      // v0.8.3 worker-vs-raider combat — tick worker attack cooldown so the
+      // counter-attack site in AnimalAISystem can fire repeatedly. Non-guard
+      // workers never reset this themselves (only the predator-hit branch
+      // does), so without this tick the cooldown would stay >0 after the
+      // first counter and silently disable bidirectional combat.
+      worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
 
       // v0.8.2 Round-7 (01e+02b) — trait modifiers loaded once per worker per tick.
       const _traitMods = getWorkerTraitModifiers(worker);

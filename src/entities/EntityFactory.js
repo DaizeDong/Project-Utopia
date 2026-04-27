@@ -390,7 +390,29 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
       resolvedSpecies = ANIMAL_SPECIES.DEER;
     }
   }
-  const hp = Number(ANIMAL_SPECIES_HP[resolvedSpecies] ?? (kind === ANIMAL_KIND.PREDATOR ? 90 : 70));
+  let hp = Number(ANIMAL_SPECIES_HP[resolvedSpecies] ?? (kind === ANIMAL_KIND.PREDATOR ? 90 : 70));
+  // v0.8.3 worker-vs-raider combat — raider_beast attribute randomisation.
+  // Wolf/bear stay on the fixed BALANCE values to keep the wildlife loop
+  // stable; raiders get an envelope of ±BALANCE.raiderStatsVariance around
+  // the base hp so each spawn fights a little differently. The same seeded
+  // RNG passed in produces the same stats on replay (determinism contract).
+  // Per-instance overrides are stored on the animal so AnimalAISystem can
+  // read them even though predator damage/speed still flow through BALANCE
+  // for non-raiders.
+  let raiderAttackDamage = null;
+  let raiderSpeed = null;
+  let raiderAttackCooldownSec = null;
+  if (resolvedSpecies === ANIMAL_SPECIES.RAIDER_BEAST) {
+    const variance = Math.max(0, Number(BALANCE.raiderStatsVariance ?? 0.25));
+    const jitter = () => 1 + (random() * 2 - 1) * variance;
+    hp = Math.max(20, Math.round(hp * jitter()));
+    raiderAttackDamage = Math.max(4, Number((BALANCE.predatorAttackDamage ?? 26) * jitter()).toFixed(2));
+    raiderAttackDamage = Number(raiderAttackDamage);
+    raiderSpeed = Math.max(0.4, Number((BALANCE.predatorSpeed ?? 2.25) * jitter()).toFixed(3));
+    raiderSpeed = Number(raiderSpeed);
+    raiderAttackCooldownSec = Math.max(0.5, Number((BALANCE.predatorAttackCooldownSec ?? 1.4) * jitter()).toFixed(3));
+    raiderAttackCooldownSec = Number(raiderAttackCooldownSec);
+  }
   const speciesLabel = ANIMAL_SPECIES_LABEL[resolvedSpecies]
     ?? (kind === ANIMAL_KIND.PREDATOR ? "Predator" : "Herbivore");
   // v0.8.2 Round-0 01e-innovation (Step 2). Animals get a constant backstory
@@ -451,6 +473,12 @@ export function createAnimal(x, z, kind = ANIMAL_KIND.HERBIVORE, random = Math.r
     },
     groupId: kind === ANIMAL_KIND.PREDATOR ? GROUP_IDS.PREDATORS : GROUP_IDS.HERBIVORES,
     species: resolvedSpecies,
+    // v0.8.3 worker-vs-raider combat — raider-only stat overrides. null on
+    // wolf/bear/deer (they read BALANCE directly). AnimalAISystem applies
+    // these when the species is RAIDER_BEAST.
+    raiderAttackDamage,
+    raiderSpeed,
+    raiderAttackCooldownSec,
   };
 }
 

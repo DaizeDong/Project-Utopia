@@ -689,10 +689,33 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   animal.debug.predatorSpecies = String(animal.species ?? ANIMAL_SPECIES.WOLF);
 
   // raider_beast ignores herbivores entirely — they are the "raider" archetype
-  // that exists to harass the colony, not the wildlife loop.
-  const prey = (huntSuppressed || profile.ignoresHerbivores)
-    ? null
-    : choosePredatorPrey(animal, useLocalAnimalQueries ? nearbyHerbivores : herbivores, state, policy);
+  // that exists to harass the colony, not the wildlife loop. v0.8.3 worker-
+  // vs-raider combat: when `profile.targetsWorkers` is true (raider_beast)
+  // we look up the nearest live worker as prey so the raider actively moves
+  // toward the colony.
+  let prey = null;
+  if (!huntSuppressed && !profile.ignoresHerbivores) {
+    prey = choosePredatorPrey(animal, useLocalAnimalQueries ? nearbyHerbivores : herbivores, state, policy);
+  }
+  if (!prey && profile.targetsWorkers) {
+    let bestWorker = null;
+    let bestD2 = Infinity;
+    for (const w of state.agents ?? []) {
+      if (!w || w.alive === false || w.type !== "WORKER") continue;
+      const dx = w.x - animal.x;
+      const dz = w.z - animal.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        bestWorker = w;
+      }
+    }
+    prey = bestWorker;
+    // raider_beast doesn't go through the normal stalk/hunt state machine
+    // because that branch is gated on herbivore prey detection. Force the
+    // stateNode to "stalk" so the chase block below activates.
+    if (prey) stateNode = "stalk";
+  }
   const distance = prey ? Math.sqrt(distanceSq(animal, prey)) : Infinity;
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
@@ -726,14 +749,25 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
       const step = followPath(animal, state, dt);
       animal.desiredVel = step.desired;
       if (distance < Number(BALANCE.predatorAttackDistance ?? 0.9) && animal.attackCooldownSec <= 0) {
-        const dmg = Number(BALANCE.predatorAttackDamage ?? 24);
+        const preyIsWorker = String(prey.type ?? "") === "WORKER";
+        const preyAttackBoost = preyIsWorker && prey.role === "GUARD" ? 0.5 : 1.0;
+        // v0.8.3 worker-vs-raider combat — raider_beast uses its per-spawn
+        // randomised attack damage if set; wolf/bear stay on the BALANCE
+        // baseline. The 0.5 boost is GUARDs taking less damage in melee.
+        const baseDmg = (animal.raiderAttackDamage != null && Number.isFinite(Number(animal.raiderAttackDamage)))
+          ? Number(animal.raiderAttackDamage)
+          : Number(BALANCE.predatorAttackDamage ?? 24);
+        const dmg = baseDmg * preyAttackBoost;
         prey.hp = Math.max(0, Number(prey.hp ?? 0) - dmg);
         prey.memory.recentEvents.unshift("predator-hit");
         prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
         // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species
         // attack cadence overrides the global BALANCE default. Bears are
         // slow but punishing; wolves stay on the standard 1.4s.
-        animal.attackCooldownSec = Number(profile.attackCooldownSec ?? BALANCE.predatorAttackCooldownSec ?? 1.4);
+        animal.attackCooldownSec = (animal.raiderAttackCooldownSec != null
+          && Number.isFinite(Number(animal.raiderAttackCooldownSec)))
+          ? Number(animal.raiderAttackCooldownSec)
+          : Number(profile.attackCooldownSec ?? BALANCE.predatorAttackCooldownSec ?? 1.4);
         recoverPredatorHungerOnHit(animal);
         emitEvent(state, EVENT_TYPES.PREDATOR_ATTACK, {
           entityId: animal.id, entityName: animal.displayName ?? animal.id,
@@ -744,6 +778,31 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
           prey.deathReason = "predation";
           prey.deathSec = state.metrics.timeSec;
           prey.starvationSec = 0;
+        }
+        // v0.8.3 worker-vs-raider combat — Bidirectional melee. The directly
+        // hit worker counter-attacks ONCE per landed hit if their own attack
+        // cooldown is ready. GUARD-role workers deal `guardAttackDamage` (≈
+        // 14); regular workers retaliate with `workerCounterAttackDamage`
+        // (≈ 6). When the predator's hp drops to 0, mark deathReason
+        // "killed-by-worker" so MortalitySystem / ecology metrics don't
+        // misclassify it. NO area-of-effect — only the hit worker fights
+        // back; nearby workers keep their day jobs.
+        if (preyIsWorker && prey.alive !== false
+            && Number(prey.attackCooldownSec ?? 0) <= 0
+            && Number(animal.hp ?? 0) > 0) {
+          const isGuard = prey.role === "GUARD";
+          const counterDmg = isGuard
+            ? Number(BALANCE.guardAttackDamage ?? 14)
+            : Number(BALANCE.workerCounterAttackDamage ?? 6);
+          animal.hp = Math.max(0, Number(animal.hp ?? 0) - counterDmg);
+          prey.attackCooldownSec = Number(BALANCE.workerAttackCooldownSec ?? 1.6);
+          prey.memory.recentEvents.unshift(isGuard ? "guard-counter" : "worker-counter");
+          prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
+          if (animal.hp <= 0 && animal.alive !== false) {
+            animal.alive = false;
+            animal.deathReason = "killed-by-worker";
+            animal.deathSec = state.metrics.timeSec;
+          }
         }
       }
       return;
@@ -936,6 +995,48 @@ export class AnimalAISystem {
       updateIdleWithoutReasonMetric(animal, stateNode, animalDt, state);
     }
     finalizeEcologyMetrics(state, ecology);
+    // v0.8.3 worker-vs-raider combat — publish a per-tick combat snapshot
+    // (active raiders, active predators, guard count) so ColonyPlanner /
+    // ThreatPlanner / panels can read it without re-walking state every
+    // call. Lives under state.metrics.combat (new sub-object); not added to
+    // state.ai.agentDirector.stats per scope guardrails.
+    state.metrics ??= {};
+    let activePredators = 0;
+    let activeRaiders = 0;
+    for (const a of state.animals ?? []) {
+      if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
+      activePredators += 1;
+      if (String(a.species ?? "") === "raider_beast") activeRaiders += 1;
+    }
+    let guardCount = 0;
+    let workerCount = 0;
+    for (const w of state.agents ?? []) {
+      if (!w || w.alive === false || w.type !== "WORKER") continue;
+      workerCount += 1;
+      if (w.role === "GUARD") guardCount += 1;
+    }
+    // Nearest predator-to-worker distance for proximity gates.
+    let nearestSq = Infinity;
+    if (activePredators > 0 && workerCount > 0) {
+      for (const w of state.agents) {
+        if (!w || w.alive === false || w.type !== "WORKER") continue;
+        for (const a of state.animals) {
+          if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
+          const dx = a.x - w.x;
+          const dz = a.z - w.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < nearestSq) nearestSq = d2;
+        }
+      }
+    }
+    state.metrics.combat = {
+      activeThreats: activePredators,
+      activeRaiders,
+      activePredators,
+      guardCount,
+      workerCount,
+      nearestThreatDistance: nearestSq === Infinity ? -1 : Math.sqrt(nearestSq),
+    };
     if (state.debug) {
       state.debug.animalAiLod = {
         stride,

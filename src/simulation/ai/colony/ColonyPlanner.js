@@ -27,6 +27,7 @@ import {
 } from "./SkillLibrary.js";
 import { formatObservationForLLM } from "./ColonyPerceiver.js";
 import { planLogisticsRoadSteps, formatLogisticsHintForLLM } from "./RoadPlanner.js";
+import { planThreatResponseSteps, formatThreatHintForLLM } from "./ThreatPlanner.js";
 
 // ── v0.8.0 Phase 5 (patches 9-10) constants ──────────────────────────
 // Depletion down-rank threshold + multiplier per spec 13.2 patch 9. The
@@ -338,6 +339,20 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
     sections.push("\n## Infrastructure Deficits\n" + lines.join("\n"));
   }
 
+  // v0.8.3 worker-vs-raider combat — Threat posture section. Mirrors the
+  // Infrastructure Deficits block: when active raiders are loose, surface
+  // them at the top of the prompt so the LLM prefers GUARD promotions /
+  // walls over more economy buildings.
+  const threatHint = formatThreatHintForLLM(state);
+  if (threatHint) {
+    const threatSteps = planThreatResponseSteps(state);
+    const lines = [threatHint];
+    if (threatSteps.length > 0) {
+      lines.push(`Suggested response: emit ${threatSteps.length} reassign_role step(s) with hint "guard" before further economy steps.`);
+    }
+    sections.push("\n## Threat Posture\n" + lines.join("\n"));
+  }
+
   // Recent reflections
   if (memoryText) {
     sections.push("\n## Recent Reflections\n" + memoryText);
@@ -594,6 +609,26 @@ export function generateFallbackPlan(observation, state) {
         "Food crisis but insufficient wood for farm, extend logistics",
         { logistics: "improved" }));
     }
+  }
+
+  // v0.8.3 worker-vs-raider combat — Threat-driven GUARD promotion.
+  // Mirrors the logistics-roads block above but slotted AFTER the food
+  // crisis branch so a starving colony does not promote farmers off the
+  // food line. When state.metrics.combat.activeThreats >= 1 AND the
+  // nearest predator is within `proximityTiles`, emit reassign_role(GUARD)
+  // step(s) so RoleAssignmentSystem promotes workers to GUARD before the
+  // next economy tier kicks in.
+  const threatSteps = planThreatResponseSteps(state);
+  for (const ts of threatSteps) {
+    steps.push({
+      id: nextId++,
+      thought: ts.reason,
+      action: { type: "reassign_role", role: "GUARD", hint: ts.hint ?? "guard" },
+      predicted_effect: { guard_slot_delta: "+1", threat_response: "active" },
+      priority: ts.priority ?? "critical",
+      depends_on: [],
+      status: "pending",
+    });
   }
 
   // Phase 5 — SkillLibrary suggestion hooks. These run once we've addressed

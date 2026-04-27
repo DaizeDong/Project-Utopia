@@ -712,6 +712,40 @@ export const BALANCE = Object.freeze({
   traitEfficientTaskMult: 0.85,
   // resilient: death threshold delta (negative = harder to die)
   traitResilientDeathThresholdDelta: -0.05,
+  // --- v0.8.3 worker-vs-raider combat (bidirectional melee) -------------
+  // When a predator hits a worker, the directly hit worker fights back with
+  // `workerCounterAttackDamage`. GUARD-role workers actively pathfind
+  // toward predators within `guardAggroRadius` and deal `guardAttackDamage`.
+  // `meleeReachTiles` is the world-distance threshold for landing a hit
+  // (matches predatorAttackDistance scale). `workerAttackCooldownSec` paces
+  // the counter so a single worker can't infinite-stunlock a predator.
+  workerCounterAttackDamage: 6,
+  guardAttackDamage: 14,
+  // v0.8.3 worker-vs-raider combat — Iteration tuning. 4-tile aggro felt
+  // too short in the live probe (GUARDs auto-promoted from idle workers
+  // were often 5-7 tiles from the spawn-injected raider and never closed
+  // distance before the raider had engaged a non-GUARD farmer). 6 tiles
+  // gives the GUARD time to intercept while still respecting the "patrol
+  // near home" boundary; further widening would have GUARDs abandon the
+  // colony chasing wolves on the map edge.
+  guardAggroRadius: 6,
+  // v0.8.3 worker-vs-raider combat — Iteration tuning. 1.0 left GUARDs in
+  // a stand-off at d≈1.2 tiles (the predator's preferred preyChase distance
+  // sat just outside the melee threshold). 1.3 closes the gap so a GUARD
+  // tracking a raider into melee range will land hits without overshooting.
+  meleeReachTiles: 1.3,
+  workerAttackCooldownSec: 1.6,
+  // raider_beast stat-randomisation envelope. Same seed must reproduce the
+  // same draw — see EntityFactory.createAnimal raider branch. Wolf/bear
+  // remain on their fixed BALANCE values to keep the wildlife loop stable.
+  raiderStatsVariance: 0.25,
+  // Threat-driven plan injection thresholds. ColonyPlanner.generateFallback
+  // Plan pre-pends GUARD-promotion / wall steps when activeThreats meets
+  // these gates. `targetGuardsPerThreat` is the headcount the planner asks
+  // RoleAssignmentSystem to promote (capped by population).
+  threatActiveThreshold: 1,
+  threatGuardCap: 4,
+  targetGuardsPerThreat: 1,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
