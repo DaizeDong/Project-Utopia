@@ -1,5 +1,6 @@
-import { EVENT_TYPE, TILE, WEATHER } from "../../config/constants.js";
-import { countTilesByType } from "../grid/Grid.js";
+import { EVENT_TYPE, NODE_FLAGS, TILE, WEATHER } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
+import { setTileField } from "../grid/Grid.js";
 
 const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
   temperate_plains: "frontier_repair",
@@ -9,6 +10,141 @@ const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
   archipelago_isles: "island_relay",
   coastal_ocean: "island_relay",
 });
+
+// v0.8.2 Round-1 02e-indie-critic — Template-specific scenario voice.
+// The 6 map templates share only 3 scenario families (frontier_repair /
+// gate_chokepoints / island_relay), which left player-facing copy
+// template-agnostic: e.g. Fertile Riverlands opened to "Broken Frontier —
+// Reconnect the west lumber line…" (indistinguishable from Temperate Plains).
+// This table overrides title / summary / hintCopy per-template so each of the
+// 6 templates tells a distinct opening story. Mechanical anchors, routes,
+// depots, targets, and objectiveCopy are NOT touched — only player-facing
+// strings. See Feedbacks/02e-indie-critic.md for reviewer phrasing.
+const SCENARIO_VOICE_BY_TEMPLATE = Object.freeze({
+  temperate_plains: Object.freeze({
+    title: "Broken Frontier",
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — soften the OKR-speak
+    // briefing copy. The mechanics (anchor IDs, target counts, route labels)
+    // are unchanged; only the player-facing prose is rewritten so a casual
+    // first-timer can name what they see on screen ("west forest is overgrown")
+    // instead of decoding "lumber line" / "depot". Title stays as
+    // "Broken Frontier" because tests pin it as the canonical name.
+    summary: "Your colony just landed. The west forest is overgrown — clear a path back, then rebuild the east warehouse.",
+    openingPressure: "The frontier is wide open, but the colony stalls fast if the west forest path and the broken east warehouse stay disconnected.",
+    hintInitial: "Build a road to the west forest and put a warehouse on the broken east platform before scaling up.",
+    hintAfterLogistics: "Starter logistics are online. Refill the stockpile before the first pressure wave.",
+    hintAfterStockpile: "Fortify the colony and hold stability under pressure.",
+    hintCompleted: "All objectives completed.",
+  }),
+  fertile_riverlands: Object.freeze({
+    title: "Silted Hearth",
+    summary: "Last year's flood buried the west road under silt — rebuild the lumber line before the river runs dry.",
+    openingPressure: "The first threat is delay: silt, floodwater, and long haul lines can starve the hearth before the valley pays off.",
+    hintInitial: "Dig the silted lumber road free and reclaim the flood-wrecked east granary.",
+    hintAfterLogistics: "The hearth fires are lit again. Stockpile grain before the next rain-fed crest.",
+    hintAfterStockpile: "Shore up the banks and hold the hearth through the autumn floods.",
+    hintCompleted: "The valley is whole again — the river feeds a living colony.",
+  }),
+  rugged_highlands: Object.freeze({
+    title: "Gate Bastion",
+    summary: "Reopen the north timber gate, reclaim the south granary, and stabilize two chokepoints.",
+    openingPressure: "The highlands reward careful timing: every cleared route also becomes a gate you must hold.",
+    hintInitial: "Repair the north gate, then reclaim the south granary before scaling up the bastion.",
+    hintAfterLogistics: "The gates are open. Stock food and wood before the next pressure wave.",
+    hintAfterStockpile: "Close the defense loop and hold both chokepoints.",
+    hintCompleted: "All objectives completed.",
+  }),
+  fortified_basin: Object.freeze({
+    title: "Hollow Keep",
+    summary: "The old keep's gates hang open — hold north and south before raiders find the breach.",
+    openingPressure: "The danger is not distance but exposure: the basin already has hard gates, and every open one invites pressure.",
+    hintInitial: "Wall off the north and south gates before the raiders learn the keep is hollow.",
+    hintAfterLogistics: "The gates hold. Pack the larders before the siege tightens.",
+    hintAfterStockpile: "Man the walls — the keep is only as strong as who watches the ramparts.",
+    hintCompleted: "The keep is whole again, its gates manned and its larders full.",
+  }),
+  archipelago_isles: Object.freeze({
+    title: "Island Relay",
+    summary: "Bridge two causeways, claim the relay depot, and connect the harbor to the outer fields.",
+    openingPressure: "The opening fight is over crossing water; one missed bridge leaves the island chain broken and idle.",
+    hintInitial: "Bridge the harbor and east causeways, then claim the relay depot with a warehouse.",
+    hintAfterLogistics: "The relay is online. Push enough food and wood across the split map.",
+    hintAfterStockpile: "Secure the crossings and hold the outer shoreline.",
+    hintCompleted: "All objectives completed.",
+  }),
+  coastal_ocean: Object.freeze({
+    title: "Driftwood Harbor",
+    summary: "A gale scattered the fleet — rebuild the harbor causeways before the autumn caravan arrives.",
+    openingPressure: "The coast is generous only after the causeways exist; until then the harbor, fields, and depot run separately.",
+    hintInitial: "Lash the harbor causeways back together and raise a depot on the relay spit.",
+    hintAfterLogistics: "The harbor is re-strung. Lay in food and wood before the caravan tide turns.",
+    hintAfterStockpile: "Brace the crossings — autumn storms will test every rope and plank.",
+    hintCompleted: "The harbor sings with gulls and laden sails again.",
+  }),
+});
+
+// Family-level defaults for unknown templateIds (defensive — prevents a
+// missing entry from silently shipping "undefined · undefined" strings).
+const DEFAULT_VOICE_FOR_FRONTIER_REPAIR = SCENARIO_VOICE_BY_TEMPLATE.temperate_plains;
+const DEFAULT_VOICE_FOR_GATE_CHOKEPOINTS = SCENARIO_VOICE_BY_TEMPLATE.rugged_highlands;
+const DEFAULT_VOICE_FOR_ISLAND_RELAY = SCENARIO_VOICE_BY_TEMPLATE.archipelago_isles;
+
+export function getScenarioVoiceForTemplate(templateId) {
+  return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
+}
+
+// v0.8.2 Round-5b (02e Step 3) — intro payload for scenario switch fade.
+// GameApp.regenerateWorld writes this to state.ui.scenarioIntro after deepReplace;
+// HUDController reads it to show a 1.5s opening-pressure overlay on the strip.
+export function getScenarioIntroPayload(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return Object.freeze({
+    title: String(voice.title ?? ""),
+    openingPressure: String(voice.openingPressure ?? ""),
+    durationMs: 1500,
+  });
+}
+
+/**
+ * v0.8.2 Round-5b Wave-1 (01e Step 3) — export the per-template scenario
+ * voice strings pre-packaged for HUD consumption. Returns a frozen map
+ * keyed by phase tag (`phase:logistics`, `phase:stockpile`,
+ * `phase:stability`, `phase:completed`, `phase:default`). Keeps the
+ * authored text in a single location (SCENARIO_VOICE_BY_TEMPLATE) so a
+ * future edit to `hintAfterLogistics` does not need to touch
+ * storytellerStrip.js.
+ * @param {string} templateId
+ * @returns {{[phaseTag:string]: string}}
+ */
+export function exportScenarioVoiceForHUD(templateId) {
+  const voice = getScenarioVoiceForTemplate(templateId);
+  return Object.freeze({
+    "phase:logistics": String(voice.hintInitial ?? ""),
+    "phase:stockpile": String(voice.hintAfterLogistics ?? ""),
+    "phase:stability": String(voice.hintAfterStockpile ?? ""),
+    "phase:completed": String(voice.hintCompleted ?? ""),
+    "phase:default": String(voice.openingPressure ?? voice.summary ?? ""),
+  });
+}
+
+function buildScenarioNextActionContext(scenario = {}) {
+  const objectiveCopy = scenario.objectiveCopy ?? {};
+  const hintCopy = scenario.hintCopy ?? {};
+  return Object.freeze({
+    routeLabel: String(scenario.routeLinks?.[0]?.label ?? "supply route").trim(),
+    depotLabel: String(scenario.depotZones?.[0]?.label ?? "depot").trim(),
+    logisticsTitle: String(objectiveCopy.logisticsTitle ?? "Reconnect the logistics loop").trim(),
+    logisticsDescription: String(objectiveCopy.logisticsDescription ?? "").trim(),
+    stockpileTitle: String(objectiveCopy.stockpileTitle ?? "Refill the stockpile").trim(),
+    stockpileDescription: String(objectiveCopy.stockpileDescription ?? "").trim(),
+    stabilityTitle: String(objectiveCopy.stabilityTitle ?? "Fortify and stabilize").trim(),
+    stabilityDescription: String(objectiveCopy.stabilityDescription ?? "").trim(),
+    hintInitial: String(hintCopy.initial ?? "").trim(),
+    hintAfterLogistics: String(hintCopy.afterLogistics ?? "").trim(),
+    hintAfterStockpile: String(hintCopy.afterStockpile ?? "").trim(),
+    hintCompleted: String(hintCopy.completed ?? "").trim(),
+  });
+}
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -135,38 +271,10 @@ function inflateTiles(grid, seeds = [], radius = 1, options = {}) {
   return tiles;
 }
 
-function buildObjectivesForScenario(scenario) {
-  return [
-    {
-      id: "logistics-1",
-      title: scenario.objectiveCopy.logisticsTitle,
-      description: scenario.objectiveCopy.logisticsDescription,
-      completed: false,
-      progress: 0,
-      reward: "+18 food, +18 wood",
-    },
-    {
-      id: "stockpile-1",
-      title: scenario.objectiveCopy.stockpileTitle,
-      description: scenario.objectiveCopy.stockpileDescription,
-      completed: false,
-      progress: 0,
-      reward: "Spawn +4 workers",
-    },
-    {
-      id: "stability-1",
-      title: scenario.objectiveCopy.stabilityTitle,
-      description: scenario.objectiveCopy.stabilityDescription,
-      completed: false,
-      progress: 0,
-      reward: "Permanent doctrine bonus +8%",
-    },
-  ];
-}
-
 function buildFrontierRepairScenario(grid) {
   clearInfrastructure(grid);
 
+  const voice = SCENARIO_VOICE_BY_TEMPLATE[grid.templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
   const center = findNearestScenarioAnchor(grid, Math.floor(grid.width / 2), Math.floor(grid.height / 2));
   const eastDepot = {
     ix: clamp(center.ix + 9, 3, grid.width - 4),
@@ -197,7 +305,8 @@ function buildFrontierRepairScenario(grid) {
   stampRoad(grid, westOutpost.ix, westOutpost.iz, westOutpost.ix + 2, westOutpost.iz);
   setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
 
-  stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }], TILE.FARM);
+  stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }, { x: -1, z: 2 }, { x: -2, z: 2 }], TILE.FARM);
+  stampCluster(grid, center, [{ x: 3, z: -1 }], TILE.LUMBER);
   stampCluster(grid, westOutpost, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
@@ -206,13 +315,15 @@ function buildFrontierRepairScenario(grid) {
   setTileDirect(grid, eastDepot.ix + 2, eastDepot.iz, TILE.RUINS);
 
   stampCluster(grid, eastDepot, [{ x: 0, z: -1 }, { x: 0, z: 1 }, { x: 1, z: -1 }], TILE.WALL);
+  stampCluster(grid, center, [{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: -1, z: 3 }, { x: 1, z: 3 }], TILE.WALL);
   grid.version = Number(grid.version ?? 0) + 1;
 
   return {
     id: "alpha_broken_frontier",
     family: "frontier_repair",
-    title: "Broken Frontier",
-    summary: "Reconnect the west lumber line, reclaim the east depot, then scale the colony.",
+    title: voice.title,
+    summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: center.ix, iz: center.iz },
       westLumberOutpost: { ix: westOutpost.ix, iz: westOutpost.iz },
@@ -273,23 +384,28 @@ function buildFrontierRepairScenario(grid) {
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "west-wilds" }],
     },
     targets: {
-      logistics: { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 0 },
+      logistics: { warehouses: 2, farms: 6, lumbers: 3, roads: 20, walls: 8 },
       stockpile: { food: 95, wood: 90 },
       stability: { walls: 12, prosperity: 58, threat: 44, holdSec: 30 },
     },
     objectiveCopy: {
       logisticsTitle: "Reconnect the Frontier",
-      logisticsDescription: "Reconnect the west lumber outpost, reclaim the east depot with a warehouse, then reach 4 farms, 3 lumbers, and 20 roads.",
+      // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — drop the inventory-list
+      // "Reconnect the west lumber outpost, reclaim the east depot with a
+      // warehouse" prose for a casual goal sentence. Mechanical targets
+      // (6 farms / 3 lumbers / 8 walls / 20 roads) stay verbatim because
+      // the objective tracker counts them; only framing is rewritten.
+      logisticsDescription: "Connect the west forest to your warehouse, plant a warehouse on the east platform, then build 6 farms, 3 lumbers, 8 walls, and 20 roads.",
       stockpileTitle: "Refill the Stockpile",
       stockpileDescription: "Reach 95 food and 90 wood once the repaired frontier route is running.",
       stabilityTitle: "Fortify and Stabilize",
       stabilityDescription: "Build 12 walls, then hold prosperity >= 58 and threat <= 44 for 30 seconds.",
     },
     hintCopy: {
-      initial: "Reconnect the west lumber route and reclaim the east depot before scaling up.",
-      afterLogistics: "Starter logistics online. Refill the stockpile.",
-      afterStockpile: "Fortify the colony and hold stability under pressure.",
-      completed: "All objectives completed.",
+      initial: voice.hintInitial,
+      afterLogistics: voice.hintAfterLogistics,
+      afterStockpile: voice.hintAfterStockpile,
+      completed: voice.hintCompleted,
     },
   };
 }
@@ -297,6 +413,7 @@ function buildFrontierRepairScenario(grid) {
 function buildGateChokepointScenario(grid) {
   clearInfrastructure(grid);
 
+  const voice = SCENARIO_VOICE_BY_TEMPLATE[grid.templateId] ?? DEFAULT_VOICE_FOR_GATE_CHOKEPOINTS;
   const center = findNearestScenarioAnchor(grid, Math.floor(grid.width / 2), Math.floor(grid.height / 2));
   const northTimber = {
     ix: clamp(center.ix - 1, 3, grid.width - 4),
@@ -333,22 +450,18 @@ function buildGateChokepointScenario(grid) {
   setTileDirect(grid, center.ix, center.iz, TILE.WAREHOUSE);
 
   stampCluster(grid, center, [{ x: 1, z: 2 }], TILE.FARM);
-  stampCluster(grid, southGranary, [{ x: 0, z: 0 }, { x: -1, z: 0 }], TILE.FARM);
+  stampCluster(grid, southGranary, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
   stampCluster(grid, center, [
-    { x: -3, z: -2 }, { x: -3, z: -1 }, { x: -3, z: 0 },
-    { x: 3, z: -2 }, { x: 3, z: -1 }, { x: 3, z: 0 },
     { x: -2, z: 3 }, { x: -1, z: 3 }, { x: 0, z: 3 },
   ], TILE.WALL);
   stampCluster(grid, northGate, [
-    { x: -1, z: -1 }, { x: -1, z: 0 }, { x: -1, z: 1 },
-    { x: 1, z: -1 }, { x: 1, z: 0 }, { x: 1, z: 1 },
+    { x: -1, z: 0 }, { x: 1, z: 0 },
   ], TILE.WALL);
   stampCluster(grid, southGate, [
-    { x: -1, z: -1 }, { x: -1, z: 0 }, { x: -1, z: 1 },
-    { x: 1, z: -1 }, { x: 1, z: 0 }, { x: 1, z: 1 },
+    { x: -1, z: 0 }, { x: 1, z: 0 },
   ], TILE.WALL);
 
   setTileDirect(grid, northGate.ix, northGate.iz, TILE.RUINS);
@@ -360,8 +473,9 @@ function buildGateChokepointScenario(grid) {
   return {
     id: "alpha_gate_bastion",
     family: "gate_chokepoints",
-    title: "Gate Bastion",
-    summary: "Reopen the north timber gate, reclaim the south granary, and stabilize two chokepoints.",
+    title: voice.title,
+    summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: center.ix, iz: center.iz },
       northTimber: { ix: northTimber.ix, iz: northTimber.iz },
@@ -425,10 +539,10 @@ function buildGateChokepointScenario(grid) {
       stabilityDescription: "Build 14 walls, then hold prosperity >= 56 and threat <= 40 for 26 seconds.",
     },
     hintCopy: {
-      initial: "Repair the north gate, then reclaim the south granary before scaling up the bastion.",
-      afterLogistics: "The gates are open. Stock food and wood before the next pressure wave.",
-      afterStockpile: "Close the defense loop and hold both chokepoints.",
-      completed: "All objectives completed.",
+      initial: voice.hintInitial,
+      afterLogistics: voice.hintAfterLogistics,
+      afterStockpile: voice.hintAfterStockpile,
+      completed: voice.hintCompleted,
     },
   };
 }
@@ -436,6 +550,7 @@ function buildGateChokepointScenario(grid) {
 function buildIslandRelayScenario(grid) {
   clearInfrastructure(grid);
 
+  const voice = SCENARIO_VOICE_BY_TEMPLATE[grid.templateId] ?? DEFAULT_VOICE_FOR_ISLAND_RELAY;
   const center = findNearestScenarioAnchor(grid, Math.floor(grid.width / 2), Math.floor(grid.height / 2));
   const harbor = {
     ix: clamp(center.ix - 10, 4, grid.width - 5),
@@ -481,7 +596,7 @@ function buildIslandRelayScenario(grid) {
   setTileDirect(grid, relayDepot.ix, relayDepot.iz, TILE.ROAD);
   setTileDirect(grid, harbor.ix, harbor.iz, TILE.WAREHOUSE);
 
-  stampCluster(grid, eastFields, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.FARM);
+  stampCluster(grid, eastFields, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
   stampCluster(grid, northIslet, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
@@ -495,8 +610,9 @@ function buildIslandRelayScenario(grid) {
   return {
     id: "alpha_island_relay",
     family: "island_relay",
-    title: "Island Relay",
-    summary: "Bridge two causeways, claim the relay depot, and connect the harbor to the outer fields.",
+    title: voice.title,
+    summary: voice.summary,
+    openingPressure: voice.openingPressure,
     anchors: {
       coreWarehouse: { ix: harbor.ix, iz: harbor.iz },
       relayDepot: { ix: relayDepot.ix, iz: relayDepot.iz },
@@ -573,10 +689,10 @@ function buildIslandRelayScenario(grid) {
       stabilityDescription: "Build 8 walls, then hold prosperity >= 54 and threat <= 48 for 24 seconds.",
     },
     hintCopy: {
-      initial: "Bridge the harbor and east causeways, then claim the relay depot with a warehouse.",
-      afterLogistics: "The relay is online. Push enough food and wood across the split map.",
-      afterStockpile: "Secure the crossings and hold the outer shoreline.",
-      completed: "All objectives completed.",
+      initial: voice.hintInitial,
+      afterLogistics: voice.hintAfterLogistics,
+      afterStockpile: voice.hintAfterStockpile,
+      completed: voice.hintCompleted,
     },
   };
 }
@@ -642,6 +758,227 @@ export function getScenarioFamilyForTemplate(templateId) {
   return SCENARIO_FAMILY_BY_TEMPLATE[templateId] ?? "frontier_repair";
 }
 
+// --- Phase 3 M1a resource node seeding ---
+// Seeds forest, stone, and herb nodes on GRASS tiles of a freshly-generated
+// map. Each seeded tile receives a node-flag bitmask and an initial yieldPool
+// on its tileState entry. Uses services.rng for determinism; callers can also
+// pass a bare `{ next }` object or a raw function for test ergonomics.
+
+function asRngFn(services) {
+  // v0.8.0 Phase 3 M1a — deterministic world-gen. Silent fallback to Math.random
+  // would break benchmark reproducibility (silent-failure C1), so refuse rather
+  // than drift. Callers are responsible for supplying a seeded source.
+  if (typeof services === "function") return services;
+  if (services && typeof services.next === "function") return () => services.next();
+  const rng = services?.rng;
+  if (rng && typeof rng.next === "function") return () => rng.next();
+  if (typeof rng === "function") return rng;
+  throw new Error("seedResourceNodes: deterministic RNG required (pass fn, { next }, or services with .rng.next)");
+}
+
+function getGrid(target) {
+  if (!target) return null;
+  if (target.tiles && typeof target.width === "number") return target;
+  return target.grid ?? null;
+}
+
+function gridIndex(grid, ix, iz) {
+  return ix + iz * grid.width;
+}
+
+function isGrassAt(grid, ix, iz) {
+  if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) return false;
+  return grid.tiles[gridIndex(grid, ix, iz)] === TILE.GRASS;
+}
+
+function collectGrassTiles(grid) {
+  const out = [];
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      if (grid.tiles[gridIndex(grid, ix, iz)] === TILE.GRASS) out.push({ ix, iz });
+    }
+  }
+  return out;
+}
+
+function shuffleInPlace(arr, rngFn) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rngFn() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+function rangeInt(rngFn, range, fallbackMin = 0, fallbackMax = 0) {
+  const lo = Number(Array.isArray(range) ? range[0] : fallbackMin) | 0;
+  const hi = Number(Array.isArray(range) ? range[1] : fallbackMax) | 0;
+  const lowBound = Math.min(lo, hi);
+  const highBound = Math.max(lo, hi);
+  if (highBound <= lowBound) return lowBound;
+  return lowBound + Math.floor(rngFn() * (highBound - lowBound + 1));
+}
+
+function setNodeOnTile(grid, ix, iz, flag, yieldPool) {
+  // Read existing tileState entry (may be null for bare grass tiles) and OR
+  // the new flag in. Also seed the yieldPool so tests / harvest flow can read
+  // it immediately via getTileState.
+  const idx = gridIndex(grid, ix, iz);
+  const prev = grid.tileState?.get?.(idx) ?? null;
+  const prevFlags = Number(prev?.nodeFlags ?? 0) | 0;
+  setTileField(grid, ix, iz, "nodeFlags", (prevFlags | flag) >>> 0);
+  setTileField(grid, ix, iz, "yieldPool", Number(yieldPool) || 0);
+}
+
+function seedForestNodes(grid, rngFn) {
+  // Poisson-disk-ish sampling with min-distance 3 tiles. Walk a shuffled list
+  // of GRASS tiles and accept a candidate if it sits >= MIN_DIST from all
+  // previously accepted FOREST nodes.
+  const MIN_DIST = 3;
+  const count = rangeInt(rngFn, BALANCE.forestNodeCountRange, 18, 32);
+  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const accepted = [];
+  for (const tile of grass) {
+    if (accepted.length >= count) break;
+    let ok = true;
+    for (const other of accepted) {
+      const dx = other.ix - tile.ix;
+      const dz = other.iz - tile.iz;
+      if (dx * dx + dz * dz < MIN_DIST * MIN_DIST) { ok = false; break; }
+    }
+    if (!ok) continue;
+    accepted.push(tile);
+    setNodeOnTile(grid, tile.ix, tile.iz, NODE_FLAGS.FOREST, BALANCE.nodeYieldPoolForest ?? 80);
+  }
+  return accepted.length;
+}
+
+function seedStoneNodes(grid, rngFn) {
+  // Cluster-walk from N seed GRASS tiles; each seed walks 3-6 steps in random
+  // 4-directional moves, laying a STONE flag on each GRASS step.
+  const count = rangeInt(rngFn, BALANCE.stoneNodeCountRange, 10, 18);
+  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  let placed = 0;
+  const seeds = grass.slice(0, count);
+  for (const seed of seeds) {
+    const steps = 3 + Math.floor(rngFn() * 4); // 3..6 inclusive
+    let cx = seed.ix;
+    let cz = seed.iz;
+    if (isGrassAt(grid, cx, cz)) {
+      setNodeOnTile(grid, cx, cz, NODE_FLAGS.STONE, BALANCE.nodeYieldPoolStone ?? 120);
+      placed += 1;
+    }
+    for (let step = 0; step < steps; step += 1) {
+      const [dx, dz] = dirs[Math.floor(rngFn() * dirs.length)];
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (!isGrassAt(grid, nx, nz)) continue;
+      cx = nx; cz = nz;
+      setNodeOnTile(grid, cx, cz, NODE_FLAGS.STONE, BALANCE.nodeYieldPoolStone ?? 120);
+      placed += 1;
+    }
+  }
+  return placed;
+}
+
+function seedHerbNodes(grid, rngFn) {
+  // Link-seek: prefer GRASS tiles adjacent to WATER or FARM. Fall back to
+  // any GRASS tile if preferred candidates are exhausted.
+  const count = rangeInt(rngFn, BALANCE.herbNodeCountRange, 12, 22);
+  const preferred = [];
+  const fallback = [];
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      if (grid.tiles[gridIndex(grid, ix, iz)] !== TILE.GRASS) continue;
+      const hasLink =
+        (ix + 1 < grid.width && (grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.FARM)) ||
+        (ix - 1 >= 0 && (grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.FARM)) ||
+        (iz + 1 < grid.height && (grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.FARM)) ||
+        (iz - 1 >= 0 && (grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.FARM));
+      if (hasLink) preferred.push({ ix, iz });
+      else fallback.push({ ix, iz });
+    }
+  }
+  shuffleInPlace(preferred, rngFn);
+  shuffleInPlace(fallback, rngFn);
+  const ordered = preferred.concat(fallback);
+  let placed = 0;
+  for (const tile of ordered) {
+    if (placed >= count) break;
+    setNodeOnTile(grid, tile.ix, tile.iz, NODE_FLAGS.HERB, BALANCE.nodeYieldPoolHerb ?? 60);
+    placed += 1;
+  }
+  return placed;
+}
+
+// v0.8.0 Phase 3 M1a — world-seeded LUMBER/QUARRY/HERB_GARDEN tiles predate the
+// node layer and would otherwise read nodeFlags=0 (BuildAdvisor would then
+// correctly forbid rebuilding on them after demolish, a jarring UX regression).
+// Auto-tag them so the map is internally consistent — player-visible gating is
+// then uniform: a LUMBER tile is always sitting on a FOREST node.
+function autoFlagExistingProductionTiles(grid) {
+  const pairs = [
+    [TILE.LUMBER, NODE_FLAGS.FOREST, Number(BALANCE.nodeYieldPoolForest ?? 80)],
+    [TILE.QUARRY, NODE_FLAGS.STONE, Number(BALANCE.nodeYieldPoolStone ?? 120)],
+    [TILE.HERB_GARDEN, NODE_FLAGS.HERB, Number(BALANCE.nodeYieldPoolHerb ?? 60)],
+  ];
+  // FARM tiles don't use nodeFlags (no corresponding NODE_FLAGS entry), but they
+  // still need a seeded yieldPool or the M1 harvest-cap branch will clamp the
+  // refund to zero. Scenario-placed FARMs bypass setTile() and therefore skip
+  // the Grid.js init-loop pre-seed, so reconcile here.
+  const farmPoolInit = Number(BALANCE.farmYieldPoolInitial ?? 120);
+  let flagged = 0;
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      const type = grid.tiles[gridIndex(grid, ix, iz)];
+      if (type === TILE.FARM) {
+        const prev = grid.tileState?.get?.(gridIndex(grid, ix, iz)) ?? null;
+        // Only reconcile scenario-stamped FARMs that have no tileState yet
+        // (prev == null). A live depleted FARM (yieldPool === 0 from soil
+        // exhaustion) still has a tileState entry and must NOT be silently
+        // refilled — that would mask the M1 salinization gameplay loop.
+        if (prev == null) {
+          setTileField(grid, ix, iz, "yieldPool", farmPoolInit);
+          // Mirror the setTile(TILE.FARM) path: fixed 0.9 fertility. Grid.js
+          // init uses 0.8 + random*0.2; scenario-stamped FARMs get this
+          // deterministic floor so M1 harvest math doesn't zero out before
+          // the 0.2 clamp (animal-ecology.test.js).
+          setTileField(grid, ix, iz, "fertility", 0.9);
+          flagged += 1;
+        }
+        continue;
+      }
+      for (const [tileType, flag, initialPool] of pairs) {
+        if (type !== tileType) continue;
+        const prev = grid.tileState?.get?.(gridIndex(grid, ix, iz)) ?? null;
+        const prevFlags = Number(prev?.nodeFlags ?? 0) | 0;
+        if ((prevFlags & flag) !== 0) break;
+        setTileField(grid, ix, iz, "nodeFlags", (prevFlags | flag) >>> 0);
+        // Only seed yieldPool if not already populated (preserve mid-game saves).
+        if (!prev || Number(prev.yieldPool ?? 0) <= 0) {
+          setTileField(grid, ix, iz, "yieldPool", initialPool);
+        }
+        flagged += 1;
+        break;
+      }
+    }
+  }
+  return flagged;
+}
+
+export function seedResourceNodes(target, services) {
+  const grid = getGrid(target);
+  if (!grid) return { forest: 0, stone: 0, herb: 0, autoFlagged: 0 };
+  const rngFn = asRngFn(services);
+  const forest = seedForestNodes(grid, rngFn);
+  const stone = seedStoneNodes(grid, rngFn);
+  const herb = seedHerbNodes(grid, rngFn);
+  const autoFlagged = autoFlagExistingProductionTiles(grid);
+  return { forest, stone, herb, autoFlagged };
+}
+
 export function buildScenarioBundle(grid) {
   const family = getScenarioFamilyForTemplate(grid.templateId);
   const scenario = family === "gate_chokepoints"
@@ -649,45 +986,59 @@ export function buildScenarioBundle(grid) {
     : family === "island_relay"
       ? buildIslandRelayScenario(grid)
       : buildFrontierRepairScenario(grid);
+  scenario.nextActionContext = buildScenarioNextActionContext(scenario);
+  // Scenario stamping uses setTileDirect, which writes grid.tiles but skips
+  // tileState — so any FARM/LUMBER/HERB_GARDEN/QUARRY placed by scenario has no
+  // yieldPool. Reconcile now so M1 harvest-gating sees a seeded pool from tick 0.
+  autoFlagExistingProductionTiles(grid);
   return {
     scenario,
-    objectives: buildObjectivesForScenario(scenario),
+    // v0.8.0 Phase 4 — Survival Mode. Objectives no longer drive a "win" outcome;
+    // kept as an empty array for legacy readers (HUD, telemetry, tests).
+    objectives: [],
     objectiveHint: scenario.hintCopy.initial,
   };
 }
 
 export function isInfrastructureNetworkTile(tileType) {
-  return tileType === TILE.ROAD || tileType === TILE.WAREHOUSE || tileType === TILE.LUMBER;
+  return tileType === TILE.ROAD || tileType === TILE.WAREHOUSE || tileType === TILE.LUMBER || tileType === TILE.BRIDGE;
 }
 
 export function hasInfrastructureConnection(grid, start, goal) {
   if (!start || !goal) return false;
-  const startTile = grid.tiles[start.ix + start.iz * grid.width];
-  const goalTile = grid.tiles[goal.ix + goal.iz * grid.width];
+  const width = Number(grid.width ?? 0);
+  const height = Number(grid.height ?? 0);
+  const tiles = grid.tiles ?? [];
+  const startIdx = start.ix + start.iz * width;
+  const goalIdx = goal.ix + goal.iz * width;
+  const startTile = tiles[startIdx];
+  const goalTile = tiles[goalIdx];
   if (!isInfrastructureNetworkTile(startTile) || !isInfrastructureNetworkTile(goalTile)) return false;
 
-  const queue = [start];
-  const visited = new Set([tileKey(start.ix, start.iz)]);
-  const neighbors = [
-    { x: 1, z: 0 },
-    { x: -1, z: 0 },
-    { x: 0, z: 1 },
-    { x: 0, z: -1 },
-  ];
+  const queueIx = [start.ix];
+  const queueIz = [start.iz];
+  const visited = new Uint8Array(width * height);
+  visited[startIdx] = 1;
+  let head = 0;
+  const dx = [1, -1, 0, 0];
+  const dz = [0, 0, 1, -1];
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current.ix === goal.ix && current.iz === goal.iz) return true;
-    for (const neighbor of neighbors) {
-      const ix = current.ix + neighbor.x;
-      const iz = current.iz + neighbor.z;
-      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
-      const key = tileKey(ix, iz);
-      if (visited.has(key)) continue;
-      const tile = grid.tiles[ix + iz * grid.width];
+  while (head < queueIx.length) {
+    const currentIx = queueIx[head];
+    const currentIz = queueIz[head];
+    head += 1;
+    if (currentIx === goal.ix && currentIz === goal.iz) return true;
+    for (let i = 0; i < 4; i += 1) {
+      const ix = currentIx + dx[i];
+      const iz = currentIz + dz[i];
+      if (ix < 0 || iz < 0 || ix >= width || iz >= height) continue;
+      const idx = ix + iz * width;
+      if (visited[idx]) continue;
+      const tile = tiles[idx];
       if (!isInfrastructureNetworkTile(tile)) continue;
-      visited.add(key);
-      queue.push({ ix, iz });
+      visited[idx] = 1;
+      queueIx.push(ix);
+      queueIz.push(iz);
     }
   }
 
@@ -738,8 +1089,94 @@ export function getScenarioEventCandidates(state, eventType) {
   return getScenarioFocusZones(state, refs);
 }
 
+function countScenarioRuntimeTiles(grid) {
+  const counts = { warehouses: 0, farms: 0, lumbers: 0, roads: 0, walls: 0 };
+  for (const tile of grid.tiles ?? []) {
+    if (tile === TILE.WAREHOUSE) counts.warehouses += 1;
+    else if (tile === TILE.FARM) counts.farms += 1;
+    else if (tile === TILE.LUMBER) counts.lumbers += 1;
+    else if (tile === TILE.ROAD) counts.roads += 1;
+    else if (tile === TILE.WALL) counts.walls += 1;
+  }
+  return counts;
+}
+
+function setScenarioRuntimeCache(state, cache) {
+  Object.defineProperty(state, "_scenarioRuntimeCache", {
+    value: cache,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+}
+
+function buildScenarioRuntimeTileSignature(grid, scenario) {
+  const width = Number(grid?.width ?? 0);
+  const height = Number(grid?.height ?? 0);
+  const tiles = grid?.tiles ?? [];
+  if (width <= 0 || height <= 0 || !tiles.length) return "0:0";
+
+  const anchors = scenario?.anchors ?? {};
+  const seen = new Set();
+  let hash = 2166136261;
+
+  const addTile = (ix, iz) => {
+    const x = Number(ix);
+    const z = Number(iz);
+    if (!Number.isInteger(x) || !Number.isInteger(z) || x < 0 || z < 0 || x >= width || z >= height) return;
+    const idx = x + z * width;
+    if (seen.has(idx)) return;
+    seen.add(idx);
+    hash = Math.imul(hash ^ (idx + 1), 16777619);
+    hash = Math.imul(hash ^ (Number(tiles[idx] ?? 0) + 31), 16777619);
+  };
+
+  const addRadius = (anchor, radius = 1) => {
+    if (!anchor) return;
+    const centerX = Number(anchor.ix);
+    const centerZ = Number(anchor.iz);
+    const r = Math.max(0, Math.floor(Number(radius ?? 1)));
+    for (let iz = centerZ - r; iz <= centerZ + r; iz += 1) {
+      for (let ix = centerX - r; ix <= centerX + r; ix += 1) {
+        if (Math.abs(ix - centerX) + Math.abs(iz - centerZ) > r) continue;
+        addTile(ix, iz);
+      }
+    }
+  };
+
+  for (const route of scenario?.routeLinks ?? []) {
+    addRadius(anchors[route.from], 1);
+    addRadius(anchors[route.to], 1);
+    for (const tile of route.gapTiles ?? []) addTile(tile.ix, tile.iz);
+  }
+  for (const depot of scenario?.depotZones ?? []) {
+    addRadius(anchors[depot.anchor], depot.radius ?? 2);
+  }
+
+  return `${seen.size}:${hash >>> 0}`;
+}
+
 export function getScenarioRuntime(state) {
   const scenario = state.gameplay?.scenario ?? {};
+  const gridVersion = Number(state.grid?.version ?? 0);
+  const tileSignature = buildScenarioRuntimeTileSignature(state.grid, scenario);
+  const cached = state._scenarioRuntimeCache;
+  if (
+    cached
+    && cached.scenario === scenario
+    && cached.grid === state.grid
+    && cached.gridVersion === gridVersion
+    && cached.routeLinks === scenario.routeLinks
+    && cached.depotZones === scenario.depotZones
+    && cached.targets === scenario.targets
+    && cached.anchors === scenario.anchors
+    && cached.nextActionContext === scenario.nextActionContext
+    && cached.tileSignature === tileSignature
+  ) {
+    return cached.runtime;
+  }
+
+  const nextActionContext = scenario.nextActionContext ?? buildScenarioNextActionContext(scenario);
   const anchors = scenario.anchors ?? {};
   const routes = (scenario.routeLinks ?? []).map((route) => ({
     ...route,
@@ -749,21 +1186,16 @@ export function getScenarioRuntime(state) {
     ...depot,
     ready: hasWarehouseNear(state.grid, anchors[depot.anchor], depot.radius ?? 2),
   }));
-  const counts = {
-    warehouses: countTilesByType(state.grid, [TILE.WAREHOUSE]),
-    farms: countTilesByType(state.grid, [TILE.FARM]),
-    lumbers: countTilesByType(state.grid, [TILE.LUMBER]),
-    roads: countTilesByType(state.grid, [TILE.ROAD]),
-    walls: countTilesByType(state.grid, [TILE.WALL]),
-  };
+  const counts = countScenarioRuntimeTiles(state.grid);
   const logisticsTargets = scenario.targets?.logistics ?? { warehouses: 2, farms: 4, lumbers: 3, roads: 20, walls: 0 };
   const stockpileTargets = scenario.targets?.stockpile ?? { food: 95, wood: 90 };
   const stabilityTargets = scenario.targets?.stability ?? { walls: 12, prosperity: 58, threat: 44, holdSec: 30 };
   const connectedRoutes = routes.filter((route) => route.connected).length;
   const readyDepots = depots.filter((depot) => depot.ready).length;
 
-  return {
+  const runtime = {
     scenario,
+    nextActionContext,
     routes,
     depots,
     counts,
@@ -773,4 +1205,17 @@ export function getScenarioRuntime(state) {
     connectedRoutes,
     readyDepots,
   };
+  setScenarioRuntimeCache(state, {
+    scenario,
+    grid: state.grid,
+    gridVersion,
+    routeLinks: scenario.routeLinks,
+    depotZones: scenario.depotZones,
+    targets: scenario.targets,
+    anchors: scenario.anchors,
+    nextActionContext: scenario.nextActionContext,
+    tileSignature,
+    runtime,
+  });
+  return runtime;
 }

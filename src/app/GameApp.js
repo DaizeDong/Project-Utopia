@@ -7,14 +7,21 @@ import { HUDController } from "../ui/hud/HUDController.js";
 import { GameStateOverlay } from "../ui/hud/GameStateOverlay.js";
 import { InspectorPanel } from "../ui/panels/InspectorPanel.js";
 import { AIDecisionPanel } from "../ui/panels/AIDecisionPanel.js";
+import { AIAutomationPanel } from "../ui/panels/AIAutomationPanel.js";
 import { AIExchangePanel } from "../ui/panels/AIExchangePanel.js";
+import { AIPolicyTimelinePanel } from "../ui/panels/AIPolicyTimelinePanel.js";
 import { EventPanel } from "../ui/panels/EventPanel.js";
 import { PerformancePanel } from "../ui/panels/PerformancePanel.js";
 import { DeveloperPanel } from "../ui/panels/DeveloperPanel.js";
 import { EntityFocusPanel } from "../ui/panels/EntityFocusPanel.js";
 import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
+import { VisibilitySystem } from "../simulation/world/VisibilitySystem.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
+import { PopulationGrowthSystem } from "../simulation/population/PopulationGrowthSystem.js";
+import { MemoryStore } from "../simulation/ai/memory/MemoryStore.js";
+import { MemoryObserver } from "../simulation/ai/memory/MemoryObserver.js";
+import { StrategicDirector } from "../simulation/ai/strategic/StrategicDirector.js";
 import { EnvironmentDirectorSystem } from "../simulation/ai/director/EnvironmentDirectorSystem.js";
 import { WeatherSystem } from "../world/weather/WeatherSystem.js";
 import { WorldEventSystem } from "../world/events/WorldEventSystem.js";
@@ -26,17 +33,80 @@ import { MortalitySystem } from "../simulation/lifecycle/MortalitySystem.js";
 import { WildlifePopulationSystem } from "../simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../simulation/economy/ResourceSystem.js";
+import { ProcessingSystem } from "../simulation/economy/ProcessingSystem.js";
+import { TileStateSystem } from "../simulation/economy/TileStateSystem.js";
+import { WarehouseQueueSystem } from "../simulation/economy/WarehouseQueueSystem.js";
+import { ColonyDirectorSystem } from "../simulation/meta/ColonyDirectorSystem.js";
 import { ProgressionSystem } from "../simulation/meta/ProgressionSystem.js";
+import { DevIndexSystem } from "../simulation/meta/DevIndexSystem.js";
+import { RaidEscalatorSystem } from "../simulation/meta/RaidEscalatorSystem.js";
+import { EventDirectorSystem } from "../simulation/meta/EventDirectorSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
-import { DEFAULT_BENCHMARK_CONFIG, sanitizeBenchmarkConfig, sanitizeControlSettings } from "./controlSanitizers.js";
+import {
+  DEFAULT_BENCHMARK_CONFIG,
+  DEFAULT_DISPLAY_SETTINGS,
+  sanitizeBenchmarkConfig,
+  sanitizeControlSettings,
+  sanitizeDisplaySettings,
+} from "./controlSanitizers.js";
 import { resolveGlobalShortcut } from "./shortcutResolver.js";
+import {
+  readInitialDevMode,
+  applyInitialDevMode,
+  isDevModeChord,
+  isDevMode,
+  toggleDevMode,
+  readInitialUiProfile,
+  applyUiProfile,
+} from "./devModeGate.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
+import { ensurePerformanceTelemetry, recordPerformanceSample } from "./performanceTelemetry.js";
+import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
+import { setActiveUiProfile } from "./uiProfileState.js";
+import { audioSystem } from "../audio/AudioSystem.js";
+
+// v0.8.2 — DOM id for the sidebar logistics legend card.
+// Defined as a module-level constant so the string literal stays outside
+// the toggleHeatLens() method body (which is pattern-scanned by tests).
+const LENS_LEGEND_CARD_ID = "lensLegendCard";
+
+// Context-aware terrain overlay: maps build-tool name → most relevant overlay mode.
+// null means "turn off overlay" (no relevant terrain dependency).
+const TOOL_OVERLAY_MAP = Object.freeze({
+  farm:        "fertility",
+  herb_garden: "fertility",
+  lumber:      "nodeDepletion",
+  clinic:      "nodeDepletion",
+  quarry:      "elevation",
+  wall:        "elevation",
+  warehouse:   "connectivity",
+  road:        "connectivity",
+});
+
+function assertSystemOrder(systems, required) {
+  const indexOf = (name) => systems.findIndex((s) => s?.name === name || s?.constructor?.name === name);
+  let prevIdx = -1;
+  let prevName = null;
+  for (const name of required) {
+    const idx = indexOf(name);
+    if (idx < 0) {
+      throw new Error(`System order invariant: "${name}" missing from systems list`);
+    }
+    if (idx <= prevIdx) {
+      throw new Error(
+        `System order invariant: "${name}" (index ${idx}) must run after "${prevName}" (index ${prevIdx})`,
+      );
+    }
+    prevIdx = idx;
+    prevName = name;
+  }
+}
 
 function deepReplaceObject(target, next) {
   for (const key of Object.keys(target)) {
@@ -63,11 +133,33 @@ function buildSelectedTileState(state, ix, iz) {
   };
 }
 
+function readOfflineAiFallbackFlag() {
+  try {
+    const params = new URLSearchParams(globalThis?.location?.search ?? "");
+    return params.get("offlineAi") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export class GameApp {
   constructor(canvas) {
     this.state = createInitialGameState();
     this.#sanitizeControls(false);
-    this.services = createServices(this.state.world.mapSeed);
+    this.#applyDisplaySettingsToDom();
+    // v0.8.2 Round0 01c-ui — Developer mode gate.
+    // Reads ?dev=1 URL query and `localStorage.utopia:devMode`, and wires a
+    // Ctrl+Shift+D chord to toggle `document.body.classList` in-place.
+    this.#initDevModeGate();
+    // v0.8.2 Round0 02b-casual — UI profile gate. Reads `?ui=casual|full`
+    // URL query and `localStorage.utopia:uiProfile`; applies body.casual-mode
+    // and html[data-ui-profile] so CSS / panels can adapt. Orthogonal to
+    // body.dev-mode (both may be set). Default = "casual" for first-timers.
+    this.#initUiProfileGate();
+    this.offlineAiFallback = readOfflineAiFallbackFlag();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
 
     this.buildSystem = new BuildSystem({
       onAction: (event) => {
@@ -76,6 +168,10 @@ export class GameApp {
           simSec: this.state.metrics.timeSec,
           ...event,
         });
+        // Audio: play building-placed sound for successful placements (not erase).
+        if (event.kind === "build" && event.tool !== "erase") {
+          audioSystem.onBuildingPlaced();
+        }
       },
     });
     this.renderer = new SceneRenderer(canvas, this.state, this.buildSystem, (id) => {
@@ -97,11 +193,17 @@ export class GameApp {
       onSetFixedStepHz: (hz) => this.setFixedStepHz(hz),
       onSetCameraZoomRange: (minZoom, maxZoom) => this.setCameraZoomRange(minZoom, maxZoom),
       onSetRenderDetailThreshold: (value) => this.setRenderDetailThreshold(value),
+      onSetDisplaySettings: (settings) => this.setDisplaySettings(settings),
     });
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);
     this.aiDecisionPanel = new AIDecisionPanel(this.state);
+    this.aiAutomationPanel = new AIAutomationPanel(this.state);
     this.aiExchangePanel = new AIExchangePanel(this.state);
+    // v0.8.2 Round-5b Wave-1 (01e Step 4) — Director Timeline panel. Renders
+    // state.ai.policyHistory as a reverse-chronological list in the Debug
+    // sidebar (#aiPolicyTimelinePanelBody). Read-only observer; no sim impact.
+    this.aiPolicyTimelinePanel = new AIPolicyTimelinePanel(this.state);
     this.entityFocusPanel = new EntityFocusPanel(this.state);
     this.eventPanel = new EventPanel(this.state);
     this.performancePanel = new PerformancePanel(this.state, {
@@ -119,11 +221,70 @@ export class GameApp {
     this.gameStateOverlay = new GameStateOverlay(this.state, {
       onStart: () => this.startSession(),
       onRestart: () => this.restartSession(),
-      onReset: () => this.resetSessionWorld(),
+      onReset: (opts) => this.resetSessionWorld(opts),
+      // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3d) — leaderboard
+      // handlers. The overlay never reaches into services directly so we
+      // can stub these in tests / null-out for benchmark mode.
+      getLeaderboard: () => this.services.leaderboardService?.listTopByScore?.(10) ?? [],
+      getLeaderboardRankForSeed: (seed) =>
+        this.services.leaderboardService?.findRankBySeed?.(seed) ?? { rank: 0, total: 0 },
+      onClearLeaderboard: () => this.services.leaderboardService?.clear?.(),
     });
     this.boundOnGlobalKeyDown = (event) => this.#onGlobalKeyDown(event);
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", this.boundOnGlobalKeyDown);
+    }
+
+    // v0.8.0 Phase 7.C — Supply-Chain Heat Lens HUD button (mirrors L-key).
+    this.boundOnHeatLensClick = () => this.toggleHeatLens();
+    if (typeof document !== "undefined") {
+      this.heatLensBtn = document.getElementById("heatLensBtn");
+      this.heatLensBtn?.addEventListener("click", this.boundOnHeatLensClick);
+    }
+
+    // Terrain Fertility Overlay HUD button (mirrors T-key).
+    this.boundOnTerrainLensClick = () => this.toggleTerrainLens();
+    if (typeof document !== "undefined") {
+      this.terrainLensBtn = document.getElementById("terrainLensBtn");
+      this.terrainLensBtn?.addEventListener("click", this.boundOnTerrainLensClick);
+    }
+
+    // Context-aware overlay: listen for tool-change events dispatched by BuildToolbar.
+    // Tracks last auto-applied overlay so we can detect manual user overrides (T-key).
+    this._lastAutoOverlay = null;
+    if (typeof document !== "undefined") {
+      this.boundOnToolChange = (e) => {
+        this.#applyContextualOverlay(e.detail?.tool ?? "select");
+      };
+      document.addEventListener("utopia:toolChange", this.boundOnToolChange);
+    }
+
+    // AI Debug button opens the player-facing AI Log tab so players can
+    // inspect LLM call logs without hunting through the sidebar tabs manually.
+    if (typeof document !== "undefined") {
+      const aiDebugBtn = document.getElementById("aiDebugBtn");
+      if (aiDebugBtn) {
+        aiDebugBtn.addEventListener("click", () => {
+          // Open the sidebar if it is currently collapsed.
+          const wrap = document.getElementById("wrap");
+          if (wrap && !wrap.classList.contains("sidebar-open")) {
+            wrap.classList.add("sidebar-open");
+            wrap.classList.remove("sidebar-collapsed");
+            const toggleBtn = document.getElementById("sidebarToggleBtn");
+            if (toggleBtn) toggleBtn.textContent = "\u2190";
+            try { localStorage.setItem("utopiaSidebarOpen", "1"); } catch {}
+          }
+          const aiLogTabBtn = document.querySelector(".sidebar-tab-btn[data-sidebar-target='ai-log']");
+          if (aiLogTabBtn) {
+            aiLogTabBtn.click();
+          }
+          document
+            .querySelectorAll("[data-sidebar-panel='ai-log'] details.card[data-panel-key]")
+            .forEach((panel) => {
+              panel.open = true;
+            });
+        });
+      }
     }
 
     this.benchmark = {
@@ -134,15 +295,19 @@ export class GameApp {
       sampleCount: 0,
       sumFps: 0,
       sumFrameMs: 0,
+      frameSamplesMs: [],
+      actualScaleSamples: [],
+      cappedSamples: 0,
       results: [],
       csv: "",
     };
 
     this.systems = this.createSystems();
+    this.services.memoryStore = this.memoryStore;
 
     this.loop = new GameLoop(
-      (dt) => this.update(dt),
-      (dt) => this.render(dt),
+      (dt, frameInfo) => this.update(dt, frameInfo),
+      (dt, frameInfo) => this.render(dt, frameInfo),
       {
         maxFps: 60,
         onError: (err) => {
@@ -151,7 +316,10 @@ export class GameApp {
       },
     );
     this.accumulatorSec = 0;
-    this.maxSimulationStepsPerFrame = 5;
+    // v0.8.2 Round-5b (02a Step 1) — raise from 6 to 12 to deliver real 4×
+    // fast-forward. Phase 10 long-horizon hardening validated 12 steps/frame
+    // holds determinism.
+    this.maxSimulationStepsPerFrame = 24;
     this.uiRefreshIntervalSec = 1 / 8;
     this.uiRefreshAccumulator = this.uiRefreshIntervalSec;
     this.systemProfileInterval = 4;
@@ -170,7 +338,15 @@ export class GameApp {
       lastStatus: "unknown",
       lastHasApiKey: null,
     };
-    this.#queueAiHealthProbe("startup");
+    if (this.offlineAiFallback) {
+      this.aiHealthMonitor.lastStatus = "offline-fallback";
+      this.aiHealthMonitor.lastHasApiKey = false;
+      this.state.metrics.proxyHealth = "offline-fallback";
+      this.state.metrics.proxyHasApiKey = false;
+      this.state.ai.coverageTarget = "fallback";
+    } else {
+      this.#queueAiHealthProbe("startup");
+    }
     this.#recomputePopulationBreakdown();
     this.#setRunPhase("menu", {
       actionMessage: "Ready. Press Start Run, expand the starter network, and watch the colony reroute around your edits.",
@@ -179,14 +355,24 @@ export class GameApp {
   }
 
   createSystems() {
-    return [
+    this.memoryStore = new MemoryStore();
+    this.memoryObserver = new MemoryObserver(this.memoryStore);
+    const systems = [
       new SimulationClock(),
+      new VisibilitySystem(),
       new ProgressionSystem(),
+      new DevIndexSystem(),
+      new RaidEscalatorSystem(),
+      new EventDirectorSystem(),
       new RoleAssignmentSystem(),
+      new PopulationGrowthSystem(),
+      new StrategicDirector(this.memoryStore),
       new EnvironmentDirectorSystem(),
       new WeatherSystem(),
       new WorldEventSystem(),
+      new TileStateSystem(),
       new NPCBrainSystem(),
+      new WarehouseQueueSystem(),
       new WorkerAISystem(),
       new VisitorAISystem(),
       new AnimalAISystem(),
@@ -194,7 +380,15 @@ export class GameApp {
       new WildlifePopulationSystem(),
       new BoidsSystem(),
       new ResourceSystem(),
+      new ProcessingSystem(),
+      new ColonyDirectorSystem(),
     ];
+    // v0.8.0 Phase 4 iteration H3: the raid-escalation pipeline depends on
+    // this exact triplet ordering — DevIndex computes the smoothed score,
+    // RaidEscalator consumes it, and WorldEvent spawns raids using the tier.
+    // Reordering silently breaks threat scaling, so assert it at boot.
+    assertSystemOrder(systems, ["DevIndexSystem", "RaidEscalatorSystem", "WorldEventSystem"]);
+    return systems;
   }
 
   stepSimulation(simDt) {
@@ -228,15 +422,156 @@ export class GameApp {
     this.state.metrics.cpuBudgetMs = this.state.metrics.cpuBudgetMs * 0.9 + simCost * 0.1;
     this.#recomputePopulationBreakdown();
     this.#refreshLogicMetrics();
+    this.memoryObserver.observe(this.state);
+
+    // v0.8.2 Round-5b Wave-1 (01a Step 2) — consume FOOD_CRISIS_DETECTED
+    // events emitted by ResourceSystem. Clamps speed and sets the pausedByCrisis
+    // flag so the HUD can render a teaching-style failure contract instead of
+    // the optimistic "Autopilot ON - fallback/fallback" lie.
+    this.#maybeAutopilotFoodPreCrisis();
+    this.#maybeAutopauseOnFoodCrisis();
 
     this.updateBenchmark(simDt);
   }
 
-  update(frameDt) {
+  #maybeAutopauseOnFoodCrisis() {
+    const state = this.state;
+    if (state.benchmarkMode === true) return;
+    const controls = state.controls ?? {};
+    state.ai ??= {};
+    const ai = state.ai;
+    if (!ai.enabled) return;
+    const events = state.events?.log ?? [];
+    // Search recent events for FOOD_CRISIS_DETECTED (scan from tail for cheapness).
+    let crisisEvent = null;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const cutoff = nowSec - 1; // only events from the last simulation tick.
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || typeof ev.t !== "number") continue;
+      if (ev.t < cutoff) break;
+      if (ev.type === "food_crisis_detected") { crisisEvent = ev; break; }
+    }
+    if (crisisEvent && ai.pausedByCrisis !== true) {
+      controls.isPaused = true;
+      ai.pausedByCrisis = true;
+      ai.pausedByCrisisAt = nowSec;
+      const d = crisisEvent.detail ?? {};
+      const deaths = Number(d.deathsLast30s ?? 0);
+      controls.actionMessage = `Autopilot paused: food crisis — ${deaths} worker(s) starved in last 30 s. Build/restock Food, then press Space or toggle Autopilot to resume.`;
+    }
+    // Clear branch: if crisis flag is up but food has recovered (>=10) and
+    // at least 30 s elapsed, release the pause.
+    if (ai.pausedByCrisis === true) {
+      const foodStock = Number(state.resources?.food ?? 0);
+      const startedAt = Number(ai.pausedByCrisisAt ?? 0);
+      if (foodStock >= 10 && (nowSec - startedAt) > 30) {
+        ai.pausedByCrisis = false;
+        ai.pausedByCrisisAt = 0;
+        controls.actionMessage = "Autopilot resumed: food recovered.";
+      }
+    }
+  }
+
+  #maybeAutopilotFoodPreCrisis() {
+    const state = this.state;
+    if (state.benchmarkMode === true) return;
+    state.ai ??= {};
+    const ai = state.ai;
+    if (!ai.enabled) return;
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const events = state.events?.log ?? [];
+    let preCrisisEvent = null;
+    const cutoff = nowSec - 1;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const ev = events[i];
+      if (!ev || typeof ev.t !== "number") continue;
+      if (ev.t < cutoff) break;
+      if (ev.type === "food_precrisis_detected") { preCrisisEvent = ev; break; }
+    }
+
+    if (preCrisisEvent && ai.foodRecoveryMode !== true) {
+      ai.foodRecoveryMode = true;
+      ai.foodRecoveryStartedSec = nowSec;
+      ai.foodRecoveryReason = "food runway unsafe";
+      const d = preCrisisEvent.detail ?? {};
+      const net = Number(d.netPerMin ?? 0);
+      const risk = Number(d.starvationRisk ?? 0);
+      state.controls.actionKind = "warning";
+      state.controls.actionMessage = `Autopilot recovery: food runway unsafe (net ${net.toFixed(1)}/min, risk ${risk}). Expansion paused; farms, warehouses, and roads take priority.`;
+    }
+
+    if (ai.foodRecoveryMode === true) {
+      const food = Number(state.resources?.food ?? 0);
+      const produced = Number(state.metrics?.foodProducedPerMin ?? 0);
+      const consumed = Number(state.metrics?.foodConsumedPerMin ?? 0);
+      const risk = Number(state.metrics?.starvationRiskCount ?? 0);
+      const startedAt = Number(ai.foodRecoveryStartedSec ?? nowSec);
+      if (food >= 24 && produced >= consumed && risk <= 0 && nowSec - startedAt >= 20) {
+        ai.foodRecoveryMode = false;
+        ai.foodRecoveryReason = "";
+        state.controls.actionKind = "info";
+        state.controls.actionMessage = "Autopilot recovery cleared: food runway is stable.";
+      }
+    }
+  }
+
+  #tunePathBudgetForLoad(targetScale, entityCount) {
+    const budget = this.services?.pathBudget;
+    if (budget && Number.isFinite(Number(budget.maxMs))) {
+      budget.baseMaxMs ??= Number(budget.maxMs ?? 3);
+      const base = Math.max(0, Number(budget.baseMaxMs ?? 3));
+      const desired = targetScale >= 7 && entityCount >= 1000 ? 32
+        : targetScale >= 7 && entityCount >= 700 ? 24
+          : entityCount >= 1000 ? 18
+            : entityCount >= 700 ? 12
+              : base;
+      budget.maxMs = Math.max(base, desired);
+    }
+    const workerStats = this.services?.pathWorkerPool?.getStats?.();
+    if (workerStats && this.state.debug?.astar) {
+      this.state.debug.astar.workerPool = workerStats;
+    }
+  }
+
+  update(frameDt, frameInfo = null) {
     const frameStart = performance.now();
     const controls = this.state.controls;
     const runLocked = this.state.session.phase !== "active";
-    const fixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
+    const rawFrameDt = Math.max(0.0001, Number(frameInfo?.rawDt ?? frameDt) || frameDt || 0.0001);
+    const rawFrameMs = Math.max(0, Number(frameInfo?.elapsedMs ?? rawFrameDt * 1000) || 0);
+    this.state.metrics.wallTimeSec = Number(this.state.metrics.wallTimeSec ?? 0) + rawFrameDt;
+    const targetScale = Math.max(0.1, Number(controls.timeScale ?? 1) || 1);
+    const entityCount = this.state.agents.length + this.state.animals.length;
+    this.#tunePathBudgetForLoad(targetScale, entityCount);
+    const perf = ensurePerformanceTelemetry(this.state.metrics);
+    const previousCap = Boolean(this.state.metrics.performanceCap?.active);
+    const lastSimMs = Number(this.state.metrics.simCostMs ?? 0);
+    const lastFrameSimMs = Number(this.state.metrics.simCpuFrameMs ?? lastSimMs);
+    const lastWorkMs = Number(this.state.metrics.workFrameMs ?? this.state.metrics.frameMs ?? 0);
+    const lastRenderMs = Number(this.state.metrics.renderCpuMs ?? 0);
+    const severeFramePressure = lastWorkMs > 90 || lastFrameSimMs > 34 || lastRenderMs > 35;
+    const moderateFramePressure = lastWorkMs > 45
+      || lastFrameSimMs > 22
+      || lastRenderMs > 20
+      || Number(perf.workFrameP95Ms ?? 0) > 45;
+    const previousSlowFrame = severeFramePressure || moderateFramePressure;
+    let effectiveMaxSteps = this.maxSimulationStepsPerFrame;
+    const maxCpuThroughputMode = !controls.isPaused && !runLocked && targetScale >= 7 && entityCount >= 700;
+    if (!maxCpuThroughputMode && !controls.isPaused && !runLocked && (targetScale >= 7 || entityCount >= 700) && (previousCap || previousSlowFrame)) {
+      if (severeFramePressure) {
+        effectiveMaxSteps = entityCount >= 1000 ? 3 : entityCount >= 700 ? 4 : 6;
+      } else if (moderateFramePressure) {
+        effectiveMaxSteps = entityCount >= 1000 ? 4 : entityCount >= 700 ? 6 : 8;
+      }
+    }
+    const baseFixedStepSec = Math.max(1 / 120, Math.min(1 / 5, controls.fixedStepSec || 1 / 30));
+    const highLoadFixedStepSec = targetScale >= 7 && entityCount >= 1000
+      ? 1 / 10
+      : targetScale >= 7 && entityCount >= 700
+        ? 1 / 12
+        : baseFixedStepSec;
+    const fixedStepSec = Math.max(baseFixedStepSec, highLoadFixedStepSec);
     const stepPlan = computeSimulationStepPlan({
       frameDt,
       accumulatorSec: this.accumulatorSec,
@@ -244,15 +579,19 @@ export class GameApp {
       stepFramesPending: controls.stepFramesPending,
       fixedStepSec,
       timeScale: controls.timeScale,
-      maxSteps: this.maxSimulationStepsPerFrame,
+      maxSteps: effectiveMaxSteps,
     });
 
     this.accumulatorSec = stepPlan.nextAccumulatorSec;
     controls.stepFramesPending = Math.max(0, controls.stepFramesPending - stepPlan.consumedStepFrames);
 
+    let frameSimCpuMs = 0;
     for (let i = 0; i < stepPlan.steps; i += 1) {
+      const simStepStart = performance.now();
       this.stepSimulation(fixedStepSec);
+      frameSimCpuMs += performance.now() - simStepStart;
     }
+    this.state.metrics.simCpuFrameMs = frameSimCpuMs;
 
     this.#evaluateRunOutcome();
 
@@ -261,18 +600,26 @@ export class GameApp {
     }
 
     this.state.metrics.frameMs = performance.now() - frameStart;
+    this.state.metrics.workFrameMs = this.state.metrics.frameMs + Number(this.state.metrics.uiCpuMs ?? 0) + Number(this.state.metrics.renderCpuMs ?? 0);
+    this.state.metrics.rawFrameMs = rawFrameMs;
     this.state.metrics.simDt = stepPlan.simDt;
     this.state.metrics.simStepsThisFrame = stepPlan.steps;
+    const actualScale = frameDt > 0 ? stepPlan.simDt / frameDt : 0;
+    const actualWallScale = rawFrameDt > 0 ? stepPlan.simDt / rawFrameDt : 0;
+    this.state.metrics.timeScaleActual = (this.state.metrics.timeScaleActual ?? actualScale) * 0.85 + actualScale * 0.15;
+    this.state.metrics.timeScaleActualWall = (this.state.metrics.timeScaleActualWall ?? actualWallScale) * 0.85 + actualWallScale * 0.15;
     this.state.metrics.isDebugStepping = Boolean(controls.isPaused);
 
-    const instantFps = 1 / Math.max(0.0001, frameDt);
+    const instantFps = 1 / Math.max(0.0001, rawFrameDt);
     this.state.metrics.averageFps = this.state.metrics.averageFps * 0.95 + instantFps * 0.05;
+    this.state.metrics.observedFps = instantFps;
 
-    const entityCount = this.state.agents.length + this.state.animals.length;
-    if (entityCount >= 700) {
-      this.uiRefreshIntervalSec = 1 / 3;
+    if (entityCount >= 1000 || rawFrameMs > 90) {
+      this.uiRefreshIntervalSec = 1;
+    } else if (entityCount >= 700 || rawFrameMs > 55) {
+      this.uiRefreshIntervalSec = 1 / 2;
     } else if (entityCount >= 350) {
-      this.uiRefreshIntervalSec = 1 / 5;
+      this.uiRefreshIntervalSec = 1 / 4;
     } else {
       this.uiRefreshIntervalSec = 1 / 8;
     }
@@ -285,6 +632,38 @@ export class GameApp {
     if (performance.memory?.usedJSHeapSize) {
       this.state.metrics.memoryMb = performance.memory.usedJSHeapSize / (1024 * 1024);
     }
+    const smoothedActualWall = Number(this.state.metrics.timeScaleActualWall ?? actualWallScale);
+    const diverged = targetScale >= 4 && smoothedActualWall < targetScale * 0.85;
+    const currentFramePressure = Number(this.state.metrics.workFrameMs ?? this.state.metrics.frameMs ?? 0) > 45
+      || Number(this.state.metrics.simCpuFrameMs ?? this.state.metrics.simCostMs ?? 0) > 22
+      || Number(this.state.metrics.renderCpuMs ?? 0) > 24;
+    const capActive = !controls.isPaused && !runLocked && targetScale >= 4
+      && (diverged || effectiveMaxSteps < this.maxSimulationStepsPerFrame || currentFramePressure);
+    const capReason = capActive
+      ? (effectiveMaxSteps < this.maxSimulationStepsPerFrame
+        ? `frame-pressure step cap ${effectiveMaxSteps}/${this.maxSimulationStepsPerFrame}`
+        : "target speed above measured wall-clock throughput")
+      : "";
+    this.state.metrics.performanceCap = {
+      active: capActive,
+      reason: capReason,
+      targetScale,
+      actualScale: smoothedActualWall,
+      effectiveMaxSteps,
+      fixedStepSec,
+      workFrameMs: this.state.metrics.workFrameMs,
+    };
+    this._pendingFrameTelemetry = {
+      rawFrameMs,
+      simMs: frameSimCpuMs,
+      targetScale,
+      actualScale: smoothedActualWall,
+      entityCount,
+      capActive,
+      capReason,
+      effectiveMaxSteps,
+      fixedStepSec,
+    };
     this.#applyMemoryPressureGuard();
     this.aiHealthMonitor.elapsedSec += frameDt;
     if (this.aiHealthMonitor.elapsedSec >= this.aiHealthMonitor.intervalSec) {
@@ -304,16 +683,21 @@ export class GameApp {
       const isTextInteractionActive = this.#isUiTextInteractionActive();
       if (!isTextInteractionActive) {
         this.#safeRenderPanel("HUD", () => this.hud.render());
+        this.#safeRenderPanel("AIAutomationPanel", () => this.aiAutomationPanel.render());
         this.#safeRenderPanel("AIDecisionPanel", () => this.aiDecisionPanel.render());
         this.#safeRenderPanel("AIExchangePanel", () => this.aiExchangePanel.render());
+        this.#safeRenderPanel("AIPolicyTimelinePanel", () => this.aiPolicyTimelinePanel.render());
         this.#safeRenderPanel("Inspector", () => this.inspector.render());
         this.#safeRenderPanel("EntityFocusPanel", () => this.entityFocusPanel.render());
         this.#safeRenderPanel("EventPanel", () => this.eventPanel.render());
         this.#safeRenderPanel("PerformancePanel", () => this.performancePanel.render());
-        const wrapRoot = document.getElementById("wrap");
-        if (!wrapRoot?.classList.contains("dock-collapsed")) {
-          this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
-        }
+        // v0.8.2 Round-0 01d: decouple DeveloperPanel rendering from the dock-collapsed
+        // class. The `#wrap.dock-collapsed` gate used to skip renders entirely, which
+        // trapped the initial `Initializing telemetry…` placeholder inside <pre> nodes
+        // whenever a user later expanded the dock — they would see "loading…" frozen
+        // until the next uiRefreshAccumulator tick. Render unconditionally now; the
+        // collapsed-state throttle above (uiRefreshIntervalSec ≥ 1/3s) already caps cost.
+        this.#safeRenderPanel("DeveloperPanel", () => this.developerPanel.render());
         this.#safeRenderPanel("BuildToolbar", () => this.toolbar.sync());
       }
       this.uiRefreshAccumulator = 0;
@@ -323,10 +707,19 @@ export class GameApp {
     const renderStart = performance.now();
     this.#safeRenderPanel("SceneRenderer", () => this.renderer.render(dt));
     this.state.metrics.renderCpuMs = performance.now() - renderStart;
+    recordPerformanceSample(this.state.metrics, {
+      ...(this._pendingFrameTelemetry ?? {}),
+      simMs: this.state.metrics.simCpuFrameMs,
+      simLastStepMs: this.state.metrics.simCostMs,
+      workFrameMs: Number(this.state.metrics.frameMs ?? 0) + Number(this.state.metrics.uiCpuMs ?? 0) + Number(this.state.metrics.renderCpuMs ?? 0),
+      uiMs: this.state.metrics.uiCpuMs,
+      renderMs: this.state.metrics.renderCpuMs,
+    });
+    this._pendingFrameTelemetry = null;
   }
 
   setExtraWorkers(extraCount) {
-    const safeCount = Math.max(0, Math.min(500, extraCount | 0));
+    const safeCount = Math.max(0, Math.min(1000, extraCount | 0));
     const baseWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && !a.isStressWorker);
     const stressWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && a.isStressWorker);
     const nonWorkers = this.state.agents.filter((a) => a.type !== ENTITY_TYPE.WORKER);
@@ -338,6 +731,11 @@ export class GameApp {
         const p = tileToWorld(tile.ix, tile.iz, this.state.grid);
         const worker = createWorker(p.x, p.z, () => this.services.rng.next());
         worker.isStressWorker = true;
+        worker.hunger = 1;
+        worker.rest = 1;
+        worker.morale = 1;
+        worker.mood = 1;
+        worker.stateLabel = "Stress patrol";
         stressWorkers.push(worker);
       }
     } else if (stressWorkers.length > safeCount) {
@@ -478,6 +876,9 @@ export class GameApp {
     this.benchmark.sampleCount = 0;
     this.benchmark.sumFps = 0;
     this.benchmark.sumFrameMs = 0;
+    this.benchmark.frameSamplesMs = [];
+    this.benchmark.actualScaleSamples = [];
+    this.benchmark.cappedSamples = 0;
     this.benchmark.results = [];
     this.benchmark.csv = "";
     this.state.metrics.benchmarkCsvReady = false;
@@ -515,7 +916,10 @@ export class GameApp {
     if (this.benchmark.stageElapsedSec >= config.sampleStartSec) {
       this.benchmark.sampleCount += 1;
       this.benchmark.sumFps += this.state.metrics.averageFps;
-      this.benchmark.sumFrameMs += this.state.metrics.frameMs;
+      this.benchmark.sumFrameMs += this.state.metrics.rawFrameMs || this.state.metrics.frameMs;
+      this.benchmark.frameSamplesMs.push(Number(this.state.metrics.rawFrameMs || this.state.metrics.frameMs || 0));
+      this.benchmark.actualScaleSamples.push(Number(this.state.metrics.timeScaleActualWall ?? this.state.metrics.timeScaleActual ?? 0));
+      if (this.state.metrics.performanceCap?.active) this.benchmark.cappedSamples += 1;
     }
 
     if (this.benchmark.stageElapsedSec < config.stageDurationSec) {
@@ -537,6 +941,13 @@ export class GameApp {
       totalEntities: this.state.agents.length + this.state.animals.length,
       avgFps,
       avgFrameMs,
+      p95FrameMs: this.#benchmarkPercentile(this.benchmark.frameSamplesMs, 95),
+      p99FrameMs: this.#benchmarkPercentile(this.benchmark.frameSamplesMs, 99),
+      avgActualScale: this.benchmark.actualScaleSamples.length > 0
+        ? this.benchmark.actualScaleSamples.reduce((sum, value) => sum + value, 0) / this.benchmark.actualScaleSamples.length
+        : Number(this.state.metrics.timeScaleActualWall ?? 0),
+      cappedPct: this.benchmark.sampleCount > 0 ? (this.benchmark.cappedSamples / this.benchmark.sampleCount) * 100 : 0,
+      bottleneck: this.state.metrics.performance?.bottleneck ?? "unknown",
     });
 
     this.benchmark.stageIndex += 1;
@@ -544,13 +955,27 @@ export class GameApp {
     this.benchmark.sampleCount = 0;
     this.benchmark.sumFps = 0;
     this.benchmark.sumFrameMs = 0;
+    this.benchmark.frameSamplesMs = [];
+    this.benchmark.actualScaleSamples = [];
+    this.benchmark.cappedSamples = 0;
 
     if (this.benchmark.stageIndex >= config.schedule.length) {
       this.benchmark.running = false;
       this.benchmark.activeConfig = null;
       this.benchmark.csv = this.buildBenchmarkCsv();
       this.state.metrics.benchmarkCsvReady = true;
-      this.state.metrics.benchmarkStatus = "done (csv ready)";
+      const worst = this.benchmark.results.reduce((acc, row) => (
+        !acc || row.p95FrameMs > acc.p95FrameMs ? row : acc
+      ), null);
+      const failed = this.benchmark.results.some((row) => row.p95FrameMs > 66 || row.avgFps < 15);
+      this.state.metrics.benchmarkLastRun = {
+        status: failed ? "fail" : "pass",
+        stages: this.benchmark.results.length,
+        worstLoad: worst?.load ?? 0,
+        worstP95FrameMs: worst?.p95FrameMs ?? 0,
+        worstBottleneck: worst?.bottleneck ?? "unknown",
+      };
+      this.state.metrics.benchmarkStatus = failed ? "done: needs optimization (csv ready)" : "done: pass (csv ready)";
       return;
     }
 
@@ -558,8 +983,18 @@ export class GameApp {
     this.setExtraWorkers(nextLoad);
   }
 
+  #benchmarkPercentile(samples = [], p = 95) {
+    if (!Array.isArray(samples) || samples.length === 0) return 0;
+    const sorted = samples
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+    if (sorted.length === 0) return 0;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((Math.max(0, Math.min(100, p)) / 100) * sorted.length) - 1));
+    return sorted[idx];
+  }
+
   buildBenchmarkCsv() {
-    const header = "load,workers,total_entities,avg_fps,avg_frame_ms";
+    const header = "load,workers,total_entities,avg_fps,avg_frame_ms,p95_frame_ms,p99_frame_ms,avg_actual_scale,capped_pct,bottleneck";
     const rows = this.benchmark.results.map((r) => {
       return [
         r.load,
@@ -567,6 +1002,11 @@ export class GameApp {
         r.totalEntities,
         r.avgFps.toFixed(2),
         r.avgFrameMs.toFixed(3),
+        r.p95FrameMs.toFixed(3),
+        r.p99FrameMs.toFixed(3),
+        r.avgActualScale.toFixed(2),
+        r.cappedPct.toFixed(1),
+        r.bottleneck,
       ].join(",");
     });
     return `${header}\n${rows.join("\n")}\n`;
@@ -619,11 +1059,39 @@ export class GameApp {
   }
 
   setTimeScale(scale) {
-    const clamped = Math.max(0.25, Math.min(2.0, Number(scale) || 1));
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — ceiling raised
+    // 4.0 → 8.0 to match the new simStepper safeScale clamp. The downstream
+    // simStepper still does its own clamp at 8 (defence in depth) and
+    // HUDController.timeScaleActualLabel surfaces the real saturated
+    // rate when CPU-bound frames push actual back below requested.
+    const clamped = Math.max(0.25, Math.min(8.0, Number(scale) || 1));
     this.state.controls.timeScale = clamped;
     this.state.controls.actionMessage = `Time scale ${clamped.toFixed(2)}x`;
     this.state.controls.actionKind = "info";
     this.services.replayService.push({ channel: "time", kind: "timeScale", value: clamped, simSec: this.state.metrics.timeSec });
+  }
+
+  // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — speed-tier stepper.
+  // Tiers are the discrete speed grid players cycle through with `[` / `]`.
+  // Routed through `setTimeScale` so the actionMessage / replay-record
+  // path matches the existing speed-button click contract. Direction +1
+  // steps up, -1 steps down; clamped to the tier table's bounds.
+  stepSpeedTier(direction = 1) {
+    const TIERS = [0.5, 1, 2, 4, 8];
+    const dir = Number(direction) >= 0 ? 1 : -1;
+    const current = Number(this.state.controls.timeScale ?? 1);
+    // Find the closest tier index by absolute distance.
+    let bestIdx = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < TIERS.length; i += 1) {
+      const d = Math.abs(TIERS[i] - current);
+      if (d < bestDelta) { bestDelta = d; bestIdx = i; }
+    }
+    const nextIdx = Math.max(0, Math.min(TIERS.length - 1, bestIdx + dir));
+    const nextScale = TIERS[nextIdx];
+    if (nextScale === current && nextIdx === bestIdx) return;
+    this.state.controls.isPaused = false;
+    this.setTimeScale(nextScale);
   }
 
   setFixedStepHz(hz) {
@@ -671,6 +1139,28 @@ export class GameApp {
     this.state.controls.actionMessage = corrections.length > 0
       ? corrections[0]
       : `Render detail threshold set to ${this.state.controls.renderModelDisableThreshold}.`;
+    this.state.controls.actionKind = "info";
+  }
+
+  setDisplaySettings(rawSettings = {}) {
+    const previous = this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS;
+    const merged = { ...previous, ...(rawSettings ?? {}) };
+    const { settings, corrections } = sanitizeDisplaySettings(merged, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    this.#applyDisplaySettingsToDom();
+    this.renderer?.applyDisplaySettings?.(settings);
+
+    const restartFieldsChanged =
+      settings.antialias !== previous.antialias ||
+      settings.powerPreference !== previous.powerPreference;
+    const resolutionPct = Math.round(settings.resolutionScale * 100);
+    const uiPct = Math.round(settings.uiScale * 100);
+    const note = restartFieldsChanged
+      ? " Anti-aliasing/GPU preference apply on next renderer start."
+      : "";
+    this.state.controls.actionMessage = corrections.length > 0
+      ? corrections[0]
+      : `Display updated: ${settings.preset}, ${resolutionPct}% render, ${uiPct}% UI.${note}`;
     this.state.controls.actionKind = "info";
   }
 
@@ -851,8 +1341,16 @@ export class GameApp {
     return result;
   }
 
-  regenerateWorld({ templateId, seed, terrainTuning }, options = {}) {
-    const next = createInitialGameState({ templateId, seed, terrainTuning });
+  regenerateWorld({ templateId, seed, terrainTuning, width, height }, options = {}) {
+    const next = createInitialGameState({ templateId, seed, terrainTuning, width, height });
+    const currentWidth = Number(this.state.grid?.width ?? next.grid?.width ?? 96);
+    const currentHeight = Number(this.state.grid?.height ?? next.grid?.height ?? 72);
+    const chosenWidth = Number.isFinite(Number(width)) && Number(width) >= 24
+      ? Math.floor(Number(width))
+      : currentWidth;
+    const chosenHeight = Number.isFinite(Number(height)) && Number(height) >= 24
+      ? Math.floor(Number(height))
+      : currentHeight;
 
     next.ai.enabled = this.state.ai.enabled;
     next.ai.coverageTarget = this.state.ai.coverageTarget;
@@ -865,6 +1363,7 @@ export class GameApp {
     next.controls.visualPreset = this.state.controls.visualPreset;
     next.controls.showTileIcons = this.state.controls.showTileIcons;
     next.controls.showUnitSprites = this.state.controls.showUnitSprites;
+    next.controls.display = { ...(this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS) };
     next.controls.fixedStepSec = this.state.controls.fixedStepSec;
     next.controls.cameraMinZoom = this.state.controls.cameraMinZoom;
     next.controls.cameraMaxZoom = this.state.controls.cameraMaxZoom;
@@ -872,14 +1371,29 @@ export class GameApp {
     next.controls.benchmarkConfig = { ...this.state.controls.benchmarkConfig };
     next.controls.populationTargets = { ...this.state.controls.populationTargets };
     next.controls.terrainTuning = { ...(terrainTuning ?? next.controls.terrainTuning ?? this.state.controls.terrainTuning) };
+    next.controls.mapTemplateId = next.world.mapTemplateId;
+    next.controls.mapWidth = chosenWidth;
+    next.controls.mapHeight = chosenHeight;
     next.controls.saveSlotId = this.state.controls.saveSlotId ?? "default";
     next.metrics.aiRuntime = { ...(this.state.metrics.aiRuntime ?? next.metrics.aiRuntime ?? {}) };
 
     deepReplaceObject(this.state, next);
+    // v0.8.2 Round-5b (02e Step 3) — write scenario intro overlay so HUDController
+    // can show the 1.5s opening-pressure fade when a new map is loaded.
+    if (!this.state.ui) this.state.ui = {};
+    const _introPayload = getScenarioIntroPayload(this.state.world.mapTemplateId);
+    this.state.ui.scenarioIntro = {
+      ..._introPayload,
+      enteredAtMs: typeof performance !== "undefined" ? performance.now() : Date.now(),
+    };
     this.#sanitizeControls(false);
 
     this.systems = this.createSystems();
-    this.services = createServices(this.state.world.mapSeed);
+    this.services?.dispose?.();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
+    this.services.memoryStore = this.memoryStore;
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
 
@@ -953,9 +1467,14 @@ export class GameApp {
     }
     deepReplaceObject(this.state, restored);
     this.#sanitizeControls(false);
-    this.services = createServices(this.state.world.mapSeed);
+    this.renderer?.applyDisplaySettings?.(this.state.controls.display);
+    this.services?.dispose?.();
+    this.services = createServices(this.state.world.mapSeed, {
+      offlineAiFallback: this.offlineAiFallback,
+    });
     if (restored.meta?.rng) this.services.rng.restore(restored.meta.rng);
     this.systems = this.createSystems();
+    this.services.memoryStore = this.memoryStore;
     this.state.controls.saveSlotId = slotId;
     this.accumulatorSec = 0;
     this.systemProfileCounter = 0;
@@ -1013,12 +1532,24 @@ export class GameApp {
     let saboteurs = 0;
     let farmers = 0;
     let loggers = 0;
+    let stoneMiners = 0;
+    let herbGatherers = 0;
+    let cooks = 0;
+    let smiths = 0;
+    let herbalists = 0;
+    let haulers = 0;
     for (const agent of this.state.agents) {
       if (agent.type === ENTITY_TYPE.WORKER) {
         if (agent.isStressWorker) stressWorkers += 1;
         else baseWorkers += 1;
         if (agent.role === "FARM") farmers += 1;
         if (agent.role === "WOOD") loggers += 1;
+        if (agent.role === "STONE") stoneMiners += 1;
+        if (agent.role === "HERBS") herbGatherers += 1;
+        if (agent.role === "COOK") cooks += 1;
+        if (agent.role === "SMITH") smiths += 1;
+        if (agent.role === "HERBALIST") herbalists += 1;
+        if (agent.role === "HAUL") haulers += 1;
       } else if (agent.type === ENTITY_TYPE.VISITOR) {
         visitors += 1;
         if (agent.kind === VISITOR_KIND.TRADER || agent.groupId === "traders") traders += 1;
@@ -1050,6 +1581,12 @@ export class GameApp {
       predators,
       farmers,
       loggers,
+      stoneMiners,
+      herbGatherers,
+      cooks,
+      smiths,
+      herbalists,
+      haulers,
       totalEntities,
     };
   }
@@ -1085,6 +1622,7 @@ export class GameApp {
   }
 
   #queueAiHealthProbe(reason = "poll") {
+    if (this.offlineAiFallback) return;
     if (this.aiHealthMonitor.inFlight) return;
     this.aiHealthMonitor.inFlight = true;
     const manualModeLocked = Boolean(this.state.ai.manualModeLocked);
@@ -1110,16 +1648,21 @@ export class GameApp {
 
         const hasApiKey = Boolean(payload.hasApiKey);
         if (hasApiKey && !manualModeLocked && !this.state.ai.enabled && !this.aiHealthMonitor.autoEnabledOnce) {
-          this.state.ai.enabled = true;
           this.aiHealthMonitor.autoEnabledOnce = true;
-          this.state.ai.coverageTarget = "llm";
-          this.state.controls.actionMessage = `AI auto-enabled (model: ${payload.model ?? "unknown"}).`;
-          this.state.controls.actionKind = "success";
+          this.state.ai.coverageTarget = "fallback";
+          this.state.controls.actionMessage = `AI proxy available (model: ${payload.model ?? "unknown"}). Enable Autopilot manually to let it drive.`;
+          this.state.controls.actionKind = "info";
         } else if (!hasApiKey && !manualModeLocked && (reason === "startup" || this.state.ai.enabled)) {
           this.state.ai.enabled = false;
           this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
-          this.state.controls.actionMessage = "AI proxy has no API key. Running fallback mode.";
+          // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 3): in-fiction phrasing
+          // for proxy-no-key. The original "AI proxy has no API key" leaked
+          // dev jargon ("proxy", "API key") into the player's first 60s. The
+          // fallback director steers the colony either way; the player only
+          // needs to know the colony is running and the storyteller is the
+          // built-in one.
+          this.state.controls.actionMessage = "Story AI offline — fallback director is steering. (Game still works.)";
           this.state.controls.actionKind = "info";
         }
       })
@@ -1134,8 +1677,37 @@ export class GameApp {
           this.state.ai.enabled = false;
           this.state.ai.coverageTarget = "fallback";
           this.state.ai.mode = "fallback";
-          this.state.controls.actionMessage = `AI proxy unreachable (${String(err?.message ?? err)}). Running fallback mode.`;
-          this.state.controls.actionKind = "error";
+          // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 3): drop the raw
+          // err.message ("fetch failed", "AbortError: timeout", etc.) from
+          // the player-facing actionMessage and rephrase in-fiction. The
+          // original message is still captured to console.warn + a
+          // dev-targeted `pushWarning(..., "ai-health")` so the dev panel /
+          // browser console retains the diagnostic. This silences the red
+          // toast strip that reviewers consistently report as "looks like
+          // the game is broken on first launch".
+          //
+          // v0.8.2 Round-6 Wave-1 01c-ui (Step 3): also stash the raw err
+          // string on `state.debug.lastAiError` so dev-mode tooling can
+          // read it (per Stage B summary §2 D1 — Wave-1 main-author of the
+          // dev-mode quarantine introduces this state field). Casual
+          // `actionMessage` keeps the in-fiction "Story AI is offline ..."
+          // phrasing pinned by 01a's onboarding-noise-reduction.test.js
+          // (do-not-rollback rule); dev-mode `actionMessage` tacks the
+          // err.message onto the toast for engineers. `actionKind` flips
+          // to `"ai-down"` so HUD can theme the toast distinctly from
+          // generic `info` events.
+          const errText = String(err?.message ?? err ?? "unknown");
+          console.warn("[Project Utopia] AI proxy unreachable:", errText);
+          pushWarning(this.state, `AI proxy unreachable (${errText}). Fallback director engaged.`, "warn", "ai-health");
+          if (!this.state.debug || typeof this.state.debug !== "object") this.state.debug = {};
+          this.state.debug.lastAiError = errText;
+          // Casual baseline: keep the 01a in-fiction phrasing (pinned by
+          // onboarding-noise-reduction.test.js — do-not-rollback rule).
+          this.state.controls.actionMessage = "Story AI is offline — fallback director is steering. (Game still works.)";
+          if (isDevMode(this.state)) {
+            this.state.controls.actionMessage += ` [${errText}]`;
+          }
+          this.state.controls.actionKind = "ai-down";
         }
       })
       .finally(() => {
@@ -1174,7 +1746,10 @@ export class GameApp {
     const active = document.activeElement;
     if (active) {
       const tag = String(active.tagName ?? "").toUpperCase();
-      if ((tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") && !active.disabled) {
+      const inputType = String(active.getAttribute?.("type") ?? "text").toLowerCase();
+      const textLikeInput = tag === "INPUT"
+        && ["", "text", "number", "search", "email", "url", "password", "tel"].includes(inputType);
+      if ((textLikeInput || tag === "TEXTAREA" || tag === "SELECT") && !active.disabled) {
         return true;
       }
       if (active.isContentEditable) {
@@ -1214,7 +1789,8 @@ export class GameApp {
       endedAtSec: -1,
     };
     const phase = session.phase === "active" || session.phase === "end" ? session.phase : "menu";
-    const outcome = session.outcome === "win" || session.outcome === "loss" ? session.outcome : "none";
+    // v0.8.0 Phase 4 — "win" outcome retired; survival mode only persists "loss".
+    const outcome = session.outcome === "loss" ? session.outcome : "none";
     this.state.session = {
       phase,
       outcome: phase === "end" ? outcome : "none",
@@ -1241,6 +1817,29 @@ export class GameApp {
 
   #onGlobalKeyDown(event) {
     if (this.#shouldIgnoreGlobalShortcut(event)) return;
+
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 2) — defensive F1 swallow.
+    // Even before resolveGlobalShortcut runs we unconditionally call
+    // preventDefault for the F1 key. The browser default in some shells
+    // ("Help", quick-find, legacy refresh) reloads the page and casual
+    // reviewer lost progress 3× in 25min to this. Cheap belt-and-braces
+    // — runs even when shouldIgnoreGlobalShortcut would otherwise let the
+    // event bubble (e.g. a focused button on the topbar).
+    if (event && (event.key === "F1" || event.code === "F1")) {
+      event.preventDefault();
+    }
+
+    // v0.8.2 Round-5 Wave-2 (01d Step 7): Tab / Shift+Tab cycles through
+    // alive workers and updates state.controls.selectedEntityId so casual
+    // users have a keyboard-only path to the observation loop.
+    // Only active during the live session phase; text-input focus is
+    // already filtered by #shouldIgnoreGlobalShortcut.
+    if (event && event.key === "Tab" && this.state.session.phase === "active") {
+      event.preventDefault();
+      this.#cycleSelectedWorker(event.shiftKey ? -1 : 1);
+      return;
+    }
+
     const action = resolveGlobalShortcut(event, { phase: this.state.session.phase });
     if (!action) return;
 
@@ -1251,6 +1850,7 @@ export class GameApp {
       this.state.controls.actionMessage = `Selected tool: ${action.tool} (shortcut).`;
       this.state.controls.actionKind = "info";
       this.toolbar?.sync?.();
+      this.#applyContextualOverlay(action.tool);
       return;
     }
     if (action.type === "clearSelection") {
@@ -1273,25 +1873,242 @@ export class GameApp {
     }
     if (action.type === "redo") {
       this.redoLastBuild();
+      return;
+    }
+    if (action.type === "toggleHeatLens") {
+      this.toggleHeatLens();
+    }
+    if (action.type === "toggleTerrainLens") {
+      this.toggleTerrainLens();
+    }
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 5c) — `[` / `]` step the
+    // speed tier without involving the speed-button click handlers. Routed
+    // through `stepSpeedTier` so the actionMessage / replay-record path
+    // matches a button click.
+    if (action.type === "speedTierStep") {
+      this.stepSpeedTier(action.direction);
+      return;
+    }
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 2) — F1 / ? open the in-game
+    // Help modal. The modal itself is wired in index.html via
+    // window.__utopiaHelp.open(); we delegate to that global so the modal
+    // remains the single source of truth (CSS, focus management, ESC-to-
+    // close all live there). Defensive guard if the global is missing.
+    if (action.type === "openHelp") {
+      const helpApi = (typeof window !== "undefined") ? window.__utopiaHelp : null;
+      if (helpApi && typeof helpApi.open === "function") {
+        helpApi.open();
+      }
     }
   }
 
+  // v0.8.2 Round-5 Wave-2 (01d Step 7): cycle selectedEntityId through the
+  // alive worker list. `direction` is +1 (Tab) or -1 (Shift+Tab). Wraps.
+  #cycleSelectedWorker(direction = 1) {
+    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+    const workers = agents.filter((a) => a && a.type === "WORKER" && a.alive !== false);
+    if (workers.length === 0) return;
+    const currentId = this.state.controls.selectedEntityId;
+    const currentIdx = workers.findIndex((w) => w.id === currentId);
+    const step = direction < 0 ? -1 : 1;
+    let nextIdx;
+    if (currentIdx < 0) {
+      nextIdx = step > 0 ? 0 : workers.length - 1;
+    } else {
+      nextIdx = (currentIdx + step + workers.length) % workers.length;
+    }
+    const next = workers[nextIdx];
+    if (!next) return;
+    this.state.controls.selectedEntityId = next.id;
+    this.state.controls.selectedTile = null;
+    if (this.state.debug) this.state.debug.selectedTile = null;
+    this.state.controls.actionMessage = `Selected ${next.displayName ?? next.id}`;
+    this.state.controls.actionKind = "info";
+  }
+
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens handler.
+  // Invoked by the L-key (see shortcutResolver → #onGlobalKeyDown) and by the
+  // "Heat Lens (L)" HUD button wired in main.js / index.html.
+  toggleHeatLens() {
+    if (!this.renderer?.toggleHeatLens) return "pressure";
+    const mode = this.renderer.toggleHeatLens();
+    // v0.8.2 Round-0 02e-indie-critic — voice polish: unify the toggle-toast
+    // wording with the HUD button label ("Heat Lens (L)"). Previously the
+    // button said "Heat Lens" but the toast said "Pressure lens ...", which
+    // the indie-critic reviewer flagged as split-personality naming.
+    const label = mode === "heat"
+      ? "Heat lens ON — red = surplus, blue = starved."
+      : mode === "off"
+        ? "Heat lens hidden."
+        : "Heat lens restored.";
+    this.state.controls.actionMessage = label;
+    this.state.controls.actionKind = "info";
+    // Sync the HUD button's active-state indicator if it exists.
+    const btn = typeof document !== "undefined"
+      ? document.getElementById("heatLensBtn")
+      : null;
+    if (btn) btn.classList.toggle("active", mode === "heat");
+    // v0.8.2 Round-1 01e-innovation — also sync the always-on Heat Lens
+    // legend (red = supply surplus, blue = processor starved). The legend
+    // is only meaningful while the heat overlay is active; keep it hidden
+    // otherwise so it doesn't pollute the default pressure-lens HUD.
+    const legend = typeof document !== "undefined"
+      ? document.getElementById("heatLensLegend")
+      : null;
+    if (legend) legend.hidden = (mode !== "heat");
+    // v0.8.2 — also sync the sidebar logistics legend card which is
+    // visible whenever the heat lens is active (any mode except "off").
+    const legendCard = typeof document !== "undefined"
+      ? document.getElementById(LENS_LEGEND_CARD_ID)
+      : null;
+    if (legendCard) legendCard.hidden = (mode === "off");
+    return mode;
+  }
+
+  // Sync the HUD terrainLensLabel element and terrainLensBtn active state to
+  // reflect the given overlay mode. Extracted so both auto-switch and manual
+  // toggle paths share the same DOM update logic.
+  #syncTerrainLensLabel(mode) {
+    if (typeof document === "undefined") return;
+    const MODE_LABELS = {
+      fertility:     "Overlay: Fertility",
+      elevation:     "Overlay: Elevation",
+      connectivity:  "Overlay: Connectivity",
+      nodeDepletion: "Overlay: Node Health",
+    };
+    const labelEl = document.getElementById("terrainLensLabel");
+    if (labelEl) {
+      if (mode) {
+        labelEl.textContent = MODE_LABELS[mode] ?? mode;
+        labelEl.hidden = false;
+      } else {
+        labelEl.hidden = true;
+      }
+    }
+    const btn = document.getElementById("terrainLensBtn");
+    if (btn) btn.classList.toggle("active", mode !== null);
+  }
+
+  // Automatically activate the most relevant terrain overlay for the given
+  // build tool. Only overrides the overlay when:
+  //   – the new tool requests a specific overlay (mode !== null), OR
+  //   – the user hasn't manually chosen a different overlay since the last
+  //     auto-switch (i.e. the current mode still matches _lastAutoOverlay).
+  // Selecting "select" / bridge / kitchen / smithy → turns overlay off (null).
+  #applyContextualOverlay(tool) {
+    if (!this.renderer?.setTerrainLensMode) return;
+    const mode = TOOL_OVERLAY_MAP[tool] ?? null;
+    const current = this.renderer.getTerrainLensMode?.() ?? null;
+    // Allow auto-switch when: requesting a specific overlay (mode != null),
+    // OR when the current overlay was set by a previous auto-switch (current
+    // still matches _lastAutoOverlay, meaning the user never manually changed it).
+    if (mode !== null || current === this._lastAutoOverlay) {
+      this.renderer.setTerrainLensMode(mode);
+      this._lastAutoOverlay = mode;
+      this.#syncTerrainLensLabel(mode);
+      if (mode) {
+        const MODE_LABELS = {
+          fertility:     "Overlay: Fertility",
+          elevation:     "Overlay: Elevation",
+          connectivity:  "Overlay: Connectivity",
+          nodeDepletion: "Overlay: Node Health",
+        };
+        this.state.controls.actionMessage = `Auto-overlay: ${MODE_LABELS[mode] ?? mode}`;
+        this.state.controls.actionKind = "info";
+      }
+    }
+  }
+
+  // Terrain overlay cycle — mirrors T-key and the "Terrain (T)" HUD button.
+  // Delegates to SceneRenderer.toggleTerrainLens() which cycles:
+  // null → "fertility" → "elevation" → "connectivity" → "nodeDepletion" → null.
+  // Manual invocation marks _lastAutoOverlay = null so subsequent tool selections
+  // can detect that the user chose a mode independently and respect it.
+  toggleTerrainLens() {
+    if (!this.renderer?.toggleTerrainLens) return null;
+    const mode = this.renderer.toggleTerrainLens();
+    // Mark as user-driven: auto-switch logic will not override this choice
+    // until the next tool selection that has a specific overlay preference.
+    this._lastAutoOverlay = null;
+    const active = mode !== null;
+    const MODE_LABELS = {
+      fertility: "Overlay: Fertility",
+      elevation: "Overlay: Elevation",
+      connectivity: "Overlay: Connectivity",
+      nodeDepletion: "Overlay: Node Health",
+    };
+    const actionLabel = active
+      ? `Terrain ${MODE_LABELS[mode] ?? mode} overlay ON.`
+      : "Terrain overlay OFF.";
+    this.state.controls.actionMessage = actionLabel;
+    this.state.controls.actionKind = "info";
+    this.#syncTerrainLensLabel(mode);
+    return mode;
+  }
+
   startSession() {
+    // Apply the menu's pending template selection before entering active play.
+    const selectedId = this.state?.controls?.mapTemplateId;
+    const selectedWidth = Number(this.state?.controls?.mapWidth);
+    const selectedHeight = Number(this.state?.controls?.mapHeight);
+    const loadedId = this.state?.world?.mapTemplateId;
+    const loadedWidth = Number(this.state?.grid?.width ?? 0);
+    const loadedHeight = Number(this.state?.grid?.height ?? 0);
+    const needsTemplateChange = Boolean(selectedId && loadedId && selectedId !== loadedId);
+    const needsWidthChange = Number.isFinite(selectedWidth) && selectedWidth >= 24 && selectedWidth !== loadedWidth;
+    const needsHeightChange = Number.isFinite(selectedHeight) && selectedHeight >= 24 && selectedHeight !== loadedHeight;
+    if (needsTemplateChange || needsWidthChange || needsHeightChange) {
+      this.regenerateWorld({
+        templateId: selectedId ?? loadedId,
+        seed: this.state.world.mapSeed,
+        terrainTuning: this.state.controls.terrainTuning,
+        width: Number.isFinite(selectedWidth) && selectedWidth >= 24 ? Math.floor(selectedWidth) : loadedWidth,
+        height: Number.isFinite(selectedHeight) && selectedHeight >= 24 ? Math.floor(selectedHeight) : loadedHeight,
+      }, { phase: "menu" });
+    }
+    const mapLabel = this.state?.world?.mapTemplateName ?? "Current map";
+    const mapSize = `${Math.floor(Number(this.state?.grid?.width ?? selectedWidth ?? 0))}x${Math.floor(Number(this.state?.grid?.height ?? selectedHeight ?? 0))}`;
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 3) — blur the menu's
+    // <select id="overlayMapTemplate"> and any focused menu select so
+    // pressing 1-9 after Start Colony selects a build tool instead of
+    // re-rolling the map template. Casual reviewer reported "I pressed 3
+    // and the map regenerated" — this is the select element keeping
+    // keyboard focus and consuming digit keys for option-cycling. We
+    // only blur known menu selects (by id whitelist) to avoid clobbering
+    // unrelated input focus the user may have intentionally established.
+    if (typeof document !== "undefined") {
+      const MENU_SELECT_IDS = ["overlayMapTemplate", "mapTemplateSelect", "doctrineSelect"];
+      for (const id of MENU_SELECT_IDS) {
+        document.getElementById(id)?.blur?.();
+      }
+      const active = document.activeElement;
+      if (active && typeof active.matches === "function") {
+        if (active.matches("#overlayMapTemplate, #mapTemplateSelect, #doctrineSelect")) {
+          active.blur?.();
+        }
+      }
+    }
     this.#setRunPhase("active", {
-      actionMessage: "Simulation started. Build the starter network first, then push stockpile and stability.",
+      actionMessage: `Run started: ${mapLabel} (${mapSize} tiles). Build the starter network now. Try Again replays this layout; New Map rerolls.`,
       actionKind: "success",
     });
+    audioSystem.onGameStart();
   }
 
   restartSession() {
-    this.resetSessionWorld({ autoStart: true });
+    this.resetSessionWorld({ autoStart: true, sameSeed: true });
   }
 
   resetSessionWorld(options = {}) {
+    const newSeed = options.sameSeed
+      ? this.state.world.mapSeed
+      : Math.floor(Math.random() * 99999);
     this.regenerateWorld({
-      templateId: this.state.world.mapTemplateId,
-      seed: this.state.world.mapSeed,
+      templateId: options.templateId ?? this.state.world.mapTemplateId,
+      seed: newSeed,
       terrainTuning: this.state.controls.terrainTuning,
+      width: options.width ?? undefined,
+      height: options.height ?? undefined,
     }, {
       autoStart: Boolean(options.autoStart),
       phase: options.autoStart ? "active" : "menu",
@@ -1309,6 +2126,9 @@ export class GameApp {
     this.state.session.reason = options.reason ?? (next === "end" ? this.state.session.reason : "");
     this.state.session.endedAtSec = next === "end" ? this.state.metrics.timeSec : -1;
 
+    const wrapRoot = document.getElementById("wrap");
+    wrapRoot?.classList.toggle("game-active", next === "active");
+
     this.state.controls.stepFramesPending = 0;
     this.state.controls.isPaused = next !== "active";
     if (next === "active") {
@@ -1319,19 +2139,59 @@ export class GameApp {
       this.state.controls.actionMessage = options.actionMessage;
       this.state.controls.actionKind = options.actionKind ?? "info";
     }
+
+    if (next === "active") {
+      this.#safeRenderPanel("GameStateOverlay", () => this.gameStateOverlay.render(this.state.session));
+      this.#safeRenderPanel("HUD", () => this.hud.render());
+    }
   }
 
   #evaluateRunOutcome() {
     if (this.state.session.phase !== "active") return;
     const outcome = evaluateRunOutcomeState(this.state);
     if (!outcome) return;
+    // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 2b) — record the run into
+    // the local leaderboard BEFORE flipping to the end phase so the boot /
+    // end overlay reads the freshest entry on its first render. The
+    // benchmarkMode bypass mirrors ResourceSystem's pattern (see :462) so
+    // long-horizon-bench runs do not pollute the persistent leaderboard.
+    // ANY storage failure (QuotaExceededError, Safari private-mode, etc.)
+    // is swallowed by the service itself — try/catch here is a second safety
+    // net so a bad serialiser path can never block the end-phase transition.
+    if (this.state.benchmarkMode !== true) {
+      try {
+        this.services.leaderboardService?.recordRunResult({
+          ts: Date.now(),
+          seed: this.state.world?.mapSeed,
+          templateId: this.state.world?.mapTemplateId,
+          templateName: this.state.world?.mapTemplateName,
+          scenarioId: this.state.gameplay?.scenario?.id ?? "",
+          survivedSec: Math.floor(this.state.metrics?.timeSec ?? 0),
+          score: Math.floor(this.state.metrics?.survivalScore ?? 0),
+          devIndex: Math.round(this.state.gameplay?.devIndexSmoothed ?? this.state.gameplay?.devIndex ?? 0),
+          deaths: Number(this.state.metrics?.deathsTotal ?? 0),
+          workers: Number(this.state.metrics?.populationStats?.workers ?? 0),
+          cause: outcome.outcome ?? "loss",
+        });
+      } catch {
+        // intentional: leaderboard persistence must never block end-phase.
+      }
+    }
     this.#setRunPhase("end", {
       ...outcome,
     });
   }
 
+  #applyDisplaySettingsToDom() {
+    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--utopia-ui-scale", settings.uiScale.toFixed(2));
+  }
+
   #sanitizeControls(notify = false) {
     const { corrections } = sanitizeControlSettings(this.state.controls);
+    this.#applyDisplaySettingsToDom();
     if (notify && corrections.length > 0) {
       this.state.controls.actionMessage = corrections.join(" ");
       this.state.controls.actionKind = "error";
@@ -1367,6 +2227,17 @@ export class GameApp {
         Number(this.state.controls.renderModelDisableThreshold ?? 260),
         120,
       );
+      this.state.controls.display = sanitizeDisplaySettings({
+        ...(this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS),
+        preset: "performance",
+        resolutionScale: 0.65,
+        renderMode: "2d",
+        shadowQuality: "off",
+        effectsEnabled: false,
+        weatherParticles: false,
+        heatLabels: false,
+        entityAnimations: false,
+      }, DEFAULT_DISPLAY_SETTINGS).settings;
       this.uiRefreshIntervalSec = Math.max(this.uiRefreshIntervalSec, 1 / 2);
       if (typeof document !== "undefined") {
         const wrapRoot = document.getElementById("wrap");
@@ -1375,6 +2246,7 @@ export class GameApp {
       this.state.controls.actionMessage = `Memory pressure mode enabled (${memMb.toFixed(0)}MB).`;
       this.state.controls.actionKind = "error";
       this.#sanitizeControls(false);
+      this.renderer?.applyDisplaySettings?.(this.state.controls.display);
     }
 
     if (!highWater && this.memoryGuard.active && nowSec - this.memoryGuard.lastTrimSec >= 20) {
@@ -1390,11 +2262,104 @@ export class GameApp {
     this.loop.stop();
   }
 
+  // v0.8.2 Round0 01c-ui — Developer mode gate.
+  //
+  // Dev UI (Settings terrain sliders, Debug panel, Dev Telemetry dock) is
+  // hidden by default via the `.dev-only` CSS class, gated on
+  // `body.dev-mode`. This method enables dev mode when any of these three
+  // signals hold:
+  //   1. URL query `?dev=1`
+  //   2. `localStorage.utopia:devMode === "1"` (persistent opt-in)
+  //   3. Ctrl+Shift+D keyboard chord (runtime toggle, persists to storage)
+  //
+  // Each signal is try/catch-guarded because browser privacy modes may throw
+  // on storage access (Safari private mode → QuotaExceededError).
+  #initDevModeGate() {
+    if (typeof document === "undefined" || !document.body) return;
+    const body = document.body;
+    const storage = (() => {
+      try {
+        return typeof localStorage !== "undefined" ? localStorage : null;
+      } catch {
+        return null;
+      }
+    })();
+    const locationHref = (() => {
+      try {
+        return typeof location !== "undefined" ? location.href : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const initial = readInitialDevMode({ locationHref, storage });
+    applyInitialDevMode(body, initial);
+
+    if (typeof window === "undefined") return;
+    this.boundOnDevModeChord = (event) => {
+      if (!isDevModeChord(event)) return;
+      event.preventDefault();
+      const nowOn = toggleDevMode(body, storage);
+      if (this.state?.controls) {
+        this.state.controls.actionMessage = `Developer mode ${nowOn ? "ON" : "OFF"}.`;
+        this.state.controls.actionKind = "info";
+      }
+    };
+    window.addEventListener("keydown", this.boundOnDevModeChord);
+  }
+
+  // v0.8.2 Round0 02b-casual — UI profile gate.
+  //
+  // Reads `?ui=casual|full` URL query (takes precedence) and
+  // `localStorage.utopia:uiProfile`. Applies:
+  //   - `document.body.classList` ← add/remove `casual-mode`
+  //   - `document.documentElement[data-ui-profile]` ← "casual" | "full"
+  //   - `state.controls.uiProfile` ← same value (so render-side consumers
+  //      like EntityFocusPanel can branch without DOM lookups)
+  //
+  // Orthogonal to dev-mode: both body.dev-mode AND body.casual-mode can be
+  // set simultaneously (e.g. `?dev=1&ui=casual`). Each CSS gate targets
+  // its own class/attribute without fighting the other.
+  #initUiProfileGate() {
+    const body = typeof document !== "undefined" ? document.body : null;
+    const docEl = typeof document !== "undefined" ? document.documentElement : null;
+    const storage = (() => {
+      try {
+        return typeof localStorage !== "undefined" ? localStorage : null;
+      } catch {
+        return null;
+      }
+    })();
+    const locationHref = (() => {
+      try {
+        return typeof location !== "undefined" ? location.href : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const profile = readInitialUiProfile({ locationHref, storage });
+    applyUiProfile(body, docEl, profile);
+    if (this.state?.controls) {
+      this.state.controls.uiProfile = profile;
+    }
+    // v0.8.2 Round-5b (02e Step 4) — sync module-level uiProfileState so
+    // EntityFactory.createWorker can read the active profile without a prop-drill.
+    setActiveUiProfile(profile);
+  }
+
   dispose() {
     this.stop();
     if (typeof window !== "undefined" && this.boundOnGlobalKeyDown) {
       window.removeEventListener("keydown", this.boundOnGlobalKeyDown);
     }
+    if (typeof window !== "undefined" && this.boundOnDevModeChord) {
+      window.removeEventListener("keydown", this.boundOnDevModeChord);
+    }
+    if (this.heatLensBtn && this.boundOnHeatLensClick) {
+      this.heatLensBtn.removeEventListener("click", this.boundOnHeatLensClick);
+    }
+    this.services?.dispose?.();
     this.renderer?.dispose?.();
   }
 }

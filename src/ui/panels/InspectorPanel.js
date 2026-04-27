@@ -74,6 +74,90 @@ export class InspectorPanel {
       return `${n.label}: ${t}`;
     });
 
+    // Processing block for kitchen / smithy / clinic tiles (Step 5)
+    const PROCESSING_KINDS = { [TILE.KITCHEN]: "kitchen", [TILE.SMITHY]: "smithy", [TILE.CLINIC]: "clinic" };
+    const processingKind = PROCESSING_KINDS[currentType];
+    let processingBlock = "";
+    if (processingKind) {
+      const snapshot = Array.isArray(this.state.metrics?.processing) ? this.state.metrics.processing : [];
+      const entry = snapshot.find((e) => e.ix === tile.ix && e.iz === tile.iz);
+      if (entry) {
+        const pct = Math.floor((entry.progress01 ?? 0) * 100);
+        const eta = Math.max(0, Math.round(entry.etaSec ?? 0));
+        const workerLabel = entry.workerPresent ? `${entry.kind} present` : `${entry.kind} missing`;
+        const statusLabel = entry.stalled ? `stalled \u2014 ${entry.stallReason ?? "unknown"}` : "running";
+        const inputLabel = entry.kind === "kitchen" ? `food OK: ${entry.inputOk}`
+          : entry.kind === "smithy" ? `stone+wood OK: ${entry.inputOk}`
+          : `herbs OK: ${entry.inputOk}`;
+        processingBlock = `
+          <details style="margin-top:8px;" open>
+            <summary class="small"><b>Processing</b></summary>
+            <div class="small" style="margin-top:6px;"><b>Cycle:</b> ${pct}% (ETA ${eta}s)</div>
+            <div class="small"><b>Worker:</b> ${workerLabel}</div>
+            <div class="small"><b>Inputs:</b> ${inputLabel}</div>
+            <div class="small"><b>Status:</b> ${statusLabel}</div>
+          </details>`;
+      } else {
+        processingBlock = `
+          <details style="margin-top:8px;" open>
+            <summary class="small"><b>Processing</b></summary>
+            <div class="small muted">No cycle data yet (idle or simulation warming up).</div>
+          </details>`;
+      }
+    }
+
+    // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 2) — Building block
+    // for raw producers / warehouse: FARM / LUMBER / QUARRY / HERB_GARDEN /
+    // WAREHOUSE. Reads from state.metrics.production.byTile (Step 3) so the
+    // old-vet "I clicked the FARM and got nothing" deal-breaker is closed.
+    // Processing buildings (KITCHEN/SMITHY/CLINIC) keep their dedicated
+    // Processing block above for backward compatibility with
+    // test/inspectorProcessingBlock.test.js + test/processingSnapshot.test.js.
+    const RAW_PRODUCER_KINDS = {
+      [TILE.FARM]: "farm",
+      [TILE.LUMBER]: "lumber",
+      [TILE.QUARRY]: "quarry",
+      [TILE.HERB_GARDEN]: "herb_garden",
+      [TILE.WAREHOUSE]: "warehouse",
+    };
+    const rawKind = RAW_PRODUCER_KINDS[currentType];
+    let buildingBlock = "";
+    if (rawKind) {
+      const prodMap = this.state.metrics?.production?.byTile;
+      const prodKey = `${tile.ix},${tile.iz}`;
+      const prodEntry = (prodMap instanceof Map) ? prodMap.get(prodKey) : null;
+      const lastYield = prodEntry ? Number(prodEntry.lastYield ?? 0) : 0;
+      const idleReason = prodEntry?.idleReason ?? null;
+      const lastTickSec = prodEntry ? Number(prodEntry.lastTickSec ?? 0) : 0;
+      const nowSec = Number(this.state.metrics?.timeSec ?? 0);
+      const ageSec = lastTickSec > 0 ? Math.max(0, nowSec - lastTickSec) : null;
+      const yieldLine = prodEntry
+        ? `${lastYield.toFixed(2)}${ageSec !== null ? ` (${ageSec.toFixed(1)}s ago)` : ""}`
+        : "no harvest yet";
+      const idleLine = idleReason ?? "none";
+      buildingBlock = `
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>Building</b></summary>
+          <div class="small" style="margin-top:6px;"><b>Kind:</b> ${rawKind}</div>
+          <div class="small"><b>Last Yield:</b> ${yieldLine}</div>
+          <div class="small"><b>Idle Reason:</b> ${idleLine}</div>
+        </details>`;
+    }
+
+    // Logistics efficiency for all production tiles (bonus carry-over)
+    const PRODUCTION_TILE_SET = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+      TILE.WAREHOUSE, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
+    const tileKey = `${tile.ix},${tile.iz}`;
+    const logEff = this.state.metrics?.logistics?.buildingEfficiency?.[tileKey];
+    let logisticsLine = "";
+    if (logEff !== undefined && PRODUCTION_TILE_SET.has(currentType)) {
+      const eff = Number(logEff);
+      const label = eff >= 1.1 ? `connected \xd7${eff.toFixed(2)}`
+        : eff >= 0.95 ? `adjacent \xd7${eff.toFixed(2)}`
+        : `isolated \xd7${eff.toFixed(2)}`;
+      logisticsLine = `<div class="small"><b>Logistics:</b> ${label}</div>`;
+    }
+
     return `
       <div><b>Selected Tile</b></div>
       <div class="small" style="margin-top:6px;"><b>Coord:</b> (${tile.ix}, ${tile.iz}) | idx=${idx}</div>
@@ -83,6 +167,9 @@ export class InspectorPanel {
       <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
       <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
       <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
+      ${logisticsLine}
+      ${buildingBlock}
+      ${processingBlock}
       <details style="margin-top:8px;" open>
         <summary class="small"><b>Tile Context</b></summary>
         <div class="small" style="margin-top:6px;">
@@ -128,7 +215,14 @@ export class InspectorPanel {
 
     const target = entity.targetTile ? `(${entity.targetTile.ix}, ${entity.targetTile.iz})` : "none";
     const hunger = entity.hunger !== undefined ? entity.hunger.toFixed(3) : "-";
-    const carry = entity.carry ? `food=${entity.carry.food.toFixed?.(2) ?? entity.carry.food}, wood=${entity.carry.wood.toFixed?.(2) ?? entity.carry.wood}` : "-";
+    // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 1) — Carry shows all 4
+    // resources (food/wood/stone/herbs); previously stone+herbs were silently
+    // truncated, hiding "80 workers carrying nothing" diagnostics from old vets.
+    const carry = entity.carry
+      ? ["food", "wood", "stone", "herbs"]
+        .map((k) => `${k}=${(Number(entity.carry?.[k] ?? 0)).toFixed(2)}`)
+        .join(", ")
+      : "-";
     const pathProgress = entity.path ? `${entity.pathIndex}/${entity.path.length}` : "none";
     const pathNodes = entity.path ? entity.path.map((n) => `(${n.ix},${n.iz})`).join(" -> ") : "none";
     const speed = Math.hypot(entity.vx || 0, entity.vz || 0).toFixed(3);

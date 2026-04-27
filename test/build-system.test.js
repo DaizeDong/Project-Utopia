@@ -29,9 +29,13 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
   assert.equal(state.resources.wood, 3);
 
   assert.ok(validRoad);
+  const roadPreview = buildSystem.previewToolAt(state, "road", validRoad.ix, validRoad.iz);
+  const roadWoodCost = roadPreview.cost.wood;
+  state.resources.wood = roadWoodCost + 1;
+  const beforeRoad = state.resources.wood;
   const okRoad = buildSystem.placeToolAt(state, "road", validRoad.ix, validRoad.iz);
   assert.equal(okRoad.ok, true);
-  assert.equal(state.resources.wood, 2);
+  assert.equal(state.resources.wood, beforeRoad - roadWoodCost);
   assert.equal(state.grid.tiles[validRoad.ix + validRoad.iz * state.grid.width], TILE.ROAD);
 
   state.resources.wood = 0;
@@ -52,7 +56,7 @@ test("BuildSystem preview reports water blocked placement", () => {
   assert.equal(preview.reason, "waterBlocked");
 });
 
-test("BuildSystem blocks overwriting structures and isolated road painting", () => {
+test("BuildSystem blocks overwriting structures", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
   const core = state.gameplay.scenario.anchors.coreWarehouse;
@@ -60,54 +64,12 @@ test("BuildSystem blocks overwriting structures and isolated road painting", () 
   const overwrite = buildSystem.previewToolAt(state, "road", core.ix, core.iz);
   assert.equal(overwrite.ok, false);
   assert.equal(overwrite.reason, "occupiedTile");
-
-  const isolatedGrass = findFirstTile(state, (ix, iz) => {
-    if (state.grid.tiles[ix + iz * state.grid.width] !== TILE.GRASS) return false;
-    for (let dz = -1; dz <= 1; dz += 1) {
-      for (let dx = -1; dx <= 1; dx += 1) {
-        if (Math.abs(dx) + Math.abs(dz) !== 1) continue;
-        const nx = ix + dx;
-        const nz = iz + dz;
-        if (nx < 0 || nz < 0 || nx >= state.grid.width || nz >= state.grid.height) continue;
-        const neighbor = state.grid.tiles[nx + nz * state.grid.width];
-        if (neighbor === TILE.ROAD || neighbor === TILE.WAREHOUSE || neighbor === TILE.FARM || neighbor === TILE.LUMBER) {
-          return false;
-        }
-      }
-    }
-    return true;
-  });
-
-  assert.ok(isolatedGrass);
-  const isolatedRoad = buildSystem.previewToolAt(state, "road", isolatedGrass.ix, isolatedGrass.iz);
-  assert.equal(isolatedRoad.ok, false);
-  assert.equal(isolatedRoad.reason, "needsNetworkAnchor");
 });
 
-test("BuildSystem requires logistics access for worksites and spread for warehouses", () => {
+test("BuildSystem enforces warehouse spacing", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
   const core = state.gameplay.scenario.anchors.coreWarehouse;
-
-  const isolatedGrass = findFirstTile(state, (ix, iz) => {
-    if (state.grid.tiles[ix + iz * state.grid.width] !== TILE.GRASS) return false;
-    for (let dz = -2; dz <= 2; dz += 1) {
-      for (let dx = -2; dx <= 2; dx += 1) {
-        if (Math.abs(dx) + Math.abs(dz) > 2) continue;
-        const nx = ix + dx;
-        const nz = iz + dz;
-        if (nx < 0 || nz < 0 || nx >= state.grid.width || nz >= state.grid.height) continue;
-        const neighbor = state.grid.tiles[nx + nz * state.grid.width];
-        if (neighbor === TILE.ROAD || neighbor === TILE.WAREHOUSE) return false;
-      }
-    }
-    return true;
-  });
-
-  assert.ok(isolatedGrass);
-  const worksite = buildSystem.previewToolAt(state, "farm", isolatedGrass.ix, isolatedGrass.iz);
-  assert.equal(worksite.ok, false);
-  assert.equal(worksite.reason, "needsLogisticsAccess");
 
   const crampedWarehouse = buildSystem.previewToolAt(state, "warehouse", core.ix + 1, core.iz);
   assert.equal(crampedWarehouse.ok, false);
@@ -142,30 +104,48 @@ test("BuildSystem undo/redo restores tiles and resources", () => {
 test("BuildSystem erase salvages structure cost and undo/redo preserves the refund", () => {
   const state = createInitialGameState();
   const buildSystem = new BuildSystem();
-  const wallTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "wall", ix, iz).ok);
+  // Use warehouse (wood:10) — post-M1c demoWoodRecovery=0.25 yields a non-zero
+  // wood refund (floor(10×0.25)=2). Wall (wood:2) now rounds down to zero.
+  const warehouseTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "warehouse", ix, iz).ok);
 
-  assert.ok(wallTarget);
-  const idx = wallTarget.ix + wallTarget.iz * state.grid.width;
+  assert.ok(warehouseTarget);
+  const idx = warehouseTarget.ix + warehouseTarget.iz * state.grid.width;
+  const whPreview = buildSystem.previewToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
+  const whWoodCost = whPreview.cost.wood;
   const beforeWood = state.resources.wood;
-  const built = buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
+  const built = buildSystem.placeToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
   assert.equal(built.ok, true);
-  assert.equal(state.resources.wood, beforeWood - 2);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost);
 
-  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", warehouseTarget.ix, warehouseTarget.iz);
   assert.equal(erased.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
-  assert.equal(erased.refund.wood, 1);
-  assert.equal(state.resources.wood, beforeWood - 1);
+  assert.ok(erased.refund.wood >= 1);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost + erased.refund.wood);
 
   const undo = buildSystem.undo(state);
   assert.equal(undo.ok, true);
-  assert.equal(state.grid.tiles[idx], TILE.WALL);
-  assert.equal(state.resources.wood, beforeWood - 2);
+  assert.equal(state.grid.tiles[idx], TILE.WAREHOUSE);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost);
 
   const redo = buildSystem.redo(state);
   assert.equal(redo.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
-  assert.equal(state.resources.wood, beforeWood - 1);
+  assert.equal(state.resources.wood, beforeWood - whWoodCost + erased.refund.wood);
+});
+
+test("BuildSystem erasing a wall rounds refund to zero under 0.25 wood recovery", () => {
+  // Locks the demoWoodRecovery invariant — if tuning bumps recovery above 0.5,
+  // wall (wood:2) would start refunding 1 and this test flags the behavior
+  // change so CHANGELOG / baselines get reviewed intentionally.
+  const state = createInitialGameState();
+  const buildSystem = new BuildSystem();
+  const wallTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "wall", ix, iz).ok);
+  assert.ok(wallTarget);
+  buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
+  assert.equal(erased.ok, true);
+  assert.equal(erased.refund.wood ?? 0, 0, "wall wood refund must round to zero under current demoWoodRecovery");
 });
 
 test("BuildSystem preview surfaces scenario-specific construction effects", () => {

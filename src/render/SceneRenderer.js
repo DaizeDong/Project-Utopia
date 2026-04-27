@@ -3,13 +3,17 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { TILE_INFO, ENTITY_TYPE, ANIMAL_KIND, TILE, VISITOR_KIND } from "../config/constants.js";
+import { BALANCE, CASUAL_UX } from "../config/balance.js";
 import { tileToWorld, worldToTile, inBounds } from "../world/grid/Grid.js";
-import { explainBuildReason } from "../simulation/construction/BuildAdvisor.js";
+import { explainBuildReason, summarizeBuildPreview } from "../simulation/construction/BuildAdvisor.js";
+import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
+import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../app/controlSanitizers.js";
 import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
-import { buildPressureLens } from "./PressureLens.js";
+import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels, getPressureLabelRank, heatLabelBudgetForZoom } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
+import { FogOverlay } from "./FogOverlay.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -18,12 +22,147 @@ const TILE_LABEL = Object.freeze(
   }, {}),
 );
 
+// Build validity accent helper.
+// Given a BuildSystem preview result and the active UI profile, compute a
+// small description of how the hover preview should be accentuated:
+//   { color: "#4ade80" | "#ef4444" | null, scale: 1.0 | 1.08,
+//     reasonText: string, legal: boolean }
+// The renderer calls this and forwards `scale` to the preview-mesh scale +
+// `color` to the material tint. Extracted as a pure function so the
+// casual-profile accent can be unit-tested without standing up Three.js.
+// `null` color signals "no hover / no preview available".
+export function describeBuildValidityAccent(preview, uiProfile = "casual") {
+  if (!preview || typeof preview !== "object") {
+    return { color: null, scale: 1.0, reasonText: "", legal: false };
+  }
+  const legal = Boolean(preview.ok);
+  const color = legal ? "#4ade80" : "#ef4444";
+  const scale = uiProfile === "casual" ? 1.08 : 1.0;
+  const reasonText = legal
+    ? String(preview.summary ?? "")
+    : String(preview.reasonText ?? explainBuildReason(preview.reason, preview) ?? "");
+  return { color, scale, reasonText, legal };
+}
+
+// Build click feedback layer.
+// Pure helper: render a short floating-toast string from a BuildSystem result.
+// Separated from DOM/THREE so unit tests can assert text shape without a
+// rendering context. Shapes expected:
+//   success: { ok: true, cost: { food, wood, stone, herbs } }
+//     → "-N wood", joined by commas if multiple resources had non-zero cost
+//     → "+built" when all cost entries are zero (e.g. erase tool with no refund)
+//   failure, insufficient: { ok: false, reason: "insufficientResource",
+//                             cost: {...}, resources: {...} }
+//     → "Need N more wood, M more stone" (only resources that fell short)
+//   failure, other reasons: { ok: false, reasonText: "<text>" } → that text
+// The `resources` input is optional; when missing or the reason is not
+// insufficientResource, we fall back to reasonText.
+export function formatToastText(buildResult, resources = null) {
+  if (!buildResult || typeof buildResult !== "object") return "blocked";
+  const RESOURCE_KEYS = ["food", "wood", "stone", "herbs"];
+  if (buildResult.ok) {
+    const cost = buildResult.cost ?? {};
+    const parts = [];
+    for (const k of RESOURCE_KEYS) {
+      const v = Number(cost[k] ?? 0);
+      if (v > 0) parts.push(`-${v} ${k}`);
+    }
+    if (parts.length === 0) return "+built";
+    return parts.join(", ");
+  }
+  if (buildResult.reason === "insufficientResource" && resources) {
+    const cost = buildResult.cost ?? {};
+    const shortfalls = [];
+    for (const k of RESOURCE_KEYS) {
+      const need = Number(cost[k] ?? 0);
+      const have = Number(resources[k] ?? 0);
+      const gap = need - have;
+      if (gap > 0) shortfalls.push(`${gap} more ${k}`);
+    }
+    if (shortfalls.length > 0) {
+      const recovery = String(buildResult.recoveryText ?? "").trim();
+      return recovery ? `Need ${shortfalls.join(", ")}. ${recovery}` : `Need ${shortfalls.join(", ")}`;
+    }
+  }
+  const reason = String(buildResult.reasonText ?? "blocked");
+  const recovery = String(buildResult.recoveryText ?? "").trim();
+  return recovery && reason !== "blocked" ? `${reason} ${recovery}` : reason;
+}
+
 const MAT_TMP = new THREE.Matrix4();
 const MAT_Q = new THREE.Quaternion();
 const MAT_P = new THREE.Vector3();
 const MAT_S = new THREE.Vector3();
 const COLOR_TMP = new THREE.Color();
 const VEC_TMP = new THREE.Vector3();
+
+// Screen-space proximity fallback + build-guard.
+// The worker InstancedMesh geometry has radius ~0.35 world units, which at
+// typical camera zoom translates to roughly 8–12 screen pixels. That means
+// the default THREE.Raycaster pick on the InstancedMesh almost never hits
+// when the user clicks near (but not exactly on) a worker sprite, leaving
+// the Entity Focus panel stuck on "No entity selected". These two constants
+// define the screen-space fallback radius used by
+// `findProximityEntity` / `#proximityNearestEntity`:
+//   - ENTITY_PICK_FALLBACK_PX (16): select the nearest entity when exact
+//     raycast returns no hit. 16 px ≈ 1 tile at default zoom, low enough
+//     to avoid mis-selecting neighbours.
+//   - ENTITY_PICK_GUARD_PX (24): when a build tool is active, suppress the
+//     build placement if the click landed within this radius of a worker
+//     but outside the fallback radius, so the user isn't surprised by a
+//     Farm appearing "next to the worker they thought they clicked".
+// v0.8.2 Round-5b (02a-rimworld-veteran Step 5) — hitbox sourced from BALANCE
+// so uiProfile can enlarge picks for non-casual (RimWorld veteran) players.
+const ENTITY_PICK_FALLBACK_PX = Number(BALANCE.renderHitboxPixels?.entityPickFallback ?? 24);
+const ENTITY_PICK_GUARD_PX = Number(BALANCE.renderHitboxPixels?.entityPickGuard ?? 36);
+
+// Pure helper for screen-space proximity pick. Extracted from
+// SceneRenderer.#pickEntity so it can be unit-tested without standing up
+// Three.js renderers / canvases.
+//
+//   entities: iterable of { id, x, z, alive? }. Dead entities (alive===false)
+//     are filtered out.
+//   projectWorldToNdc(x, z): ({ ndcX, ndcY }) — caller-provided projection,
+//     normally `new THREE.Vector3(x, 0, z).project(camera)` mapped to NDC
+//     {-1..+1, -1..+1}.
+//   mouseNdc: { x, y } — the pointer position in the same NDC space.
+//   viewport: { width, height } — canvas pixel size; used to convert NDC
+//     deltas back to pixel distances (NDC uses half-extents, so
+//     dx_px = (ndc.x - mouse.x) * 0.5 * width).
+//   thresholdPx: max allowed screen-pixel distance; entities outside this
+//     radius are skipped.
+//
+// Returns: { entity, pixelDistance } | null. Stable tie-break: first match
+// in iteration order wins on exact tie (should be impossible with floats).
+export function findProximityEntity({ entities, projectWorldToNdc, mouseNdc, viewport, thresholdPx }) {
+  if (!entities || typeof projectWorldToNdc !== "function") return null;
+  if (!mouseNdc || !viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) return null;
+  if (!Number.isFinite(thresholdPx) || thresholdPx <= 0) return null;
+
+  const halfW = viewport.width * 0.5;
+  const halfH = viewport.height * 0.5;
+  let best = null;
+  for (const entity of entities) {
+    if (!entity) continue;
+    if (entity.alive === false) continue;
+    const wx = Number(entity.x);
+    const wz = Number(entity.z);
+    if (!Number.isFinite(wx) || !Number.isFinite(wz)) continue;
+    const ndc = projectWorldToNdc(wx, wz);
+    if (!ndc || !Number.isFinite(ndc.ndcX) || !Number.isFinite(ndc.ndcY)) continue;
+    // Skip entities behind the camera (beyond far plane) if caller signalled
+    // with ndcZ > 1. Optional — callers may omit ndcZ.
+    if (Number.isFinite(ndc.ndcZ) && ndc.ndcZ > 1) continue;
+    const dxPx = (ndc.ndcX - mouseNdc.x) * halfW;
+    const dyPx = (ndc.ndcY - mouseNdc.y) * halfH;
+    const pixelDistance = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+    if (pixelDistance > thresholdPx) continue;
+    if (!best || pixelDistance < best.pixelDistance) {
+      best = { entity, pixelDistance };
+    }
+  }
+  return best;
+}
 
 function setInstancedMatrix(mesh, index, x, y, z, sx = 1, sy = 1, sz = 1) {
   MAT_P.set(x, y, z);
@@ -42,16 +181,25 @@ function lerpAngle(a, b, t) {
   return a + delta * t;
 }
 
-function createRendererWithFallback(canvas) {
-  const attempts = [
-    { antialias: true, powerPreference: "high-performance" },
-    { antialias: false, powerPreference: "high-performance" },
-    { antialias: false, powerPreference: "default" },
-  ];
+function createRendererWithFallback(canvas, displaySettings = DEFAULT_DISPLAY_SETTINGS) {
+  const { settings } = sanitizeDisplaySettings(displaySettings, DEFAULT_DISPLAY_SETTINGS);
+  const preferredPower = settings.powerPreference;
+  const attempts = settings.antialias === "off"
+    ? [
+        { antialias: false, powerPreference: preferredPower, compatibilityFallback: false },
+        { antialias: false, powerPreference: "default", compatibilityFallback: true },
+        { antialias: true, powerPreference: preferredPower, compatibilityFallback: false },
+      ]
+    : [
+        { antialias: true, powerPreference: preferredPower, compatibilityFallback: false },
+        { antialias: false, powerPreference: preferredPower, compatibilityFallback: true },
+        { antialias: false, powerPreference: "default", compatibilityFallback: true },
+      ];
   let lastError = null;
   for (const attempt of attempts) {
     try {
-      const renderer = new THREE.WebGLRenderer({ canvas, ...attempt });
+      const { compatibilityFallback, ...rendererOptions } = attempt;
+      const renderer = new THREE.WebGLRenderer({ canvas, ...rendererOptions });
       return { renderer, attempt };
     } catch (err) {
       lastError = err;
@@ -132,6 +280,10 @@ const TILE_MODEL_BINDINGS = Object.freeze({
   [TILE.FARM]: { key: "farmTile", scale: { x: 0.8, y: 0.62, z: 0.8 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.LUMBER]: { key: "lumberTile", scale: { x: 0.82, y: 0.62, z: 0.82 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.WAREHOUSE]: { key: "warehouseTile", scale: { x: 0.88, y: 0.88, z: 0.88 }, y: 0.04, randomYaw: true, jitter: 0.05, scaleJitter: 0.05 },
+  // TODO visual (v0.8.0 Phase 2 M2): amber pulse tint for warehouses present in
+  // state.metrics.warehouseDensity.hotWarehouses. Deferred — the current
+  // instanced-tile render path doesn't expose per-instance material tinting.
+  // See docs/superpowers/specs/2026-04-21-living-world-balance-design.md § 3.
   [TILE.WALL]: { key: "wallTile", scale: { x: 0.95, y: 0.46, z: 0.26 }, y: 0.03, randomYaw: false, autoYaw: true },
   [TILE.RUINS]: { key: "ruinsTile", scale: { x: 0.68, y: 0.42, z: 0.68 }, y: 0.04, randomYaw: true, jitter: 0.1, scaleJitter: 0.12 },
 });
@@ -153,6 +305,12 @@ const TILE_ICON_TYPES = Object.freeze({
   [TILE.WALL]: "WALL",
   [TILE.RUINS]: "RUINS",
   [TILE.WATER]: "WATER",
+  [TILE.QUARRY]: "QUARRY",
+  [TILE.HERB_GARDEN]: "HERB_GARDEN",
+  [TILE.KITCHEN]: "KITCHEN",
+  [TILE.SMITHY]: "SMITHY",
+  [TILE.CLINIC]: "CLINIC",
+  [TILE.BRIDGE]: "BRIDGE",
 });
 
 const UNIT_SPRITE_BINDINGS = Object.freeze({
@@ -171,6 +329,12 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.WALL]: { key: "wall", tint: 0xb6c1cd, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x30363f, emissiveIntensity: 0.05 },
   [TILE.RUINS]: { key: "props", tint: 0xc19b81, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x432f24, emissiveIntensity: 0.06 },
   [TILE.WATER]: { key: "grass", tint: 0x86c8f8, repeatX: 12, repeatY: 12, roughness: 0.66, emissive: 0x1f527f, emissiveIntensity: 0.12 },
+  [TILE.QUARRY]: { key: "props", tint: 0xb8a88e, repeatX: 9, repeatY: 9, roughness: 0.93, emissive: 0x3d3028, emissiveIntensity: 0.06 },
+  [TILE.HERB_GARDEN]: { key: "plants", tint: 0x8fd47a, repeatX: 10, repeatY: 10, roughness: 0.95, emissive: 0x1f3d1a, emissiveIntensity: 0.07 },
+  [TILE.KITCHEN]: { key: "structure", tint: 0xe0be74, repeatX: 8, repeatY: 8, roughness: 0.9, emissive: 0x4c3a18, emissiveIntensity: 0.06 },
+  [TILE.SMITHY]: { key: "structure", tint: 0xa08e7a, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x2a2018, emissiveIntensity: 0.06 },
+  [TILE.CLINIC]: { key: "structure", tint: 0xc8e0c0, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x2a3d28, emissiveIntensity: 0.06 },
+  [TILE.BRIDGE]: { key: "road", tint: 0xb09878, repeatX: 10, repeatY: 10, roughness: 0.92, emissive: 0x3a2a1a, emissiveIntensity: 0.06 },
 });
 
 const RENDER_ORDER = Object.freeze({
@@ -189,7 +353,7 @@ const DEFAULT_CAMERA_VIEW = Object.freeze({
   targetZ: 0,
   zoom: 1.12,
 });
-const PRESSURE_MARKER_STYLE = Object.freeze({
+export const PRESSURE_MARKER_STYLE = Object.freeze({
   route: Object.freeze({ ring: 0xffa75a, fill: 0xffe0b8, ringOpacity: 0.58, fillOpacity: 0.16 }),
   depot: Object.freeze({ ring: 0x71d9ff, fill: 0xc8f4ff, ringOpacity: 0.54, fillOpacity: 0.14 }),
   weather: Object.freeze({ ring: 0x72b9ff, fill: 0xd0e8ff, ringOpacity: 0.5, fillOpacity: 0.13 }),
@@ -199,6 +363,16 @@ const PRESSURE_MARKER_STYLE = Object.freeze({
   traffic: Object.freeze({ ring: 0xffcd6c, fill: 0xffefc5, ringOpacity: 0.52, fillOpacity: 0.13 }),
   ecology: Object.freeze({ ring: 0x8ed66f, fill: 0xd8efb7, ringOpacity: 0.48, fillOpacity: 0.12 }),
   event: Object.freeze({ ring: 0xff9d80, fill: 0xffdccb, ringOpacity: 0.5, fillOpacity: 0.12 }),
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens channels (spec § 6).
+  heat_surplus: Object.freeze({ ring: 0xff5a48, fill: 0xff9180, ringOpacity: 0.72, fillOpacity: 0.22 }),
+  heat_starved: Object.freeze({ ring: 0x4aa8ff, fill: 0x9fd0ff, ringOpacity: 0.7, fillOpacity: 0.22 }),
+  heat_idle: Object.freeze({ ring: 0x8a94a2, fill: 0xb6bdc6, ringOpacity: 0.34, fillOpacity: 0.08 }),
+});
+export const HEAT_TILE_OVERLAY_VISUAL = Object.freeze({
+  heat_surplus: Object.freeze({ opacity: 0.62 }),
+  heat_starved: Object.freeze({ opacity: 0.56 }),
+  heat_idle: Object.freeze({ opacity: 0.44 }),
+  pulseAmplitude: 0.28,
 });
 
 export class SceneRenderer {
@@ -208,23 +382,28 @@ export class SceneRenderer {
     this.buildSystem = buildSystem;
     this.onSelectEntity = onSelectEntity;
     this.hoverTile = null;
+    this.state.controls.display = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS).settings;
 
-    const { renderer, attempt: rendererAttempt } = createRendererWithFallback(canvas);
+    const { renderer, attempt: rendererAttempt } = createRendererWithFallback(canvas, this.state.controls.display);
     this.renderer = renderer;
     this.rendererAttempt = rendererAttempt;
-    this.compatibilityRenderer = !rendererAttempt.antialias;
+    this.compatibilityRenderer = Boolean(rendererAttempt.compatibilityFallback);
+    this.rendererAntialias = Boolean(rendererAttempt.antialias);
     const deviceMemory = Number(globalThis?.navigator?.deviceMemory ?? 0);
     this.lowMemoryMode = Number.isFinite(deviceMemory) && deviceMemory > 0 && deviceMemory <= 8;
     this.basePixelRatio = this.lowMemoryMode ? 1 : Math.min(1.25, window.devicePixelRatio || 1);
-    this.lowQualityPixelRatio = this.lowMemoryMode ? 0.85 : 1;
+    this.lowQualityPixelRatio = this.lowMemoryMode ? 0.55 : 0.6;
+    this.ultraLowQualityPixelRatio = this.lowMemoryMode ? 0.45 : 0.5;
     this.currentPixelRatio = this.basePixelRatio;
     this.renderer.setPixelRatio(this.currentPixelRatio);
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.28;
-    this.renderer.shadowMap.enabled = !this.compatibilityRenderer && !this.lowMemoryMode;
-    this.renderer.shadowMap.type = this.lowMemoryMode ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    this.activeShadowQuality = this.#effectiveShadowQuality();
+    this.renderer.shadowMap.enabled = this.activeShadowQuality !== "off";
+    this.renderer.shadowMap.type = this.#shadowMapType(this.activeShadowQuality);
+    this.appliedDisplaySignature = "";
 
     const initialAtmosphere = deriveAtmosphereProfile(state);
     this.scene = new THREE.Scene();
@@ -263,6 +442,10 @@ export class SceneRenderer {
     this.state.controls.cameraMinZoom ??= 0.55;
     this.state.controls.cameraMaxZoom ??= 3.2;
     this.state.controls.renderModelDisableThreshold ??= this.modelDisableThreshold;
+    this.state.controls.display = this.#displaySettings();
+    this.state.debug.rendererAntialias = this.rendererAntialias;
+    this.state.debug.rendererPowerPreference = rendererAttempt.powerPreference;
+    this.state.debug.shadowQuality = this.activeShadowQuality;
     this.state.debug.visualAssetPack = "loading";
     this.state.debug.iconAtlasLoaded = false;
     this.state.debug.unitSpriteLoaded = false;
@@ -300,8 +483,28 @@ export class SceneRenderer {
     this.lastShowTileIcons = null;
     this.lastVisualPreset = this.state.controls.visualPreset;
     this.lastEntityRenderSignature = "";
+    this.entityMeshUpdateAccumulatorSec = Infinity;
     this.pressureLensMarkers = [];
     this.lastPressureLensSignature = "";
+    // v0.8.0 Phase 7.C — supply-chain heat lens overlay toggle.
+    // Modes: "pressure" (default scenario/weather markers), "heat" (supply-chain
+    // red/blue/grey channels), "off" (hide all lens markers entirely).
+    this.lensMode = "pressure";
+    this.lastHeatLensSignature = "";
+    this.lastPlacementLensSignature = "";
+    // Terrain Overlay — toggled by T key. null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"
+    this.terrainLensMode = null;
+    this.terrainOverlayPool = [];
+    this.lastTerrainVersion = -1;
+    // Tile info tooltip DOM element (resolved lazily).
+    this.tileInfoTooltipEl = null;
+    this.tileInfoLastTile = null;
+    // Track last pointer position for tooltip positioning.
+    this.lastPointerClientX = 0;
+    this.lastPointerClientY = 0;
+    // v0.8.2 — Pressure lens HTML label pool (populated lazily from #pressureLabelLayer).
+    this.pressureLabelPool = [];
+    this.pressureLabelLayerEl = null;
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -338,6 +541,8 @@ export class SceneRenderer {
     this.entitySpriteRoot = new THREE.Group();
     this.entityModelRoot = new THREE.Group();
     this.scene.add(this.tileModelRoot, this.entitySpriteRoot, this.entityModelRoot);
+    this.fogOverlay = new FogOverlay(this.state.grid);
+    this.fogOverlay.attach(this.scene);
 
     this.lastGridVersion = -1;
     this.pathDoneVerts = [];
@@ -351,6 +556,7 @@ export class SceneRenderer {
     this.#setupOverlayMeshes();
     this.#setupPressureLensMeshes();
     this.#loadWorldSimManifest();
+    this.#applyRendererDisplaySettings();
     if (this.compatibilityRenderer) {
       this.state.controls.actionMessage = "Compatibility renderer enabled (anti-alias off).";
       this.state.controls.actionKind = "info";
@@ -372,12 +578,30 @@ export class SceneRenderer {
     this.boundOnPointerMove = (e) => this.#onPointerMove(e);
     this.boundOnPointerLeave = () => {
       this.hoverTile = null;
+      this.#hideTileInfoTooltip();
     };
     this.boundOnPointerDown = (e) => this.#onPointerDown(e);
+
+    // Build-feedback toast pool. Pre-allocate 6 reusable DOM nodes so rapid-fire
+    // clicks at 2x speed don't churn the heap. We look up #floatingToastLayer
+    // lazily because SceneRenderer may be instantiated in test environments
+    // without that node present.
+    this.toastLayer = typeof document !== "undefined"
+      ? document.getElementById("floatingToastLayer")
+      : null;
+    this.toastPool = [];
+    this.lastToastTileKey = "";
+    this.lastToastTimeMs = 0;
+    this.boundDeathToastEvent = (event) => this.#handleDeathToastEvent(event);
+    this.boundMilestoneToastEvent = (event) => this.#handleMilestoneToastEvent(event);
+    onEvent(this.state, EVENT_TYPES.WORKER_STARVED, this.boundDeathToastEvent);
+    onEvent(this.state, EVENT_TYPES.WORKER_DIED, this.boundDeathToastEvent);
+    onEvent(this.state, EVENT_TYPES.COLONY_MILESTONE, this.boundMilestoneToastEvent);
     this.boundOnContextMenu = (e) => e.preventDefault();
     this.boundOnControlsStart = () => {
       this.isCameraInteracting = true;
       this.hoverTile = null;
+      this.#hideTileInfoTooltip();
     };
     this.boundOnControlsEnd = () => {
       this.isCameraInteracting = false;
@@ -389,6 +613,133 @@ export class SceneRenderer {
     this.canvas.addEventListener("contextmenu", this.boundOnContextMenu);
     this.controls.addEventListener("start", this.boundOnControlsStart);
     this.controls.addEventListener("end", this.boundOnControlsEnd);
+  }
+
+  #displaySettings() {
+    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    return settings;
+  }
+
+  #effectiveShadowQuality(settings = this.#displaySettings()) {
+    if (settings.renderMode === "2d") return "off";
+    if (this.compatibilityRenderer) return "off";
+    const requested = settings.shadowQuality;
+    if (requested === "off") return "off";
+    if (requested === "low" || requested === "medium" || requested === "high") return requested;
+    return this.lowMemoryMode ? "low" : "medium";
+  }
+
+  #shadowMapType(quality) {
+    if (quality === "high" || quality === "medium") return THREE.PCFSoftShadowMap;
+    return THREE.BasicShadowMap;
+  }
+
+  #shadowMapSize(quality) {
+    if (quality === "high") return 2048;
+    if (quality === "medium") return 1536;
+    if (quality === "low") return 768;
+    return 0;
+  }
+
+  #textureQualityOptions(quality = this.#displaySettings().textureQuality) {
+    const maxAnisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
+    if (quality === "ultra") return { mipmaps: true, anisotropy: maxAnisotropy };
+    if (quality === "high") return { mipmaps: true, anisotropy: Math.min(8, maxAnisotropy) };
+    if (quality === "medium") return { mipmaps: true, anisotropy: Math.min(4, maxAnisotropy) };
+    return { mipmaps: false, anisotropy: 1 };
+  }
+
+  #applyTextureQuality() {
+    const options = this.#textureQualityOptions();
+    const apply = (texture, pixelated = false) => {
+      if (!texture) return;
+      if (pixelated) {
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.anisotropy = 1;
+      } else {
+        texture.minFilter = options.mipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = options.mipmaps;
+        texture.anisotropy = options.anisotropy;
+      }
+      texture.needsUpdate = true;
+    };
+
+    for (const material of this.tileMaterialsByType.values()) {
+      apply(material?.map, false);
+    }
+    for (const material of this.tileIconMaterials.values()) {
+      apply(material?.map, true);
+    }
+    for (const texture of this.unitSpriteTextures.values()) {
+      apply(texture, true);
+    }
+  }
+
+  #applyShadowFlags(enabled) {
+    if (this.sunLight) this.sunLight.castShadow = enabled;
+    for (const mesh of this.tileMeshesByType?.values?.() ?? []) {
+      mesh.receiveShadow = enabled;
+    }
+    const entityMeshes = [this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh];
+    for (const mesh of entityMeshes) {
+      if (!mesh) continue;
+      mesh.castShadow = enabled;
+      mesh.receiveShadow = enabled;
+    }
+    this.entityModelRoot?.traverse?.((node) => {
+      if (node.userData?.entityShadow) node.visible = enabled;
+      if (!node.isMesh) return;
+      node.castShadow = enabled;
+      node.receiveShadow = enabled;
+    });
+    this.entitySpriteRoot?.traverse?.((node) => {
+      if (node.userData?.entityShadow) node.visible = enabled;
+    });
+  }
+
+  #applyRendererDisplaySettings() {
+    const settings = this.#displaySettings();
+    const shadowQuality = this.#effectiveShadowQuality(settings);
+    const signature = [
+      settings.textureQuality,
+      shadowQuality,
+      settings.renderMode,
+      settings.effectsEnabled ? 1 : 0,
+      settings.weatherParticles ? 1 : 0,
+      settings.fogEnabled ? 1 : 0,
+      settings.heatLabels ? 1 : 0,
+      settings.entityAnimations ? 1 : 0,
+    ].join("|");
+    if (signature === this.appliedDisplaySignature) return;
+    this.appliedDisplaySignature = signature;
+    this.activeShadowQuality = shadowQuality;
+    const shadowsEnabled = shadowQuality !== "off";
+    this.renderer.shadowMap.enabled = shadowsEnabled;
+    this.renderer.shadowMap.type = this.#shadowMapType(shadowQuality);
+    if (this.sunLight) {
+      this.sunLight.castShadow = shadowsEnabled;
+      const size = this.#shadowMapSize(shadowQuality);
+      if (size > 0) this.sunLight.shadow.mapSize.set(size, size);
+      this.sunLight.shadow.needsUpdate = true;
+    }
+    this.#applyShadowFlags(shadowsEnabled);
+    this.#applyTextureQuality();
+    this.lastEntityRenderSignature = "";
+    if (this.state.debug) {
+      this.state.debug.shadowQuality = shadowQuality;
+      this.state.debug.rendererAntialias = this.rendererAntialias;
+      this.state.debug.rendererPowerPreference = this.rendererAttempt?.powerPreference ?? "default";
+      this.state.debug.displaySettings = { ...settings, effectiveShadowQuality: shadowQuality };
+    }
+  }
+
+  applyDisplaySettings(settings = this.state.controls.display) {
+    this.state.controls.display = sanitizeDisplaySettings(settings, DEFAULT_DISPLAY_SETTINGS).settings;
+    this.#applyRendererDisplaySettings();
   }
 
   #hashAngle(ix, iz) {
@@ -557,7 +908,10 @@ export class SceneRenderer {
 
   #ensureModelTemplatesRequested() {
     if (this.modelTemplatesRequested) return;
-    const needsModels = this.state.controls.visualPreset !== "flat_worldsim"
+    const display = this.#displaySettings();
+    if (display.renderMode === "2d") return;
+    const needsModels = display.renderMode === "3d"
+      || this.state.controls.visualPreset !== "flat_worldsim"
       || !this.state.controls.showUnitSprites;
     if (!needsModels) return;
     this.#loadModelTemplates();
@@ -683,18 +1037,19 @@ export class SceneRenderer {
 
   #setTextureSampling(texture, options = {}) {
     const pixelated = Boolean(options.pixelated);
-    const useMipmaps = options.mipmaps ?? !pixelated;
-    const maxAnisotropy = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 1;
+    const quality = this.#textureQualityOptions();
+    const useMipmaps = options.mipmaps ?? (pixelated ? false : quality.mipmaps);
     texture.colorSpace = THREE.SRGBColorSpace;
     if (pixelated) {
       texture.minFilter = THREE.NearestFilter;
       texture.magFilter = THREE.NearestFilter;
       texture.generateMipmaps = false;
+      texture.anisotropy = 1;
     } else {
       texture.minFilter = useMipmaps ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
       texture.magFilter = THREE.LinearFilter;
       texture.generateMipmaps = useMipmaps;
-      texture.anisotropy = clamp(Number(options.anisotropy) || 4, 1, maxAnisotropy);
+      texture.anisotropy = clamp(Number(options.anisotropy) || quality.anisotropy, 1, quality.anisotropy);
     }
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
@@ -884,7 +1239,7 @@ export class SceneRenderer {
 
   #setupEntityMeshes() {
     const sphere = new THREE.SphereGeometry(0.34, 14, 14);
-    const maxWorkers = 900;
+    const maxWorkers = 1200;
     const maxVisitors = 240;
     const maxHerbivores = 300;
     const maxPredators = 120;
@@ -1012,6 +1367,53 @@ export class SceneRenderer {
     this.pressureRingGeometry = new THREE.RingGeometry(0.82, 1, 40);
     this.pressureMarkerPool = [];
     this.scene.add(this.pressureLensRoot);
+
+    this.heatTileOverlayRoot = new THREE.Group();
+    this.heatTileOverlayGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.98, this.state.grid.tileSize * 0.98);
+    this.heatTileOverlayPool = [];
+    this.scene.add(this.heatTileOverlayRoot);
+
+    // Terrain Fertility Overlay mesh pool — same geometry as heat tiles.
+    this.terrainOverlayRoot = new THREE.Group();
+    this.terrainOverlayGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.97, this.state.grid.tileSize * 0.97);
+    this.terrainOverlayPool = [];
+    this.scene.add(this.terrainOverlayRoot);
+
+    this.placementLensRoot = new THREE.Group();
+    const placementCapacity = Math.max(1, Number(this.state.grid.width ?? 0) * Number(this.state.grid.height ?? 0));
+    this.placementLensGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.92, this.state.grid.tileSize * 0.92);
+    this.placementLensGeometry.rotateX(-Math.PI / 2);
+    this.placementLegalMesh = new THREE.InstancedMesh(
+      this.placementLensGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x4ade80,
+        transparent: true,
+        opacity: 0.32,
+        depthTest: false,
+        depthWrite: false,
+      }),
+      placementCapacity,
+    );
+    this.placementIllegalMesh = new THREE.InstancedMesh(
+      this.placementLensGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xef4444,
+        transparent: true,
+        opacity: 0.08,
+        depthTest: false,
+        depthWrite: false,
+      }),
+      placementCapacity,
+    );
+    this.placementLegalMesh.count = 0;
+    this.placementIllegalMesh.count = 0;
+    this.placementLegalMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 1;
+    this.placementIllegalMesh.renderOrder = RENDER_ORDER.TILE_OVERLAY;
+    this.placementLegalMesh.frustumCulled = false;
+    this.placementIllegalMesh.frustumCulled = false;
+    this.placementLensRoot.visible = false;
+    this.placementLensRoot.add(this.placementIllegalMesh, this.placementLegalMesh);
+    this.scene.add(this.placementLensRoot);
   }
 
   #createPressureMarkerEntry() {
@@ -1055,6 +1457,685 @@ export class SceneRenderer {
     while (this.pressureMarkerPool.length < count) {
       this.pressureMarkerPool.push(this.#createPressureMarkerEntry());
     }
+  }
+
+  #createHeatTileOverlayEntry() {
+    const mesh = new THREE.Mesh(this.heatTileOverlayGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 1;
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    this.heatTileOverlayRoot.add(mesh);
+    return mesh;
+  }
+
+  #ensureHeatTileOverlayPool(count) {
+    while (this.heatTileOverlayPool.length < count) {
+      this.heatTileOverlayPool.push(this.#createHeatTileOverlayEntry());
+    }
+  }
+
+  #hideHeatTileOverlay() {
+    for (const mesh of this.heatTileOverlayPool) mesh.visible = false;
+  }
+
+  // === Terrain Fertility Overlay ===
+
+  #createTerrainOverlayEntry() {
+    const mesh = new THREE.Mesh(this.terrainOverlayGeometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 2;
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    this.terrainOverlayRoot.add(mesh);
+    return mesh;
+  }
+
+  #ensureTerrainOverlayPool(count) {
+    while (this.terrainOverlayPool.length < count) {
+      this.terrainOverlayPool.push(this.#createTerrainOverlayEntry());
+    }
+  }
+
+  #hideTerrainOverlay() {
+    for (const mesh of this.terrainOverlayPool) mesh.visible = false;
+  }
+
+  // Build an array of { ix, iz, color (hex), opacity } for all non-water tiles
+  // based on moisture. Called when terrain lens is active.
+  #buildTerrainFertilityMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles, moisture } = grid;
+    const markers = [];
+    if (!moisture) return markers;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        const tileType = tiles[idx];
+        // Skip water — it has no farming suitability.
+        if (tileType === TILE.WATER) continue;
+        const m = Number(moisture[idx] ?? 0);
+        let color, opacity;
+        if (m > 0.65) {
+          color = 0x1a7f2a; // dark green — excellent
+          opacity = 0.50;
+        } else if (m > 0.40) {
+          color = 0x4aad3a; // medium green — good
+          opacity = 0.40;
+        } else if (m > 0.20) {
+          color = 0xb8c03a; // yellow-green — poor
+          opacity = 0.38;
+        } else {
+          color = 0x6a6a6a; // gray — barren
+          opacity = 0.28;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  #updateTerrainFertilityOverlay() {
+    if (!this.terrainLensMode) {
+      this.#hideTerrainOverlay();
+      return;
+    }
+    const gridVersion = this.state.grid?.version ?? 0;
+    if (gridVersion === this.lastTerrainVersion && this.terrainOverlayPool.length > 0) {
+      // Already up to date — just ensure visibility.
+      return;
+    }
+    this.lastTerrainVersion = gridVersion;
+    let markers;
+    if (this.terrainLensMode === "elevation") {
+      markers = this.#buildTerrainElevationMarkers();
+    } else if (this.terrainLensMode === "connectivity") {
+      markers = this.#buildTerrainConnectivityMarkers();
+    } else if (this.terrainLensMode === "nodeDepletion") {
+      markers = this.#buildTerrainNodeDepletionMarkers();
+    } else {
+      markers = this.#buildTerrainFertilityMarkers();
+    }
+    this.#ensureTerrainOverlayPool(markers.length);
+    for (let i = 0; i < this.terrainOverlayPool.length; i++) {
+      const mesh = this.terrainOverlayPool[i];
+      const marker = markers[i];
+      if (!marker) { mesh.visible = false; continue; }
+      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      mesh.visible = true;
+      mesh.position.set(p.x, 0.18, p.z);
+      mesh.material.color.setHex(marker.color);
+      mesh.material.opacity = marker.opacity;
+    }
+  }
+
+  // Build elevation markers. Color tiles by their elevation value.
+  #buildTerrainElevationMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles, elevation } = grid;
+    const markers = [];
+    if (!elevation) return markers;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        const e = Number(elevation[idx] ?? 0);
+        let color, opacity;
+        if (e > 0.7) {
+          color = 0xcc4444; // red — very high
+          opacity = 0.50;
+        } else if (e > 0.4) {
+          color = 0xcc8833; // orange — high
+          opacity = 0.45;
+        } else if (e > 0.2) {
+          color = 0xaacc33; // yellow-green — mid
+          opacity = 0.40;
+        } else {
+          color = 0x88aacc; // light blue — low
+          opacity = 0.35;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  // Build connectivity markers. Color non-water tiles by road proximity (Manhattan ≤ 3).
+  #buildTerrainConnectivityMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles } = grid;
+    const markers = [];
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        // Check for a ROAD tile within Manhattan distance 3.
+        let hasRoad = false;
+        outer: for (let dz = -3; dz <= 3; dz++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+            const nx = ix + dx;
+            const nz = iz + dz;
+            if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+            if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
+          }
+        }
+        const color = hasRoad ? 0x44cc44 : 0xcc4444;
+        const opacity = hasRoad ? 0.60 : 0.40;
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  // Build node-depletion markers. Color resource buildings by soil exhaustion.
+  #buildTerrainNodeDepletionMarkers() {
+    const grid = this.state.grid;
+    const { width, height, tiles } = grid;
+    const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+    const markers = [];
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        const tileType = tiles[idx];
+        if (!RESOURCE_TILES.has(tileType)) continue;
+        const ts = grid.tileState?.get?.(idx);
+        const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
+        const maxExhaustion = 8.0; // matches TERRAIN_MECHANICS.soilExhaustionMax
+        const ratio = exhaustion / maxExhaustion;
+        let color, opacity;
+        if (ratio > 0.7) {
+          color = 0xcc2222; // red — heavily depleted
+          opacity = 0.60;
+        } else if (ratio > 0.4) {
+          color = 0xcc8822; // orange — moderate depletion
+          opacity = 0.50;
+        } else {
+          color = 0x33cc33; // green — healthy
+          opacity = 0.50;
+        }
+        markers.push({ ix, iz, color, opacity });
+      }
+    }
+    return markers;
+  }
+
+  // === Tile Info Tooltip ===
+
+  // Return 0–2 contextual header lines for the tile info tooltip based on the
+  // currently active build tool. Lines are pre-formatted HTML strings.
+  #buildContextualTooltipHeader(ix, iz, tool) {
+    const grid = this.state.grid;
+    const idx = ix + iz * grid.width;
+    function esc(v) { return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    const headerLines = [];
+
+    if (tool === "farm" || tool === "herb_garden") {
+      // Fertility / moisture is the key metric.
+      if (grid.moisture && idx < grid.moisture.length) {
+        const moist = Number(grid.moisture[idx]);
+        let hint, color;
+        if (moist > 0.65)      { hint = "Fertile";   color = "#a5f2b2"; }
+        else if (moist > 0.40) { hint = "Moderate";  color = "#ffdf8a"; }
+        else                   { hint = "Poor soil";  color = "#ff8a80"; }
+        headerLines.push(
+          `<b style="font-size:12px">Fertility / Moisture</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc(moist.toFixed(2))})</span>`,
+        );
+      }
+    } else if (tool === "lumber" || tool === "clinic") {
+      // Node depletion / soil exhaustion is the key metric.
+      const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+      const tileType = grid.tiles[idx];
+      if (RESOURCE_TILES.has(tileType)) {
+        const ts = grid.tileState?.get?.(idx);
+        const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
+        const maxExhaustion = 8.0;
+        const ratio = exhaustion / maxExhaustion;
+        let hint, color;
+        if (ratio > 0.7)      { hint = "Heavily depleted"; color = "#ff8a80"; }
+        else if (ratio > 0.4) { hint = "Moderate use";     color = "#ffdf8a"; }
+        else                  { hint = "Healthy node";      color = "#a5f2b2"; }
+        headerLines.push(
+          `<b style="font-size:12px">Node Health</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc((ratio * 100).toFixed(0))}% used)</span>`,
+        );
+      } else {
+        headerLines.push(`<b style="font-size:12px">Node Health</b>`, `<span style="opacity:0.6">No resource node here</span>`);
+      }
+    } else if (tool === "quarry" || tool === "wall") {
+      // Elevation is the key metric.
+      if (grid.elevation && idx < grid.elevation.length) {
+        const elev = Number(grid.elevation[idx]);
+        let hint, color;
+        if (elev > 0.7)       { hint = "High ground";   color = "#a5f2b2"; }
+        else if (elev > 0.4)  { hint = "Mid elevation"; color = "#ffdf8a"; }
+        else                  { hint = "Low ground";     color = "#ff8a80"; }
+        headerLines.push(
+          `<b style="font-size:12px">Elevation</b>`,
+          `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span> <span style="opacity:0.7">(${esc(elev.toFixed(2))})</span>`,
+        );
+      }
+    } else if (tool === "road" || tool === "warehouse") {
+      // Road connectivity is the key metric.
+      const { width, height, tiles } = grid;
+      let hasRoad = false;
+      outer: for (let dz = -3; dz <= 3; dz++) {
+        for (let dx = -3; dx <= 3; dx++) {
+          if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+          if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
+        }
+      }
+      const isRoadTile = grid.tiles[idx] === TILE.ROAD;
+      const hint  = isRoadTile ? "Road tile" : (hasRoad ? "Road nearby" : "Not connected");
+      const color = (isRoadTile || hasRoad) ? "#a5f2b2" : "#ff8a80";
+      headerLines.push(
+        `<b style="font-size:12px">Road Connectivity</b>`,
+        `<span style="color:${color};font-size:12px;font-weight:bold">${hint}</span>`,
+      );
+    }
+
+    return headerLines;
+  }
+
+  #resolveTileInfoTooltipEl() {
+    if (this.tileInfoTooltipEl) return this.tileInfoTooltipEl;
+    if (typeof document === "undefined") return null;
+    this.tileInfoTooltipEl = document.getElementById("tileInfoTooltip");
+    return this.tileInfoTooltipEl;
+  }
+
+  #hideTileInfoTooltip() {
+    const el = this.#resolveTileInfoTooltipEl();
+    if (!el) return;
+    el.style.display = "none";
+    this.tileInfoLastTile = null;
+  }
+
+  #updateTileInfoTooltip(ix, iz, clientX, clientY) {
+    const el = this.#resolveTileInfoTooltipEl();
+    if (!el) return;
+
+    const grid = this.state.grid;
+    const idx = ix + iz * grid.width;
+    const tileType = grid.tiles[idx];
+    const info = TILE_INFO[tileType];
+    const tileName = TILE_LABEL[tileType] ?? String(tileType);
+    const passable = info?.passable ? "Passable" : "Impassable";
+    const passableColor = info?.passable ? "#a5f2b2" : "#ff8a80";
+
+    // HTML rows with bold keys for scanability.
+    // Safe: all dynamic values are numbers / enum strings — no user text injected.
+    function esc(v) { return String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    const rows = [];
+
+    // Contextual header: show the most relevant metric first based on active tool.
+    const activeTool = this.state?.controls?.tool ?? "select";
+    const ctxHeader = this.#buildContextualTooltipHeader(ix, iz, activeTool);
+    if (ctxHeader.length > 0) {
+      rows.push(...ctxHeader);
+      rows.push(`<hr style="border:none;border-top:1px solid rgba(255,255,255,0.15);margin:3px 0">`);
+    }
+
+    rows.push(`<b>${esc(tileName)}</b> <span style="color:${passableColor};font-size:10px">${esc(passable)}</span>`);
+
+    // Elevation
+    if (grid.elevation && idx < grid.elevation.length) {
+      const elev = Number(grid.elevation[idx]).toFixed(2);
+      rows.push(`<span style="opacity:0.6">Elev</span> ${esc(elev)}`);
+    }
+
+    // Moisture + fertility hint
+    if (grid.moisture && idx < grid.moisture.length) {
+      const moist = Number(grid.moisture[idx]);
+      rows.push(`<span style="opacity:0.6">Moisture</span> ${esc(moist.toFixed(2))}`);
+      if (tileType === TILE.FARM || tileType === TILE.GRASS) {
+        let hint;
+        let color;
+        if (moist > 0.65) { hint = "Fertile"; color = "#a5f2b2"; }
+        else if (moist > 0.40) { hint = "Moderate"; color = "#ffdf8a"; }
+        else { hint = "Poor"; color = "#ff8a80"; }
+        rows.push(`<span style="opacity:0.6">Fertility</span> <span style="color:${color}">${hint}</span>`);
+      }
+    }
+
+    // Building production stats per tile type.
+    // Descriptions are static strings keyed by tile type — no user-injected text.
+    const BUILDING_DESC = Object.freeze({
+      [TILE.FARM]:        { role: "Produces food", input: "—", output: "food" },
+      [TILE.LUMBER]:      { role: "Produces wood", input: "—", output: "wood" },
+      [TILE.QUARRY]:      { role: "Produces stone", input: "—", output: "stone" },
+      [TILE.HERB_GARDEN]: { role: "Produces herbs", input: "—", output: "herbs" },
+      [TILE.WAREHOUSE]:   { role: "Storage hub", input: "all resources", output: "all resources" },
+      [TILE.KITCHEN]:     { role: "Processing: Cook", input: "food", output: "meals" },
+      [TILE.SMITHY]:      { role: "Processing: Smith", input: "wood + stone", output: "tools" },
+      [TILE.CLINIC]:      { role: "Processing: Heal", input: "herbs", output: "medicine" },
+      [TILE.ROAD]:        { role: "Fast transit (−35% movement cost)", input: "—", output: "—" },
+      [TILE.BRIDGE]:      { role: "Water crossing (passable)", input: "—", output: "—" },
+      [TILE.WALL]:        { role: "Defensive barrier (impassable)", input: "—", output: "—" },
+      [TILE.RUINS]:       { role: "Salvageable structure", input: "—", output: "stone/wood" },
+    });
+    const bDesc = BUILDING_DESC[tileType];
+    if (bDesc) {
+      rows.push(`<span style="opacity:0.6">Role</span> ${esc(bDesc.role)}`);
+      if (bDesc.input !== "—") {
+        rows.push(`<span style="opacity:0.6">Input</span> ${esc(bDesc.input)}`);
+      }
+      if (bDesc.output !== "—") {
+        rows.push(`<span style="opacity:0.6">Output</span> ${esc(bDesc.output)}`);
+      }
+    }
+
+    // tileState info (salinization, yieldPool)
+    const ts = grid.tileState?.get?.(idx);
+    if (ts) {
+      if (Number.isFinite(ts.yieldPool) && ts.yieldPool > 0) {
+        rows.push(`<span style="opacity:0.6">Yield pool</span> ${Math.round(ts.yieldPool)}`);
+      }
+      if (Number.isFinite(ts.salinized) && ts.salinized > 0) {
+        const salPct = (ts.salinized * 100).toFixed(0);
+        const salColor = ts.salinized > 0.5 ? "#ff8a80" : "#ffdf8a";
+        rows.push(`<span style="opacity:0.6">Salinization</span> <span style="color:${salColor}">${salPct}%</span>`);
+      }
+    }
+
+    // Neighbor hints
+    let forestNeighbors = 0;
+    let hasWaterNeighbor = false;
+    let hasRuinsNeighbor = tileType === TILE.RUINS;
+    for (const [dix, diz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      const nx = ix + dix;
+      const nz = iz + diz;
+      if (nx < 0 || nz < 0 || nx >= grid.width || nz >= grid.height) continue;
+      const nIdx = nx + nz * grid.width;
+      const nType = grid.tiles[nIdx];
+      const nFlags = Number(grid.tileState?.get?.(nIdx)?.nodeFlags ?? 0);
+      if (nType === TILE.WATER) hasWaterNeighbor = true;
+      if (nType === TILE.RUINS) hasRuinsNeighbor = true;
+      if (nFlags & 1 /* NODE_FLAGS.FOREST */) forestNeighbors++;
+      if (nType === TILE.LUMBER) forestNeighbors++;
+    }
+    const hints = [];
+    if (forestNeighbors > 0) hints.push("near forest");
+    if (hasWaterNeighbor) hints.push("near water");
+    if (hasRuinsNeighbor) hints.push("salvageable ruins");
+    if (hints.length > 0) {
+      rows.push(`<span style="opacity:0.55;font-style:italic">${hints.join(" · ")}</span>`);
+    }
+
+    rows.push(`<span style="opacity:0.4;font-size:10px">B = build &nbsp;·&nbsp; R = road &nbsp;·&nbsp; T = fertility</span>`);
+
+    el.innerHTML = rows.join("<br>");
+    el.style.whiteSpace = "normal";
+    // Position near cursor with a small offset; keep inside the viewport.
+    // Account for the right sidebar (280px when open) so tooltip doesn't appear
+    // under the sidebar panel. Also account for bottom bar (~50px).
+    const margin = 12;
+    let left = clientX + margin;
+    let top = clientY + margin;
+    const vpW = window.innerWidth;
+    const vpH = window.innerHeight;
+    // Estimate tooltip size (width ~220 + padding, height ~18px * rows).
+    const estW = 235;
+    const estH = rows.length * 18 + 14;
+    // Determine right clearance: sidebar takes 280px when open, 36px (tab strip) otherwise.
+    const sidebarOpen = typeof document !== "undefined" &&
+      document.getElementById("wrap")?.classList?.contains("sidebar-open");
+    const rightClearance = sidebarOpen ? 280 : 36;
+    const rightLimit = vpW - rightClearance;
+    if (left + estW > rightLimit) left = clientX - estW - margin;
+    if (top + estH > vpH - 50) top = clientY - estH - margin;
+    el.style.left = `${Math.max(4, left)}px`;
+    el.style.top = `${Math.max(4, top)}px`;
+    el.style.display = "block";
+  }
+
+  #hidePressureMarkers() {
+    for (const entry of this.pressureMarkerPool) entry.group.visible = false;
+  }
+
+  // v0.8.2 — Pressure lens HTML label overlays.
+  // Projects each active pressure marker's world position onto screen space and
+  // positions a pooled <div class="pressure-label"> absolutely over the canvas.
+  // When the lens is off, all labels are hidden. Maximum pool size is 24
+  // (matching the buildPressureLens cap) so the DOM cost stays bounded.
+  #updatePressureLensLabels() {
+    if (typeof document === "undefined") return;
+
+    // Lazily resolve the label container once.
+    if (!this.pressureLabelLayerEl) {
+      this.pressureLabelLayerEl = document.getElementById("pressureLabelLayer");
+    }
+    const container = this.pressureLabelLayerEl;
+    if (!container) return;
+
+    const display = this.#displaySettings();
+    if (!display.effectsEnabled || !display.heatLabels) {
+      for (const el of this.pressureLabelPool) {
+        el.style.display = "none";
+        el.title = "";
+      }
+      container.dataset.hiddenLabelCount = "0";
+      return;
+    }
+
+    const markers = this.lensMode !== "off" ? this.pressureLensMarkers : [];
+
+    // Grow pool as needed (max 24 to match buildPressureLens cap).
+    while (this.pressureLabelPool.length < markers.length) {
+      const div = document.createElement("div");
+      div.className = "pressure-label";
+      container.appendChild(div);
+      this.pressureLabelPool.push(div);
+    }
+
+    const canvasRect = this.canvas.getBoundingClientRect?.() ?? null;
+    const vpW = canvasRect ? canvasRect.width : this.canvas.clientWidth;
+    const vpH = canvasRect ? canvasRect.height : this.canvas.clientHeight;
+    const offsetLeft = canvasRect ? canvasRect.left : 0;
+    const offsetTop = canvasRect ? canvasRect.top : 0;
+
+    // v0.8.2 Round-6 Wave-1 (01c-ui Step 5) — two-pass projection +
+    // screen-space dedup. Pass 1 projects each marker and records its pixel
+    // coordinates / resolved label / weight. Pass 2 invokes
+    // `dedupPressureLabels` (a pure helper exported from PressureLens.js so
+    // tests can stand it up without canvas) which collapses repeat labels
+    // and bucket-overlapping primaries. Pass 3 writes display state to the
+    // pool elements. This eliminates the "supply surplus / supply surplus /
+    // supply surplus" stack reviewers reported (feedback #4).
+    const projected = [];
+    for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
+      const marker = markers[i];
+      if (!marker || vpW <= 0 || vpH <= 0) {
+        projected.push(null);
+        continue;
+      }
+      const wp = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      VEC_TMP.set(wp.x, 0.3, wp.z);
+      VEC_TMP.project(this.camera);
+      // Off-screen / behind camera → omit from dedup pool.
+      if (VEC_TMP.z > 1 || Math.abs(VEC_TMP.x) > 1.05 || Math.abs(VEC_TMP.y) > 1.05) {
+        projected.push(null);
+        continue;
+      }
+      const px = (VEC_TMP.x * 0.5 + 0.5) * vpW;
+      const py = (-VEC_TMP.y * 0.5 + 0.5) * vpH;
+      // v0.8.2 Round-6 Wave-1 01a-onboarding (Step 2): when a marker carries
+      // an explicit empty-string label (heat-lens halo markers, see
+      // PressureLens.js#buildHeatLens), suppress the label DOM entirely.
+      const rawLabel = marker.label;
+      const labelText = rawLabel === ""
+        ? ""
+        : String(rawLabel ?? marker.kind ?? "");
+      if (labelText === "") {
+        projected.push(null);
+        continue;
+      }
+      projected.push({
+        idx: i,
+        px,
+        py,
+        label: labelText,
+        weight: getPressureLabelRank({ ...marker, resolvedLabel: labelText }),
+        markerWeight: Number(marker.weight ?? 0),
+        priority: Number(marker.priority ?? 0),
+        hoverTooltip: marker.hoverTooltip ?? "",
+        kind: marker.kind ?? "",
+      });
+    }
+
+    // Pass 2: dedup. Build entries array (skip nulls) and remember mapping.
+    const entries = [];
+    const entryToPoolIdx = [];
+    for (let i = 0; i < projected.length; i += 1) {
+      const p = projected[i];
+      if (!p) continue;
+      entries.push(p);
+      entryToPoolIdx.push(i);
+    }
+    const decisions = dedupPressureLabels(entries, { nearPx: 24, bucketPx: 32 });
+
+    // Pass 3: write display state.
+    const visibleCandidates = [];
+    for (let j = 0; j < decisions.length; j += 1) {
+      const d = decisions[j];
+      const poolIdx = entryToPoolIdx[j];
+      if (d.keep) {
+        visibleCandidates.push({ poolIdx, decision: d, entry: entries[j] });
+      }
+    }
+    const labelBudget = this.lensMode === "heat"
+      ? heatLabelBudgetForZoom(this.camera?.zoom)
+      : Number.POSITIVE_INFINITY;
+    visibleCandidates.sort((a, b) => {
+      const rankDelta = Number(b.entry?.weight ?? 0) - Number(a.entry?.weight ?? 0);
+      if (Math.abs(rankDelta) > 0.0001) return rankDelta;
+      const countDelta = Number(b.decision?.count ?? 1) - Number(a.decision?.count ?? 1);
+      if (countDelta !== 0) return countDelta;
+      return String(a.entry?.label ?? "").localeCompare(String(b.entry?.label ?? ""));
+    });
+    const visible = new Map(); // poolIdx -> { decision, entry }
+    for (const item of visibleCandidates.slice(0, labelBudget)) {
+      visible.set(item.poolIdx, { decision: item.decision, entry: item.entry });
+    }
+    container.dataset.hiddenLabelCount = String(Math.max(0, visibleCandidates.length - visible.size));
+    for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
+      const el = this.pressureLabelPool[i];
+      if (!visible.has(i)) {
+        // Not visible: hidden either because off-screen, empty label, or
+        // collapsed into a sibling.
+        el.style.display = "none";
+        el.title = "";
+        if (el.dataset) {
+          if ("merged" in el.dataset) delete el.dataset.merged;
+          if ("count" in el.dataset) delete el.dataset.count;
+        }
+        continue;
+      }
+      const { decision, entry } = visible.get(i);
+      const renderPx = decision.cx ?? entry.px;
+      const renderPy = decision.cy ?? entry.py;
+      const count = decision.count ?? 1;
+      const labelText = count > 1 ? `${entry.label} \u00d7${count}` : entry.label;
+      el.dataset.kind = entry.kind;
+      if (count > 1) {
+        el.dataset.merged = "1";
+        el.dataset.count = String(count);
+      } else {
+        if (el.dataset && "merged" in el.dataset) delete el.dataset.merged;
+        if (el.dataset && "count" in el.dataset) delete el.dataset.count;
+      }
+      el.textContent = labelText;
+      el.title = entry.hoverTooltip ? String(entry.hoverTooltip) : labelText;
+      el.style.left = `${Math.round(renderPx + offsetLeft)}px`;
+      el.style.top = `${Math.round(renderPy + offsetTop)}px`;
+      el.style.display = "block";
+    }
+  }
+
+  #updateHeatTileOverlay(markers) {
+    this.#ensureHeatTileOverlayPool(markers.length);
+    const timeSec = Number(this.state.metrics?.timeSec ?? 0);
+    for (let i = 0; i < this.heatTileOverlayPool.length; i += 1) {
+      const mesh = this.heatTileOverlayPool[i];
+      const marker = markers[i];
+      if (!marker) {
+        mesh.visible = false;
+        continue;
+      }
+      const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.heat_idle;
+      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
+      const visual = HEAT_TILE_OVERLAY_VISUAL[marker.kind] ?? HEAT_TILE_OVERLAY_VISUAL.heat_idle;
+      const wave = Math.sin(timeSec * (1.5 + Number(marker.weight ?? 0) * 0.45) + i * 0.73);
+      const pulse = 1 + (wave * HEAT_TILE_OVERLAY_VISUAL.pulseAmplitude);
+      mesh.visible = true;
+      mesh.position.set(p.x, 0.175 + (Number(marker.weight ?? 0) * 0.015), p.z);
+      mesh.scale.set(pulse, pulse, 1);
+      mesh.material.color.setHex(style.fill);
+      mesh.material.opacity = visual.opacity * (0.92 + ((wave + 1) * 0.08));
+    }
+  }
+
+  #setPlacementMesh(mesh, tiles) {
+    let count = 0;
+    const capacity = mesh.instanceMatrix.count ?? tiles.length;
+    for (const tile of tiles) {
+      if (count >= capacity) break;
+      const p = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      setInstancedMatrix(mesh, count, p.x, 0.19, p.z);
+      count += 1;
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  #updatePlacementLens() {
+    const tool = this.state.controls?.tool;
+    if (this.lensMode === "off") {
+      this.placementLensRoot.visible = false;
+      this.placementLegalMesh.count = 0;
+      this.placementIllegalMesh.count = 0;
+      return;
+    }
+
+    const classified = classifyPlacementTiles(this.state, tool);
+    if (!classified.requiredFlag) {
+      this.placementLensRoot.visible = false;
+      this.placementLegalMesh.count = 0;
+      this.placementIllegalMesh.count = 0;
+      this.lastPlacementLensSignature = "";
+      return;
+    }
+
+    const signature = [
+      tool,
+      this.state.grid?.version ?? 0,
+      this.state.grid?.tileStateVersion ?? 0,
+      classified.legal.length,
+      classified.illegal.length,
+    ].join("|");
+    this.placementLensRoot.visible = true;
+    if (signature === this.lastPlacementLensSignature) return;
+    this.lastPlacementLensSignature = signature;
+    this.#setPlacementMesh(this.placementLegalMesh, classified.legal);
+    this.#setPlacementMesh(this.placementIllegalMesh, classified.illegal);
   }
 
   #lerpColor(targetColor, hex, t) {
@@ -1110,10 +2191,30 @@ export class SceneRenderer {
   }
 
   #updatePressureLens() {
-    const signature = this.#pressureLensSignature();
-    if (signature !== this.lastPressureLensSignature) {
-      this.lastPressureLensSignature = signature;
-      this.pressureLensMarkers = buildPressureLens(this.state);
+    // v0.8.0 Phase 7.C — heat mode swaps the marker source + signature diff.
+    if (this.lensMode === "off") {
+      this.#hidePressureMarkers();
+      this.#hideHeatTileOverlay();
+      this.pressureLensMarkers = [];
+      return;
+    }
+
+    if (this.lensMode === "heat") {
+      const signature = heatLensSignature(this.state);
+      if (signature !== this.lastHeatLensSignature) {
+        this.lastHeatLensSignature = signature;
+        this.pressureLensMarkers = buildHeatLens(this.state);
+      }
+      this.#hidePressureMarkers();
+      this.#updateHeatTileOverlay(this.pressureLensMarkers);
+      return;
+    } else {
+      this.#hideHeatTileOverlay();
+      const signature = this.#pressureLensSignature();
+      if (signature !== this.lastPressureLensSignature) {
+        this.lastPressureLensSignature = signature;
+        this.pressureLensMarkers = buildPressureLens(this.state);
+      }
     }
 
     this.#ensurePressureMarkerPool(this.pressureLensMarkers.length);
@@ -1128,8 +2229,11 @@ export class SceneRenderer {
       }
 
       const style = PRESSURE_MARKER_STYLE[marker.kind] ?? PRESSURE_MARKER_STYLE.event;
-      const pulse = 1 + Math.sin(timeSec * (1.9 + Number(marker.weight ?? 0) * 0.9) + entry.phase) * 0.08;
-      const ringPulse = 1 + Math.cos(timeSec * (1.4 + Number(marker.weight ?? 0) * 0.7) + entry.phase) * 0.12;
+      const isHeatMarker = String(marker.kind ?? "").startsWith("heat_");
+      const pulseAmount = isHeatMarker ? HEAT_TILE_OVERLAY_VISUAL.pulseAmplitude : 0.08;
+      const ringPulseAmount = isHeatMarker ? 0.28 : 0.12;
+      const pulse = 1 + Math.sin(timeSec * (1.9 + Number(marker.weight ?? 0) * 0.9) + entry.phase) * pulseAmount;
+      const ringPulse = 1 + Math.cos(timeSec * (1.4 + Number(marker.weight ?? 0) * 0.7) + entry.phase) * ringPulseAmount;
       const worldRadius = this.state.grid.tileSize * (Number(marker.radius ?? 1) * 0.7 + 0.28);
       const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
 
@@ -1392,6 +2496,7 @@ export class SceneRenderer {
   #syncEntitySprites(entities) {
     const alive = new Set();
     let removedAny = false;
+    const animateEntities = this.#displaySettings().entityAnimations;
 
     for (const entity of entities) {
       const binding = this.#entitySpriteBinding(entity);
@@ -1444,13 +2549,14 @@ export class SceneRenderer {
       }
 
       const speed = Math.hypot(entity.vx || 0, entity.vz || 0);
-      const bobAmp = speed > 0.2 ? binding.bobAmp : binding.bobIdleAmp;
+      const bobAmp = animateEntities ? (speed > 0.2 ? binding.bobAmp : binding.bobIdleAmp) : 0;
       const bobFreq = speed > 0.2 ? 9 : 3.4;
       const bob = Math.sin(this.state.metrics.timeSec * bobFreq + entry.phase) * bobAmp;
 
       entry.group.position.set(entity.x, 0, entity.z);
       entry.sprite.position.set(0, binding.y + bob, 0);
       entry.sprite.scale.set(binding.scale, binding.scale, 1);
+      entry.shadow.visible = this.renderer.shadowMap.enabled;
       entry.shadow.scale.set(binding.shadowRadius, binding.shadowRadius, binding.shadowRadius);
     }
 
@@ -1491,6 +2597,7 @@ export class SceneRenderer {
   #syncEntityModels(entities) {
     const alive = new Set();
     let removedAny = false;
+    const animateEntities = this.#displaySettings().entityAnimations;
 
     for (const entity of entities) {
       if (!this.#entityModelEnabled(entity)) continue;
@@ -1528,11 +2635,11 @@ export class SceneRenderer {
       const speed = Math.sqrt(speedSq);
       const targetYaw = speed > 0.03 ? Math.atan2(entity.vx, entity.vz) : entry.yaw;
       const turnSmooth = speed > 0.2 ? 0.26 : 0.11;
-      entry.yaw = lerpAngle(entry.yaw, targetYaw, turnSmooth);
-      const bobAmp = speed > 0.2 ? binding.bobAmp : binding.idleBobAmp;
+      entry.yaw = animateEntities ? lerpAngle(entry.yaw, targetYaw, turnSmooth) : targetYaw;
+      const bobAmp = animateEntities ? (speed > 0.2 ? binding.bobAmp : binding.idleBobAmp) : 0;
       const bobFreq = speed > 0.2 ? 10 : 3.6;
       const bob = Math.sin(this.state.metrics.timeSec * bobFreq + entry.phase) * bobAmp;
-      const lean = clamp(speed * binding.leanFactor, 0, 0.11);
+      const lean = animateEntities ? clamp(speed * binding.leanFactor, 0, 0.11) : 0;
 
       entry.object.position.set(entity.x, binding.y + bob, entity.z);
       entry.object.rotation.set(-lean, entry.yaw + binding.headingOffset, 0);
@@ -1589,20 +2696,43 @@ export class SceneRenderer {
   }
 
   #setRenderPixelRatio(targetPixelRatio) {
-    const clamped = Math.max(0.85, Math.min(this.basePixelRatio, targetPixelRatio));
+    const display = this.#displaySettings();
+    const resolutionScale = clamp(Number(display.resolutionScale) || 1, 0.5, 1.75);
+    const scaledTarget = targetPixelRatio * resolutionScale;
+    const maxPixelRatio = Math.min(2.5, Math.max(0.45, this.basePixelRatio * resolutionScale));
+    const clamped = Math.max(0.35, Math.min(maxPixelRatio, scaledTarget));
     if (Math.abs(clamped - this.currentPixelRatio) < 0.01) return;
     this.currentPixelRatio = clamped;
     this.renderer.setPixelRatio(clamped);
   }
 
+  #entityMeshUpdateIntervalSec(totalEntities) {
+    const requestedScale = Number(this.state.controls?.timeScale ?? 1);
+    if (totalEntities >= 1000 && requestedScale >= 7) return 1 / 8;
+    if (totalEntities >= 700 && requestedScale >= 7) return 1 / 10;
+    if (totalEntities >= 700) return 1 / 15;
+    if (totalEntities >= 350) return 1 / 24;
+    return 0;
+  }
+
   #updateEntityMeshes() {
     this.#collectEntityBuckets();
     const totalEntities = this.allEntities.length;
+    const display = this.#displaySettings();
     const spritesReady = this.unitSpriteTextures.size > 0;
-    const spriteMode = Boolean(this.state.controls.showUnitSprites) && spritesReady && this.state.controls.visualPreset === "flat_worldsim";
+    const force2d = display.renderMode === "2d";
+    const force3d = display.renderMode === "3d";
+    const spriteMode = !force3d
+      && totalEntities < 650
+      && Boolean(this.state.controls.showUnitSprites)
+      && spritesReady
+      && this.state.controls.visualPreset === "flat_worldsim";
     this.state.debug.unitSpriteLoaded = spritesReady;
 
     if (spriteMode) {
+      this.#setRenderPixelRatio(totalEntities >= 1000
+        ? this.ultraLowQualityPixelRatio
+        : totalEntities >= 700 ? this.lowQualityPixelRatio : this.basePixelRatio);
       this.#syncEntitySprites(this.allEntities);
       if (this.entityModelInstances.size > 0) {
         this.#clearGroup(this.entityModelRoot);
@@ -1622,7 +2752,6 @@ export class SceneRenderer {
       this.herbivoreMesh.instanceMatrix.needsUpdate = true;
       this.predatorMesh.instanceMatrix.needsUpdate = true;
 
-      this.#setRenderPixelRatio(this.basePixelRatio);
       if (this.state.debug) {
         this.state.debug.renderMode = "sprites";
         this.state.debug.renderEntityCount = totalEntities;
@@ -1636,9 +2765,10 @@ export class SceneRenderer {
       this.#clearEntitySpriteInstances();
     }
 
-    let shouldUseEntityModels = this.useEntityModels;
-    if (shouldUseEntityModels && totalEntities > this.modelDisableThreshold) shouldUseEntityModels = false;
-    if (!shouldUseEntityModels && totalEntities < this.modelEnableThreshold) shouldUseEntityModels = true;
+    let shouldUseEntityModels = force3d ? true : this.useEntityModels;
+    if (force2d) shouldUseEntityModels = false;
+    if (!force2d && !force3d && shouldUseEntityModels && totalEntities > this.modelDisableThreshold) shouldUseEntityModels = false;
+    if (!force2d && !force3d && !shouldUseEntityModels && totalEntities < this.modelEnableThreshold) shouldUseEntityModels = true;
     if (shouldUseEntityModels !== this.useEntityModels) {
       this.useEntityModels = shouldUseEntityModels;
       if (!this.useEntityModels) {
@@ -1652,7 +2782,12 @@ export class SceneRenderer {
       }
     }
 
-    this.#setRenderPixelRatio(this.useEntityModels ? this.basePixelRatio : this.lowQualityPixelRatio);
+    const fastPixelRatio = totalEntities >= 1000
+      ? this.ultraLowQualityPixelRatio
+      : totalEntities >= 700
+        ? this.lowQualityPixelRatio
+        : Math.max(this.lowQualityPixelRatio, Math.min(this.basePixelRatio, 0.9));
+    this.#setRenderPixelRatio(this.useEntityModels ? this.basePixelRatio : fastPixelRatio);
 
     if (this.useEntityModels) {
       this.#syncEntityModels(this.allEntities);
@@ -1673,11 +2808,13 @@ export class SceneRenderer {
 
     let i = 0;
     if (workerFallbackVisible) {
-      for (const e of this.workerEntities) {
+      const capacity = Number(this.workerMesh.instanceMatrix?.count ?? this.workerEntities.length);
+      const visibleCount = Math.min(this.workerEntities.length, capacity);
+      for (const e of this.workerEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.workerMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.workerMesh.count = this.workerEntities.length;
+      this.workerMesh.count = visibleCount;
     } else {
       this.workerMesh.count = 0;
     }
@@ -1685,11 +2822,13 @@ export class SceneRenderer {
 
     i = 0;
     if (visitorFallbackVisible) {
-      for (const e of this.visitorEntities) {
+      const capacity = Number(this.visitorMesh.instanceMatrix?.count ?? this.visitorEntities.length);
+      const visibleCount = Math.min(this.visitorEntities.length, capacity);
+      for (const e of this.visitorEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.visitorMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.visitorMesh.count = this.visitorEntities.length;
+      this.visitorMesh.count = visibleCount;
     } else {
       this.visitorMesh.count = 0;
     }
@@ -1697,11 +2836,13 @@ export class SceneRenderer {
 
     i = 0;
     if (herbivoreFallbackVisible) {
-      for (const e of this.herbivoreEntities) {
+      const capacity = Number(this.herbivoreMesh.instanceMatrix?.count ?? this.herbivoreEntities.length);
+      const visibleCount = Math.min(this.herbivoreEntities.length, capacity);
+      for (const e of this.herbivoreEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.herbivoreMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.herbivoreMesh.count = this.herbivoreEntities.length;
+      this.herbivoreMesh.count = visibleCount;
     } else {
       this.herbivoreMesh.count = 0;
     }
@@ -1709,11 +2850,13 @@ export class SceneRenderer {
 
     i = 0;
     if (predatorFallbackVisible) {
-      for (const e of this.predatorEntities) {
+      const capacity = Number(this.predatorMesh.instanceMatrix?.count ?? this.predatorEntities.length);
+      const visibleCount = Math.min(this.predatorEntities.length, capacity);
+      for (const e of this.predatorEntities.slice(0, visibleCount)) {
         setInstancedMatrix(this.predatorMesh, i, e.x, 0.48, e.z);
         i += 1;
       }
-      this.predatorMesh.count = this.predatorEntities.length;
+      this.predatorMesh.count = visibleCount;
     } else {
       this.predatorMesh.count = 0;
     }
@@ -1729,6 +2872,17 @@ export class SceneRenderer {
     if (this.state.debug) {
       this.state.debug.renderMode = this.useEntityModels ? "detailed" : "fast";
       this.state.debug.renderEntityCount = totalEntities;
+      this.state.debug.renderEntityMeshLod = {
+        totalEntities,
+        updateIntervalSec: this.#entityMeshUpdateIntervalSec(totalEntities),
+        skippedFrame: false,
+      };
+      this.state.debug.renderFallbackCounts = {
+        workers: this.workerMesh.count,
+        visitors: this.visitorMesh.count,
+        herbivores: this.herbivoreMesh.count,
+        predators: this.predatorMesh.count,
+      };
       this.state.debug.renderModelDisableThreshold = this.modelDisableThreshold;
       this.state.debug.renderPixelRatio = this.currentPixelRatio;
     }
@@ -1783,9 +2937,47 @@ export class SceneRenderer {
       }
     }
 
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      // Screen-space proximity fallback: when exact raycast missed (typical for
+      // small instanced workers at moderate zoom), project alive entities to NDC
+      // and pick the nearest one within ENTITY_PICK_FALLBACK_PX.
+      const proximity = this.#proximityNearestEntity(mouse, ENTITY_PICK_FALLBACK_PX);
+      if (proximity) return proximity.entity;
+      return null;
+    }
     candidates.sort((a, b) => a.distance - b.distance);
     return candidates[0].entity;
+  }
+
+  // Proximity fallback entry point. Wraps `findProximityEntity` with the
+  // renderer's camera + canvas so callers can keep using NDC `mouse` coords.
+  // Returns { entity, pixelDistance } or null.
+  #proximityNearestEntity(mouse, thresholdPx) {
+    if (!this.camera || !this.canvas || !this.state) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = rect.width || this.canvas.width || 0;
+    const height = rect.height || this.canvas.height || 0;
+    if (width <= 0 || height <= 0) return null;
+    const camera = this.camera;
+    const projectWorldToNdc = (x, z) => {
+      VEC_TMP.set(x, 0, z);
+      VEC_TMP.project(camera);
+      return { ndcX: VEC_TMP.x, ndcY: VEC_TMP.y, ndcZ: VEC_TMP.z };
+    };
+    const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+    const animals = Array.isArray(this.state.animals) ? this.state.animals : [];
+    // Concatenate via a lightweight generator to keep allocation low.
+    function* iterEntities() {
+      for (const a of agents) yield a;
+      for (const a of animals) yield a;
+    }
+    return findProximityEntity({
+      entities: iterEntities(),
+      projectWorldToNdc,
+      mouseNdc: { x: mouse.x, y: mouse.y },
+      viewport: { width, height },
+      thresholdPx,
+    });
   }
 
   #pickTile(mouse) {
@@ -1806,13 +2998,55 @@ export class SceneRenderer {
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    this.lastPointerClientX = event.clientX;
+    this.lastPointerClientY = event.clientY;
 
     const picked = this.#pickTile(this.mouse);
     this.hoverTile = picked?.tile ?? null;
+
+    // Pipe BuildSystem.previewToolAt reasonText into state.controls.buildHint for
+    // HUD surfacing. When the hovered tile is invalid for the current tool, the
+    // player sees the textual reason (e.g. "Farm requires grass tile") instead of
+    // a silent red mesh. Appends Ctrl+Z hint when there's an undo stack so the
+    // shortcut is discoverable at the point of error.
+    const state = this.state;
+    try {
+      if (this.hoverTile && state?.controls?.tool && state.controls.tool !== "select") {
+        const preview = this.buildSystem.previewToolAt(
+          state, state.controls.tool, this.hoverTile.ix, this.hoverTile.iz,
+        );
+        if (preview && preview.ok === false) {
+          const tip = summarizeBuildPreview(preview);
+          const undoHint = Array.isArray(state.controls?.undoStack) && state.controls.undoStack.length > 0
+            ? " (Ctrl+Z to undo last build.)"
+            : "";
+          state.controls.buildHint = tip + undoHint;
+        } else {
+          state.controls.buildHint = "";
+        }
+      } else if (state?.controls) {
+        state.controls.buildHint = "";
+      }
+    } catch {
+      // buildHint is UI sugar — never fail the hover path on a preview error.
+      if (state?.controls) state.controls.buildHint = "";
+    }
+
+    // Tile info tooltip in select mode.
+    try {
+      if (this.hoverTile && state?.controls?.tool === "select") {
+        this.#updateTileInfoTooltip(this.hoverTile.ix, this.hoverTile.iz, this.lastPointerClientX, this.lastPointerClientY);
+      } else {
+        this.#hideTileInfoTooltip();
+      }
+    } catch {
+      // Tooltip is UI sugar — never fail on errors.
+    }
   }
 
   #onPointerDown(event) {
     if (event.button !== 0) return;
+    event.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
@@ -1821,11 +3055,49 @@ export class SceneRenderer {
     if (selected) {
       this.state.controls.selectedEntityId = selected.id;
       this.state.controls.selectedTile = null;
+      // Clear stale hover build preview so the mesh stops flashing on the
+      // tile underneath when a click lands on a worker via proximity fallback.
+      this.state.controls.buildPreview = null;
       if (this.state.debug) this.state.debug.selectedTile = null;
       this.state.controls.actionMessage = `Selected ${selected.displayName ?? selected.id}`;
       this.state.controls.actionKind = "info";
+      // Surface a confirmation toast over the selected entity for feedback.
+      // Uses tile coords (-1,-1) to bypass the per-tile dedupe window.
+      try {
+        const selName = selected.displayName ?? selected.id;
+        this.#spawnFloatingToast(selected.x ?? 0, selected.z ?? 0, `Selected ${selName}`, "info", -1, -1);
+      } catch (err) {
+        // Spawning a toast is a non-essential UI sugar — never fail the
+        // click path if the DOM layer is absent (tests / headless).
+      }
+      // Auto-expand the EntityFocus overlay on first successful pick so the
+      // inspector is visible without requiring a separate click.
+      if (typeof document !== "undefined") {
+        try {
+          const overlay = document.getElementById("entityFocusOverlay");
+          if (overlay && !overlay.open) overlay.open = true;
+        } catch {
+          // headless DOM / forbidden contexts — safe no-op.
+        }
+      }
       this.onSelectEntity?.(selected.id);
       return;
+    }
+
+    // Build-tool 24 px guard: if the user was clearly aiming at a worker
+    // (within ENTITY_PICK_GUARD_PX but outside ENTITY_PICK_FALLBACK_PX)
+    // and a build tool is active, suppress the placement to avoid
+    // surprising the user with a building appearing "next to the worker
+    // they thought they clicked". The 16 px inner radius already handles
+    // the "close enough" case; this catches the 16–24 px annulus.
+    const activeTool = this.state.controls?.tool;
+    if (activeTool && activeTool !== "select" && activeTool !== "inspect") {
+      const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
+      if (nearWorker) {
+        this.state.controls.actionMessage = "Click a bit closer to the worker (hitbox is small)";
+        this.state.controls.actionKind = "info";
+        return;
+      }
     }
 
     const picked = this.#pickTile(this.mouse);
@@ -1847,10 +3119,152 @@ export class SceneRenderer {
       this.#updateSelectedTile(tile.ix, tile.iz);
       this.state.controls.actionMessage = buildResult.message ?? `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
       this.state.controls.actionKind = "success";
+      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
     } else {
-      this.state.controls.actionMessage = buildResult.reasonText ?? explainBuildReason(buildResult.reason, buildResult);
+      this.state.controls.actionMessage = summarizeBuildPreview(buildResult)
+        || buildResult.reasonText
+        || explainBuildReason(buildResult.reason, buildResult);
       this.state.controls.actionKind = "error";
+      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      const text = formatToastText(buildResult, this.state.resources);
+      this.#spawnFloatingToast(worldPos.x, worldPos.z, text, "error", tile.ix, tile.iz);
     }
+  }
+
+  #handleDeathToastEvent(event) {
+    const detail = event?.detail ?? {};
+    const worldX = Number(detail.worldX);
+    const worldZ = Number(detail.worldZ);
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldZ)) return;
+    const name = String(detail.entityName ?? detail.displayName ?? "Worker").trim() || "Worker";
+    const reason = String(detail.reason ?? "event").trim() || "event";
+    const foodEmptySec = Number(detail.foodEmptySec ?? 0);
+    const secText = foodEmptySec >= 5 ? ` - food empty ${Math.floor(foodEmptySec)}s` : "";
+    const text = event?.type === EVENT_TYPES.WORKER_STARVED || reason === "starvation"
+      ? `${name} starved${secText}`
+      : `${name} died - ${reason}`;
+    const tile = detail.tile ?? {};
+    this.#spawnFloatingToast(
+      worldX,
+      worldZ,
+      text,
+      "death",
+      Number.isFinite(Number(tile.ix)) ? Number(tile.ix) : -1,
+      Number.isFinite(Number(tile.iz)) ? Number(tile.iz) : -1,
+    );
+    const now = (typeof performance !== "undefined" && typeof performance.now === "function")
+      ? performance.now()
+      : Date.now();
+    this.state.ui ??= {};
+    this.state.ui.deathToastShownUntil = now + 3500;
+  }
+
+  #handleMilestoneToastEvent(event) {
+    const detail = event?.detail ?? {};
+    const anchor = detail.tile
+      ?? this.state.gameplay?.scenario?.anchors?.coreWarehouse
+      ?? { ix: Math.floor(Number(this.state.grid?.width ?? 0) / 2), iz: Math.floor(Number(this.state.grid?.height ?? 0) / 2) };
+    const world = Number.isFinite(Number(detail.worldX)) && Number.isFinite(Number(detail.worldZ))
+      ? { x: Number(detail.worldX), z: Number(detail.worldZ) }
+      : tileToWorld(Number(anchor.ix ?? 0), Number(anchor.iz ?? 0), this.state.grid);
+    const text = String(detail.label ?? "Milestone reached").trim() || "Milestone reached";
+    this.#spawnFloatingToast(
+      world.x,
+      world.z,
+      text,
+      "milestone",
+      Number.isFinite(Number(anchor.ix)) ? Number(anchor.ix) : -1,
+      Number.isFinite(Number(anchor.iz)) ? Number(anchor.iz) : -1,
+    );
+  }
+
+  #spawnFloatingToast(worldX, worldZ, text, kind, tileIx = -1, tileIz = -1) {
+    // Re-query once if the layer wasn't in the DOM at construction time (tests).
+    if (!this.toastLayer && typeof document !== "undefined") {
+      this.toastLayer = document.getElementById("floatingToastLayer");
+      if (!this.toastLayer) return;
+    }
+    if (!this.toastLayer || !this.camera) return;
+    // 2s message-text dedup: suppress identical toast messages within 2 seconds.
+    this._lastToastTextMap ??= new Map();
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (this._lastToastTextMap.has(text) && now - this._lastToastTextMap.get(text) < 2000) return;
+    this._lastToastTextMap.set(text, now);
+    // Throttle: ignore duplicate clicks on the same tile within 100ms.
+    const key = `${tileIx},${tileIz}`;
+    if (key === this.lastToastTileKey && (now - this.lastToastTimeMs) < 100) return;
+    this.lastToastTileKey = key;
+    this.lastToastTimeMs = now;
+
+    // Project world coords to NDC, then to CSS pixels inside the viewport rect.
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const layerRect = this.toastLayer.getBoundingClientRect();
+    VEC_TMP.set(Number(worldX) || 0, 0, Number(worldZ) || 0);
+    VEC_TMP.project(this.camera);
+    const px = canvasRect.left - layerRect.left + (VEC_TMP.x * 0.5 + 0.5) * canvasRect.width;
+    const py = canvasRect.top - layerRect.top + (-VEC_TMP.y * 0.5 + 0.5) * canvasRect.height;
+
+    // Acquire a div from the pool or create one on demand (cap at 6 reused nodes).
+    let node = this.toastPool.find((n) => n.dataset.busy !== "1");
+    if (!node) {
+      if (this.toastPool.length >= 6) {
+        node = this.toastPool[0]; // oldest — evict and reuse
+      } else {
+        node = document.createElement("div");
+        this.toastLayer.appendChild(node);
+        this.toastPool.push(node);
+      }
+    }
+
+    node.dataset.busy = "1";
+    const classKind = kind === "success"
+      ? "ok"
+      : kind === "death"
+        ? "death"
+        : kind === "milestone"
+          ? "milestone"
+          : "err";
+    node.className = `build-toast build-toast--${classKind}`;
+    node.textContent = String(text ?? "");
+    node.style.left = `${px}px`;
+    node.style.top = `${py}px`;
+    // Reset the keyframe animation so repeat spawns on the same node re-trigger.
+    node.style.animation = "none";
+    // Force reflow so the reset takes effect before the new animation is applied.
+    void node.offsetWidth;
+    const animationName = kind === "death" ? "toastDeath" : kind === "milestone" ? "toastMilestone" : "toastFloat";
+    const durationMs = kind === "death"
+      ? 4000
+      : kind === "milestone"
+        ? 3200
+        : kind === "err"
+          ? CASUAL_UX.errToastMs
+          : kind === "warn"
+            ? CASUAL_UX.warnToastMs
+            : CASUAL_UX.successToastMs;
+    node.style.animation = `${animationName} ${durationMs / 1000}s ease-out forwards`;
+
+    // Free the slot shortly after the animation ends.
+    if (node._utopiaToastTimer) clearTimeout(node._utopiaToastTimer);
+    node._utopiaToastTimer = setTimeout(() => {
+      node.dataset.busy = "0";
+      node.style.animation = "none";
+      node.style.opacity = "0";
+    }, durationMs + 50);
+  }
+
+  spawnDeathToast(worldX, worldZ, name, reason, tileIx = -1, tileIz = -1) {
+    const safeName = String(name ?? "Worker").trim() || "Worker";
+    const safeReason = String(reason ?? "unknown cause").trim() || "unknown cause";
+    this.#spawnFloatingToast(
+      worldX,
+      worldZ,
+      `${safeName} died - ${safeReason}`,
+      "death",
+      tileIx,
+      tileIz,
+    );
   }
 
   #updateSelectedTile(ix, iz) {
@@ -1889,6 +3303,14 @@ export class SceneRenderer {
       this.previewMesh.material.color.setHex(color);
     }
 
+    // In casual profile, scale the preview mesh slightly so the legal/illegal
+    // cue is easier to read at standard zoom.
+    const profile = this.state.controls?.uiProfile ?? "casual";
+    if (this.hoverTile && this.previewMesh?.visible) {
+      const accent = profile === "casual" ? 1.08 : 1.0;
+      this.previewMesh.scale.set(accent, accent, accent);
+    }
+
     const selectedTile = this.state.controls.selectedTile;
     if (!selectedTile) {
       this.selectedTileMesh.visible = false;
@@ -1915,6 +3337,7 @@ export class SceneRenderer {
   }
 
   #applyRuntimeControlSettings() {
+    this.#applyRendererDisplaySettings();
     const minZoom = clamp(Number(this.state.controls.cameraMinZoom) || 0.55, 0.3, 5);
     const maxZoom = clamp(Number(this.state.controls.cameraMaxZoom) || 3.2, minZoom + 0.1, 6);
 
@@ -1977,34 +3400,193 @@ export class SceneRenderer {
     this.isCameraInteracting = false;
   }
 
+  // v0.8.0 Phase 7.C — Supply-Chain Heat Lens toggle (spec § 6).
+  // Cycle order: pressure → heat → off → pressure. Returns the new mode so
+  // callers (L-key handler, HUD button) can update their UI state.
+  toggleHeatLens() {
+    const next = this.lensMode === "pressure"
+      ? "heat"
+      : this.lensMode === "heat"
+        ? "off"
+        : "pressure";
+    this.setLensMode(next);
+    return this.lensMode;
+  }
+
+  setLensMode(mode) {
+    const valid = mode === "heat" || mode === "off" ? mode : "pressure";
+    if (this.lensMode === valid) return this.lensMode;
+    this.lensMode = valid;
+    // Invalidate cached signatures so the next update() rebuilds the marker set
+    // against the freshly-selected mode regardless of whether state has changed.
+    this.lastPressureLensSignature = "";
+    this.lastHeatLensSignature = "";
+    return this.lensMode;
+  }
+
+  getLensMode() {
+    return this.lensMode;
+  }
+
+  // Cycle terrain overlay mode: null → "fertility" → "elevation" → "connectivity" → "nodeDepletion" → null.
+  // Returns the new mode string (null when off).
+  toggleTerrainLens() {
+    const MODES = [null, "fertility", "elevation", "connectivity", "nodeDepletion"];
+    const idx = MODES.indexOf(this.terrainLensMode);
+    this.terrainLensMode = MODES[(idx + 1) % MODES.length];
+    if (!this.terrainLensMode) {
+      this.#hideTerrainOverlay();
+    } else {
+      // Force rebuild on next render pass.
+      this.lastTerrainVersion = -1;
+    }
+    return this.terrainLensMode;
+  }
+
+  // Directly set a specific terrain overlay mode without cycling.
+  // targetMode: null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"
+  // Returns the new mode (unchanged if targetMode is invalid or already active).
+  setTerrainLensMode(targetMode) {
+    const VALID = [null, "fertility", "elevation", "connectivity", "nodeDepletion"];
+    if (!VALID.includes(targetMode)) return this.terrainLensMode;
+    if (this.terrainLensMode === targetMode) return targetMode;
+    this.terrainLensMode = targetMode;
+    this.#updateTerrainFertilityOverlay();
+    return targetMode;
+  }
+
+  getTerrainLensActive() {
+    return this.terrainLensMode !== null;
+  }
+
+  getTerrainLensMode() {
+    return this.terrainLensMode;
+  }
+
   resetView() {
+    this.orthoSize = Math.max(this.state.grid.width, this.state.grid.height) * 0.65;
+    this.lastGridVersion = -1;
+    // Rebuild instanced meshes if grid dimensions changed (capacity may differ)
+    const newCount = this.state.grid.width * this.state.grid.height;
+    const existingSample = this.tileMeshesByType.values().next().value;
+    if (!existingSample || existingSample.instanceMatrix.count !== newCount) {
+      for (const mesh of this.tileMeshesByType.values()) {
+        this.scene.remove(mesh);
+        mesh.dispose();
+      }
+      this.#setupTileMesh();
+      // Rebuild tile border grid lines for new dimensions
+      if (this.tileBorderLines) {
+        this.scene.remove(this.tileBorderLines);
+        this.tileBorderLines.geometry.dispose();
+        this.tileBorderLines.material.dispose();
+      }
+      this.#setupTileBorders();
+      this.fogOverlay?.dispose?.();
+      this.fogOverlay = new FogOverlay(this.state.grid);
+      this.fogOverlay.attach(this.scene);
+    }
+    this.#updateOrthoProjection();
     this.applyViewState(DEFAULT_CAMERA_VIEW);
+  }
+
+  // v0.8.2 Round-7 01d — rain particle system. Three simple private methods
+  // so the render() loop stays readable. _rainParticles is null when dry.
+  #createRainParticles() {
+    const count = 200;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3]     = (Math.random() - 0.5) * 100;
+      pos[i * 3 + 1] = Math.random() * 30 + 5;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 100;
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({ color: 0x88aacc, size: 0.15, transparent: true, opacity: 0.5 });
+    this._rainParticles = new THREE.Points(geo, mat);
+    this.scene.add(this._rainParticles);
+  }
+
+  #removeRainParticles() {
+    if (this._rainParticles) {
+      this.scene.remove(this._rainParticles);
+      this._rainParticles.geometry.dispose();
+      this._rainParticles.material.dispose();
+      this._rainParticles = null;
+    }
+  }
+
+  #updateRainParticles() {
+    const pos = this._rainParticles.geometry.attributes.position.array;
+    for (let i = 1; i < pos.length; i += 3) {
+      pos[i] -= 0.3;
+      if (pos[i] < 0) pos[i] = Math.random() * 30 + 10;
+    }
+    this._rainParticles.geometry.attributes.position.needsUpdate = true;
   }
 
   render(dt) {
     this.#applyRuntimeControlSettings();
+    const display = this.#displaySettings();
     this.#syncVisualAssetDebug();
     this.#ensureModelTemplatesRequested();
     this.controls.update();
     this.#updateTileLayerVisibilityByZoom();
     this.#applyAtmosphere(dt);
 
+    // v0.8.2 Round-7 01d — weather rain particles: activate when
+    // state.weather.current === "rain" (or "storm"), deactivate otherwise.
+    const weatherNow = String(this.state.weather?.current ?? "clear");
+    const isRaining = display.effectsEnabled
+      && display.weatherParticles
+      && (weatherNow === "rain" || weatherNow === "storm");
+    if (isRaining !== Boolean(this._weatherRain)) {
+      this._weatherRain = isRaining;
+      if (isRaining) {
+        this.#createRainParticles();
+      } else {
+        this.#removeRainParticles();
+      }
+    }
+    if (this._rainParticles) this.#updateRainParticles();
+
     this.#rebuildTilesIfNeeded();
+    const totalEntities = Number(this.state.agents?.length ?? 0) + Number(this.state.animals?.length ?? 0);
+    const entityUpdateIntervalSec = this.#entityMeshUpdateIntervalSec(totalEntities);
+    this.entityMeshUpdateAccumulatorSec += dt;
     const entityRenderSignature = [
-      this.state.metrics.tick,
       this.state.agents.length,
       this.state.animals.length,
       this.state.controls.showUnitSprites ? 1 : 0,
       this.state.controls.visualPreset,
       this.modelDisableThreshold,
       this.modelTemplates.size,
+      display.renderMode,
+      display.resolutionScale,
+      display.entityAnimations ? 1 : 0,
     ].join("|");
-    if (entityRenderSignature !== this.lastEntityRenderSignature) {
+    const shouldUpdateEntities = entityRenderSignature !== this.lastEntityRenderSignature
+      || entityUpdateIntervalSec <= 0
+      || this.entityMeshUpdateAccumulatorSec >= entityUpdateIntervalSec;
+    if (shouldUpdateEntities) {
       this.lastEntityRenderSignature = entityRenderSignature;
+      this.entityMeshUpdateAccumulatorSec = 0;
       this.#updateEntityMeshes();
+    } else if (this.state.debug) {
+      this.state.debug.renderEntityMeshLod = {
+        totalEntities,
+        updateIntervalSec: entityUpdateIntervalSec,
+        skippedFrame: true,
+      };
     }
     this.#updatePathLine();
+    const fogVisible = display.effectsEnabled && display.fogEnabled;
+    if (this.fogOverlay?.mesh) this.fogOverlay.mesh.visible = fogVisible;
+    if (fogVisible) this.fogOverlay?.update?.(this.state);
     this.#updatePressureLens();
+    this.#updatePressureLensLabels();
+    this.#updatePlacementLens();
+    this.#updateTerrainFertilityOverlay();
     this.#updateOverlayMeshes();
 
     const pixelRatio = this.renderer.getPixelRatio();
@@ -2048,6 +3630,7 @@ export class SceneRenderer {
     this.controls.removeEventListener("end", this.boundOnControlsEnd);
 
     this.controls?.dispose?.();
+    this.fogOverlay?.dispose?.();
     this.#clearEntitySpriteInstances();
     for (const texture of this.unitSpriteTextures.values()) {
       texture.dispose?.();

@@ -9,19 +9,22 @@ test("evaluateRunOutcomeState returns loss for collapse spiral", () => {
   state.gameplay.prosperity = 7.5;
   state.gameplay.threat = 93;
   state.metrics.populationStats = { workers: 12 };
+  state.metrics.simTimeSec = 120;
 
   const outcome = evaluateRunOutcomeState(state);
   assert.equal(outcome?.outcome, "loss");
   assert.equal(outcome?.reason.includes("low prosperity"), true);
 });
 
-test("evaluateRunOutcomeState returns win when objectives complete", () => {
+test("evaluateRunOutcomeState has no win outcome in survival mode", () => {
+  // v0.8.0 Phase 4 — Survival Mode. There is no longer a "win" path; the
+  // only terminal outcome is loss (colony wipe or collapse). A healthy
+  // colony simply returns null.
   const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
-  state.gameplay.objectiveIndex = state.gameplay.objectives.length;
   state.metrics.populationStats = { workers: 12 };
 
   const outcome = evaluateRunOutcomeState(state);
-  assert.equal(outcome?.outcome, "win");
+  assert.equal(outcome, null);
 });
 
 test("evaluateRunOutcomeState keeps the run alive when zero stockpile still has supply in transit", () => {

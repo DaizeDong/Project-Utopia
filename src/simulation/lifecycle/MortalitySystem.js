@@ -1,15 +1,246 @@
 import { ANIMAL_KIND, ENTITY_TYPE, TILE } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
 import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { recordResourceFlow } from "../economy/ResourceSystem.js";
+import { audioSystem } from "../../audio/AudioSystem.js";
 
 const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
+const WORKER_MEMORY_LIMIT = 6;
+const WORKER_MEMORY_HISTORY_LIMIT = 24;
+const WITNESS_NEARBY_DISTANCE = 12;
+const NUTRITION_REACHABILITY_REFRESH_HUNGER = 0.22;
 
 function deathThresholdFor(entity) {
   if (entity.type === ENTITY_TYPE.WORKER) return { hunger: 0.045, holdSec: 34 };
   if (entity.type === ENTITY_TYPE.VISITOR) return { hunger: 0.04, holdSec: 40 };
   if (entity.kind === ANIMAL_KIND.HERBIVORE) return { hunger: 0.035, holdSec: 20 };
   return { hunger: 0.03, holdSec: 28 };
+}
+
+function relationLabelForMemory(opinion) {
+  const n = Number(opinion);
+  if (!Number.isFinite(n)) return "Colleague";
+  if (n >= 0.45) return "Close friend";
+  if (n >= 0.15) return "Friend";
+  if (n >= -0.15) return "Acquaintance";
+  if (n > -0.45) return "Strained";
+  return "Rival";
+}
+
+/**
+ * v0.8.2 Round-5 Wave-1 (02d Step 2) — push a narrative line into a worker's
+ * memory.recentEvents, with optional same-event dedup. `dedupKey` + `nowSec`
+ * + `windowSec` form a (key, last-push-time, window) tuple stored in
+ * `worker.memory.recentKeys` (Map lazily initialised — see 02d Step 3 Risk
+ * note re: snapshot roundtrip). If the same key fired within `windowSec`,
+ * the new label is dropped. Death events pass a large windowSec (9999) as
+ * a defensive measure — a worker only dies once, but the dedup keeps stray
+ * double-recording (e.g. re-enter loop from a snapshot replay) safe.
+ * @param {object} worker
+ * @param {string} label
+ * @param {string|null} [dedupKey]
+ * @param {number} [windowSec]
+ * @param {number} [nowSec]
+ */
+function inferMemoryType(dedupKey) {
+  const key = String(dedupKey ?? "");
+  if (key.startsWith("death:")) return "death";
+  if (key.startsWith("birth:")) return "birth";
+  if (key.startsWith("friend:") || key.startsWith("rival:")) return "relationship";
+  return "event";
+}
+
+function pushWorkerMemoryHistory(worker, label, dedupKey = null, nowSec = 0) {
+  worker.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(worker.memory.history)) worker.memory.history = [];
+  if (dedupKey && worker.memory.history.some((entry) => entry?.key === dedupKey)) return;
+  worker.memory.history.unshift({
+    simSec: Number(nowSec ?? 0),
+    type: inferMemoryType(dedupKey),
+    label: String(label ?? ""),
+    key: dedupKey ? String(dedupKey) : null,
+  });
+  worker.memory.history = worker.memory.history.slice(0, WORKER_MEMORY_HISTORY_LIMIT);
+}
+
+function pushWorkerMemory(worker, label, dedupKey = null, windowSec = 30, nowSec = 0) {
+  worker.memory ??= { recentEvents: [], dangerTiles: [] };
+  if (!Array.isArray(worker.memory.recentEvents)) worker.memory.recentEvents = [];
+  if (dedupKey) {
+    // Lazy-init so snapshot reload (which shallow-clones `memory` and drops
+    // Map instances) always recovers to a usable state without schema
+    // migration.
+    if (!(worker.memory.recentKeys instanceof Map)) worker.memory.recentKeys = new Map();
+    const recentKeys = worker.memory.recentKeys;
+    const last = Number(recentKeys.get(dedupKey) ?? -Infinity);
+    if (Number.isFinite(last) && Number(nowSec) - last < Number(windowSec)) {
+      return; // within window — skip push
+    }
+    recentKeys.set(dedupKey, Number(nowSec));
+  }
+  worker.memory.recentEvents.unshift(label);
+  worker.memory.recentEvents = worker.memory.recentEvents.slice(0, WORKER_MEMORY_LIMIT);
+  pushWorkerMemoryHistory(worker, label, dedupKey, nowSec);
+}
+
+function readRelationshipOpinion(deceased, witness) {
+  const fromDeceased = Number(deceased.relationships?.[witness.id]);
+  if (Number.isFinite(fromDeceased)) return fromDeceased;
+  const fromWitness = Number(witness.relationships?.[deceased.id]);
+  if (Number.isFinite(fromWitness)) return fromWitness;
+  return NaN;
+}
+
+function manhattanWorldDistance(a, b) {
+  return Math.abs(Number(a.x ?? 0) - Number(b.x ?? 0))
+    + Math.abs(Number(a.z ?? 0) - Number(b.z ?? 0));
+}
+
+// v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5) — resolve a tile-coord into
+// a scenario-anchor label like "west ridge wilds" / "east depot gate", so
+// obituary lines read "died near the west lumber route" instead of the bare
+// "(32,18)" coords. Walks scenario.routeLinks → depotZones → chokePoints →
+// anchors and returns the closest match within `radiusTiles` (default 6).
+// Falls back to "(ix,iz)" when no anchor is in range — same behaviour as
+// before, just narratively richer when scenario data is available.
+function resolveAnchorLabel(state, tile) {
+  if (!tile || !Number.isFinite(tile.ix) || !Number.isFinite(tile.iz)) return "";
+  const scenario = state?.gameplay?.scenario;
+  if (!scenario) return `(${tile.ix},${tile.iz})`;
+  const radiusTiles = 6;
+  const anchors = scenario.anchors ?? {};
+  const labelled = [];
+  const pushIfAnchor = (anchorKey, label) => {
+    const a = anchors[anchorKey];
+    if (!a || !Number.isFinite(a.ix) || !Number.isFinite(a.iz)) return;
+    const dist = Math.abs(a.ix - tile.ix) + Math.abs(a.iz - tile.iz);
+    labelled.push({ label, dist });
+  };
+  for (const link of scenario.routeLinks ?? []) {
+    pushIfAnchor(link.from, String(link.label ?? ""));
+    pushIfAnchor(link.to, String(link.label ?? ""));
+  }
+  for (const zone of scenario.depotZones ?? []) {
+    pushIfAnchor(zone.anchor, String(zone.label ?? ""));
+  }
+  for (const choke of scenario.chokePoints ?? []) {
+    pushIfAnchor(choke.anchor, String(choke.label ?? ""));
+  }
+  for (const wild of scenario.wildlifeZones ?? []) {
+    pushIfAnchor(wild.anchor, String(wild.label ?? ""));
+  }
+  labelled.sort((a, b) => a.dist - b.dist);
+  const best = labelled.find((l) => l.label && l.dist <= radiusTiles);
+  return best ? best.label : `(${tile.ix},${tile.iz})`;
+}
+
+function recordDeathIntoWitnessMemory(state, deceased, nowSec) {
+  if (deceased.type !== ENTITY_TYPE.WORKER && deceased.type !== ENTITY_TYPE.VISITOR) return;
+  const workers = (state.agents ?? [])
+    .filter((agent) => agent.id !== deceased.id
+      && agent.type === ENTITY_TYPE.WORKER
+      && agent.alive !== false);
+  if (workers.length === 0) return;
+
+  // v0.8.2 Round-5 Wave-1 (02d Step 1) — union of `related` ∪ `nearby` rather
+  // than the previous "related OR nearby" fallback. Previously any deceased
+  // with at least one opinion≠0 relationship made the fallback branch dead
+  // code, so near-field witnesses without a relationship never got the
+  // memory. Now we always collect top-3 related (by |opinion|) AND top-3
+  // nearby (distance <= WITNESS_NEARBY_DISTANCE), dedupe by agent id, and
+  // label each witness by its strongest tag.
+  const related = workers
+    .map((worker) => ({ worker, opinion: readRelationshipOpinion(deceased, worker) }))
+    .filter(({ opinion }) => Number.isFinite(opinion) && Math.abs(opinion) > 0)
+    .sort((a, b) => Math.abs(b.opinion) - Math.abs(a.opinion))
+    .slice(0, 3);
+
+  const nearby = workers
+    .map((worker) => ({ worker, opinion: NaN, distance: manhattanWorldDistance(worker, deceased) }))
+    .filter(({ distance }) => distance <= WITNESS_NEARBY_DISTANCE)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 3);
+
+  // Combine using Set<agentId>: related wins the opinion tag (Friend/Close
+  // friend/Strained/Rival), nearby-only witnesses are labelled "Colleague".
+  const witnessesById = new Map();
+  for (const entry of related) {
+    witnessesById.set(entry.worker.id, entry);
+  }
+  for (const entry of nearby) {
+    if (!witnessesById.has(entry.worker.id)) {
+      witnessesById.set(entry.worker.id, entry);
+    }
+  }
+
+  const reason = String(deceased.deathReason || "event");
+  const deceasedName = deceased.displayName ?? deceased.id;
+  const time = Math.max(0, Number(nowSec ?? 0)).toFixed(0);
+  const deathKey = `death:${deceased.id}`;
+  // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5+6) — kinship & rivalry
+  // variants. Family ties (lineage.parents/children) get an additional
+  // "my father / my child died" memory beat. Rival witnesses (opinion ≤
+  // -0.15) flip into the "felt grim relief" line and gain a small +0.05
+  // morale bump (the "enemy's funeral" cliché — bounded so the long-horizon
+  // bench's social CI doesn't collapse).
+  const deceasedParentSet = new Set(Array.isArray(deceased.lineage?.parents) ? deceased.lineage.parents : []);
+  const deceasedChildSet = new Set(Array.isArray(deceased.lineage?.children) ? deceased.lineage.children : []);
+  for (const { worker, opinion } of witnessesById.values()) {
+    const label = Number.isFinite(opinion) ? relationLabelForMemory(opinion) : "Colleague";
+    pushWorkerMemory(
+      worker,
+      `[${time}s] ${label} ${deceasedName} died (${reason})`,
+      deathKey,
+      9999,
+      Number(nowSec ?? 0),
+    );
+    // Family witness variant: only fires for workers wired into the
+    // deceased's lineage tree (Step 3 in PopulationGrowthSystem populates
+    // both directions). Stays orthogonal to the relationship-band label
+    // above so the "Friend / Close friend" copy still surfaces.
+    if (deceasedChildSet.has(worker.id)) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] My parent ${deceasedName} died (${reason})`,
+        `${deathKey}:family-parent`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+    }
+    if (deceasedParentSet.has(worker.id)) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] My child ${deceasedName} died (${reason})`,
+        `${deathKey}:family-child`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+    }
+    // Rivalry "grim relief" variant — only fires when the witness has a
+    // clear-rival opinion of the deceased (≤ -0.15 Strained band onwards).
+    if (Number.isFinite(opinion) && opinion <= -0.15) {
+      pushWorkerMemory(
+        worker,
+        `[${time}s] Felt grim relief at ${deceasedName}'s death`,
+        `${deathKey}:rival-relief`,
+        9999,
+        Number(nowSec ?? 0),
+      );
+      worker.morale = Math.max(0, Math.min(1, Number(worker.morale ?? 0.5) + 0.05));
+    }
+    // v0.8.2 Round-7 01d — grief mechanic: Close Friend witnesses (opinion ≥ 0.6)
+    // receive a morale debuff and a blackboard grief timer (90s) so WorkerAISystem
+    // can slow their efficiency. Bounded to not drop morale below 0.
+    if (Number.isFinite(opinion) && opinion >= 0.6) {
+      worker.blackboard ??= {};
+      worker.blackboard.griefUntilSec = Number(nowSec ?? 0) + 90;
+      worker.blackboard.griefFriendName = (deceasedName ?? "").split(" ")[0];
+      worker.morale = Math.max(0, Number(worker.morale ?? 0.5) - 0.15);
+    }
+  }
 }
 
 function ensureLogicBucket(state) {
@@ -61,7 +292,7 @@ function resolveReachability(entity, state, services, fromTile, target, sourceTy
       penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
     });
     if (path) {
-      services?.pathCache?.set?.(state.grid.version, fromTile, target, path);
+      services?.pathCache?.set?.(state.grid.version, fromTile, target, 0, path);
     }
   }
 
@@ -129,6 +360,17 @@ function shouldStarve(entity, dt, state, services, nowSec) {
   const current = Number(entity.hunger ?? 1);
 
   if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
+    const reachabilityRefreshThreshold = Math.max(hunger, NUTRITION_REACHABILITY_REFRESH_HUNGER);
+    if (current > reachabilityRefreshThreshold && Number(entity.starvationSec ?? 0) <= 0) {
+      entity.starvationSec = 0;
+      return {
+        shouldDie: false,
+        reachableFood: Boolean(entity.debug?.reachableFood),
+        nutritionSourceType: String(entity.debug?.nutritionSourceType ?? "none"),
+        isStarvationRisk: false,
+      };
+    }
+
     const nutrition = hasReachableNutritionSource(entity, state, services, nowSec);
     entity.debug ??= {};
     entity.debug.reachableFood = nutrition.reachable;
@@ -192,10 +434,101 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
     state.metrics.ecologyPendingDeaths[reason] = Number(state.metrics.ecologyPendingDeaths[reason] ?? 0) + 1;
   }
   deathEvents.push(`${entity.displayName ?? entity.id} died (${entity.deathReason || "event"}).`);
+
+  // v0.8.2 Round-0 02d-roleplayer (Step 3) — surface deaths to the player-
+  // visible Colony Log. Only colonists (workers/visitors) get a narrative
+  // line; animal deaths stay in state.debug.eventTrace to avoid drowning the
+  // log in herbivore/predator churn. Dedupe is guaranteed by the caller's
+  // `!entity.deathRecorded` guard plus the fact that we append BEFORE setting
+  // the flag in this function. objectiveLog uses unshift+slice(0,24) to
+  // match ProgressionSystem.logObjective's capacity policy.
+  if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
+    const reason = entity.deathReason || "event";
+    const nowSec = Number(state.metrics?.timeSec ?? 0);
+    const tile = entity.deathContext?.targetTile
+      ?? (entity.targetTile ? { ix: entity.targetTile.ix, iz: entity.targetTile.iz } : null);
+    const tileSuffix = tile ? ` near (${tile.ix},${tile.iz})` : "";
+    const name = entity.displayName ?? entity.id;
+    const line = `[${nowSec.toFixed(1)}s] ${name} died (${reason})${tileSuffix}`;
+    if (state.gameplay) {
+      if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+      state.gameplay.objectiveLog.unshift(line);
+      state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+    }
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5) — obituary line: a
+    // richer "writer's voice" version of the bare death line. Includes the
+    // worker's backstory ("farming specialist, swift temperament") and the
+    // closest scenario-anchor label ("near the west lumber route") so the
+    // Storyteller strip and EntityFocusPanel obituary section can render a
+    // proper send-off rather than a coordinate dump. Stored on
+    // `entity.obituary` and unshifted into `state.gameplay.deathLog` (capped
+    // to 24, same policy as objectiveLog). The plain `line` above is kept
+    // unchanged for backward-compatible regression tests.
+    const backstory = String(entity.backstory ?? "").trim();
+    const anchorLabel = resolveAnchorLabel(state, tile);
+    const backstoryFrag = backstory ? `, ${backstory},` : "";
+    const locFrag = anchorLabel ? ` near ${anchorLabel}` : "";
+    const obituaryLine = `[${nowSec.toFixed(1)}s] ${name}${backstoryFrag} died of ${reason}${locFrag}`;
+    entity.obituary = obituaryLine;
+    if (entity.lineage && typeof entity.lineage === "object") {
+      entity.lineage.deathSec = nowSec;
+    }
+    if (state.gameplay) {
+      if (!Array.isArray(state.gameplay.deathLog)) state.gameplay.deathLog = [];
+      state.gameplay.deathLog.unshift(obituaryLine);
+      state.gameplay.deathLog = state.gameplay.deathLog.slice(0, 24);
+      // v0.8.2 Round-7 01d — structured death log for Chronicles panel.
+      // Stores rich per-death objects so EventPanel can render a formatted
+      // obituary without parsing the obituaryLine string.
+      if (!Array.isArray(state.gameplay.deathLogStructured)) state.gameplay.deathLogStructured = [];
+      state.gameplay.deathLogStructured.unshift({
+        name: name,
+        role: String(entity.role ?? entity.kind ?? "colonist"),
+        trait: entity.traits?.[0] ?? entity.trait ?? null,
+        cause: entity.deathReason || "event",
+        location: anchorLabel || (tile ? `(${tile.ix},${tile.iz})` : "the colony"),
+        timeSec: nowSec,
+      });
+      state.gameplay.deathLogStructured = state.gameplay.deathLogStructured.slice(0, 24);
+    }
+    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 5+7) — surface the
+    // obituary line into state.debug.eventTrace so storytellerStrip's
+    // SALIENT pattern (Step 7 expanded `^\[.+\] .+, .+, died of/i`) can
+    // lift it into #storytellerBeat. Trace stays newest-first via unshift,
+    // capped at the same 36-entry bound the system uses elsewhere.
+    if (state.debug) {
+      if (!Array.isArray(state.debug.eventTrace)) state.debug.eventTrace = [];
+      state.debug.eventTrace.unshift(obituaryLine);
+      state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);
+    }
+    recordDeathIntoWitnessMemory(state, entity, nowSec);
+  }
+
   entity.deathRecorded = true;
   if (!entity.deathContext) {
     entity.deathContext = buildDeathContext(entity, state, entity.deathReason || "event", reachableFood, nutritionSourceType);
   }
+  // Audio: play death tone for colonist deaths only (not animals — too frequent).
+  if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
+    audioSystem.onWorkerDeath();
+  }
+  const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
+  const fallbackTile = worldToTile(Number(entity.x ?? 0), Number(entity.z ?? 0), state.grid);
+  const tile = entity.deathContext?.targetTile
+    ?? { ix: fallbackTile.ix, iz: fallbackTile.iz };
+  emitEvent(state, eventType, {
+    entityId: entity.id,
+    entityName: entity.displayName ?? entity.id,
+    displayName: entity.displayName ?? entity.id,
+    reason: entity.deathReason || "event",
+    groupId: entity.groupId ?? entity.kind ?? "unknown",
+    tile,
+    worldX: Number(entity.x ?? 0),
+    worldZ: Number(entity.z ?? 0),
+    foodEmptySec: Number(state.metrics.resourceEmptySec?.food ?? 0),
+  });
+  state.metrics.deathTimestamps ??= [];
+  state.metrics.deathTimestamps.push(Number(state.metrics.timeSec ?? 0));
 }
 
 export class MortalitySystem {
@@ -220,6 +553,15 @@ export class MortalitySystem {
         if (!entity.deathRecorded) {
           recordDeath(state, entity, Boolean(entity.debug?.reachableFood), String(entity.debug?.nutritionSourceType ?? "none"), deathEvents);
         }
+        continue;
+      }
+
+      if (entity.isStressWorker) {
+        entity.hunger = 1;
+        entity.rest = 1;
+        entity.morale = 1;
+        entity.mood = 1;
+        entity.starvationSec = 0;
         continue;
       }
 
@@ -272,6 +614,31 @@ export class MortalitySystem {
     }
 
     state.metrics.starvationRiskCount = starvationRiskCount;
+
+    // Medicine healing: heal the most injured worker each tick
+    if (Number(state.resources?.medicine ?? 0) > 0) {
+      let mostInjured = null;
+      for (const agent of state.agents) {
+        if (agent.type !== "WORKER" || agent.alive === false) continue;
+        if ((agent.hp ?? agent.maxHp) >= agent.maxHp) continue;
+        if (!mostInjured || (agent.hp ?? agent.maxHp) < (mostInjured.hp ?? mostInjured.maxHp)) {
+          mostInjured = agent;
+        }
+      }
+      if (mostInjured) {
+        const healRate = Number(BALANCE.medicineHealPerSecond ?? 8);
+        mostInjured.hp = Math.min(mostInjured.maxHp, (mostInjured.hp ?? mostInjured.maxHp) + healRate * dt);
+        const medicineUsed = 0.1 * dt;
+        state.resources.medicine -= medicineUsed;
+        state.resources.medicine = Math.max(0, state.resources.medicine);
+        // v0.8.2 Round-5 Wave-2 (01d Step 2): MortalitySystem consumption
+        // path — medicine-heal is a true-source consumer. Worker food eating
+        // lives in WorkerAISystem (freeze-locked) and is picked up by the
+        // ResourceSystem net-delta fallback; here we add the one consumer
+        // MortalitySystem directly owns.
+        recordResourceFlow(state, "medicine", "consumed", medicineUsed);
+      }
+    }
 
     if (deadIds.size === 0) return;
 

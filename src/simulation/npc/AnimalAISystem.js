@@ -1,11 +1,13 @@
 import { BALANCE } from "../../config/balance.js";
-import { ANIMAL_KIND, TILE } from "../../config/constants.js";
+import { ANIMAL_KIND, ANIMAL_SPECIES, TILE } from "../../config/constants.js";
 import { getLongRunWildlifeTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
+import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
 
 const PREDATOR_HUNT_REFRESH_SEC = 1.15;
 const HERBIVORE_FLEE_REFRESH_SEC = 0.9;
@@ -14,6 +16,22 @@ const WANDER_REFRESH_JITTER_SEC = 1.4;
 const HERBIVORE_FLEE_ENTER_DIST = 3.4;
 const HERBIVORE_FLEE_EXIT_DIST = 4.8;
 const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
+const FLEE_EXCLUDED_SPREAD_STATES = new Set(["flee"]);
+
+// v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species-aware
+// behaviour table. Wolf is the standard pack hunter (default fallback);
+// bear is slow but hits hard with longer chase tolerance; raider_beast
+// ignores herbivores and goes straight for workers (the new "raider" role).
+const PREDATOR_SPECIES_PROFILE = Object.freeze({
+  [ANIMAL_SPECIES.WOLF]: { attackCooldownSec: 1.4, chaseDistanceMult: 1.0, ignoresHerbivores: false, targetsWorkers: false },
+  [ANIMAL_SPECIES.BEAR]: { attackCooldownSec: 2.6, chaseDistanceMult: 1.5, ignoresHerbivores: false, targetsWorkers: false },
+  [ANIMAL_SPECIES.RAIDER_BEAST]: { attackCooldownSec: 1.8, chaseDistanceMult: 1.2, ignoresHerbivores: true, targetsWorkers: true },
+});
+
+function getPredatorProfile(animal) {
+  const species = String(animal?.species ?? ANIMAL_SPECIES.WOLF);
+  return PREDATOR_SPECIES_PROFILE[species] ?? PREDATOR_SPECIES_PROFILE[ANIMAL_SPECIES.WOLF];
+}
 
 function resolveTargetPriority(policy, key, fallback = 1) {
   return Math.max(0, Math.min(3, Number(policy?.targetPriorities?.[key] ?? fallback)));
@@ -324,7 +342,7 @@ function choosePredatorPatrolTile(animal, state, ecology, services, policy, pred
   }
 
   animal.debug.lastPatrolLabel = "open frontier";
-  return randomPassableTile(state.grid);
+  return randomPassableTile(state.grid, () => services.rng.next());
 }
 
 function choosePredatorPrey(animal, herbivores, state, policy) {
@@ -403,7 +421,7 @@ function chooseSpreadTarget(animal, state, groupAnimals, services) {
     }
   }
   if (!best && zoneAnchor) return zoneAnchor;
-  return best ?? randomPassableTile(state.grid);
+  return best ?? randomPassableTile(state.grid, () => services.rng.next());
 }
 
 function shouldForceSpread(animal, groupAnimals, state, tuning, dt, excludedStates = new Set()) {
@@ -528,14 +546,22 @@ function recoverPredatorHungerOnHit(animal) {
   animal.hunger = clamp((animal.hunger ?? 0) + recover, 0, 1);
 }
 
-function herbivoreTick(animal, predators, herbivores, state, dt, services, stateNode, ecology) {
+function herbivoreTick(animal, predators, herbivores, state, dt, services, stateNode, ecology, context = null) {
   const bb = animal.blackboard ?? (animal.blackboard = {});
   const policy = getAnimalPolicy(state, "herbivores");
   const tuning = getLongRunWildlifeTuning(state);
-  const threat = nearestPredator(animal, predators);
+  const nearbyPredators = context?.nearbyPredators ?? predators;
+  const nearbyHerbivores = context?.nearbyHerbivores ?? herbivores;
+  const threat = context?.threat ?? nearestPredator(animal, nearbyPredators);
   const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
   const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
   if (threatNear) {
+    if (!bb.fleeLatch) {
+      emitEvent(state, EVENT_TYPES.HERBIVORE_FLED, {
+        entityId: animal.id, entityName: animal.displayName ?? animal.id,
+        predatorId: threat.predator?.id, distance: threat.distance,
+      });
+    }
     bb.fleeLatch = true;
   } else if (threatFar) {
     bb.fleeLatch = false;
@@ -570,12 +596,12 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   const migrationTarget = animal.memory?.migrationTarget ?? null;
   const currentTile = worldToTile(animal.x, animal.z, state.grid);
   const hazardPenalty = getHazardPenalty(state, currentTile);
-  const forceSpread = shouldForceSpread(animal, herbivores, state, tuning, dt, new Set(["flee"]));
+  const forceSpread = shouldForceSpread(animal, nearbyHerbivores, state, tuning, dt, FLEE_EXCLUDED_SPREAD_STATES);
   if ((forceSpread || hazardPenalty > Number(tuning.maxHazardPenaltyForSpawn ?? 1.45)) && canAttemptPath(animal, state)) {
     const nextCrowdRefreshSec = Number(animal.debug?.nextCrowdSpreadRefreshSec ?? -Infinity);
     if (state.metrics.timeSec >= nextCrowdRefreshSec || !hasActivePath(animal, state) || isPathStuck(animal, state, 1.8)) {
       clearPath(animal);
-      const spreadTarget = chooseSpreadTarget(animal, state, herbivores, services);
+      const spreadTarget = chooseSpreadTarget(animal, state, nearbyHerbivores, services);
       if (spreadTarget && setTargetAndPath(animal, spreadTarget, state, services)) {
         animal.debug.lastCrowdResponse = hazardPenalty > Number(tuning.maxHazardPenaltyForSpawn ?? 1.45) ? "hazard-avoidance" : "spread";
         animal.debug.nextCrowdSpreadRefreshSec = state.metrics.timeSec + 1.1;
@@ -604,7 +630,7 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
 
   if (stateNode === "graze" || stateNode === "regroup") {
     if (!hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM]) && canAttemptPath(animal, state)) {
-      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology, policy, herbivores);
+      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology, policy, nearbyHerbivores);
       if (grazeTarget) setTargetAndPath(animal, grazeTarget, state, services);
     }
 
@@ -629,7 +655,7 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.homeTile ?? null;
   const wanderTarget = zoneAnchor && tileDistance(worldToTile(animal.x, animal.z, state.grid), zoneAnchor) > 6
     ? zoneAnchor
-    : randomPassableTile(state.grid);
+    : randomPassableTile(state.grid, () => services.rng.next());
   const nextWanderRefreshSec = Number(animal.debug?.nextWanderRefreshSec ?? -Infinity);
   if ((state.metrics.timeSec >= nextWanderRefreshSec || isPathStuck(animal, state, 2.0)) && canAttemptPath(animal, state)) {
     clearPath(animal);
@@ -644,10 +670,15 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   }
 }
 
-function predatorTick(animal, herbivores, predators, state, dt, services, stateNode, ecology) {
+function predatorTick(animal, herbivores, predators, state, dt, services, stateNode, ecology, context = null) {
   animal.attackCooldownSec = Math.max(0, Number(animal.attackCooldownSec ?? 0) - dt);
   const policy = getAnimalPolicy(state, "predators");
   const tuning = getLongRunWildlifeTuning(state);
+  const useLocalAnimalQueries = Boolean(context?.useLocalAnimalQueries);
+  const nearbyHerbivores = context?.nearbyHerbivores ?? herbivores;
+  const nearbyPredators = context?.nearbyPredators ?? predators;
+  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species profile.
+  const profile = getPredatorProfile(animal);
   const zoneId = String(getWildlifeZone(state, animal)?.id ?? "");
   const zoneHerbivores = zoneId
     ? countZoneAnimals(state, zoneId, herbivores)
@@ -655,8 +686,13 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   const huntSuppressed = zoneHerbivores <= Number(tuning.predatorHuntPreyFloor ?? 0);
   animal.debug ??= {};
   animal.debug.huntSuppressedReason = huntSuppressed ? "prey-floor" : "";
+  animal.debug.predatorSpecies = String(animal.species ?? ANIMAL_SPECIES.WOLF);
 
-  const prey = huntSuppressed ? null : choosePredatorPrey(animal, herbivores, state, policy);
+  // raider_beast ignores herbivores entirely — they are the "raider" archetype
+  // that exists to harass the colony, not the wildlife loop.
+  const prey = (huntSuppressed || profile.ignoresHerbivores)
+    ? null
+    : choosePredatorPrey(animal, useLocalAnimalQueries ? nearbyHerbivores : herbivores, state, policy);
   const distance = prey ? Math.sqrt(distanceSq(animal, prey)) : Infinity;
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
@@ -694,8 +730,15 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
         prey.hp = Math.max(0, Number(prey.hp ?? 0) - dmg);
         prey.memory.recentEvents.unshift("predator-hit");
         prey.memory.recentEvents.length = Math.min(prey.memory.recentEvents.length, 6);
-        animal.attackCooldownSec = Number(BALANCE.predatorAttackCooldownSec ?? 1.4);
+        // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 7) — species
+        // attack cadence overrides the global BALANCE default. Bears are
+        // slow but punishing; wolves stay on the standard 1.4s.
+        animal.attackCooldownSec = Number(profile.attackCooldownSec ?? BALANCE.predatorAttackCooldownSec ?? 1.4);
         recoverPredatorHungerOnHit(animal);
+        emitEvent(state, EVENT_TYPES.PREDATOR_ATTACK, {
+          entityId: animal.id, entityName: animal.displayName ?? animal.id,
+          targetId: prey.id, targetName: prey.displayName ?? prey.id, damage: dmg,
+        });
         if (prey.hp <= 0 && prey.alive !== false) {
           prey.alive = false;
           prey.deathReason = "predation";
@@ -715,13 +758,13 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   const nowSec = state.metrics.timeSec;
   const currentTile = worldToTile(animal.x, animal.z, state.grid);
   const hazardPenalty = getHazardPenalty(state, currentTile);
-  const forceSpread = shouldForceSpread(animal, predators, state, tuning, dt);
+  const forceSpread = shouldForceSpread(animal, nearbyPredators, state, tuning, dt);
   if ((!prey && forceSpread) || hazardPenalty > Number(tuning.maxHazardPenaltyForSpawn ?? 1.45)) {
     const nextCrowdRefreshSec = Number(animal.debug?.nextCrowdSpreadRefreshSec ?? -Infinity);
     const pathInvalid = !hasActivePath(animal, state) || isPathStuck(animal, state, 2.0);
     if ((pathInvalid || nowSec >= nextCrowdRefreshSec) && canAttemptPath(animal, state)) {
       clearPath(animal);
-      const spreadTarget = chooseSpreadTarget(animal, state, predators, services);
+      const spreadTarget = chooseSpreadTarget(animal, state, nearbyPredators, services);
       if (spreadTarget && setTargetAndPath(animal, spreadTarget, state, services)) {
         animal.debug.lastCrowdResponse = hazardPenalty > Number(tuning.maxHazardPenaltyForSpawn ?? 1.45) ? "hazard-avoidance" : "spread";
         animal.debug.nextCrowdSpreadRefreshSec = nowSec + 1.15;
@@ -742,7 +785,7 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
     const shouldPatrol = stateNode === "stalk" || stateNode === "roam" || (stateNode === "rest" && !atTerritory);
   if (shouldPatrol && canAttemptPath(animal, state) && (pathStale || pathMissingAwayFromTarget || pathStuck || nowSec >= nextPatrolRefreshSec)) {
     clearPath(animal);
-    const patrolTarget = choosePredatorPatrolTile(animal, state, ecology, services, policy, predators);
+    const patrolTarget = choosePredatorPatrolTile(animal, state, ecology, services, policy, nearbyPredators);
     if (patrolTarget && setTargetAndPath(animal, patrolTarget, state, services) && animal.debug) {
       animal.debug.nextPatrolRefreshSec = nowSec + Number(BALANCE.predatorPatrolRefreshSec ?? 1.6);
     }
@@ -778,6 +821,11 @@ export class AnimalAISystem {
     this.name = "AnimalAISystem";
     this.herbivores = [];
     this.predators = [];
+    this.highLoadStride = 1;
+    this.herbivoreHash = { map: new Map(), cellSize: 8 };
+    this.predatorHash = { map: new Map(), cellSize: 8 };
+    this.herbivoreNeighborBuffer = [];
+    this.predatorNeighborBuffer = [];
   }
 
   #partitionAnimals(state) {
@@ -797,16 +845,71 @@ export class AnimalAISystem {
   update(dt, state, services) {
     this.#partitionAnimals(state);
     const ecology = prepareEcologyMetrics(state, dt);
+    const activeAnimalCount = this.herbivores.length + this.predators.length;
+    const requestedScale = Number(state.controls?.timeScale ?? 1);
+    const totalEntities = Number(state.agents?.length ?? 0) + Number(state.animals?.length ?? 0);
+    const stride = requestedScale >= 7
+      ? (activeAnimalCount >= 1000 || totalEntities >= 1200 ? 3
+        : activeAnimalCount >= 500 || totalEntities >= 1000 ? 2
+          : activeAnimalCount >= 220 || totalEntities >= 650 ? 1
+            : 1)
+      : (activeAnimalCount >= 1000 ? 4
+        : activeAnimalCount >= 500 ? 3
+          : activeAnimalCount >= 220 ? 2
+            : 1);
+    const useLocalAnimalQueries = activeAnimalCount >= 220;
+    if (useLocalAnimalQueries) {
+      buildSpatialHash(this.herbivores, 8, this.herbivoreHash);
+      buildSpatialHash(this.predators, 8, this.predatorHash);
+    }
+    this.highLoadStride = stride;
+    const tick = Number(state.metrics?.tick ?? 0);
+    let processed = 0;
+    let skipped = 0;
     for (const animal of state.animals) {
       if (animal.alive === false) continue;
-      updateAnimalHunger(animal, dt);
       recordZonePresence(ecology, animal, state);
+      const blackboard = animal.blackboard ?? (animal.blackboard = {});
+      let animalDt = dt;
+      if (stride > 1) {
+        blackboard.aiLodDt = Number(blackboard.aiLodDt ?? 0) + dt;
+        if (!Number.isFinite(blackboard.aiLodPhase)) {
+          let phaseSeed = 0;
+          const id = String(animal.id ?? "");
+          for (let i = 0; i < id.length; i += 1) phaseSeed += id.charCodeAt(i);
+          blackboard.aiLodPhase = Math.abs(phaseSeed);
+        }
+        const phase = blackboard.aiLodPhase % stride;
+        if ((tick + phase) % stride !== 0) {
+          if (hasActivePath(animal, state)) {
+            animal.desiredVel = followPath(animal, state, dt).desired;
+          } else {
+            setIdleDesired(animal);
+          }
+          skipped += 1;
+          continue;
+        }
+        animalDt = Math.max(dt, Number(blackboard.aiLodDt ?? dt));
+        blackboard.aiLodDt = 0;
+      }
+      processed += 1;
+      updateAnimalHunger(animal, animalDt);
 
       const groupId = animal.kind === ANIMAL_KIND.HERBIVORE ? "herbivores" : "predators";
-      const plan = planEntityDesiredState(animal, state, {
-        predators: this.predators,
-        herbivores: this.herbivores,
-      });
+      const nearbyPredators = useLocalAnimalQueries
+        ? queryNeighbors(this.predatorHash, animal, this.predatorNeighborBuffer, 192)
+        : this.predators;
+      const nearbyHerbivores = useLocalAnimalQueries
+        ? queryNeighbors(this.herbivoreHash, animal, this.herbivoreNeighborBuffer, 192)
+        : this.herbivores;
+      const animalContext = {
+        predators: nearbyPredators,
+        herbivores: nearbyHerbivores,
+        nearbyPredators,
+        nearbyHerbivores,
+        useLocalAnimalQueries,
+      };
+      const plan = planEntityDesiredState(animal, state, animalContext);
       const stateNode = transitionEntityState(animal, groupId, plan.desiredState, state.metrics.timeSec, plan.reason);
 
       animal.blackboard.intent = stateNode;
@@ -817,20 +920,29 @@ export class AnimalAISystem {
 
       if (groupId === "herbivores") {
         const bb = animal.blackboard ?? (animal.blackboard = {});
-        const threat = nearestPredator(animal, this.predators);
+        const threat = nearestPredator(animal, nearbyPredators);
+        animalContext.threat = threat;
         const threatNear = Boolean(threat.predator && threat.distance <= HERBIVORE_FLEE_ENTER_DIST);
         const threatFar = Boolean(!threat.predator || threat.distance >= HERBIVORE_FLEE_EXIT_DIST);
         if (threatNear) bb.fleeLatch = true;
         else if (threatFar) bb.fleeLatch = false;
         if (stateNode === "idle") setIdleDesired(animal);
-        else herbivoreTick(animal, this.predators, this.herbivores, state, dt, services, stateNode, ecology);
+        else herbivoreTick(animal, this.predators, this.herbivores, state, animalDt, services, stateNode, ecology, animalContext);
       } else {
-        predatorTick(animal, this.herbivores, this.predators, state, dt, services, stateNode, ecology);
+        predatorTick(animal, this.herbivores, this.predators, state, animalDt, services, stateNode, ecology, animalContext);
         recordFrontierPredator(animal, state, ecology);
       }
 
-      updateIdleWithoutReasonMetric(animal, stateNode, dt, state);
+      updateIdleWithoutReasonMetric(animal, stateNode, animalDt, state);
     }
     finalizeEcologyMetrics(state, ecology);
+    if (state.debug) {
+      state.debug.animalAiLod = {
+        stride,
+        processed,
+        skipped,
+        activeAnimalCount,
+      };
+    }
   }
 }

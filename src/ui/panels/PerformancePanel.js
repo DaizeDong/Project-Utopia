@@ -42,6 +42,8 @@ export class PerformancePanel {
     this.applyBenchmarkConfigBtn = document.getElementById("applyBenchmarkConfigBtn");
 
     this.benchmarkStatusVal = document.getElementById("benchmarkStatusVal");
+    this.performanceSummaryVal = document.getElementById("performanceSummaryVal");
+    this.benchmarkLastRunVal = document.getElementById("benchmarkLastRunVal");
     this.simControlVal = document.getElementById("simControlVal");
     this.fpsVal = document.getElementById("fpsVal");
     this.frameVal = document.getElementById("frameVal");
@@ -52,7 +54,7 @@ export class PerformancePanel {
 
     this.extraWorkersInput?.addEventListener("input", () => {
       const value = Number(this.extraWorkersInput.value);
-      this.state.controls.stressExtraWorkers = Math.max(0, Math.min(500, value));
+      this.state.controls.stressExtraWorkers = Math.max(0, Math.min(1000, value));
       this.#syncInputLabel();
     });
 
@@ -134,14 +136,14 @@ export class PerformancePanel {
 
   #syncInputLabel() {
     if (!this.extraWorkersInput || !this.extraWorkersLabel) return;
-    const value = Math.max(0, Math.min(500, this.state.controls.stressExtraWorkers | 0));
+    const value = Math.max(0, Math.min(1000, this.state.controls.stressExtraWorkers | 0));
     this.#setFieldValueIfIdle(this.extraWorkersInput, value);
     this.extraWorkersLabel.textContent = String(value);
   }
 
   #syncTimeScaleLabel() {
     if (!this.timeScaleInput || !this.timeScaleLabel) return;
-    const value = Math.max(0.25, Math.min(2, this.state.controls.timeScale || 1));
+    const value = Math.max(0.25, Math.min(8, this.state.controls.timeScale || 1));
     this.#setFieldValueIfIdle(this.timeScaleInput, Math.round(value * 100));
     this.timeScaleLabel.textContent = `${value.toFixed(2)}x`;
   }
@@ -209,11 +211,27 @@ export class PerformancePanel {
     if (this.agentVal) this.agentVal.textContent = String(stats?.totalEntities ?? totalAgents);
     if (this.workerVal) this.workerVal.textContent = String(stats?.workers ?? this.state.agents.filter((a) => a.type === "WORKER").length);
     if (this.benchmarkStatusVal) this.benchmarkStatusVal.textContent = `Benchmark: ${this.state.metrics.benchmarkStatus}`;
+    if (this.performanceSummaryVal) {
+      const perf = this.state.metrics.performance ?? {};
+      const cap = this.state.metrics.performanceCap ?? {};
+      const requested = Number(this.state.controls.timeScale ?? 1);
+      const actual = Number(this.state.metrics.timeScaleActualWall ?? requested);
+      this.performanceSummaryVal.textContent = `Performance: fps=${this.state.metrics.averageFps.toFixed(1)} work p95=${Number(perf.workFrameP95Ms ?? perf.frameP95Ms ?? 0).toFixed(1)}ms raw p95=${Number(perf.frameP95Ms ?? 0).toFixed(1)}ms raw p99=${Number(perf.frameP99Ms ?? 0).toFixed(1)}ms | target=${requested.toFixed(1)}x actual=${actual.toFixed(1)}x | cap=${cap.active ? cap.reason : "off"} | bottleneck=${perf.bottleneck ?? "sampling"}`;
+      this.performanceSummaryVal.title = perf.summary ?? "";
+    }
+    if (this.benchmarkLastRunVal) {
+      const last = this.state.metrics.benchmarkLastRun;
+      this.benchmarkLastRunVal.textContent = last
+        ? `Last benchmark: ${last.status} | worst load=${last.worstLoad} p95=${Number(last.worstP95FrameMs ?? 0).toFixed(1)}ms | ${last.worstBottleneck}`
+        : "Last benchmark: none";
+    }
     if (this.simControlVal) {
       const phase = this.state.session?.phase ?? "menu";
       const sim = phase !== "active" ? "locked" : this.state.controls.isPaused ? "paused" : "running";
       const aiLatency = Number(this.state.metrics.aiLatencyMs ?? 0).toFixed(1);
-      this.simControlVal.textContent = `Sim: ${phase}/${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simCost=${this.state.metrics.simCostMs.toFixed(2)}ms | ui=${(this.state.metrics.uiCpuMs ?? 0).toFixed(2)}ms | render=${(this.state.metrics.renderCpuMs ?? 0).toFixed(2)}ms | ai=${aiLatency}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
+      const frameSim = Number(this.state.metrics.simCpuFrameMs ?? this.state.metrics.simCostMs ?? 0);
+      const fixedStep = Number(this.state.metrics.performanceCap?.fixedStepSec ?? this.state.controls.fixedStepSec ?? 1 / 30);
+      this.simControlVal.textContent = `Sim: ${phase}/${sim} | simDt=${this.state.metrics.simDt.toFixed(3)} | step=${fixedStep.toFixed(3)} | steps=${this.state.metrics.simStepsThisFrame} | simFrame=${frameSim.toFixed(2)}ms | simLast=${this.state.metrics.simCostMs.toFixed(2)}ms | workFrame=${(this.state.metrics.workFrameMs ?? this.state.metrics.frameMs ?? 0).toFixed(2)}ms | ui=${(this.state.metrics.uiCpuMs ?? 0).toFixed(2)}ms | render=${(this.state.metrics.renderCpuMs ?? 0).toFixed(2)}ms | rawFrame=${(this.state.metrics.rawFrameMs ?? this.state.metrics.frameMs).toFixed(2)}ms | ai=${aiLatency}ms | heap=${this.state.metrics.memoryMb.toFixed(1)}MB`;
     }
     if (this.workerBreakdownVal) {
       const breakdown = this.state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0 };

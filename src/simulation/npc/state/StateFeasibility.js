@@ -20,7 +20,9 @@ function nearestDistanceSq(entity, list = []) {
 export function buildFeasibilityContext(entity, groupId, state, context = {}) {
   const carryFood = Number(entity?.carry?.food ?? 0);
   const carryWood = Number(entity?.carry?.wood ?? 0);
-  const carryTotal = carryFood + carryWood;
+  const carryStone = Number(entity?.carry?.stone ?? 0);
+  const carryHerbs = Number(entity?.carry?.herbs ?? 0);
+  const carryTotal = carryFood + carryWood + carryStone + carryHerbs;
   const warehouses = Number(state?.buildings?.warehouses ?? 0);
   const farms = Number(state?.buildings?.farms ?? 0);
   const lumbers = Number(state?.buildings?.lumbers ?? 0);
@@ -41,11 +43,20 @@ export function buildFeasibilityContext(entity, groupId, state, context = {}) {
   const nearestPredatorDistance = Math.sqrt(nearestDistanceSq(entity, predators));
 
   const workerRole = String(entity?.role ?? "");
-  const hasWorkerWorksite = workerRole === ROLE.FARM
-    ? farms > 0
-    : workerRole === ROLE.WOOD
-      ? lumbers > 0
-      : farms + lumbers > 0;
+  const quarries = Number(state?.buildings?.quarries ?? 0);
+  const herbGardens = Number(state?.buildings?.herbGardens ?? 0);
+  const kitchens = Number(state?.buildings?.kitchens ?? 0);
+  const smithies = Number(state?.buildings?.smithies ?? 0);
+  const clinics = Number(state?.buildings?.clinics ?? 0);
+  const hasWorkerWorksite = workerRole === ROLE.FARM ? farms > 0
+    : workerRole === ROLE.WOOD ? lumbers > 0
+    : workerRole === ROLE.STONE ? quarries > 0
+    : workerRole === ROLE.HERBS ? herbGardens > 0
+    : workerRole === ROLE.COOK ? kitchens > 0
+    : workerRole === ROLE.SMITH ? smithies > 0
+    : workerRole === ROLE.HERBALIST ? clinics > 0
+    : workerRole === ROLE.HAUL ? warehouses > 0
+    : farms + lumbers > 0;
 
   return {
     groupId,

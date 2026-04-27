@@ -1,5 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, WEATHER } from "../../config/constants.js";
+import { EVENT_TYPE, FOG_STATE, NODE_FLAGS, WEATHER } from "../../config/constants.js";
 import { worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
@@ -11,6 +11,21 @@ function tileKey(ix, iz) {
 
 function roundMetric(value, digits = 2) {
   return Number(Number(value ?? 0).toFixed(digits));
+}
+
+function describeNodeFlags(flags) {
+  const labels = [];
+  if ((flags & NODE_FLAGS.FOREST) !== 0) labels.push("forest");
+  if ((flags & NODE_FLAGS.STONE) !== 0) labels.push("stone");
+  if ((flags & NODE_FLAGS.HERB) !== 0) labels.push("herb");
+  return labels;
+}
+
+function describeVisibility(value) {
+  if (value === FOG_STATE.VISIBLE) return "visible";
+  if (value === FOG_STATE.EXPLORED) return "explored";
+  if (value === FOG_STATE.HIDDEN) return "hidden";
+  return "unknown";
 }
 
 function findActiveEventZones(state, ix, iz) {
@@ -53,10 +68,6 @@ function summarizeEvent(event) {
   if (event.type === EVENT_TYPE.TRADE_CARAVAN) return `trade caravan ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
   if (event.type === EVENT_TYPE.ANIMAL_MIGRATION) return `animal migration ${event.status}${target}${pressureText}${overlapText}${contestedText}`;
   return `${event.type}:${event.status}${target}${pressureText}${overlapText}${contestedText}${impact}`;
-}
-
-function getCurrentObjective(state) {
-  return state.gameplay?.objectives?.[state.gameplay?.objectiveIndex ?? 0] ?? null;
 }
 
 function pickTopFocusGroups(state, limit = 3) {
@@ -114,6 +125,81 @@ export function getFrontierStatus(state) {
     depotsTotal: runtime.depots.length,
     summary: `${runtime.scenario?.title ?? "Scenario"}: ${routesSummary} | ${depotsSummary} | warehouses ${runtime.counts.warehouses}/${runtime.logisticsTargets.warehouses} | farms ${runtime.counts.farms}/${runtime.logisticsTargets.farms} | lumbers ${runtime.counts.lumbers}/${runtime.logisticsTargets.lumbers} | roads ${runtime.counts.roads}/${runtime.logisticsTargets.roads}${runtime.logisticsTargets.walls > 0 ? ` | walls ${runtime.counts.walls}/${runtime.logisticsTargets.walls}` : ""}`,
   };
+}
+
+// v0.8.2 Round-0 02c-speedrunner (Step 1) — Score-delta breakdown surfaced on
+// the HUD scoreboard ribbon. Pure selector: reads BALANCE constants and the
+// running metrics counters, returns per-rule rates and running subtotals so the
+// HUD can render "+1/s · +5/birth · -10/death (lived 312 · births 5 · deaths -20)".
+// Zero side effects, safe to call every render.
+export function getSurvivalScoreBreakdown(state) {
+  const metrics = state?.metrics ?? {};
+  const perSec = Number(BALANCE.survivalScorePerSecond ?? 0);
+  const perBirth = Number(BALANCE.survivalScorePerBirth ?? 0);
+  const perDeath = Number(BALANCE.survivalScorePenaltyPerDeath ?? 0);
+  const livedSec = Math.max(0, Math.floor(Number(metrics.timeSec ?? 0)));
+  const births = Math.max(0, Math.floor(Number(metrics.birthsTotal ?? 0)));
+  const deaths = Math.max(0, Math.floor(Number(metrics.deathsTotal ?? 0)));
+  return {
+    perSec,
+    perBirth,
+    perDeath,
+    livedSec,
+    births,
+    deaths,
+    subtotalSec: perSec * livedSec,
+    subtotalBirths: perBirth * births,
+    subtotalDeaths: perDeath * deaths,
+  };
+}
+
+// v0.8.2 Round-0 02c-speedrunner (Step 2) — Compact scenario-progress ribbon.
+// Consumes the same runtime view that `getFrontierStatus()` already materialises
+// (single grid traversal) and returns a single-line string suitable for a HUD
+// micro-badge. Survival-mode / scenarios with no active anchors return a
+// friendly "endless · no active objectives" so the ribbon never collapses to
+// a stray `" · "` token.
+export function getScenarioProgressCompact(state) {
+  const runtime = getScenarioRuntime(state);
+  const routesTotal = runtime.routes.length;
+  const depotsTotal = runtime.depots.length;
+  const targets = runtime.logisticsTargets ?? {};
+  const counts = runtime.counts ?? {};
+  const parts = [];
+  if (routesTotal > 0) parts.push(`routes ${runtime.connectedRoutes}/${routesTotal}`);
+  if (depotsTotal > 0) parts.push(`depots ${runtime.readyDepots}/${depotsTotal}`);
+  if (Number(targets.warehouses ?? 0) > 0) parts.push(`wh ${counts.warehouses ?? 0}/${targets.warehouses}`);
+  if (Number(targets.farms ?? 0) > 0) parts.push(`farms ${counts.farms ?? 0}/${targets.farms}`);
+  if (Number(targets.lumbers ?? 0) > 0) parts.push(`lumbers ${counts.lumbers ?? 0}/${targets.lumbers}`);
+  if (Number(targets.walls ?? 0) > 0) parts.push(`walls ${counts.walls ?? 0}/${targets.walls}`);
+  if (parts.length === 0) return "endless · no active objectives";
+  return parts.join(" · ");
+}
+
+// v0.8.2 Round-1 02b-casual (Step 5) — Casual-profile variant of the compact
+// scenario-progress ribbon. Same single-pass `getScenarioRuntime()` consumer
+// as the dev-profile version above, but every token is written in full words
+// ("3 of 5 supply routes open", "2 warehouses built (goal 4)") so a first-time
+// player can tell the "built" count from the "goal" count without a glossary.
+// The dev-profile `getScenarioProgressCompact` string is preserved as-is to
+// avoid invalidating tests/debug paths that depend on the `"wh 5/2"` literal.
+// Tokens are joined with a two-space separator (not `" · "`) so browsers can
+// break the line inside the 2-line clamp added in Step 1-3.
+export function getScenarioProgressCompactCasual(state) {
+  const runtime = getScenarioRuntime(state);
+  const routesTotal = runtime.routes.length;
+  const depotsTotal = runtime.depots.length;
+  const targets = runtime.logisticsTargets ?? {};
+  const counts = runtime.counts ?? {};
+  const parts = [];
+  if (routesTotal > 0) parts.push(`${runtime.connectedRoutes} of ${routesTotal} supply routes open`);
+  if (depotsTotal > 0) parts.push(`${runtime.readyDepots} of ${depotsTotal} depots reclaimed`);
+  if (Number(targets.warehouses ?? 0) > 0) parts.push(`${counts.warehouses ?? 0} warehouses built (goal ${targets.warehouses})`);
+  if (Number(targets.farms ?? 0) > 0) parts.push(`${counts.farms ?? 0} farms built (goal ${targets.farms})`);
+  if (Number(targets.lumbers ?? 0) > 0) parts.push(`${counts.lumbers ?? 0} lumber camps (goal ${targets.lumbers})`);
+  if (Number(targets.walls ?? 0) > 0) parts.push(`${counts.walls ?? 0} walls placed (goal ${targets.walls})`);
+  if (parts.length === 0) return "Endless mode — no pending goals";
+  return parts.join("  ");
 }
 
 export function getWeatherInsight(state) {
@@ -187,7 +273,6 @@ export function getAiInsight(state) {
 
 export function getCausalDigest(state) {
   const runtime = getScenarioRuntime(state);
-  const objective = getCurrentObjective(state);
   const frontier = getFrontierStatus(state);
   const logistics = state.metrics?.logistics ?? {};
   const logisticsSummary = getLogisticsInsight(state);
@@ -204,13 +289,29 @@ export function getCausalDigest(state) {
   const overloadedWarehouses = Number(logistics.overloadedWarehouses ?? 0);
   const stretchedWorksites = Number(logistics.stretchedWorksites ?? 0);
   const pressuredFarms = Number(ecology.pressuredFarms ?? 0);
+  const foodAvailable = Number(state.resources?.food ?? 0);
+  const foodEmergency = Number(BALANCE.foodEmergencyThreshold ?? 18);
+  const foodEmptySec = Number(state.metrics?.resourceEmptySec?.food ?? 0);
+  const starvationRisk = Number(state.metrics?.starvationRiskCount ?? 0);
+  const foodCrisis = (state.session?.phase ?? "active") === "active"
+    && (foodAvailable <= foodEmergency || foodEmptySec > 0 || starvationRisk > 0);
 
   let severity = "info";
-  let headline = objective?.title ?? "Hold the colony together";
-  let action = objective?.description ?? objective?.title ?? "Observe the current pressure and keep the colony stable.";
+  let headline = "Hold the colony together";
+  let action = "Observe the current pressure and keep the colony stable.";
   let warning = "";
 
-  if (isolatedWorksites > 0) {
+  if (foodCrisis) {
+    severity = "error";
+    headline = "Recover food now";
+    const accessHint = isolatedWorksites > 0 || stretchedWorksites > 0
+      ? " Reconnect depot access to existing fields before adding more distant sites."
+      : " Place another farm on green terrain or reconnect field access.";
+    action = `Food is ${Math.max(0, Math.floor(foodAvailable))} (safe line ${foodEmergency});${accessHint}`;
+    warning = starvationRisk > 0
+      ? `${starvationRisk} worker${starvationRisk === 1 ? "" : "s"} at starvation risk.`
+      : action;
+  } else if (isolatedWorksites > 0) {
     severity = "error";
     headline = `Reconnect ${isolatedWorksites} isolated worksite${isolatedWorksites === 1 ? "" : "s"}`;
     action = "At least one worksite is outside depot reach, so route repair should outrank more expansion.";
@@ -254,7 +355,6 @@ export function getCausalDigest(state) {
   }
 
   const evidence = [
-    objective ? `Objective: ${objective.title} (${roundMetric(objective.progress ?? 0, 1).toFixed(1)}%)` : null,
     `Frontier: ${frontier.summary}`,
     logisticsSummary && logisticsSummary !== "Logistics: unavailable" ? logisticsSummary : null,
     traffic.hasPressure ? traffic.summary : null,
@@ -294,6 +394,23 @@ export function getTileInsight(state, tile) {
   const weatherPenalty = Math.max(1, Number(state.weather?.hazardPenaltyByKey?.[key] ?? state.weather?.hazardPenaltyMultiplier ?? 1));
   const hazardLabels = Array.isArray(state.weather?.hazardLabelByKey?.[key]) ? state.weather.hazardLabelByKey[key] : [];
   const hotspotKeys = new Set((traffic?.hotspotTiles ?? []).map((entry) => tileKey(entry.ix, entry.iz)));
+  const idx = tile.ix + tile.iz * Number(state.grid?.width ?? 0);
+  const tileState = state.grid?.tileState?.get?.(idx) ?? null;
+  const elevation = Number(state.grid?.elevation?.[idx]);
+  const moisture = Number(state.grid?.moisture?.[idx]);
+  const nodeLabels = describeNodeFlags(Number(tileState?.nodeFlags ?? 0));
+  const visibility = describeVisibility(Number(state.fog?.visibility?.[idx] ?? FOG_STATE.VISIBLE));
+
+  if (Number.isFinite(elevation) || Number.isFinite(moisture)) {
+    insights.push(`Terrain: elevation ${Number.isFinite(elevation) ? elevation.toFixed(2) : "n/a"}, moisture ${Number.isFinite(moisture) ? moisture.toFixed(2) : "n/a"}.`);
+  }
+  if (tileState) {
+    insights.push(`Soil: fertility ${Number(tileState.fertility ?? 0).toFixed(2)}, salinity ${Number(tileState.salinized ?? 0).toFixed(2)}, yield pool ${Number(tileState.yieldPool ?? 0).toFixed(0)}.`);
+  }
+  if (nodeLabels.length > 0) {
+    insights.push(`Node: ${nodeLabels.join(", ")} deposit supports matching gather tools.`);
+  }
+  insights.push(`Visibility: ${visibility}.`);
 
   for (const route of scenario.routeLinks ?? []) {
     if ((route.gapTiles ?? []).some((gap) => gap.ix === tile.ix && gap.iz === tile.iz)) {

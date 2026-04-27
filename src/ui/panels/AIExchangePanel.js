@@ -20,6 +20,45 @@ function prettyJson(value) {
   }
 }
 
+// v0.8.2 Round-5b Wave-1 (01e Step 6) — render a collapsed log of the last
+// ≤5 errored/fallback exchanges so players (and testers) can see a history
+// of LLM failures without chasing lastPolicyError single-value churn.
+// Reads state.ai.policyExchanges + state.ai.environmentExchanges rings.
+function renderErrorLogCard(title, exchanges, keyPrefix) {
+  const safeList = Array.isArray(exchanges) ? exchanges : [];
+  const rows = [];
+  for (const ex of safeList) {
+    if (!ex) continue;
+    if (!ex.error && !ex.fallback) continue;
+    const t = fmtSec(ex.simSec);
+    const kind = ex.error ? `error: ${ex.error}` : "fallback";
+    const endpoint = ex.endpoint ? `endpoint=${escapeHtml(ex.endpoint)}` : "";
+    const model = ex.model ? `model=${escapeHtml(ex.model)}` : "";
+    rows.push(`<div class="small">[${t}] ${escapeHtml(kind)} ${endpoint} ${model}</div>`);
+    if (rows.length >= 5) break;
+  }
+  const body = rows.length === 0
+    ? `<div class="small muted">No LLM errors captured yet.</div>`
+    : rows.join("\n");
+  return `
+    <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:errorLog`)}" style="margin-top:8px;">
+      <summary class="small"><b>${escapeHtml(title)}</b></summary>
+      ${body}
+    </details>
+  `;
+}
+
+function renderInactiveExchangeCard(title, keyPrefix, reason, detail = "") {
+  return `
+    <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
+      <summary class="small"><b>${escapeHtml(title)}</b></summary>
+      <div class="small" style="margin-top:6px;font-weight:600;"><span style="color:#f3b85d;font-weight:700;">&#9679;</span> NOT WIRED IN LIVE RUNTIME</div>
+      <div class="small muted" style="margin-top:4px;">${escapeHtml(reason)}</div>
+      ${detail ? `<div class="small" style="margin-top:4px;"><b>Decision:</b> ${escapeHtml(detail)}</div>` : ""}
+    </details>
+  `;
+}
+
 function renderExchangeCard(title, exchange, keyPrefix) {
   if (!exchange) {
     return `
@@ -29,6 +68,14 @@ function renderExchangeCard(title, exchange, keyPrefix) {
       </details>
     `;
   }
+
+  const isLlm = exchange.source === "llm";
+  const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+  const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+  const latencyPart = exchange.latencyMs != null ? ` | ${Number(exchange.latencyMs).toFixed(0)}ms` : "";
+  const modelPart = exchange.model ? ` ${escapeHtml(exchange.model)}${latencyPart}` : latencyPart;
+  const sourceLabel = isLlm ? `LLM${modelPart}` : "RULE-BASED";
+  const badgeLine = `${badgeDot} ${sourceLabel} at T=${fmtSec(exchange.simSec)}`;
 
   const status = [
     `source=${escapeHtml(exchange.source || "-")}`,
@@ -40,7 +87,8 @@ function renderExchangeCard(title, exchange, keyPrefix) {
   return `
     <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
       <summary class="small"><b>${escapeHtml(title)}</b></summary>
-      <div class="small" style="margin-top:6px;">${status}</div>
+      <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+      <div class="small" style="margin-top:2px;">${status}</div>
       <div class="small"><b>Endpoint:</b> ${escapeHtml(exchange.endpoint || "-")} | <b>Error:</b> ${escapeHtml(exchange.error || "none")}</div>
       <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:prompt-system`)}" style="margin-top:6px;" open>
         <summary class="small"><b>Prompt Input: System</b></summary>
@@ -69,6 +117,10 @@ function renderExchangeCard(title, exchange, keyPrefix) {
       <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:guarded`)}" style="margin-top:6px;">
         <summary class="small"><b>Guarded Output</b></summary>
         <pre class="entity-exchange-pre" data-ai-exchange-scroll="${escapeHtml(`${keyPrefix}:guarded:pre`)}">${escapeHtml(prettyJson(exchange.guardedOutput) || "(empty)")}</pre>
+      </details>
+      <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:decision`)}" style="margin-top:6px;" open>
+        <summary class="small"><b>Decision Result</b></summary>
+        <pre class="entity-exchange-pre" data-ai-exchange-scroll="${escapeHtml(`${keyPrefix}:decision:pre`)}">${escapeHtml(prettyJson(exchange.decisionResult ?? exchange.guardedOutput) || "(empty)")}</pre>
       </details>
     </details>
   `;
@@ -180,13 +232,31 @@ export class AIExchangePanel {
     if (!this.root) return;
     this.#captureOpenStates();
     this.#captureScrollStates();
-    const policy = this.state.ai.lastPolicyExchange ?? null;
-    const environment = this.state.ai.lastEnvironmentExchange ?? null;
+    const ai = this.state.ai ?? {};
+    const environment = ai.lastEnvironmentExchange ?? null;
+    const strategic = ai.lastStrategicExchange ?? null;
+    const policy = ai.lastPolicyExchange ?? null;
+    const planner = ai.lastColonyPlannerExchange ?? ai.lastPlannerExchange ?? null;
 
+    const environmentExchanges = ai.environmentExchanges ?? [];
+    const strategicExchanges = ai.strategicExchanges ?? [];
+    const policyExchanges = ai.policyExchanges ?? [];
     const html = `
-      <div class="small muted">Shows exact prompt input and model output for demo/debug.</div>
-      ${renderExchangeCard("Policy Exchange", policy, "policy")}
-      ${renderExchangeCard("Environment Exchange", environment, "environment")}
+      <div class="small muted">Categories match docs/llm-agent-flows.md. Each live card shows prompt input, raw model output, validated output, and the final decision applied to simulation state.</div>
+      ${renderExchangeCard("Environment Director", environment, "environment")}
+      ${renderExchangeCard("Strategic Director", strategic, "strategic")}
+      ${renderExchangeCard("NPC Brain", policy, "npc-brain")}
+      ${planner
+        ? renderExchangeCard("Colony Planner", planner, "colony-planner")
+        : renderInactiveExchangeCard(
+          "Colony Planner",
+          "colony-planner",
+          "docs/llm-agent-flows.md defines this LLM flow, but GameApp currently wires rule-based ColonyDirectorSystem instead of AgentDirectorSystem/ColonyPlanner.",
+          "No live Colony Planner LLM calls can appear until that system is wired into GameApp.",
+        )}
+      ${renderErrorLogCard("Last LLM errors (environment)", environmentExchanges, "environment")}
+      ${renderErrorLogCard("Last LLM errors (strategic)", strategicExchanges, "strategic")}
+      ${renderErrorLogCard("Last LLM errors (npc brain)", policyExchanges, "npc-brain")}
     `;
     if (html === this.lastHtml) return;
     if (this.#isUserInteracting()) return;

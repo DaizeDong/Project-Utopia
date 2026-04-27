@@ -76,7 +76,7 @@ test("Guardrails drop invalid stateTargets", () => {
   assert.equal(guarded.stateTargets.length, 1);
   assert.equal(guarded.stateTargets[0].groupId, "workers");
   assert.equal(guarded.stateTargets[0].targetState, "seek_task");
-  assert.deepEqual(Object.keys(guarded.policies[0].intentWeights).sort(), ["deliver", "farm", "wood", "eat", "wander"].sort());
+  assert.deepEqual(Object.keys(guarded.policies[0].intentWeights).sort(), ["deliver", "farm", "wood", "eat", "wander", "quarry", "gather_herbs", "cook", "smith", "heal"].sort());
   assert.equal(Object.prototype.hasOwnProperty.call(guarded.policies[0].intentWeights, "invalid"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(guarded.policies[0].targetPriorities, "invalid"), false);
   assert.equal(guarded.policies[0].focus, "frontier cargo");

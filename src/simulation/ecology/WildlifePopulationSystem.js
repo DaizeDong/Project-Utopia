@@ -180,7 +180,7 @@ function pickSpawnTile(state, zone, kind, tuning, rng) {
     }
   }
   if (candidates.length <= 0) return null;
-  return candidates[Math.floor((rng?.next?.() ?? Math.random()) * candidates.length)];
+  return candidates[Math.floor(rng() * candidates.length)];
 }
 
 function spawnAnimals(state, zone, kind, count, runtime, eventKey, rng, tuning) {
@@ -190,7 +190,7 @@ function spawnAnimals(state, zone, kind, count, runtime, eventKey, rng, tuning) 
     const tile = pickSpawnTile(state, zone, kind, tuning, rng);
     if (!tile) break;
     const pos = tileToWorld(tile.ix, tile.iz, state.grid);
-    const animal = createAnimal(pos.x, pos.z, kind, () => rng?.next?.() ?? Math.random());
+    const animal = createAnimal(pos.x, pos.z, kind, rng);
     assignAnimalHabitat(animal, zone, anchor, tile);
     animal.hunger = kind === ANIMAL_KIND.PREDATOR ? 0.72 : 0.78;
     animal.blackboard = {
@@ -460,7 +460,12 @@ export class WildlifePopulationSystem {
     const runtime = ensureWildlifeRuntime(state);
     const ecology = state.metrics.ecology ?? {};
     const tuning = getLongRunWildlifeTuning(state);
-    const rng = services?.rng ?? Math;
+    // Seeded RNG is authoritative (determinism contract). Fall back to
+     // Math.random only when services is absent (legacy GameApp boot path
+     // before createServices is wired).
+    const rng = typeof services?.rng?.next === "function"
+      ? () => services.rng.next()
+      : Math.random;
     const zoneBuckets = buildZoneBuckets(state);
     const zoneStats = Object.values(zoneBuckets).map((bucket) => updateZonePopulation(state, runtime, bucket, tuning, rng, dt));
     const clusters = updateClusterMetrics(state, runtime, tuning);
@@ -479,6 +484,20 @@ export class WildlifePopulationSystem {
     ecology.clusters = clusters;
     const totalPredators = (state.animals ?? []).filter((animal) => animal.alive !== false && animal.kind === ANIMAL_KIND.PREDATOR).length;
     const totalHerbivores = (state.animals ?? []).filter((animal) => animal.alive !== false && animal.kind === ANIMAL_KIND.HERBIVORE).length;
+    // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 8) — expose per-species
+    // predator counts so HUD/Inspector can show wolf/bear/raider_beast splits
+    // without each panel re-walking state.animals.
+    const predatorsBySpecies = { wolf: 0, bear: 0, raider_beast: 0 };
+    for (const animal of state.animals ?? []) {
+      if (!animal || animal.alive === false) continue;
+      if (animal.kind !== ANIMAL_KIND.PREDATOR) continue;
+      const species = String(animal.species ?? "wolf");
+      if (predatorsBySpecies[species] === undefined) {
+        predatorsBySpecies[species] = 0;
+      }
+      predatorsBySpecies[species] += 1;
+    }
+    ecology.predatorsBySpecies = predatorsBySpecies;
     ecology.flags = {
       extinctionRisk: zoneStats.some((entry) => entry.herbivoreCount < Number(entry.herbivoreCapacity?.min ?? 0)),
       overgrowthRisk: zoneStats.some((entry) => entry.herbivoreCount > Number(entry.herbivoreCapacity?.max ?? Infinity) || entry.predatorCount > Number(entry.predatorCapacity?.max ?? Infinity)),
