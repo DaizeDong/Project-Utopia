@@ -49,7 +49,7 @@ test("createAnimal: PREDATOR distribution roughly matches predatorSpeciesWeights
     `raider_beast ratio ${raiderRatio.toFixed(3)} vs target ${w.raider_beast}`);
 });
 
-test("createAnimal: species HP table matches plan §6 (deer 70 / wolf 80 / bear 130 / raider_beast 110)", () => {
+test("createAnimal: species HP table matches plan §6 (deer 70 / wolf 80 / bear 130 / raider_beast ≈110)", () => {
   // Force species explicitly via the 5th arg.
   const rng = makeSeededRng(1);
   const deer = createAnimal(0, 0, ANIMAL_KIND.HERBIVORE, rng, ANIMAL_SPECIES.DEER);
@@ -59,7 +59,14 @@ test("createAnimal: species HP table matches plan §6 (deer 70 / wolf 80 / bear 
   assert.equal(deer.hp, 70);
   assert.equal(wolf.hp, 80);
   assert.equal(bear.hp, 130);
-  assert.equal(raider.hp, 110);
+  // v0.8.3 worker-vs-raider combat — raider_beast hp is now drawn from a
+  // ±BALANCE.raiderStatsVariance envelope around 110. Wolf/bear/deer keep
+  // their flat values.
+  const variance = Number(BALANCE.raiderStatsVariance ?? 0.25);
+  assert.ok(raider.hp >= Math.floor(110 * (1 - variance)) - 1,
+    `raider hp ${raider.hp} below floor ${Math.floor(110 * (1 - variance))}`);
+  assert.ok(raider.hp <= Math.ceil(110 * (1 + variance)) + 1,
+    `raider hp ${raider.hp} above ceiling ${Math.ceil(110 * (1 + variance))}`);
 });
 
 test("createAnimal: displayName carries the species label (Wolf / Bear / Raider-beast / Deer)", () => {

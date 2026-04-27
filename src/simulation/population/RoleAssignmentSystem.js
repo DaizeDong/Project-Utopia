@@ -112,9 +112,120 @@ export class RoleAssignmentSystem {
     if (this.timer > 0) return;
     this.timer = BALANCE.managerIntervalSec;
 
-    const workers = state.agents.filter((a) => a.type === "WORKER");
+    const allWorkers = state.agents.filter((a) => a.type === "WORKER");
+
+    // v0.8.3 worker-vs-raider combat — GUARD allocation. Threat-driven hint
+    // published by ColonyPlanner (`state.ai.fallbackHints.pendingGuardCount`)
+    // tells us how many GUARDs the colony needs this tick. Promote up to
+    // that many workers BEFORE the regular farm/wood/specialist allocation
+    // runs. Promoted GUARDs are excluded from the rest of the allocation so
+    // their role isn't overwritten. Cap at `BALANCE.threatGuardCap` and
+    // never strip below 1 economy-side worker.
+    const totalWorkerCount = allWorkers.length;
+    const guardCap = Math.max(0, Math.min(
+      Number(BALANCE.threatGuardCap ?? 4),
+      Math.max(0, totalWorkerCount - 1),
+    ));
+    // Two sources contribute to the requested guard count:
+    //   (a) explicit hint via state.ai.fallbackHints.pendingGuardCount
+    //       (one-shot from ColonyPlanner / LLM reassign_role steps)
+    //   (b) live combat posture via state.metrics.combat — keeps GUARDs
+    //       on watch as long as a hostile raider is in range, so the hint
+    //       does not need to be re-emitted every tick.
+    //
+    // Live promotion is gated to RAIDERS only (not all predators). Wolves
+    // and bears that wander near the colony while hunting deer should not
+    // pull farmers off their crops — workers' built-in counter-attack and
+    // existing predator AI handle those incidental encounters. GUARDs are
+    // specifically a raider response, matching the raider-beast threat
+    // model in this milestone. This also prevents long-horizon DevIndex
+    // regressions caused by economy workers being repeatedly drafted into
+    // GUARD when ambient wildlife passes within range.
+    const hintGuards = Math.max(0, Number(state.ai?.fallbackHints?.pendingGuardCount ?? 0) | 0);
+    const combat = state.metrics?.combat ?? null;
+    const activeRaiders = Number(combat?.activeRaiders ?? 0);
+    const nearestDist = Number(combat?.nearestThreatDistance ?? -1);
+    // Tight proximity gate (~6 tiles) keeps the live-promotion responsive
+    // for actual raids while avoiding any ambient draft.
+    const proximityGate = 6;
+    const liveTargetGuards = (activeRaiders > 0 && nearestDist > 0 && nearestDist <= proximityGate)
+      ? Math.min(guardCap, Math.max(1, activeRaiders * Number(BALANCE.targetGuardsPerThreat ?? 1)))
+      : 0;
+    const requestedGuards = Math.max(0, Math.min(
+      guardCap,
+      Math.max(hintGuards, liveTargetGuards),
+    ));
+    if (state.ai?.fallbackHints && "pendingGuardCount" in state.ai.fallbackHints) {
+      delete state.ai.fallbackHints.pendingGuardCount;
+    }
+    const currentGuardSet = new Set(allWorkers.filter((w) => w.role === "GUARD"));
+    let guards = [];
+    if (requestedGuards > 0) {
+      // Prefer existing guards (preserves attackCooldown pacing); top up
+      // from workers nearest to the active threat so the new guard can
+      // engage in the same tick rather than running across the map.
+      guards = Array.from(currentGuardSet).slice(0, requestedGuards);
+      const need = requestedGuards - guards.length;
+      if (need > 0) {
+        // Find the nearest threat anchor for ordering. Falls back to
+        // farming-skill ascending when no live predator is recorded yet.
+        let threat = null;
+        let threatD2 = Infinity;
+        for (const a of state.animals ?? []) {
+          if (!a || a.alive === false) continue;
+          if (a.kind !== "PREDATOR") continue;
+          for (const w of allWorkers) {
+            const dx = a.x - w.x;
+            const dz = a.z - w.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < threatD2) {
+              threatD2 = d2;
+              threat = a;
+            }
+          }
+        }
+        const candidates = allWorkers
+          .filter((w) => !currentGuardSet.has(w))
+          .map((w, i) => ({
+            w,
+            i,
+            skill: Number(w.skills?.farming ?? 0),
+            distToThreat: threat
+              ? (threat.x - w.x) * (threat.x - w.x) + (threat.z - w.z) * (threat.z - w.z)
+              : Infinity,
+          }))
+          .sort((a, b) => {
+            if (threat) {
+              if (a.distToThreat !== b.distToThreat) return a.distToThreat - b.distToThreat;
+            }
+            if (a.skill !== b.skill) return a.skill - b.skill;
+            return a.i - b.i;
+          });
+        for (let i = 0; i < need && i < candidates.length; i += 1) {
+          guards.push(candidates[i].w);
+        }
+      }
+    }
+    const guardSet = new Set(guards);
+    for (const w of guards) w.role = "GUARD";
+    // Any current GUARD that didn't make the cut reverts to FARM (the
+    // economy-side allocator below will pick them up correctly because
+    // they're now in the `workers` pool with a non-GUARD role).
+    for (const w of currentGuardSet) {
+      if (!guardSet.has(w)) w.role = "FARM";
+    }
+    // The rest of the allocator works on `workers` (non-GUARD pool).
+    const workers = allWorkers.filter((w) => !guardSet.has(w));
     const n = workers.length;
-    if (n === 0) return;
+    if (n === 0) {
+      // All workers are guards — still publish counts and bail.
+      state.metrics ??= {};
+      state.metrics.roleCounts = {
+        FARM: 0, WOOD: 0, STONE: 0, HERBS: 0, COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0,
+        GUARD: guards.length,
+      };
+      return;
+    }
 
     // v0.8.2 Round-5 Wave-1 (01b Step 6) — consume the ColonyPlanner's
     // `reassign_role` hint once per tick. Planner emits this on its Priority
@@ -429,8 +540,8 @@ export class RoleAssignmentSystem {
     // on "kitchen exists but COOK=0". Counts reflect the post-assignment
     // distribution.
     state.metrics ??= {};
-    const counts = { FARM: 0, WOOD: 0, STONE: 0, HERBS: 0, COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0 };
-    for (const worker of workers) {
+    const counts = { FARM: 0, WOOD: 0, STONE: 0, HERBS: 0, COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0, GUARD: 0 };
+    for (const worker of allWorkers) {
       const r = worker.role;
       if (r && counts[r] !== undefined) counts[r] += 1;
     }

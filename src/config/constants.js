@@ -40,6 +40,12 @@ export const ROLE = Object.freeze({
   COOK: "COOK",
   SMITH: "SMITH",
   HERBALIST: "HERBALIST",
+  // v0.8.3 worker-vs-raider combat — GUARDs do not farm/haul. They patrol
+  // near home and engage predators in melee within `guardAggroRadius`. They
+  // are promoted from idle workers when threat posture is hot (see
+  // ThreatPlanner / RoleAssignmentSystem). Stat profile: higher attack
+  // damage, same hp as a regular worker.
+  GUARD: "GUARD",
 });
 
 export const WEATHER = Object.freeze({

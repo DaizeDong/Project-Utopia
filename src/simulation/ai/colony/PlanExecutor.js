@@ -513,7 +513,15 @@ export function executeNextSteps(plan, state, buildSystem, services = null) {
       if (role) {
         state.ai ??= {};
         state.ai.fallbackHints ??= {};
-        state.ai.fallbackHints.pendingRoleBoost = role;
+        if (role === "GUARD") {
+          // v0.8.3 worker-vs-raider combat — GUARD promotion is counted, not
+          // a single boost: each step bumps the requested guard count by 1.
+          // RoleAssignmentSystem clamps to BALANCE.threatGuardCap.
+          state.ai.fallbackHints.pendingGuardCount =
+            Math.max(1, Number(state.ai.fallbackHints.pendingGuardCount ?? 0) + 1);
+        } else {
+          state.ai.fallbackHints.pendingRoleBoost = role;
+        }
       }
       step.status = "completed";
       executed.push(step);
