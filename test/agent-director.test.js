@@ -20,6 +20,12 @@ function makeState() {
 function makeServices(mem) {
   const services = createServices(mem);
   services.memoryStore = mem;
+  // Phase A wiring: createServices() always provisions an llmClient (proxy
+  // routed). For the hybrid/algorithmic-pipeline tests below we don't have a
+  // running proxy, so strip the LLM channel to force the agent into "hybrid"
+  // mode (memory-enriched algorithmic fallback) — the same behaviour the
+  // tests exercised before the proxy wiring landed.
+  services.llmClient = null;
   return services;
 }
 

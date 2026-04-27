@@ -59,6 +59,47 @@ function renderInactiveExchangeCard(title, keyPrefix, reason, detail = "") {
   `;
 }
 
+// Phase B: live Colony Planner card — reads state.ai.agentDirector to show the
+// current plan goal, step count, and source ("llm" vs "fallback"). Renders a
+// benign "no active plan" status when activePlan is null. References to
+// docs/llm-agent-flows.md remain so panel readers can still find the flow doc.
+function renderColonyPlannerLiveCard(title, keyPrefix, agentDirector) {
+  const activePlan = agentDirector?.activePlan ?? null;
+  const stats = agentDirector?.stats ?? {};
+  const mode = agentDirector?.mode ?? "agent";
+  const historyLen = Array.isArray(agentDirector?.planHistory) ? agentDirector.planHistory.length : 0;
+
+  if (!activePlan) {
+    const detailLine = `mode=${escapeHtml(mode)} plansGenerated=${Number(stats.plansGenerated ?? 0)} plansCompleted=${Number(stats.plansCompleted ?? 0)} history=${historyLen}`;
+    return `
+      <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
+        <summary class="small"><b>${escapeHtml(title)}</b></summary>
+        <div class="small" style="margin-top:6px;font-weight:600;"><span style="color:#f3b85d;font-weight:700;">&#9679;</span> no active plan</div>
+        <div class="small muted" style="margin-top:4px;">AgentDirectorSystem is wired (see docs/llm-agent-flows.md). It will generate a plan on the next planning tick.</div>
+        <div class="small" style="margin-top:4px;">${detailLine}</div>
+      </details>
+    `;
+  }
+
+  const source = String(activePlan.source ?? "fallback");
+  const isLlm = source === "llm";
+  const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+  const sourceLabel = isLlm ? "LLM" : "FALLBACK";
+  const goal = String(activePlan.goal ?? "(no goal)");
+  const steps = Number(activePlan.steps ?? 0);
+  const detailLine = `mode=${escapeHtml(mode)} plansGenerated=${Number(stats.plansGenerated ?? 0)} plansCompleted=${Number(stats.plansCompleted ?? 0)} llmFailures=${Number(stats.llmFailures ?? 0)}`;
+
+  return `
+    <details data-ai-exchange-key="${escapeHtml(`${keyPrefix}:root`)}" style="margin-top:8px;" open>
+      <summary class="small"><b>${escapeHtml(title)}</b></summary>
+      <div class="small" style="margin-top:6px;font-weight:600;"><span style="color:${badgeColor};font-weight:700;">&#9679;</span> ${escapeHtml(sourceLabel)} plan active</div>
+      <div class="small" style="margin-top:2px;"><b>Goal:</b> ${escapeHtml(goal)} | <b>Steps:</b> ${steps} | <b>Source:</b> ${escapeHtml(source)}</div>
+      <div class="small muted" style="margin-top:2px;">Live AgentDirectorSystem flow per docs/llm-agent-flows.md.</div>
+      <div class="small" style="margin-top:2px;">${detailLine}</div>
+    </details>
+  `;
+}
+
 function renderExchangeCard(title, exchange, keyPrefix) {
   if (!exchange) {
     return `
@@ -248,12 +289,7 @@ export class AIExchangePanel {
       ${renderExchangeCard("NPC Brain", policy, "npc-brain")}
       ${planner
         ? renderExchangeCard("Colony Planner", planner, "colony-planner")
-        : renderInactiveExchangeCard(
-          "Colony Planner",
-          "colony-planner",
-          "docs/llm-agent-flows.md defines this LLM flow, but GameApp currently wires rule-based ColonyDirectorSystem instead of AgentDirectorSystem/ColonyPlanner.",
-          "No live Colony Planner LLM calls can appear until that system is wired into GameApp.",
-        )}
+        : renderColonyPlannerLiveCard("Colony Planner", "colony-planner", ai.agentDirector ?? null)}
       ${renderErrorLogCard("Last LLM errors (environment)", environmentExchanges, "environment")}
       ${renderErrorLogCard("Last LLM errors (strategic)", strategicExchanges, "strategic")}
       ${renderErrorLogCard("Last LLM errors (npc brain)", policyExchanges, "npc-brain")}

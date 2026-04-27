@@ -6,6 +6,7 @@ import {
 } from "./PromptPayload.js";
 import { guardEnvironmentDirective, guardGroupPolicies } from "./Guardrails.js";
 import { validateEnvironmentDirective, validateGroupPolicy } from "./ResponseSchema.js";
+import { validatePlanResponse } from "../colony/ColonyPlanner.js";
 
 function compactClientError(err) {
   const raw = String(err?.message ?? err ?? "unknown error")
@@ -323,6 +324,85 @@ export class LLMClient {
           guardedOutput: fallbackData,
           error: this.lastError,
         }),
+      };
+    }
+  }
+
+  /**
+   * Request a colony construction plan via the AI proxy.
+   * Mirrors the shape of `requestPolicies` so AgentDirectorSystem callers
+   * receive a consistent envelope with `{ ok, plan, source, error, latencyMs }`.
+   *
+   * @param {string} systemPrompt — colony planner system prompt (caller-built)
+   * @param {string} userPrompt — caller-built observation/memory/eval prompt
+   * @param {object} [options] — { model } reserved for future per-call overrides
+   * @returns {Promise<{ ok:boolean, plan:object|null, source:"llm"|"proxy-fallback"|"client-error", error:string, latencyMs:number, model:string, debug:object|null }>}
+   */
+  async requestPlan(systemPrompt, userPrompt, options = {}) {
+    const startedAt = performance.now();
+    try {
+      const result = await postJson(
+        this.baseUrl,
+        AI_CONFIG.planEndpoint,
+        { systemPrompt, userPrompt, ...options },
+        AI_CONFIG.requestTimeoutMs,
+      );
+      const payload = result.data ?? {};
+      this.lastLatencyMs = result.latencyMs;
+      this.lastStatus = "up";
+      this.lastError = String(payload.error ?? "");
+      this.lastModel = String(payload.model ?? this.lastModel ?? "").trim();
+
+      // Server returns { fallback, plan, error, model, debug }; if proxy
+      // returned a fallback (no apiKey or upstream error) the plan field will
+      // be null and callers should treat this as "no LLM plan available".
+      if (payload.fallback) {
+        return {
+          ok: false,
+          plan: null,
+          source: "proxy-fallback",
+          error: String(payload.error ?? "fallback"),
+          latencyMs: result.latencyMs,
+          model: String(payload.model ?? this.lastModel ?? "fallback"),
+          debug: payload.debug ?? null,
+        };
+      }
+
+      const validation = validatePlanResponse(payload.plan ?? payload.data ?? payload);
+      if (!validation.ok) {
+        return {
+          ok: false,
+          plan: null,
+          source: "client-error",
+          error: `schema: ${validation.error}`,
+          latencyMs: result.latencyMs,
+          model: String(payload.model ?? this.lastModel ?? "fallback"),
+          debug: payload.debug ?? null,
+        };
+      }
+
+      return {
+        ok: true,
+        plan: { ...validation.plan, source: "llm" },
+        source: "llm",
+        error: "",
+        latencyMs: result.latencyMs,
+        model: String(payload.model ?? this.lastModel ?? ""),
+        debug: payload.debug ?? null,
+      };
+    } catch (err) {
+      const latencyMs = performance.now() - startedAt;
+      this.lastError = compactClientError(err);
+      this.lastStatus = "down";
+      this.lastLatencyMs = latencyMs;
+      return {
+        ok: false,
+        plan: null,
+        source: "client-error",
+        error: this.lastError,
+        latencyMs,
+        model: this.lastModel || "fallback",
+        debug: null,
       };
     }
   }

@@ -707,6 +707,7 @@ export class HUDController {
     const syncAutopilot = (enabled) => {
       const active = Boolean(enabled);
       this.state.ai.enabled = active;
+      this.state.ai.coverageTarget = active ? "llm" : "fallback";
       if (!active) this.state.ai.mode = "fallback";
       // Reset decision timers so the LLM is called immediately on the next
       // simulation tick rather than waiting for the full interval to elapse.

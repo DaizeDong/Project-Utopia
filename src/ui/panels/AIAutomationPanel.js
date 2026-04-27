@@ -66,6 +66,27 @@ export class AIAutomationPanel {
     const policyExchange = ai.lastPolicyExchange ?? null;
     const director = ai.colonyDirector ?? null;
     const strategy = ai.strategy ?? {};
+    const agentDirector = ai.agentDirector ?? null;
+    const agentStats = agentDirector?.stats ?? {};
+    const agentMode = agentDirector?.mode ?? "off";
+    const activePlan = agentDirector?.activePlan ?? null;
+    const plansGenerated = Number(agentStats.plansGenerated ?? 0);
+    const plansCompleted = Number(agentStats.plansCompleted ?? 0);
+    const plansFailed = Number(agentStats.plansFailed ?? 0);
+    const llmFailures = Number(agentStats.llmFailures ?? 0);
+    // Pick a status enum that matches neighbouring rows: agent-mode LLM plans
+    // count as "llm"; hybrid/algorithmic count as "rule"; never-ticked as
+    // inactive; recent llmFailures bumps the badge to a fallback warning.
+    const planSource = activePlan?.source ?? null;
+    const plannerStatusKind = planSource === "llm"
+      ? "llm"
+      : (agentMode === "agent" || agentMode === "hybrid" || agentMode === "algorithmic")
+        ? "rule"
+        : "inactive";
+    const plannerHasError = llmFailures > 0;
+    const plannerOutput = activePlan
+      ? `goal=${activePlan.goal ?? "-"} steps=${Number(activePlan.steps ?? 0)} source=${activePlan.source ?? "-"}`
+      : "no active plan (next tick will generate one)";
     const automationRows = [
       {
         title: "Environment Director",
@@ -97,9 +118,9 @@ export class AIAutomationPanel {
       },
       {
         title: "Colony Planner LLM",
-        status: sourceBadge("inactive", true, ""),
-        detail: "Documented in docs/llm-agent-flows.md, but AgentDirectorSystem/ColonyPlanner is not wired into GameApp's live system list.",
-        output: "No live Colony Planner LLM calls can appear in this build; Build Automation above is the active builder.",
+        status: sourceBadge(plannerStatusKind, plannerStatusKind !== "llm", plannerHasError ? `${llmFailures} llm failure(s)` : ""),
+        detail: `AgentDirectorSystem live (docs/llm-agent-flows.md). mode=${agentMode} plansGenerated=${plansGenerated} plansCompleted=${plansCompleted} plansFailed=${plansFailed} llmFailures=${llmFailures}.`,
+        output: plannerOutput,
       },
     ];
 

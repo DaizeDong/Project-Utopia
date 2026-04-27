@@ -1112,8 +1112,26 @@ export class ColonyPlanner {
    * @returns {Promise<{ plan: object, source: "llm"|"fallback", error: string }>}
    */
   async requestPlan(observation, memoryText, state, learnedSkillsText = "", evaluationText = "", options = {}) {
-    // Try LLM if API key is available
-    if (this._apiKey) {
+    // Phase A wiring: when an llmClient is supplied (browser runtime), route
+    // through the AI proxy so no apiKey is exposed to the browser. The direct
+    // `callLLM` path (with `_apiKey`) remains for tests / Node harnesses that
+    // hit the OpenAI API directly.
+    const llmClient = options.llmClient;
+    if (llmClient && typeof llmClient.requestPlan === "function") {
+      const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText, evaluationText, options);
+      this._stats.llmCalls++;
+      const result = await llmClient.requestPlan(SYSTEM_PROMPT, userPrompt, { model: this._model });
+      this._stats.totalLatencyMs += Number(result?.latencyMs ?? 0);
+      if (result?.ok && result.plan) {
+        this._stats.llmSuccesses++;
+        this._stats.lastPlanSource = "llm";
+        return { plan: { ...result.plan, source: "llm" }, source: "llm", error: result.error ?? "" };
+      }
+      this._stats.llmFailures++;
+      this._stats.lastError = String(result?.error ?? "proxy returned no plan");
+      // Fall through to fallback below.
+    } else if (this._apiKey) {
+      // Test/headless path: direct OpenAI call when a key is configured.
       const userPrompt = buildPlannerPrompt(observation, memoryText, state, learnedSkillsText, evaluationText, options);
       this._stats.llmCalls++;
 

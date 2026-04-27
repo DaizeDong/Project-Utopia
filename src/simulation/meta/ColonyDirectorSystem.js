@@ -817,6 +817,12 @@ export class ColonyDirectorSystem {
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
         director.buildsPlaced += 1;
+        // Phase B: attribute placement source so HUD/panels can distinguish
+        // rule-based ColonyDirector builds from LLM-driven AgentDirector ones.
+        // ColonyDirector is always the rule-based fallback path, so tag as
+        // "fallback" here. AgentDirector tags its own LLM step placements.
+        director.lastBuildSource = "fallback";
+        director.lastBuildTimeSec = nowSec;
         emitEvent(state, EVENT_TYPES.BUILDING_PLACED, {
           buildingType: build.type, ix: tile.ix, iz: tile.iz, reason: build.reason, owner: "autopilot",
         });
