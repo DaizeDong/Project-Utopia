@@ -4,6 +4,7 @@ import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
 import { createDefaultAiRuntimeStats } from "../app/aiRuntimeStats.js";
 import { getActiveUiProfile } from "../app/uiProfileState.js";
+import { DEFAULT_DISPLAY_SETTINGS } from "../app/controlSanitizers.js";
 import {
   createInitialGrid,
   randomTileOfTypes,
@@ -1022,6 +1023,7 @@ export function createInitialGameState(options = {}) {
       visualPreset: "flat_worldsim",
       showTileIcons: true,
       showUnitSprites: true,
+      display: { ...DEFAULT_DISPLAY_SETTINGS },
       mapTemplateId: grid.templateId,
       mapSeed: grid.seed,
       terrainTuning: { ...(grid.terrainTuning ?? {}) },

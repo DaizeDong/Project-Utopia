@@ -23,6 +23,7 @@
       --divider: rgba(255, 255, 255, 0.08);
       --success: #4caf50;
       --danger: #f44336;
+      --utopia-ui-scale: 1;
     }
 
     /* === RESET === */
@@ -45,6 +46,15 @@
     #ui {
       position: absolute; inset: 0; z-index: 10;
       pointer-events: none;
+      zoom: var(--utopia-ui-scale);
+    }
+
+    #statusBar,
+    #speedControls,
+    #entityFocusOverlay,
+    #authorTickerStrip,
+    #gameStateOverlay {
+      zoom: var(--utopia-ui-scale);
     }
 
     /* Legacy layout controls — hidden in new UI */
@@ -878,6 +888,37 @@
     }
     select { cursor: pointer; }
     select option { background: #0f1a28; color: var(--text); }
+
+    .display-settings-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .display-setting-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: baseline;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .display-setting-label span:last-child {
+      color: var(--text);
+      font-weight: 800;
+    }
+    .display-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .display-status-pill {
+      padding: 6px 8px;
+      border: 1px solid rgba(80,160,220,0.18);
+      border-radius: 8px;
+      background: rgba(80,160,220,0.07);
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
 
     input[type="range"] {
       width: 100%; accent-color: var(--accent);
@@ -2272,6 +2313,99 @@
 
       <!-- === SETTINGS PANEL (player-facing only) === -->
       <div id="settingsFloatingPanel" class="floating-panel floating-panel-right">
+        <details class="card" data-panel-key="display" open>
+          <summary>Display &amp; Graphics</summary>
+          <div class="panel-body">
+            <div class="display-settings-grid">
+              <div class="display-status-pill small">
+                Current Output: <span id="displayRuntimeSummary">detecting renderer...</span>
+              </div>
+
+              <label class="small muted" for="displayPresetSelect">Quality Preset</label>
+              <select id="displayPresetSelect" title="Apply a full graphics preset">
+                <option value="performance">Performance - lower resolution, 2D-friendly, minimal effects</option>
+                <option value="balanced" selected>Balanced - adaptive quality for normal play</option>
+                <option value="quality">Quality - higher resolution and shadows</option>
+                <option value="ultra">Ultra - max quality, highest GPU load</option>
+                <option value="custom">Custom - manual overrides</option>
+              </select>
+
+              <div>
+                <label class="display-setting-label" for="displayResolutionScale">
+                  <span>Resolution Scale</span>
+                  <span id="displayResolutionScaleLabel">100%</span>
+                </label>
+                <input id="displayResolutionScale" type="range" min="50" max="175" step="5" value="100" title="Internal render resolution. Higher values use more GPU." />
+              </div>
+
+              <div>
+                <label class="display-setting-label" for="displayUiScale">
+                  <span>UI Scale</span>
+                  <span id="displayUiScaleLabel">100%</span>
+                </label>
+                <input id="displayUiScale" type="range" min="80" max="140" step="5" value="100" title="Scale HUD, sidebars, overlays, and controls." />
+              </div>
+
+              <div class="display-two-col">
+                <label class="small muted" for="displayRenderModeSelect">3D Rendering
+                  <select id="displayRenderModeSelect" title="Choose automatic 3D/2D entity rendering or force a mode">
+                    <option value="auto">Auto LOD</option>
+                    <option value="3d">Force 3D Models</option>
+                    <option value="2d">Force 2D Fast</option>
+                  </select>
+                </label>
+                <label class="small muted" for="displayShadowQualitySelect">Shadows
+                  <select id="displayShadowQualitySelect" title="Shadow quality. Off is fastest.">
+                    <option value="auto">Auto</option>
+                    <option value="off">Off</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="display-two-col">
+                <label class="small muted" for="displayAntialiasSelect">Anti-Aliasing
+                  <select id="displayAntialiasSelect" title="MSAA anti-aliasing is chosen when the renderer starts.">
+                    <option value="auto">Auto</option>
+                    <option value="on">On next start</option>
+                    <option value="off">Off next start</option>
+                  </select>
+                </label>
+                <label class="small muted" for="displayTextureQualitySelect">Textures
+                  <select id="displayTextureQualitySelect" title="Texture sampling quality and anisotropy.">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="ultra">Ultra</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="small muted" for="displayPowerPreferenceSelect">GPU Power Preference</label>
+              <select id="displayPowerPreferenceSelect" title="WebGL GPU power preference used on renderer startup.">
+                <option value="high-performance">High Performance GPU</option>
+                <option value="default">Browser Default</option>
+                <option value="low-power">Low Power</option>
+              </select>
+
+              <div class="display-two-col">
+                <div class="switch"><input id="displayEffectsToggle" type="checkbox" checked /><label for="displayEffectsToggle">Effects</label></div>
+                <div class="switch"><input id="displayWeatherParticlesToggle" type="checkbox" checked /><label for="displayWeatherParticlesToggle">Weather Particles</label></div>
+                <div class="switch"><input id="displayFogToggle" type="checkbox" checked /><label for="displayFogToggle">Fog of War</label></div>
+                <div class="switch"><input id="displayHeatLabelsToggle" type="checkbox" checked /><label for="displayHeatLabelsToggle">Heat Labels</label></div>
+                <div class="switch"><input id="displayEntityAnimationsToggle" type="checkbox" checked /><label for="displayEntityAnimationsToggle">Entity Animation</label></div>
+                <div class="switch"><input id="displayTileIconsToggle" type="checkbox" checked /><label for="displayTileIconsToggle">Tile Icons</label></div>
+                <div class="switch"><input id="displayUnitSpritesToggle" type="checkbox" checked /><label for="displayUnitSpritesToggle">Unit Sprites</label></div>
+              </div>
+
+              <button id="resetDisplaySettingsBtn" type="button" title="Restore balanced display settings">Reset Display Settings</button>
+              <div class="small muted">Anti-aliasing and GPU preference are applied on renderer startup; all other options update live.</div>
+            </div>
+          </div>
+        </details>
+
         <details class="card" data-panel-key="management" open>
           <summary>Map &amp; Doctrine</summary>
           <div class="panel-body">

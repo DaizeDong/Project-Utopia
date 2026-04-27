@@ -335,6 +335,22 @@
  * }} GameplayState
  *
  * @typedef {{
+ *  preset: "performance"|"balanced"|"quality"|"ultra"|"custom",
+ *  resolutionScale: number,
+ *  uiScale: number,
+ *  renderMode: "auto"|"3d"|"2d",
+ *  antialias: "auto"|"on"|"off",
+ *  shadowQuality: "auto"|"off"|"low"|"medium"|"high",
+ *  textureQuality: "low"|"medium"|"high"|"ultra",
+ *  powerPreference: "high-performance"|"default"|"low-power",
+ *  effectsEnabled: boolean,
+ *  weatherParticles: boolean,
+ *  fogEnabled: boolean,
+ *  heatLabels: boolean,
+ *  entityAnimations: boolean
+ * }} DisplaySettings
+ *
+ * @typedef {{
  *  mapTemplateId: string,
  *  mapTemplateName: string,
  *  mapSeed: number|string,
@@ -359,6 +375,7 @@
  *  visualPreset: "flat_worldsim",
  *  showTileIcons: boolean,
  *  showUnitSprites: boolean,
+ *  display: DisplaySettings,
  *  mapTemplateId: string,
  *  mapSeed: number|string,
  *  terrainTuning: Record<string, unknown>,

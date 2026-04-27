@@ -9,6 +9,7 @@ import { getDoctrinePresets } from "../../simulation/meta/ProgressionSystem.js";
 import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvisor.js";
 import { explainTerm } from "../hud/glossary.js";
 import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
+import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../../app/controlSanitizers.js";
 
 // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when a build preview reports
 // "insufficientResource", pick the first limiting raw resource that still
@@ -39,6 +40,7 @@ const CORE_PANEL_KEYS = Object.freeze([
   "costs",
   "resources",
   "population",
+  "display",
   "management",
   "world",
   "ai-automation",
@@ -52,6 +54,60 @@ const POPULATION_TARGET_LIMITS = Object.freeze({
   saboteurs: { min: 0, max: 300 },
   herbivores: { min: 0, max: 400 },
   predators: { min: 0, max: 200 },
+});
+const DISPLAY_PRESETS = Object.freeze({
+  performance: Object.freeze({
+    resolutionScale: 0.65,
+    renderMode: "2d",
+    antialias: "off",
+    shadowQuality: "off",
+    textureQuality: "low",
+    powerPreference: "high-performance",
+    effectsEnabled: false,
+    weatherParticles: false,
+    fogEnabled: false,
+    heatLabels: false,
+    entityAnimations: false,
+  }),
+  balanced: Object.freeze({
+    resolutionScale: 1,
+    renderMode: "auto",
+    antialias: "auto",
+    shadowQuality: "auto",
+    textureQuality: "high",
+    powerPreference: "high-performance",
+    effectsEnabled: true,
+    weatherParticles: true,
+    fogEnabled: true,
+    heatLabels: true,
+    entityAnimations: true,
+  }),
+  quality: Object.freeze({
+    resolutionScale: 1.2,
+    renderMode: "auto",
+    antialias: "on",
+    shadowQuality: "medium",
+    textureQuality: "high",
+    powerPreference: "high-performance",
+    effectsEnabled: true,
+    weatherParticles: true,
+    fogEnabled: true,
+    heatLabels: true,
+    entityAnimations: true,
+  }),
+  ultra: Object.freeze({
+    resolutionScale: 1.5,
+    renderMode: "3d",
+    antialias: "on",
+    shadowQuality: "high",
+    textureQuality: "ultra",
+    powerPreference: "high-performance",
+    effectsEnabled: true,
+    weatherParticles: true,
+    fogEnabled: true,
+    heatLabels: true,
+    entityAnimations: true,
+  }),
 });
 
 function clampPopulationTarget(key, rawValue, fallback = 0) {
@@ -154,6 +210,25 @@ export class BuildToolbar {
     this.terrainWallModeSelect = document.getElementById("terrainWallModeSelect");
     this.terrainOceanSideSelect = document.getElementById("terrainOceanSideSelect");
     this.resetTerrainTuningBtn = document.getElementById("resetTerrainTuningBtn");
+    this.displayPresetSelect = document.getElementById("displayPresetSelect");
+    this.displayResolutionScale = document.getElementById("displayResolutionScale");
+    this.displayResolutionScaleLabel = document.getElementById("displayResolutionScaleLabel");
+    this.displayUiScale = document.getElementById("displayUiScale");
+    this.displayUiScaleLabel = document.getElementById("displayUiScaleLabel");
+    this.displayRenderModeSelect = document.getElementById("displayRenderModeSelect");
+    this.displayShadowQualitySelect = document.getElementById("displayShadowQualitySelect");
+    this.displayAntialiasSelect = document.getElementById("displayAntialiasSelect");
+    this.displayTextureQualitySelect = document.getElementById("displayTextureQualitySelect");
+    this.displayPowerPreferenceSelect = document.getElementById("displayPowerPreferenceSelect");
+    this.displayEffectsToggle = document.getElementById("displayEffectsToggle");
+    this.displayWeatherParticlesToggle = document.getElementById("displayWeatherParticlesToggle");
+    this.displayFogToggle = document.getElementById("displayFogToggle");
+    this.displayHeatLabelsToggle = document.getElementById("displayHeatLabelsToggle");
+    this.displayEntityAnimationsToggle = document.getElementById("displayEntityAnimationsToggle");
+    this.displayTileIconsToggle = document.getElementById("displayTileIconsToggle");
+    this.displayUnitSpritesToggle = document.getElementById("displayUnitSpritesToggle");
+    this.displayRuntimeSummary = document.getElementById("displayRuntimeSummary");
+    this.resetDisplaySettingsBtn = document.getElementById("resetDisplaySettingsBtn");
     this.showTileIconsToggle = document.getElementById("showTileIconsToggle");
     this.showUnitSpritesToggle = document.getElementById("showUnitSpritesToggle");
     this.fixedStepHz = document.getElementById("fixedStepHz");
@@ -234,6 +309,7 @@ export class BuildToolbar {
     this.#setupPopulationControls();
     this.#setupRoleQuotaControls();
     this.#setupTerrainTuningControls();
+    this.#setupDisplayControls();
     this.#setupAdvancedControls();
 
     this.farmRatio?.addEventListener("input", () => {
@@ -434,6 +510,97 @@ export class BuildToolbar {
       this.state.controls.actionMessage = "Terrain tuning reset to preset defaults.";
       this.state.controls.actionKind = "info";
       this.sync();
+    });
+  }
+
+  #displaySettings() {
+    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    return settings;
+  }
+
+  #applyDisplaySettings(patch, options = {}) {
+    const current = this.#displaySettings();
+    const next = {
+      ...current,
+      ...patch,
+    };
+    if (options.markCustom !== false && patch.preset === undefined) {
+      next.preset = "custom";
+    }
+    const { settings } = sanitizeDisplaySettings(next, DEFAULT_DISPLAY_SETTINGS);
+    this.handlers.onSetDisplaySettings?.(settings);
+    if (!this.handlers.onSetDisplaySettings) {
+      this.state.controls.display = settings;
+    }
+    this.sync();
+  }
+
+  #setupDisplayControls() {
+    this.displayPresetSelect?.addEventListener("change", () => {
+      const preset = this.displayPresetSelect.value;
+      if (preset === "custom") {
+        this.#applyDisplaySettings({ preset: "custom" }, { markCustom: false });
+        return;
+      }
+      const presetSettings = DISPLAY_PRESETS[preset] ?? DISPLAY_PRESETS.balanced;
+      this.#applyDisplaySettings({ ...presetSettings, preset }, { markCustom: false });
+    });
+
+    this.displayResolutionScale?.addEventListener("input", () => {
+      const value = Math.max(50, Math.min(175, Number(this.displayResolutionScale.value) || 100)) / 100;
+      this.#applyDisplaySettings({ resolutionScale: value });
+    });
+
+    this.displayUiScale?.addEventListener("input", () => {
+      const value = Math.max(80, Math.min(140, Number(this.displayUiScale.value) || 100)) / 100;
+      this.#applyDisplaySettings({ uiScale: value });
+    });
+
+    this.displayRenderModeSelect?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ renderMode: this.displayRenderModeSelect.value });
+    });
+    this.displayShadowQualitySelect?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ shadowQuality: this.displayShadowQualitySelect.value });
+    });
+    this.displayAntialiasSelect?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ antialias: this.displayAntialiasSelect.value });
+    });
+    this.displayTextureQualitySelect?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ textureQuality: this.displayTextureQualitySelect.value });
+    });
+    this.displayPowerPreferenceSelect?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ powerPreference: this.displayPowerPreferenceSelect.value });
+    });
+
+    this.displayEffectsToggle?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ effectsEnabled: Boolean(this.displayEffectsToggle.checked) });
+    });
+    this.displayWeatherParticlesToggle?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ weatherParticles: Boolean(this.displayWeatherParticlesToggle.checked) });
+    });
+    this.displayFogToggle?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ fogEnabled: Boolean(this.displayFogToggle.checked) });
+    });
+    this.displayHeatLabelsToggle?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ heatLabels: Boolean(this.displayHeatLabelsToggle.checked) });
+    });
+    this.displayEntityAnimationsToggle?.addEventListener("change", () => {
+      this.#applyDisplaySettings({ entityAnimations: Boolean(this.displayEntityAnimationsToggle.checked) });
+    });
+    this.displayTileIconsToggle?.addEventListener("change", () => {
+      this.handlers.onSetTileIconsVisible?.(Boolean(this.displayTileIconsToggle.checked));
+      this.sync();
+    });
+    this.displayUnitSpritesToggle?.addEventListener("change", () => {
+      this.handlers.onSetUnitSpritesVisible?.(Boolean(this.displayUnitSpritesToggle.checked));
+      this.sync();
+    });
+
+    this.resetDisplaySettingsBtn?.addEventListener("click", () => {
+      this.handlers.onSetTileIconsVisible?.(true);
+      this.handlers.onSetUnitSpritesVisible?.(true);
+      this.#applyDisplaySettings({ ...DEFAULT_DISPLAY_SETTINGS }, { markCustom: false });
     });
   }
 
@@ -656,6 +823,7 @@ export class BuildToolbar {
     if (!Number.isFinite(controls.cameraMinZoom)) controls.cameraMinZoom = 0.55;
     if (!Number.isFinite(controls.cameraMaxZoom)) controls.cameraMaxZoom = 3.2;
     if (!Number.isFinite(controls.renderModelDisableThreshold)) controls.renderModelDisableThreshold = 260;
+    controls.display = sanitizeDisplaySettings(controls.display, DEFAULT_DISPLAY_SETTINGS).settings;
     if (!controls.benchmarkConfig || typeof controls.benchmarkConfig !== "object") {
       controls.benchmarkConfig = {
         schedule: [0, 100, 200, 300, 400, 500],
@@ -859,6 +1027,41 @@ export class BuildToolbar {
 
     if (this.compactToggle && this.uiRoot) {
       this.compactToggle.checked = this.uiRoot.classList.contains("compact");
+    }
+
+    const display = this.#displaySettings();
+    if (this.displayPresetSelect) this.#setFieldValueIfIdle(this.displayPresetSelect, display.preset);
+    if (this.displayResolutionScale && this.displayResolutionScaleLabel) {
+      const pct = Math.round(display.resolutionScale * 100);
+      this.#setFieldValueIfIdle(this.displayResolutionScale, pct);
+      this.displayResolutionScaleLabel.textContent = `${pct}%`;
+    }
+    if (this.displayUiScale && this.displayUiScaleLabel) {
+      const pct = Math.round(display.uiScale * 100);
+      this.#setFieldValueIfIdle(this.displayUiScale, pct);
+      this.displayUiScaleLabel.textContent = `${pct}%`;
+    }
+    if (this.displayRenderModeSelect) this.#setFieldValueIfIdle(this.displayRenderModeSelect, display.renderMode);
+    if (this.displayShadowQualitySelect) this.#setFieldValueIfIdle(this.displayShadowQualitySelect, display.shadowQuality);
+    if (this.displayAntialiasSelect) this.#setFieldValueIfIdle(this.displayAntialiasSelect, display.antialias);
+    if (this.displayTextureQualitySelect) this.#setFieldValueIfIdle(this.displayTextureQualitySelect, display.textureQuality);
+    if (this.displayPowerPreferenceSelect) this.#setFieldValueIfIdle(this.displayPowerPreferenceSelect, display.powerPreference);
+    if (this.displayEffectsToggle) this.displayEffectsToggle.checked = Boolean(display.effectsEnabled);
+    if (this.displayWeatherParticlesToggle) this.displayWeatherParticlesToggle.checked = Boolean(display.weatherParticles);
+    if (this.displayFogToggle) this.displayFogToggle.checked = Boolean(display.fogEnabled);
+    if (this.displayHeatLabelsToggle) this.displayHeatLabelsToggle.checked = Boolean(display.heatLabels);
+    if (this.displayEntityAnimationsToggle) this.displayEntityAnimationsToggle.checked = Boolean(display.entityAnimations);
+    if (this.displayTileIconsToggle) this.displayTileIconsToggle.checked = Boolean(this.state.controls.showTileIcons);
+    if (this.displayUnitSpritesToggle) this.displayUnitSpritesToggle.checked = Boolean(this.state.controls.showUnitSprites);
+    if (this.displayRuntimeSummary) {
+      const pixelRatio = Number(this.state.debug?.renderPixelRatio ?? 0);
+      const entityMode = this.state.debug?.renderMode ?? "pending";
+      const canvas = typeof document !== "undefined" ? document.getElementById("c") : null;
+      const sizeText = canvas?.width && canvas?.height ? `${canvas.width}x${canvas.height}` : "canvas pending";
+      const aaText = this.state.debug?.rendererAntialias ? "AA on" : "AA off/auto";
+      const shadows = this.state.debug?.shadowQuality ?? display.shadowQuality;
+      this.displayRuntimeSummary.textContent =
+        `${sizeText} | ${pixelRatio > 0 ? `${pixelRatio.toFixed(2)}x` : "auto DPR"} | ${entityMode} | shadows:${shadows} | ${aaText}`;
     }
 
     if (this.showTileIconsToggle) {

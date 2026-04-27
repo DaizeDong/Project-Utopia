@@ -44,7 +44,13 @@ import { EventDirectorSystem } from "../simulation/meta/EventDirectorSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
-import { DEFAULT_BENCHMARK_CONFIG, sanitizeBenchmarkConfig, sanitizeControlSettings } from "./controlSanitizers.js";
+import {
+  DEFAULT_BENCHMARK_CONFIG,
+  DEFAULT_DISPLAY_SETTINGS,
+  sanitizeBenchmarkConfig,
+  sanitizeControlSettings,
+  sanitizeDisplaySettings,
+} from "./controlSanitizers.js";
 import { resolveGlobalShortcut } from "./shortcutResolver.js";
 import {
   readInitialDevMode,
@@ -140,6 +146,7 @@ export class GameApp {
   constructor(canvas) {
     this.state = createInitialGameState();
     this.#sanitizeControls(false);
+    this.#applyDisplaySettingsToDom();
     // v0.8.2 Round0 01c-ui — Developer mode gate.
     // Reads ?dev=1 URL query and `localStorage.utopia:devMode`, and wires a
     // Ctrl+Shift+D chord to toggle `document.body.classList` in-place.
@@ -186,6 +193,7 @@ export class GameApp {
       onSetFixedStepHz: (hz) => this.setFixedStepHz(hz),
       onSetCameraZoomRange: (minZoom, maxZoom) => this.setCameraZoomRange(minZoom, maxZoom),
       onSetRenderDetailThreshold: (value) => this.setRenderDetailThreshold(value),
+      onSetDisplaySettings: (settings) => this.setDisplaySettings(settings),
     });
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);
@@ -1134,6 +1142,28 @@ export class GameApp {
     this.state.controls.actionKind = "info";
   }
 
+  setDisplaySettings(rawSettings = {}) {
+    const previous = this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS;
+    const merged = { ...previous, ...(rawSettings ?? {}) };
+    const { settings, corrections } = sanitizeDisplaySettings(merged, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    this.#applyDisplaySettingsToDom();
+    this.renderer?.applyDisplaySettings?.(settings);
+
+    const restartFieldsChanged =
+      settings.antialias !== previous.antialias ||
+      settings.powerPreference !== previous.powerPreference;
+    const resolutionPct = Math.round(settings.resolutionScale * 100);
+    const uiPct = Math.round(settings.uiScale * 100);
+    const note = restartFieldsChanged
+      ? " Anti-aliasing/GPU preference apply on next renderer start."
+      : "";
+    this.state.controls.actionMessage = corrections.length > 0
+      ? corrections[0]
+      : `Display updated: ${settings.preset}, ${resolutionPct}% render, ${uiPct}% UI.${note}`;
+    this.state.controls.actionKind = "info";
+  }
+
   setBenchmarkConfig(rawConfig) {
     const { config, corrections } = sanitizeBenchmarkConfig(rawConfig, DEFAULT_BENCHMARK_CONFIG);
     this.state.controls.benchmarkConfig = config;
@@ -1333,6 +1363,7 @@ export class GameApp {
     next.controls.visualPreset = this.state.controls.visualPreset;
     next.controls.showTileIcons = this.state.controls.showTileIcons;
     next.controls.showUnitSprites = this.state.controls.showUnitSprites;
+    next.controls.display = { ...(this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS) };
     next.controls.fixedStepSec = this.state.controls.fixedStepSec;
     next.controls.cameraMinZoom = this.state.controls.cameraMinZoom;
     next.controls.cameraMaxZoom = this.state.controls.cameraMaxZoom;
@@ -1436,6 +1467,7 @@ export class GameApp {
     }
     deepReplaceObject(this.state, restored);
     this.#sanitizeControls(false);
+    this.renderer?.applyDisplaySettings?.(this.state.controls.display);
     this.services?.dispose?.();
     this.services = createServices(this.state.world.mapSeed, {
       offlineAiFallback: this.offlineAiFallback,
@@ -2150,8 +2182,16 @@ export class GameApp {
     });
   }
 
+  #applyDisplaySettingsToDom() {
+    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    this.state.controls.display = settings;
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--utopia-ui-scale", settings.uiScale.toFixed(2));
+  }
+
   #sanitizeControls(notify = false) {
     const { corrections } = sanitizeControlSettings(this.state.controls);
+    this.#applyDisplaySettingsToDom();
     if (notify && corrections.length > 0) {
       this.state.controls.actionMessage = corrections.join(" ");
       this.state.controls.actionKind = "error";
@@ -2187,6 +2227,17 @@ export class GameApp {
         Number(this.state.controls.renderModelDisableThreshold ?? 260),
         120,
       );
+      this.state.controls.display = sanitizeDisplaySettings({
+        ...(this.state.controls.display ?? DEFAULT_DISPLAY_SETTINGS),
+        preset: "performance",
+        resolutionScale: 0.65,
+        renderMode: "2d",
+        shadowQuality: "off",
+        effectsEnabled: false,
+        weatherParticles: false,
+        heatLabels: false,
+        entityAnimations: false,
+      }, DEFAULT_DISPLAY_SETTINGS).settings;
       this.uiRefreshIntervalSec = Math.max(this.uiRefreshIntervalSec, 1 / 2);
       if (typeof document !== "undefined") {
         const wrapRoot = document.getElementById("wrap");
@@ -2195,6 +2246,7 @@ export class GameApp {
       this.state.controls.actionMessage = `Memory pressure mode enabled (${memMb.toFixed(0)}MB).`;
       this.state.controls.actionKind = "error";
       this.#sanitizeControls(false);
+      this.renderer?.applyDisplaySettings?.(this.state.controls.display);
     }
 
     if (!highWater && this.memoryGuard.active && nowSec - this.memoryGuard.lastTrimSec >= 20) {
