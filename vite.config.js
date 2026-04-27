@@ -29,5 +29,17 @@ export default defineConfig(() => {
         },
       },
     },
+    preview: {
+      proxy: {
+        "/api": {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+        "/health": {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+      },
+    },
   };
 });

@@ -13,6 +13,7 @@
 
 ### Bug Fixes
 
+- **AI proxy not reached in preview mode** (`vite.config.js`): added `preview.proxy` mirroring the existing `server.proxy` so that `/api/ai/*` and `/health` are forwarded to the AI proxy when running `vite preview` (`npm run preview:full`); previously the proxy was only wired for the dev server, causing all AI calls to 404 and fall back in production builds.
 - **Storyteller DOM readability** (`src/ui/hud/storytellerStrip.js`, `index.html`): fixed joined extracted strings such as `MILESTONEDepot` and duplicate `DIRECTORDIRECTOR` wording while preserving the visual strip.
 - **Food-crisis next actions** (`src/ui/hud/nextActionAdvisor.js`, `src/ui/interpretation/WorldExplain.js`): starvation guidance now checks isolated farms/worksites and recommends concrete road, warehouse, reconnect, or reachable-farm actions before generic advice.
 - **Non-dev smoke API** (`src/main.js`): keeps `window.__utopiaLongRun` available for browser verification while leaving the broader `window.__utopia` handle dev-gated.
