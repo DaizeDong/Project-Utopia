@@ -70,7 +70,11 @@ test("AIExchangePanel renders LLM calls by documented categories", () => {
     assert.match(html, /Strategic Director/);
     assert.match(html, /NPC Brain/);
     assert.match(html, /Colony Planner/);
-    assert.match(html, /not wired in live runtime/i);
+    // Phase B: live Colony Planner card reads state.ai.agentDirector. No
+    // agentDirector in this state -> the card renders the benign "no active
+    // plan" status with a docs/llm-agent-flows.md pointer.
+    assert.match(html, /no active plan/i);
+    assert.match(html, /docs\/llm-agent-flows\.md/);
     assert.match(html, /Prompt Input: System/);
     assert.match(html, /Raw Model Content/);
     assert.match(html, /Decision Result/);

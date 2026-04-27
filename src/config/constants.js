@@ -133,7 +133,12 @@ export const SYSTEM_ORDER = Object.freeze([
   // the bandit-raid cooldown downgrade) and before ColonyDirector (so its
   // queued events are visible to the same-tick building snapshot).
   "EventDirectorSystem",
-  "ColonyDirectorSystem",
+  // Phase A LLM Colony Planner wiring: AgentDirectorSystem replaces
+  // ColonyDirectorSystem in the order. AgentDirectorSystem internally wraps
+  // ColonyDirectorSystem as `_fallback` and delegates to it when
+  // `state.ai.coverageTarget === "fallback"` (Autopilot OFF) so behaviour is
+  // unchanged for non-LLM runs.
+  "AgentDirectorSystem",
   "RoleAssignmentSystem",
   "PopulationGrowthSystem",
   "EnvironmentDirectorSystem",
