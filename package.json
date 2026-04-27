@@ -1,5 +1,11 @@
 {
+  "name": "project-utopia",
+  "version": "0.8.1",
+  "private": true,
+  "description": "Project Utopia desktop build",
+  "author": "Daize Dong",
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite",
     "dev:full": "node scripts/dev-full.mjs",
@@ -12,6 +18,9 @@
     "test:ui": "node --test test/ui-layout.test.js",
     "bench:perf": "node scripts/bench-perf.mjs",
     "bench:logic": "node scripts/logic-baseline.mjs",
+    "bench:long": "node scripts/long-horizon-bench.mjs",
+    "bench:long:smoke": "node scripts/long-horizon-bench.mjs --seed 1 --max-days 90 --tick-rate 2 --stop-on-death false --soft-validation true",
+    "bench:long:matrix": "node scripts/long-horizon-matrix.mjs",
     "soak:sim": "node scripts/soak-sim.mjs",
     "soak:browser:idle": "node scripts/soak-browser-idle.mjs",
     "soak:browser:operator": "node scripts/soak-browser-operator.mjs",
@@ -24,13 +33,41 @@
     "release:check": "node scripts/release-check.mjs",
     "release:strict": "node scripts/release-check.mjs --require-clean --require-fresh-build --require-fresh-verify",
     "submit:local": "npm run verify:full && npm run release:check",
-    "submit:strict": "npm run verify:full && npm run release:strict"
+    "submit:strict": "npm run verify:full && npm run release:strict",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:pack": "npm run build && electron-builder --win dir",
+    "desktop:zip": "node scripts/zip-desktop.mjs",
+    "desktop:dist": "npm run build && node scripts/package-browser-app.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"
   },
   "devDependencies": {
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "playwright": "^1.58.2",
     "vite": "^7.3.1"
+  },
+  "build": {
+    "appId": "com.daizedong.projectutopia",
+    "productName": "Project Utopia",
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "files": [
+      "desktop/**/*",
+      "dist/**/*",
+      "scripts/env-loader.mjs",
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "win": {
+      "target": [
+        "dir"
+      ],
+      "signAndEditExecutable": false
+    }
   }
 }

@@ -20,6 +20,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const envPromptPath = path.resolve(__dirname, "../src/data/prompts/environment-director.md");
 const policyPromptPath = path.resolve(__dirname, "../src/data/prompts/npc-brain.md");
+const strategicPromptPath = path.resolve(__dirname, "../src/data/prompts/strategic-director.md");
 
 function normalizeConfiguredModel(rawModel) {
   const raw = String(rawModel ?? "").trim();
@@ -41,11 +42,11 @@ function normalizeConfiguredModel(rawModel) {
 }
 
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
-const OPENAI_BASE_URL = ((process.env.OPENAI_BASE_URL ?? "").trim() || "https://api.openai.com/v1").replace(/\/+$/, "");
 const modelConfig = normalizeConfiguredModel(process.env.OPENAI_MODEL);
 const OPENAI_MODEL_RAW = modelConfig.configuredModel;
 const OPENAI_MODEL = modelConfig.model;
-const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 18000) || 18000);
+const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 120000) || 120000);
 const MODEL_SOURCE = modelConfig.source;
 const API_KEY_SOURCE = OPENAI_API_KEY
   ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
@@ -63,6 +64,9 @@ const envSystemPrompt = fs.existsSync(envPromptPath)
 const policySystemPrompt = fs.existsSync(policyPromptPath)
   ? fs.readFileSync(policyPromptPath, "utf8")
   : "You output strict JSON for group policies.";
+const strategicSystemPrompt = fs.existsSync(strategicPromptPath)
+  ? fs.readFileSync(strategicPromptPath, "utf8")
+  : "You output strict JSON for strategic colony priorities.";
 
 function sendJson(res, code, payload) {
   res.writeHead(code, {
@@ -248,6 +252,10 @@ function readBody(req) {
 }
 
 async function handleEnvironment(summary) {
+  if (summary?.channel === "strategic-director") {
+    return handleStrategic(summary);
+  }
+
   const requestedAtIso = new Date().toISOString();
   const promptUser = buildEnvironmentPromptUserContent(summary);
   if (!OPENAI_API_KEY) {
@@ -325,6 +333,86 @@ async function handleEnvironment(summary) {
         rawModelContent: JSON.stringify(fallbackRaw, null, 2),
         parsedBeforeValidation: fallbackRaw,
         guardedOutput: guarded,
+        error: compact,
+      }),
+    };
+  }
+}
+
+async function handleStrategic(summary) {
+  const requestedAtIso = new Date().toISOString();
+  const promptUser = JSON.stringify(summary ?? {}, null, 2);
+  if (!OPENAI_API_KEY) {
+    return {
+      fallback: true,
+      data: null,
+      error: "OPENAI_API_KEY missing",
+      model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        promptSystem: strategicSystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+          channel: "strategic-director",
+        },
+        rawModelContent: "",
+        parsedBeforeValidation: null,
+        guardedOutput: null,
+        error: "OPENAI_API_KEY missing",
+      }),
+    };
+  }
+
+  try {
+    const result = await callOpenAIWithModelFallback(strategicSystemPrompt, promptUser);
+    return {
+      fallback: false,
+      data: result.parsed,
+      error: "",
+      model: result.model,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        promptSystem: result.promptSystem,
+        promptUser: result.promptUser,
+        requestPayload: {
+          ...result.requestPayload,
+          channel: "strategic-director",
+        },
+        rawModelContent: result.rawModelContent,
+        parsedBeforeValidation: result.parsed,
+        guardedOutput: result.parsed,
+        error: "",
+      }),
+    };
+  } catch (err) {
+    const compact = compactError(err);
+    return {
+      fallback: true,
+      data: null,
+      error: compact,
+      model: OPENAI_MODEL,
+      debug: buildDebugPayload({
+        requestedAtIso,
+        endpoint: "/api/ai/environment",
+        requestSummary: summary,
+        promptSystem: strategicSystemPrompt,
+        promptUser,
+        requestPayload: {
+          model: OPENAI_MODEL,
+          temperature: 0.3,
+          responseFormat: "json_object",
+          channel: "strategic-director",
+        },
+        rawModelContent: "",
+        parsedBeforeValidation: null,
+        guardedOutput: null,
         error: compact,
       }),
     };
@@ -426,6 +514,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: "ai-proxy",
       hasApiKey: Boolean(OPENAI_API_KEY),
+      baseUrl: OPENAI_BASE_URL,
       model: OPENAI_MODEL,
       configuredModel: OPENAI_MODEL_RAW || null,
       modelNormalized: Boolean(modelConfig.normalized),
@@ -472,7 +561,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`[ai-proxy] listening on http://localhost:${PORT}`);
+  console.log(`[ai-proxy] listening on http://localhost:${PORT}  (baseUrl: ${OPENAI_BASE_URL})`);
 });
 
 server.on("error", (err) => {

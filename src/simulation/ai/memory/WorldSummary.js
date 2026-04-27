@@ -6,6 +6,13 @@ import {
   listGroupTransitions,
 } from "../../npc/state/StateGraph.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
+import { MIN_FOOD_FOR_GROWTH } from "../../population/PopulationGrowthSystem.js";
+import {
+  sampleTerrainAggregates,
+  sampleSoilAggregates,
+  sampleNodeDepletionCounts,
+  sampleWaterConnectivity,
+} from "../colony/ColonyPerceiver.js";
 
 const POLICY_GROUP_ORDER = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -57,7 +64,7 @@ function buildTransitionHints(groupId, world, groupStats) {
   const hints = [];
 
   if (groupId === GROUP_IDS.WORKERS) {
-    if (food < 20 || avgHunger < 0.34) hints.push("seek_food -> eat -> seek_task");
+    if (food < MIN_FOOD_FOR_GROWTH || avgHunger < 0.34) hints.push("seek_food -> eat -> seek_task");
     if ((groupStats.carrying ?? 0) > Math.max(4, groupStats.count * 0.5)) hints.push("deliver -> seek_task");
     if (dominant === "wander" || dominant === "idle") hints.push("wander -> seek_task -> harvest");
   } else if (groupId === GROUP_IDS.TRADERS) {
@@ -125,6 +132,11 @@ export function buildWorldSummary(state) {
     resources: {
       food: Number(state.resources.food.toFixed(2)),
       wood: Number(state.resources.wood.toFixed(2)),
+      stone: Number(Number(state.resources?.stone ?? 0).toFixed(2)),
+      herbs: Number(Number(state.resources?.herbs ?? 0).toFixed(2)),
+      meals: Number(Number(state.resources?.meals ?? 0).toFixed(2)),
+      medicine: Number(Number(state.resources?.medicine ?? 0).toFixed(2)),
+      tools: Number(Number(state.resources?.tools ?? 0).toFixed(2)),
     },
     population: { workers, visitors, herbivores, predators },
     buildings: { ...state.buildings },
@@ -209,9 +221,27 @@ export function buildWorldSummary(state) {
       activeEventCount: Number(state.metrics.spatialPressure?.activeEventCount ?? 0),
     },
     aiMode: state.ai.mode,
+
+    // v0.8.2: terrain, soil, node depletion counts, water connectivity
+    terrain: sampleTerrainAggregates(state.grid),
+    soil: sampleSoilAggregates(state.grid),
+    nodes: sampleNodeDepletionCounts(state.grid),
+    connectivity: sampleWaterConnectivity(state),
   };
 
   summary.operations = buildOperationsSummary(summary);
+
+  if (state.ai?.strategy) {
+    summary._strategyContext = {
+      priority: state.ai.strategy.priority,
+      resourceFocus: state.ai.strategy.resourceFocus,
+      defensePosture: state.ai.strategy.defensePosture,
+      riskTolerance: state.ai.strategy.riskTolerance,
+      workerFocus: state.ai.strategy.workerFocus,
+      environmentPreference: state.ai.strategy.environmentPreference,
+    };
+  }
+
   return summary;
 }
 

@@ -13,8 +13,15 @@ const POLICY_INTENT_TO_STATE = Object.freeze({
   workers: Object.freeze({
     eat: "seek_food",
     deliver: "deliver",
+    rest: "seek_rest",
     farm: "seek_task",
     wood: "seek_task",
+    quarry: "seek_task",
+    gather_herbs: "seek_task",
+    cook: "seek_task",
+    smith: "seek_task",
+    heal: "seek_task",
+    haul: "seek_task",
     wander: "wander",
   }),
   traders: Object.freeze({
@@ -59,7 +66,7 @@ function normalizeIntentKey(raw) {
 
 function defaultFallbackState(groupId) {
   if (groupId === "workers") return "seek_task";
-  if (groupId === "traders") return "seek_trade";
+  if (groupId === "traders") return "wander";
   if (groupId === "saboteurs") return "scout";
   if (groupId === "herbivores") return "graze";
   if (groupId === "predators") return "stalk";
@@ -87,7 +94,36 @@ function isTargetTileType(entity, state, targetTileTypes) {
 }
 
 function deriveWorkerDesiredState(worker, state) {
-  if ((worker.hunger ?? 1) < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
+  const currentFsmState = worker.blackboard?.fsm?.state;
+  const hunger = worker.hunger ?? 1;
+
+  // v0.8.2 Round-7 02a — starving preempt: if hunger is critically low,
+  // override to seek_food immediately regardless of current task.
+  const starvingThreshold = Number(BALANCE.workerStarvingPreemptThreshold ?? 0.22);
+  const hasFoodSource = (state.resources.food > 0 && state.buildings.warehouses > 0)
+    || Number(worker.carry?.food ?? 0) > 0;
+  if (hunger < starvingThreshold && hasFoodSource) {
+    return {
+      desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
+        ? "eat"
+        : "seek_food",
+      reason: "rule:starving-preempt",
+    };
+  }
+
+  // Eat hysteresis: if already eating/seeking food, stay until hunger recovers past recover threshold
+  if ((currentFsmState === "eat" || currentFsmState === "seek_food")
+    && hunger < Number(BALANCE.workerHungerRecoverThreshold ?? 0.35)
+    && state.resources.food > 0 && state.buildings.warehouses > 0) {
+    return {
+      desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
+        ? "eat"
+        : "seek_food",
+      reason: "rule:hunger-hysteresis",
+    };
+  }
+
+  if (hunger < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"
@@ -96,11 +132,59 @@ function deriveWorkerDesiredState(worker, state) {
     };
   }
 
+  // Rest need: seek rest when rest is critically low
+  const restLevel = Number(worker.rest ?? 1);
+  const restThreshold = Number(BALANCE.workerRestSeekThreshold ?? 0.2);
+  const restRecoverThreshold = Number(BALANCE.workerRestRecoverThreshold ?? 0.6);
+  // Rest hysteresis: if already resting, stay until recovered past threshold
+  if ((currentFsmState === "rest" || currentFsmState === "seek_rest") && restLevel < restRecoverThreshold) {
+    return { desiredState: currentFsmState === "rest" ? "rest" : "seek_rest", reason: "rule:rest-hysteresis" };
+  }
+  if (restLevel < restThreshold) {
+    return { desiredState: "seek_rest", reason: "rule:rest-low" };
+  }
+
+  // Night behavior: strongly prefer rest during night (day/night cycle drives temporal realism)
+  const isNight = Boolean(state.environment?.isNight);
+  if (isNight && restLevel < Number(BALANCE.workerNightRestThreshold ?? 0.65)) {
+    return { desiredState: "seek_rest", reason: "rule:night-rest" };
+  }
+
+  // Weather-responsive behavior: storms force shelter, adverse weather reduces productivity
+  const weatherType = state.weather?.current ?? "clear";
+  if (weatherType === "storm" && restLevel < 0.92) {
+    return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
+  }
+  if (weatherType === "winter" && restLevel < 0.55) {
+    return { desiredState: "seek_rest", reason: "rule:winter-rest" };
+  }
+  if (weatherType === "drought" && restLevel < 0.5) {
+    return { desiredState: "seek_rest", reason: "rule:drought-rest" };
+  }
+  if (weatherType === "rain" && restLevel < 0.4) {
+    return { desiredState: "seek_rest", reason: "rule:rain-rest" };
+  }
+
   const hasWarehouse = state.buildings.warehouses > 0;
-  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0);
+  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0)
+    + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   const noWorkSite = (worker.role === ROLE.FARM && state.buildings.farms <= 0)
-    || (worker.role === ROLE.WOOD && state.buildings.lumbers <= 0);
-  if (hasWarehouse && carryTotal > 0 && (carryTotal >= 2.4 || noWorkSite || worker.blackboard?.fsm?.state === "deliver")) {
+    || (worker.role === ROLE.WOOD && state.buildings.lumbers <= 0)
+    || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
+    || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
+    || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
+    || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
+    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
+    || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
+  // Deliver hysteresis: use lower threshold when already in deliver state.
+  // HAUL workers deliver sooner (lower threshold) to maximize logistics throughput.
+  // carryTotal > 0 gate is intentional: workers with empty carry should exit deliver even with hysteresis.
+  const isHauler = worker.role === ROLE.HAUL;
+  const deliverEntryThreshold = currentFsmState === "deliver"
+    ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
+    : isHauler ? Number(BALANCE.workerDeliverLowThreshold ?? 1.2)
+    : Number(BALANCE.workerDeliverThreshold ?? 2.4);
+  if (hasWarehouse && carryTotal > 0 && (carryTotal >= deliverEntryThreshold || noWorkSite)) {
     return { desiredState: "deliver", reason: "rule:deliver" };
   }
 
@@ -112,6 +196,42 @@ function deriveWorkerDesiredState(worker, state) {
   if (worker.role === ROLE.WOOD && state.buildings.lumbers > 0) {
     const atLumber = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.LUMBER]);
     return { desiredState: atLumber ? "harvest" : "seek_task", reason: "rule:lumber" };
+  }
+
+  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) {
+    const atQuarry = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.QUARRY]);
+    return { desiredState: atQuarry ? "harvest" : "seek_task", reason: "rule:quarry" };
+  }
+
+  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) {
+    const atHerbGarden = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.HERB_GARDEN]);
+    return { desiredState: atHerbGarden ? "harvest" : "seek_task", reason: "rule:herbs" };
+  }
+
+  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) {
+    const atKitchen = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.KITCHEN]);
+    return { desiredState: atKitchen ? "process" : "seek_task", reason: "rule:cook" };
+  }
+
+  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) {
+    const atSmithy = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.SMITHY]);
+    return { desiredState: atSmithy ? "process" : "seek_task", reason: "rule:smith" };
+  }
+
+  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) {
+    const atClinic = isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.CLINIC]);
+    return { desiredState: atClinic ? "process" : "seek_task", reason: "rule:herbalist" };
+  }
+
+  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) {
+    // Haulers harvest from any available worksite, with lower deliver threshold
+    const anyWorksite = state.buildings.farms > 0 || state.buildings.lumbers > 0
+      || Number(state.buildings?.quarries ?? 0) > 0 || Number(state.buildings?.herbGardens ?? 0) > 0;
+    if (anyWorksite) {
+      const haulTargetTypes = [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN];
+      const atWorksite = isAtTargetTile(worker, state) && isTargetTileType(worker, state, haulTargetTypes);
+      return { desiredState: atWorksite ? "harvest" : "seek_task", reason: "rule:haul" };
+    }
   }
 
   if (noWorkSite) return { desiredState: "wander", reason: "rule:no-worksite" };
@@ -235,6 +355,7 @@ function isCriticalLocalState(groupId, localState) {
 
 function isProtectedLocalState(groupId, localState) {
   if (groupId === "workers" && localState === "deliver") return true;
+  if (groupId === "workers" && (localState === "seek_food" || localState === "eat")) return true;
   return isCriticalLocalState(groupId, localState);
 }
 
@@ -344,6 +465,8 @@ function applyGroupTargetOverride(groupId, localDesired, localReason, entity, st
   };
 }
 
+export { deriveWorkerDesiredState as deriveWorkerDesiredStateExported };
+
 export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   const logic = state.debug.logic ?? (state.debug.logic = {
     invalidTransitions: 0,
@@ -352,17 +475,40 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
     idleWithoutReasonSecByGroup: {},
     pathRecalcByEntity: {},
     lastGoalsByEntity: {},
+    prevPrevGoalsByEntity: {},
     deathByReasonAndReachability: {},
   });
 
   const key = String(entity.id ?? "");
   const prev = logic.lastGoalsByEntity[key];
+  const prevPrev = (logic.prevPrevGoalsByEntity ??= {})[key];
   const lastGoalSec = Number(entity.debug?.lastGoalSetSec ?? -Infinity);
-  if (prev && prev !== desiredState && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 3.0) {
+
+  // Only count A→B→A oscillation within 1.5s window.
+  // Exclude normal behavioral cycles: any transition within the standard work loop
+  // (harvest, deliver, seek_task, process, idle, wander) or survival interrupts (eat, seek_food).
+  const WORK_CYCLE_STATES = new Set(["harvest", "deliver", "seek_task", "process", "idle", "wander", "seek_rest", "rest"]);
+  const SURVIVAL_STATES = new Set(["seek_food", "eat"]);
+  const isNormalCycle =
+    // Any transition between work-cycle states is a normal work loop
+    (WORK_CYCLE_STATES.has(prevPrev) && WORK_CYCLE_STATES.has(prev))
+    // Any transition involving survival states is a normal interruption
+    || SURVIVAL_STATES.has(prev) || SURVIVAL_STATES.has(prevPrev);
+  if (
+    prev && prev !== desiredState
+    && prevPrev === desiredState
+    && !isNormalCycle
+    && Number.isFinite(lastGoalSec) && nowSec - lastGoalSec <= 1.5
+  ) {
     logic.goalFlipCount = Number(logic.goalFlipCount ?? 0) + 1;
     state.metrics.goalFlipCount = Number(state.metrics.goalFlipCount ?? 0) + 1;
   }
-  logic.lastGoalsByEntity[key] = desiredState;
+
+  // Update history only on actual state change
+  if (prev !== desiredState) {
+    logic.prevPrevGoalsByEntity[key] = prev;
+    logic.lastGoalsByEntity[key] = desiredState;
+  }
   entity.debug ??= {};
   entity.debug.lastGoalSetSec = nowSec;
 }

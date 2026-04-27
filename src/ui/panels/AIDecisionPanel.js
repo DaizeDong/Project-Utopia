@@ -134,8 +134,15 @@ export class AIDecisionPanel {
     const resultSec = fmtSec(ai.lastEnvironmentResultSec);
     const err = ai.lastEnvironmentError ? escapeHtml(ai.lastEnvironmentError) : "";
 
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
     if (!directive) {
       return `
+        <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
         <div class="small muted">No environment directive applied yet.</div>
         <div class="small muted" style="margin-top:4px;">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
       `;
@@ -155,12 +162,52 @@ export class AIDecisionPanel {
       : "none";
 
     return `
+      <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
       <div class="small"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
       <div class="small"><b>weather:</b> ${escapeHtml(weather)} | <b>duration:</b> ${fmtNum(durationSec, 1)}s | <b>tension:</b> ${fmtNum(tension, 2)}</div>
       <div class="small"><b>focus:</b> ${focus}</div>
       <div class="small"><b>summary:</b> ${summary}</div>
       <div class="small"><b>steeringNotes:</b><br/>${notes}</div>
       <div class="small" style="margin-top:4px;"><b>eventSpawns:</b><br/>${eventLines}</div>
+      ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
+    `;
+  }
+
+  #renderStrategicBlock() {
+    const ai = this.state.ai;
+    const strategy = ai.strategy ?? null;
+    const source = ai.lastStrategySource ?? "none";
+    const model = ai.lastStrategyModel || this.state.metrics.proxyModel || "-";
+    const resultSec = fmtSec(ai.lastStrategySec);
+    const err = ai.lastStrategyError ? escapeHtml(ai.lastStrategyError) : "";
+
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
+    if (!strategy) {
+      return `
+        <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
+        <div class="small muted">No strategic decision applied yet.</div>
+        ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
+      `;
+    }
+
+    const budget = strategy.resourceBudget ?? {};
+    const constraints = Array.isArray(strategy.constraints) && strategy.constraints.length > 0
+      ? strategy.constraints.map((line) => escapeHtml(line)).join("<br/>")
+      : "none";
+
+    return `
+      <div class="small" style="font-weight:600;margin-bottom:4px;">${badgeLine}</div>
+      <div class="small"><b>source:</b> ${escapeHtml(source)} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
+      <div class="small"><b>priority:</b> ${escapeHtml(strategy.priority ?? "-")} | <b>phase:</b> ${escapeHtml(strategy.phase ?? "-")} | <b>risk:</b> ${fmtNum(strategy.riskTolerance, 2)}</div>
+      <div class="small"><b>resourceFocus:</b> ${escapeHtml(strategy.resourceFocus ?? "-")} | <b>workerFocus:</b> ${escapeHtml(strategy.workerFocus ?? "-")} | <b>defense:</b> ${escapeHtml(strategy.defensePosture ?? "-")}</div>
+      <div class="small"><b>goal:</b> ${escapeHtml(strategy.primaryGoal ?? "none")}</div>
+      <div class="small"><b>reserve:</b> wood=${fmtNum(budget.reserveWood, 0)} food=${fmtNum(budget.reserveFood, 0)}</div>
+      <div class="small"><b>constraints:</b><br/>${constraints}</div>
       ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
     `;
   }
@@ -179,11 +226,18 @@ export class AIDecisionPanel {
     const groupTarget = ai.groupStateTargets?.get?.(groupId) ?? null;
     const targetTtl = groupTarget ? fmtSec(Number(groupTarget.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0)) : "-";
 
+    const isLlm = source === "llm";
+    const badgeColor = isLlm ? "#4caf50" : "#ff9800";
+    const badgeDot = `<span style="color:${badgeColor};font-weight:700;">&#9679;</span>`;
+    const sourceLabel = isLlm ? `LLM (${escapeHtml(model)})` : "RULE-BASED";
+    const badgeLine = `${badgeDot} ${sourceLabel} at T=${resultSec}`;
+
     if (!policy) {
       return `
         <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;">
           <summary class="small"><b>${escapeHtml(groupId)}</b> (no policy)</summary>
-          <div class="small muted" style="margin-top:6px;">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
+          <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+          <div class="small muted">source=${source} model=${escapeHtml(model)} at=${resultSec}</div>
           ${err ? `<div class="small" style="margin-top:4px; color:#a33;"><b>error:</b> ${err}</div>` : ""}
         </details>
       `;
@@ -202,7 +256,8 @@ export class AIDecisionPanel {
     return `
       <details data-ai-decision-key="${escapeHtml(`policy:${groupId}`)}" style="margin-top:8px;" open>
         <summary class="small"><b>${escapeHtml(groupId)}</b> | ttl=${ttl}s | risk=${risk}</summary>
-        <div class="small" style="margin-top:6px;"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
+        <div class="small" style="margin-top:6px;font-weight:600;">${badgeLine}</div>
+        <div class="small"><b>source:</b> ${source} | <b>model:</b> ${escapeHtml(model)} | <b>at:</b> ${resultSec}</div>
         <div class="small"><b>expires:</b> ${expiresAtSec}</div>
         <div class="small"><b>stateTarget:</b> ${escapeHtml(groupTarget?.targetState ?? "none")} | <b>priority:</b> ${fmtNum(groupTarget?.priority ?? 0, 2)} | <b>targetTTL:</b> ${targetTtl}</div>
         <div class="small"><b>focus:</b> ${focus}</div>
@@ -224,6 +279,10 @@ export class AIDecisionPanel {
       <div>
         <div class="small" style="font-weight:700;">World Directive (Parsed)</div>
         <div style="margin-top:6px;">${this.#renderEnvironmentBlock()}</div>
+      </div>
+      <div style="margin-top:10px;">
+        <div class="small" style="font-weight:700;">Strategic Director (Parsed)</div>
+        <div style="margin-top:6px;">${this.#renderStrategicBlock()}</div>
       </div>
       <div style="margin-top:10px;">
         <div class="small" style="font-weight:700;">Group Policies (Parsed)</div>

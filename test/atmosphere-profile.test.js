@@ -32,16 +32,18 @@ test("atmosphere profile reacts to scenario family and weather pressure", () => 
   assert.ok(stormFrontier.markerStrength > clearFrontier.markerStrength);
 });
 
-test("atmosphere profile darkens end-state losses and brightens wins", () => {
+test("atmosphere profile darkens end-state losses vs neutral endings", () => {
+  // v0.8.0 Phase 4 — survival mode has no "win" outcome. Compare loss to
+  // the neutral (no-outcome) end state instead.
   const state = createInitialGameState({ seed: 1337 });
   state.session.phase = "end";
   state.session.outcome = "loss";
   const loss = deriveAtmosphereProfile(state);
 
-  state.session.outcome = "win";
-  const win = deriveAtmosphereProfile(state);
+  state.session.outcome = "none";
+  const neutral = deriveAtmosphereProfile(state);
 
-  assert.ok(loss.exposure < win.exposure);
-  assert.ok(loss.sunIntensity < win.sunIntensity);
+  assert.ok(loss.exposure < neutral.exposure);
+  assert.ok(loss.sunIntensity < neutral.sunIntensity);
 });
 

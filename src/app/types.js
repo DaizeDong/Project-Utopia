@@ -219,8 +219,8 @@
  * }} MetricsState
  *
  * @typedef {{
- *  enabled: boolean,
- *  coverageTarget?: "fallback"|"llm",
+ *  enabled: boolean, // false until the player explicitly turns on Autopilot.
+ *  coverageTarget?: "fallback"|"llm", // defaults to "fallback"; proxy health never flips this to "llm" by itself.
  *  runtimeProfile?: string,
  *  manualModeLocked?: boolean,
  *  mode: "fallback"|"llm",
@@ -284,7 +284,7 @@
  *
  * @typedef {{
  *  phase: "menu"|"active"|"end",
- *  outcome: "none"|"win"|"loss",
+ *  outcome: "none"|"loss",
  *  reason: string,
  *  endedAtSec: number
  * }} SessionState
@@ -317,7 +317,6 @@
  *  objectiveIndex: number,
  *  scenario?: ScenarioState,
  *  objectives: Array<{id:string,title:string,description:string,completed:boolean,progress:number,reward:string}>,
- *  objectiveHoldSec: number,
  *  recovery?: {
  *    charges:number,
  *    activeBoostSec:number,
@@ -326,8 +325,30 @@
  *    lastReason:string
  *  },
  *  objectiveHint?: string,
- *  objectiveLog: string[]
+ *  devIndex: number,
+ *  devIndexSmoothed: number,
+ *  devIndexDims: {population:number, economy:number, infrastructure:number, production:number, defense:number, resilience:number},
+ *  devIndexHistory: Array<{tick:number, value:number, dims:Record<string,number>}>,
+ *  raidEscalation: {tier:number, intervalTicks:number, intensityMultiplier:number, devIndexSample:number},
+ *  lastRaidTick: number,
+ *  wildlifeRuntime?: Record<string, unknown>
  * }} GameplayState
+ *
+ * @typedef {{
+ *  preset: "performance"|"balanced"|"quality"|"ultra"|"custom",
+ *  resolutionScale: number,
+ *  uiScale: number,
+ *  renderMode: "auto"|"3d"|"2d",
+ *  antialias: "auto"|"on"|"off",
+ *  shadowQuality: "auto"|"off"|"low"|"medium"|"high",
+ *  textureQuality: "low"|"medium"|"high"|"ultra",
+ *  powerPreference: "high-performance"|"default"|"low-power",
+ *  effectsEnabled: boolean,
+ *  weatherParticles: boolean,
+ *  fogEnabled: boolean,
+ *  heatLabels: boolean,
+ *  entityAnimations: boolean
+ * }} DisplaySettings
  *
  * @typedef {{
  *  mapTemplateId: string,
@@ -338,6 +359,7 @@
  *
  * @typedef {{
  *  farmRatio: number,
+ *  roleQuotas: {cook:number, smith:number, herbalist:number, haul:number, stone:number, herbs:number},
  *  selectedEntityId: string | null,
  *  selectedTile: SelectedTileState | null,
  *  tool: "road"|"farm"|"lumber"|"warehouse"|"wall"|"erase",
@@ -353,6 +375,7 @@
  *  visualPreset: "flat_worldsim",
  *  showTileIcons: boolean,
  *  showUnitSprites: boolean,
+ *  display: DisplaySettings,
  *  mapTemplateId: string,
  *  mapSeed: number|string,
  *  terrainTuning: Record<string, unknown>,
@@ -380,7 +403,8 @@
  *  redoStack?: Array<Record<string, unknown>>,
  *  doctrine: string,
  *  actionMessage: string,
- *  actionKind: "info"|"success"|"error"
+ *  actionKind: "info"|"success"|"error",
+ *  uiProfile?: "casual"|"full"
  * }} ControlState
  *
  * @typedef {{

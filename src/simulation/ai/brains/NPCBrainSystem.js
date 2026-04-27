@@ -319,10 +319,13 @@ export class NPCBrainSystem {
 
       const debugExchange = this.pendingResult.debug ?? {};
       const baseExchange = {
+        category: "npc-brain",
+        label: "NPC Brain",
         simSec: now,
         source: usedFallback ? "fallback" : "llm",
         fallback: usedFallback,
         model: this.pendingResult.model ?? state.ai.lastPolicyModel ?? "",
+        latencyMs: this.pendingResult.latencyMs ?? null,
         endpoint: debugExchange.endpoint ?? "/api/ai/policy",
         requestedAtIso: debugExchange.requestedAtIso ?? "",
         requestSummary: debugExchange.requestSummary ?? null,
@@ -332,18 +335,56 @@ export class NPCBrainSystem {
         rawModelContent: debugExchange.rawModelContent ?? "",
         parsedBeforeValidation: debugExchange.parsedBeforeValidation ?? null,
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
+        decisionResult: { policies, stateTargets },
         error: this.pendingResult.error ?? debugExchange.error ?? "",
       };
       state.ai.lastPolicyExchange = baseExchange;
       state.ai.policyExchanges ??= [];
       state.ai.policyExchanges.unshift(baseExchange);
       state.ai.policyExchanges = state.ai.policyExchanges.slice(0, 8);
+      state.ai.llmCallLog ??= [];
+      state.ai.llmCallLog.unshift(baseExchange);
+      state.ai.llmCallLog = state.ai.llmCallLog.slice(0, 24);
       state.ai.lastPolicyExchangeByGroup ??= {};
       for (const policy of policies) {
         state.ai.lastPolicyExchangeByGroup[policy.groupId] = {
           ...baseExchange,
           groupId: policy.groupId,
         };
+      }
+
+      // v0.8.2 Round-5b Wave-1 (01e Step 2) — policy-change ring buffer.
+      // Pure observer write: compares the first worker policy's focus + the
+      // llm/fallback source against the previous entry; pushes a new record
+      // when either dimension flips (or at least 5 s have elapsed). Cap 32
+      // so the Timeline panel / future debug surface reads bounded history
+      // without modifying sim outputs (benchmark bit-identical).
+      const firstWorker = policies.find((p) => String(p.groupId ?? "").toLowerCase() === "workers") ?? policies[0] ?? null;
+      const focusTag = String(firstWorker?.focus ?? firstWorker?.data?.focus ?? "");
+      const errorKind = this.pendingResult.errorKind ?? (this.pendingResult.error ? "unknown" : "none");
+      state.ai.policyHistory ??= [];
+      const prev = state.ai.policyHistory[0] ?? null;
+      const focusChanged = !prev || prev.focus !== focusTag;
+      const sourceChanged = !prev || prev.source !== state.ai.lastPolicySource;
+      const elapsedGuard = !prev || ((now - Number(prev.atSec ?? 0)) >= 5);
+      if (!prev || focusChanged || sourceChanged || !elapsedGuard === false) {
+        // Only push on actual change; skip duplicates within 5 s.
+        if (!prev || focusChanged || sourceChanged || (now - Number(prev.atSec ?? 0)) >= 5) {
+          state.ai.policyHistory.unshift({
+            atSec: now,
+            source: state.ai.lastPolicySource,
+            badgeState: usedFallback
+              ? (this.pendingResult.error ? "fallback-degraded" : "fallback-healthy")
+              : "llm-live",
+            focus: focusTag,
+            errorKind,
+            errorMessage: String(this.pendingResult.error ?? "").slice(0, 120),
+            model: String(this.pendingResult.model ?? ""),
+          });
+          if (state.ai.policyHistory.length > 32) {
+            state.ai.policyHistory = state.ai.policyHistory.slice(0, 32);
+          }
+        }
       }
 
       if (state.debug?.aiTrace) {
@@ -378,18 +419,17 @@ export class NPCBrainSystem {
       }
     }
 
+    const predators = state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [];
+    const herbivores = state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [];
+    const targetContext = { predators, herbivores };
     for (const e of [...state.agents, ...state.animals]) {
       e.policy = state.ai.groupPolicies.get(e.groupId)?.data ?? null;
       const groupTarget = state.ai.groupStateTargets?.get?.(e.groupId) ?? null;
       let targetForEntity = groupTarget;
       if (groupTarget) {
-        const context = {
-          predators: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.PREDATORS && animal.alive !== false) ?? [],
-          herbivores: state.animals?.filter?.((animal) => animal.groupId === GROUP_IDS.HERBIVORES && animal.alive !== false) ?? [],
-        };
-        const feasibilityContext = buildFeasibilityContext(e, String(e.groupId ?? ""), state, context);
+        const feasibilityContext = buildFeasibilityContext(e, String(e.groupId ?? ""), state, targetContext);
         const feasible = isStateFeasible(e, String(e.groupId ?? ""), groupTarget.targetState, state, {
-          ...context,
+          ...targetContext,
           feasibilityContext,
         });
         if (!feasible.ok) {
@@ -418,12 +458,20 @@ export class NPCBrainSystem {
     state.ai.lastPolicyDecisionSec = state.metrics.timeSec;
     markAiDecisionRequest(state, "policy", state.metrics.timeSec);
     const summary = buildPolicySummary(state);
+    if (services.memoryStore) {
+      const memCtx = services.memoryStore.formatForPrompt(
+        "workers food wood task policy",
+        state.metrics.timeSec,
+      );
+      if (memCtx) summary._memoryContext = memCtx;
+    }
+    const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
-        source: state.ai.enabled ? "llm" : "fallback",
+        source: wantsLlm ? "llm" : "fallback",
         channel: "policy-request",
-        fallback: !state.ai.enabled,
+        fallback: !wantsLlm,
         model: state.metrics.proxyModel ?? services.llmClient.lastModel ?? "",
         weather: summary.world.weather.current,
         events: Object.keys(summary.groups).join(", "),
@@ -432,7 +480,7 @@ export class NPCBrainSystem {
       state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
     }
     this.pendingPromise = services.llmClient
-      .requestPolicies(summary, state.ai.enabled)
+      .requestPolicies(summary, wantsLlm)
       .then((result) => {
         this.pendingResult = result;
       })
