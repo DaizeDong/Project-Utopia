@@ -4,10 +4,30 @@ const DEFAULT_BENCHMARK_CONFIG = Object.freeze({
   sampleStartSec: 1.2,
 });
 
+const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
+  preset: "balanced",
+  resolutionScale: 1,
+  uiScale: 1,
+  renderMode: "auto",
+  antialias: "auto",
+  shadowQuality: "auto",
+  textureQuality: "high",
+  powerPreference: "high-performance",
+  effectsEnabled: true,
+  weatherParticles: true,
+  fogEnabled: true,
+  heatLabels: true,
+  entityAnimations: true,
+});
+
 function clampNumber(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function sanitizeEnum(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
 }
 
 function parseScheduleArray(rawSchedule) {
@@ -71,6 +91,41 @@ export function sanitizeBenchmarkConfig(rawConfig = {}, fallback = DEFAULT_BENCH
   };
 }
 
+export function sanitizeDisplaySettings(rawSettings = {}, fallback = DEFAULT_DISPLAY_SETTINGS) {
+  const corrections = [];
+  const input = rawSettings && typeof rawSettings === "object" ? rawSettings : {};
+  const settings = {
+    preset: sanitizeEnum(input.preset, ["performance", "balanced", "quality", "ultra", "custom"], fallback.preset),
+    resolutionScale: clampNumber(input.resolutionScale, 0.5, 1.75, fallback.resolutionScale),
+    uiScale: clampNumber(input.uiScale, 0.8, 1.4, fallback.uiScale),
+    renderMode: sanitizeEnum(input.renderMode, ["auto", "3d", "2d"], fallback.renderMode),
+    antialias: sanitizeEnum(input.antialias, ["auto", "on", "off"], fallback.antialias),
+    shadowQuality: sanitizeEnum(input.shadowQuality, ["auto", "off", "low", "medium", "high"], fallback.shadowQuality),
+    textureQuality: sanitizeEnum(input.textureQuality, ["low", "medium", "high", "ultra"], fallback.textureQuality),
+    powerPreference: sanitizeEnum(input.powerPreference, ["high-performance", "default", "low-power"], fallback.powerPreference),
+    effectsEnabled: typeof input.effectsEnabled === "boolean" ? input.effectsEnabled : fallback.effectsEnabled,
+    weatherParticles: typeof input.weatherParticles === "boolean" ? input.weatherParticles : fallback.weatherParticles,
+    fogEnabled: typeof input.fogEnabled === "boolean" ? input.fogEnabled : fallback.fogEnabled,
+    heatLabels: typeof input.heatLabels === "boolean" ? input.heatLabels : fallback.heatLabels,
+    entityAnimations: typeof input.entityAnimations === "boolean" ? input.entityAnimations : fallback.entityAnimations,
+  };
+
+  if (settings.preset !== input.preset) corrections.push("Display preset reset to balanced.");
+  if (settings.resolutionScale !== input.resolutionScale) {
+    corrections.push(`Resolution scale clamped to ${Math.round(settings.resolutionScale * 100)}%.`);
+  }
+  if (settings.uiScale !== input.uiScale) {
+    corrections.push(`UI scale clamped to ${Math.round(settings.uiScale * 100)}%.`);
+  }
+  if (settings.renderMode !== input.renderMode) corrections.push("Render mode reset to Auto.");
+  if (settings.antialias !== input.antialias) corrections.push("Anti-aliasing preference reset to Auto.");
+  if (settings.shadowQuality !== input.shadowQuality) corrections.push("Shadow quality reset to Auto.");
+  if (settings.textureQuality !== input.textureQuality) corrections.push("Texture quality reset to High.");
+  if (settings.powerPreference !== input.powerPreference) corrections.push("GPU power preference reset to High Performance.");
+
+  return { settings, corrections };
+}
+
 export function sanitizeControlSettings(controls) {
   const corrections = [];
   if (!controls || typeof controls !== "object") {
@@ -104,6 +159,10 @@ export function sanitizeControlSettings(controls) {
   controls.showTileIcons = Boolean(controls.showTileIcons);
   controls.showUnitSprites = Boolean(controls.showUnitSprites);
 
+  const displayResult = sanitizeDisplaySettings(controls.display, DEFAULT_DISPLAY_SETTINGS);
+  controls.display = displayResult.settings;
+  corrections.push(...displayResult.corrections);
+
   const benchmarkResult = sanitizeBenchmarkConfig(
     controls.benchmarkConfig,
     DEFAULT_BENCHMARK_CONFIG,
@@ -114,4 +173,4 @@ export function sanitizeControlSettings(controls) {
   return { corrections };
 }
 
-export { DEFAULT_BENCHMARK_CONFIG };
+export { DEFAULT_BENCHMARK_CONFIG, DEFAULT_DISPLAY_SETTINGS };
