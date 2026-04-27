@@ -59,7 +59,7 @@ export class AIAutomationPanel {
       ? "LLM calls enabled when proxy is available"
       : "LLM calls disabled; fallback directors still visible";
     const boundaryCopy = enabled
-      ? "Autopilot ON attempts LLM calls for Environment Director, Strategic Director, and NPC Brain when the proxy/API key is available. Build Automation remains rule-based, and Colony Planner LLM is documented but not wired into this runtime."
+      ? "Autopilot ON attempts LLM calls for Environment Director, Strategic Director, NPC Brain, and Colony Planner LLM (AgentDirectorSystem) when the proxy/API key is available. Build Automation remains rule-based and serves as AgentDirector's algorithmic fallback when the LLM is unavailable."
       : "Autopilot OFF means player build control is manual and live LLM calls are disabled. The rows below can still update because rule-based simulation directors keep weather, strategy, NPC policy, and build safety rails running.";
     const envExchange = ai.lastEnvironmentExchange ?? null;
     const strategicExchange = ai.lastStrategicExchange ?? null;
