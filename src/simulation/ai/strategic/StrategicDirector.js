@@ -2,6 +2,12 @@ import { DecisionScheduler } from "./DecisionScheduler.js";
 import { BALANCE } from "../../../config/balance.js";
 import { TILE } from "../../../config/constants.js";
 import { listTilesByType, toIndex, getTileState } from "../../../world/grid/Grid.js";
+import {
+  buildStrategicAnalytics,
+  formatStrategicAnalyticsForLLM,
+  validateStrategicPick,
+  candidateUseRate,
+} from "./StrategicAnalytics.js";
 
 // ── Living World v0.8.0 Phase 5 (patches 14-18) — strategic goal tuning ─────
 /** Threat-tier at or above which we switch to fortify_and_survive. */
@@ -399,7 +405,14 @@ export function synthesizePrimaryGoal(strategy, state) {
   const smithies = buildings.smithies ?? 0;
   const kitchens = buildings.kitchens ?? 0;
   const food = Number(state?.resources?.food ?? 0);
-  const workers = Number(state?.metrics?.populationStats?.workers ?? 0);
+  // Round 2: harness/test states may not have populated populationStats yet
+  // (only GameApp's main loop sets it). Fall back to the live agents
+  // array so synthesize doesn't mis-fire the "workers<=3" survival
+  // branch on a state that has 12+ healthy workers.
+  let workers = Number(state?.metrics?.populationStats?.workers ?? 0);
+  if (!workers && Array.isArray(state?.agents)) {
+    workers = state.agents.filter((a) => a?.type === "WORKER" && a?.alive !== false).length;
+  }
   const threat = Number(state?.gameplay?.threat ?? 0);
   const phase = strategy?.phase ?? "bootstrap";
   const priority = strategy?.priority ?? "grow";
@@ -668,6 +681,13 @@ export class StrategicDirector {
       workers, tools, food, threat, devSmoothed, previousPhase,
     });
 
+    // Round 2: ranked candidate menus. The LLM picks priority/phase/
+    // resourceFocus from these instead of inventing them. The post-
+    // validator (validateStrategicPick) falls back to the top-1
+    // candidate when the LLM violates the menu.
+    const analytics = buildStrategicAnalytics(state);
+    const computedSignalsBlock = formatStrategicAnalyticsForLLM(analytics);
+
     const payload = {
       channel: "strategic-director",
       summary: {
@@ -702,14 +722,20 @@ export class StrategicDirector {
         medical: clinics > 0 ? "complete" : herbGardens > 0 ? "ready_for_clinic" : "no_herbs",
       },
       previous: { phase: previousPhase, primaryGoal: previousGoal },
+      computedSignals: computedSignalsBlock,
+      computedSignalsRaw: analytics,
       phasePreamble: preamble,
       instructions: [
         "You are a phase-aware strategic director. Pick THE single best phase and write a non-empty primaryGoal.",
+        "PICK FROM MENUS (Round 2): `strategy.priority` MUST be one of the priorityCandidates values; `strategy.phase` MUST be one of the phaseCandidates values; `strategy.resourceFocus` SHOULD be the focus column of the top bottleneck (or 'balanced').",
+        "If a Constraint Flag forces survive/defend/fortify, OBEY IT — do not override.",
+        "Strongly prefer the TOP-1 candidate per field. Only choose runner-up when its score is within 0.10 of the leader AND you have a domain reason. Random rotation hurts continuity.",
+        "When bootstrap is met (farms>=4 AND warehouses>=1), do NOT pick phase=bootstrap. Move to industrialize→process→growth/optimize.",
         "Phases: bootstrap < growth < industrialize < process < fortify | optimize. Progress monotonically unless threat>75 (fortify) or food<15 (bootstrap survive).",
-        "Bootstrap exit: farms>=4 AND warehouses>=1 — DO NOT remain in bootstrap once both are met. Move to industrialize if no quarry, else process if no kitchen, else growth.",
+        "Bootstrap exit: farms>=4 AND warehouses>=1 — DO NOT remain in bootstrap once both are met.",
         "Long-horizon multipliers beat greedy headcount: smithy (+15% all production), kitchen (food→meals 2x), clinic (mortality reduction). Recommend investing in these BEFORE adding more farms when chainStatus shows ready_for_X.",
         "Worker bottleneck: if tools<workers/2 and quarries==0, the bottleneck is tools NOT headcount — primaryGoal should drive quarry→smithy chain.",
-        "Output strict JSON. strategy.primaryGoal MUST be a concrete imperative sentence under 80 chars (e.g., 'Build smithy to unlock tool multiplier' — not empty, not generic 'optimize colony').",
+        "Output strict JSON. strategy.primaryGoal MUST be a concrete imperative sentence under 80 chars referencing the chosen bottleneck/phase (e.g., 'Build smithy to unlock tool multiplier' — not empty, not generic 'optimize colony').",
         "strategy.constraints: 2-5 short rules the tactical planner will follow this tick.",
         "Required strategy keys: priority, phase, primaryGoal, resourceFocus, defensePosture, riskTolerance, workerFocus, expansionDirection, environmentPreference, constraints, resourceBudget.",
       ].join(" "),
@@ -755,6 +781,24 @@ export class StrategicDirector {
       } else {
         const guarded = guardStrategy(this.pendingResult.data);
         strategy = guarded.strategy;
+
+        // Round 2 — validate the LLM picks against the candidate menus.
+        // Falls back to top-1 candidate per field on violation; tracks
+        // candidateUseRate so the bench can report menu adherence.
+        const analytics = buildStrategicAnalytics(state);
+        const validated = validateStrategicPick(strategy, analytics);
+        strategy = validated.strategy;
+
+        state.ai.strategy ??= {};
+        const useRate = candidateUseRate(validated.picks);
+        state.ai.strategyPicks = validated.picks;
+        state.ai.strategyCandidateUseRate = useRate;
+        // Running average across decisions
+        const prevAvg = Number(state.ai.candidateUseRateAvg ?? 0);
+        const prevCount = Number(state.ai.candidateUseRateSamples ?? 0);
+        const newCount = prevCount + 1;
+        state.ai.candidateUseRateSamples = newCount;
+        state.ai.candidateUseRateAvg = (prevAvg * prevCount + useRate) / newCount;
 
         // Post-validation: ensure primaryGoal is non-empty. The
         // strategic-director.md system prompt did not historically

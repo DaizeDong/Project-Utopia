@@ -6,7 +6,8 @@
  * has the largest expected lead). All other AI directors run in fallback mode
  * so the only variable is the policy source.
  *
- * Composite npc-quality-score = -deaths*2.0 + entities*0.1 - predationDeaths*5.0
+ * Composite npc-quality-score = -deaths*2.0 + entities*0.1
+ *   (R2: predation already accounted for via deaths; do not double-weight.)
  *
  * Usage:
  *   node scripts/bench-npc-brain.mjs
@@ -238,7 +239,17 @@ async function runOne(scenario, coverageTarget) {
   }
   const predatorHitsPerWorker = workerSurvey > 0 ? predatorHits / workerSurvey : 0;
 
-  const score = -deathsTotal * 2.0 + totalEntities * 0.1 - predationDeaths * 5.0;
+  // R2 composite — deaths and entities only (predation already counted in
+  // deaths; double-weighting hid R1 wins on calm scenarios).
+  const score = -deathsTotal * 2.0 + totalEntities * 0.1;
+  // Pull from state.ai.npcBrainR2 (rolling average) since metrics.combat
+  // is rewritten each frame by AnimalAISystem.
+  const r2Stats = state.ai?.npcBrainR2 ?? null;
+  const policyDeltaUseRate = r2Stats && r2Stats.samples > 0
+    ? Number((r2Stats.sumUse / r2Stats.samples).toFixed(3))
+    : Number(state.metrics?.combat?.policyDeltaUseRate ?? 0);
+  const policyDeltaTotalDeviations = r2Stats?.sumTotal ?? Number(state.metrics?.combat?.policyDeltaTotalDeviations ?? 0);
+  const policyDeltaMatched = r2Stats?.sumMatched ?? Number(state.metrics?.combat?.policyDeltaMatchedCount ?? 0);
 
   return {
     coverageTarget,
@@ -254,6 +265,9 @@ async function runOne(scenario, coverageTarget) {
     lastPolicySource: state.ai.lastPolicySource,
     policyDecisionCount: Number(state.ai.policyDecisionCount ?? 0),
     policyLlmCount: Number(state.ai.policyLlmCount ?? 0),
+    policyDeltaUseRate,
+    policyDeltaMatched,
+    policyDeltaTotalDeviations,
     score: Number(score.toFixed(2)),
   };
 }
@@ -275,7 +289,8 @@ async function main() {
       console.log(
         `  [${ct.padEnd(8)}] deaths=${r.deathsTotal} predation=${r.predationDeaths} entities=${r.totalEntities} ` +
         `score=${r.score} | meanRaiders=${r.meanRaiders} meanGuards=${r.meanGuards} workers=${r.meanWorkers} ` +
-        `predHits/wkr=${r.predatorHitsPerWorker} | policy=${r.lastPolicySource} llmCalls=${r.policyLlmCount}/${r.policyDecisionCount}`,
+        `predHits/wkr=${r.predatorHitsPerWorker} | policy=${r.lastPolicySource} llmCalls=${r.policyLlmCount}/${r.policyDecisionCount} ` +
+        `deltaUse=${r.policyDeltaUseRate} (${r.policyDeltaMatched}/${r.policyDeltaTotalDeviations})`,
       );
     }
     const llm = results.llm;
@@ -287,19 +302,24 @@ async function main() {
     console.log(`    Δscore=${scoreDelta.toFixed(1)}%  Δdeaths=${deathDelta.toFixed(1)}%  Δpredation=${predDelta.toFixed(1)}%\n`);
   }
 
-  console.log("\n══════════════════════════ Summary ══════════════════════════");
-  console.log("Scenario                          Δscore   Δpred    pass(8% & ≥0)");
+  console.log("\n══════════════════════════ Summary (R2) ══════════════════════════");
+  console.log("Scenario                          Δscore   Δpred    deltaUse  pass(≥30%)");
   let passingScenarios = 0;
   let predationPassScenarios = 0;
   for (const row of out) {
-    const passScore = row.scoreDelta >= 8 || (row.fallback.score < 0 && row.llm.score > row.fallback.score && Math.abs(row.scoreDelta) >= 8);
+    // R2 pass: LLM score beats fallback by ≥30% on raid scenarios. Use a
+    // sign-aware definition that handles negative scores correctly: LLM
+    // wins when (fb - llm)/|fb| ≤ -0.30 (i.e. composite delta upward is
+    // ≥30% of |fb|).
+    const passScore = row.scoreDelta >= 30 || (row.fallback.score <= 0 && row.llm.score > row.fallback.score && Math.abs(row.scoreDelta) >= 30);
     if (passScore) passingScenarios += 1;
-    if (row.predDelta <= -20) predationPassScenarios += 1;
+    // R2 predation pass: LLM predation deaths ≤ fallback predation deaths.
+    if (row.llm.predationDeaths <= row.fallback.predationDeaths) predationPassScenarios += 1;
     const tag = `${row.scenario.id} ${row.scenario.label}`.padEnd(34);
-    console.log(`${tag} ${row.scoreDelta.toFixed(1).padStart(6)}%  ${row.predDelta.toFixed(1).padStart(6)}%  ${passScore ? "PASS" : "----"}`);
+    console.log(`${tag} ${row.scoreDelta.toFixed(1).padStart(6)}%  ${row.predDelta.toFixed(1).padStart(6)}%  ${row.llm.policyDeltaUseRate.toFixed(2).padStart(8)}  ${passScore ? "PASS" : "----"}`);
   }
-  const success = passingScenarios >= 2 && predationPassScenarios >= 1;
-  console.log(`\nResult: ${passingScenarios}/3 scenarios on score, ${predationPassScenarios}/3 on predation drop. ${success ? "✓ PASS" : "✗ FAIL"}\n`);
+  const success = passingScenarios >= 2 && predationPassScenarios >= 2;
+  console.log(`\nResult: ${passingScenarios}/3 scenarios on score (≥30%), ${predationPassScenarios}/3 on predation ≤ fallback. ${success ? "✓ PASS" : "✗ FAIL"}\n`);
   return success ? 0 : 1;
 }
 

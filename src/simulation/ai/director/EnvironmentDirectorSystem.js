@@ -7,6 +7,10 @@ import { VISITOR_KIND } from "../../../config/constants.js";
 import { createVisitor } from "../../../entities/EntityFactory.js";
 import { isPassable, tileToWorld } from "../../../world/grid/Grid.js";
 import { pushWarning } from "../../../app/warnings.js";
+import {
+  buildEnvironmentMenu,
+  validateEnvironmentPick,
+} from "./EnvironmentAnalytics.js";
 
 // v0.8.2 LLM-tune (env-director): perception block injected onto the
 // world summary BEFORE it ships to LLMClient.requestEnvironment. The
@@ -200,6 +204,10 @@ export class EnvironmentDirectorSystem {
     this.name = "EnvironmentDirectorSystem";
     this.pendingPromise = null;
     this.pendingResult = null;
+    // Round 2: holds the pre-rated weather/event menu we injected into the
+    // outgoing prompt, so the post-validation step can verify the LLM's
+    // pick was on-menu when the result returns.
+    this.pendingMenu = null;
     // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — last sim-second the
     // threat-gated raid micro-pulse fired. Persisted on the system instance
     // (not state) so snapshot reload restarts the cooldown — harmless: at
@@ -260,8 +268,31 @@ export class EnvironmentDirectorSystem {
 
     if (this.pendingResult) {
       const now = state.metrics.timeSec;
-      applyEnvironmentDirective(state, this.pendingResult.data);
+      // Round 2: post-validate the LLM's pick against the candidate menu we
+      // pre-computed when the request was issued. We DO NOT post-validate
+      // fallback directives — the rule-based fallback is already
+      // deterministic and fragility-aware.
       const usedFallback = Boolean(this.pendingResult.fallback);
+      const menu = this.pendingMenu;
+      let candidateUseRate = 1;
+      let postValidationReasons = [];
+      if (!usedFallback && menu && this.pendingResult.data) {
+        const check = validateEnvironmentPick(
+          this.pendingResult.data,
+          menu.weatherCandidates,
+          menu.eventCandidates,
+          menu.posture,
+          menu.recommendedDurationSec ?? null,
+          menu.recommendedReliefSpawn ?? null,
+        );
+        candidateUseRate = check.candidateUseRate;
+        postValidationReasons = check.reasons;
+        // Replace the directive with the sanitized one. If the LLM picked
+        // off-menu, we silently rewrite to top-1; the reason is logged on
+        // the exchange so it surfaces in the AI panel.
+        this.pendingResult.data = check.fixed;
+      }
+      applyEnvironmentDirective(state, this.pendingResult.data);
       state.ai.mode = usedFallback ? "fallback" : "llm";
       state.ai.lastEnvironmentSource = usedFallback ? "fallback" : "llm";
       state.ai.lastEnvironmentResultSec = now;
@@ -295,8 +326,24 @@ export class EnvironmentDirectorSystem {
         guardedOutput: debugExchange.guardedOutput ?? this.pendingResult.data ?? null,
         decisionResult: this.pendingResult.data ?? null,
         error: this.pendingResult.error ?? debugExchange.error ?? "",
+        // Round 2: pre-rated menu + post-validation telemetry.
+        candidateUseRate,
+        postValidationReasons,
+        storytellerPosture: menu?.posture?.posture ?? null,
+        threatWindow: menu?.threatWindow ?? null,
+        topWeather: menu?.weatherCandidates?.[0]?.weather ?? null,
+        topWeatherScore: menu?.weatherCandidates?.[0]?.score ?? null,
       };
       state.ai.lastEnvironmentExchange = environmentExchange;
+      // Round 2: rolling avg of candidateUseRate across LLM-only calls. The
+      // bench reads this to confirm ≥ 0.85 on 3/3 scenarios.
+      if (!usedFallback) {
+        const prev = Number(state.ai.environmentCandidateUseRateAvg ?? 0);
+        const n = Number(state.ai.environmentLlmCount ?? 1);
+        state.ai.environmentCandidateUseRateAvg = Number(
+          (prev + (candidateUseRate - prev) / Math.max(1, n)).toFixed(4),
+        );
+      }
       state.ai.environmentExchanges ??= [];
       state.ai.environmentExchanges.unshift(environmentExchange);
       state.ai.environmentExchanges = state.ai.environmentExchanges.slice(0, 8);
@@ -318,6 +365,7 @@ export class EnvironmentDirectorSystem {
         state.debug.aiTrace = state.debug.aiTrace.slice(0, 36);
       }
       this.pendingResult = null;
+      this.pendingMenu = null;
     }
 
     if (this.pendingPromise) return;
@@ -346,6 +394,21 @@ export class EnvironmentDirectorSystem {
     // perception fields are no-ops for it, so the rule-based path is
     // unchanged. Tested in test/llm-environment-tune.test.js.
     summary._fragilityPerception = buildEnvironmentPerception(summary);
+    // Round 2: pre-rate every legal weather/event option, classify storyteller
+    // posture, and embed the markdown menu directly in the summary so it
+    // appears in the LLM prompt JSON. Stash the raw menu on the system
+    // instance so we can post-validate the LLM's pick when it returns.
+    const environmentMenu = buildEnvironmentMenu(summary, summary._fragilityPerception);
+    summary._environmentMenu = {
+      menuMarkdown: environmentMenu.menuMarkdown,
+      posture: environmentMenu.posture,
+      threatWindow: environmentMenu.threatWindow,
+      weatherCandidates: environmentMenu.weatherCandidates,
+      eventCandidates: environmentMenu.eventCandidates,
+      recommendedDurationSec: environmentMenu.recommendedDurationSec,
+      recommendedReliefSpawn: environmentMenu.recommendedReliefSpawn,
+    };
+    this.pendingMenu = environmentMenu;
     const wantsLlm = state.ai.enabled && state.ai.coverageTarget !== "fallback";
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({

@@ -224,6 +224,8 @@ async function runScenario({ template, seed, durationSec }, useLLM, llmClient) {
     primaryGoalNonEmpty,
     primaryGoalChecks,
     primaryGoalRate: primaryGoalChecks > 0 ? primaryGoalNonEmpty / primaryGoalChecks : 0,
+    candidateUseRateAvg: Number(state.ai?.candidateUseRateAvg ?? 0),
+    candidateUseRateSamples: Number(state.ai?.candidateUseRateSamples ?? 0),
     score,
     goalSamples: goalSamples.slice(0, 6),
     phaseSamples,
@@ -255,7 +257,8 @@ async function main() {
     const llm = await runScenario(scen, true, llmClient);
     console.log(`  llm:      dev=${fmt(llm.devIndexSmoothed)} ent=${llm.totalEntities} deaths=${llm.deathsTotal} ` +
       `phases=${llm.phasesSeen.length} rank=${llm.maxPhaseRank} score=${fmt(llm.score)} ` +
-      `decisions=${llm.decisionCount} goal%=${fmt(llm.primaryGoalRate * 100, 1)} src=${llm.lastSource}`);
+      `decisions=${llm.decisionCount} goal%=${fmt(llm.primaryGoalRate * 100, 1)} ` +
+      `candUse%=${fmt(llm.candidateUseRateAvg * 100, 1)} src=${llm.lastSource}`);
 
     const delta = llm.score - fb.score;
     const deltaPct = fb.score !== 0 ? (delta / Math.abs(fb.score)) * 100 : 0;
@@ -269,35 +272,55 @@ async function main() {
   }
 
   // Summary
-  console.log("┌──────┬───────────┬────────────┬────────────┬─────────┬─────────┬─────────┐");
-  console.log("│ Scen │ Template  │ FB score   │ LLM score  │ Δ%      │ goal%   │ Verdict │");
-  console.log("├──────┼───────────┼────────────┼────────────┼─────────┼─────────┼─────────┤");
+  console.log("┌──────┬───────────┬────────────┬────────────┬─────────┬─────────┬─────────┬─────────┐");
+  console.log("│ Scen │ Template  │ FB score   │ LLM score  │ Δ%      │ goal%   │ candUse%│ Verdict │");
+  console.log("├──────┼───────────┼────────────┼────────────┼─────────┼─────────┼─────────┼─────────┤");
   let wins = 0;
+  let r2Wins = 0;  // R2 bar: ≥75% delta
   let totalGoalNonEmpty = 0;
   let totalGoalChecks = 0;
+  let candUseSum = 0;
+  let candUseCount = 0;
   for (const r of results) {
-    const winFlag = r.deltaPct >= 5 ? "WIN" : "LOSS";
+    const winFlag = r.deltaPct >= 75 ? "R2-WIN" : (r.deltaPct >= 5 ? "WIN" : "LOSS");
     if (r.deltaPct >= 5) wins += 1;
+    if (r.deltaPct >= 75) r2Wins += 1;
     totalGoalNonEmpty += r.llm.primaryGoalNonEmpty;
     totalGoalChecks += r.llm.primaryGoalChecks;
+    if (r.llm.candidateUseRateSamples > 0) {
+      candUseSum += r.llm.candidateUseRateAvg;
+      candUseCount += 1;
+    }
     console.log(
       `│ ${r.scen.id.padEnd(4)} │ ${r.scen.template.slice(0, 9).padEnd(9)} │ ${
         fmt(r.fallback.score).padStart(10)
       } │ ${fmt(r.llm.score).padStart(10)} │ ${fmt(r.deltaPct, 1).padStart(7)} │ ${
         fmt(r.llm.primaryGoalRate * 100, 1).padStart(7)
-      } │ ${winFlag.padEnd(7)} │`,
+      } │ ${fmt(r.llm.candidateUseRateAvg * 100, 1).padStart(7)} │ ${winFlag.padEnd(7)} │`,
     );
   }
-  console.log("└──────┴───────────┴────────────┴────────────┴─────────┴─────────┴─────────┘");
+  console.log("└──────┴───────────┴────────────┴────────────┴─────────┴─────────┴─────────┴─────────┘");
 
   const overallGoalRate = totalGoalChecks > 0 ? totalGoalNonEmpty / totalGoalChecks : 0;
-  console.log(`\nWins (Δ≥5%): ${wins}/${SCENARIOS.length}`);
+  const overallCandUse = candUseCount > 0 ? candUseSum / candUseCount : 0;
+  console.log(`\nWins (Δ≥5%):  ${wins}/${SCENARIOS.length}`);
+  console.log(`R2 Wins (Δ≥75%): ${r2Wins}/${SCENARIOS.length}`);
   console.log(`Overall LLM primaryGoal-non-empty rate: ${fmt(overallGoalRate * 100, 1)}%`);
+  console.log(`Overall candidateUseRate (avg per scenario): ${fmt(overallCandUse * 100, 1)}%`);
 
   const passWins = wins >= 2;
   const passGoals = overallGoalRate >= 0.8;
+  const passR2 = r2Wins >= 3;
+  const passCandUse = overallCandUse >= 0.8;
   if (passWins && passGoals) {
-    console.log("\nPASS — strategic LLM beats fallback on ≥2 of 3 scenarios with ≥80% goal coverage.\n");
+    if (passR2 && passCandUse) {
+      console.log("\nPASS R2 — LLM beats fallback by ≥75% on 3/3 AND candidateUseRate ≥ 80%.\n");
+    } else {
+      console.log("\nPASS R1 — LLM beats fallback on ≥2 of 3 scenarios with ≥80% goal coverage.");
+      if (!passR2) console.log(`  R2 bar miss: needs 3/3 ≥75% wins, got ${r2Wins}`);
+      if (!passCandUse) console.log(`  R2 bar miss: needs ≥80% candidateUseRate, got ${fmt(overallCandUse * 100, 1)}%`);
+      console.log();
+    }
     process.exit(0);
   }
   console.log("\nFAIL — tuning targets not met:");
