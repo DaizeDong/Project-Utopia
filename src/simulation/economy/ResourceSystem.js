@@ -21,7 +21,12 @@ function ensureResourceFlowState(state) {
   if (!state._resourceFlowAccum) {
     const accum = {};
     for (const r of TRACKED_FLOW_RESOURCES) {
-      accum[r] = { produced: 0, consumed: 0, spoiled: 0 };
+      // v0.8.3 entity-death cleanup (Bug D) — `recovered` bucket tracks
+      // resources refunded back to the colony stockpile when a worker
+      // dies. Kept distinct from `produced` so HUDController's
+      // production-rate breakdown isn't artificially inflated by death
+      // refunds.
+      accum[r] = { produced: 0, consumed: 0, spoiled: 0, recovered: 0 };
     }
     state._resourceFlowAccum = accum;
   }
@@ -116,18 +121,18 @@ export function recordProductionEntry(state, ix, iz, kind, lastYield, idleReason
 /**
  * True-source resource flow emitter. Called by ProcessingSystem (farm
  * harvest, kitchen consumption, spoilage) and MortalitySystem (medicine
- * heal) so HUDController can render a breakdown. Safe to call with 0 or
- * negative amounts (clamped to 0).
+ * heal, death-carry refund) so HUDController can render a breakdown.
+ * Safe to call with 0 or negative amounts (clamped to 0).
  * @param {object} state - Game state root.
  * @param {"food"|"wood"|"stone"|"herbs"|"meals"|"medicine"|"tools"} resource
- * @param {"produced"|"consumed"|"spoiled"} kind
+ * @param {"produced"|"consumed"|"spoiled"|"recovered"} kind
  * @param {number} amount - Non-negative quantity to record.
  */
 export function recordResourceFlow(state, resource, kind, amount) {
   const qty = Math.max(0, Number(amount) || 0);
   if (qty <= 0) return;
   if (!TRACKED_FLOW_RESOURCES.includes(resource)) return;
-  if (kind !== "produced" && kind !== "consumed" && kind !== "spoiled") return;
+  if (kind !== "produced" && kind !== "consumed" && kind !== "spoiled" && kind !== "recovered") return;
   const accum = ensureResourceFlowState(state);
   accum[resource][kind] = Number(accum[resource][kind] ?? 0) + qty;
 }
@@ -427,8 +432,10 @@ export class ResourceSystem {
       const prev = state._resourceFlowLastSnapshot;
       const cur = state.resources;
       // Food net-delta fallback: emitted sources (farm produced, kitchen
-      // consumed, spoilage) may not fully account for worker eating.
+      // consumed, spoilage, death-carry recovered) may not fully account
+      // for worker eating.
       const explainedFood = Number(accum.food.produced ?? 0)
+        + Number(accum.food.recovered ?? 0)
         - Number(accum.food.consumed ?? 0)
         - Number(accum.food.spoiled ?? 0);
       const actualFoodDelta = Number(cur.food ?? 0) - Number(prev.food ?? 0);
@@ -457,6 +464,9 @@ export class ResourceSystem {
         accum[r].produced = 0;
         accum[r].consumed = 0;
         accum[r].spoiled = 0;
+        // v0.8.3 entity-death cleanup (Bug D) — also reset the recovered
+        // bucket so it accumulates per-window like the others.
+        accum[r].recovered = 0;
       }
       state._resourceFlowLastSnapshot = {
         food: Number(cur.food ?? 0),

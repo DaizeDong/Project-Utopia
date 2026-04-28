@@ -10,16 +10,39 @@ export class ProcessingSystem {
     this.buildingTimers = new Map();
     // Reused every tick — length=0 reset avoids GC pressure from new Array.
     this.snapshotBuffer = [];
+    // v0.8.3 weather-transition cleanup (Bug E) — track the last weather
+    // transition simSec we observed. WeatherSystem stamps
+    // state.weather.lastTransitionSec on each weather change; when our
+    // observed value lags, we wipe `buildingTimers` so pending cooldowns
+    // don't finish at the old weather's effective cycle. Worst case the
+    // transition tick costs one missed processing event per active
+    // kitchen/smithy/clinic — much smaller than the desync drift it
+    // prevents.
+    this._lastWeatherSeenSec = -1;
   }
 
   update(dt, state) {
     const nowSec = state.metrics.timeSec ?? 0;
+
+    // Bug E (weather transition) — wipe stale cooldown timers when weather
+    // changed since our last tick. See constructor comment.
+    this.#drainWeatherTransition(state);
 
     // Process each building type
     this.#processKitchens(dt, state, nowSec);
     this.#processSmithies(dt, state, nowSec);
     this.#processClinics(dt, state, nowSec);
     this.#emitSnapshot(state, nowSec);
+  }
+
+  #drainWeatherTransition(state) {
+    const lastTransition = Number(state?.weather?.lastTransitionSec ?? -1);
+    if (!Number.isFinite(lastTransition) || lastTransition < 0) return;
+    if (lastTransition <= this._lastWeatherSeenSec) return;
+    this._lastWeatherSeenSec = lastTransition;
+    // Simple-and-correct: clear all timers so each building rebuilds its
+    // cooldown at the new weather's effective rate next tick.
+    this.buildingTimers.clear();
   }
 
   #tileKey(ix, iz) {

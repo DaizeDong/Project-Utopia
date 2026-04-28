@@ -7,6 +7,30 @@ function clamp(v, min, max) {
 }
 
 /**
+ * v0.8.3 role-transition cleanup (Bug B) — assign a new role to a worker AND
+ * release the JobReservation slot held under the old role so the now-vacated
+ * tile is available to other workers immediately. We deliberately do NOT
+ * clear `targetTile` / `path` / `blackboard.lastIntent` here: WorkerAISystem
+ * already detects role/intent mismatch on its next maybeRetarget tick and
+ * replans. Eager path-nuking here measurably degraded long-horizon
+ * throughput because RoleAssignmentSystem fires every managerInterval and
+ * even brief FARM↔HAUL oscillations would trash in-flight paths every cycle.
+ *
+ * `worker.carry` is intentionally NOT cleared — the new role's deposit
+ * logic in WorkerAISystem can drop carry at any warehouse, and clearing
+ * here would silently destroy resources (Bug D parity).
+ */
+function setWorkerRole(state, worker, newRole) {
+  if (!worker) return;
+  const currentRole = worker.role;
+  if (currentRole === newRole) return;
+  if (state?._jobReservation && typeof state._jobReservation.releaseAll === "function") {
+    state._jobReservation.releaseAll(worker.id);
+  }
+  worker.role = newRole;
+}
+
+/**
  * v0.8.2 Round-5b Wave-1 (01b Step 2) — find the population-band entry for
  * worker count `n` from BALANCE.roleQuotaScaling.bandTable. Returns `null`
  * if `n` exceeds every band (caller should fall through to perWorker path).
@@ -207,12 +231,12 @@ export class RoleAssignmentSystem {
       }
     }
     const guardSet = new Set(guards);
-    for (const w of guards) w.role = "GUARD";
+    for (const w of guards) setWorkerRole(state, w, "GUARD");
     // Any current GUARD that didn't make the cut reverts to FARM (the
     // economy-side allocator below will pick them up correctly because
     // they're now in the `workers` pool with a non-GUARD role).
     for (const w of currentGuardSet) {
-      if (!guardSet.has(w)) w.role = "FARM";
+      if (!guardSet.has(w)) setWorkerRole(state, w, "FARM");
     }
     // The rest of the allocator works on `workers` (non-GUARD pool).
     const workers = allWorkers.filter((w) => !guardSet.has(w));
@@ -465,7 +489,7 @@ export class RoleAssignmentSystem {
     // spatially near farms/lumber (see monotonicity seed=1 Risk note in
     // Round5/Implementations/w1-fallback-loop.commit.md).
     const assignTo = (agents, role) => {
-      for (const agent of agents) agent.role = role;
+      for (const agent of agents) setWorkerRole(state, agent, role);
     };
     let pool = workers.slice();
     // Specialist picks — building-gated (COOK/SMITH/HERBALIST/STONE/HERBS).
@@ -520,20 +544,20 @@ export class RoleAssignmentSystem {
 
     const farmSorted = sortByMismatch(pool, ROLE.FARM);
     const farmPicked = farmSorted.slice(0, totalFarm);
-    for (const a of farmPicked) a.role = ROLE.FARM;
+    for (const a of farmPicked) setWorkerRole(state, a, ROLE.FARM);
 
     const afterFarm = pool.filter(a => !farmPicked.includes(a));
     const woodSorted = sortByMismatch(afterFarm, ROLE.WOOD);
     const woodPicked = woodSorted.slice(0, totalWood);
-    for (const a of woodPicked) a.role = ROLE.WOOD;
+    for (const a of woodPicked) setWorkerRole(state, a, ROLE.WOOD);
 
     const afterWood = afterFarm.filter(a => !woodPicked.includes(a));
     const haulSorted = sortByMismatch(afterWood, ROLE.HAUL);
     const haulPicked = haulSorted.slice(0, haulSlots);
-    for (const a of haulPicked) a.role = ROLE.HAUL;
+    for (const a of haulPicked) setWorkerRole(state, a, ROLE.HAUL);
 
     const leftover = afterWood.filter(a => !haulPicked.includes(a));
-    for (const a of leftover) a.role = ROLE.FARM;
+    for (const a of leftover) setWorkerRole(state, a, ROLE.FARM);
 
     // v0.8.2 Round-5 Wave-1 (01b Step 5) — publish roleCounts to metrics so
     // ColonyPlanner's Priority 3.75 "idle processing chain" branch can gate
