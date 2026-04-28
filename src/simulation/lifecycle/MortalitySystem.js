@@ -279,6 +279,82 @@ function markDeath(entity, reason, nowSec, context = null) {
   entity.deathContext = context ?? null;
 }
 
+// v0.8.3 entity-death cleanup (Bug A + D) — releases the dead entity's
+// JobReservation slot immediately and refunds any worker carry back to the
+// colony stockpile. Called at the moment `alive` is flipped to false so
+// neither resource leaks until the next tick. Visitor/animal carry is not
+// refunded (visitors don't haul colony stockpile resources, animals don't
+// have `carry`); JobReservation is only owned by workers but `releaseAll`
+// is a no-op for unknown ids so it's safe to call uniformly.
+function releaseDeathSideEffects(state, entity) {
+  if (state?._jobReservation && typeof state._jobReservation.releaseAll === "function") {
+    state._jobReservation.releaseAll(entity.id);
+  }
+  if (entity?.type !== ENTITY_TYPE.WORKER) return;
+  const carry = entity.carry;
+  if (!carry || typeof carry !== "object") return;
+  const refundable = ["food", "wood", "stone", "herbs"];
+  if (!state.resources) state.resources = {};
+  for (const r of refundable) {
+    const amount = Number(carry[r] ?? 0);
+    if (!(amount > 0)) continue;
+    state.resources[r] = Number(state.resources[r] ?? 0) + amount;
+    recordResourceFlow(state, r, "recovered", amount);
+    carry[r] = 0;
+  }
+}
+
+// v0.8.3 entity-death cleanup (Bug C) — recompute combat metrics after a
+// death pass so RoleAssignmentSystem on the next tick doesn't over-promote
+// guards based on a raider that died this tick. Mirrors the AnimalAISystem
+// emitter (line ~1004) but filters `alive !== false` strictly. Cheap O(n)
+// and only runs when at least one entity died this tick.
+function recomputeCombatMetrics(state) {
+  if (!state.metrics) state.metrics = {};
+  const animals = Array.isArray(state.animals) ? state.animals : [];
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  let activePredators = 0;
+  let activeRaiders = 0;
+  for (const a of animals) {
+    if (!a || a.alive === false) continue;
+    if (a.kind !== ANIMAL_KIND.PREDATOR) continue;
+    activePredators += 1;
+    if (String(a.species ?? "") === "raider_beast") activeRaiders += 1;
+  }
+  let guardCount = 0;
+  let workerCount = 0;
+  for (const w of agents) {
+    if (!w || w.alive === false || w.type !== ENTITY_TYPE.WORKER) continue;
+    workerCount += 1;
+    if (w.role === "GUARD") guardCount += 1;
+  }
+  let nearestSq = Infinity;
+  if (activePredators > 0 && workerCount > 0) {
+    for (const w of agents) {
+      if (!w || w.alive === false || w.type !== ENTITY_TYPE.WORKER) continue;
+      for (const a of animals) {
+        if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
+        const dx = a.x - w.x;
+        const dz = a.z - w.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < nearestSq) nearestSq = d2;
+      }
+    }
+  }
+  // Preserve existing combat fields (e.g. policyDelta* from NPCBrainSystem)
+  // by merging into the existing object rather than replacing it.
+  const existing = state.metrics.combat ?? {};
+  state.metrics.combat = {
+    ...existing,
+    activeThreats: activePredators,
+    activeRaiders,
+    activePredators,
+    guardCount,
+    workerCount,
+    nearestThreatDistance: nearestSq === Infinity ? -1 : Math.sqrt(nearestSq),
+  };
+}
+
 function resolveReachability(entity, state, services, fromTile, target, sourceType) {
   if (!target) return { reachable: false, sourceType: "none", pathLength: 0 };
   if (fromTile.ix === target.ix && fromTile.iz === target.iz) {
@@ -551,6 +627,11 @@ export class MortalitySystem {
       if (entity.alive === false) {
         deadIds.add(entity.id);
         if (!entity.deathRecorded) {
+          // v0.8.3 entity-death cleanup (Bug A+D) — release reservation +
+          // refund carry the moment we observe `alive===false`. Idempotent
+          // via the `deathRecorded` guard so re-entrant ticks don't double-
+          // refund.
+          releaseDeathSideEffects(state, entity);
           recordDeath(state, entity, Boolean(entity.debug?.reachableFood), String(entity.debug?.nutritionSourceType ?? "none"), deathEvents);
         }
         continue;
@@ -582,6 +663,9 @@ export class MortalitySystem {
 
       if (entity.alive === false) {
         deadIds.add(entity.id);
+        // v0.8.3 entity-death cleanup (Bug A+D) — same cleanup as the
+        // already-dead branch above, fired on the tick where alive flips.
+        releaseDeathSideEffects(state, entity);
         recordDeath(state, entity, reachableFood, nutritionSourceType, deathEvents);
       }
     }
@@ -590,6 +674,9 @@ export class MortalitySystem {
       if (animal.alive === false) {
         deadIds.add(animal.id);
         if (!animal.deathRecorded) {
+          // Animals don't hold reservations or carry, but call the helper
+          // for consistency — releaseAll on a non-worker id is a no-op.
+          releaseDeathSideEffects(state, animal);
           recordDeath(state, animal, false, "none", deathEvents);
         }
         continue;
@@ -609,6 +696,7 @@ export class MortalitySystem {
 
       if (animal.alive === false) {
         deadIds.add(animal.id);
+        releaseDeathSideEffects(state, animal);
         recordDeath(state, animal, reachableFood, "none", deathEvents);
       }
     }
@@ -644,6 +732,14 @@ export class MortalitySystem {
 
     state.agents = state.agents.filter((entity) => !deadIds.has(entity.id));
     state.animals = state.animals.filter((entity) => !deadIds.has(entity.id));
+
+    // v0.8.3 entity-death cleanup (Bug C) — re-emit combat metrics now that
+    // dead raiders/predators are filtered out of state.animals. Without
+    // this, RoleAssignmentSystem on the NEXT tick still reads
+    // `activeRaiders > 0` and over-promotes guards even though the threat
+    // is gone. AnimalAISystem ran earlier in this tick (before MortalitySystem)
+    // and counted the now-dead raider as alive.
+    recomputeCombatMetrics(state);
 
     if (state.controls.selectedEntityId && deadIds.has(state.controls.selectedEntityId)) {
       state.controls.selectedEntityId = null;

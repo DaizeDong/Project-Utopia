@@ -2,6 +2,7 @@ import { TILE } from "../../config/constants.js";
 import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
 import { createTileStateEntry } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { onTileMutated } from "../lifecycle/TileMutationHooks.js";
 
 const FERTILITY_RECOVERY_PER_SEC = 0.002;
 const FERTILITY_HARVEST_DRAIN = 0.08;
@@ -210,6 +211,7 @@ export class TileStateSystem {
             // silently eat the map's resource layer (silent-failure H1). We
             // also emit a NODE_DESTROYED event so listeners can react.
             const preservedFlags = Number(entry.nodeFlags ?? 0) | 0;
+            const oldTile = grid.tiles[idx];
             grid.tiles[idx] = TILE.GRASS;
             if (preservedFlags !== 0) {
               grid.tileState.set(idx, createTileStateEntry({ nodeFlags: preservedFlags }));
@@ -218,6 +220,10 @@ export class TileStateSystem {
             }
             grid.tileStateVersion = (grid.tileStateVersion ?? 0) + 1;
             grid.version = (grid.version ?? 0) + 1;
+            // Cascade cleanup: building counts, worker reservations, target/
+            // path invalidation, processing-timer dirty-keys. Wildfire was
+            // bypassing these hooks just like sabotage used to.
+            if (state) onTileMutated(state, ix, iz, oldTile, TILE.GRASS);
             if (state) emitEvent(state, EVENT_TYPES.BUILDING_DESTROYED, { ix, iz, cause: "wildfire" });
             continue;
           }

@@ -6,7 +6,8 @@ import {
   spend,
   summarizeBuildPreview,
 } from "./BuildAdvisor.js";
-import { setTile, rebuildBuildingStats } from "../../world/grid/Grid.js";
+import { setTile } from "../../world/grid/Grid.js";
+import { onTileMutated } from "../lifecycle/TileMutationHooks.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 export class BuildSystem {
@@ -79,7 +80,10 @@ export class BuildSystem {
       };
     }
 
-    state.buildings = rebuildBuildingStats(state.grid);
+    // Cascade cleanup (counts + reservations + worker target/path + dirty-keys)
+    // for both placement and erase. onTileMutated rebuilds buildings stats
+    // synchronously, so we don't repeat rebuildBuildingStats here.
+    onTileMutated(state, ix, iz, preview.oldType, preview.newType);
     if (options.recordHistory !== false) {
       this.#recordHistory(state, {
         kind: "build",
@@ -157,7 +161,7 @@ export class BuildSystem {
       || (entry.refund?.herbs ?? 0) > 0
     )) spend(state.resources, entry.refund);
 
-    state.buildings = rebuildBuildingStats(state.grid);
+    onTileMutated(state, entry.ix, entry.iz, entry.newType, entry.oldType);
     state.controls.redoStack.push(entry);
     this.#syncHistoryFlags(state);
     this.onAction?.({ kind: "undo", tool: entry.tool, ix: entry.ix, iz: entry.iz, oldType: entry.oldType, newType: entry.newType });
@@ -196,7 +200,7 @@ export class BuildSystem {
       return { ok: false, reason: "unchanged" };
     }
 
-    state.buildings = rebuildBuildingStats(state.grid);
+    onTileMutated(state, entry.ix, entry.iz, entry.oldType, entry.newType);
     state.controls.undoStack.push(entry);
     this.#syncHistoryFlags(state);
     this.onAction?.({ kind: "redo", tool: entry.tool, ix: entry.ix, iz: entry.iz, oldType: entry.oldType, newType: entry.newType });

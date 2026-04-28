@@ -8,6 +8,7 @@ import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setT
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
+import { mutateTile } from "../lifecycle/TileMutationHooks.js";
 
 const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
@@ -287,8 +288,11 @@ function applySabotage(state, target, context, rng) {
     return { blocked: true, targetLabel: context?.label ?? "", defenseScore };
   }
 
-  state.grid.tiles[idx] = TILE.RUINS;
-  state.grid.version += 1;
+  // Route through the central tile-mutation hook so reservations / worker
+  // target+path / building counts / processing-timer dirty-key set all clear
+  // synchronously. Raw grid.tiles[] writes left workers frozen on the now-
+  // RUIN tile because cleanup didn't propagate until the next tick.
+  mutateTile(state, target.ix, target.iz, TILE.RUINS);
   state.gameplay ??= {};
   state.gameplay.lastSabotageGridChangeSec = nowSec;
 

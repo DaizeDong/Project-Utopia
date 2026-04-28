@@ -56,6 +56,24 @@ export class JobReservation {
   }
 
   /**
+   * Release any reservation on this tile, regardless of worker. Used when
+   * the underlying tile is destroyed (sabotage/demolition/wildfire) so the
+   * reservation doesn't linger on a now-RUIN tile.
+   * @param {number} ix
+   * @param {number} iz
+   */
+  releaseTile(ix, iz) {
+    const key = `${ix},${iz}`;
+    const entry = this._tiles.get(key);
+    if (!entry) return;
+    this._tiles.delete(key);
+    const workerKey = this._workerToTile.get(entry.workerId);
+    if (workerKey === key) {
+      this._workerToTile.delete(entry.workerId);
+    }
+  }
+
+  /**
    * Release all reservations held by the given worker.
    * @param {string} workerId
    */

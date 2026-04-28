@@ -166,12 +166,22 @@ function applyWeatherHazards(state, weatherName) {
 
 export function setWeather(state, weatherName, durationSec = 30, source = "event") {
   const m = WEATHER_MODIFIERS[weatherName] ?? WEATHER_MODIFIERS[WEATHER.CLEAR];
+  // v0.8.3 weather-transition cleanup (Bug E) — record the transition
+  // simSec ONLY when the weather name actually changes. ProcessingSystem
+  // reads this flag to invalidate per-building cooldown timers so a
+  // kitchen/smithy/clinic mid-cycle when weather flips doesn't finish at
+  // the OLD weather's effective rate. Same-weather setWeather() calls
+  // (renew duration, update hazard tiles) intentionally do NOT trigger.
+  const prevWeather = state.weather.current;
   state.weather.current = weatherName;
   state.weather.timeLeftSec = durationSec;
   state.weather.moveCostMultiplier = m.moveCostMultiplier;
   state.weather.farmProductionMultiplier = m.farmProductionMultiplier;
   state.weather.lumberProductionMultiplier = m.lumberProductionMultiplier;
   state.weather.source = source;
+  if (prevWeather !== weatherName) {
+    state.weather.lastTransitionSec = Number(state.metrics?.timeSec ?? 0);
+  }
   applyWeatherHazards(state, weatherName);
 }
 

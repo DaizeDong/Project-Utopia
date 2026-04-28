@@ -3,6 +3,7 @@ import { ENTITY_TYPE, EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/consta
 import { getLongRunEventTuning } from "../../config/longRunProfile.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../scenarios/ScenarioFactory.js";
 import { emitEvent, EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
+import { mutateTile } from "../../simulation/lifecycle/TileMutationHooks.js";
 import { pushWarning } from "../../app/warnings.js";
 
 function tileKey(ix, iz) {
@@ -666,9 +667,13 @@ function applyImpactTileToGrid(state, impactTile) {
   const current = state.grid.tiles[idx];
   if (current === TILE.WATER || current === TILE.WALL || current === TILE.WAREHOUSE || current === TILE.RUINS) return false;
 
-  state.grid.tiles[idx] = TILE.RUINS;
-  state.grid.version = Number(state.grid.version ?? 0) + 1;
-  return true;
+  // Route through mutateTile() so the cascade cleanup (building counts,
+  // reservations, worker target/path invalidation, dirty-tile-key bookkeeping
+  // for ProcessingSystem) runs synchronously. Previously this site wrote
+  // grid.tiles[] raw, leaving downstream state stale until the next tick —
+  // workers froze on RUIN-targeted intents because counts+reservations didn't
+  // catch up before WorkerAISystem ran later in the SAME tick.
+  return mutateTile(state, impactTile.ix, impactTile.iz, TILE.RUINS);
 }
 
 function applyBanditRaidImpact(event, state, ctx = null) {
