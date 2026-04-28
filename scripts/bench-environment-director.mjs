@@ -164,6 +164,10 @@ async function runOnce(scenario, coverage) {
   let llmCalls = 0;
   let fallbackCalls = 0;
   let lastSeenDecisionCount = 0;
+  // Round 2 telemetry — track candidateUseRate samples from each LLM exchange.
+  const candidateUseRateSamples = [];
+  const postValidationViolations = [];
+  const postureCounts = { calm: 0, building_tension: 0, climax: 0, recovery: 0 };
 
   // Yield to the event loop every ~30 ticks (≈1 sim sec) so any
   // in-flight `fetch` from EnvironmentDirector.requestEnvironment can
@@ -197,6 +201,16 @@ async function runOnce(scenario, coverage) {
       if (ex) {
         if (ex.fallback) fallbackCalls += 1; else llmCalls += 1;
         if (Number.isFinite(Number(ex.latencyMs))) latencies.push(Number(ex.latencyMs));
+        // Round 2 telemetry capture.
+        if (!ex.fallback && Number.isFinite(Number(ex.candidateUseRate))) {
+          candidateUseRateSamples.push(Number(ex.candidateUseRate));
+        }
+        if (Array.isArray(ex.postValidationReasons) && ex.postValidationReasons.length > 0) {
+          postValidationViolations.push(ex.postValidationReasons.length);
+        }
+        if (ex.storytellerPosture && postureCounts[ex.storytellerPosture] !== undefined) {
+          postureCounts[ex.storytellerPosture] += 1;
+        }
       }
       lastSeenDecisionCount = dc;
     }
@@ -228,6 +242,15 @@ async function runOnce(scenario, coverage) {
       if (ex) {
         if (ex.fallback) fallbackCalls += 1; else llmCalls += 1;
         if (Number.isFinite(Number(ex.latencyMs))) latencies.push(Number(ex.latencyMs));
+        if (!ex.fallback && Number.isFinite(Number(ex.candidateUseRate))) {
+          candidateUseRateSamples.push(Number(ex.candidateUseRate));
+        }
+        if (Array.isArray(ex.postValidationReasons) && ex.postValidationReasons.length > 0) {
+          postValidationViolations.push(ex.postValidationReasons.length);
+        }
+        if (ex.storytellerPosture && postureCounts[ex.storytellerPosture] !== undefined) {
+          postureCounts[ex.storytellerPosture] += 1;
+        }
       }
       lastSeenDecisionCount = dc;
     }
@@ -246,6 +269,14 @@ async function runOnce(scenario, coverage) {
     ? latencies.reduce((s, x) => s + x, 0) / latencies.length
     : 0;
 
+  // Round 2 telemetry rollups.
+  const avgCandidateUseRate = candidateUseRateSamples.length > 0
+    ? candidateUseRateSamples.reduce((s, x) => s + x, 0) / candidateUseRateSamples.length
+    : 1;
+  const minCandidateUseRate = candidateUseRateSamples.length > 0
+    ? Math.min(...candidateUseRateSamples)
+    : 1;
+
   return {
     coverage,
     deaths: Number(state.metrics?.deathsTotal ?? 0),
@@ -261,6 +292,12 @@ async function runOnce(scenario, coverage) {
     finalProsperity: Number((state.gameplay?.prosperity ?? 0).toFixed(2)),
     finalThreat: Number((state.gameplay?.threat ?? 0).toFixed(2)),
     foodFinal: Number(Number(state.resources?.food ?? 0).toFixed(2)),
+    // Round 2 metrics.
+    candidateUseRate: Number(avgCandidateUseRate.toFixed(3)),
+    minCandidateUseRate: Number(minCandidateUseRate.toFixed(3)),
+    candidateUseRateSamples: candidateUseRateSamples.length,
+    postValidationViolations: postValidationViolations.length,
+    postureCounts,
   };
 }
 
@@ -282,12 +319,16 @@ async function main() {
 
     const llmStart = Date.now();
     const llm = await runOnce(scenario, "llm");
-    console.error(`  llm done in ${Date.now() - llmStart}ms — deaths=${llm.deaths} dev60=${llm.devIndexSmoothed60} thrash=${llm.weatherChanges} fallbackRatio=${llm.fallbackRatio} avgLatency=${llm.avgLatencyMs}ms`);
+    console.error(`  llm done in ${Date.now() - llmStart}ms — deaths=${llm.deaths} dev60=${llm.devIndexSmoothed60} thrash=${llm.weatherChanges} fallbackRatio=${llm.fallbackRatio} avgLatency=${llm.avgLatencyMs}ms candUseRate=${llm.candidateUseRate} (n=${llm.candidateUseRateSamples})`);
 
     const fbScore = envQualityScore(fallback);
     const llmScore = envQualityScore(llm);
     const denom = Math.abs(fbScore) > 0.0001 ? Math.abs(fbScore) : 1;
     const deltaPct = ((llmScore - fbScore) / denom) * 100;
+    // Round 2: thrash drop %.
+    const thrashDropPct = fallback.weatherChanges > 0
+      ? ((fallback.weatherChanges - llm.weatherChanges) / fallback.weatherChanges) * 100
+      : 0;
 
     out.scenarios.push({
       id: scenario.id,
@@ -298,15 +339,32 @@ async function main() {
       fallback,
       llm,
       envQualityScore: { fallback: fbScore, llm: llmScore, deltaPct: Number(deltaPct.toFixed(2)) },
+      thrashDropPct: Number(thrashDropPct.toFixed(2)),
     });
   }
 
-  // Summary
-  const wins = out.scenarios.filter((s) => s.envQualityScore.deltaPct >= 5).length;
+  // Summary — Round 2 pass criteria: ≥+20% delta on 3/3 scenarios,
+  // weather thrash drop ≥50%, candidateUseRate ≥0.85.
+  const wins5 = out.scenarios.filter((s) => s.envQualityScore.deltaPct >= 5).length;
+  const wins20 = out.scenarios.filter((s) => s.envQualityScore.deltaPct >= 20).length;
+  const thrashDrop50 = out.scenarios.filter((s) => s.thrashDropPct >= 50).length;
+  const candUseRate085 = out.scenarios.filter((s) => s.llm.candidateUseRate >= 0.85).length;
+  const avgCandUseRate = out.scenarios.length > 0
+    ? out.scenarios.reduce((s, x) => s + x.llm.candidateUseRate, 0) / out.scenarios.length
+    : 0;
+  const avgThrashDrop = out.scenarios.length > 0
+    ? out.scenarios.reduce((s, x) => s + x.thrashDropPct, 0) / out.scenarios.length
+    : 0;
   out.summary = {
     scenarioCount: out.scenarios.length,
-    llmWins5pct: wins,
-    pass: wins >= 2,
+    llmWins5pct: wins5,
+    llmWins20pct: wins20,
+    thrashDrop50pct: thrashDrop50,
+    candUseRate085: candUseRate085,
+    avgCandidateUseRate: Number(avgCandUseRate.toFixed(3)),
+    avgThrashDropPct: Number(avgThrashDrop.toFixed(2)),
+    passR1: wins5 >= 2,
+    passR2: wins20 >= 3 && thrashDrop50 >= 3 && avgCandUseRate >= 0.85,
   };
 
   console.log(JSON.stringify(out, null, 2));

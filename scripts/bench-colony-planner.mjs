@@ -171,6 +171,12 @@ async function runSim(scenario, mode, opts) {
   const completionBonus = llm ? completionRate * 5 : 0;
   const score = finalDev * 0.4 + buildings * 0.05 - deaths * 0.5 + completionBonus;
 
+  // Round-2: surface candidateUseRate (rolling EMA stored on agentDirector).
+  const candidateUseRate = Number(stats?.candidateUseRate ?? 0);
+  // Round-3: surface candidateGroundRejectionRate (also a rolling EMA). Lower
+  // is better; the R3 feasibility filter should drive this toward zero.
+  const candidateGroundRejectionRate = Number(stats?.candidateGroundRejectionRate ?? 0);
+
   return {
     mode,
     scenario: scenario.id,
@@ -184,6 +190,8 @@ async function runSim(scenario, mode, opts) {
     plansFailed,
     plansSuperseded,
     completionRate: Number(completionRate.toFixed(3)),
+    candidateUseRate: Number(candidateUseRate.toFixed(3)),
+    candidateGroundRejectionRate: Number(candidateGroundRejectionRate.toFixed(3)),
     score: Number(score.toFixed(2)),
     wallSec: Number((wallMs / 1000).toFixed(1)),
   };
@@ -245,7 +253,9 @@ async function main() {
     summary.push({ id: sc.id, fb, llm, delta });
     if (llm) {
       const sign = delta >= 0 ? "+" : "";
-      console.log(`  Δ score: ${sign}${delta}%   completionRate=${(llm.completionRate * 100).toFixed(0)}%`);
+      const cur = (llm.candidateUseRate * 100).toFixed(0);
+      const grj = (llm.candidateGroundRejectionRate * 100).toFixed(0);
+      console.log(`  Δ score: ${sign}${delta}%   completionRate=${(llm.completionRate * 100).toFixed(0)}%   candidateUseRate=${cur}%   groundRejectRate=${grj}%`);
     }
   }
 

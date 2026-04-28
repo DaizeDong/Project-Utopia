@@ -28,6 +28,7 @@ import {
 import { formatObservationForLLM } from "./ColonyPerceiver.js";
 import { planLogisticsRoadSteps, formatLogisticsHintForLLM } from "./RoadPlanner.js";
 import { planThreatResponseSteps, formatThreatHintForLLM } from "./ThreatPlanner.js";
+import { formatAnalyticsForLLM, validatePlanCandidates } from "./ColonyAnalytics.js";
 
 // ── v0.8.0 Phase 5 (patches 9-10) constants ──────────────────────────
 // Depletion down-rank threshold + multiplier per spec 13.2 patch 9. The
@@ -281,6 +282,20 @@ guards, then roads.
 - "## Learned Skills" — if present, those skills are PROVEN in this colony.
   Prefer the listed skills over re-doing their primitive steps; reference
   them as \`{ "type": "skill", "skill": "<exact-id>" }\`.
+- "## Building Candidates (pick by id)" — pre-scored tile options per type.
+  The algorithmic perceiver already ranked these by terrain + warehouse
+  reach + adjacency; you should PREFER these over inventing your own
+  coordinates. Each candidate has an integer id (C1, C2…). To use one set
+  \`action.hint\` to the literal "<ix>,<iz>" of a candidate. Prefer C-IDs
+  with the highest score and the tightest fit to your chain.
+- "## Resource Projections" — bottleneck = the resource projected to hit zero
+  first. If "URGENT bottleneck" appears, the FIRST step must be the producer
+  for that resource (farm for food, lumber for wood, quarry for stone,
+  herb_garden for herbs).
+- "## Chain Opportunities" — pre-ranked 3-5 step recipes the LLM should pick
+  one of, then encode each step as a depends_on chain.
+- "## Richness Hotspots" — tiles where placing buildings compounds adjacency
+  bonuses; bias toward these for chain-anchor steps.
 
 ## Output Format
 {
@@ -334,6 +349,35 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
 
   // Observation
   sections.push("## Current Observation\n" + formatObservationForLLM(obs));
+
+  // Round-2 analytics layer: surface pre-scored building candidates,
+  // resource projections, chain opportunities, and richness hotspots so the
+  // LLM picks from algorithmic outputs instead of inventing coordinates.
+  // We stash the candidate index on the state so post-validation can compute
+  // candidateUseRate without recomputing analytics.
+  let analyticsRendered = "";
+  try {
+    // Cache the most recent observation on state so computeResourceProjections
+    // can read it without a redundant perceiver pass.
+    if (state.ai) state.ai.lastObservation = obs;
+    const analytics = formatAnalyticsForLLM(state, { topN: 4 });
+    if (analytics.text && analytics.text.length > 0) {
+      analyticsRendered = analytics.text;
+      sections.push("\n" + analytics.text);
+      // Stash for validatePlanCandidates post-hoc.
+      if (state.ai) {
+        state.ai._lastAnalytics = {
+          candidatesByType: analytics.candidatesByType,
+          candidateIndex: analytics.candidateIndex,
+          // R3 — surface unaffordable / dropped types alongside the
+          // candidate menu so the post-hoc rejection-rate calculator can
+          // skip steps the LLM was warned about.
+          unaffordableTypes: analytics.unaffordableTypes ?? [],
+          droppedTypes: analytics.droppedTypes ?? {},
+        };
+      }
+    }
+  } catch { /* analytics is best-effort; never break planning */ }
 
   // Phase 5 H7 / strategic wiring — surface the current strategic goal +
   // chain + repair goal + fallback hints so the LLM sees what the strategic
@@ -571,6 +615,132 @@ function _validateStep(raw, seenIds) {
 
 function _truncate(str, maxLen) {
   return str.length > maxLen ? str.slice(0, maxLen) : str;
+}
+
+/**
+ * Round-2: record what fraction of LLM-picked tiles came from the surfaced
+ * candidate list. Stored on `state.ai.agentDirector.stats.candidateUseRate`
+ * as a rolling EMA so the bench harness and the HUD can read a single number
+ * without a sliding-window struct. Best-effort: never throws, ignores when
+ * analytics weren't computed (e.g. SkillLibrary-only fallback paths).
+ *
+ * R3 — also records `candidateGroundRejectionRate`: the fraction of build
+ * steps whose hint coords would FAIL `groundPlanStep` at execution time.
+ * The R2 menu already returned the analytics-scored top tiles, but those
+ * passed `analyzeCandidateTiles` (a soft scoring pass) without checking the
+ * hard execution gates (warehouse spacing, node flags, hard cap, etc.). The
+ * R3 feasibility filter inside ColonyAnalytics drops infeasible candidates
+ * before they reach the LLM, so the rejection rate should drop dramatically
+ * after this fix lands.
+ */
+function _recordCandidateUseRate(state, plan) {
+  try {
+    const cached = state?.ai?._lastAnalytics;
+    if (!cached || !cached.candidatesByType) return;
+    const report = validatePlanCandidates(plan, cached.candidatesByType);
+    const ad = state?.ai?.agentDirector;
+    if (!ad?.stats) return;
+    const stats = ad.stats;
+    // Track a rolling EMA so a single bad plan doesn't dominate.
+    const prev = Number.isFinite(stats.candidateUseRate) ? stats.candidateUseRate : null;
+    const sample = report.candidateUseRate;
+    stats.candidateUseRate = prev == null ? sample : Math.round((prev * 0.7 + sample * 0.3) * 1000) / 1000;
+    stats.candidateUseRateLast = sample;
+    stats.candidateUseSteps = report.totalSteps;
+    stats.candidateUseMatches = report.candidateMatches;
+    if (report.totalSteps >= 2 && sample < 0.5) {
+      stats.candidateUseLowWarn = (stats.candidateUseLowWarn ?? 0) + 1;
+    }
+    // R3 — pre-flight grounding rejection rate.
+    const grRate = _computeGroundRejectionRate(state, plan);
+    if (grRate != null) {
+      const prevG = Number.isFinite(stats.candidateGroundRejectionRate)
+        ? stats.candidateGroundRejectionRate : null;
+      stats.candidateGroundRejectionRate = prevG == null
+        ? grRate
+        : Math.round((prevG * 0.7 + grRate * 0.3) * 1000) / 1000;
+      stats.candidateGroundRejectionRateLast = grRate;
+    }
+  } catch { /* best-effort */ }
+}
+
+/**
+ * R3 — compute the fraction of plan steps whose `(type, hint)` would be
+ * rejected by `groundPlanStep` (== `evaluateBuildPreview`). Uses the same
+ * checks that R3's feasibility filter uses, so it tracks rejection at the
+ * INTENT level (what the LLM picked) not the execution level (which can also
+ * fail for e.g. a flooded tile that became occupied between plan generation
+ * and execution).
+ *
+ * Skips skill / reassign_role steps (no coord). Returns null when there are
+ * zero coord-bearing steps so the EMA isn't biased by skill-only plans.
+ */
+function _computeGroundRejectionRate(state, plan) {
+  if (!plan || !Array.isArray(plan.steps)) return null;
+  const grid = state?.grid;
+  if (!grid) return null;
+  let total = 0;
+  let rejected = 0;
+  for (const step of plan.steps) {
+    const action = step.action ?? {};
+    const type = action.type;
+    if (!type || type === "skill" || type === "reassign_role") continue;
+    const hint = typeof action.hint === "string" ? action.hint : null;
+    let ix = null, iz = null;
+    if (hint) {
+      const m = hint.match(/^(\d+),(\d+)$/);
+      if (m) { ix = parseInt(m[1], 10); iz = parseInt(m[2], 10); }
+    }
+    if (!Number.isFinite(ix) || !Number.isFinite(iz)) {
+      // Non-coord hint (e.g. "near_cluster:c0", "expansion:north") — these
+      // resolve at grounding time. Don't penalize the LLM for using them
+      // since the system also accepts them. Skip in the rejection sample.
+      continue;
+    }
+    total++;
+    if (!_grindablePreflight(state, type, { ix, iz })) rejected++;
+  }
+  if (total === 0) return null;
+  return Math.round((rejected / total) * 1000) / 1000;
+}
+
+/** Same checks as ColonyAnalytics._preflightFeasibility, kept here as a
+ *  thin re-implementation to avoid widening the analytics export surface. */
+function _grindablePreflight(state, type, tile) {
+  const grid = state?.grid;
+  if (!grid) return false;
+  const { ix, iz } = tile;
+  if (!inBounds(ix, iz, grid)) return false;
+  const idx = toIndex(ix, iz, grid.width);
+  if (grid.tiles?.[idx] !== TILE.GRASS) return false;
+  const buildings = state.buildings ?? {};
+  const existingCount = Number(buildings[pluralBuildingKey(type)] ?? 0);
+  const cost = (typeof BUILD_COST[type] === "object" && BUILD_COST[type] !== null)
+    ? (computeEscalatedBuildCost(type, existingCount) ?? BUILD_COST[type])
+    : { ...BUILD_COST[type] };
+  const r = state.resources ?? {};
+  if ((r.food ?? 0) < (cost.food ?? 0)) return false;
+  if ((r.wood ?? 0) < (cost.wood ?? 0)) return false;
+  if ((r.stone ?? 0) < (cost.stone ?? 0)) return false;
+  if ((r.herbs ?? 0) < (cost.herbs ?? 0)) return false;
+  // Node-gated tools.
+  const NODE_GATE = { lumber: 1, quarry: 2, herb_garden: 4 }; // FOREST/STONE/HERB
+  const requiredFlag = NODE_GATE[type];
+  if (requiredFlag) {
+    const entry = getTileState(grid, ix, iz);
+    const flags = Number(entry?.nodeFlags ?? 0) | 0;
+    if ((flags & requiredFlag) === 0) return false;
+  }
+  // Warehouse spacing.
+  if (type === "warehouse") {
+    const spacing = 5;
+    const others = listTilesByType(grid, [TILE.WAREHOUSE]);
+    for (const wh of others) {
+      const d = Math.abs(wh.ix - ix) + Math.abs(wh.iz - iz);
+      if (d <= spacing) return false;
+    }
+  }
+  return true;
 }
 
 // ── Fallback Plan Generation ─────────────────────────────────────────
@@ -1260,6 +1430,7 @@ export class ColonyPlanner {
       if (result?.ok && result.plan) {
         this._stats.llmSuccesses++;
         this._stats.lastPlanSource = "llm";
+        _recordCandidateUseRate(state, result.plan);
         return { plan: { ...result.plan, source: "llm" }, source: "llm", error: result.error ?? "" };
       }
       this._stats.llmFailures++;
@@ -1285,6 +1456,7 @@ export class ColonyPlanner {
           this._stats.llmSuccesses++;
           this._stats.lastPlanSource = "llm";
           validation.plan.source = "llm";
+          _recordCandidateUseRate(state, validation.plan);
           return { plan: validation.plan, source: "llm", error: validation.error };
         }
 

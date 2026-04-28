@@ -12,6 +12,10 @@ import { buildPolicySummary } from "../memory/WorldSummary.js";
 import { listGroupStates } from "../../npc/state/StateGraph.js";
 import { buildFeasibilityContext, isStateFeasible } from "../../npc/state/StateFeasibility.js";
 import { markAiDecisionRequest, recordAiDecisionResult } from "../../../app/aiRuntimeStats.js";
+import {
+  buildNPCBrainAnalytics,
+  validatePolicyDeltas,
+} from "./NPCBrainAnalytics.js";
 
 const REQUIRED_POLICY_GROUPS = Object.freeze([
   GROUP_IDS.WORKERS,
@@ -162,21 +166,39 @@ function attachCombatContextToSummary(summary, combat) {
   // raw counts. These flow through `_strategyContext` (already lifted by
   // PromptPayload.buildPolicyPromptUserContent into a labeled section) and
   // a dedicated `_combatContext` mirror.
+  // Round-2 — proximity-aware directives. Earlier (R1) we issued blanket
+  // "must retreat" instructions for any raidActive frame, which over-rotated
+  // the LLM in S2 (persistent distant raid → starvation). Now we only push
+  // hard-retreat language when threats are CLOSE; otherwise we keep the LLM
+  // in throughput-preserving mode and let the delta menu carry the signal.
   const directives = [];
-  if (combat.raidActive) {
+  const nearestTilesDir = Number(combat.nearestThreatTiles ?? 999);
+  const proximateDir = nearestTilesDir >= 0 && nearestTilesDir <= 12;
+  const imminentDir = proximateDir && (Number(combat.guardDeficit ?? 0) > 0 || Number(combat.workersUnderHit ?? 0) > 0);
+  if (combat.raidActive && imminentDir) {
     directives.push(
-      `Active raid: ${combat.activeRaiders} raider-beast(s) targeting workers, ${combat.guardCount} guard(s) on watch (need ~${combat.recommendedGuards}).`,
-      "Workers must retreat: keep intentWeights.farm and intentWeights.wood at most 0.5; deliver carried cargo then idle near depot.",
-      "Workers: targetPriorities.safety and targetPriorities.warehouse should dominate; targetPriorities.frontier should drop below 0.4.",
-      "Predators: do not steer wolves/bears toward farms while raid is active; targetPriorities.farm should stay below 0.3.",
-      "Herbivores: intentWeights.flee must exceed intentWeights.graze.",
+      `IMMINENT raid (${combat.activeRaiders} raider(s) within ${nearestTilesDir} tiles, ${combat.guardCount}/${combat.recommendedGuards} guards): hard retreat.`,
+      "Workers: cap intentWeights.farm and wood at 0.5; deliver carried cargo and idle near depot.",
+      "Workers: targetPriorities.safety up; warehouse modest (do NOT cluster all workers — keep them spread so guards can recruit).",
+      "Frontier targetPriority below 0.4. Keep deliver weight ≥ 1.4 so cargo flows.",
+      "Predators: targetPriorities.farm below 0.3 (don't pile onto raid).",
+      "Herbivores: intentWeights.flee must exceed graze.",
     );
     if (combat.workersUnderHit > 0) {
-      directives.push(`${combat.workersUnderHit} worker(s) hit recently — emphasise eat + safety; intentWeights.eat ≥ 1.8.`);
+      directives.push(`${combat.workersUnderHit} worker(s) hit — intentWeights.eat ≥ 1.8.`);
     }
+  } else if (combat.raidActive) {
+    // Distant raid — keep producing, but slightly bias safety. Pick from
+    // the delta menu rather than applying blanket retreat.
+    directives.push(
+      `Distant raid (${combat.activeRaiders} raider(s) at ~${nearestTilesDir} tiles, ${combat.guardCount} guards): MAINTAIN throughput.`,
+      "Prefer LOW-score deltas from menu (small farm/wood trims). Keep deliver weight high.",
+      "Do NOT zero out farm/wood — colony will starve. Keep intentWeights.farm and wood ≥ 0.7.",
+      "Bias predators slightly off the farm tile (`predators.farm-down`) and herbivore flee up.",
+    );
   } else if (combat.activePredators >= 2) {
     directives.push(
-      `Predator pressure: ${combat.activePredators} active predators near the colony. Bias workers toward safety targets and reduce open-frontier exposure.`,
+      `Predator pressure: ${combat.activePredators} active predators. Bias workers toward safety; small frontier trim only.`,
     );
   }
   summary._combatContext = { ...summary.world.combat, raidActive: combat.raidActive, directives };
@@ -187,6 +209,47 @@ function attachCombatContextToSummary(summary, combat) {
   if (directives.length > 0) {
     summary._strategyContext.raidDirectives = directives;
   }
+  return summary;
+}
+
+/**
+ * Round-2 LLM tuning — attach analytics package (group analytics, threat
+ * sector map, scored delta menu, baseline hint) to the summary in BOTH a
+ * machine-readable form (`summary._npcBrainAnalytics`) and a markdown text
+ * block lifted into `_strategyContext.npcBrainAnalyticsText`. The latter is
+ * the path the LLM's prompt actually surfaces.
+ *
+ * Pure: never mutates state, only the `summary` argument.
+ */
+function attachNPCBrainAnalyticsToSummary(summary, analytics) {
+  if (!summary || typeof summary !== "object" || !analytics) return summary;
+  // Compact wire format — keep only the fields the LLM needs to ground its
+  // pick. Drops baseline.summary/steeringNotes (already in the prompt
+  // policy template) and limits delta menu to top-12.
+  summary._npcBrainAnalytics = {
+    groupAnalytics: analytics.groupAnalytics,
+    threatMap: {
+      hotSectorId: analytics.threatMap?.hotSectorId ?? null,
+      workerCentroidSector: analytics.threatMap?.workerCentroidSector ?? null,
+      totalThreats: analytics.threatMap?.totalThreats ?? 0,
+      sectors: (analytics.threatMap?.sectors ?? []).filter((s) => s.threatCount > 0),
+    },
+    deltaMenu: (analytics.deltaMenu ?? []).slice(0, 12),
+    baseline: analytics.baseline,
+  };
+  summary._strategyContext = summary._strategyContext ?? {};
+  summary._strategyContext.npcBrainAnalytics = summary._npcBrainAnalytics;
+  summary._strategyContext.npcBrainAnalyticsText = analytics.formatted;
+  // R2 prompt-style instruction — LLM should PREFER picking deltas from the
+  // menu and keep all unmentioned policy fields at baseline. Surfaced as a
+  // top-level directive so PromptPayload picks it up alongside raid
+  // directives.
+  summary._strategyContext.r2Instructions = [
+    "PREFER deltas from `_npcBrainAnalytics.deltaMenu` (highest score first).",
+    "Keep all unmentioned policy fields at the baseline values shown in `_npcBrainAnalytics.baseline`.",
+    "Pick deltas by ID when possible — set policy._appliedDeltas to a list of delta IDs you picked.",
+    "If you must deviate from baseline OUTSIDE the menu, set policy._reason explaining why.",
+  ];
   return summary;
 }
 
@@ -247,6 +310,18 @@ function applyRaidPosturePolicy(policy, combat) {
     } else if (high) {
       if (typeof policy.intentWeights.farm === "number") policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.8);
       if (typeof policy.intentWeights.wood === "number") policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.8);
+    } else if (manageable) {
+      // R2 iteration-2 — distant raid floor. The R2 LLM (with delta menu)
+      // tends to pick multiple retreat deltas under any raidActive frame,
+      // which starves the colony when the threat is ≥20 tiles away. Floor
+      // farm/wood at 0.7 so the LLM cannot drag them below working levels.
+      const fb = DEFAULT_GROUP_POLICIES[groupId]?.intentWeights ?? {};
+      if (typeof policy.intentWeights.farm === "number") {
+        policy.intentWeights.farm = Math.max(policy.intentWeights.farm, Math.min(0.7, Number(fb.farm ?? 1)));
+      }
+      if (typeof policy.intentWeights.wood === "number") {
+        policy.intentWeights.wood = Math.max(policy.intentWeights.wood, Math.min(0.7, Number(fb.wood ?? 1)));
+      }
     }
     // Deliver: keep cargo flowing but cap unbounded LLM aggression.
     policy.intentWeights.deliver = Math.min(
@@ -500,6 +575,7 @@ function isTargetFeasibleForGroup(state, target) {
 export {
   buildCombatContext,
   attachCombatContextToSummary,
+  attachNPCBrainAnalyticsToSummary,
   applyRaidPosturePolicy,
   sanitizePolicyForRuntime,
   normalizePoliciesForRuntime,
@@ -520,6 +596,46 @@ export class NPCBrainSystem {
       // visible when the request was queued (typically 8-30 s earlier).
       const combatContext = buildCombatContext(state);
       const policies = normalizePoliciesForRuntime(this.pendingResult.data?.policies ?? [], state, combatContext);
+      // Round-2 — post-validate the policy bag against the menu shown to
+      // the LLM. Tracks `state.metrics.combat.policyDeltaUseRate` so the
+      // bench / panels can see whether the LLM is actually using the menu
+      // (high rate) vs. inventing weights (low rate).
+      const usedFb = Boolean(this.pendingResult.fallback);
+      if (this.lastRequestAnalytics && !usedFb) {
+        // Validate against the RAW LLM output (pre-sanitize/clamp) so the
+        // delta-use signal reflects what the model actually chose.
+        // Sanitization clamps everything toward baseline under raid pressure
+        // and would zero out the signal otherwise.
+        const rawLlmPolicies = this.pendingResult.data?.policies ?? [];
+        const validation = validatePolicyDeltas(
+          rawLlmPolicies,
+          this.lastRequestAnalytics.baseline,
+          this.lastRequestAnalytics.deltaMenu,
+        );
+        // Stash on state.ai (rolling-average) — AnimalAISystem rewrites
+        // state.metrics.combat each frame, so any field we put there is
+        // wiped before the bench reads it.
+        state.ai ??= {};
+        const prev = state.ai.npcBrainR2 ?? { samples: 0, sumUse: 0, sumTotal: 0, sumMatched: 0, sumUnjustified: 0, lastIds: [] };
+        prev.samples += 1;
+        prev.sumUse += validation.deltaUseRate;
+        prev.sumTotal += validation.totalDeviations;
+        prev.sumMatched += validation.matchedDeltas;
+        prev.sumUnjustified += validation.unjustifiedDeviations;
+        prev.lastIds = validation.matchedDeltaIds;
+        prev.lastUseRate = validation.deltaUseRate;
+        state.ai.npcBrainR2 = prev;
+        // Also write to metrics.combat for in-frame readers (will likely
+        // get overwritten by AnimalAISystem next tick, but useful within a
+        // single tick).
+        state.metrics ??= {};
+        state.metrics.combat ??= {};
+        state.metrics.combat.policyDeltaUseRate = validation.deltaUseRate;
+        state.metrics.combat.policyDeltaTotalDeviations = validation.totalDeviations;
+        state.metrics.combat.policyDeltaMatchedCount = validation.matchedDeltas;
+        state.metrics.combat.policyDeltaUnjustified = validation.unjustifiedDeviations;
+        state.metrics.combat.policyDeltaMatchedIds = validation.matchedDeltaIds;
+      }
       const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
       const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets, state)
         .filter((target) => {
@@ -720,18 +836,44 @@ export class NPCBrainSystem {
     // touching PromptPayload/ai-proxy.
     const requestCombat = buildCombatContext(state);
     attachCombatContextToSummary(summary, requestCombat);
+    // Round-2 — attach analytics package (group analytics, threat sector
+    // map, scored delta menu, baseline hint). Computed up-front so the LLM
+    // request and the post-validator share the same baseline + menu (which
+    // is critical for the delta-use-rate signal to be meaningful).
+    const requestAnalytics = buildNPCBrainAnalytics(state, summary, requestCombat);
+    attachNPCBrainAnalyticsToSummary(summary, requestAnalytics);
+    // Stash the menu + baseline on the brain instance so the integration
+    // step (which can run several seconds later) can validate against the
+    // menu that was actually shown to the LLM.
+    this.lastRequestAnalytics = requestAnalytics;
     // Phase-LLM-Tune (system-level fix): NPC-Brain LLM only fires when there
     // is a real threat to react to. In calm scenarios the LLM produces
     // policies that are slightly more defensive than the rule-based fallback
     // (a known artifact of the trained tendency toward caution), which costs
     // production output across long runs without saving any lives. Gate LLM
     // on activeThreats|activeRaiders|workersUnderHit; otherwise use fallback.
+    // Round-2 iteration-3 — extend the gate: even if there are active
+    // threats, only let the LLM steer when the threat is IMMINENT (close
+    // OR guard-deficit OR worker hit). Distant raid frames stay on fallback
+    // because the LLM consistently over-rotates the colony into starvation
+    // (S2 case). Calm + distant-raid both → fallback.
     const calmCombat = requestCombat.activeRaiders === 0
       && Number(state.metrics?.combat?.activeThreats ?? 0) === 0
       && Number(requestCombat.workersUnderHit ?? 0) === 0;
+    const nearestTilesGate = Number(requestCombat.nearestThreatTiles ?? 999);
+    const proximateGate = nearestTilesGate >= 0 && nearestTilesGate <= 14;
+    // Round-2 iteration-3 — imminent gate. Only fire LLM when:
+    //   - close threat (≤14 tiles), OR
+    //   - guard deficit (need rapid policy shift to recruit), OR
+    //   - workers actively hit.
+    // Distant-raid frames stay on fallback because the LLM consistently
+    // over-rotates the colony into starvation when threat is far away.
+    const imminentGate = (requestCombat.activeRaiders > 0 || requestCombat.activePredators >= 2)
+      && (proximateGate || requestCombat.guardDeficit > 0 || requestCombat.workersUnderHit > 0);
     const wantsLlm = state.ai.enabled
       && state.ai.coverageTarget !== "fallback"
-      && !calmCombat;
+      && !calmCombat
+      && imminentGate;
     if (state.debug?.aiTrace) {
       state.debug.aiTrace.unshift({
         sec: state.metrics.timeSec,
