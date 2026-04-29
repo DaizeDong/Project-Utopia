@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] - v0.9.0-b — JobHarvest×4 + JobHelpers extraction (still feature-flagged)
+
+Phase 2 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` stays default OFF; production behaviour is unchanged. This phase ports the four harvest handlers (Farm/Lumber/Quarry/Herb) into Job classes that share the existing yield-pool / soil-salinization / node-flag / fertility-drain semantics with the legacy `handleHarvest`.
+
+### Added
+
+- **`src/simulation/npc/jobs/JobHelpers.js`** — shared movement + tile primitives for the Job-layer. Re-exports the WorkerAISystem helpers `chooseWorkerTarget`, `isAtTargetTile`, `setIdleDesired`, `applyHarvestStep`, `pickWanderNearby` (now exported from there). Defines locally `executeMovement` (composite follow-path-or-idle), `arrivedAtTarget` (at-tile predicate with optional tile-type sanity check), `tryAcquirePath` (wraps `setTargetAndPath` + integrates with v0.8.13 path-fail blacklist), `releaseReservation`, and `markBlacklist`.
+- **`src/simulation/npc/jobs/JobHarvestBase.js`** — shared base for the four harvest siblings. Implements `canTake` (gate on building count + carry-not-full), `findTarget` (delegates to `chooseWorkerTarget` for utility scoring with occupancy + reachability + blacklist consultation), `score` (role-fit × need-pressure × distance, scoring constants inline), `tick` (acquire path / follow / harvest), `isComplete` (carry at the deliver-cap → re-pick), and `onAbandon` (release reservation). Subclasses override only the static config fields.
+- **`src/simulation/npc/jobs/JobHarvestFarm.js`** — food / FARM tiles, role-fit `FARM=1.0, HAUL=0.5, default=0.1`, pressure soft-target ≈ 1.5× `foodEmergencyThreshold`.
+- **`src/simulation/npc/jobs/JobHarvestLumber.js`** — wood / LUMBER tiles, `WOOD=1.0`.
+- **`src/simulation/npc/jobs/JobHarvestQuarry.js`** — stone / QUARRY tiles, `STONE=1.0`.
+- **`src/simulation/npc/jobs/JobHarvestHerb.js`** — herbs / HERB_GARDEN tiles, `HERBS=1.0`.
+- **`test/job-harvest.test.js`** (10 cases): canTake gates on `buildings.farms > 0`; findTarget returns null on a grid with no FARM tiles; role-fit ordering FARM > HAUL > other; pressure inversion (high stockpile → low score, low → high); distance penalty (near > far); scheduler resolution — WOOD worker picks Lumber over Farm when both valid; hysteresis — incumbent harvest survives a marginally higher alt within the sticky window; isComplete fires at the carry-cap; **yield-equivalence** — `applyHarvestStep` produces the same `carry.food` as the legacy `handleHarvest` on a single completion tick (no-behaviour-change smoke test); end-to-end harvest cycles for QUARRY (`carry.stone`) and HERB_GARDEN (`carry.herbs`).
+
+### Changed
+
+- **`src/simulation/npc/jobs/JobRegistry.js`** — `ALL_JOBS` now lists 5 Jobs in priority order: 4 harvest (priority 10) followed by `JobWander` (priority 0, terminal floor).
+- **`src/simulation/npc/WorkerAISystem.js`** — extracts `applyHarvestStep(worker, state, services, dt, tileTypeOverride?, resourceKeyOverride?)` from `handleHarvest`. The legacy `handleHarvest` now delegates the at-target body to `applyHarvestStep` with no override (HAUL/role resolution preserved); the four harvest Jobs call it with explicit `(tileType, resourceKey)`. Yield-pool / soil salinization / fertility drain / production telemetry semantics live in a single place. Also exports `chooseWorkerTarget`, `isAtTargetTile`, `setIdleDesired` so `JobHelpers.js` can re-export them without forking.
+- **`test/job-layer-foundation.test.js`** — phase-a test #1's `ALL_JOBS.length === 1` assertion bumped to `=== 5` (registry now 4 harvest + wander). On bare-init (no FARM/LUMBER/QUARRY/HERB_GARDEN tiles) JobWander still wins by default since the harvest Jobs' `findTarget` returns null.
+
+### Constraints honoured
+
+- **Zero behaviour change in this commit.** `FEATURE_FLAGS.USE_JOB_LAYER = false` stays. Legacy dispatch path runs unchanged in production. `handleHarvest` / `handleEat` / `handleDeliver` / `handleProcess` / `handleConstruct` / `handleRest` / `handleGuardCombat` not modified beyond the `applyHarvestStep` extraction (which is exercised by both code paths).
+- `commitmentCycle`, `TASK_LOCK_STATES`, `chooseWorkerIntent`, `StatePlanner`, `StateFeasibility`, `RoleAssignmentSystem` untouched (phase 0.9.0-d territory).
+- No new BALANCE.* knobs. Job scoring constants live inline.
+
+### Test results
+
+1661 tests / 1658 pass / 0 fail / 3 pre-existing skips. v0.9.0-a baseline was 1651/1648 — exactly +10 (the new harvest test file) with zero regressions.
+
+### Deferred to phases 0.9.0-c through 0.9.0-e
+
+- **0.9.0-c** — `JobDeliverWarehouse` (carry-full → deposit), `JobEat` (warehouse-eat path), `JobProcess` × 3 (Cook/Smith/Heal), `JobConstruct` + `JobSeekConstruct`, `JobRest`, `JobGuardCombat`. Wires the GUARD/stress short-circuits which currently still run before the flag check.
+- **0.9.0-d** — flip `FEATURE_FLAGS.USE_JOB_LAYER`; retire `commitmentCycle` + `TASK_LOCK_STATES` + `chooseWorkerIntent`. Physical move of helpers from `WorkerAISystem.js` into `JobHelpers.js`.
+- **0.9.0-e** — delete the `handle*` helpers and the `if/else if` dispatch chain.
+
 ## [Unreleased] - v0.9.0-a — Job layer foundation (feature-flagged, default OFF)
 
 Phase 1 of 5 in the v0.9.0 Job-layer architectural rewrite per `/tmp/utopia-worker-architecture.md` audit items A1 (Job layer collapsing the triple-intent-picker) and A3 (utility hysteresis replacing the `commitmentCycle` global lock). This phase lands ONLY the foundation behind a feature flag default-OFF — `WorkerAISystem` dispatch is unchanged when the flag is false. Phases 0.9.0-b/c port the remaining handlers as Jobs (harvest / deliver / eat / process / construct / rest / guard); phase 0.9.0-d flips the flag and retires `commitmentCycle` + `TASK_LOCK_STATES` + `chooseWorkerIntent`; phase 0.9.0-e deletes the legacy dispatch entirely.
