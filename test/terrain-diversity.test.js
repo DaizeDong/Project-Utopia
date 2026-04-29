@@ -11,7 +11,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createInitialGrid, MAP_TEMPLATES } from "../src/world/grid/Grid.js";
+import { createInitialGrid, MAP_TEMPLATES, BIOME, BIOME_NAMES } from "../src/world/grid/Grid.js";
 import { TILE } from "../src/config/constants.js";
 
 const DIVERSITY_SEEDS = [1, 7, 42, 1337, 2025];
@@ -92,4 +92,65 @@ test("rugged_highlands and fertile_riverlands also exhibit seed diversity", () =
       `${templateId}: minimum pairwise diff ${(minDiff * 100).toFixed(2)}% — expected >=5%`,
     );
   }
+});
+
+// v0.8.9 Phase B — biome diversity. Different seeds should yield visibly
+// different biome distributions, not just shuffled tile arrays. We measure
+// per-biome tile percentage across 5 seeds and require at least 2 biomes
+// to vary by more than 5 percentage points (max-min) seed to seed.
+test("temperate_plains: different seeds get different biome distributions", () => {
+  const grids = DIVERSITY_SEEDS.map((seed) => createInitialGrid({ templateId: "temperate_plains", seed }));
+  const biomeCount = BIOME_NAMES.length;
+  const perSeedPct = grids.map((g) => {
+    assert.ok(g.biomes instanceof Uint8Array, "grid.biomes must be a Uint8Array");
+    assert.equal(g.biomes.length, g.tiles.length, "biomes must match tile count");
+    const counts = new Array(biomeCount).fill(0);
+    for (let i = 0; i < g.biomes.length; i += 1) counts[g.biomes[i]] += 1;
+    return counts.map((c) => c / g.biomes.length);
+  });
+  let biomesWithSpread = 0;
+  for (let b = 0; b < biomeCount; b += 1) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const pct of perSeedPct) {
+      if (pct[b] < lo) lo = pct[b];
+      if (pct[b] > hi) hi = pct[b];
+    }
+    if (hi - lo > 0.05) biomesWithSpread += 1;
+  }
+  assert.ok(
+    biomesWithSpread >= 2,
+    `expected >=2 biomes with >5% spread across seeds, got ${biomesWithSpread}`,
+  );
+});
+
+// v0.8.9 Phase B — quirks fire deterministically. The quirk RNG is keyed off
+// the seed; running the same template+seed twice must produce byte-identical
+// tile arrays (including any quirk-affected tiles).
+test("quirks fire deterministically: same seed -> same quirk-affected tiles", () => {
+  for (const tpl of ["temperate_plains", "rugged_highlands", "fertile_riverlands"]) {
+    for (const seed of [1, 1337, 99]) {
+      const a = createInitialGrid({ templateId: tpl, seed });
+      const b = createInitialGrid({ templateId: tpl, seed });
+      assert.equal(diffPct(a.tiles, b.tiles), 0, `${tpl} seed ${seed}: non-deterministic generation`);
+      // Biome map should also be deterministic.
+      let biomeDiff = 0;
+      for (let i = 0; i < a.biomes.length; i += 1) {
+        if (a.biomes[i] !== b.biomes[i]) biomeDiff += 1;
+      }
+      assert.equal(biomeDiff, 0, `${tpl} seed ${seed}: biomes diverged`);
+    }
+  }
+});
+
+// Sanity: BIOME constants are exported and consistent.
+test("BIOME enum: ids 0..6 correspond to BIOME_NAMES", () => {
+  assert.equal(BIOME.OPEN_PLAINS, 0);
+  assert.equal(BIOME.LUSH_VALLEY, 1);
+  assert.equal(BIOME.WOODLAND, 2);
+  assert.equal(BIOME.ROCKY_HILL, 3);
+  assert.equal(BIOME.MOUNTAIN, 4);
+  assert.equal(BIOME.WETLAND, 5);
+  assert.equal(BIOME.SCRUB, 6);
+  assert.equal(BIOME_NAMES.length, 7);
 });
