@@ -208,6 +208,10 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
       // `?? nowSec` which makes stuckTime=0 until the first successful path.
       lastSuccessfulPathSec: null,
     },
+    // v0.9.0-a — populated by JobScheduler when FEATURE_FLAGS.USE_JOB_LAYER
+    // is enabled. null in production (flag OFF). Phase 0.9.0-d flips the
+    // flag and this becomes the sole worker behaviour source-of-truth.
+    currentJob: null,
     policy: null,
     alive: true,
     hp: 100,

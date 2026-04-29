@@ -185,3 +185,27 @@ export const SYSTEM_ORDER = Object.freeze([
   "ResourceSystem",
   "ProcessingSystem",
 ]);
+
+// v0.9.0-a — Feature flags. Object.freeze with a getter so the surface is
+// immutable but `_testSetFeatureFlag` can flip the underlying state for
+// test isolation. Production code reads `FEATURE_FLAGS.USE_JOB_LAYER`
+// exactly like a static frozen field; tests call `_testSetFeatureFlag`
+// from this module only (NOT exported anywhere else).
+//
+// USE_JOB_LAYER — Phase 1 of 5 in the v0.9.0 Job-layer rewrite. When false
+// (production default), WorkerAISystem.update runs the legacy chooseWorker*
+// + commitmentCycle dispatch (zero behaviour change). When true,
+// WorkerAISystem routes through src/simulation/npc/jobs/JobScheduler.
+// Will flip to true in phase 0.9.0-d after harvest/deliver/eat/build/rest
+// /process/guard Jobs are ported and validated against the trace harness.
+let _useJobLayer = false;
+
+export const FEATURE_FLAGS = Object.freeze({
+  get USE_JOB_LAYER() { return _useJobLayer; },
+});
+
+// Test-only setter. Do NOT call from production code paths.
+// Restores the flag to its default in afterEach hooks to keep tests isolated.
+export function _testSetFeatureFlag(name, value) {
+  if (name === "USE_JOB_LAYER") _useJobLayer = Boolean(value);
+}
