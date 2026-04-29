@@ -28,8 +28,12 @@ function clonePlainObject(value) {
   return { ...value };
 }
 
-export function buildPathWorkerKey(gridVersion, start, goal, costVersion = 0) {
-  return `${gridVersion}:${costVersion}:${start.ix},${start.iz}->${goal.ix},${goal.iz}`;
+// v0.8.4 strategic walls + GATE (Agent C). Faction-aware key — must match
+// the PathCache key shape so a worker-pool result can be looked up under
+// the same key the cache uses. Default "colony" preserves pre-v0.8.4
+// behaviour for callers that don't pass a faction.
+export function buildPathWorkerKey(gridVersion, start, goal, costVersion = 0, faction = "colony") {
+  return `${gridVersion}:${costVersion}:${start.ix},${start.iz}->${goal.ix},${goal.iz}:${faction}`;
 }
 
 export function snapshotGridForPathWorker(grid, gridVersion) {
@@ -168,6 +172,10 @@ export class PathWorkerPool {
           weatherMoveCostMultiplier: job.weatherMoveCostMultiplier,
           dynamicCosts: job.dynamicCosts,
           grid: includeGrid ? job.grid : null,
+          // v0.8.4 strategic walls + GATE (Agent C). Forward the faction to
+          // the worker-side aStar call so off-thread searches respect gate
+          // permissions identically to main-thread searches.
+          faction: String(job.faction ?? "colony"),
         },
       });
     }

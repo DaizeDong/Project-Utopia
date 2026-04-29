@@ -9,7 +9,7 @@
  * 5. Skill expansion (compound skills → individual build steps)
  */
 
-import { BUILD_COST } from "../../../config/balance.js";
+import { BUILD_COST, BALANCE } from "../../../config/balance.js";
 import { TILE } from "../../../config/constants.js";
 import {
   inBounds, getTile, listTilesByType, toIndex,
@@ -259,6 +259,151 @@ function _dedup(tiles) {
   });
 }
 
+// ── Demolish Candidate Resolution ────────────────────────────────────
+
+/**
+ * v0.8.4 (Agent B) — Resolve a demolish hint to a list of candidate tiles
+ * that contain a built structure or RUINS. Unlike resolveLocationHint (which
+ * filters for GRASS), this filter accepts the inverse: any tile in the
+ * erase tool's allowedOldTypes EXCEPT GRASS / WATER.
+ *
+ * Hint forms:
+ *   "<ix>,<iz>"          — explicit coord; returns [{ ix, iz }] if the tile
+ *                          is built/RUINS, otherwise [].
+ *   "ruins_cluster"      — RUINS tiles, sorted by adjacency to roads.
+ *   "depleted_farm"      — FARM tiles with low yieldPool / salinized first.
+ *   "depleted_producer"  — Any depleted producer (farm/lumber/quarry/herb).
+ *   "blocking_road"      — Built tile adjacent to a road that breaks the chain.
+ *   "auto" / null        — Best inferred target (RUINS first, then depleted).
+ *
+ * @param {string|null} hint
+ * @param {object} state
+ * @param {Map} groundedSteps — map of step.id → grounded tile (for near_step)
+ * @returns {Array<{ ix:number, iz:number }>}
+ */
+function _resolveDemolishCandidates(hint, state, groundedSteps = new Map()) {
+  const grid = state?.grid;
+  if (!grid || !grid.tiles) return [];
+
+  if (typeof hint === "string") {
+    const m = hint.match(/^(\d+)\s*,\s*(\d+)$/);
+    if (m) {
+      const ix = parseInt(m[1], 10);
+      const iz = parseInt(m[2], 10);
+      if (!inBounds(ix, iz, grid)) return [];
+      if (_isDemolishable(grid, ix, iz)) return [{ ix, iz }];
+      return [];
+    }
+  }
+
+  const keyword = (typeof hint === "string" && hint.length > 0) ? hint : "auto";
+
+  if (keyword === "ruins_cluster") {
+    return _rankDemolishRuins(state);
+  }
+  if (keyword === "depleted_farm") {
+    return _rankDemolishProducers(state, [TILE.FARM]);
+  }
+  if (keyword === "depleted_producer") {
+    return _rankDemolishProducers(state, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  }
+  if (keyword === "blocking_road") {
+    return _rankDemolishBlockingTiles(state);
+  }
+  // "auto" / unknown — RUINS first, then depleted producers, then any built.
+  const ruins = _rankDemolishRuins(state);
+  if (ruins.length > 0) return ruins;
+  const depleted = _rankDemolishProducers(state, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  if (depleted.length > 0) return depleted;
+  // Last resort: any built tile (excluding warehouses — too important).
+  const out = [];
+  const PROTECTED = new Set([TILE.WAREHOUSE, TILE.GRASS, TILE.WATER]);
+  for (let iz = 0; iz < grid.height; iz++) {
+    for (let ix = 0; ix < grid.width; ix++) {
+      const tile = grid.tiles[toIndex(ix, iz, grid.width)];
+      if (PROTECTED.has(tile)) continue;
+      if (_isDemolishable(grid, ix, iz)) out.push({ ix, iz });
+      if (out.length >= 20) break;
+    }
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+/** Predicate: tile contains a built structure or RUINS (i.e. not GRASS / WATER). */
+function _isDemolishable(grid, ix, iz) {
+  if (!inBounds(ix, iz, grid)) return false;
+  const tile = grid.tiles[toIndex(ix, iz, grid.width)];
+  return tile !== TILE.GRASS && tile !== TILE.WATER;
+}
+
+/** Rank RUINS tiles: prefer adjacency to road / warehouse (clearing widens logistics). */
+function _rankDemolishRuins(state) {
+  const grid = state.grid;
+  const ruins = listTilesByType(grid, [TILE.RUINS]);
+  const ranked = ruins.map((r) => {
+    let score = 0;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (const [dx, dz] of dirs) {
+      const nx = r.ix + dx;
+      const nz = r.iz + dz;
+      if (!inBounds(nx, nz, grid)) continue;
+      const nType = grid.tiles[toIndex(nx, nz, grid.width)];
+      if (nType === TILE.ROAD || nType === TILE.WAREHOUSE) score += 5;
+    }
+    return { ix: r.ix, iz: r.iz, score };
+  });
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked.map(({ ix, iz }) => ({ ix, iz }));
+}
+
+/** Rank producer tiles by depletion (salinized first, then lowest yieldPool). */
+function _rankDemolishProducers(state, tileTypes) {
+  const grid = state.grid;
+  const producers = listTilesByType(grid, tileTypes);
+  const ranked = [];
+  for (const p of producers) {
+    const idx = toIndex(p.ix, p.iz, grid.width);
+    const ts = grid.tileState && typeof grid.tileState.get === "function"
+      ? grid.tileState.get(idx)
+      : null;
+    if (!ts) continue;
+    const pool = Number(ts.yieldPool ?? Infinity);
+    const salinized = Number(ts.salinized ?? 0) > 0;
+    const fallowTicks = Number(ts.fallowTicks ?? 0);
+    if (!(salinized || pool < 60 || fallowTicks > 2400)) continue;
+    const score = salinized ? -1000 : pool - fallowTicks * 0.01;
+    ranked.push({ ix: p.ix, iz: p.iz, score });
+  }
+  ranked.sort((a, b) => a.score - b.score);
+  return ranked.map(({ ix, iz }) => ({ ix, iz }));
+}
+
+/** Find built tiles adjacent to a road that block the road's continuation. */
+function _rankDemolishBlockingTiles(state) {
+  const grid = state.grid;
+  const out = [];
+  const PROTECTED = new Set([TILE.WAREHOUSE, TILE.WATER, TILE.GRASS, TILE.ROAD, TILE.BRIDGE]);
+  for (let iz = 0; iz < grid.height; iz++) {
+    for (let ix = 0; ix < grid.width; ix++) {
+      const tile = grid.tiles[toIndex(ix, iz, grid.width)];
+      if (PROTECTED.has(tile)) continue;
+      if (!_isDemolishable(grid, ix, iz)) continue;
+      let roadAdj = 0;
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      for (const [dx, dz] of dirs) {
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (!inBounds(nx, nz, grid)) continue;
+        const nType = grid.tiles[toIndex(nx, nz, grid.width)];
+        if (nType === TILE.ROAD) roadAdj++;
+      }
+      if (roadAdj >= 2) out.push({ ix, iz });
+    }
+  }
+  return out;
+}
+
 // ── Affordance Scoring (SayCan-inspired) ─────────────────────────────
 
 /**
@@ -345,6 +490,51 @@ export function groundPlanStep(step, state, buildSystem, groundedSteps = new Map
       feasible: true,
       candidateCount: 0,
       feasibleCount: 0,
+      placementDetails: null,
+      status: "pending",
+    };
+  }
+
+  // v0.8.4 Phase 11 (Agent D) — `recruit` action carries no tile and no
+  // resource cost (RecruitmentSystem checks food at spawn time). Mark
+  // trivially feasible so executeNextSteps detects the type and bumps
+  // state.controls.recruitQueue by action.count.
+  if (action.type === "recruit") {
+    return {
+      ...step,
+      groundedTile: null,
+      affordanceScore: 1,
+      feasible: true,
+      candidateCount: 0,
+      feasibleCount: 0,
+      placementDetails: null,
+      status: "pending",
+    };
+  }
+
+  // v0.8.4 (Agent B) — `demolish` action: ground to a tile that contains a
+  // built structure or RUINS. Hints accept "<ix>,<iz>", whitelisted keywords
+  // ("ruins_cluster" / "depleted_farm" / "depleted_producer" /
+  // "blocking_road" / "auto"), or a fall-through to "auto" via
+  // _resolveDemolishCandidates. The grounded tile is then validated via
+  // `buildSystem.previewToolAt(state, "erase", ix, iz)` so we share the
+  // same allowedOldTypes / RUINS-includes-GRASS rule the player UI uses.
+  if (action.type === "demolish") {
+    const cost = BALANCE.demolishToolCost ?? { wood: 1 };
+    const affordanceScore = computeAffordanceScore(state.resources ?? {}, cost);
+    const candidates = _resolveDemolishCandidates(action.hint, state, groundedSteps);
+    const feasibleTiles = candidates.filter((tile) => {
+      const preview = buildSystem.previewToolAt(state, "erase", tile.ix, tile.iz, services);
+      return preview.ok;
+    });
+    const bestTile = feasibleTiles[0] ?? null;
+    return {
+      ...step,
+      groundedTile: bestTile,
+      affordanceScore,
+      feasible: bestTile != null && affordanceScore > 0.5,
+      candidateCount: candidates.length,
+      feasibleCount: feasibleTiles.length,
       placementDetails: null,
       status: "pending",
     };
@@ -528,6 +718,62 @@ export function executeNextSteps(plan, state, buildSystem, services = null) {
       continue;
     }
 
+    // v0.8.4 Phase 11 (Agent D) — `recruit` increments
+    // state.controls.recruitQueue by action.count, clamped to
+    // BALANCE.recruitMaxQueueSize. Cost is paid at spawn time (not here).
+    if (step.action.type === "recruit") {
+      state.controls ??= {};
+      const requested = Math.max(1, Math.min(10, Number(step.action.count ?? 1) | 0));
+      const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
+      const before = Math.max(0, Number(state.controls.recruitQueue ?? 0) | 0);
+      const after = Math.min(maxQueue, before + requested);
+      state.controls.recruitQueue = after;
+      step.status = "completed";
+      step.actualEnqueued = after - before;
+      state.metrics ??= {};
+      state.metrics.recruitEnqueued = Math.max(0, Number(state.metrics.recruitEnqueued ?? 0)) + (after - before);
+      executed.push(step);
+      continue;
+    }
+
+    // v0.8.4 (Agent B) — `demolish` action: resolved into a built/RUINS tile
+    // by groundPlanStep. Routes through buildSystem.placeToolAt with the
+    // erase tool (Agent A's BuildSystem will redirect to the demolish-overlay
+    // path once that lands; the legacy instant-erase path is exercised
+    // until then). Cost is BALANCE.demolishToolCost (1 wood). We bump
+    // state.metrics.demolishCount so the bench harness can chart how often
+    // the AI uses this lever.
+    if (step.action.type === "demolish") {
+      const cost = BALANCE.demolishToolCost ?? { wood: 1 };
+      if (!canAfford(state.resources ?? {}, cost)) {
+        step.status = "waiting_resources";
+        continue;
+      }
+      if (!step.groundedTile) {
+        step.status = "failed";
+        step.failureReason = "no_demolish_target";
+        executed.push(step);
+        continue;
+      }
+      const tile = step.groundedTile;
+      const owner = step.owner ?? "ai-llm";
+      const result = buildSystem.placeToolAt(
+        state, "erase", tile.ix, tile.iz,
+        { recordHistory: false, services, owner }
+      );
+      step.status = result.ok ? "completed" : "failed";
+      step.actualTile = result.ok ? tile : null;
+      if (result.ok) {
+        state.buildings = rebuildBuildingStats(state.grid);
+        state.metrics ??= {};
+        state.metrics.demolishCount = Math.max(0, Number(state.metrics.demolishCount ?? 0)) + 1;
+      } else {
+        step.failureReason = result.reason ?? "demolish_failed";
+      }
+      executed.push(step);
+      continue;
+    }
+
     // Check affordability
     const cost = step.action.skill
       ? _skillTotalCost(step.action.skill)
@@ -610,6 +856,17 @@ export function isPlanBlocked(plan, state) {
       plan.steps.find(s => s.id === depId)?.status === "completed"
     );
     if (!depsComplete) continue;
+
+    // v0.8.4 (Agent B) — `demolish` carries a tile and the small
+    // BALANCE.demolishToolCost (1 wood). Treat it as making progress when
+    // both are present.
+    if (step.action.type === "demolish") {
+      const dCost = BALANCE.demolishToolCost ?? { wood: 1 };
+      if (canAfford(state.resources ?? {}, dCost) && step.groundedTile) {
+        return false;
+      }
+      continue;
+    }
 
     // If at least one unblocked step can afford its cost, plan is not blocked
     const cost = step.action.skill

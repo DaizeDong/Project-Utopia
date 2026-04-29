@@ -38,10 +38,18 @@ const TICK_RATE = 2;
 // ≥0.05 DevIndex flipped the test to red. v0.8.3 tile-mutation cleanup
 // (sabotage/wildfire/build now go through `onTileMutated` → synchronous
 // rebuildBuildingStats + reservation release) costs ~1 point of long-horizon
-// DevIndex because the cleanup work is real. Floor lowered to 28 to give
-// the assertion breathing room while still catching genuine regressions
-// (sub-25 would mean the colony actually fell apart).
-const SOFT_FLOOR_DAY30 = 28;
+// DevIndex because the cleanup work is real. Floor was 28 in v0.8.3.
+// v0.8.4 building lifecycle (worker-driven construction-in-progress, food-cost
+// recruitment replacing auto-reproduction, HP-based walls + GATE faction
+// pathing) is a major mechanic shift: workers must travel to and labor at
+// build sites (no instant placement), and population growth is gated by a
+// recruitCooldown rather than the legacy 10s organic-birth loop. Round-2
+// polish reduced cooldown 30→12s and halved most constructionWorkSec values,
+// recovering ~7 DevIndex points but the day-30 baseline still legitimately
+// runs ~20 (seed=1) instead of the v0.8.3 baseline 30. Floor lowered to 18
+// to track the new mechanic; sub-15 would mean the colony genuinely fell
+// apart rather than transitioned.
+const SOFT_FLOOR_DAY30 = 18;
 
 function assertCheckpointShape(cp) {
   assert.ok(cp, "checkpoint must be sampled");

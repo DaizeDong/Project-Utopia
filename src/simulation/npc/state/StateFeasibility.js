@@ -90,7 +90,39 @@ export function isStateFeasible(entity, groupId, desiredState, state, context = 
       return { ok: false, reason: "worker role has no matching worksite" };
     }
     if ((stateNode === "seek_food" || stateNode === "eat") && !fctx.hasAnyFoodSource) {
-      return { ok: false, reason: "no reachable food source" };
+      // v0.8.7 T0-2: also accept the carry-bypass case — no warehouse but
+      // colony has food in state.resources. Workers must still be able to
+      // reach `eat` so the WorkerAISystem.consumeEmergencyRation path fires
+      // (LR-C1). Without this clause, a colony that has built food but never
+      // a warehouse would have all its workers blocked from `eat`.
+      const colonyFood = Number(state?.resources?.food ?? 0);
+      if (!(colonyFood > 0 && fctx.warehouses === 0)) {
+        return { ok: false, reason: "no reachable food source" };
+      }
+    }
+    // v0.8.6 Tier 2 F3: also gate on `entity.debug.reachableFood`. Pre-fix
+    // `hasAnyFoodSource` only checked stockpile + warehouse counts; a
+    // walled-off worker with intact warehouses would loop seek_food → fail
+    // → seek_food forever. With this gate, the feasibility check defers
+    // those workers to wander/idle until the reachability probe succeeds.
+    // v0.8.7 T0-2: Skip the reachability gate when no warehouse exists —
+    // the carry-bypass eat path doesn't need a warehouse to be reachable
+    // (it consumes from state.resources.food directly via consumeEmergencyRation).
+    if ((stateNode === "seek_food" || stateNode === "eat")
+        && entity?.debug && entity.debug.reachableFood === false
+        && fctx.warehouses > 0) {
+      return { ok: false, reason: "food not reachable from current position" };
+    }
+    // v0.8.4 building-construction (Agent A) — construction states require
+    // at least one site in `state.constructionSites`. RoleAssignmentSystem
+    // demotes BUILDERs when sites empty, but the feasibility gate stops a
+    // newly-promoted BUILDER from picking the state on the same tick the
+    // last site completes.
+    if (stateNode === "construct" || stateNode === "seek_construct") {
+      const sites = Array.isArray(state?.constructionSites) ? state.constructionSites : [];
+      if (sites.length === 0) {
+        return { ok: false, reason: "no construction sites" };
+      }
     }
   }
 

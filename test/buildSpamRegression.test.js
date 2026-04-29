@@ -85,14 +85,14 @@ test("build-spam: wall×20 cumulative wood exceeds flat 2×20 but respects softe
     `wall×20 should be penalised softer than warehouse: got ${escalatedTotal}, flat ${flatTotal}`);
 });
 
-test("build-spam: kitchen×5 hits the steep perExtra=0.35 curve", () => {
-  // Kitchen is a processing singleton: the curve is deliberately steep to
-  // discourage stacking duplicates. Cumulative wood for 5 kitchens must be
-  // >= 1.4× the flat baseline 8×5=40. (Empirical: 58 wood vs 40 flat = 1.45×.)
+test("build-spam: kitchen×5 still escalates with perExtra=0.25 (v0.8.5)", () => {
+  // v0.8.5 Tier 3: kitchen perExtra 0.35 → 0.25 (LLM never built 2nd kitchen
+  // even when needed; soften the punishment). Cumulative wood for 5
+  // kitchens still escalates above flat (now ~1.25× instead of 1.45×).
   const flatTotal = 5 * Number(BUILD_COST.kitchen.wood ?? 0);
   const escalatedTotal = cumulativeWood("kitchen", 5);
-  assert.ok(escalatedTotal >= flatTotal * 1.4,
-    `kitchen×5 should hit >=1.4× flat ${flatTotal}, got ${escalatedTotal}`);
+  assert.ok(escalatedTotal >= flatTotal * 1.2,
+    `kitchen×5 should still escalate >=1.2× flat ${flatTotal}, got ${escalatedTotal}`);
   // Also assert stone-axis scaling: kitchen base stone=3, cumulative stone
   // for count 0..4 follows the same multiplier pattern.
   let stoneTotal = 0;

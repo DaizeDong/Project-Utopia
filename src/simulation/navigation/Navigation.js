@@ -2,6 +2,7 @@ import { BALANCE } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { worldToTile, tileToWorld, getTile } from "../../world/grid/Grid.js";
 import { aStar } from "./AStar.js";
+import { getEntityFaction } from "./Faction.js";
 import { buildPathWorkerKey, snapshotDynamicCostsForPathWorker, snapshotGridForPathWorker } from "./PathWorkerPool.js";
 
 const PATH_RETRY_BUDGET_SKIP_BASE_SEC = 0.16;
@@ -207,12 +208,18 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   }
 
   const start = worldToTile(entity.x, entity.z, state.grid);
-  const cachedPath = services.pathCache.get(state.grid.version, start, targetTile, pathCostVersion);
+  // v0.8.4 strategic walls + GATE (Agent C). Faction derives from the
+  // entity (worker → "colony", saboteur → "hostile", predator → "hostile",
+  // herbivore → "neutral"). Threaded through cache key + A* options +
+  // worker pool key so a hostile path search is never served a colony
+  // result and vice versa.
+  const faction = getEntityFaction(entity);
+  const cachedPath = services.pathCache.get(state.grid.version, start, targetTile, pathCostVersion, faction);
 
   let path = cachedPath;
   let durationMs = 0;
   let resolvedByWorker = false;
-  const workerKey = buildPathWorkerKey(state.grid.version, start, targetTile, pathCostVersion);
+  const workerKey = buildPathWorkerKey(state.grid.version, start, targetTile, pathCostVersion, faction);
   if (!path && shouldUsePathWorkers(entity, state, services)) {
     const pendingKey = String(retryState?.pendingPathWorkerKey ?? "");
     let workerResult = null;
@@ -259,6 +266,10 @@ export function setTargetAndPath(entity, targetTile, state, services) {
         weatherMoveCostMultiplier: state.weather.moveCostMultiplier,
         dynamicCosts: snapshotDynamicCostsForPathWorker(state),
         grid: getPathWorkerGridSnapshot(state),
+        // v0.8.4 strategic walls + GATE (Agent C). Faction is included on
+        // the worker job so the off-thread aStar applies the same
+        // gate/wall rules as on-thread.
+        faction,
       });
       if (astarStats) {
         astarStats.workerRequests = Number(astarStats.workerRequests ?? 0) + 1;
@@ -310,12 +321,17 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       return false;
     }
     const t0 = nowMs();
+    // v0.8.4 strategic walls + GATE (Agent C). Faction-aware A* — gates
+    // open for "colony", closed for "hostile"/"neutral". The default
+    // "colony" baseline is preserved for tests/scenes that path without
+    // faction context (the entity-based callers above always provide one).
     path = aStar(
       state.grid,
       start,
       targetTile,
       state.weather.moveCostMultiplier,
       getDynamicPathCosts(state),
+      { faction },
     );
     durationMs = nowMs() - t0;
     pathBudget.usedMs += durationMs;
@@ -349,7 +365,10 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   }
 
   if (!cachedPath) {
-    services.pathCache.set(state.grid.version, start, targetTile, pathCostVersion, path);
+    // v0.8.4 strategic walls + GATE (Agent C). Cache by faction so a
+    // hostile result can never be returned to a colony lookup and vice
+    // versa.
+    services.pathCache.set(state.grid.version, start, targetTile, pathCostVersion, faction, path);
   }
   applyPathWorkerStats(state, services);
 

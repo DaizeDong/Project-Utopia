@@ -41,7 +41,10 @@ const LLM_RETRY_DELAY_SEC = 60;
  *  LLM benches showed plansCompleted=0/5 because plans hogged the slot for
  *  30s each while the colony fell behind. 10s is enough for resources to
  *  accumulate one production cycle. */
-const PLAN_STALL_GRACE_SEC = 10;
+// v0.8.5 Tier 3: 10 → 18. 10s was less than smithyCycleSec=8 (so plans
+// requiring tools always stalled before completion). 18s gives the
+// tool/medicine pipelines real headroom to land.
+const PLAN_STALL_GRACE_SEC = 18;
 
 // ── State Initialization ────────────────────────────────────────────
 
@@ -228,9 +231,27 @@ export class AgentDirectorSystem {
     }
 
     // ── Step 2: Generate new plan if needed ──
-    if (!this._activePlan && !this._pendingLLM) {
+    // v0.8.6 Tier 1 AI-S15: pass `hasActivePlan` correctly so the crisis
+    // branches (food_crisis / resource_opportunity) inside shouldReplan are
+    // reachable. Pre-fix this call always passed `false`, collapsing every
+    // replan to "no_active_plan" and skipping the crisis logic. With this
+    // guard, an EXISTING valid plan can still abort + replan when
+    // shouldReplan flags a true crisis (food crashing or resource windfall).
+    const hasActivePlan = Boolean(
+      this._activePlan
+      && Array.isArray(this._activePlan.steps)
+      && this._activePlan.steps.length > 0
+      && !isPlanComplete(this._activePlan),
+    );
+    if (!this._pendingLLM) {
       const observation = this._perceiver.observe(state);
-      const trigger = shouldReplan(nowSec, this._lastPlanSec, observation, false);
+      const trigger = shouldReplan(nowSec, this._lastPlanSec, observation, hasActivePlan);
+      // Only act when there's no active plan OR a crisis explicitly requested
+      // a mid-flight replan. Heartbeat / cooldown without a crisis is a
+      // no-op while a plan is already executing.
+      const isCrisis = trigger.reason === "food_crisis" || trigger.reason === "resource_opportunity";
+      const allowReplan = !this._activePlan || isCrisis;
+      if (!allowReplan) trigger.should = false;
 
       if (trigger.should && nowSec - this._lastPlanSec >= PLAN_INTERVAL_SEC) {
         this._lastPlanSec = nowSec;

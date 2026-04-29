@@ -1,8 +1,13 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { ANIMAL_KIND, EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
+import { ANIMAL_KIND, EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO, VISITOR_KIND } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
+import {
+  applyConstructionWork,
+  findOrReserveBuilderSite,
+  releaseBuilderSite,
+} from "../construction/ConstructionSites.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, hasPendingPathRequest, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
@@ -21,7 +26,15 @@ const TARGET_REFRESH_JITTER_SEC = 0.7;
 const WANDER_REFRESH_BASE_SEC = 1.8;
 const WANDER_REFRESH_JITTER_SEC = 1.2;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
-export const TASK_LOCK_STATES = new Set(["harvest", "deliver", "eat", "process", "seek_task"]);
+// v0.8.4 building-construction (Agent A) — `construct` and `seek_construct`
+// are task-locked so a BUILDER assigned to a site does not flip back to
+// FARM when the planner re-evaluates each manager interval. RoleAssignment
+// system controls when BUILDERs are demoted (sites empty); the FSM keeps
+// them committed during their assigned shift.
+export const TASK_LOCK_STATES = new Set([
+  "harvest", "deliver", "eat", "process", "seek_task",
+  "construct", "seek_construct",
+]);
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 const WORKER_MEMORY_RECENT_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
@@ -539,11 +552,28 @@ function estimateNearestWarehouseDistance(worker, state) {
   return Math.abs(current.ix - nearest.ix) + Math.abs(current.iz - nearest.iz);
 }
 
-function resolveWorkCooldown(worker, dt, amount, resourceType, rng, isNight) {
+// v0.8.5 Tier 3: Rest-scaled night productivity multiplier. The previous
+// flat 0.6 punished well-rested colonies the same as exhausted ones.
+// Linear: floor + restBonus × clamp(rest, 0, 1). At rest=0 → floor (0.6);
+// at rest=1 → floor+restBonus (1.0). Falls back to the legacy flat
+// multiplier if the new fields are unset (backwards-compatible savegames).
+function getNightProductivityMultiplier(worker) {
+  const floor = Number(BALANCE.workerNightProductivityFloor ?? BALANCE.workerNightProductivityMultiplier ?? 0.6);
+  const restBonus = Number(BALANCE.workerNightProductivityRestBonus ?? 0);
+  if (restBonus <= 0) return floor;
+  const rest = clamp(Number(worker?.rest ?? 1), 0, 1);
+  return floor + restBonus * rest;
+}
+
+function resolveWorkCooldown(worker, dt, amount, resourceType, rng, isNight, directDepositState = null) {
   if (worker.cooldown <= 0) {
     const baseDuration = Number(BALANCE.workerHarvestDurationSec ?? 2.5);
     const skillMultiplier = Number(worker.preferences?.workDurationMultiplier ?? 1);
-    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    // v0.8.5 Tier 3: rest-scaled night productivity. Well-rested workers
+    // hit 1.0 productivity at night; exhausted ones still take the floor
+    // penalty.
+    const nightMult = isNight ? getNightProductivityMultiplier(worker) : 1;
+    const nightPenalty = isNight ? (1 / Math.max(0.1, nightMult)) : 1;
     worker.cooldown = baseDuration * skillMultiplier * nightPenalty * (0.8 + rng.next() * 0.5);
     worker.workRemaining = worker.cooldown;
     worker.progress = 0;
@@ -555,7 +585,28 @@ function resolveWorkCooldown(worker, dt, amount, resourceType, rng, isNight) {
   const total = Number(worker.workRemaining ?? worker.cooldown + dt);
   worker.progress = total > 0 ? clamp(1 - worker.cooldown / total, 0, 1) : 1;
   if (worker.cooldown <= 0) {
-    worker.carry[resourceType] += amount;
+    // v0.8.5 Tier 3: careful trait yield bonus. Pre-v0.8.5 the careful
+    // trait carried only a speed penalty (workDurationMultiplier > 1)
+    // with no upside — strict-worse trait. Apply +traitCarefulYieldBonus
+    // to harvest amounts when the worker has the careful trait, balancing
+    // out the slower harvest cycle.
+    let yielded = amount;
+    if (BALANCE.workerTraitEffectsEnabled !== false
+        && Array.isArray(worker.traits)
+        && worker.traits.includes("careful")) {
+      const carefulBonus = Number(BALANCE.traitCarefulYieldBonus ?? 0);
+      if (carefulBonus > 0) yielded *= 1 + carefulBonus;
+    }
+    // v0.8.6 Tier 0 LR-C1: bypass carry → deposit directly into state.resources
+    // when no warehouse exists. Caller passes `directDepositState=state` to opt
+    // in; otherwise the standard carry path is preserved. Resource keys map
+    // 1:1 with state.resources fields.
+    if (directDepositState && directDepositState.resources) {
+      const cur = Number(directDepositState.resources[resourceType] ?? 0);
+      directDepositState.resources[resourceType] = cur + yielded;
+    } else {
+      worker.carry[resourceType] += yielded;
+    }
     worker.progress = 0;
     worker.workRemaining = 0;
   }
@@ -611,7 +662,20 @@ function consumeEmergencyRation(worker, state, dt, nowSec) {
   const carryFood = Number(worker.carry?.food ?? 0);
   // v0.8.2 Round-7 01e+02b — fall back to carry.food when warehouse is empty
   if (warehouseFood <= 0 && carryFood <= 0) return;
-  if (worker.debug?.reachableFood) return;
+  // v0.8.7 T0-3 (QA1-H1): Skip emergency-eat ONLY if the worker can actually
+  // USE the reachable source.
+  // v0.8.8 D1: tightened to make carry-eat truly emergency-only. Earlier
+  // logic permitted carry-eat any time reachableFood was undefined, which
+  // happened on the first MortalitySystem-skip tick of a worker's life.
+  // Now we treat:
+  //   - warehouse present + reachableFood !== false → skip (let regular
+  //     seek_food path deliver to/from warehouse stockpile)
+  //   - warehouse present + reachableFood === false → emergency carry-eat
+  //   - no warehouse → emergency carry-eat permitted (LR-C1 path)
+  // Net effect: workers with carry food who can route to a warehouse will
+  // deposit + eat from stockpile rather than munching carry directly.
+  const hasWarehouse = (state.buildings?.warehouses ?? 0) > 0;
+  if (hasWarehouse && worker.debug?.reachableFood !== false) return;
   worker.blackboard ??= {};
   const nextAllowed = Number(worker.blackboard.emergencyRationCooldownSec ?? -Infinity);
   if (nowSec < nextAllowed) return;
@@ -694,7 +758,7 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
  */
 function handleGuardCombat(worker, state, services, dt) {
   const animals = Array.isArray(state?.animals) ? state.animals : [];
-  if (animals.length === 0) return false;
+  const agents = Array.isArray(state?.agents) ? state.agents : [];
 
   const aggroRadius = Number(BALANCE.guardAggroRadius ?? 4);
   const aggro2 = aggroRadius * aggroRadius;
@@ -709,6 +773,22 @@ function handleGuardCombat(worker, state, services, dt) {
     if (d2 <= aggro2 && d2 < bestD2) {
       bestD2 = d2;
       target = a;
+    }
+  }
+  // v0.8.5 Tier 2 S3: saboteur engagement. GUARDs now also chase active
+  // SABOTEUR visitors within aggro range so the colony has a real counter
+  // beyond walls. Saboteurs have HP (initialised in EntityFactory) and
+  // die when hp drops to 0 — same melee path as predator engagement.
+  for (const v of agents) {
+    if (!v || v.alive === false) continue;
+    if (v.type !== "VISITOR") continue;
+    if (v.kind !== VISITOR_KIND.SABOTEUR) continue;
+    const dx = v.x - worker.x;
+    const dz = v.z - worker.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= aggro2 && d2 < bestD2) {
+      bestD2 = d2;
+      target = v;
     }
   }
   if (!target) return false;
@@ -727,13 +807,33 @@ function handleGuardCombat(worker, state, services, dt) {
   // Refresh path if stale or absent.
   const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
   const noPath = !hasActivePath(worker, state);
+  let pathAcquired = !noPath;
   if ((pathStale || noPath) && canAttemptPath(worker, state)) {
-    setTargetAndPath(worker, targetTile, state, services);
+    pathAcquired = setTargetAndPath(worker, targetTile, state, services);
   }
   if (hasActivePath(worker, state)) {
     const step = followPath(worker, state, dt);
     worker.desiredVel = step.desired;
+    worker.blackboard.guardPathFailDwellSec = 0;
   } else {
+    // v0.8.6 Tier 2 CB-H1: GUARD path-fail fallback. Pre-fix, when A* failed
+    // to reach the threat (walled off, on a different island, etc.) the
+    // GUARD just idled — leaving the threat free to operate. Now: track
+    // dwell, after 1.5s without a successful path, switch to wandering or
+    // demote out of GUARD so the FSM picks something useful instead of
+    // burning a worker slot doing nothing.
+    // v0.8.7.1 P11 — clamp dwell counter to a reasonable upper bound so an
+    // unreachable target on a long-running save can't push the value into
+    // pathological ranges.
+    const dwell = Math.min(5, Number(worker.blackboard.guardPathFailDwellSec ?? 0) + dt);
+    worker.blackboard.guardPathFailDwellSec = dwell;
+    if (dwell >= 1.5) {
+      setIdleDesired(worker);
+      // Don't demote here (RoleAssignmentSystem owns that). Just clear the
+      // engagement so handleWander or the next manager tick can re-route.
+      worker.debug.lastIntentReason = `GUARD path-fail dwell=${dwell.toFixed(1)}s`;
+      return false; // fall through to regular FSM (wander/idle/etc.)
+    }
     setIdleDesired(worker);
   }
 
@@ -966,6 +1066,12 @@ export function handleHarvest(worker, state, services, dt) {
     // Capture pre-resolve cooldown so we can tell whether this tick was the
     // completion tick (amount was added inside resolveWorkCooldown).
     const preCooldown = Number(worker.cooldown ?? 0);
+    // v0.8.6 Tier 0 LR-C1: when no warehouse exists, route harvested food
+    // directly into state.resources.food (the "communal cache"). Without this,
+    // workers harvest into carry.food but cannot deposit (no warehouse to
+    // path to) and the colony starves while carry rots — observed live as
+    // 19/23 dead in 180s on Broken Frontier scenario.
+    const noWarehouse = Number(state.buildings?.warehouses ?? 0) <= 0;
     resolveWorkCooldown(
       worker,
       dt,
@@ -973,6 +1079,7 @@ export function handleHarvest(worker, state, services, dt) {
       "food",
       services.rng,
       isNight,
+      noWarehouse ? state : null,
     );
     // Drain tile fertility on harvest
     if (worker.cooldown <= 0 && worker.targetTile) {
@@ -1195,6 +1302,16 @@ function handleWander(worker, state, services, dt) {
     return; // Built something, skip normal wander
   }
 
+  // v0.8.7 T0-2: when feasibility blocked seek_food/eat (e.g., no warehouse +
+  // reachableFood probe missed) and the worker is hungry while colony food
+  // exists, route through the carry-bypass eat. This ensures LR-C1 reaches
+  // workers even when they end up in `wander` rather than `eat`.
+  const hungerNow = Number(worker.hunger ?? 0);
+  const colonyFood = Number(state.resources?.food ?? 0);
+  if (hungerNow < WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD && colonyFood > 0) {
+    consumeEmergencyRation(worker, state, dt, Number(state.metrics?.timeSec ?? 0));
+  }
+
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
   // v0.8.0 Phase 3 M1b post-review — if fog has hidden tiles, bias the wander
   // destination toward the nearest frontier so "explore_fog" intent is actually
@@ -1276,6 +1393,86 @@ function handleStressWorkerPatrol(worker, state, services, dt) {
   }
 }
 
+/**
+ * v0.8.4 building-construction (Agent A) — BUILDER state handlers.
+ *
+ * `handleSeekConstruct` routes the BUILDER to its assigned site (or claims
+ * the nearest unassigned one). When the worker's tile matches the site,
+ * StatePlanner's BUILDER branch transitions them to `construct`, where
+ * `handleConstruct` accumulates dt onto the overlay's workAppliedSec.
+ *
+ * Both handlers fall back to "idle" if no sites exist. RoleAssignmentSystem
+ * demotes BUILDERs to FARM when sites empty so this is mostly a guard
+ * against a same-tick race (last site completes between role-assign and
+ * worker tick).
+ */
+function handleSeekConstruct(worker, state, services, dt) {
+  const site = findOrReserveBuilderSite(state, worker);
+  if (!site) {
+    setIdleDesired(worker);
+    return;
+  }
+  const targetTile = { ix: site.ix, iz: site.iz };
+  // Always set targetTile so StatePlanner's BUILDER branch can detect when
+  // the worker reaches the site (and transition `seek_construct → construct`).
+  if (!worker.targetTile
+    || worker.targetTile.ix !== targetTile.ix
+    || worker.targetTile.iz !== targetTile.iz) {
+    worker.targetTile = { ix: targetTile.ix, iz: targetTile.iz };
+  }
+  // Already on the target tile — no path needed; next planner tick will
+  // resolve to `construct`.
+  if (isAtTile(worker, targetTile, state)) {
+    setIdleDesired(worker);
+    return;
+  }
+  if (!hasActivePath(worker, state)) {
+    if (canAttemptPath(worker, state) && !hasPendingPathRequest(worker, services)) {
+      setTargetAndPath(worker, targetTile, state, services);
+    }
+  }
+  if (hasActivePath(worker, state)) {
+    worker.desiredVel = followPath(worker, state, dt).desired;
+  } else {
+    setIdleDesired(worker);
+  }
+}
+
+function handleConstruct(worker, state, services, dt) {
+  const site = findOrReserveBuilderSite(state, worker);
+  if (!site) {
+    setIdleDesired(worker);
+    return;
+  }
+  const targetTile = { ix: site.ix, iz: site.iz };
+  if (!isAtTile(worker, targetTile, state)) {
+    // We thought we were at the site but the FSM resolved `construct`
+    // anyway — re-route via seek_construct logic on the same tick.
+    if (canAttemptPath(worker, state) && !hasPendingPathRequest(worker, services)) {
+      setTargetAndPath(worker, targetTile, state, services);
+    }
+    if (hasActivePath(worker, state)) {
+      worker.desiredVel = followPath(worker, state, dt).desired;
+    } else {
+      setIdleDesired(worker);
+    }
+    return;
+  }
+  // At the site — apply work seconds to the overlay. ConstructionSystem
+  // (next system in tick) will detect completion and mutate the tile.
+  setIdleDesired(worker);
+  applyConstructionWork(state, site.ix, site.iz, dt);
+  if (worker.debug) {
+    worker.debug.lastConstructApplySec = Number(state.metrics?.timeSec ?? 0);
+  }
+}
+
+function isAtTile(worker, target, state) {
+  if (!target || !state?.grid) return false;
+  const current = worldToTile(worker.x, worker.z, state.grid);
+  return current.ix === target.ix && current.iz === target.iz;
+}
+
 function updateIdleWithoutReasonMetric(worker, stateNode, dt, state) {
   if (stateNode !== "idle" && stateNode !== "wander") return;
   const reason = String(worker.blackboard?.fsm?.reason ?? "");
@@ -1322,7 +1519,12 @@ export class WorkerAISystem {
     this.activeWorkers.length = 0;
     for (const worker of state.agents) {
       if (worker.alive === false) {
-        if (worker.type === "WORKER") reservation.releaseAll(worker.id);
+        if (worker.type === "WORKER") {
+          reservation.releaseAll(worker.id);
+          // v0.8.4 building-construction (Agent A) — also free any builder
+          // reservation so a different BUILDER can claim the half-built site.
+          releaseBuilderSite(state, worker);
+        }
         continue;
       }
       if (worker.type === "WORKER") this.activeWorkers.push(worker);
@@ -1451,10 +1653,17 @@ export class WorkerAISystem {
         const _cur = worldToTile(worker.x, worker.z, state.grid);
         const _curTile = getTile(state.grid, _cur.ix, _cur.iz);
         const _onRoad = (_curTile === TILE.ROAD || _curTile === TILE.BRIDGE);
-        if (!_onRoad) {
-          const _ticks = Number(worker.blackboard.carryTicks ?? 0);
-          const _graceTicks = Number(BALANCE.spoilageGracePeriodTicks ?? 0);
-          const _rateScale = _ticks < _graceTicks ? 0.5 : 1.0;
+        // v0.8.8 C1 — spoilage-on-road exemption is now an explicit
+        // multiplier (default 0.3) instead of a binary skip. Roads still
+        // give a strong but non-absolute spoilage advantage so a worker
+        // who happens to dwell on a road for a long deposit doesn't ferry
+        // perishables forever; this also makes the road-roi exploit test
+        // pass since road-trips meaningfully preserve carry food.
+        const _spoilageRoadMult = Number(BALANCE.spoilageOnRoadMultiplier ?? 0.3);
+        const _ticks = Number(worker.blackboard.carryTicks ?? 0);
+        const _graceTicks = Number(BALANCE.spoilageGracePeriodTicks ?? 0);
+        const _rateScale = (_ticks < _graceTicks ? 0.5 : 1.0) * (_onRoad ? _spoilageRoadMult : 1.0);
+        if (_rateScale > 0) {
           const _foodLoss = Number(BALANCE.foodSpoilageRatePerSec ?? 0) * dt * _rateScale;
           const _herbLoss = Number(BALANCE.herbSpoilageRatePerSec ?? 0) * dt * _rateScale;
           if (_foodLoss > 0) {
@@ -1463,8 +1672,8 @@ export class WorkerAISystem {
           if (_herbLoss > 0) {
             worker.carry.herbs = Math.max(0, Number(worker.carry.herbs ?? 0) - _herbLoss);
           }
-          worker.blackboard.carryTicks = _ticks + 1;
         }
+        worker.blackboard.carryTicks = _ticks + 1;
       }
       // Morale decay: faster during adverse weather.
       // hardy trait: adverse-weather morale penalty reduced by traitHardyMoraleDecayMult.
@@ -1782,6 +1991,10 @@ export class WorkerAISystem {
         handleRest(worker, state, services, dt);
       } else if (stateNode === "wander") {
         handleWander(worker, state, services, dt);
+      } else if (stateNode === "seek_construct") {
+        handleSeekConstruct(worker, state, services, dt);
+      } else if (stateNode === "construct") {
+        handleConstruct(worker, state, services, dt);
       } else {
         setIdleDesired(worker);
       }

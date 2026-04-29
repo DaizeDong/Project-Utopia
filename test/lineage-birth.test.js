@@ -22,7 +22,13 @@ function findWarehouseTile(state) {
   return null;
 }
 
-test("PopulationGrowthSystem wires lineage parents/children on birth", () => {
+// v0.8.4 Phase 11 (Agent D) — RecruitmentSystem replaced organic
+// reproduction with explicit food-cost recruits. Recruits intentionally do
+// NOT carry parent ids (they're "hired" from a recruit pool, not born to
+// in-game agents). The kinship-wiring this test guards no longer exists.
+// The test is preserved (skipped) to mark the behavior change for the
+// changelog and to remind any future reviver that the contract changed.
+test("PopulationGrowthSystem wires lineage parents/children on birth", { skip: "v0.8.4 recruits do not carry parent ids (Phase 11 RecruitmentSystem)" }, () => {
   const state = createInitialGameState({ seed: 31337 });
   const wh = findWarehouseTile(state);
   assert.ok(wh, "test setup: at least one warehouse tile is required");

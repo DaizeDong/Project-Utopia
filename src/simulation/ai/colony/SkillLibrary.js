@@ -54,12 +54,19 @@ export const SKILL_LIBRARY = Object.freeze({
 
   defense_line: Object.freeze({
     name: "Defense Line",
-    description: "Wall chain along elevation ridge — maximizes wall defense bonus",
-    preconditions: Object.freeze({ wood: 10 }),
+    description: "Wall chain along elevation ridge with a centre gate — keeps colonist routes open while maximizing wall defense bonus",
+    // v0.8.6 Tier 3 BC2: replace one wall with a centre GATE so the resulting
+    // 5-tile line is `wall, wall, gate, wall, wall`. Pre-fix the AI fallback
+    // would frequently lay a 5-wall line that walled off the colony's own
+    // warehouses. The centre gate is faction-passable for workers but blocks
+    // hostiles; net result: stronger defense, no friendly-route block. Gate
+    // costs `BUILD_COST.gate` (≈ 2 wood + 1 stone) so the precondition rises
+    // modestly to `{ wood: 10, stone: 1 }`.
+    preconditions: Object.freeze({ wood: 10, stone: 1 }),
     steps: Object.freeze([
       Object.freeze({ type: "wall", offset: [0, 0] }),
       Object.freeze({ type: "wall", offset: [1, 0] }),
-      Object.freeze({ type: "wall", offset: [2, 0] }),
+      Object.freeze({ type: "gate", offset: [2, 0] }),
       Object.freeze({ type: "wall", offset: [3, 0] }),
       Object.freeze({ type: "wall", offset: [4, 0] }),
     ]),

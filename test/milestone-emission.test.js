@@ -20,7 +20,7 @@ function placeFirstBuildableFarm(state, buildSystem) {
     for (let ix = 0; ix < state.grid.width; ix += 1) {
       const preview = buildSystem.previewToolAt(state, "farm", ix, iz);
       if (!preview.ok) continue;
-      const placed = buildSystem.placeToolAt(state, "farm", ix, iz);
+      const placed = buildSystem.placeToolAt(state, "farm", ix, iz, { instant: true });
       assert.equal(placed.ok, true, `farm placement failed at (${ix},${iz}): ${placed.reason}`);
       return { ix, iz };
     }

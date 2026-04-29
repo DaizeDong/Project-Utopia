@@ -84,7 +84,23 @@ export function onEvent(state, type, handler) {
   if (!state.events.listeners.has(type)) {
     state.events.listeners.set(type, []);
   }
-  state.events.listeners.get(type).push(handler);
+  const handlers = state.events.listeners.get(type);
+  // v0.8.7 T1-3 (QA3-C3): de-duplicate handler registration. Pre-fix repeated
+  // calls to onEvent (e.g., panel reinit on tab switch) appended the same
+  // handler N times; on every emit the listener fired N times and the array
+  // grew unbounded. We early-return here AND return an unsubscribe function
+  // so callers can opt into explicit cleanup (HUDController, panel teardown).
+  if (handlers.includes(handler)) {
+    return () => {
+      const idx = handlers.indexOf(handler);
+      if (idx >= 0) handlers.splice(idx, 1);
+    };
+  }
+  handlers.push(handler);
+  return () => {
+    const idx = handlers.indexOf(handler);
+    if (idx >= 0) handlers.splice(idx, 1);
+  };
 }
 
 export function getEventLog(state) {

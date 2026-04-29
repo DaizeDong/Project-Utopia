@@ -149,10 +149,17 @@ function collectCoverageStats(state, tiles) {
   const width = Number(grid?.width ?? 0);
   const height = Number(grid?.height ?? 0);
   const gridTiles = grid?.tiles ?? [];
+  const tileState = grid?.tileState;
+  const wallMaxHp = Math.max(1, Number(BALANCE.wallMaxHp ?? 50));
   const seenNear = new Set();
   const seenCore = new Set();
   const stats = {
     walls: 0,
+    // v0.8.5 Tier 1 B3: HP-weighted effective wall coverage. A wall at 1 HP
+    // contributes 1/wallMaxHp instead of a full 1.0 — so once raiders chip
+    // walls down, the BANDIT_RAID mitigation softens proportionally rather
+    // than staying at 100% protection until the wall pops to RUINS.
+    effectiveWalls: 0,
     roads: 0,
     warehouses: 0,
     farms: 0,
@@ -168,7 +175,14 @@ function collectCoverageStats(state, tiles) {
         if (seenNear.has(idx)) continue;
         seenNear.add(idx);
         const current = gridTiles[idx];
-        if (current === TILE.WALL) stats.walls += 1;
+        if (current === TILE.WALL || current === TILE.GATE) {
+          stats.walls += 1;
+          // Read tile state HP if available; default to full HP when the
+          // tileState entry is missing (older savegames / scenario walls).
+          const entry = tileState?.get?.(idx);
+          const hp = entry?.wallHp != null ? Number(entry.wallHp) : wallMaxHp;
+          stats.effectiveWalls += Math.max(0, Math.min(1, hp / wallMaxHp));
+        }
         else if (current === TILE.ROAD) stats.roads += 1;
         else if (current === TILE.WAREHOUSE) stats.warehouses += 1;
       }
@@ -541,6 +555,10 @@ function ensureSpatialPayload(event, state, ctx = null) {
     targetTiles,
     focusTile: event.payload.focusTile ?? targetTiles[0] ?? null,
     wallCoverage: walls,
+    // v0.8.5 Tier 1 B3: HP-weighted effective wall coverage. Carried in
+    // event payload so applyActiveEvent reads damaged walls rather than
+    // the raw count.
+    effectiveWallCoverage: coverage.effectiveWalls,
     roadSupport: roads,
     warehouseCoverage: warehouses,
     farmCoverage: farms,
@@ -680,7 +698,15 @@ function applyBanditRaidImpact(event, state, ctx = null) {
   if (event.payload?.sabotageApplied) return;
   ensureSpatialPayload(event, state, ctx);
   const targetTiles = collectTargetTiles(event);
-  const defense = Number(event.payload?.wallCoverage ?? 0);
+  // v0.8.6 Tier 1 CB-C3: defense should be HP-weighted so a 1-HP wall stub
+  // doesn't provide full impact-tile shielding. Match the same priority order
+  // as `applyActiveEvent` (effective → raw → 0). Walls below 100% HP now
+  // shield proportionally instead of absolutely.
+  const defense = Number(
+    event.payload?.effectiveWallCoverage
+      ?? event.payload?.wallCoverage
+      ?? 0,
+  );
   const impactTile = pickImpactTile(state, targetTiles, String(event.payload?.targetKind ?? "route"));
 
   event.payload.sabotageApplied = true;
@@ -712,7 +738,16 @@ function applyBanditRaidImpact(event, state, ctx = null) {
 
 function applyActiveEvent(event, dt, state, ctx = null) {
   if (event.type === EVENT_TYPE.BANDIT_RAID) {
-    const defense = Number(event.payload?.defenseScore ?? event.payload?.wallCoverage ?? 0);
+    // v0.8.5 Tier 1 B3: read the HP-weighted effective wall coverage when
+    // available so a half-broken wall provides only half the mitigation.
+    // Falls back to raw wallCoverage / defenseScore for events that
+    // pre-date the field (older savegame, scenario raid).
+    const defense = Number(
+      event.payload?.defenseScore
+        ?? event.payload?.effectiveWallCoverage
+        ?? event.payload?.wallCoverage
+        ?? 0,
+    );
     const mitigation = Math.max(0.42, 1 - defense * 0.12);
     const lossMultiplier = Math.max(1, Number(event.payload?.lossMultiplier ?? 1));
     const loss = event.intensity * dt * 0.62 * lossMultiplier * mitigation;
@@ -758,17 +793,26 @@ function applyActiveEvent(event, dt, state, ctx = null) {
     const intensity = Math.max(1, Number(event.intensity ?? 1));
     const medicineDrain = 0.4 * intensity * dt;
     state.resources.medicine = Math.max(0, Number(state.resources.medicine ?? 0) - medicineDrain);
-    // Pick one alive worker per tick and apply hp damage. Deterministic-ish:
-    // index by tick parity so test fixtures with a small worker set still see
-    // hp deduction within 1-2 ticks.
+    // v0.8.5 Tier 3: damage a fixed cohort of 3 victims per tick (8/s each)
+    // rather than spreading 5/s across the whole worker pool. Pre-v0.8.5
+    // the spread-thin damage was invisible (workers self-healed faster
+    // than they took damage). Concentrating damage on the cohort makes
+    // disease feel like a real crisis the player must respond to.
     const workers = getActiveWorkers(state, ctx);
     if (workers.length > 0) {
-      const idx = Math.floor(Number(state.metrics?.tick ?? 0)) % workers.length;
-      const victim = workers[idx];
-      const dmg = 5 * dt * intensity;
-      victim.hp = Math.max(0, Number(victim.hp ?? 0) - dmg);
+      const cohortSize = Math.min(3, workers.length);
+      const baseTick = Math.floor(Number(state.metrics?.tick ?? 0));
+      const dmg = 8 * dt * intensity;
+      const seen = new Set();
+      for (let c = 0; c < cohortSize; c += 1) {
+        const idx = (baseTick + c) % workers.length;
+        if (seen.has(idx)) continue;
+        seen.add(idx);
+        const victim = workers[idx];
+        victim.hp = Math.max(0, Number(victim.hp ?? 0) - dmg);
+      }
       event.payload ??= {};
-      event.payload.diseaseInfectedCount = Number(event.payload.diseaseInfectedCount ?? 0) + 1;
+      event.payload.diseaseInfectedCount = Number(event.payload.diseaseInfectedCount ?? 0) + cohortSize;
     }
     if (!event.payload?.diseaseLogged) {
       recordWorkerEventMemory(
@@ -802,7 +846,11 @@ function applyActiveEvent(event, dt, state, ctx = null) {
           const tileIdx = (tickSalt + i) % targetTiles.length;
           const tile = targetTiles[tileIdx];
           const cur = grid.tiles[tile.ix + tile.iz * width];
-          if (cur === TILE.LUMBER) {
+          // v0.8.5 Tier 3: wildfire now also burns FARM and HERB_GARDEN.
+          // Pre-v0.8.5 only LUMBER burned, which meant farm-heavy colonies
+          // never feared wildfire. Farms and herb gardens are flammable
+          // organic matter; let them burn too.
+          if (cur === TILE.LUMBER || cur === TILE.FARM || cur === TILE.HERB_GARDEN) {
             if (applyImpactTileToGrid(state, tile)) {
               event.payload ??= {};
               event.payload.wildfireBurnedTiles = Number(event.payload.wildfireBurnedTiles ?? 0) + 1;
@@ -1000,7 +1048,10 @@ export class WorldEventSystem {
     if (state.events.queue.length > 0) {
       const escalation = readRaidEscalation(state);
       const currentTick = Number(state.metrics?.tick ?? 0);
-      const lastRaidTick = Number(state.gameplay?.lastRaidTick ?? -9999);
+      // v0.8.7.1 P10 — track lastRaidTick locally so multi-raid drains in
+      // the same tick correctly cool down against the previous spawn (mostly
+      // defensive; today maxConcurrent gates this to one anyway).
+      let lastRaidTick = Number(state.gameplay?.lastRaidTick ?? -9999);
       const tuning = getLongRunEventTuning(state);
       const drained = state.events.queue.splice(0, state.events.queue.length);
       const spawned = [];
@@ -1046,6 +1097,9 @@ export class WorldEventSystem {
 
           state.gameplay ??= {};
           state.gameplay.lastRaidTick = currentTick;
+          // v0.8.7.1 P10 — refresh local copy so subsequent BANDIT_RAID
+          // events drained on the same tick honour the cooldown.
+          lastRaidTick = currentTick;
         }
         spawned.push(event);
         spawnedCountsByType.set(event.type, (spawnedCountsByType.get(event.type) ?? 0) + 1);

@@ -291,7 +291,12 @@ test("ProcessingSystem: clinic does NOT process without HERBALIST nearby", () =>
 // 2. Resource Effects Tests
 // ---------------------------------------------------------------------------
 
-test("ResourceSystem: tool production multiplier formula", () => {
+test("ResourceSystem: tool production multiplier formula (v0.8.5.1: 0.12/tool, cap 5)", () => {
+  // v0.8.5 Tier 3: toolHarvestSpeedBonus 0.15 → 0.10 + toolMaxEffective
+  // 3 → 5. Spread the same total bonus over more tools (5 × 0.10 = 0.50
+  // vs old 3 × 0.15 = 0.45) so smithy stays productive longer.
+  // v0.8.5.1 hotfix: softened back to 0.12 after Day-30 DevIndex
+  // regression. 5 tools cap = 1 + 5 × 0.12 = 1.60x.
   const state = createInitialGameState();
   const system = new ResourceSystem();
 
@@ -302,19 +307,24 @@ test("ResourceSystem: tool production multiplier formula", () => {
 
   state.resources.tools = 1;
   system.update(0.1, state);
-  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.15) < 0.001,
-    "1 tool => 1.15x multiplier");
+  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.12) < 0.001,
+    `1 tool => 1.12x multiplier (got ${state.gameplay.toolProductionMultiplier})`);
 
   state.resources.tools = 3;
   system.update(0.1, state);
-  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.45) < 0.001,
-    "3 tools => 1.45x multiplier");
+  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.36) < 0.001,
+    `3 tools => 1.36x multiplier (got ${state.gameplay.toolProductionMultiplier})`);
 
-  // Cap at 3 effective tools
   state.resources.tools = 5;
   system.update(0.1, state);
-  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.45) < 0.001,
-    "5 tools => still 1.45x (capped at 3)");
+  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.60) < 0.001,
+    `5 tools => 1.60x multiplier (got ${state.gameplay.toolProductionMultiplier})`);
+
+  // Cap at 5 effective tools
+  state.resources.tools = 8;
+  system.update(0.1, state);
+  assert.ok(Math.abs(state.gameplay.toolProductionMultiplier - 1.60) < 0.001,
+    "8 tools => still 1.60x (capped at 5)");
 });
 
 test("ResourceSystem: clamps all 7 resources to >= 0", () => {
@@ -633,11 +643,13 @@ test("BuildSystem: erasing bridge restores water", () => {
   });
   if (!waterTile) return; // skip if no suitable water tile on this map
 
-  const result = bs.placeToolAt(state, "bridge", waterTile.ix, waterTile.iz);
+  // v0.8.4 blueprint mode requires { instant: true } for tests that assert
+  // post-placement tile state without simulating ConstructionSystem completion.
+  const result = bs.placeToolAt(state, "bridge", waterTile.ix, waterTile.iz, { instant: true });
   assert.equal(result.ok, true, "should place bridge on water");
   assert.equal(state.grid.tiles[waterTile.ix + waterTile.iz * state.grid.width], TILE.BRIDGE, "tile should be BRIDGE");
 
-  const eraseResult = bs.placeToolAt(state, "erase", waterTile.ix, waterTile.iz);
+  const eraseResult = bs.placeToolAt(state, "erase", waterTile.ix, waterTile.iz, { instant: true });
   assert.equal(eraseResult.ok, true, "should erase bridge");
   assert.equal(state.grid.tiles[waterTile.ix + waterTile.iz * state.grid.width], TILE.WATER, "erased bridge should become WATER, not GRASS");
 });
@@ -686,7 +698,7 @@ test("BuildSystem: can place quarry on grass near road/warehouse", () => {
   });
 
   assert.ok(validQuarry, "Should be able to find a valid quarry placement");
-  const result = buildSystem.placeToolAt(state, "quarry", validQuarry.ix, validQuarry.iz);
+  const result = buildSystem.placeToolAt(state, "quarry", validQuarry.ix, validQuarry.iz, { instant: true });
   assert.equal(result.ok, true, `Expected ok=true but got reason: ${result.reason}`);
   assert.equal(state.grid.tiles[validQuarry.ix + validQuarry.iz * state.grid.width], TILE.QUARRY);
 });
@@ -704,7 +716,7 @@ test("BuildSystem: can place kitchen (requires wood + stone)", () => {
   });
 
   assert.ok(validKitchen, "Should be able to find a valid kitchen placement");
-  const result = buildSystem.placeToolAt(state, "kitchen", validKitchen.ix, validKitchen.iz);
+  const result = buildSystem.placeToolAt(state, "kitchen", validKitchen.ix, validKitchen.iz, { instant: true });
   assert.equal(result.ok, true, `Expected ok=true but got reason: ${result.reason}`);
   assert.equal(state.grid.tiles[validKitchen.ix + validKitchen.iz * state.grid.width], TILE.KITCHEN);
 });
@@ -749,12 +761,12 @@ test("BuildSystem: erase of new tiles returns correct salvage refund", () => {
 
   if (!validSmithy) return; // skip if no valid location
 
-  buildSystem.placeToolAt(state, "smithy", validSmithy.ix, validSmithy.iz);
+  buildSystem.placeToolAt(state, "smithy", validSmithy.ix, validSmithy.iz, { instant: true });
 
   const woodBeforeErase = state.resources.wood;
   const stoneBeforeErase = state.resources.stone;
 
-  const eraseResult = buildSystem.placeToolAt(state, "erase", validSmithy.ix, validSmithy.iz);
+  const eraseResult = buildSystem.placeToolAt(state, "erase", validSmithy.ix, validSmithy.iz, { instant: true });
   assert.equal(eraseResult.ok, true, "Should be able to erase smithy");
 
   // v0.8.0 M1c: type-specific demolition recovery fractions (floor of original cost).
@@ -783,12 +795,12 @@ test("BuildSystem: erase of clinic returns herbs salvage refund", () => {
 
   if (!validClinic) return;
 
-  buildSystem.placeToolAt(state, "clinic", validClinic.ix, validClinic.iz);
+  buildSystem.placeToolAt(state, "clinic", validClinic.ix, validClinic.iz, { instant: true });
 
   const woodBeforeErase = state.resources.wood;
   const herbsBeforeErase = state.resources.herbs;
 
-  const eraseResult = buildSystem.placeToolAt(state, "erase", validClinic.ix, validClinic.iz);
+  const eraseResult = buildSystem.placeToolAt(state, "erase", validClinic.ix, validClinic.iz, { instant: true });
   assert.equal(eraseResult.ok, true, "Should be able to erase clinic");
 
   // v0.8.0 M1c: herbs are biodegradable — demoHerbsRecovery is 0 by default.

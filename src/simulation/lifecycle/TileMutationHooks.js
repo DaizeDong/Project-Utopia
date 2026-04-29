@@ -16,6 +16,7 @@
  * grid.version + tileStateVersion) and then runs the cascade cleanup.
  */
 import { TILE } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
 import { setTile, rebuildBuildingStats } from "../../world/grid/Grid.js";
 
 /**
@@ -89,6 +90,16 @@ export function onTileMutated(state, ix, iz, oldTile, newTile) {
       agent.pathIndex = 0;
       agent.pathGridVersion = -1;
       agent.pathTrafficVersion = 0;
+      // v0.8.6 Tier 2 F5: also zero the agent's desired velocity. Without
+      // this the agent kept drifting toward the now-invalid path's last
+      // computed direction for ≥1 tick (300ms+), occasionally walking onto
+      // the just-mutated blocking tile and getting wedged.
+      if (agent.desiredVel) {
+        agent.desiredVel.x = 0;
+        agent.desiredVel.z = 0;
+      } else {
+        agent.desiredVel = { x: 0, z: 0 };
+      }
       if (agent.blackboard) {
         agent.blackboard.pendingPathWorkerKey = "";
         agent.blackboard.pendingPathTargetTile = null;
@@ -105,6 +116,66 @@ export function onTileMutated(state, ix, iz, oldTile, newTile) {
     state._tileMutationDirtyKeys = new Set();
   }
   state._tileMutationDirtyKeys.add(tileKey);
+
+  // 5. v0.8.4 strategic walls + GATE (Agent C) — wallHp / gateHp lifecycle.
+  //    When a tile *becomes* a WALL or GATE, seed the per-tile hp pool so
+  //    AnimalAISystem / VisitorAISystem can attack it. When a tile *was* a
+  //    WALL or GATE and is no longer, clear the pool so a future build on
+  //    the same coords doesn't inherit stale hp. Per-tile state lives on
+  //    grid.tileState.get(idx) — the same map setTile() seeds with
+  //    fertility / yieldPool / nodeFlags.
+  //
+  //    setTile preserves a tileState entry for WALL (lumped with ROAD/
+  //    BRIDGE) but does NOT have a branch for GATE (a v0.8.4 addition); a
+  //    GATE placement currently falls through to the delete branch unless
+  //    nodeFlags/yieldPool happen to be non-zero. To keep this hook
+  //    self-contained — and to avoid editing Grid.js (broad ownership) —
+  //    we lazily create a tileState entry here when wallHp needs to be
+  //    seeded. Same `Map<idx, entry>` shape; downstream consumers
+  //    (rendering, attack logic, save/load) read wallHp via .get(idx).
+  const idx = ix + iz * state.grid.width;
+  if (newTile === TILE.WALL || newTile === TILE.GATE) {
+    const tileState = state.grid.tileState;
+    if (tileState) {
+      let entry = tileState.get(idx);
+      if (!entry) {
+        // Lazily create a minimal entry shape so wallHp has a place to live.
+        // Mirrors createTileStateEntry's defaults so nothing downstream
+        // reads `undefined` on the previously-empty fields.
+        entry = {
+          fertility: 0,
+          wear: 0,
+          growthStage: 0,
+          salinized: 0,
+          fallowUntil: 0,
+          yieldPool: 0,
+          nodeFlags: 0,
+          lastHarvestTick: -1,
+        };
+        tileState.set(idx, entry);
+      }
+      // v0.8.5 Tier 3: gates use gateMaxHp (75) for differentiated HP from walls (50).
+      entry.wallHp = newTile === TILE.GATE
+        ? Number(BALANCE.gateMaxHp ?? BALANCE.wallMaxHp ?? 50)
+        : Number(BALANCE.wallMaxHp ?? 50);
+    }
+  } else if (oldTile === TILE.WALL || oldTile === TILE.GATE) {
+    const tileState = state.grid.tileState;
+    if (tileState) {
+      const entry = tileState.get(idx);
+      if (entry && entry.wallHp != null) {
+        // Drop the wallHp field (back to undefined). The rest of the
+        // tileState entry stays intact (nodeFlags, yieldPool, etc.) per the
+        // setTile preservation pass.
+        delete entry.wallHp;
+      }
+      // v0.8.5 Tier 2 S2: also drop the regen damage timestamp when the
+      // wall/gate is removed so a fresh build doesn't inherit stale state.
+      if (entry && entry.lastWallDamageTick != null) {
+        delete entry.lastWallDamageTick;
+      }
+    }
+  }
 }
 
 /**

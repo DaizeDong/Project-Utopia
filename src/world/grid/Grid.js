@@ -1707,6 +1707,13 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
     }
   }
 
+  // v0.8.6 Tier 3 R9: auto-bridge invocation. Pre-fix carveBridgesOnMainAxis
+  // was defined but NEVER called from any terrain generator, leaving river
+  // and island maps with unreachable land masses across waterways. Carve
+  // bridges along the main axis after the river-paint pass so the colony
+  // has a starting connectivity option.
+  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 6500);
+
   return { elevation, moisture, ridge };
 }
 
@@ -2109,6 +2116,9 @@ function generateRuggedHighlandsTerrain(tiles, width, height, seed, profile) {
     }
   }
 
+  // v0.8.6 Tier 3 R9: auto-bridge after river/water carve in Rugged Highlands.
+  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 9500);
+
   return { elevation, moisture, ridge };
 }
 
@@ -2214,6 +2224,9 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
     if (moisture[fidx] < 0.25) continue;
     paintBlob(tiles, width, height, fx, fz, lerp(2, 3.5, rng()), lerp(1.5, 3, rng()), TILE.FARM, seed + 4700 + fx * 7, new Set([TILE.GRASS]));
   }
+
+  // v0.8.6 Tier 3 R9: auto-bridge after river carve.
+  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 4900);
 
   return { elevation, moisture, ridge };
 }
@@ -2473,7 +2486,7 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   trimRoadOverflow(tiles, width, height, profile, seed + 3301);
 
   const emptyBaseTiles = finalizeTileCoverage(tiles);
-  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile, elevation: fields.elevation, moisture: fields.moisture };
+  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile, elevation: fields.elevation, moisture: fields.moisture, ridge: fields.ridge };
 }
 export function describeMapTemplate(templateId) {
   return MAP_TEMPLATES.find((tpl) => tpl.id === templateId) ?? MAP_TEMPLATES[0];
@@ -2533,6 +2546,7 @@ export function createInitialGrid(options = {}) {
     emptyBaseTiles: generated.emptyBaseTiles,
     elevation: generated.elevation,
     moisture: generated.moisture,
+    ridge: generated.ridge,
   };
 }
 
@@ -2713,6 +2727,12 @@ export function rebuildBuildingStats(grid) {
     lumbers: countTilesByType(grid, [TILE.LUMBER]),
     roads: countTilesByType(grid, [TILE.ROAD]),
     walls: countTilesByType(grid, [TILE.WALL]),
+    // v0.8.6 Tier 1 BC1: include GATE in building stats so the
+    // BUILD_COST_ESCALATOR `gate` softTarget / hardCap / perExtra escalator
+    // actually fires. Pre-fix `state.buildings.gates` was always undefined,
+    // collapsing the escalator to base cost regardless of how many gates the
+    // player/AI had already placed.
+    gates: countTilesByType(grid, [TILE.GATE]),
     quarries: countTilesByType(grid, [TILE.QUARRY]),
     herbGardens: countTilesByType(grid, [TILE.HERB_GARDEN]),
     kitchens: countTilesByType(grid, [TILE.KITCHEN]),

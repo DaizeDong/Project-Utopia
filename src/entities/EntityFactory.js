@@ -331,12 +331,22 @@ export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.
   const backstory = kind === VISITOR_KIND.TRADER
     ? "wandering trader"
     : "roaming saboteur";
-  return {
+  const visitor = {
     ...baseAgent(id, ENTITY_TYPE.VISITOR, x, z, displayName, random),
     kind,
     groupId,
     backstory,
   };
+  // v0.8.5 Tier 2 S3: saboteur engagement. Saboteurs now have a smaller HP
+  // pool than the default 100 used by baseAgent so worker/GUARD melee can
+  // actually kill them. Reuse BALANCE.wallMaxHp (50) for symmetry — same
+  // expected attrition as a wall. Traders keep the default HP.
+  if (kind === VISITOR_KIND.SABOTEUR) {
+    const saboteurHp = Number(BALANCE.wallMaxHp ?? 50);
+    visitor.hp = saboteurHp;
+    visitor.maxHp = saboteurHp;
+  }
+  return visitor;
 }
 
 // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 6) — per-species HP table.
@@ -502,6 +512,77 @@ function randomTileNearAnchorOfTypes(grid, anchor, radius, targetTypes, random) 
   return candidates[Math.floor(random() * candidates.length)];
 }
 
+// v0.8.8 B1 — biome-aware wildlife spawn helpers. Predators prefer the
+// dense forest (LUMBER), then forest-edge GRASS adjacent to a LUMBER tile,
+// then any in-zone GRASS. Herbivores prefer GRASS adjacent to LUMBER
+// (forest-edge browsers), then plain GRASS. Each helper falls back through
+// progressively less specific candidate sets so a zone with no LUMBER
+// still spawns its quota.
+function isAdjacentToTileType(grid, ix, iz, type) {
+  const w = grid.width;
+  const h = grid.height;
+  if (ix > 0 && grid.tiles[(ix - 1) + iz * w] === type) return true;
+  if (ix < w - 1 && grid.tiles[(ix + 1) + iz * w] === type) return true;
+  if (iz > 0 && grid.tiles[ix + (iz - 1) * w] === type) return true;
+  if (iz < h - 1 && grid.tiles[ix + (iz + 1) * w] === type) return true;
+  return false;
+}
+
+function tilesInRadiusByType(grid, anchor, radius, predicate) {
+  if (!anchor) return [];
+  const out = [];
+  for (let iz = anchor.iz - radius; iz <= anchor.iz + radius; iz += 1) {
+    for (let ix = anchor.ix - radius; ix <= anchor.ix + radius; ix += 1) {
+      if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) continue;
+      if (Math.abs(ix - anchor.ix) + Math.abs(iz - anchor.iz) > radius) continue;
+      const tile = grid.tiles[ix + iz * grid.width];
+      if (predicate(tile, ix, iz)) out.push({ ix, iz });
+    }
+  }
+  return out;
+}
+
+export function pickPredatorSpawnTile(grid, anchor, radius, random = Math.random) {
+  if (!grid || !anchor) return null;
+  // 1) prefer LUMBER tiles inside zone
+  const lumberCandidates = tilesInRadiusByType(grid, anchor, radius, (tile) => tile === TILE.LUMBER);
+  if (lumberCandidates.length > 0) {
+    return lumberCandidates[Math.floor(random() * lumberCandidates.length)];
+  }
+  // 2) GRASS adjacent to a LUMBER tile (forest edge)
+  const edgeCandidates = tilesInRadiusByType(grid, anchor, radius, (tile, ix, iz) => (
+    tile === TILE.GRASS && isAdjacentToTileType(grid, ix, iz, TILE.LUMBER)
+  ));
+  if (edgeCandidates.length > 0) {
+    return edgeCandidates[Math.floor(random() * edgeCandidates.length)];
+  }
+  // 3) any in-zone GRASS or RUINS (legacy fallback)
+  const fallback = tilesInRadiusByType(grid, anchor, radius, (tile) => (
+    tile === TILE.GRASS || tile === TILE.RUINS
+  ));
+  if (fallback.length > 0) {
+    return fallback[Math.floor(random() * fallback.length)];
+  }
+  return null;
+}
+
+export function pickHerbivoreSpawnTile(grid, anchor, radius, random = Math.random) {
+  if (!grid || !anchor) return null;
+  // 1) GRASS adjacent to LUMBER (forest-edge browse)
+  const edgeCandidates = tilesInRadiusByType(grid, anchor, radius, (tile, ix, iz) => (
+    tile === TILE.GRASS && isAdjacentToTileType(grid, ix, iz, TILE.LUMBER)
+  ));
+  if (edgeCandidates.length > 0) {
+    return edgeCandidates[Math.floor(random() * edgeCandidates.length)];
+  }
+  // 2) any in-zone GRASS
+  const grassCandidates = tilesInRadiusByType(grid, anchor, radius, (tile) => tile === TILE.GRASS);
+  if (grassCandidates.length > 0) {
+    return grassCandidates[Math.floor(random() * grassCandidates.length)];
+  }
+  return null;
+}
+
 function assignAnimalHabitat(animal, zone, anchor, spawnTile) {
   animal.memory.homeTile = spawnTile ? { ix: spawnTile.ix, iz: spawnTile.iz } : null;
   animal.memory.territoryAnchor = anchor ? { ix: anchor.ix, iz: anchor.iz } : null;
@@ -592,13 +673,17 @@ function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   for (let i = 0; i < INITIAL_POPULATION.herbivores; i += 1) {
     const zone = wildlifeZones.length > 0 ? wildlifeZones[i % wildlifeZones.length] : null;
     const anchor = zone ? anchors[zone.anchor] : null;
-    const tile = randomTileNearAnchorOfTypes(
-      grid,
-      anchor,
-      Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus),
-      [TILE.GRASS, TILE.FARM],
-      random,
-    ) ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM], random);
+    const radius = Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus);
+    // v0.8.8 B1 — biome-aware spawn: forest-edge browse > plain GRASS.
+    const tile = (anchor ? pickHerbivoreSpawnTile(grid, anchor, radius, random) : null)
+      ?? randomTileNearAnchorOfTypes(
+        grid,
+        anchor,
+        radius,
+        [TILE.GRASS, TILE.FARM],
+        random,
+      )
+      ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.FARM], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
     const animal = createAnimal(p.x, p.z, ANIMAL_KIND.HERBIVORE, random);
     assignAnimalHabitat(animal, zone, anchor, tile);
@@ -608,15 +693,31 @@ function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   for (let i = 0; i < INITIAL_POPULATION.predators; i += 1) {
     const zone = wildlifeZones.length > 0 ? wildlifeZones[i % wildlifeZones.length] : null;
     const anchor = zone ? anchors[zone.anchor] : null;
-    const tile = randomTileNearAnchorOfTypes(
-      grid,
-      anchor,
-      Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus),
-      [TILE.GRASS, TILE.LUMBER, TILE.RUINS, TILE.FARM],
-      random,
-    ) ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS], random);
+    const radius = Math.max(2, Number(zone?.radius ?? 2) + wildlifeRadiusBonus);
+    // v0.8.8 B1 — biome-aware spawn: LUMBER > forest-edge GRASS > any GRASS.
+    const tile = (anchor ? pickPredatorSpawnTile(grid, anchor, radius, random) : null)
+      ?? randomTileNearAnchorOfTypes(
+        grid,
+        anchor,
+        radius,
+        [TILE.GRASS, TILE.LUMBER, TILE.RUINS, TILE.FARM],
+        random,
+      )
+      ?? randomTileOfTypes(grid, [TILE.GRASS, TILE.LUMBER, TILE.RUINS], random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
-    const animal = createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR, random);
+    // v0.8.5 Tier 3: block raider_beast on the first scenario spawn so the
+    // colony gets ~60s of grace before any worker-targeting threat appears
+    // (the 15% raider roll on tick 0 was killing colonies before they had
+    // a single warehouse). On i===0 we force a non-raider species; the
+    // weighted random RNG still rolls (consumes the same number of
+    // random calls — determinism preserved).
+    let species = null;
+    if (i === 0) {
+      // Sample but reject raider; if raider, force WOLF (the modal species).
+      const peek = pickPredatorSpecies(random);
+      species = peek === ANIMAL_SPECIES.RAIDER_BEAST ? ANIMAL_SPECIES.WOLF : peek;
+    }
+    const animal = createAnimal(p.x, p.z, ANIMAL_KIND.PREDATOR, random, species);
     assignAnimalHabitat(animal, zone, anchor, tile);
     animals.push(animal);
   }
@@ -677,6 +778,10 @@ export function createInitialGameState(options = {}) {
     agents,
     animals,
     buildings: rebuildBuildingStats(grid),
+    // v0.8.4 building-construction (Agent A) — fast index of in-flight
+    // construction sites (build/demolish overlays). Authoritative state
+    // lives on tileState.construction; this mirror is for renderer + AI.
+    constructionSites: [],
     events: {
       queue: [],
       active: [],
@@ -1032,6 +1137,15 @@ export function createInitialGameState(options = {}) {
       canUndo: false,
       canRedo: false,
       buildPreview: null,
+      // v0.8.4 Recruitment (Agent D) — explicit recruit queue replaces the
+      // legacy auto-reproduction loop. Player UI / LLM / fallback rules
+      // increment `recruitQueue`; RecruitmentSystem drains it gated by
+      // food cost + cooldown. autoRecruit=true preserves the old behaviour
+      // for tests/fixtures that expected free growth toward a target.
+      recruitTarget: 16,
+      recruitQueue: 0,
+      autoRecruit: true,
+      recruitCooldownSec: 0,
       showReplayPanel: false,
       showPresetComparator: false,
       undoStack: [],

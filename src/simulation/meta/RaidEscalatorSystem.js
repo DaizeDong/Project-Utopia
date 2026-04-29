@@ -55,21 +55,52 @@ function ensureEscalationState(state) {
  * Pure helper exposed for testing — derives a raid-escalation bundle from a
  * DevIndex sample without touching state. Kept deterministic and free of
  * side effects.
+ *
+ * v0.8.5 Tier 2 S1: log-curve replacement for the linear floor(DI/15) tier.
+ * The previous formula gave DI=100 → tier 6 → 60s interval, ~2.8× intensity,
+ * which combined with EventDirector and saboteurs made late-game
+ * unsurvivable. The log curve flattens the late-game tier ramp:
+ *   tier = floor(2.5 × log2(1 + DI / devIndexPerRaidTier))
+ *   DI=15  → tier 2.5 → 2
+ *   DI=30  → tier 3.9 → 3
+ *   DI=60  → tier 5.5 → 5
+ *   DI=100 → tier 6.7 → 6
+ *
+ * Plus: above DI 60, intensity is softened by the colony's defenseScore so
+ * a fortified colony enjoys a "fortified plateau" rather than raid spirals.
+ *
+ * @param {number} devIndexSmoothed
+ * @param {object} [opts] - { defenseScore } for the fortified-plateau bonus
  */
-export function computeRaidEscalation(devIndexSmoothed) {
+export function computeRaidEscalation(devIndexSmoothed, opts = {}) {
   const sample = Number.isFinite(devIndexSmoothed) ? Number(devIndexSmoothed) : 0;
   const perTier = Math.max(1e-6, Number(BALANCE.devIndexPerRaidTier ?? 15));
   const tierMax = Math.max(0, Number(BALANCE.raidTierMax ?? 10));
-  const rawTier = Math.floor(Math.max(0, sample) / perTier);
-  const tier = clamp(rawTier, 0, tierMax);
+  // v0.8.5 Tier 2 S1: log-curve tier. Math.log2(1 + sample/perTier) so DI=0
+  // still yields tier=0; the 2.5 coefficient calibrates DI=100 to ≈ tier 6.7.
+  const safeSample = Math.max(0, sample);
+  const rawTier = 2.5 * Math.log2(1 + safeSample / perTier);
+  const tier = clamp(Math.floor(rawTier), 0, tierMax);
 
   const baseTicks = Math.max(1, Number(BALANCE.raidIntervalBaseTicks ?? 3600));
-  const minTicks = Math.max(1, Number(BALANCE.raidIntervalMinTicks ?? 600));
+  const minTicks = Math.max(1, Number(BALANCE.raidIntervalMinTicks ?? 900));
   const reductionPerTier = Math.max(0, Number(BALANCE.raidIntervalReductionPerTier ?? 300));
   const intervalTicks = Math.max(minTicks, baseTicks - tier * reductionPerTier);
 
-  const intensityPerTier = Math.max(0, Number(BALANCE.raidIntensityPerTier ?? 0.3));
-  const intensityMultiplier = 1 + tier * intensityPerTier;
+  const intensityPerTier = Math.max(0, Number(BALANCE.raidIntensityPerTier ?? 0.22));
+  let intensityMultiplier = 1 + tier * intensityPerTier;
+
+  // v0.8.5 Tier 2 S1: fortified-plateau bonus. When the colony's defense
+  // score is high (≥ 80 fully neutralises the bonus), late-game raid
+  // intensity scales down — walls reduce raid intensity, rewarding the
+  // player for actually defending instead of letting raid scaling cap out.
+  const defenseScore = Math.max(0, Number(opts.defenseScore ?? 0));
+  if (safeSample > 60) {
+    const defenseFactor = 1.5 - 0.5 * Math.min(1, defenseScore / 80);
+    // Clamp to [0.5, 1.5] so a maxed-defense colony still sees baseline+
+    // pressure (defenseFactor ≥ 1.0 only when defenseScore < 80).
+    intensityMultiplier *= Math.max(0.5, Math.min(1.5, defenseFactor));
+  }
 
   return {
     tier,
@@ -91,7 +122,11 @@ export class RaidEscalatorSystem {
     // Read smoothed DevIndex. Fallback to 0 when DevIndexSystem has not run
     // (e.g. tests that skip it) so raids still spawn at the baseline tier.
     const sample = Number(state.gameplay?.devIndexSmoothed ?? 0);
-    const bundle = computeRaidEscalation(sample);
+    // v0.8.5 Tier 2 S1: pass defense score for the fortified-plateau bonus
+    // (above DI 60). Read from the DevIndexSystem dimensions if populated,
+    // else fall back to 0 (no bonus, equivalent to pre-v0.8.5 behaviour).
+    const defenseScore = Number(state.gameplay?.devIndexDimensions?.defense ?? 0);
+    const bundle = computeRaidEscalation(sample, { defenseScore });
 
     // Mutate in place so downstream systems holding a reference stay in sync.
     g.raidEscalation.tier = bundle.tier;
@@ -150,6 +185,12 @@ export class RaidEscalatorSystem {
     const durationSec = Number(BALANCE.raidFallbackDurationSec ?? 18);
     const intensity = Number(g.raidEscalation.intensityMultiplier ?? 1);
     enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, { source: "raid_fallback_scheduler" }, durationSec, intensity);
-    g.lastRaidTick = tick;
+    // v0.8.6 Tier 2 CB-H3: do NOT set lastRaidTick at enqueue time. Pre-fix
+    // the raid was enqueued AND lastRaidTick was bumped to currentTick, so
+    // WorldEventSystem's per-event cooldown gate dropped the same-tick raid
+    // as `(tick - lastRaidTick) < intervalTicks` evaluated to `0 < N` and
+    // refused to fire. The raid was effectively a no-op. The advance is now
+    // moved to WorldEventSystem._applyEvent for BANDIT_RAID at the moment
+    // the event is actually drained from the queue.
   }
 }

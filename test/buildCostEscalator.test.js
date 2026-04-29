@@ -26,10 +26,11 @@ test("computeEscalatedBuildCost: warehouse at soft target yields base cost (no e
   assert.equal(cost.wood, 10);
 });
 
-test("computeEscalatedBuildCost: warehouse mid-range scaling (count=5)", () => {
-  // 3 over softTarget × perExtra 0.2 = +60%. 10 × 1.6 = 16.
+test("computeEscalatedBuildCost: warehouse mid-range scaling (count=5) — v0.8.5 perExtra=0.30", () => {
+  // v0.8.5 Tier 3: warehouse perExtra 0.20 → 0.30. 3 over × 0.30 = +90%.
+  // 10 × 1.9 = 19.
   const cost = computeEscalatedBuildCost("warehouse", 5);
-  assert.equal(cost.wood, 16);
+  assert.equal(cost.wood, 19);
 });
 
 test("computeEscalatedBuildCost: warehouse beyond cap (count=20) costs more than cap plateau", () => {
@@ -49,14 +50,14 @@ test("computeEscalatedBuildCost: bridge → flat passthrough even at very high c
   assert.deepEqual(cost, { ...BUILD_COST.bridge });
 });
 
-test("computeEscalatedBuildCost: kitchen at count=3 scales both wood AND stone", () => {
-  // softTarget=1, perExtra=0.35, so count=3 → over=2 → mult = 1 + 0.35×2 = 1.7.
-  // Base wood=8 → ceil(13.6) = 14. Base stone=3 → ceil(5.1) = 6.
-  // The plan's hint "wood≈13, stone≈5" uses floor; we use ceil so callers
-  // can't under-allocate a fractional cost. Assert the ceil values.
+test("computeEscalatedBuildCost: kitchen at count=3 scales both wood AND stone — v0.8.5 perExtra=0.25", () => {
+  // v0.8.5 Tier 3: kitchen perExtra 0.35 → 0.25 (LLM never built 2nd kitchen
+  // even when needed; soften the punishment).
+  // softTarget=1, perExtra=0.25, count=3 → over=2 → mult = 1 + 0.25×2 = 1.5.
+  // Base wood=8 → ceil(12.0) = 12. Base stone=3 → ceil(4.5) = 5.
   const cost = computeEscalatedBuildCost("kitchen", 3);
-  assert.equal(cost.wood, 14);
-  assert.equal(cost.stone, 6);
+  assert.equal(cost.wood, 12);
+  assert.equal(cost.stone, 5);
 });
 
 test("computeEscalatedBuildCost: wall count=12 → cap=2.0 → 2 × 2.0 = 4 wood", () => {

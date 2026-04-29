@@ -1052,6 +1052,18 @@ export class HUDController {
       const scenarioIntro = state.ui?.scenarioIntro;
       const nowMs = (typeof performance !== "undefined" && typeof performance.now === "function")
         ? performance.now() : Date.now();
+      // v0.8.7 T2-3 (QA2-F8): the storytellerWhyNoWhisper span sits inside the
+      // "no milestone, no scenario-intro" branch below; on a tick that
+      // crosses into either of those branches the prior dev-mode "Why no
+      // WHISPER?" text would otherwise persist. Helper clears it for the
+      // non-fallback branches so leaving fallback mode wipes the span too.
+      const __resetWhySpan = () => {
+        if (typeof document === "undefined") return;
+        const el = document.getElementById("storytellerWhyNoWhisper");
+        if (!el) return;
+        el.textContent = "";
+        if (!el.hasAttribute?.("hidden")) el.setAttribute?.("hidden", "");
+      };
       if (getBadgeEl && getFocusEl && getSummaryEl && scenarioIntro
           && scenarioIntro.enteredAtMs
           && (nowMs - scenarioIntro.enteredAtMs) < (scenarioIntro.durationMs ?? 1500)) {
@@ -1066,6 +1078,7 @@ export class HUDController {
           if (getBeatEl.textContent !== "") getBeatEl.textContent = "";
           if (!getBeatEl.hasAttribute?.("hidden")) getBeatEl.setAttribute?.("hidden", "");
         }
+        __resetWhySpan();
       } else if (getBadgeEl && getFocusEl && getSummaryEl) {
         if (milestoneFlash) {
           if (getBadgeEl.textContent !== "MILESTONE") getBadgeEl.textContent = "MILESTONE";
@@ -1083,6 +1096,7 @@ export class HUDController {
             if (!getTemplateTagEl.hasAttribute?.("hidden")) getTemplateTagEl.setAttribute?.("hidden", "");
           }
           this.storytellerStrip.setAttribute?.("title", `[MILESTONE] ${milestoneFlash.text}`);
+          __resetWhySpan();
         } else {
         const model = computeStorytellerStripModel(state);
         if (getTemplateTagEl) {
@@ -1236,6 +1250,17 @@ export class HUDController {
         if (typeof document !== "undefined") {
           const whySpan = document.getElementById("storytellerWhyNoWhisper");
           if (whySpan) {
+            // v0.8.7 T2-3 (QA2-F8): always reset the span BEFORE the
+            // conditional populate. The pre-fix code only cleared it on
+            // the explicit `else` branch — but the entire whySpan handler
+            // sits inside the `else if (getBadgeEl && getFocusEl && ...)`
+            // → "no milestone flash" branch. On a tick that flips into
+            // milestone-flash or scenario-intro, the whySpan kept its
+            // prior text indefinitely. Reset-first guarantees the only
+            // path that leaves text on screen is the explicit dev-mode
+            // populate below.
+            whySpan.textContent = "";
+            if (!whySpan.hasAttribute?.("hidden")) whySpan.setAttribute?.("hidden", "");
             // v0.8.2 Round-6 Wave-1 01c-ui (Step 1) — only populate the
             // dev-only `#storytellerWhyNoWhisper` span when `body.dev-mode`
             // (or `state.controls.devMode`) is on; casual players never see
@@ -1248,9 +1273,6 @@ export class HUDController {
             if (devModeOn && model.badgeState !== "llm-live" && reasonText) {
               whySpan.textContent = `Why no WHISPER?: ${reasonText}`;
               if (whySpan.hasAttribute?.("hidden")) whySpan.removeAttribute?.("hidden");
-            } else {
-              whySpan.textContent = "";
-              if (!whySpan.hasAttribute?.("hidden")) whySpan.setAttribute?.("hidden", "");
             }
           }
           // v0.8.2 Round-6 Wave-1 01c-ui (Step 1 + Step 2) — casual-mode

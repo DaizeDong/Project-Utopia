@@ -1,24 +1,45 @@
+// v0.8.4 Phase 11 (Agent D) — Recruitment system. Replaces the legacy
+// auto-reproduction loop with explicit, food-cost recruitment. The player
+// (UI) and the AI (LLM/rules) both push intents into
+// `state.controls.recruitQueue`; this system drains the queue gated by
+// `recruitFoodCost`, `recruitCooldownSec`, and warehouse availability.
+//
+// Public API:
+//   - class RecruitmentSystem      (canonical name)
+//   - export PopulationGrowthSystem (alias for back-compat — GameApp /
+//     SimHarness imports the legacy name and we don't want to churn unrelated
+//     callsites)
+//   - export MIN_FOOD_FOR_GROWTH   (mirrors BALANCE.recruitMinFoodBuffer
+//     for ColonyPerceiver / WorldSummary which still read this constant)
+//
+// Behaviour:
+//   1. Cooldown ticks down each frame (regardless of 1Hz check cadence).
+//   2. At 1Hz, when warehouses exist and autoRecruit is on, the queue is
+//      topped up toward `recruitTarget` if food >= recruitMinFoodBuffer.
+//   3. When queue > 0 AND cooldownSec <= 0 AND food >= recruitFoodCost, a
+//      single worker spawns at a seeded-random warehouse, food is debited,
+//      and the cooldown resets to recruitCooldownSec.
+//   4. Recruits do NOT carry parents (lineage.parents = []) — they "arrive"
+//      from the colony's recruit pool, not are born to in-game agents.
+//   5. Both `WORKER_BORN` and `VISITOR_ARRIVED` events fire (back-compat
+//      with EventPanel/Telemetry which still listen on the legacy beat).
+//   6. `state.metrics.birthsTotal` AND `state.metrics.recruitTotal` are
+//      both incremented (survival score + new metric).
+
+import { BALANCE } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { createWorker } from "../../entities/EntityFactory.js";
 import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
-import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
 
-const CHECK_INTERVAL_SEC = 10;
+const CHECK_INTERVAL_SEC = 1.0;
 const MEMORY_RECENT_LIMIT = 6;
 const MEMORY_HISTORY_LIMIT = 24;
-// v0.8.1 Phase 8.C iteration 2: 6 → 10. Phase 8.A fixes (yieldPool/kitchen/
-// fog/salinization) opened food production, but DevIndex stayed at 44 because
-// demand-side growth was runaway — cheap 6-food births + generous pop-cap
-// spawned workers faster than food regen could sustain. Iteration 1 raised
-// this to 15 + infra penalty + 2x buffer, which *collapsed* the colony by
-// day 26 (pop 5 → 2) because birth rate fell below death rate. 10 is the
-// middle ground: real cost without starving birth rate.
-const FOOD_COST_PER_COLONIST = 10;
-// v0.8.1 Phase 8.C iteration 2: 25 → 30. Mild bump over the old 25 threshold
-// so growth requires a modest buffer, but not the 40 (→ collapse) we tried
-// first. Exported so AI perceiver/summary sites stay in sync.
-export const MIN_FOOD_FOR_GROWTH = 30;
+
+// v0.8.4 Phase 11 (Agent D) — Re-exported for ColonyPerceiver / WorldSummary
+// which still gate growth-related copy on this constant. Tracks
+// BALANCE.recruitMinFoodBuffer.
+export const MIN_FOOD_FOR_GROWTH = Number(BALANCE.recruitMinFoodBuffer ?? 80);
 
 function pushMemoryLine(agent, line, key, nowSec, type = "event") {
   agent.memory ??= { recentEvents: [], dangerTiles: [] };
@@ -42,158 +63,178 @@ function pushMemoryLine(agent, line, key, nowSec, type = "event") {
   return true;
 }
 
-export class PopulationGrowthSystem {
+export class RecruitmentSystem {
   constructor() {
-    this.name = "PopulationGrowthSystem";
-    this._timer = CHECK_INTERVAL_SEC * 0.5; // first check after half interval
+    this.name = "RecruitmentSystem";
+    // First check fires immediately on a forced 0-timer (the test suite sets
+    // `_timer = 0` then ticks dt=1 to cross the threshold). Default to 0 so
+    // the first frame after construction does meaningful work.
+    this._timer = 0;
   }
 
   update(dt, state, services = null) {
-    this._timer -= dt;
+    if (!state) return;
+    state.controls ??= {};
+    state.metrics ??= {};
+
+    // (1) Cooldown ticks down every frame regardless of 1Hz cadence so the
+    // recruit cap honors wall-clock pacing rather than tick rate.
+    const dtNum = Math.max(0, Number(dt) || 0);
+    state.controls.recruitCooldownSec = Math.max(
+      0,
+      Number(state.controls.recruitCooldownSec ?? 0) - dtNum,
+    );
+
+    // 1Hz cadence for the queue-fill / spawn loop.
+    this._timer = Number(this._timer ?? 0) - dtNum;
     if (this._timer > 0) return;
     this._timer = CHECK_INTERVAL_SEC;
 
-    const workers = state.agents.filter(a => a.type === "WORKER" && a.alive !== false);
+    const workers = state.agents.filter((a) => a.type === "WORKER" && a.alive !== false);
     const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
     if (warehouses.length === 0) return;
+
     // v0.8.0 Phase 4 silent-failure C1: seeded RNG is required so benchmark
     // runs stay reproducible. services.rng.next is the deterministic source;
-    // fall back to Math.random only when no services are threaded (legacy
-    // tests that construct the system directly).
+    // fall back to Math.random only when no services are threaded.
     const rngNext = typeof services?.rng?.next === "function"
       ? () => services.rng.next()
       : Math.random;
 
-    // Dynamic population cap based on infrastructure
-    const farms = state.buildings?.farms ?? 0;
-    const quarries = state.buildings?.quarries ?? 0;
-    const kitchens = state.buildings?.kitchens ?? 0;
-    const lumbers = state.buildings?.lumbers ?? 0;
-    const smithies = state.buildings?.smithies ?? 0;
-    const clinics = state.buildings?.clinics ?? 0;
-    const herbGardens = state.buildings?.herbGardens ?? 0;
-    // v0.8.1 Phase 8.C iteration 2: tighten pop-cap modestly — removed the
-    // infrastructure-balance penalty from iteration 1 because it created a
-    // doom spiral (once pop fell below warehouses*3, penalty stayed 0, but
-    // combined with high MIN_FOOD_FOR_GROWTH it froze birth rate below
-    // death rate). Kept farm 0.8 → 0.5 and warehouse 4 → 3 coefficient
-    // reductions since the runaway they targeted was real.
-    const cap = Math.min(80, 8 + warehouses.length * 3 + Math.floor(farms * 0.5)
-      + Math.floor(lumbers * 0.5) + quarries * 2 + kitchens * 2
-      + smithies * 2 + clinics * 2 + herbGardens);
-    if (workers.length >= cap) return;
+    const food = Number(state.resources?.food ?? 0);
+    const recruitFoodCost = Number(BALANCE.recruitFoodCost ?? 25);
+    const recruitMinBuffer = Number(BALANCE.recruitMinFoodBuffer ?? 80);
+    const recruitMaxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
+    const recruitCooldownSecRef = Number(BALANCE.recruitCooldownSec ?? 30);
+    const recruitTargetRaw = Math.max(0, Number(state.controls.recruitTarget ?? 0) | 0);
+    let recruitQueue = Math.max(0, Number(state.controls.recruitQueue ?? 0) | 0);
+    const autoRecruit = state.controls.autoRecruit !== false;
 
-    if (state.ai?.foodRecoveryMode === true || isFoodRunwayUnsafe(state)) {
-      state.metrics ??= {};
-      state.metrics.populationGrowthBlockedReason = "food runway unsafe";
+    // v0.8.5 Tier 1 B5 / Tier 2 S5: Re-enforce the documented infrastructure
+    // cap from docs/systems/05-population-lifecycle.md. Code (pre-v0.8.5) used
+    // only state.controls.recruitTarget, which let the player/LLM set a high
+    // recruit target and outgrow infrastructure. Compute the cap inline so
+    // the auto-fill never advances past it. The player's explicit
+    // recruitTarget remains an upper bound (so dropping the slider still
+    // works), but the colony cannot be auto-grown beyond what the buildings
+    // support.
+    const buildings = state?.buildings ?? {};
+    const warehousesCount = Number(buildings.warehouses ?? 0);
+    const farmsCount = Number(buildings.farms ?? 0);
+    const lumbersCount = Number(buildings.lumbers ?? 0);
+    const quarriesCount = Number(buildings.quarries ?? 0);
+    const kitchensCount = Number(buildings.kitchens ?? 0);
+    const smithiesCount = Number(buildings.smithies ?? 0);
+    const clinicsCount = Number(buildings.clinics ?? 0);
+    const herbGardensCount = Number(buildings.herbGardens ?? 0);
+    const infraCap = Math.min(
+      80,
+      8
+        + warehousesCount * 3
+        + Math.floor(farmsCount * 0.5)
+        + Math.floor(lumbersCount * 0.5)
+        + quarriesCount * 2
+        + kitchensCount * 2
+        + smithiesCount * 2
+        + clinicsCount * 2
+        + herbGardensCount,
+    );
+    const effectiveCap = Math.min(recruitTargetRaw, infraCap);
+    state.metrics.populationInfraCap = infraCap;
+    state.metrics.populationEffectiveCap = effectiveCap;
+
+    // (2) Auto-recruit branch. Top up the queue toward the EFFECTIVE cap if
+    // food is safely above the min buffer and we're not already at the cap.
+    // Adds at most one per 1Hz tick to keep growth pacing predictable; manual
+    // UI / LLM bulk-enqueue paths go through PlanExecutor.
+    const totalCurrent = workers.length + recruitQueue;
+    if (autoRecruit
+        && totalCurrent < effectiveCap
+        && food >= recruitMinBuffer
+        && recruitQueue < recruitMaxQueue) {
+      // Grow the queue by 1 per second toward the cap; cap at the gap to
+      // avoid overshoot when target shrinks.
+      const gap = effectiveCap - totalCurrent;
+      const add = Math.min(1, gap);
+      recruitQueue = Math.min(recruitMaxQueue, recruitQueue + add);
+      state.controls.recruitQueue = recruitQueue;
+    }
+
+    // (3) Spawn branch — drain one queue entry per tick when the gates open.
+    // v0.8.4 Round 2 polish: spawn now also respects `recruitMinFoodBuffer`.
+    // Previously a queue built up at food >= 50 would keep firing all the way
+    // down to food = 25, draining the colony into a starvation spiral. The
+    // double gate keeps spawn pressure on the same buffer the auto-fill uses.
+    if (recruitQueue <= 0) return;
+    const cooldown = Number(state.controls.recruitCooldownSec ?? 0);
+    if (cooldown > 0) return;
+    if (food < recruitFoodCost) {
+      state.metrics.populationGrowthBlockedReason = "food below recruit cost";
+      return;
+    }
+    if (food < recruitMinBuffer) {
+      state.metrics.populationGrowthBlockedReason = "food below recruit buffer";
       return;
     }
 
-    // Need sufficient food
-    const food = state.resources?.food ?? 0;
-    if (food < MIN_FOOD_FOR_GROWTH) {
-      state.metrics ??= {};
-      state.metrics.populationGrowthBlockedReason = "food below growth floor";
-      return;
-    }
-    if (state.metrics) state.metrics.populationGrowthBlockedReason = "";
-
-    // Spawn at a seeded-random warehouse.
+    // Pick a deterministic warehouse for placement.
     const wh = warehouses[Math.floor(rngNext() * warehouses.length)];
     const pos = tileToWorld(wh.ix, wh.iz, state.grid);
     const newWorker = createWorker(pos.x, pos.z, rngNext);
     state.agents.push(newWorker);
-    state.resources.food -= FOOD_COST_PER_COLONIST;
+    state.resources.food = Math.max(0, food - recruitFoodCost);
+    state.controls.recruitQueue = Math.max(0, recruitQueue - 1);
+    state.controls.recruitCooldownSec = recruitCooldownSecRef;
 
-    // v0.8.0 Phase 4 — Survival Mode. Bump a monotonic counter so the scoring
-    // path can diff exact birth count (silent-failure C2: a timestamp cursor
-    // drops births that collide on the same integer `timeSec`).
-    state.metrics ??= {};
+    // Survival score uses birthsTotal. Phase 11 also tracks recruitTotal so
+    // analytics can split organic births from explicit recruits (zero
+    // organic births in v0.8.4+, but the API stays stable for replays).
     state.metrics.birthsTotal = Number(state.metrics.birthsTotal ?? 0) + 1;
-    // Preserve lastBirthGameSec for HUD / telemetry reads; no longer the
-    // cursor for survival-score bookkeeping.
+    state.metrics.recruitTotal = Number(state.metrics.recruitTotal ?? 0) + 1;
     state.metrics.lastBirthGameSec = Number(state.metrics.timeSec ?? 0);
+    state.metrics.populationGrowthBlockedReason = "";
 
-    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 3) — pick 1-2 nearest
-    // living workers (manhattan-world distance < 8) as `parents` so the
-    // birth event reads like "X was born to Y" instead of cloning out of
-    // the warehouse. Walk uses the deterministic agents order; no rngNext
-    // calls so RNG offset is preserved (long-horizon-determinism contract).
-    // If no candidate is in range we fall back to the legacy "arrived at
-    // the colony" copy and leave parents empty.
-    const candidates = [];
-    for (const agent of state.agents) {
-      if (agent === newWorker || agent.type !== "WORKER" || agent.alive === false) continue;
-      const dist = Math.abs(Number(agent.x ?? 0) - pos.x) + Math.abs(Number(agent.z ?? 0) - pos.z);
-      if (dist >= 8) continue;
-      candidates.push({ agent, dist });
-    }
-    candidates.sort((a, b) => a.dist - b.dist);
-    const parents = candidates.slice(0, 2).map((c) => c.agent);
+    // Recruits do NOT carry parents — they're hired, not born.
     newWorker.lineage ??= { parents: [], children: [], deathSec: -1 };
-    newWorker.lineage.parents = parents.map((p) => p.id);
-    for (const parent of parents) {
-      parent.lineage ??= { parents: [], children: [], deathSec: -1 };
-      if (!Array.isArray(parent.lineage.children)) parent.lineage.children = [];
-      if (!parent.lineage.children.includes(newWorker.id)) {
-        parent.lineage.children.push(newWorker.id);
-      }
-    }
-    const parentNames = parents.map((p) => p.displayName ?? p.id);
+    newWorker.lineage.parents = [];
 
     // Legacy event (downstream listeners — EventPanel/Telemetry — already
-    // consume VISITOR_ARRIVED with reason="colony_growth"). Bumped reason
-    // to "colony_growth_birth" so listeners that want to differentiate from
-    // raid-spawn / trade-spawn can branch without breaking tag invariants.
+    // consume VISITOR_ARRIVED with reason="recruited"). Bumped reason so
+    // listeners that want to differentiate from organic births can branch.
     emitEvent(state, EVENT_TYPES.VISITOR_ARRIVED, {
       entityId: newWorker.id,
       entityName: newWorker.displayName ?? newWorker.id,
-      reason: parents.length > 0 ? "colony_growth_birth" : "colony_growth",
+      reason: "recruited",
     });
-    // New dedicated WORKER_BORN beat — narrative consumers (storytellerStrip
-    // SALIENT pattern, voice-pack overlay) subscribe to this without
-    // colour-filtering the legacy bus.
     emitEvent(state, EVENT_TYPES.WORKER_BORN, {
       entityId: newWorker.id,
       entityName: newWorker.displayName ?? newWorker.id,
-      parentNames,
-      lineageParentIds: parents.map((p) => p.id),
-      reason: parents.length > 0 ? "colony_growth_birth" : "colony_growth",
+      parentNames: [],
+      lineageParentIds: [],
+      reason: "recruited",
     });
 
-    // v0.8.2 Round-5b (02d Step 2a) — Push birth memory into nearby workers so
-    // Entity Focus "Recent Memory" shows a human-readable birth event line.
-    // v0.8.2 Round-6 Wave-3 (02d-roleplayer Step 3) — copy now reads "born to
-    // {parent}" when at least one parent was picked (kinship signal) or
-    // "arrived at the colony" otherwise (no warehouse literal — it spoiled
-    // the scene per reviewer feedback). The line is also broadcast into the
-    // global state.gameplay.objectiveLog so storytellerStrip's SALIENT
-    // pattern can lift it into #storytellerBeat (Step 7 wires the regex).
     const nowSec = Number(state.metrics?.timeSec ?? 0);
     const newbornName = newWorker.displayName ?? newWorker.id;
-    const birthLine = parents.length > 0
-      ? `[${nowSec.toFixed(0)}s] ${newbornName} was born to ${parentNames.join(" and ")}`
-      : `[${nowSec.toFixed(0)}s] ${newbornName} arrived at the colony`;
-    pushMemoryLine(newWorker, birthLine, `birth:${newWorker.id}`, nowSec, "birth");
-    for (const agent of state.agents) {
-      if (agent === newWorker || agent.type !== "WORKER" || agent.alive === false) continue;
-      const dist = Math.abs(agent.x - pos.x) + Math.abs(agent.z - pos.z);
-      if (dist > 10) continue;
-      pushMemoryLine(agent, birthLine, `birth:${newWorker.id}`, nowSec, "birth");
-    }
-    // Surface birth onto the player-visible log so storytellerStrip's beat
-    // extractor can lift it (SALIENT pattern in Step 7). objectiveLog uses
-    // unshift+slice(0,24) — same bound as ProgressionSystem.logObjective.
+    const recruitLine = `[${nowSec.toFixed(0)}s] ${newbornName} was recruited to the colony`;
+    pushMemoryLine(newWorker, recruitLine, `recruit:${newWorker.id}`, nowSec, "birth");
+
+    // Mirror to objective log + debug eventTrace for the storyteller strip.
     if (state.gameplay) {
       if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
-      state.gameplay.objectiveLog.unshift(birthLine);
+      state.gameplay.objectiveLog.unshift(recruitLine);
       state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
     }
-    // Mirror to debug.eventTrace (storytellerStrip's primary scan source).
     if (state.debug) {
       if (!Array.isArray(state.debug.eventTrace)) state.debug.eventTrace = [];
-      state.debug.eventTrace.unshift(birthLine);
+      state.debug.eventTrace.unshift(recruitLine);
       state.debug.eventTrace = state.debug.eventTrace.slice(0, 36);
     }
   }
 }
+
+// v0.8.4 Phase 11 (Agent D) — back-compat alias. GameApp.createSystems and
+// the SimHarness import the legacy `PopulationGrowthSystem` symbol; expose
+// the new class under that name so the rest of the call graph keeps working
+// without touching unrelated files.
+export { RecruitmentSystem as PopulationGrowthSystem };

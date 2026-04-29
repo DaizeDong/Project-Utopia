@@ -46,11 +46,15 @@ test("loaded worker decays rest faster than empty worker over 10s", () => {
   );
 
   // Expected ratio check: the loaded decay should be ~multiplier x empty decay.
+  // v0.8.5 Tier 3: carryFatigueLoadedMultiplier 1.5 → 1.25, so the ratio
+  // window shifts down accordingly (slightly above 1.0 up to mult+0.3).
   const lossLoaded = 1 - restLoaded;
   const lossEmpty = Math.max(1e-6, 1 - restEmpty);
   const ratio = lossLoaded / lossEmpty;
+  const minRatio = Math.max(1.05, BALANCE.carryFatigueLoadedMultiplier - 0.10);
+  const maxRatio = BALANCE.carryFatigueLoadedMultiplier + 0.30;
   assert.ok(
-    ratio > 1.3 && ratio < BALANCE.carryFatigueLoadedMultiplier + 0.3,
-    `loaded/empty decay ratio ${ratio.toFixed(2)} should reflect fatigue multiplier ${BALANCE.carryFatigueLoadedMultiplier}`,
+    ratio > minRatio && ratio < maxRatio,
+    `loaded/empty decay ratio ${ratio.toFixed(2)} should reflect fatigue multiplier ${BALANCE.carryFatigueLoadedMultiplier} (window ${minRatio}-${maxRatio})`,
   );
 });

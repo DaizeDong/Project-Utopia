@@ -39,17 +39,18 @@ function countRole(state, role) {
   return state.agents.filter((a) => a.type === "WORKER" && a.role === role).length;
 }
 
-test("RoleAssignmentSystem HAUL gate (n<10) disables haulers regardless of quota", () => {
+test("RoleAssignmentSystem HAUL gate (n<haulMinPopulation) disables haulers regardless of quota — v0.8.5: gate=6", () => {
+  // v0.8.5 Tier 1 B4: haulMinPopulation 8 → 6 (matches bandTable). Test
+  // pruned to n=4 to remain safely below the new gate.
   const state = createInitialGameState();
-  // Prune the worker pool below the n>=10 gate.
   const workers = state.agents.filter((a) => a.type === "WORKER");
-  const keepIds = new Set(workers.slice(0, 6).map((w) => w.id));
+  const keepIds = new Set(workers.slice(0, 4).map((w) => w.id));
   state.agents = state.agents.filter((a) => a.type !== "WORKER" || keepIds.has(a.id));
   state.buildings.warehouses = 1;
   state.controls.roleQuotas = { cook: 0, smith: 0, herbalist: 0, haul: 4, stone: 0, herbs: 0 };
   const roles = new RoleAssignmentSystem();
   roles.update(2, state);
-  assert.equal(countRole(state, ROLE.HAUL), 0, "HAUL gate (n>=10) should keep hauler count at 0 even when quota=4");
+  assert.equal(countRole(state, ROLE.HAUL), 0, "HAUL gate must keep hauler count at 0 below haulMinPopulation");
 });
 
 test("RoleAssignmentSystem honours quotas.haul = 3 when gate + warehouse are satisfied", () => {

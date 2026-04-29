@@ -848,6 +848,22 @@
       font-weight: 700; font-size: 11px;
       padding: 6px 4px;
     }
+    /* v0.8.4 destructive-action accent — Demolish stands out from constructive
+       tools. Border + text shifted toward warning hue; matches the existing
+       active-button language but in red so players see it as a non-place op. */
+    .tool-grid button[data-tool-destructive="1"] {
+      border-color: rgba(220, 96, 86, 0.55);
+      color: #e07d72;
+    }
+    .tool-grid button[data-tool-destructive="1"]:hover:not(:disabled) {
+      background: rgba(220, 96, 86, 0.18);
+      border-color: rgba(255, 130, 110, 0.7);
+    }
+    .tool-grid button[data-tool-destructive="1"].active {
+      background: rgba(180, 60, 50, 0.55);
+      border-color: rgba(255, 130, 110, 0.85);
+      color: #fff;
+    }
 
     /* === BUTTONS (dark theme) === */
     button {
@@ -2177,7 +2193,7 @@
               <button type="button" data-tool="warehouse" data-tool-tier="primary" title="Warehouse (4) — store &amp; distribute resources, cost: 10 wood. Place before your 3rd farm so haul distance stays short."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
               <button type="button" data-tool="wall" data-tool-tier="secondary" title="Wall (5) — block saboteurs, cost: 2 stone. Ring the colony when Threat &gt; 30 or a raid is announced."><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
               <button type="button" data-tool="bridge" data-tool-tier="secondary" title="Bridge (6) — cross water, cost: 3 wood + 1 stone. Must extend from an existing road/warehouse/bridge onto a water tile."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
-              <button type="button" data-tool="erase" data-tool-tier="secondary" title="Erase (7) — demolish buildings, partial resource refund. Use to relocate a building — demolishing roads is cheap."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Erase</button>
+              <button type="button" data-tool="erase" data-tool-tier="secondary" data-tool-destructive="1" title="Demolish (7) — workers will dismantle the structure over time. Returns partial salvage. Costs 1 wood to commission. Right-click a blueprint-in-progress to cancel for full refund."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Demolish</button>
               <button type="button" data-tool="quarry" data-tool-tier="advanced" title="Quarry (8) — mine stone, cost: 6 wood. Produces stone for walls/kitchen/smithy — open after your first farm is fed."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Pickaxe.png" alt="" class="tool-icon" />Quarry</button>
               <button type="button" data-tool="herb_garden" data-tool-tier="advanced" title="Herb Garden (9) — gather herbs, cost: 4 wood. Produces herbs for the Clinic medicine chain — low priority until Dev 40."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="" class="tool-icon" />Herbs</button>
               <button type="button" data-tool="kitchen" data-tool-tier="advanced" title="Kitchen (10) — cook food into meals, cost: 8 wood + 3 stone. Doubles hunger recovery — unlocks after you have 6 farms feeding well."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="" class="tool-icon" />Kitchen</button>
@@ -2185,12 +2201,14 @@
               <button type="button" data-tool="clinic" data-tool-tier="advanced" title="Clinic (12) — refine herbs into medicine, cost: 6 wood + 2 herbs. Only worthwhile with a Herb Garden feeding it."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
             </div>
             <div class="hint" style="font-size:10px; line-height:1.6; color:var(--text-muted);">
-              <span>1–12: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>
+              <span>0: select</span> · <span>1–9/-/=: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>
               <span>T: overlay (fertility/elev/conn/nodes)</span> · <span>L: heat lens</span> · <span>F1: help</span>
             </div>
             <!-- Keyboard shortcut reference grid -->
+            <!-- v0.8.7.1 U3 — 0 reclaimed for Select / Inspect (was reset camera; that role moves to R / Home, already advertised below). -->
             <div class="hotkey-grid">
-              <div class="hk-row"><span class="hk-key">1–12</span><span class="hk-desc">select build tool</span></div>
+              <div class="hk-row"><span class="hk-key">0</span><span class="hk-desc">select / inspect tool</span></div>
+              <div class="hk-row"><span class="hk-key">1–9 / - / =</span><span class="hk-desc">select build tool</span></div>
               <div class="hk-row"><span class="hk-key">Space</span><span class="hk-desc">pause / resume</span></div>
               <div class="hk-row"><span class="hk-key">Esc</span><span class="hk-desc">cancel / deselect</span></div>
               <div class="hk-row"><span class="hk-key">T</span><span class="hk-desc">terrain overlay (fertility/elev/conn/nodes)</span></div>
@@ -2199,7 +2217,7 @@
               <div class="hotkey-grid-divider"></div>
               <div class="hk-row"><span class="hk-key">Ctrl+Z</span><span class="hk-desc">undo build</span></div>
               <div class="hk-row"><span class="hk-key">Ctrl+Y</span><span class="hk-desc">redo build</span></div>
-              <div class="hk-row"><span class="hk-key">0</span><span class="hk-desc">reset camera</span></div>
+              <div class="hk-row"><span class="hk-key">R / Home</span><span class="hk-desc">reset camera</span></div>
               <div class="hk-row"><span class="hk-key">Alt+Click</span><span class="hk-desc">inspect tile</span></div>
             </div>
           </div>
@@ -2685,6 +2703,19 @@
                     <button type="button" data-pop-adjust="workers:-1" title="Remove 1 worker">-1</button>
                     <button type="button" data-pop-adjust="workers:1" title="Add 1 worker">+1</button>
                     <button type="button" data-pop-adjust="workers:10" title="Add 10 workers">+10</button>
+                  </div>
+                  <!-- v0.8.4 Phase 11 (Agent D) Round 2 polish — static recruit controls
+                       so the layout is predictable on first paint before BuildToolbar
+                       runs. #injectRecruitControls is idempotent and short-circuits when
+                       these IDs already exist, so the dynamic-injection path is preserved
+                       for legacy index.html copies that omit this block. -->
+                  <div id="recruitControlsWrap" class="recruit-controls" style="margin-top:6px;">
+                    <button id="recruitOneBtn" type="button" title="Spawn one worker now (costs 25 food, blocked when food below the recruit buffer or queue full).">+1 Worker (25 food)</button>
+                    <label class="recruit-auto-label" style="margin-left:0.5em;">
+                      <input id="autoRecruitToggle" type="checkbox" />
+                      Auto
+                    </label>
+                    <span id="recruitStatusVal" class="small muted" style="margin-left:0.5em;">Queue: 0</span>
                   </div>
                 </div>
 

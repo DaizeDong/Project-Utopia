@@ -2,7 +2,7 @@ import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { getLongRunEventTuning, getLongRunVisitorTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
-import { findNearestTileOfTypes, getTile, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, inBounds, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
@@ -460,6 +460,62 @@ function runScoutBehavior(visitor, state, dt, services) {
   }
 }
 
+// v0.8.4 strategic walls + GATE (Agent C). Wall-attack helper for
+// saboteurs — find an adjacent WALL or GATE and chip its hp. When wallHp
+// drops to 0 the tile mutates to RUINS, re-opening the path for everyone.
+// Saboteurs are now faction="hostile" via getEntityFaction, so once a
+// gate exists between them and the warehouse they were targeting, A* will
+// fail; this fallback keeps them progressing toward the colony.
+function findAdjacentBarrierVisitor(state, centerIx, centerIz) {
+  if (!state?.grid) return null;
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dz] of dirs) {
+    const ix = centerIx + dx;
+    const iz = centerIz + dz;
+    if (!inBounds(ix, iz, state.grid)) continue;
+    const t = getTile(state.grid, ix, iz);
+    if (t === TILE.WALL || t === TILE.GATE) {
+      return { ix, iz, tileType: t };
+    }
+  }
+  return null;
+}
+
+function applyVisitorWallAttack(state, attacker, barrier, dt) {
+  if (!state?.grid?.tileState || !barrier) return false;
+  const idx = barrier.ix + barrier.iz * state.grid.width;
+  const entry = state.grid.tileState.get(idx);
+  if (!entry) return false;
+  // v0.8.5 Tier 3: gates use gateMaxHp; walls keep wallMaxHp.
+  if (entry.wallHp == null) {
+    const isGate = barrier.tileType === TILE.GATE;
+    entry.wallHp = isGate
+      ? Number(BALANCE.gateMaxHp ?? BALANCE.wallMaxHp ?? 50)
+      : Number(BALANCE.wallMaxHp ?? 50);
+  }
+  const dmg = Math.max(0, Number(BALANCE.wallAttackDamagePerSec ?? 5)) * Math.max(0, dt);
+  entry.wallHp = Math.max(0, Number(entry.wallHp) - dmg);
+  // v0.8.5 Tier 2 S2: track damage tick for regen safe-window check.
+  entry.lastWallDamageTick = Number(state.metrics?.tick ?? 0);
+  attacker.debug ??= {};
+  attacker.debug.lastWallAttackHp = entry.wallHp;
+  attacker.debug.lastWallAttackTile = { ix: barrier.ix, iz: barrier.iz };
+  if (entry.wallHp <= 0) {
+    mutateTile(state, barrier.ix, barrier.iz, TILE.RUINS);
+    emitEvent(state, EVENT_TYPES.BUILDING_DESTROYED ?? "buildingDestroyed", {
+      tool: barrier.tileType === TILE.GATE ? "gate" : "wall",
+      ix: barrier.ix,
+      iz: barrier.iz,
+      oldType: barrier.tileType,
+      newType: TILE.RUINS,
+      cause: "wall-attack",
+      attackerId: String(attacker.id ?? ""),
+    });
+    return true;
+  }
+  return false;
+}
+
 function saboteurTick(visitor, state, dt, services, stateNode) {
   const policy = state.ai.groupPolicies.get(visitor.groupId)?.data;
   const sabotageWeight = Number(policy?.intentWeights?.sabotage ?? 1);
@@ -502,6 +558,32 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
       clearPath(visitor);
     }
     return;
+  }
+
+  // v0.8.4 strategic walls + GATE (Agent C). Saboteurs are faction="hostile"
+  // (per getEntityFaction), so once gates exist between them and their
+  // sabotage target, A* will fail. Fall back to wall-attack: chip the
+  // adjacent WALL/GATE until it breaks. mutateTile then bumps grid.version
+  // and the next plan-cycle gets a fresh path. Gated by a 1.5s dwell so a
+  // transient one-tick path miss doesn't fire wall-attack — same gating
+  // pattern as the predator branch in AnimalAISystem (keeps long-horizon
+  // plains baselines from chipping walls every patrol cycle).
+  if (visitor.targetTile && pathInvalid) {
+    const dwell = Number(bb.pathFailDwellSec ?? 0) + dt;
+    bb.pathFailDwellSec = dwell;
+    if (dwell >= 1.5) {
+      const here = worldToTile(visitor.x, visitor.z, state.grid);
+      const barrier = findAdjacentBarrierVisitor(state, here.ix, here.iz);
+      if (barrier) {
+        bb.intent = "attack_structure";
+        visitor.stateLabel = "Wall-attack";
+        setIdleDesired(visitor);
+        applyVisitorWallAttack(state, visitor, barrier, dt);
+        return;
+      }
+    }
+  } else if (bb.pathFailDwellSec) {
+    bb.pathFailDwellSec = 0;
   }
 
   if (stateNode === "evade" || stateNode === "scout") {

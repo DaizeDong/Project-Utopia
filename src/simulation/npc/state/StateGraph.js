@@ -2,16 +2,22 @@ const DEFAULT_STATE_HOLD_SEC = 0.8;
 
 export const GROUP_STATE_GRAPH = Object.freeze({
   workers: Object.freeze({
-    idle: ["seek_food", "seek_task", "seek_rest", "wander"],
+    // v0.8.4 building-construction (Agent A) — `seek_construct` and
+    // `construct` are added so BUILDERs route to construction sites and
+    // apply work-seconds. They sit alongside seek_task/harvest/process to
+    // preserve hysteresis (idle → seek_construct → construct → idle).
+    idle: ["seek_food", "seek_task", "seek_rest", "wander", "seek_construct"],
     seek_food: ["eat", "seek_task"],
     eat: ["seek_task", "wander", "idle"],
-    seek_task: ["harvest", "deliver", "wander", "process"],
+    seek_task: ["harvest", "deliver", "wander", "process", "seek_construct"],
     harvest: ["deliver", "seek_food", "seek_task"],
     deliver: ["seek_task", "seek_food", "idle"],
     process: ["seek_task", "seek_food", "idle"],
-    wander: ["seek_task", "seek_food", "seek_rest", "idle"],
+    wander: ["seek_task", "seek_food", "seek_rest", "idle", "seek_construct"],
     seek_rest: ["rest", "seek_food", "idle"],
     rest: ["seek_task", "seek_food", "idle", "wander"],
+    seek_construct: ["construct", "seek_food", "idle", "seek_task"],
+    construct: ["seek_construct", "seek_food", "idle", "seek_task"],
   }),
   traders: Object.freeze({
     idle: ["seek_trade", "seek_food", "wander"],
@@ -67,6 +73,8 @@ const LABELS = Object.freeze({
     wander: "Wander",
     seek_rest: "Seek Rest",
     rest: "Rest",
+    seek_construct: "Seek Build",
+    construct: "Building",
   },
   traders: {
     idle: "Idle",

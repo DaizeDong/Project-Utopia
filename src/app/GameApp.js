@@ -27,6 +27,7 @@ import { WeatherSystem } from "../world/weather/WeatherSystem.js";
 import { WorldEventSystem } from "../world/events/WorldEventSystem.js";
 import { NPCBrainSystem } from "../simulation/ai/brains/NPCBrainSystem.js";
 import { WorkerAISystem } from "../simulation/npc/WorkerAISystem.js";
+import { ConstructionSystem } from "../simulation/construction/ConstructionSystem.js";
 import { VisitorAISystem } from "../simulation/npc/VisitorAISystem.js";
 import { AnimalAISystem } from "../simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../simulation/lifecycle/MortalitySystem.js";
@@ -258,6 +259,15 @@ export class GameApp {
         this.#applyContextualOverlay(e.detail?.tool ?? "select");
       };
       document.addEventListener("utopia:toolChange", this.boundOnToolChange);
+      // v0.8.7 T3-3 (QA2-F3): forward `utopia:clearToasts` to SceneRenderer.
+      // BuildToolbar dispatches this on tool-change so stale toasts don't
+      // outlive the tool that produced them.
+      this.boundOnClearToasts = () => {
+        if (this.renderer && typeof this.renderer.clearToasts === "function") {
+          this.renderer.clearToasts();
+        }
+      };
+      document.addEventListener("utopia:clearToasts", this.boundOnClearToasts);
     }
 
     // AI Debug button opens the player-facing AI Log tab so players can
@@ -269,8 +279,9 @@ export class GameApp {
           // Open the sidebar if it is currently collapsed.
           const wrap = document.getElementById("wrap");
           if (wrap && !wrap.classList.contains("sidebar-open")) {
+            // v0.8.8 A5 (F14) \u2014 `sidebar-collapsed` removal no longer
+            // needed (BuildToolbar no longer applies it).
             wrap.classList.add("sidebar-open");
-            wrap.classList.remove("sidebar-collapsed");
             const toggleBtn = document.getElementById("sidebarToggleBtn");
             if (toggleBtn) toggleBtn.textContent = "\u2190";
             try { localStorage.setItem("utopiaSidebarOpen", "1"); } catch {}
@@ -375,6 +386,9 @@ export class GameApp {
       new NPCBrainSystem(),
       new WarehouseQueueSystem(),
       new WorkerAISystem(),
+      // v0.8.4 building-construction (Agent A) — completes blueprint/demolish
+      // overlays after WorkerAISystem applies workAppliedSec for the tick.
+      new ConstructionSystem(),
       new VisitorAISystem(),
       new AnimalAISystem(),
       new MortalitySystem(),

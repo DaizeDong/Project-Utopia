@@ -130,6 +130,36 @@ function hazardPenaltyForWeather(weatherName) {
   return 1;
 }
 
+// v0.8.7.1 P2 — shallow equality helpers replace JSON.stringify diff. Source
+// data fully replaces on each call (no in-place mutation), so reference
+// identity within objects/arrays is sufficient for change detection.
+function shallowKeyValueEq(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) if (a[k] !== b[k]) return false;
+  return true;
+}
+
+function shallowFrontsEq(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const fa = a[i];
+    const fb = b[i];
+    if (fa === fb) continue;
+    if (!fa || !fb) return false;
+    if (fa.label !== fb.label || fa.kind !== fb.kind
+        || fa.tileCount !== fb.tileCount
+        || fa.contestedTiles !== fb.contestedTiles
+        || fa.peakPenalty !== fb.peakPenalty) return false;
+  }
+  return true;
+}
+
 function applyWeatherHazards(state, weatherName) {
   const nextWeather = buildWeatherFronts(state, weatherName);
   const nextTiles = nextWeather.hazardTiles;
@@ -139,10 +169,12 @@ function applyWeatherHazards(state, weatherName) {
     : [];
   const nextPenalty = hazardPenaltyForWeather(weatherName);
   const prevPenalty = Number(state.weather.hazardPenaltyMultiplier ?? 1);
-  const prevPenaltyByKey = JSON.stringify(state.weather.hazardPenaltyByKey ?? {});
-  const nextPenaltyByKey = JSON.stringify(nextWeather.hazardPenaltyByKey ?? {});
-  const prevFronts = JSON.stringify(state.weather.hazardFronts ?? []);
-  const nextFronts = JSON.stringify(nextWeather.hazardFronts ?? []);
+  const prevPenaltyByKey = state.weather.hazardPenaltyByKey ?? {};
+  const nextPenaltyByKey = nextWeather.hazardPenaltyByKey ?? {};
+  const prevFronts = state.weather.hazardFronts ?? [];
+  const nextFronts = nextWeather.hazardFronts ?? [];
+  const penaltyByKeyChanged = !shallowKeyValueEq(prevPenaltyByKey, nextPenaltyByKey);
+  const frontsChanged = !shallowFrontsEq(prevFronts, nextFronts);
 
   state.weather.hazardTiles = nextTiles;
   state.weather.hazardTileSet = new Set(nextKeys);
@@ -157,8 +189,8 @@ function applyWeatherHazards(state, weatherName) {
   if (
     nextKeys.join("|") !== prevKeys.join("|")
     || nextPenalty !== prevPenalty
-    || prevPenaltyByKey !== nextPenaltyByKey
-    || prevFronts !== nextFronts
+    || penaltyByKeyChanged
+    || frontsChanged
   ) {
     state.grid.version = Number(state.grid.version ?? 0) + 1;
   }
@@ -193,12 +225,15 @@ const SEASONS = Object.freeze([
   { name: "winter", durationSec: 50, weights: { clear: 20, rain: 0, storm: 20, drought: 0, winter: 60 } },
 ]);
 
+// v0.8.5 Tier 3: 2× weather durations across the board so each weather
+// phase becomes a real tactical period (not a tic the player ignores).
+// drought 24-40s, winter 28-48s, storm 16-32s.
 const WEATHER_DURATION = Object.freeze({
-  clear: { minSec: 18, maxSec: 35 },
-  rain: { minSec: 12, maxSec: 22 },
-  storm: { minSec: 8, maxSec: 16 },
-  drought: { minSec: 12, maxSec: 20 },
-  winter: { minSec: 14, maxSec: 24 },
+  clear: { minSec: 36, maxSec: 70 },
+  rain: { minSec: 24, maxSec: 44 },
+  storm: { minSec: 16, maxSec: 32 },
+  drought: { minSec: 24, maxSec: 40 },
+  winter: { minSec: 28, maxSec: 48 },
 });
 
 function pickWeatherFromSeason(season, rngFn) {

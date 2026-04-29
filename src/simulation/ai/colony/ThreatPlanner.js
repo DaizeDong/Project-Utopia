@@ -16,7 +16,7 @@
  * the existing AnimalAISystem populates `state.metrics.combat` per tick.
  */
 
-import { ANIMAL_KIND } from "../../../config/constants.js";
+import { ANIMAL_KIND, VISITOR_KIND } from "../../../config/constants.js";
 import { BALANCE } from "../../../config/balance.js";
 
 /**
@@ -24,11 +24,18 @@ import { BALANCE } from "../../../config/balance.js";
  * Returns a snapshot suitable for both `state.metrics.combat` and
  * `formatThreatHintForLLM`. Pure read.
  *
+ * v0.8.5 Tier 1 B2: extended to count active hostile saboteurs in addition
+ * to predators. Saboteurs deal damage to walls / warehouses and previously
+ * never triggered GUARD promotion — players had no active counter beyond
+ * walls. Count a saboteur as a threat when it is alive AND within
+ * `proximityTiles` (8) of any worker.
+ *
  * @param {object} state
  * @returns {{
  *   activeThreats:number,
  *   activeRaiders:number,
  *   activePredators:number,
+ *   activeSaboteurs:number,
  *   guardCount:number,
  *   workerCount:number,
  *   nearestThreatDistance:number,
@@ -47,17 +54,40 @@ export function computeThreatPosture(state) {
   const agents = Array.isArray(state?.agents) ? state.agents : [];
   let guardCount = 0;
   let workerCount = 0;
+  const workers = [];
   for (const w of agents) {
     if (!w || w.alive === false) continue;
     if (w.type !== "WORKER") continue;
     workerCount += 1;
+    workers.push(w);
     if (w.role === "GUARD") guardCount += 1;
   }
 
-  // Find nearest threat to any worker (cheap O(W*P)).
+  // v0.8.5 Tier 1 B2: count active hostile saboteurs in proximity.
+  // Saboteurs are visitors with kind=SABOTEUR; they live in state.agents
+  // with type==="VISITOR".
+  let activeSaboteurs = 0;
+  const saboteurProximity = 8;
+  const saboteurProximity2 = saboteurProximity * saboteurProximity;
+  for (const v of agents) {
+    if (!v || v.alive === false) continue;
+    if (v.type !== "VISITOR") continue;
+    if (v.kind !== VISITOR_KIND.SABOTEUR) continue;
+    let close = false;
+    for (const w of workers) {
+      const dx = v.x - w.x;
+      const dz = v.z - w.z;
+      if (dx * dx + dz * dz <= saboteurProximity2) {
+        close = true;
+        break;
+      }
+    }
+    if (close) activeSaboteurs += 1;
+  }
+
+  // Find nearest threat to any worker (cheap O(W*(P+S))).
   let nearest = Infinity;
-  for (const w of agents) {
-    if (!w || w.alive === false || w.type !== "WORKER") continue;
+  for (const w of workers) {
     for (const a of animals) {
       if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
       const dx = a.x - w.x;
@@ -65,13 +95,21 @@ export function computeThreatPosture(state) {
       const d2 = dx * dx + dz * dz;
       if (d2 < nearest) nearest = d2;
     }
+    for (const v of agents) {
+      if (!v || v.alive === false || v.type !== "VISITOR" || v.kind !== VISITOR_KIND.SABOTEUR) continue;
+      const dx = v.x - w.x;
+      const dz = v.z - w.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < nearest) nearest = d2;
+    }
   }
   const nearestThreatDistance = nearest === Infinity ? -1 : Math.sqrt(nearest);
 
   return {
-    activeThreats: activePredators,
+    activeThreats: activePredators + activeSaboteurs,
     activeRaiders,
     activePredators,
+    activeSaboteurs,
     guardCount,
     workerCount,
     nearestThreatDistance,

@@ -10,6 +10,7 @@ import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvis
 import { explainTerm } from "../hud/glossary.js";
 import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
 import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../../app/controlSanitizers.js";
+import { BALANCE } from "../../config/balance.js";
 
 // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when a build preview reports
 // "insufficientResource", pick the first limiting raw resource that still
@@ -243,6 +244,14 @@ export class BuildToolbar {
     this.#ensurePopulationTargets();
     this.#ensureTerrainTuning();
     this.#ensureAuxControls();
+    // v0.8.8 A1 (F6) — Recruit DOM is now baked into index.html
+    // (#recruitControlsWrap with #recruitOneBtn / #autoRecruitToggle /
+    // #recruitStatusVal at line ~2710). Both #ensureRecruitControls (state
+    // backfill) and #injectRecruitControls (dynamic DOM) were removed —
+    // EntityFactory.js seeds recruit fields on state.controls and the
+    // static DOM is always present. Only #setupRecruitControls remains
+    // to wire handlers to the existing nodes.
+    this.#setupRecruitControls();
 
     this.#setupToolButtons();
     this.#setupManagementControls();
@@ -255,6 +264,82 @@ export class BuildToolbar {
     this.sync();
   }
 
+  /**
+   * v0.8.4 Phase 11 (Agent D) — wire the recruit DOM nodes to state. The
+   * +1 button enqueues (clamped to BALANCE.recruitMaxQueueSize and gated on
+   * food >= recruitFoodCost). The auto toggle binds to autoRecruit. The
+   * worker target slider, if present, updates recruitTarget so the existing
+   * UI tile keeps doing useful work post-rename.
+   *
+   * v0.8.8 A1 (F6) — Static DOM is now in index.html (#recruitControlsWrap
+   * with #recruitOneBtn / #autoRecruitToggle / #recruitStatusVal). The
+   * dynamic-injection helpers (#injectRecruitControls, #ensureRecruitControls)
+   * were removed; this method now resolves the static nodes and also
+   * defensively backfills state.controls fields for legacy snapshots.
+   */
+  #setupRecruitControls() {
+    if (typeof document === "undefined") return;
+    // Defensive backfill for legacy snapshots without recruit fields.
+    // EntityFactory.js seeds these on fresh state, but pre-v0.8.4 saves
+    // may load without them.
+    if (this.state) {
+      this.state.controls ??= {};
+      const cc = this.state.controls;
+      if (!Number.isFinite(cc.recruitTarget)) cc.recruitTarget = 16;
+      if (!Number.isFinite(cc.recruitQueue)) cc.recruitQueue = 0;
+      if (!Number.isFinite(cc.recruitCooldownSec)) cc.recruitCooldownSec = 0;
+      if (typeof cc.autoRecruit !== "boolean") cc.autoRecruit = true;
+    }
+    const c = this.state?.controls ?? null;
+    if (!c) return;
+
+    // Resolve static DOM nodes (index.html ~line 2710).
+    this.recruitOneBtn = document.getElementById("recruitOneBtn");
+    this.autoRecruitToggle = document.getElementById("autoRecruitToggle");
+    this.recruitStatusVal = document.getElementById("recruitStatusVal");
+
+    if (this.recruitOneBtn) {
+      this.recruitOneBtn.addEventListener("click", () => {
+        const food = Number(this.state.resources?.food ?? 0);
+        const cost = Number(BALANCE.recruitFoodCost ?? 25);
+        const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
+        if (food < cost) {
+          c.actionMessage = "Not enough food to recruit.";
+          c.actionKind = "warn";
+          this.sync();
+          return;
+        }
+        if ((c.recruitQueue ?? 0) >= maxQueue) {
+          c.actionMessage = "Recruit queue is full.";
+          c.actionKind = "warn";
+          this.sync();
+          return;
+        }
+        c.recruitQueue = Math.min(maxQueue, Number(c.recruitQueue ?? 0) + 1);
+        c.actionMessage = `Recruit queued (${c.recruitQueue}).`;
+        c.actionKind = "info";
+        this.sync();
+      });
+    }
+
+    if (this.autoRecruitToggle) {
+      this.autoRecruitToggle.addEventListener("change", () => {
+        c.autoRecruit = Boolean(this.autoRecruitToggle.checked);
+        this.sync();
+      });
+    }
+
+    // Worker target slider doubles as the recruit target. Existing
+    // populationTargets binding in #setupPopulationControls already handles
+    // the slider; we mirror its value into recruitTarget on input.
+    if (this.workerTargetInput) {
+      this.workerTargetInput.addEventListener("input", () => {
+        const v = Math.max(0, Number(this.workerTargetInput.value) | 0);
+        c.recruitTarget = v;
+      });
+    }
+  }
+
   #setupToolButtons() {
     this.toolButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -264,11 +349,25 @@ export class BuildToolbar {
         if (tool === "select") {
           this.state.controls.buildPreview = null;
           this.state.controls.actionMessage = "Select tool - click a worker or tile without building.";
+        } else if (tool === "erase") {
+          // v0.8.4 (Agent B) — destructive action gets a distinct, explicit
+          // status message instead of "Selected tool: erase". The construction
+          // overlay flow (Agent A) means demolishing now takes time, so the
+          // message also nudges players that workers will travel to the site.
+          this.state.controls.actionMessage = "Demolish tool — click a built tile or RUINS. Workers will dismantle over time. Costs 1 wood to commission.";
         } else {
           this.state.controls.actionMessage = `Selected tool: ${tool}`;
         }
         this.state.controls.actionKind = "info";
         this.sync();
+        // v0.8.7 T3-3 (QA2-F3): clear any in-flight toasts before the tool
+        // changes so a "Need 5 wood" toast left over from BUILD doesn't
+        // float over the next tool's UI. Fire a separate event so GameApp
+        // can forward to SceneRenderer.clearToasts() without BuildToolbar
+        // needing a renderer reference.
+        if (typeof document !== "undefined") {
+          document.dispatchEvent(new CustomEvent("utopia:clearToasts", { detail: { reason: "toolChange" }, bubbles: false }));
+        }
         // Notify GameApp so it can apply the context-aware terrain overlay.
         if (typeof document !== "undefined") {
           document.dispatchEvent(new CustomEvent("utopia:toolChange", { detail: { tool }, bubbles: false }));
@@ -289,9 +388,12 @@ export class BuildToolbar {
 
     const selectBtn = document.createElement("button");
     selectBtn.setAttribute("data-tool", "select");
+    // v0.8.7.1 U3 — advertise hotkey 0 in the tooltip + data-hotkey
+    // attribute so the help modal / future shortcut surfaces can read it.
+    selectBtn.setAttribute("data-hotkey", "0");
     selectBtn.setAttribute(
       "title",
-      "Select / Inspect (Esc) - neutral mode, click a worker or tile without building",
+      "Select / Inspect (0 or Esc) - neutral mode, click a worker or tile without building",
     );
     selectBtn.textContent = "Select";
     grid.insertBefore(selectBtn, anchor);
@@ -694,8 +796,15 @@ export class BuildToolbar {
     });
 
     this.toggleSidebarBtn?.addEventListener("click", () => {
-      const next = !this.wrapRoot?.classList.contains("sidebar-collapsed");
-      this.#setSidebarCollapsed(next);
+      // v0.8.8 A5 (F14) — Single source of truth is `utopiaSidebarOpen` and
+      // the `sidebar-open` class on wrapRoot, both managed by inline JS in
+      // index.html (~line 3140). BuildToolbar no longer toggles
+      // `sidebar-collapsed`; we just flip the open state via storage so the
+      // index.html restore handler picks it up on next load.
+      const isOpen = Boolean(this.wrapRoot?.classList.contains("sidebar-open"));
+      const next = !isOpen;
+      this.wrapRoot?.classList.toggle("sidebar-open", next);
+      try { localStorage.setItem("utopiaSidebarOpen", next ? "1" : "0"); } catch {}
       this.sync();
     });
 
@@ -715,10 +824,13 @@ export class BuildToolbar {
   }
 
   #restoreLayoutPreference() {
-    const sidebarCollapsed = localStorage.getItem("utopiaSidebarCollapsed") === "1";
+    // v0.8.8 A5 (F14) — sidebar state lives at `utopiaSidebarOpen` and is
+    // restored by inline JS in index.html (~line 3178). We no longer apply
+    // `sidebar-collapsed` from BuildToolbar; the legacy
+    // `utopiaSidebarCollapsed` key is ignored to avoid the dual-source
+    // conflict that caused stale visibility on reload.
     const storedDock = localStorage.getItem("utopiaDockCollapsed");
     const dockCollapsed = storedDock === null ? true : storedDock === "1";
-    this.#setSidebarCollapsed(sidebarCollapsed);
     this.#setDockCollapsed(dockCollapsed);
   }
 
@@ -765,10 +877,9 @@ export class BuildToolbar {
     localStorage.setItem(SIDEBAR_PANELS_STORAGE_KEY, JSON.stringify(state));
   }
 
-  #setSidebarCollapsed(collapsed) {
-    this.wrapRoot?.classList.toggle("sidebar-collapsed", Boolean(collapsed));
-    localStorage.setItem("utopiaSidebarCollapsed", collapsed ? "1" : "0");
-  }
+  // v0.8.8 A5 (F14) — #setSidebarCollapsed removed; sidebar state is now
+  // owned exclusively by inline JS in index.html (utopiaSidebarOpen +
+  // sidebar-open class).
 
   #setDockCollapsed(collapsed) {
     this.wrapRoot?.classList.toggle("dock-collapsed", Boolean(collapsed));
@@ -950,6 +1061,63 @@ export class BuildToolbar {
     };
   }
 
+  // v0.8.4 (Agent B) — Demolish-tool hover preview helper. Reads the
+  // construction overlay (if any) on the hovered tile and returns a
+  // { text, kind, tooltip } object describing what clicking would do.
+  // Robust to missing overlay system (Agent A may not have merged yet); when
+  // tileState lookup throws or returns nothing, we fall back to the legacy
+  // build-preview verb.
+  #readConstructionOverlay(ix, iz) {
+    try {
+      const grid = this.state?.grid;
+      if (!grid || !Number.isFinite(ix) || !Number.isFinite(iz)) return null;
+      const width = Number(grid.width ?? 0);
+      const idx = ix + iz * width;
+      const tileState = grid.tileState;
+      const entry = (tileState && typeof tileState.get === "function") ? tileState.get(idx) : null;
+      const overlay = entry?.construction ?? null;
+      if (overlay && overlay.kind === "build") {
+        const refund = overlay.cost ?? {};
+        const refundParts = this.#formatRefundParts(refund);
+        const refundText = refundParts ? ` (refund ${refundParts})` : "";
+        return {
+          text: `Cancel construction${refundText}`,
+          kind: "warn",
+          tooltip: "Right-click cancels the blueprint and refunds the commission cost.",
+        };
+      }
+      if (overlay && overlay.kind === "demolish") {
+        const totalSec = Number(overlay.workTotalSec ?? 0);
+        const appliedSec = Number(overlay.workAppliedSec ?? 0);
+        const pct = totalSec > 0
+          ? Math.max(0, Math.min(100, Math.round((appliedSec / totalSec) * 100)))
+          : 0;
+        return {
+          text: `Demolish in progress (${pct}% complete)`,
+          kind: "warn",
+          tooltip: "Workers are dismantling this tile. Click to leave them to it.",
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  #formatRefundParts(refund) {
+    if (!refund || typeof refund !== "object") return "";
+    const parts = [];
+    const wood = Number(refund.wood ?? 0);
+    const stone = Number(refund.stone ?? 0);
+    const food = Number(refund.food ?? 0);
+    const herbs = Number(refund.herbs ?? 0);
+    if (wood > 0) parts.push(`${wood} wood`);
+    if (stone > 0) parts.push(`${stone} stone`);
+    if (food > 0) parts.push(`${food} food`);
+    if (herbs > 0) parts.push(`${herbs} herbs`);
+    return parts.join(" / ");
+  }
+
   sync() {
     // v0.8.2 Round-5 Wave-2 (01a-onboarding Step 2): ensure the active-class
     // contract holds even for unknown tools by falling back to the Select
@@ -1029,6 +1197,39 @@ export class BuildToolbar {
       this.compactToggle.checked = this.uiRoot.classList.contains("compact");
     }
 
+    // v0.8.4 Phase 11 (Agent D) — recruit panel sync. Status line shows
+    // queue + cooldown + food/cost; +1 button disables when queue is full
+    // or food < cost; checkbox mirrors state.controls.autoRecruit.
+    const c = this.state?.controls ?? null;
+    if (c) {
+      const food = Number(this.state.resources?.food ?? 0);
+      const cost = Number(BALANCE.recruitFoodCost ?? 25);
+      const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
+      const queue = Math.max(0, Number(c.recruitQueue ?? 0) | 0);
+      const cooldown = Math.max(0, Number(c.recruitCooldownSec ?? 0));
+      if (this.recruitStatusVal) {
+        // v0.8.8 A2 (F7) — color cues:
+        //  - Food segment red when food < cost (recruit blocked)
+        //  - Queue segment amber when queue >= maxQueue (recruit blocked)
+        const queueColor = queue >= maxQueue ? "#fbbf24" : "";
+        const foodColor = food < cost ? "#f87171" : "";
+        const queueSeg = queueColor
+          ? `<span style="color: ${queueColor}">Queue: ${queue}</span>`
+          : `Queue: ${queue}`;
+        const foodSeg = foodColor
+          ? `<span style="color: ${foodColor}">Food: ${Math.floor(food)}/${cost}</span>`
+          : `Food: ${Math.floor(food)}/${cost}`;
+        this.recruitStatusVal.innerHTML =
+          `${queueSeg} · Cooldown: ${cooldown.toFixed(0)}s · ${foodSeg}`;
+      }
+      if (this.recruitOneBtn) {
+        this.recruitOneBtn.disabled = (queue >= maxQueue) || (food < cost);
+      }
+      if (this.autoRecruitToggle) {
+        this.autoRecruitToggle.checked = c.autoRecruit !== false;
+      }
+    }
+
     const display = this.#displaySettings();
     if (this.displayPresetSelect) this.#setFieldValueIfIdle(this.displayPresetSelect, display.preset);
     if (this.displayResolutionScale && this.displayResolutionScaleLabel) {
@@ -1097,8 +1298,10 @@ export class BuildToolbar {
     }
 
     if (this.toggleSidebarBtn && this.wrapRoot) {
-      const collapsed = this.wrapRoot.classList.contains("sidebar-collapsed");
-      this.toggleSidebarBtn.textContent = collapsed ? "☰ Menu" : "✕ Close";
+      // v0.8.8 A5 (F14) — read sidebar state from `sidebar-open` class
+      // (single source of truth) instead of legacy `sidebar-collapsed`.
+      const open = this.wrapRoot.classList.contains("sidebar-open");
+      this.toggleSidebarBtn.textContent = open ? "✕ Close" : "☰ Menu";
     }
 
     if (this.toggleDockBtn && this.wrapRoot) {
@@ -1130,7 +1333,22 @@ export class BuildToolbar {
 
       if (this.workerTargetInput) this.#setFieldValueIfIdle(this.workerTargetInput, workers);
       if (this.workerTargetNumber) this.#setFieldValueIfIdle(this.workerTargetNumber, workers);
-      if (this.workerTargetLabel) this.workerTargetLabel.textContent = String(workers);
+      if (this.workerTargetLabel) {
+        // v0.8.7 T3-2 (QA2-F2): surface the effective infra cap on the
+        // worker-target label so players see why the slider can't go past
+        // a certain number. PopulationGrowthSystem already publishes
+        // `state.metrics.populationInfraCap` every tick (computed as
+        // min of warehouseCap, foodCap, restCap). Show "<target> / <max>
+        // (infra cap N)" when the cap is below the slider max so the
+        // limiting factor is obvious; otherwise just show the target.
+        const infraCap = Number(this.state.metrics?.populationInfraCap ?? Infinity);
+        const sliderMax = Number(this.workerTargetInput?.max ?? 200);
+        if (Number.isFinite(infraCap) && infraCap >= 0 && infraCap < sliderMax) {
+          this.workerTargetLabel.textContent = `${workers} / ${sliderMax} (infra cap ${infraCap})`;
+        } else {
+          this.workerTargetLabel.textContent = String(workers);
+        }
+      }
 
       if (this.traderTargetInput) this.#setFieldValueIfIdle(this.traderTargetInput, traders);
       if (this.traderTargetNumber) this.#setFieldValueIfIdle(this.traderTargetNumber, traders);
@@ -1175,31 +1393,49 @@ export class BuildToolbar {
       // v0.8.2 Round-0 01b — tint the hover-preview row when the current tool
       // cannot be placed on the hovered tile, and prepend a ✗ glyph so players
       // notice the blocker BEFORE clicking (P0 fix: "silent failure" root cause).
+      // v0.8.4 (Agent B) — when the active tool is "erase" (Demolish) and the
+      // hovered tile carries a construction overlay, enrich the preview text
+      // with the demolish-specific verb ("Cancel construction" vs "Demolish")
+      // and the salvage / refund hint. The legacy preview already reports
+      // built-tile salvage in summary; we augment with overlay state.
       const preview = this.state.controls?.buildPreview;
+      const isErase = (this.state.controls?.tool === "erase");
+      const overlayHint = (isErase && preview && Number.isFinite(preview.ix) && Number.isFinite(preview.iz))
+        ? this.#readConstructionOverlay(preview.ix, preview.iz)
+        : null;
       const isBlocker = preview && preview.ok === false && preview.reasonText;
       if (isBlocker) {
-        this.buildPreviewVal.textContent = `\u2717 ${preview.reasonText}`;
-        this.buildPreviewVal.setAttribute("data-kind", "error");
-        // Bonus: expose the reason via data-tooltip for any downstream reader
-        // (reviewer 01a / 02b / 02e may hook into this). First introduction.
+        // v0.8.7.1 U2 — surface the resource-chain deficit hint INLINE in
+        // the preview text (not just data-tooltip) so casual players see it
+        // without hovering. Tooltip continues to expose the long form.
+        let inlineText = preview.reasonText;
         let tooltip = preview.reasonText;
-        // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when the blocker is
-        // "insufficientResource", reach into the resource-chain stall
-        // report and append the production chain's bottleneck so casual
-        // players see "why can't I afford 8 wood?" at a glance.
         if (preview.reason === "insufficientResource") {
           try {
             const stall = getBuildDeficitHint(this.state, preview);
-            if (stall) tooltip = `${tooltip} — ${stall}`;
+            if (stall) {
+              inlineText = `${preview.reasonText} — ${stall}`;
+              tooltip = `${tooltip} — ${stall}`;
+            }
           } catch {
-            // Never let tooltip augmentation break the blocker line.
+            // Never let hint augmentation break the blocker line.
           }
         }
+        this.buildPreviewVal.textContent = `\u2717 ${inlineText}`;
+        this.buildPreviewVal.setAttribute("data-kind", "error");
         this.buildPreviewVal.setAttribute("data-tooltip", tooltip);
       } else if (preview && preview.ok === true && Array.isArray(preview.warnings) && preview.warnings.length > 0) {
         this.buildPreviewVal.textContent = `\u26A0 ${preview.warnings[0]} | ${buildPanel.previewSummary}`;
         this.buildPreviewVal.setAttribute("data-kind", "warn");
         this.buildPreviewVal.setAttribute("data-tooltip", preview.warnings[0]);
+      } else if (overlayHint) {
+        // v0.8.4 (Agent B) \u2014 demolish hover surface for blueprints + active
+        // demolish overlays. The legacy build-preview path handles
+        // built/RUINS hover via summarizeBuildPreview; we only fire on
+        // blueprint or in-progress demolish overlays.
+        this.buildPreviewVal.textContent = overlayHint.text;
+        this.buildPreviewVal.setAttribute("data-kind", overlayHint.kind);
+        this.buildPreviewVal.setAttribute("data-tooltip", overlayHint.tooltip);
       } else {
         this.buildPreviewVal.textContent = buildPanel.previewSummary;
         this.buildPreviewVal.setAttribute("data-kind", "");

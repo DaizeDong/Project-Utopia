@@ -190,7 +190,12 @@ export function getLongRunEventTuning(stateOrProfile = null) {
     return LONG_RUN_PROFILE.events.tuning;
   }
   return Object.freeze({
-    maxConcurrentByType: Object.freeze({}),
+    // v0.8.5 Tier 2 S4: Pre-v0.8.5, EventDirector and RaidEscalator could
+    // both enqueue BANDIT_RAID independently in the same tick (the queue
+    // had no per-type concurrency cap outside long_run mode). Pin
+    // banditRaid to 1 in non-long_run mode too so the queue rejects
+    // double-raids regardless of profile.
+    maxConcurrentByType: Object.freeze({ banditRaid: 1 }),
     maxBanditRaidPressure: Infinity,
     maxEventPressurePerEvent: Infinity,
   });

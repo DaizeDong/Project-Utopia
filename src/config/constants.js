@@ -13,6 +13,13 @@
   SMITHY: 11,
   CLINIC: 12,
   BRIDGE: 13,
+  // v0.8.4 strategic walls + gate (Agent C). GATE is faction-aware: passable
+  // for the colony faction; blocked for hostile factions (predators, raiders,
+  // saboteurs). Faction logic lives in src/simulation/navigation/Faction.js;
+  // pathfinding (AStar) consults it via options.faction. The base TILE_INFO
+  // marks GATE as `passable: true` so callers that don't pass a faction (e.g.
+  // raw isPassable() probes, scenario tooling) get the colony-side answer.
+  GATE: 14,
 });
 
 export const ENTITY_TYPE = Object.freeze({
@@ -46,6 +53,12 @@ export const ROLE = Object.freeze({
   // ThreatPlanner / RoleAssignmentSystem). Stat profile: higher attack
   // damage, same hp as a regular worker.
   GUARD: "GUARD",
+  // v0.8.4 building-construction (Agent A) — BUILDERs walk to construction
+  // sites in `state.constructionSites` and apply work-seconds to the
+  // `tileState.construction` overlay. RoleAssignmentSystem promotes idle
+  // workers to BUILDER while at least one site exists, capped by
+  // BALANCE.builderMax. Reverts to FARM when sites empty.
+  BUILDER: "BUILDER",
 });
 
 export const WEATHER = Object.freeze({
@@ -119,6 +132,12 @@ export const TILE_INFO = Object.freeze({
   [TILE.SMITHY]: { passable: true, baseCost: 1.0, height: 0.25, color: 0x8c7a6b },
   [TILE.CLINIC]: { passable: true, baseCost: 1.0, height: 0.22, color: 0xc4d8c0 },
   [TILE.BRIDGE]: { passable: true, baseCost: 0.65, height: 0.04, color: 0x8b7d6b },
+  // v0.8.4 strategic walls + gate (Agent C). Passable=true is the
+  // *default* answer for callers that don't supply a faction; the actual
+  // hostile-blocking logic lives in
+  // `src/simulation/navigation/Faction.js#isTilePassableForFaction`, which
+  // AStar consults when options.faction is provided.
+  [TILE.GATE]: { passable: true, baseCost: 0.85, height: 0.45, color: 0x8b6f47 },
 });
 
 export const MOVE_DIRECTIONS_4 = Object.freeze([
@@ -154,6 +173,11 @@ export const SYSTEM_ORDER = Object.freeze([
   "NPCBrainSystem",
   "WarehouseQueueSystem",
   "WorkerAISystem",
+  // v0.8.4 building-construction (Agent A) — sits AFTER WorkerAISystem so
+  // any builder workAppliedSec increment from this same tick is reflected
+  // before completion is checked, and BEFORE VisitorAISystem so the
+  // post-mutation tile is already visible to other agents this tick.
+  "ConstructionSystem",
   "VisitorAISystem",
   "AnimalAISystem",
   "MortalitySystem",

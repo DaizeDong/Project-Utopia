@@ -34,13 +34,13 @@ test("M1c-A: demolishing a FARM refunds demoStoneRecovery × stoneCost and demoW
   const target = findFirstValid(state, buildSystem, "farm");
   assert.ok(target, "expected at least one valid farm placement on the seed map");
 
-  const placed = buildSystem.placeToolAt(state, "farm", target.ix, target.iz);
+  const placed = buildSystem.placeToolAt(state, "farm", target.ix, target.iz, { instant: true });
   assert.equal(placed.ok, true);
 
   const woodBefore = state.resources.wood;
   const stoneBefore = state.resources.stone;
 
-  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz, { instant: true });
   assert.equal(erased.ok, true);
 
   const expectedWood = Math.floor((BUILD_COST.farm.wood ?? 0) * BALANCE.demoWoodRecovery);
@@ -63,12 +63,12 @@ test("M1c-B: demolishing a WAREHOUSE refunds proportionally to its build cost", 
   const target = findFirstValid(state, buildSystem, "warehouse");
   assert.ok(target, "expected at least one valid warehouse placement");
 
-  buildSystem.placeToolAt(state, "warehouse", target.ix, target.iz);
+  buildSystem.placeToolAt(state, "warehouse", target.ix, target.iz, { instant: true });
 
   const woodBefore = state.resources.wood;
   const stoneBefore = state.resources.stone;
 
-  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz, { instant: true });
   assert.equal(erased.ok, true);
 
   const expectedWood = Math.floor((BUILD_COST.warehouse.wood ?? 0) * BALANCE.demoWoodRecovery);
@@ -100,12 +100,12 @@ test("M1c-C: food and herbs refund is always zero under default M1c tuning", () 
   const target = findFirstValid(state, buildSystem, "clinic");
   assert.ok(target, "expected at least one valid clinic placement");
 
-  buildSystem.placeToolAt(state, "clinic", target.ix, target.iz);
+  buildSystem.placeToolAt(state, "clinic", target.ix, target.iz, { instant: true });
 
   const foodBefore = state.resources.food;
   const herbsBefore = state.resources.herbs;
 
-  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", target.ix, target.iz, { instant: true });
   assert.equal(erased.ok, true);
   assert.equal(erased.refund.food, 0, "food refund must be zero (biodegradable)");
   assert.equal(erased.refund.herbs, 0, "herbs refund must be zero (biodegradable)");
@@ -121,10 +121,10 @@ test("M1c-D: DEMOLITION_RECYCLED event emits with { ix, iz, refund: { wood, ston
 
   const target = findFirstValid(state, buildSystem, "warehouse");
   assert.ok(target);
-  buildSystem.placeToolAt(state, "warehouse", target.ix, target.iz);
+  buildSystem.placeToolAt(state, "warehouse", target.ix, target.iz, { instant: true });
 
   resetEvents(state);
-  buildSystem.placeToolAt(state, "erase", target.ix, target.iz);
+  buildSystem.placeToolAt(state, "erase", target.ix, target.iz, { instant: true });
 
   const log = getEventLog(state);
   const recycled = log.find((e) => e.type === EVENT_TYPES.DEMOLITION_RECYCLED);

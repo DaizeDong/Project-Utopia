@@ -5,6 +5,11 @@ import { BuildSystem } from "../src/simulation/construction/BuildSystem.js";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { TILE } from "../src/config/constants.js";
 
+// v0.8.4 building-construction (Agent A) — pre-existing build-system tests
+// assert immediate tile mutation. Migrated to the `instant: true` opt-in;
+// the blueprint flow has its own coverage in test/construction-in-progress.
+const INSTANT = { instant: true };
+
 function findFirstTile(state, predicate) {
   for (let iz = 0; iz < state.grid.height; iz += 1) {
     for (let ix = 0; ix < state.grid.width; ix += 1) {
@@ -23,7 +28,7 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
 
   state.resources.wood = 3;
   assert.ok(validWarehouse);
-  const noMoney = buildSystem.placeToolAt(state, "warehouse", validWarehouse.ix, validWarehouse.iz);
+  const noMoney = buildSystem.placeToolAt(state, "warehouse", validWarehouse.ix, validWarehouse.iz, INSTANT);
   assert.equal(noMoney.ok, false);
   assert.equal(noMoney.reason, "insufficientResource");
   assert.equal(state.resources.wood, 3);
@@ -33,14 +38,14 @@ test("BuildSystem enforces cost and never drives resources below zero", () => {
   const roadWoodCost = roadPreview.cost.wood;
   state.resources.wood = roadWoodCost + 1;
   const beforeRoad = state.resources.wood;
-  const okRoad = buildSystem.placeToolAt(state, "road", validRoad.ix, validRoad.iz);
+  const okRoad = buildSystem.placeToolAt(state, "road", validRoad.ix, validRoad.iz, INSTANT);
   assert.equal(okRoad.ok, true);
   assert.equal(state.resources.wood, beforeRoad - roadWoodCost);
   assert.equal(state.grid.tiles[validRoad.ix + validRoad.iz * state.grid.width], TILE.ROAD);
 
   state.resources.wood = 0;
   assert.ok(validWall);
-  const failWall = buildSystem.placeToolAt(state, "wall", validWall.ix, validWall.iz);
+  const failWall = buildSystem.placeToolAt(state, "wall", validWall.ix, validWall.iz, INSTANT);
   assert.equal(failWall.ok, false);
   assert.equal(failWall.reason, "insufficientResource");
   assert.ok(state.resources.wood >= 0);
@@ -86,7 +91,7 @@ test("BuildSystem undo/redo restores tiles and resources", () => {
   const beforeTile = state.grid.tiles[idx];
   const beforeWood = state.resources.wood;
 
-  const placed = buildSystem.placeToolAt(state, "road", ix, iz);
+  const placed = buildSystem.placeToolAt(state, "road", ix, iz, INSTANT);
   assert.equal(placed.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.ROAD);
   assert.equal(state.resources.wood, beforeWood - (placed.cost.wood ?? 0));
@@ -113,11 +118,11 @@ test("BuildSystem erase salvages structure cost and undo/redo preserves the refu
   const whPreview = buildSystem.previewToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
   const whWoodCost = whPreview.cost.wood;
   const beforeWood = state.resources.wood;
-  const built = buildSystem.placeToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz);
+  const built = buildSystem.placeToolAt(state, "warehouse", warehouseTarget.ix, warehouseTarget.iz, INSTANT);
   assert.equal(built.ok, true);
   assert.equal(state.resources.wood, beforeWood - whWoodCost);
 
-  const erased = buildSystem.placeToolAt(state, "erase", warehouseTarget.ix, warehouseTarget.iz);
+  const erased = buildSystem.placeToolAt(state, "erase", warehouseTarget.ix, warehouseTarget.iz, INSTANT);
   assert.equal(erased.ok, true);
   assert.equal(state.grid.tiles[idx], TILE.GRASS);
   assert.ok(erased.refund.wood >= 1);
@@ -142,8 +147,8 @@ test("BuildSystem erasing a wall rounds refund to zero under 0.25 wood recovery"
   const buildSystem = new BuildSystem();
   const wallTarget = findFirstTile(state, (ix, iz) => buildSystem.previewToolAt(state, "wall", ix, iz).ok);
   assert.ok(wallTarget);
-  buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz);
-  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz);
+  buildSystem.placeToolAt(state, "wall", wallTarget.ix, wallTarget.iz, INSTANT);
+  const erased = buildSystem.placeToolAt(state, "erase", wallTarget.ix, wallTarget.iz, INSTANT);
   assert.equal(erased.ok, true);
   assert.equal(erased.refund.wood ?? 0, 0, "wall wood refund must round to zero under current demoWoodRecovery");
 });

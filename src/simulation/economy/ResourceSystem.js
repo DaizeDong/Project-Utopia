@@ -155,8 +155,67 @@ function tileKey(tile) {
   return `${tile.ix},${tile.iz}`;
 }
 
+// v0.8.7.1 P1 — warehouse spatial index. Avoids O(N²) scans in
+// rebuildLogisticsMetrics + rebuildWarehouseDensity by bucketing warehouses
+// into 8×8 cells; nearestDistance queries check only the 3×3 neighborhood.
+// Cached against grid.version on `state._warehouseSpatialIndex`.
+const WAREHOUSE_INDEX_CELL = 8;
+
+function buildWarehouseSpatialIndex(grid) {
+  const list = listTilesByType(grid, [TILE.WAREHOUSE]);
+  const cells = new Map();
+  for (const wh of list) {
+    const cx = Math.floor(wh.ix / WAREHOUSE_INDEX_CELL);
+    const cz = Math.floor(wh.iz / WAREHOUSE_INDEX_CELL);
+    const key = `${cx},${cz}`;
+    let bucket = cells.get(key);
+    if (!bucket) {
+      bucket = [];
+      cells.set(key, bucket);
+    }
+    bucket.push(wh);
+  }
+  return { cells, cellSize: WAREHOUSE_INDEX_CELL, version: grid.version, list };
+}
+
+function ensureWarehouseSpatialIndex(state) {
+  const idx = state._warehouseSpatialIndex;
+  if (idx && idx.version === state.grid.version) return idx;
+  const fresh = buildWarehouseSpatialIndex(state.grid);
+  state._warehouseSpatialIndex = fresh;
+  return fresh;
+}
+
+function nearestWarehouseDistance(point, idx) {
+  if (!idx || idx.list.length === 0) return Infinity;
+  const cellSize = idx.cellSize;
+  const cx = Math.floor(point.ix / cellSize);
+  const cz = Math.floor(point.iz / cellSize);
+  let best = Infinity;
+  // Expand search radius from 1 -> larger if no candidate found.
+  for (let radius = 1; radius <= 4 && best === Infinity; radius += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dz = -radius; dz <= radius; dz += 1) {
+        // Skip already-checked inner ring.
+        if (radius > 1 && Math.abs(dx) < radius && Math.abs(dz) < radius) continue;
+        const bucket = idx.cells.get(`${cx + dx},${cz + dz}`);
+        if (!bucket) continue;
+        for (const wh of bucket) {
+          const distance = manhattan(point, wh);
+          if (distance < best) best = distance;
+        }
+      }
+    }
+  }
+  // Fallback to full list if cell expansion didn't find anything.
+  if (best === Infinity) best = nearestDistance(point, idx.list);
+  return best;
+}
+
 function rebuildLogisticsMetrics(state) {
-  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  // v0.8.7.1 P1 — use shared spatial index instead of O(N²) scans.
+  const idx = ensureWarehouseSpatialIndex(state);
+  const warehouses = idx.list;
   const worksites = listTilesByType(state.grid, [TILE.FARM, TILE.LUMBER]);
   const softRadius = Number(BALANCE.worksiteCoverageSoftRadius ?? 10);
   const hardRadius = Number(BALANCE.worksiteCoverageHardRadius ?? 16);
@@ -175,7 +234,7 @@ function rebuildLogisticsMetrics(state) {
     carryingWorkers += 1;
     totalCarryInTransit += carryTotal;
     const current = worldToTile(worker.x, worker.z, state.grid);
-    const depotDistance = nearestDistance(current, warehouses);
+    const depotDistance = warehouses.length > 0 ? nearestWarehouseDistance(current, idx) : Infinity;
     if (!Number.isFinite(depotDistance)) {
       strandedCarryWorkers += 1;
     } else {
@@ -191,7 +250,7 @@ function rebuildLogisticsMetrics(state) {
   let stretchedWorksites = 0;
   let isolatedWorksites = 0;
   for (const site of worksites) {
-    const depotDistance = nearestDistance(site, warehouses);
+    const depotDistance = warehouses.length > 0 ? nearestWarehouseDistance(site, idx) : Infinity;
     if (!Number.isFinite(depotDistance)) {
       isolatedWorksites += 1;
       continue;
@@ -260,7 +319,11 @@ const DENSITY_PRODUCER_TYPES = [
   TILE.CLINIC,
 ];
 function rebuildWarehouseDensity(state) {
-  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
+  // v0.8.7.1 P1 — reuse cached warehouse list. The producer × warehouse loop
+  // is still O(P × W) but is bounded by warehouse count; we cap the producer
+  // search using a coarse cell index so distant producers are skipped quickly.
+  const idx = ensureWarehouseSpatialIndex(state);
+  const warehouses = idx.list;
   const radius = Number(BALANCE.warehouseDensityRadius ?? 6);
   const threshold = Number(BALANCE.warehouseDensityRiskThreshold ?? 400);
   const avgStock = Number(BALANCE.warehouseDensityAvgStockPerTile ?? 50);
@@ -273,6 +336,8 @@ function rebuildWarehouseDensity(state) {
   for (const wh of warehouses) {
     let producerTiles = 0;
     for (const producer of producers) {
+      // Cheap bounding-box reject before manhattan call.
+      if (Math.abs(wh.ix - producer.ix) > radius || Math.abs(wh.iz - producer.iz) > radius) continue;
       if (manhattan(wh, producer) <= radius) producerTiles += 1;
     }
     const score = producerTiles * avgStock;

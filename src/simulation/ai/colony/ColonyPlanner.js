@@ -177,7 +177,22 @@ const VALID_PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 // BUILD_COST. PlanExecutor reads it as a noop and writes
 // `state.ai.fallbackHints.pendingRoleBoost = step.role` so
 // RoleAssignmentSystem can consume the signal next tick.
-const VALID_BUILD_TYPES = new Set([...Object.keys(BUILD_COST), "reassign_role"]);
+//
+// v0.8.4 (Agent B) — `demolish` action: triggers the erase-tool path, which
+// — once Agent A's BuildSystem rewrite lands — becomes a blueprint that
+// workers ferry to completion. Currently routes through the legacy
+// instant-erase path until that merge. The grounded tile must contain a
+// built structure or RUINS — never GRASS or WATER. Hints can be an
+// "<ix>,<iz>" coord OR a whitelisted keyword (see DEMOLISH_HINT_KEYWORDS)
+// that PlanExecutor resolves to the highest-priority demolish target.
+const VALID_BUILD_TYPES = new Set([...Object.keys(BUILD_COST), "reassign_role", "demolish", "recruit"]);
+export const DEMOLISH_HINT_KEYWORDS = Object.freeze(new Set([
+  "ruins_cluster",      // remove the largest cluster of RUINS tiles
+  "depleted_farm",      // remove a fallow farm so a fresh tile can be built
+  "depleted_producer",  // remove any depleted producer (lumber/quarry/herb_garden)
+  "blocking_road",      // remove a tile blocking road expansion
+  "auto",               // let PlanExecutor pick the highest-priority target
+]));
 const VALID_SKILL_NAMES = new Set(Object.keys(SKILL_LIBRARY));
 
 // ── System Prompt (inlined from npc-colony-planner.md for bundled use) ──
@@ -197,6 +212,11 @@ Return strict JSON only. No markdown fencing, no commentary.
 - road (1 wood) — extends logistics, reduces worker travel time.
 - wall (2 wood) — defense. High elevation walls get +50% defense bonus.
 - bridge (3 wood + 1 stone) — crosses water, connects islands.
+- demolish (1 wood, ~3s labor) — clears a built structure or RUINS for
+  partial salvage. Workers dismantle the tile over time. Use to remove
+  depleted/abandoned worksites that block better placement. Hint can be
+  an explicit "<ix>,<iz>" coord or one of "ruins_cluster", "depleted_farm",
+  "depleted_producer", "blocking_road", "auto".
 
 ## Resource Chain Dependencies (build in order!)
 1. FOOD CHAIN: farm → kitchen (requires 6+ farms and food surplus) → meals (2x hunger efficiency)
@@ -253,6 +273,11 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - Follow the strategy priority and constraints from the Strategic Advisor
 - If "Last Plan Evaluation" is provided, address its issues — avoid repeating the same mistakes
 - If "Recurring Patterns" are listed, BREAK THE LOOP by choosing a different approach
+- Demolish RUINS that have been salvaged or that block road expansion. Prefer
+  demolishing depleted producers (yieldPool < 60, fallow > 2 cycles) over
+  building yet another producer on top of a saturated warehouse.
+- A demolish step costs only 1 wood up front; pair it with a follow-up build
+  step (depends_on the demolish id) to reclaim the freed tile.
 
 ## Chain Planning (use depends_on!)
 A myopic 1-2-step plan is the fallback's job. Your job is to outpace it with
@@ -315,6 +340,8 @@ guards, then roads.
 }
 For skills: "action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }
 For role boosts: "action": { "type": "reassign_role", "role": "GUARD|COOK|SMITH|HERBALIST" }
+For demolish: "action": { "type": "demolish", "hint": "<ix>,<iz>" | "ruins_cluster" | "depleted_farm" | "depleted_producer" | "blocking_road" | "auto" }
+For recruit: "action": { "type": "recruit", "count": <1..10> } — queues that many workers to spawn at the colony's recruit anchor. Use when worker count is below the colony's effective cap AND food >= recruitMinFoodBuffer.
 3-8 steps. Aim for 4-6 with at least one \`depends_on\` chain. Unique numeric ids from 1. Valid JSON only.`;
 
 // ── Prompt Construction ──────────────────────────────────────────────
@@ -595,16 +622,64 @@ function _validateStep(raw, seenIds) {
     ? action.role
     : null;
 
+  // v0.8.4 Agent B — `demolish` action carries a hint that must be one of:
+  //   - an explicit "<ix>,<iz>" coord (validated as two non-negative ints)
+  //   - a whitelisted keyword from DEMOLISH_HINT_KEYWORDS
+  // A null/empty hint is treated as "auto" so a freshly-emitted step from the
+  // fallback (which sometimes uses null) doesn't get rejected. The hint is
+  // grounded later by PlanExecutor.resolveDemolishHint, which performs the
+  // built-tile / RUINS check at execution time.
+  let demolishHint = null;
+  if (action.type === "demolish") {
+    if (hint == null || hint === "") {
+      demolishHint = "auto";
+    } else if (DEMOLISH_HINT_KEYWORDS.has(hint)) {
+      demolishHint = hint;
+    } else {
+      const m = hint.match(/^(\d+)\s*,\s*(\d+)$/);
+      if (m) {
+        demolishHint = `${parseInt(m[1], 10)},${parseInt(m[2], 10)}`;
+      } else {
+        return {
+          error: `demolish hint must be "<ix>,<iz>" or one of ${[...DEMOLISH_HINT_KEYWORDS].join("/")}`,
+          value: null,
+        };
+      }
+    }
+  }
+
+  // v0.8.4 Phase 11 (Agent D) — `recruit` action requires a positive integer
+  // count in [1, 10]. Out-of-range values are clamped (high) or rejected
+  // (zero/negative). A missing count is treated as 1 so a thin LLM emit
+  // still spawns at least one recruit.
+  let recruitCount = null;
+  if (action.type === "recruit") {
+    const raw = Number(action.count);
+    if (!Number.isFinite(raw) || raw < 1) {
+      return { error: "recruit count must be a positive integer", value: null };
+    }
+    recruitCount = Math.max(1, Math.min(10, Math.floor(raw)));
+  }
+
+  let normalizedAction;
+  if (isSkill) {
+    normalizedAction = { type: "skill", skill: action.skill, hint };
+  } else if (reassignRole) {
+    normalizedAction = { type: "reassign_role", role: reassignRole, hint };
+  } else if (action.type === "demolish") {
+    normalizedAction = { type: "demolish", hint: demolishHint };
+  } else if (action.type === "recruit") {
+    normalizedAction = { type: "recruit", count: recruitCount };
+  } else {
+    normalizedAction = { type: action.type, hint };
+  }
+
   return {
     error: null,
     value: {
       id,
       thought,
-      action: isSkill
-        ? { type: "skill", skill: action.skill, hint }
-        : (reassignRole
-          ? { type: "reassign_role", role: reassignRole, hint }
-          : { type: action.type, hint }),
+      action: normalizedAction,
       predicted_effect,
       priority,
       depends_on,
@@ -858,6 +933,57 @@ export function generateFallbackPlan(observation, state) {
     });
   }
 
+  // v0.8.4 (Agent B) — Demolish-driven cleanup. Slot demolish steps AFTER
+  // the food-crisis + threat-response branches so a starving / besieged
+  // colony does not waste a tick clearing ruins instead of producing food.
+  // We splice in 0..2 demolish steps when:
+  //   1) RUINS count exceeds 5 (threshold mirrors the contract); the oldest
+  //      ruin or the one adjacent to a road / warehouse becomes the target.
+  //   2) A producer tile (FARM / LUMBER / QUARRY / HERB_GARDEN) has
+  //      yieldPool < 60 AND is fallow / salinized — the depleted-producer
+  //      heuristic from `scoreFallbackCandidate`.
+  // Cost is `BALANCE.demolishToolCost.wood` (default 1) per step. Emitting
+  // a demolish does NOT itself trigger a build follow-up here — the player
+  // (or a later LLM plan) decides what to put in the freed tile.
+  const demolishCostWood = Number(BALANCE.demolishToolCost?.wood ?? 1);
+  const woodSpentSoFar = _estimateWoodSpentByPlan(steps);
+  const woodAvailableForDemolish = Math.max(0, wood - woodSpentSoFar);
+  const demolishBudget = Math.min(2, Math.floor(woodAvailableForDemolish / Math.max(1, demolishCostWood)));
+  if (demolishBudget > 0) {
+    const ruinsCount = listTilesByType(state.grid, [TILE.RUINS]).length;
+    let demolishEmitted = 0;
+    if (ruinsCount > 5) {
+      const target = _pickDemolishRuinTarget(state);
+      if (target) {
+        steps.push({
+          id: nextId++,
+          thought: `Ruins count ${ruinsCount} — clear oldest/road-adjacent ruin to free tile`,
+          action: { type: "demolish", hint: `${target.ix},${target.iz}` },
+          predicted_effect: { ruins_cleared: 1, salvage: "partial" },
+          priority: "medium",
+          depends_on: [],
+          status: "pending",
+        });
+        demolishEmitted++;
+      }
+    }
+    if (demolishEmitted < demolishBudget) {
+      const depletedTarget = _pickDemolishDepletedProducer(state);
+      if (depletedTarget) {
+        steps.push({
+          id: nextId++,
+          thought: `${depletedTarget.label} at (${depletedTarget.ix},${depletedTarget.iz}) depleted — demolish to relocate`,
+          action: { type: "demolish", hint: `${depletedTarget.ix},${depletedTarget.iz}` },
+          predicted_effect: { producer_recycled: 1, salvage: "partial" },
+          priority: "low",
+          depends_on: [],
+          status: "pending",
+        });
+        demolishEmitted++;
+      }
+    }
+  }
+
   // Phase 5 — SkillLibrary suggestion hooks. These run once we've addressed
   // any food crisis (Priority 1) and before generic coverage/wood priorities
   // so the planner reacts to M1-M4 terrain depletion signals even when the
@@ -908,6 +1034,42 @@ export function generateFallbackPlan(observation, state) {
     steps.push(_step(nextId++, "warehouse", "coverage_gap", "high",
       "Many worksites uncovered, need logistics anchor",
       { coverage: "+15%" }));
+  }
+
+  // v0.8.4 Phase 11 (Agent D) — Recruit fallback. Emits a `recruit` step
+  // when food has comfortable surplus AND population is below the
+  // colony's recruit target AND we're not in foodRecoveryMode (which
+  // signals the food chain is fragile and growing population would
+  // worsen the death spiral). Count is sized to the surplus headroom but
+  // capped at 2 per plan to leave LLM/manual control room.
+  // v0.8.4 Round 2 polish — emit threshold relaxed from
+  // `food > recruitMinBuffer + 30` to `food > recruitMinBuffer`. With the
+  // round-2 cooldown drop (30→12s) the recruitment loop must fire as soon
+  // as the food buffer is satisfied so the colony can keep pace with the
+  // legacy 10s auto-spawn growth rate.
+  const recruitMinBuffer = Number(BALANCE.recruitMinFoodBuffer ?? 80);
+  const recruitTarget = Number(state?.controls?.recruitTarget ?? 0);
+  const recruitQueue = Number(state?.controls?.recruitQueue ?? 0);
+  const inFoodRecovery = Boolean(state?.ai?.foodRecoveryMode);
+  const totalCurrentPop = workerCount + recruitQueue;
+  if (
+    !inFoodRecovery
+    && food > recruitMinBuffer
+    && totalCurrentPop < recruitTarget
+    && (foodRate >= 0)
+  ) {
+    const headroom = recruitTarget - totalCurrentPop;
+    const surplusBased = Math.max(1, Math.floor((food - recruitMinBuffer) / 60));
+    const desiredCount = Math.max(1, Math.min(10, Math.min(headroom, Math.min(2, surplusBased))));
+    steps.push({
+      id: nextId++,
+      thought: `Pop ${totalCurrentPop} below recruit target ${recruitTarget} with food surplus`,
+      action: { type: "recruit", count: desiredCount },
+      predicted_effect: { workers: `+${desiredCount}` },
+      priority: "medium",
+      depends_on: [],
+      status: "pending",
+    });
   }
 
   // Priority 3: Wood shortage — add lumber if wood rate is low
@@ -1245,6 +1407,111 @@ function _detectWaterIsolation(state) {
     }
   }
   return null;
+}
+
+/**
+ * v0.8.4 (Agent B) — Estimate the wood already promised by the in-progress
+ * fallback plan, so the demolish budget calculation does not double-spend
+ * resources that earlier branches have queued. We sum BUILD_COST.<type>.wood
+ * for each non-skill, non-pseudo step. Skill-step costs are computed in
+ * `_skillTotalCost` (PlanExecutor) — accounting for them here would
+ * duplicate, so we skip skill steps. The rough heuristic is good enough to
+ * keep the demolish branch from blowing the wood budget on plans that
+ * already include 2-3 farms/walls.
+ *
+ * @param {Array<object>} steps — partial plan steps already pushed
+ * @returns {number} estimated total wood committed
+ */
+function _estimateWoodSpentByPlan(steps) {
+  let total = 0;
+  for (const s of steps) {
+    const type = s?.action?.type;
+    if (!type) continue;
+    if (type === "skill" || type === "reassign_role" || type === "recruit") continue;
+    if (type === "demolish") {
+      total += Number(BALANCE.demolishToolCost?.wood ?? 1);
+      continue;
+    }
+    const cost = BUILD_COST[type] ?? null;
+    if (cost && Number.isFinite(cost.wood)) {
+      total += Number(cost.wood);
+    }
+  }
+  return total;
+}
+
+/**
+ * v0.8.4 (Agent B) — Pick a RUINS tile to demolish. Preference order:
+ *   1) Adjacent to a road / warehouse (clearing it widens logistics).
+ *   2) The tile with the lowest `tileState.lastMutationTick` (oldest).
+ *   3) Any RUINS tile (first encountered).
+ * Returns { ix, iz } or null.
+ */
+function _pickDemolishRuinTarget(state) {
+  const grid = state?.grid;
+  if (!grid || !grid.tiles) return null;
+  const ruins = listTilesByType(grid, [TILE.RUINS]);
+  if (ruins.length === 0) return null;
+  const adjacencySet = new Set([TILE.ROAD, TILE.WAREHOUSE]);
+  let bestAdjacent = null;
+  let bestOldest = null;
+  let oldestTick = Infinity;
+  for (const r of ruins) {
+    if (!bestAdjacent) {
+      for (const { dx, dz } of MOVE_DIRECTIONS_4) {
+        const nx = r.ix + dx;
+        const nz = r.iz + dz;
+        if (!inBounds(nx, nz, grid)) continue;
+        const nType = grid.tiles[toIndex(nx, nz, grid.width)];
+        if (adjacencySet.has(nType)) {
+          bestAdjacent = { ix: r.ix, iz: r.iz };
+          break;
+        }
+      }
+    }
+    const ts = getTileState(grid, r.ix, r.iz);
+    const tick = Number(ts?.lastMutationTick ?? ts?.mutationTick ?? Infinity);
+    if (tick < oldestTick) {
+      oldestTick = tick;
+      bestOldest = { ix: r.ix, iz: r.iz };
+    }
+  }
+  return bestAdjacent ?? bestOldest ?? ruins[0];
+}
+
+/**
+ * v0.8.4 (Agent B) — Pick a producer tile (farm, lumber, quarry, herb_garden)
+ * that has been depleted (yieldPool < 60 or salinized). Returns the worst
+ * tile (lowest pool) so the player gets the most lift from the demolish.
+ * Returns { ix, iz, label } or null.
+ */
+function _pickDemolishDepletedProducer(state) {
+  const grid = state?.grid;
+  if (!grid || !grid.tiles) return null;
+  const PRODUCER_LABEL = new Map([
+    [TILE.FARM, "farm"],
+    [TILE.LUMBER, "lumber"],
+    [TILE.QUARRY, "quarry"],
+    [TILE.HERB_GARDEN, "herb_garden"],
+  ]);
+  const producers = listTilesByType(grid, [TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  let worst = null;
+  let worstScore = Infinity;
+  const poolThreshold = Number(BALANCE.yieldPoolDepletedThreshold ?? 60);
+  for (const p of producers) {
+    const ts = getTileState(grid, p.ix, p.iz);
+    if (!ts) continue;
+    const pool = Number(ts.yieldPool ?? Infinity);
+    const salinized = Number(ts.salinized ?? 0) > 0;
+    const fallowTicks = Number(ts.fallowTicks ?? 0);
+    if (!(salinized || pool < poolThreshold || fallowTicks > 2400)) continue;
+    const score = (salinized ? 0 : pool);
+    if (score < worstScore) {
+      worstScore = score;
+      worst = { ix: p.ix, iz: p.iz, label: PRODUCER_LABEL.get(grid.tiles[toIndex(p.ix, p.iz, grid.width)]) ?? "producer" };
+    }
+  }
+  return worst;
 }
 
 function _step(id, type, hint, priority, thought, predicted_effect, depends_on = []) {

@@ -1,5 +1,6 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
 import { getAiInsight, getCausalDigest, getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
+import { getConstructionOverlay } from "../../simulation/construction/ConstructionSites.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -60,6 +61,59 @@ export class InspectorPanel {
     const currentType = this.state.grid.tiles[tile.ix + tile.iz * this.state.grid.width];
     const info = TILE_INFO[currentType] ?? { passable: false, baseCost: 0, height: 0 };
     const idx = tile.ix + tile.iz * this.state.grid.width;
+    // v0.8.4 Round 2 polish — overlay-aware tile label. When a construction
+    // blueprint or demolish job is in progress on this tile, show
+    // "Warehouse (under construction, 35%)" or "Demolishing Wall (60%)"
+    // instead of the bare underlying tile type. The base "Type:" line still
+    // shows the actual current TILE_LABEL so the player can see what tile
+    // is underneath.
+    const overlay = getConstructionOverlay(this.state, tile.ix, tile.iz);
+    let overlayLine = "";
+    if (overlay) {
+      const total = Math.max(1e-3, Number(overlay.workTotalSec ?? 0));
+      const applied = Math.max(0, Number(overlay.workAppliedSec ?? 0));
+      const pct = Math.max(0, Math.min(100, Math.round((applied / total) * 100)));
+      // v0.8.7 T3-4 (QA2-F4): when work has not started yet (no builderId
+      // assigned, 0% progress) tell the player WHY — either no builder
+      // claimed the site yet, or the colony has zero live BUILDERs at all.
+      // Without this cue, players assume the blueprint is broken when
+      // really it's just waiting for role-assignment to dispatch.
+      let builderHint = "";
+      if (overlay.builderId == null && pct === 0) {
+        const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
+        const liveBuilders = agents.filter((a) => a && a.role === "BUILDER" && a.alive !== false).length;
+        builderHint = liveBuilders === 0
+          ? " <span class=\"muted\">(no builders available)</span>"
+          : " <span class=\"muted\">(awaiting builder)</span>";
+      }
+      if (overlay.kind === "build") {
+        const targetLabel = overlay.tool
+          ? String(overlay.tool).replace(/_/g, " ")
+          : (TILE_LABEL[Number(overlay.targetTile)] ?? "structure").toLowerCase();
+        overlayLine = `<div class="small"><b>Construction:</b> ${targetLabel} (under construction, ${pct}%)${builderHint}</div>`;
+      } else if (overlay.kind === "demolish") {
+        const oldLabel = TILE_LABEL[Number(overlay.originalTile)] ?? "structure";
+        overlayLine = `<div class="small"><b>Demolish:</b> ${oldLabel.toLowerCase()} (${pct}%)${builderHint}</div>`;
+      }
+    }
+    // v0.8.7 T3-5 (QA2-F10): Wall HP indicator — show current/max HP for
+     // WALL/GATE tiles so players can verify the visual red-tint cue
+     // numerically. Reads from grid.tileState.wallHp (set by ConstructionSystem
+     // on placement and decremented by saboteur/raider attacks).
+    let wallHpLine = "";
+    if (currentType === TILE.WALL || currentType === TILE.GATE) {
+      const tileState = this.state.grid?.tileState;
+      const entry = tileState?.get?.(idx) ?? null;
+      if (entry && entry.wallHp != null) {
+        const max = currentType === TILE.GATE
+          ? Number(this.state.balance?.gateMaxHp ?? 75)
+          : Number(this.state.balance?.wallMaxHp ?? 50);
+        const hp = Math.max(0, Number(entry.wallHp));
+        const ratio = max > 0 ? hp / max : 0;
+        const tone = ratio >= 0.7 ? "#8ebf8e" : ratio >= 0.4 ? "#c9a94e" : "#e07070";
+        wallHpLine = `<div class="small" style="color:${tone};"><b>HP:</b> ${hp.toFixed(0)} / ${max} (${Math.round(ratio * 100)}%)</div>`;
+      }
+    }
     const tileInsights = getTileInsight(this.state, tile);
     const previewMatchesTile = preview && preview.ix === tile.ix && preview.iz === tile.iz;
     const neighbors = [
@@ -167,6 +221,8 @@ export class InspectorPanel {
       <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
       <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
       <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
+      ${wallHpLine}
+      ${overlayLine}
       ${logisticsLine}
       ${buildingBlock}
       ${processingBlock}

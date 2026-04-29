@@ -90,11 +90,28 @@ const TOOL_INFO = Object.freeze({
     rules: "Place on water tiles. Bridges must extend from roads, warehouses, or other bridges.",
     allowedOldTypes: [TILE.WATER],
   },
+  // v0.8.4 strategic walls + GATE (Agent C). Gate = passable doorway in a
+  // wall line. Workers and traders pass through; raiders, predators, and
+  // saboteurs cannot. Cost mirrors a small structure (4w + 1s) and the
+  // build escalator hardcaps at 24 to prevent gate-spam wall workarounds.
+  gate: {
+    label: "Gate",
+    summary: "A passable doorway in a wall line. Workers and traders pass through; raiders and predators cannot.",
+    rules: "Place on grass, roads, or ruins. Best placed adjacent to a wall line so the gate seals the gap.",
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.RUINS],
+  },
   erase: {
-    label: "Erase",
-    summary: "Clears the tile back to grass (or water for bridges) and salvages part of the old structure cost.",
-    rules: "Erase any non-water tile. Built structures return partial salvage.",
-    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE],
+    label: "Demolish",
+    // v0.8.4 (Agent B) — relabelled from "Erase" to match the new
+    // construction-in-progress flow: workers travel to the site and dismantle
+    // the structure over time (~3s of labor) rather than the tile vanishing
+    // instantly. Right-click on a blueprint-in-progress cancels for full
+    // refund; clicking a built structure or RUINS commissions a demolish job
+    // for partial salvage.
+    summary: "Workers will dismantle this structure over ~3s and return partial salvage. Right-click a blueprint to cancel for a full refund.",
+    rules: "Demolish any built structure or RUINS tile. Costs 1 wood to commission. Workers must travel to the site to apply labor.",
+    // v0.8.4 strategic walls + GATE (Agent C) — TILE.GATE is demolishable.
+    allowedOldTypes: [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.WALL, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE, TILE.GATE],
   },
 });
 
@@ -117,6 +134,11 @@ const TILE_TO_TOOL = Object.freeze({
   [TILE.SMITHY]: "smithy",
   [TILE.CLINIC]: "clinic",
   [TILE.BRIDGE]: "bridge",
+  // v0.8.4 strategic walls + GATE (Agent C) — gate counts via the
+  // BUILD_COST_ESCALATOR.gate path (existing-count lookup goes through
+  // pluralBuildingKey → "gates"). The TILE→tool reverse map lets
+  // demolish/refund logic recognise GATE structures.
+  [TILE.GATE]: "gate",
 });
 
 const LOGISTICS_PRODUCER_TOOLS = new Set([
@@ -481,7 +503,19 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
   // count; road/bridge/erase fall through to flat cost. The post-terrain
   // step (applyTerrainCostModifiers) then layers moisture/elevation on top,
   // so escalator × terrain multipliers compose as the player expects.
-  const existingCount = Number(state?.buildings?.[pluralBuildingKey(tool)] ?? 0);
+  // v0.8.6 Tier 2 BM1: also count in-flight construction sites of the same
+  // tool so queueing N farm blueprints in rapid succession can't dodge the
+  // escalator (all charged base cost). Pre-fix the escalator only saw
+  // already-built tiles, letting a player/AI submit 5 farm blueprints at flat
+  // cost before any completed.
+  const placedCount = Number(state?.buildings?.[pluralBuildingKey(tool)] ?? 0);
+  const sites = Array.isArray(state?.constructionSites) ? state.constructionSites : [];
+  let inFlightCount = 0;
+  for (const site of sites) {
+    if (!site || site.kind !== "build") continue;
+    if (String(site.tool ?? "") === tool) inFlightCount += 1;
+  }
+  const existingCount = placedCount + inFlightCount;
   const baseCost = BUILD_COST_ESCALATOR[tool]
     ? computeEscalatedBuildCost(tool, existingCount)
     : (BUILD_COST[tool] ?? { wood: 0, food: 0 });
@@ -661,13 +695,25 @@ export function getBuildToolPanelState(state) {
   // when `state.controls.uiProfile === "casual"` to avoid the "5w means 5
   // food" confusion first-timers report. The compact `costLabel` is kept
   // for power users (full profile) + developer-facing surfaces.
+  // v0.8.7 T3-6 (QA2-F11): when the active tool is "erase" and there is no
+  // hovered tile preview, surface the demolish commission cost (1 wood from
+  // BALANCE.demolishToolCost) on the label so players know up-front. The
+  // legacy formatter showed "0w" because BUILD_COST.erase = { wood: 0 } —
+  // misleading since BuildSystem charges 1 wood on commission.
+  let costLabel = `${formatCost(escalatedCost)}${multiplierSuffix}`;
+  let costLabelExpanded = `${formatCostExpanded(escalatedCost)}${multiplierSuffix}`;
+  if (tool === "erase" && !preview) {
+    const demoCost = BALANCE.demolishToolCost ?? { wood: 1 };
+    costLabel = `${formatCost(demoCost)} (commission)`;
+    costLabelExpanded = `${formatCostExpanded(demoCost)} (commission)`;
+  }
   return {
     tool,
     label: info.label,
     summary: info.summary,
     rules: info.rules,
-    costLabel: `${formatCost(escalatedCost)}${multiplierSuffix}`,
-    costLabelExpanded: `${formatCostExpanded(escalatedCost)}${multiplierSuffix}`,
+    costLabel,
+    costLabelExpanded,
     previewSummary: preview ? summarizeBuildPreview(preview) : "Hover a tile to preview cost, rules, and scenario impact.",
   };
 }

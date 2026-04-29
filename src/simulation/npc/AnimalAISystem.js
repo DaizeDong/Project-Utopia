@@ -2,12 +2,19 @@ import { BALANCE } from "../../config/balance.js";
 import { ANIMAL_KIND, ANIMAL_SPECIES, TILE } from "../../config/constants.js";
 import { getLongRunWildlifeTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
-import { findNearestTileOfTypes, getTile, inBounds, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
+import { findNearestTileOfTypes, getTile, inBounds, isPassable, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { canAttemptPath, clearPath, followPath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
+// v0.8.4 strategic walls + GATE (Agent C). Predator-branch wall attack —
+// when a hostile (predator / raider_beast) cannot path to its prey AND
+// there's an adjacent WALL or GATE, it switches to attack-structure mode
+// and chips away at the wallHp until the structure is destroyed (mutated
+// to RUINS). This is what makes walls a real defensive geometry instead of
+// a one-tick obstruction that hostiles route around.
+import { mutateTile } from "../lifecycle/TileMutationHooks.js";
 
 const PREDATOR_HUNT_REFRESH_SEC = 1.15;
 const HERBIVORE_FLEE_REFRESH_SEC = 0.9;
@@ -233,7 +240,7 @@ function collectNearbyTilesOfTypes(grid, center, targetTypes, radius = 8) {
   return candidates;
 }
 
-function chooseHerbivoreGrazeTarget(animal, state, ecology, policy, herbivores = []) {
+function chooseHerbivoreGrazeTarget(animal, state, ecology, policy, herbivores = [], services = null) {
   const zone = getWildlifeZone(state, animal);
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
   const current = worldToTile(animal.x, animal.z, state.grid);
@@ -255,7 +262,12 @@ function chooseHerbivoreGrazeTarget(animal, state, ecology, policy, herbivores =
     }
   }
   if (candidates.length <= 0) {
-    return findNearestTileOfTypes(state.grid, animal, [TILE.FARM, TILE.GRASS]);
+    // v0.8.8 B2 — prefer a leashed in-zone fallback over a whole-map
+    // findNearestTileOfTypes call. The whole-map version could pull a
+    // herbivore across the entire grid when its zone happens to be
+    // grass-poor; staying close keeps the herd visually coherent.
+    const leashCenter = zoneAnchor ?? current ?? worldToTile(animal.x, animal.z, state.grid);
+    return leashedFallbackTile(state, leashCenter, BALANCE.wildlifeZoneLeashRadius ?? 12, services);
   }
 
   let best = null;
@@ -391,6 +403,29 @@ function countZoneAnimals(state, zoneId, animals) {
   return count;
 }
 
+// v0.8.8 B2 — sample a passable tile within Manhattan radius of `center`.
+// Used as a leashed fallback so animals don't teleport across the whole
+// map when their zone is unsuitable. Walks an in-radius candidate set
+// (~O(radius²)) and picks one at random; if none is passable, returns
+// `center` itself (which collapses to "stay put" at the call site).
+function leashedFallbackTile(state, center, radius, services) {
+  if (!center || !state.grid) return center ?? null;
+  const r = Math.max(1, Math.floor(Number(radius) || 1));
+  const candidates = [];
+  for (let iz = center.iz - r; iz <= center.iz + r; iz += 1) {
+    for (let ix = center.ix - r; ix <= center.ix + r; ix += 1) {
+      if (Math.abs(ix - center.ix) + Math.abs(iz - center.iz) > r) continue;
+      if (!inBounds(ix, iz, state.grid)) continue;
+      if (!isPassable(state.grid, ix, iz)) continue;
+      candidates.push({ ix, iz });
+    }
+  }
+  if (candidates.length === 0) return center;
+  const rng = services?.rng?.next ? () => services.rng.next() : Math.random;
+  const idx = Math.floor(rng() * candidates.length) % candidates.length;
+  return candidates[idx];
+}
+
 function chooseSpreadTarget(animal, state, groupAnimals, services) {
   const zone = getWildlifeZone(state, animal);
   const zoneAnchor = getZoneAnchor(state, zone) ?? animal.memory?.territoryAnchor ?? animal.memory?.homeTile ?? null;
@@ -421,7 +456,14 @@ function chooseSpreadTarget(animal, state, groupAnimals, services) {
     }
   }
   if (!best && zoneAnchor) return zoneAnchor;
-  return best ?? randomPassableTile(state.grid, () => services.rng.next());
+  // v0.8.8 B2 — leashed fallback. Pre-fix used randomPassableTile() which
+  // could pull an animal across the entire map; now we stay near the home
+  // zone (or current pos) so animals respect their territory.
+  if (!best) {
+    const leashCenter = zoneAnchor ?? worldToTile(animal.x, animal.z, state.grid);
+    return leashedFallbackTile(state, leashCenter, BALANCE.wildlifeZoneLeashRadius ?? 12, services);
+  }
+  return best;
 }
 
 function shouldForceSpread(animal, groupAnimals, state, tuning, dt, excludedStates = new Set()) {
@@ -574,9 +616,21 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
       const nextFleeRefresh = Number(animal.debug?.nextFleeRefreshSec ?? -Infinity);
       const stalePath = !hasActivePath(animal, state) || isPathStuck(animal, state, 1.8);
       if ((stalePath || nowSec >= nextFleeRefresh) && canAttemptPath(animal, state)) {
-        const dx = animal.x - predator.x;
-        const dz = animal.z - predator.z;
-        const len = Math.hypot(dx, dz) || 1;
+        // v0.8.8 B3 (M5) — when predator and herbivore share a tile,
+        // dx=dz=0 and the old `|| 1` fallback caused the herbivore to flee
+        // to its OWN current position (instant standstill, predator wins).
+        // Now we sample a random angle so the herbivore at least bolts in
+        // some direction — distance still 4 tiles, just direction is
+        // randomised on the degenerate case.
+        let dx = animal.x - predator.x;
+        let dz = animal.z - predator.z;
+        let len = Math.hypot(dx, dz);
+        if (len < 0.001) {
+          const angle = (services?.rng?.next ? services.rng.next() : Math.random()) * Math.PI * 2;
+          dx = Math.cos(angle);
+          dz = Math.sin(angle);
+          len = 1;
+        }
         const tx = animal.x + (dx / len) * 4;
         const tz = animal.z + (dz / len) * 4;
         const t = worldToTile(tx, tz, state.grid);
@@ -630,8 +684,39 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
 
   if (stateNode === "graze" || stateNode === "regroup") {
     if (!hasValidTarget(animal, state, [TILE.GRASS, TILE.FARM]) && canAttemptPath(animal, state)) {
-      const grazeTarget = chooseHerbivoreGrazeTarget(animal, state, ecology, policy, nearbyHerbivores);
-      if (grazeTarget) setTargetAndPath(animal, grazeTarget, state, services);
+      let target = null;
+      // v0.8.8 B4 (M6) — when regrouping, pull toward herd centroid (avg
+      // of nearby herbivores within radius 4). If no neighbours, fall
+      // back to standard graze targeting so isolated herbivores still
+      // find food. Without this, "regroup" was a duplicate of "graze".
+      if (stateNode === "regroup") {
+        let sumX = 0;
+        let sumZ = 0;
+        let count = 0;
+        for (const other of nearbyHerbivores ?? []) {
+          if (!other || other.alive === false || other.id === animal.id) continue;
+          const dx = other.x - animal.x;
+          const dz = other.z - animal.z;
+          if ((dx * dx + dz * dz) > 16) continue; // radius 4
+          sumX += other.x;
+          sumZ += other.z;
+          count += 1;
+        }
+        if (count > 0) {
+          const cx = sumX / count;
+          const cz = sumZ / count;
+          const centroidTile = worldToTile(cx, cz, state.grid);
+          if (centroidTile && inBounds(centroidTile.ix, centroidTile.iz, state.grid)
+              && isPassable(state.grid, centroidTile.ix, centroidTile.iz)) {
+            target = centroidTile;
+            animal.memory.migrationTarget = { ix: centroidTile.ix, iz: centroidTile.iz };
+          }
+        }
+      }
+      if (!target) {
+        target = chooseHerbivoreGrazeTarget(animal, state, ecology, policy, nearbyHerbivores, services);
+      }
+      if (target) setTargetAndPath(animal, target, state, services);
     }
 
     if (hasActivePath(animal, state)) {
@@ -668,6 +753,72 @@ function herbivoreTick(animal, predators, herbivores, state, dt, services, state
   } else {
     setIdleDesired(animal);
   }
+}
+
+// v0.8.4 strategic walls + GATE (Agent C). Find a WALL or GATE tile within
+// 1 manhattan tile of (centerIx, centerIz). Returns null if none exists.
+// Used by predator-branch + saboteur-branch wall-attack fallback when a
+// hostile entity cannot path to its target.
+function findAdjacentBarrier(state, centerIx, centerIz) {
+  if (!state?.grid) return null;
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dz] of dirs) {
+    const ix = centerIx + dx;
+    const iz = centerIz + dz;
+    if (!inBounds(ix, iz, state.grid)) continue;
+    const t = getTile(state.grid, ix, iz);
+    if (t === TILE.WALL || t === TILE.GATE) {
+      return { ix, iz, tileType: t };
+    }
+  }
+  return null;
+}
+
+// v0.8.4 strategic walls + GATE (Agent C). Apply per-tick wall-attack
+// damage. Called when a hostile is adjacent to a WALL/GATE and cannot
+// otherwise reach its prey/target. Returns true if the structure was
+// destroyed this tick (caller should clear path and reroute).
+function applyWallAttack(state, attacker, barrier, dt) {
+  if (!state?.grid?.tileState || !barrier) return false;
+  const idx = barrier.ix + barrier.iz * state.grid.width;
+  const entry = state.grid.tileState.get(idx);
+  if (!entry) return false;
+  // Initialise wallHp lazily if a prior path didn't go through onTileMutated
+  // (e.g. scenario-generated walls placed before the state init seeded
+  // wallHp). The lazy seed mirrors the value TileMutationHooks would set.
+  // v0.8.5 Tier 3: gates use gateMaxHp (75); walls use wallMaxHp (50).
+  if (entry.wallHp == null) {
+    const isGate = barrier.tileType === TILE.GATE;
+    entry.wallHp = isGate
+      ? Number(BALANCE.gateMaxHp ?? BALANCE.wallMaxHp ?? 50)
+      : Number(BALANCE.wallMaxHp ?? 50);
+  }
+  const dmg = Math.max(0, Number(BALANCE.wallAttackDamagePerSec ?? 5)) * Math.max(0, dt);
+  entry.wallHp = Math.max(0, Number(entry.wallHp) - dmg);
+  // v0.8.5 Tier 2 S2: track last damage tick so the regen pass in
+  // ConstructionSystem can wait for a safe window before healing.
+  entry.lastWallDamageTick = Number(state.metrics?.tick ?? 0);
+  attacker.debug ??= {};
+  attacker.debug.lastWallAttackHp = entry.wallHp;
+  attacker.debug.lastWallAttackTile = { ix: barrier.ix, iz: barrier.iz };
+  if (entry.wallHp <= 0) {
+    // Mutate to RUINS — opens the path for everyone, including the
+    // attacker. mutateTile fires the cleanup cascade so workers / paths
+    // refresh on the next tick. The wallHp field is dropped via
+    // TileMutationHooks step 5 (oldTile === WALL/GATE branch).
+    mutateTile(state, barrier.ix, barrier.iz, TILE.RUINS);
+    emitEvent(state, EVENT_TYPES.BUILDING_DESTROYED ?? "buildingDestroyed", {
+      tool: barrier.tileType === TILE.GATE ? "gate" : "wall",
+      ix: barrier.ix,
+      iz: barrier.iz,
+      oldType: barrier.tileType,
+      newType: TILE.RUINS,
+      cause: "wall-attack",
+      attackerId: String(attacker.id ?? ""),
+    });
+    return true;
+  }
+  return false;
 }
 
 function predatorTick(animal, herbivores, predators, state, dt, services, stateNode, ecology, context = null) {
@@ -715,8 +866,38 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
     // because that branch is gated on herbivore prey detection. Force the
     // stateNode to "stalk" so the chase block below activates.
     if (prey) stateNode = "stalk";
+    // v0.8.6 Tier 2 Animal C2: when a raider_beast has no live worker prey
+    // for ≥30 sim seconds (e.g. all workers are dead, or behind walls), bleed
+    // hunger so the raider eventually starves and despawns instead of
+    // wandering forever. Reset the dwell counter the moment prey reappears
+    // so a transient empty-pool moment doesn't penalize a still-active
+    // raider.
+    animal.blackboard ??= {};
+    if (!prey) {
+      const dwell = Number(animal.blackboard.noPreySinceSec ?? 0) + dt;
+      animal.blackboard.noPreySinceSec = dwell;
+      if (dwell > 30) {
+        // Net-negative hunger drain so a stuck raider dies in ~3 game-min.
+        animal.hunger = Math.max(0, Number(animal.hunger ?? 0) - 0.05 * dt);
+      }
+    } else {
+      animal.blackboard.noPreySinceSec = 0;
+    }
   }
   const distance = prey ? Math.sqrt(distanceSq(animal, prey)) : Infinity;
+  // v0.8.5 Tier 1 B1: chaseDistanceMult was a dead field on PREDATOR_SPECIES_PROFILE
+  // (declared per-species but never read in predatorTick). Multiply the
+  // baseline 6-tile chase tolerance by profile.chaseDistanceMult so bears
+  // pursue out to 9 tiles, raiders to 7.2, and wolves stay at 6. Once a
+  // predator's prey moves past this distance, drop the prey lock and fall
+  // through to the patrol path (rather than infinitely sprinting after a
+  // fleeing herbivore across the map).
+  const chaseRangeBaseTiles = 6;
+  const maxChaseTiles = chaseRangeBaseTiles * Number(profile.chaseDistanceMult ?? 1);
+  if (prey && distance > maxChaseTiles) {
+    prey = null;
+    animal.debug.lastPatrolLabel = "lost-track-out-of-chase-range";
+  }
   if (prey && (stateNode === "stalk" || stateNode === "hunt" || stateNode === "feed")) {
     const nowSec = state.metrics.timeSec;
     const lastSwitchSec = Number(animal.debug.lastPredatorTargetSwitchSec ?? -Infinity);
@@ -811,9 +992,45 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
       setIdleDesired(animal);
       return;
     }
+    // v0.8.4 strategic walls + GATE (Agent C). The predator has live prey
+    // but couldn't acquire a path on this tick (path is null and we're not
+    // at the target). If a WALL or GATE is within 1 manhattan tile, switch
+    // to "attack_structure" mode and chip away at its hp until the
+    // structure breaks (mutates to RUINS, opens the path for everyone).
+    // Gating: we require the predator to have been actively trying to
+    // reach prey for ≥1.5s (`pathFailDwellSec`) so a transient one-tick
+    // path miss while patrolling near a wall doesn't trigger wall-attack
+    // — only sustained "stuck on wall" hostility does. This keeps
+    // long-horizon plains baselines (where predators wander past walls
+    // every patrol cycle) from chipping at walls every time a path fails.
+    if (!hasActivePath(animal, state)) {
+      const bb = animal.blackboard ?? (animal.blackboard = {});
+      const dwell = Number(bb.pathFailDwellSec ?? 0) + dt;
+      bb.pathFailDwellSec = dwell;
+      if (dwell >= 1.5) {
+        const here = worldToTile(animal.x, animal.z, state.grid);
+        const barrier = findAdjacentBarrier(state, here.ix, here.iz);
+        if (barrier) {
+          bb.intent = "attack_structure";
+          animal.stateLabel = "Wall-attack";
+          setIdleDesired(animal);
+          applyWallAttack(state, animal, barrier, dt);
+          return;
+        }
+      }
+    } else if (animal.blackboard) {
+      animal.blackboard.pathFailDwellSec = 0;
+    }
   }
 
-  animal.hunger = clamp((animal.hunger ?? 0) + Number(BALANCE.predatorHungerRecoveryOnHit ?? 0.24) * dt * 0.12, 0, 1);
+  // v0.8.6 Tier 2 Animal C1: cap predator passive hunger recovery so it stays
+  // NET-NEGATIVE without active feed. Pre-fix the passive line added 0.24 ×
+  // 0.12 = 0.0288/s while predator decay was ~0.012/s — predators effectively
+  // never starved, so wildlife population growth was capped only by spawn
+  // rate. Multiplier dropped 0.12 → 0.04 makes recovery 0.0096/s vs decay
+  // 0.012/s → net -0.0024/s while idle, requiring active hunting/feeding to
+  // actually gain hunger.
+  animal.hunger = clamp((animal.hunger ?? 0) + Number(BALANCE.predatorHungerRecoveryOnHit ?? 0.24) * dt * 0.04, 0, 1);
   const nowSec = state.metrics.timeSec;
   const currentTile = worldToTile(animal.x, animal.z, state.grid);
   const hazardPenalty = getHazardPenalty(state, currentTile);

@@ -280,12 +280,18 @@ const TILE_MODEL_BINDINGS = Object.freeze({
   [TILE.FARM]: { key: "farmTile", scale: { x: 0.8, y: 0.62, z: 0.8 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.LUMBER]: { key: "lumberTile", scale: { x: 0.82, y: 0.62, z: 0.82 }, y: 0.04, randomYaw: true, jitter: 0.08, scaleJitter: 0.08 },
   [TILE.WAREHOUSE]: { key: "warehouseTile", scale: { x: 0.88, y: 0.88, z: 0.88 }, y: 0.04, randomYaw: true, jitter: 0.05, scaleJitter: 0.05 },
-  // TODO visual (v0.8.0 Phase 2 M2): amber pulse tint for warehouses present in
-  // state.metrics.warehouseDensity.hotWarehouses. Deferred — the current
-  // instanced-tile render path doesn't expose per-instance material tinting.
-  // See docs/superpowers/specs/2026-04-21-living-world-balance-design.md § 3.
+  // v0.8.8 A14 — TODO removed. Per-instance amber pulse for warehouses
+  // under active raid is signalled via the PressureLens markers
+  // (lensMode === "heat") and the floating "Raid !" toast spawned by
+  // RaidSystem; the instanced-tile path remains type-shared.
   [TILE.WALL]: { key: "wallTile", scale: { x: 0.95, y: 0.46, z: 0.26 }, y: 0.03, randomYaw: false, autoYaw: true },
   [TILE.RUINS]: { key: "ruinsTile", scale: { x: 0.68, y: 0.42, z: 0.68 }, y: 0.04, randomYaw: true, jitter: 0.1, scaleJitter: 0.12 },
+  // v0.8.4 strategic walls + GATE (Agent C). Reuse the wall model template
+  // but with shorter pillars (y: 0.32 vs wall's 0.46) and a horizontal-only
+  // yaw so the gate visually reads as an opening. autoYaw is intentionally
+  // disabled — gates should track their wall-line orientation but with a
+  // gap; we use the wall yaw heuristic against neighbouring WALL tiles.
+  [TILE.GATE]: { key: "wallTile", scale: { x: 0.95, y: 0.32, z: 0.18 }, y: 0.03, randomYaw: false, autoYaw: true },
 });
 
 const WORLD_SIM_MANIFEST_URL = "/assets/worldsim/asset-manifest.json";
@@ -311,6 +317,9 @@ const TILE_ICON_TYPES = Object.freeze({
   [TILE.SMITHY]: "SMITHY",
   [TILE.CLINIC]: "CLINIC",
   [TILE.BRIDGE]: "BRIDGE",
+  // v0.8.4 strategic walls + GATE (Agent C). Reuse the wall icon for now;
+  // a dedicated gate atlas entry is a future polish pass.
+  [TILE.GATE]: "WALL",
 });
 
 const UNIT_SPRITE_BINDINGS = Object.freeze({
@@ -335,6 +344,10 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.SMITHY]: { key: "structure", tint: 0xa08e7a, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x2a2018, emissiveIntensity: 0.06 },
   [TILE.CLINIC]: { key: "structure", tint: 0xc8e0c0, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x2a3d28, emissiveIntensity: 0.06 },
   [TILE.BRIDGE]: { key: "road", tint: 0xb09878, repeatX: 10, repeatY: 10, roughness: 0.92, emissive: 0x3a2a1a, emissiveIntensity: 0.06 },
+  // v0.8.4 strategic walls + GATE (Agent C). Warm wood tint so gates read
+  // visually distinct from the cold-grey wall texture. Reuses the wall
+  // texture key (which has a brick-pattern look that's gate-adjacent).
+  [TILE.GATE]: { key: "wall", tint: 0xb38a55, repeatX: 6, repeatY: 6, roughness: 0.86, emissive: 0x4a3520, emissiveIntensity: 0.07 },
 });
 
 const RENDER_ORDER = Object.freeze({
@@ -374,6 +387,51 @@ export const HEAT_TILE_OVERLAY_VISUAL = Object.freeze({
   heat_idle: Object.freeze({ opacity: 0.44 }),
   pulseAmplitude: 0.28,
 });
+
+// v0.8.7.1 P3 — road-distance field. BFS from every road/warehouse/bridge
+// tile out to MAX dist; both connectivity overlay (#buildTerrainConnectivity-
+// Markers) and tooltip header (road/warehouse) read field[ix + iz*width] in
+// O(1) instead of redoing a 7×7 Manhattan scan per tile.
+const ROAD_DISTANCE_MAX = 6;
+function buildRoadDistanceField(grid) {
+  const { width, height, tiles } = grid;
+  const field = new Uint8Array(width * height);
+  field.fill(255);
+  const queue = [];
+  for (let i = 0; i < tiles.length; i += 1) {
+    const t = tiles[i];
+    if (t === TILE.ROAD || t === TILE.WAREHOUSE || t === TILE.BRIDGE) {
+      field[i] = 0;
+      queue.push(i);
+    }
+  }
+  let head = 0;
+  while (head < queue.length) {
+    const idx = queue[head]; head += 1;
+    const dist = field[idx];
+    if (dist >= ROAD_DISTANCE_MAX) continue;
+    const ix = idx % width;
+    const iz = (idx - ix) / width;
+    const next = dist + 1;
+    if (ix > 0) {
+      const n = idx - 1;
+      if (field[n] > next) { field[n] = next; queue.push(n); }
+    }
+    if (ix < width - 1) {
+      const n = idx + 1;
+      if (field[n] > next) { field[n] = next; queue.push(n); }
+    }
+    if (iz > 0) {
+      const n = idx - width;
+      if (field[n] > next) { field[n] = next; queue.push(n); }
+    }
+    if (iz < height - 1) {
+      const n = idx + width;
+      if (field[n] > next) { field[n] = next; queue.push(n); }
+    }
+  }
+  return field;
+}
 
 export class SceneRenderer {
   constructor(canvas, state, buildSystem, onSelectEntity) {
@@ -482,7 +540,9 @@ export class SceneRenderer {
 
     this.lastShowTileIcons = null;
     this.lastVisualPreset = this.state.controls.visualPreset;
-    this.lastEntityRenderSignature = "";
+    // v0.8.8 A12 (QA3 L6) — sentinel that mismatches any computed integer
+    // hash so the first frame always rebuilds.
+    this.lastEntityRenderSignature = NaN;
     this.entityMeshUpdateAccumulatorSec = Infinity;
     this.pressureLensMarkers = [];
     this.lastPressureLensSignature = "";
@@ -554,6 +614,7 @@ export class SceneRenderer {
     this.#setupEntityMeshes();
     this.#setupDebugPath();
     this.#setupOverlayMeshes();
+    this.#setupConstructionOverlayMeshes();
     this.#setupPressureLensMeshes();
     this.#loadWorldSimManifest();
     this.#applyRendererDisplaySettings();
@@ -615,9 +676,18 @@ export class SceneRenderer {
     this.controls.addEventListener("end", this.boundOnControlsEnd);
   }
 
+  // v0.8.7.1 P5 — cache sanitized display settings against the input
+  // reference identity. Sanitizer runs ~once per state.controls.display
+  // mutation instead of every call site (HUD/render/textureQuality/etc.).
   #displaySettings() {
-    const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
+    const input = this.state.controls.display;
+    const cache = this._displaySettingsCache;
+    if (cache && cache.input === input) return cache.output;
+    const { settings } = sanitizeDisplaySettings(input, DEFAULT_DISPLAY_SETTINGS);
     this.state.controls.display = settings;
+    // After replacement, both pre-sanitize and post-sanitize references map
+    // to the cached output. Stash both so the next call short-circuits.
+    this._displaySettingsCache = { input: settings, output: settings };
     return settings;
   }
 
@@ -728,7 +798,9 @@ export class SceneRenderer {
     }
     this.#applyShadowFlags(shadowsEnabled);
     this.#applyTextureQuality();
-    this.lastEntityRenderSignature = "";
+    // v0.8.8 A12 (QA3 L6) — NaN sentinel mismatches any computed hash so
+    // the next frame rebuilds. Was empty string before the hash refactor.
+    this.lastEntityRenderSignature = NaN;
     if (this.state.debug) {
       this.state.debug.shadowQuality = shadowQuality;
       this.state.debug.rendererAntialias = this.rendererAntialias;
@@ -783,10 +855,14 @@ export class SceneRenderer {
   }
 
   #wallYawForTile(ix, iz) {
-    const left = this.#tileAt(ix - 1, iz) === TILE.WALL;
-    const right = this.#tileAt(ix + 1, iz) === TILE.WALL;
-    const up = this.#tileAt(ix, iz - 1) === TILE.WALL;
-    const down = this.#tileAt(ix, iz + 1) === TILE.WALL;
+    // v0.8.4 strategic walls + GATE (Agent C). Walls and gates share yaw
+    // logic — a gate placed in a wall line should align with the wall
+    // segments on either side. We treat both WALL and GATE as wall-line
+    // members for the orientation hint.
+    const left = this.#tileAt(ix - 1, iz) === TILE.WALL || this.#tileAt(ix - 1, iz) === TILE.GATE;
+    const right = this.#tileAt(ix + 1, iz) === TILE.WALL || this.#tileAt(ix + 1, iz) === TILE.GATE;
+    const up = this.#tileAt(ix, iz - 1) === TILE.WALL || this.#tileAt(ix, iz - 1) === TILE.GATE;
+    const down = this.#tileAt(ix, iz + 1) === TILE.WALL || this.#tileAt(ix, iz + 1) === TILE.GATE;
     const horizontal = left || right;
     const vertical = up || down;
     if (horizontal && !vertical) return 0;
@@ -796,7 +872,10 @@ export class SceneRenderer {
 
   #tileYaw(ix, iz, tileType, binding) {
     if (binding.autoYaw && tileType === TILE.ROAD) return this.#roadYawForTile(ix, iz);
-    if (binding.autoYaw && tileType === TILE.WALL) return this.#wallYawForTile(ix, iz);
+    // v0.8.4 strategic walls + GATE (Agent C). Both WALL and GATE use the
+    // shared wall-yaw heuristic so a gate-in-a-wall-line orients with the
+    // surrounding wall segments.
+    if (binding.autoYaw && (tileType === TILE.WALL || tileType === TILE.GATE)) return this.#wallYawForTile(ix, iz);
     if (binding.randomYaw) return this.#hashAngle(ix, iz);
     return 0;
   }
@@ -1361,6 +1440,148 @@ export class SceneRenderer {
     this.scene.add(this.hoverMesh, this.previewMesh, this.selectedTileMesh, this.selectionRing);
   }
 
+  // v0.8.4 building-construction (Agent A) — Round 2 polish.
+  // Renders semi-transparent blueprint plates + horizontal progress bars for
+  // each entry in `state.constructionSites`. Pools are reused across frames;
+  // surplus meshes are hidden with `mesh.visible = false`. Called from
+  // render(dt) after #updatePlacementLens / #updateOverlayMeshes so overlays
+  // sit cleanly above the base tile and any selection ring.
+  #setupConstructionOverlayMeshes() {
+    this.constructionGroup = new THREE.Group();
+    this.constructionGroup.frustumCulled = false;
+    this.scene.add(this.constructionGroup);
+    const tileSize = this.state.grid.tileSize;
+    // Blueprint plate — scaled slightly under one tile so we can still see
+    // the underlying tile colour around the edges.
+    this.constructionPlateGeometry = new THREE.PlaneGeometry(tileSize * 0.94, tileSize * 0.94);
+    // Progress-bar geometries: thin background quad + thin foreground fill
+    // that we scale on the X axis (anchor on the left edge via origin shift).
+    this.constructionBarBgGeometry = new THREE.PlaneGeometry(tileSize * 0.86, tileSize * 0.10);
+    // Foreground geometry has its origin pinned to the left edge so scaling
+    // the X axis fills from the left rather than from the centre.
+    this.constructionBarFgGeometry = new THREE.PlaneGeometry(tileSize * 0.86, tileSize * 0.10);
+    this.constructionBarFgGeometry.translate(tileSize * 0.43, 0, 0);
+    // Pool of { plate, barBg, barFg, group } entries.
+    this.constructionOverlayPool = [];
+  }
+
+  #createConstructionOverlayEntry() {
+    const tileSize = this.state.grid.tileSize;
+    const group = new THREE.Group();
+    group.frustumCulled = false;
+    const plate = new THREE.Mesh(
+      this.constructionPlateGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x6ec8ff,
+        transparent: true,
+        opacity: 0.4,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    plate.rotation.x = -Math.PI / 2;
+    plate.renderOrder = RENDER_ORDER.TILE_OVERLAY + 3;
+    plate.frustumCulled = false;
+    const barBg = new THREE.Mesh(
+      this.constructionBarBgGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x111419,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    barBg.rotation.x = -Math.PI / 2;
+    barBg.renderOrder = RENDER_ORDER.TILE_OVERLAY + 4;
+    barBg.frustumCulled = false;
+    // Centre the bar background relative to the tile.
+    barBg.position.set(0, 0.85, 0);
+    const barFg = new THREE.Mesh(
+      this.constructionBarFgGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xffd166,
+        transparent: true,
+        opacity: 0.92,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    barFg.rotation.x = -Math.PI / 2;
+    barFg.renderOrder = RENDER_ORDER.TILE_OVERLAY + 5;
+    barFg.frustumCulled = false;
+    // Anchor the bar fill on the left edge of the bar background. The bar
+    // geometry was already pre-translated by half its width so X scale fills
+    // from the left.
+    barFg.position.set(-tileSize * 0.43, 0.85, 0);
+    group.add(plate, barBg, barFg);
+    group.visible = false;
+    this.constructionGroup.add(group);
+    return { group, plate, barBg, barFg };
+  }
+
+  #ensureConstructionOverlayPool(count) {
+    while (this.constructionOverlayPool.length < count) {
+      this.constructionOverlayPool.push(this.#createConstructionOverlayEntry());
+    }
+  }
+
+  #updateConstructionOverlays() {
+    const sites = Array.isArray(this.state.constructionSites) ? this.state.constructionSites : null;
+    const pool = this.constructionOverlayPool;
+    if (!pool) return;
+    if (!sites || sites.length === 0) {
+      for (const entry of pool) entry.group.visible = false;
+      return;
+    }
+    this.#ensureConstructionOverlayPool(sites.length);
+    const grid = this.state.grid;
+    for (let i = 0; i < pool.length; i += 1) {
+      const entry = pool[i];
+      const site = sites[i];
+      if (!site) {
+        entry.group.visible = false;
+        continue;
+      }
+      const ix = Number(site.ix);
+      const iz = Number(site.iz);
+      if (!Number.isFinite(ix) || !Number.isFinite(iz)) {
+        entry.group.visible = false;
+        continue;
+      }
+      const p = tileToWorld(ix, iz, grid);
+      // Position the whole group at the tile centre slightly above the
+      // ground plane so the plate doesn't z-fight with the base tile mesh.
+      entry.group.position.set(p.x, 0.18, p.z);
+      const isDemolish = site.kind === "demolish";
+      // Plate colour: cyan for build, red for demolish. We tint the
+      // material via the cached color slot to avoid per-frame allocation.
+      const plateMat = entry.plate.material;
+      if (plateMat?.color) {
+        plateMat.color.setHex(isDemolish ? 0xff5a48 : 0x6ec8ff);
+      }
+      // Bar fill colour: gold for build, red for demolish.
+      const fillMat = entry.barFg.material;
+      if (fillMat?.color) {
+        fillMat.color.setHex(isDemolish ? 0xff7560 : 0xffd166);
+      }
+      const total = Math.max(1e-3, Number(site.workTotalSec ?? 0));
+      const applied = Math.max(0, Number(site.workAppliedSec ?? 0));
+      const fill = Math.min(1, Math.max(0, applied / total));
+      // Scale the bar fill on the X axis. The geometry's origin was shifted
+      // so the left edge stays anchored.
+      entry.barFg.scale.set(fill, 1, 1);
+      entry.group.visible = true;
+    }
+    // Hide surplus entries beyond the active site count.
+    for (let i = sites.length; i < pool.length; i += 1) {
+      pool[i].group.visible = false;
+    }
+  }
+
   #setupPressureLensMeshes() {
     this.pressureLensRoot = new THREE.Group();
     this.pressureDiscGeometry = new THREE.CircleGeometry(1, 36);
@@ -1615,31 +1836,37 @@ export class SceneRenderer {
   }
 
   // Build connectivity markers. Color non-water tiles by road proximity (Manhattan ≤ 3).
+  // v0.8.7.1 P3 — uses precomputed road-distance field (cached per grid.version).
   #buildTerrainConnectivityMarkers() {
     const grid = this.state.grid;
     const { width, height, tiles } = grid;
+    const field = this.#getRoadDistanceField();
     const markers = [];
     for (let iz = 0; iz < height; iz++) {
       for (let ix = 0; ix < width; ix++) {
         const idx = ix + iz * width;
         if (tiles[idx] === TILE.WATER) continue;
-        // Check for a ROAD tile within Manhattan distance 3.
-        let hasRoad = false;
-        outer: for (let dz = -3; dz <= 3; dz++) {
-          for (let dx = -3; dx <= 3; dx++) {
-            if (Math.abs(dx) + Math.abs(dz) > 3) continue;
-            const nx = ix + dx;
-            const nz = iz + dz;
-            if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
-            if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
-          }
-        }
+        const hasRoad = field[idx] <= 3;
         const color = hasRoad ? 0x44cc44 : 0xcc4444;
         const opacity = hasRoad ? 0.60 : 0.40;
         markers.push({ ix, iz, color, opacity });
       }
     }
     return markers;
+  }
+
+  // v0.8.7.1 P3 — return cached road-distance field, rebuilding only when
+  // grid.version advances.
+  #getRoadDistanceField() {
+    const grid = this.state.grid;
+    const cache = this._roadDistanceField;
+    if (cache && cache.version === grid.version
+        && cache.width === grid.width && cache.height === grid.height) {
+      return cache.data;
+    }
+    const data = buildRoadDistanceField(grid);
+    this._roadDistanceField = { data, version: grid.version, width: grid.width, height: grid.height };
+    return data;
   }
 
   // Build node-depletion markers. Color resource buildings by soil exhaustion.
@@ -1732,17 +1959,9 @@ export class SceneRenderer {
       }
     } else if (tool === "road" || tool === "warehouse") {
       // Road connectivity is the key metric.
-      const { width, height, tiles } = grid;
-      let hasRoad = false;
-      outer: for (let dz = -3; dz <= 3; dz++) {
-        for (let dx = -3; dx <= 3; dx++) {
-          if (Math.abs(dx) + Math.abs(dz) > 3) continue;
-          const nx = ix + dx;
-          const nz = iz + dz;
-          if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
-          if (tiles[nx + nz * width] === TILE.ROAD) { hasRoad = true; break outer; }
-        }
-      }
+      // v0.8.7.1 P3 — read cached road-distance field instead of inline BFS.
+      const field = this.#getRoadDistanceField();
+      const hasRoad = field[idx] <= 3;
       const isRoadTile = grid.tiles[idx] === TILE.ROAD;
       const hint  = isRoadTile ? "Road tile" : (hasRoad ? "Road nearby" : "Not connected");
       const color = (isRoadTile || hasRoad) ? "#a5f2b2" : "#ff8a80";
@@ -1830,6 +2049,10 @@ export class SceneRenderer {
       [TILE.ROAD]:        { role: "Fast transit (−35% movement cost)", input: "—", output: "—" },
       [TILE.BRIDGE]:      { role: "Water crossing (passable)", input: "—", output: "—" },
       [TILE.WALL]:        { role: "Defensive barrier (impassable)", input: "—", output: "—" },
+      // v0.8.4 strategic walls + GATE (Agent C). Gate is colony-passable
+      // and blocked for hostile factions; placed in wall lines to seal
+      // supply routes without locking the colony out.
+      [TILE.GATE]:        { role: "Faction doorway (colony-passable)", input: "—", output: "—" },
       [TILE.RUINS]:       { role: "Salvageable structure", input: "—", output: "stone/wood" },
     });
     const bDesc = BUILDING_DESC[tileType];
@@ -2036,17 +2259,27 @@ export class SceneRenderer {
       visible.set(item.poolIdx, { decision: item.decision, entry: item.entry });
     }
     container.dataset.hiddenLabelCount = String(Math.max(0, visibleCandidates.length - visible.size));
+    // v0.8.7.1 P6 \u2014 DOM-write diff. Track per-pool-element signature
+    // (rounded px,py + text + count) and skip style/textContent writes when
+    // the signature is unchanged across frames. Hide-state transitions still
+    // mutate the element but only once per change.
+    if (!this._prevLabelSignatures) this._prevLabelSignatures = new Map();
+    const prevSigs = this._prevLabelSignatures;
+    const nextSigs = new Map();
     for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
       const el = this.pressureLabelPool[i];
       if (!visible.has(i)) {
         // Not visible: hidden either because off-screen, empty label, or
         // collapsed into a sibling.
-        el.style.display = "none";
-        el.title = "";
-        if (el.dataset) {
-          if ("merged" in el.dataset) delete el.dataset.merged;
-          if ("count" in el.dataset) delete el.dataset.count;
+        if (prevSigs.get(i) !== "hidden") {
+          el.style.display = "none";
+          el.title = "";
+          if (el.dataset) {
+            if ("merged" in el.dataset) delete el.dataset.merged;
+            if ("count" in el.dataset) delete el.dataset.count;
+          }
         }
+        nextSigs.set(i, "hidden");
         continue;
       }
       const { decision, entry } = visible.get(i);
@@ -2054,6 +2287,13 @@ export class SceneRenderer {
       const renderPy = decision.cy ?? entry.py;
       const count = decision.count ?? 1;
       const labelText = count > 1 ? `${entry.label} \u00d7${count}` : entry.label;
+      const left = Math.round(renderPx + offsetLeft);
+      const top = Math.round(renderPy + offsetTop);
+      const sig = `${left},${top}|${labelText}|${count}|${entry.kind ?? ""}`;
+      if (prevSigs.get(i) === sig) {
+        nextSigs.set(i, sig);
+        continue;
+      }
       el.dataset.kind = entry.kind;
       if (count > 1) {
         el.dataset.merged = "1";
@@ -2062,12 +2302,18 @@ export class SceneRenderer {
         if (el.dataset && "merged" in el.dataset) delete el.dataset.merged;
         if (el.dataset && "count" in el.dataset) delete el.dataset.count;
       }
+      // v0.8.8 A4 (F13) — at cluster density (>=3 merged markers) reduce
+      // opacity to 0.7 so the dense overlay reads as background context
+      // rather than a wall of foreground labels.
+      el.style.opacity = count >= 3 ? "0.7" : "";
       el.textContent = labelText;
       el.title = entry.hoverTooltip ? String(entry.hoverTooltip) : labelText;
-      el.style.left = `${Math.round(renderPx + offsetLeft)}px`;
-      el.style.top = `${Math.round(renderPy + offsetTop)}px`;
+      el.style.left = `${left}px`;
+      el.style.top = `${top}px`;
       el.style.display = "block";
+      nextSigs.set(i, sig);
     }
+    this._prevLabelSignatures = nextSigs;
   }
 
   #updateHeatTileOverlay(markers) {
@@ -2144,7 +2390,21 @@ export class SceneRenderer {
   }
 
   #applyAtmosphere(dt) {
-    const target = deriveAtmosphereProfile(this.state);
+    // v0.8.8 A11 (QA3 L5) — cache deriveAtmosphereProfile(state) against a
+    // signature of the inputs it actually reads. The full derive is ~15
+    // mixHex + clamp ops per frame, but inputs (scenario family, weather,
+    // session phase, pressure-derived scalars) only change every few
+    // ticks. A signature hit reuses the previous profile object.
+    const s = this.state;
+    const sig = `${s.gameplay?.scenario?.family ?? ""}|${s.weather?.current ?? ""}|${s.weather?.pressureScore ?? 0}|${s.metrics?.spatialPressure?.weatherPressure ?? 0}|${s.metrics?.spatialPressure?.eventPressure ?? 0}|${s.metrics?.ecology?.maxFarmPressure ?? 0}|${s.metrics?.traffic?.peakPenalty ?? 0}|${s.session?.phase ?? ""}|${s.session?.outcome ?? ""}`;
+    let target;
+    if (this._lastAtmosphereSig === sig && this._lastAtmosphereProfile) {
+      target = this._lastAtmosphereProfile;
+    } else {
+      target = deriveAtmosphereProfile(this.state);
+      this._lastAtmosphereSig = sig;
+      this._lastAtmosphereProfile = target;
+    }
     const blend = clamp(Math.max(0.08, Number(dt) * 3.1), 0.08, 0.24);
 
     this.#lerpColor(this.scene.background, target.background, blend);
@@ -2344,7 +2604,10 @@ export class SceneRenderer {
     while (group.children.length > 0) {
       group.remove(group.children[group.children.length - 1]);
     }
-    this.renderer?.renderLists?.dispose?.();
+    // v0.8.8 A8 (QA1 L7) — dropped renderLists.dispose() call. Three.js
+    // auto-manages render lists per-frame; manually disposing here forced
+    // a rebuild every clear (which can run multiple times per frame on
+    // tile/entity rebuilds), wasting CPU on no observable benefit.
   }
 
   #rebuildTileModels() {
@@ -2355,6 +2618,24 @@ export class SceneRenderer {
 
     this.#clearGroup(this.tileModelRoot);
 
+    // v0.8.7 T3-5 (QA2-F10): wall HP visual indicator. For WALL/GATE tiles
+    // with wallHp < wallMaxHp, modulate the binding tint toward red
+    // proportional to (1 - hpRatio). Players can now see at a glance which
+    // walls are taking damage rather than having to open the inspector.
+    const wallMaxHp = Math.max(1, Number(BALANCE.wallMaxHp ?? 50));
+    const gateMaxHp = Math.max(1, Number(BALANCE.gateMaxHp ?? wallMaxHp));
+    const tileState = this.state.grid?.tileState ?? null;
+    const computeWallHpDamageTint = (tileType, idx) => {
+      if (tileType !== TILE.WALL && tileType !== TILE.GATE) return null;
+      if (!tileState?.get) return null;
+      const entry = tileState.get(idx);
+      if (!entry || entry.wallHp == null) return null;
+      const max = tileType === TILE.GATE ? gateMaxHp : wallMaxHp;
+      const ratio = Math.max(0, Math.min(1, Number(entry.wallHp) / max));
+      if (ratio >= 0.95) return null; // fully healthy — no visual change
+      // Damage ranges 0..1, where 1 = at zero HP (full red shift).
+      return 1 - ratio;
+    };
     for (let iz = 0; iz < this.state.grid.height; iz += 1) {
       for (let ix = 0; ix < this.state.grid.width; ix += 1) {
         const idx = ix + iz * this.state.grid.width;
@@ -2364,7 +2645,26 @@ export class SceneRenderer {
         const model = this.#cloneTemplate(binding.key);
         if (!model) continue;
 
-        this.#applyTint(model, binding.tint);
+        const damage = computeWallHpDamageTint(tileType, idx);
+        if (damage != null) {
+          // Lerp tint hex toward red (0xff5040) proportional to damage. We
+          // round to the nearest 24-bit color so the result is still a
+          // hex literal #applyTint can multiply into the base material.
+          const baseHex = Number(binding.tint ?? 0xffffff);
+          const baseR = (baseHex >> 16) & 0xff;
+          const baseG = (baseHex >> 8) & 0xff;
+          const baseB = baseHex & 0xff;
+          const dmgR = 0xff;
+          const dmgG = 0x50;
+          const dmgB = 0x40;
+          const t = Math.min(0.85, damage);
+          const r = Math.round(baseR + (dmgR - baseR) * t);
+          const g = Math.round(baseG + (dmgG - baseG) * t);
+          const b = Math.round(baseB + (dmgB - baseB) * t);
+          this.#applyTint(model, (r << 16) | (g << 8) | b);
+        } else {
+          this.#applyTint(model, binding.tint);
+        }
 
         const p = tileToWorld(ix, iz, this.state.grid);
         const tileBaseHeight = TILE_INFO[tileType]?.height ?? 0;
@@ -2806,13 +3106,15 @@ export class SceneRenderer {
     this.herbivoreMesh.visible = herbivoreFallbackVisible;
     this.predatorMesh.visible = predatorFallbackVisible;
 
-    let i = 0;
+    // v0.8.7.1 P7 — replace per-frame .slice() allocations with bounded
+    // for-loops. Hot path on 700+ entities; eliminates 4 slice copies per
+    // tick.
     if (workerFallbackVisible) {
       const capacity = Number(this.workerMesh.instanceMatrix?.count ?? this.workerEntities.length);
       const visibleCount = Math.min(this.workerEntities.length, capacity);
-      for (const e of this.workerEntities.slice(0, visibleCount)) {
-        setInstancedMatrix(this.workerMesh, i, e.x, 0.48, e.z);
-        i += 1;
+      for (let n = 0; n < visibleCount; n += 1) {
+        const e = this.workerEntities[n];
+        setInstancedMatrix(this.workerMesh, n, e.x, 0.48, e.z);
       }
       this.workerMesh.count = visibleCount;
     } else {
@@ -2820,13 +3122,12 @@ export class SceneRenderer {
     }
     this.workerMesh.instanceMatrix.needsUpdate = true;
 
-    i = 0;
     if (visitorFallbackVisible) {
       const capacity = Number(this.visitorMesh.instanceMatrix?.count ?? this.visitorEntities.length);
       const visibleCount = Math.min(this.visitorEntities.length, capacity);
-      for (const e of this.visitorEntities.slice(0, visibleCount)) {
-        setInstancedMatrix(this.visitorMesh, i, e.x, 0.48, e.z);
-        i += 1;
+      for (let n = 0; n < visibleCount; n += 1) {
+        const e = this.visitorEntities[n];
+        setInstancedMatrix(this.visitorMesh, n, e.x, 0.48, e.z);
       }
       this.visitorMesh.count = visibleCount;
     } else {
@@ -2834,13 +3135,12 @@ export class SceneRenderer {
     }
     this.visitorMesh.instanceMatrix.needsUpdate = true;
 
-    i = 0;
     if (herbivoreFallbackVisible) {
       const capacity = Number(this.herbivoreMesh.instanceMatrix?.count ?? this.herbivoreEntities.length);
       const visibleCount = Math.min(this.herbivoreEntities.length, capacity);
-      for (const e of this.herbivoreEntities.slice(0, visibleCount)) {
-        setInstancedMatrix(this.herbivoreMesh, i, e.x, 0.48, e.z);
-        i += 1;
+      for (let n = 0; n < visibleCount; n += 1) {
+        const e = this.herbivoreEntities[n];
+        setInstancedMatrix(this.herbivoreMesh, n, e.x, 0.48, e.z);
       }
       this.herbivoreMesh.count = visibleCount;
     } else {
@@ -2848,13 +3148,12 @@ export class SceneRenderer {
     }
     this.herbivoreMesh.instanceMatrix.needsUpdate = true;
 
-    i = 0;
     if (predatorFallbackVisible) {
       const capacity = Number(this.predatorMesh.instanceMatrix?.count ?? this.predatorEntities.length);
       const visibleCount = Math.min(this.predatorEntities.length, capacity);
-      for (const e of this.predatorEntities.slice(0, visibleCount)) {
-        setInstancedMatrix(this.predatorMesh, i, e.x, 0.48, e.z);
-        i += 1;
+      for (let n = 0; n < visibleCount; n += 1) {
+        const e = this.predatorEntities[n];
+        setInstancedMatrix(this.predatorMesh, n, e.x, 0.48, e.z);
       }
       this.predatorMesh.count = visibleCount;
     } else {
@@ -2966,13 +3265,16 @@ export class SceneRenderer {
     };
     const agents = Array.isArray(this.state.agents) ? this.state.agents : [];
     const animals = Array.isArray(this.state.animals) ? this.state.animals : [];
-    // Concatenate via a lightweight generator to keep allocation low.
-    function* iterEntities() {
-      for (const a of agents) yield a;
-      for (const a of animals) yield a;
-    }
+    // v0.8.8 A10 (QA3 L4) — reuse a single concat buffer across calls to
+    // avoid generator-protocol overhead and per-yield allocations on hot
+    // pointer-move paths. Cleared in-place each call.
+    if (!this._proximityEntityBuf) this._proximityEntityBuf = [];
+    const buf = this._proximityEntityBuf;
+    buf.length = 0;
+    for (let i = 0; i < agents.length; i += 1) buf.push(agents[i]);
+    for (let i = 0; i < animals.length; i += 1) buf.push(animals[i]);
     return findProximityEntity({
-      entities: iterEntities(),
+      entities: buf,
       projectWorldToNdc,
       mouseNdc: { x: mouse.x, y: mouse.y },
       viewport: { width, height },
@@ -3189,8 +3491,23 @@ export class SceneRenderer {
     // 2s message-text dedup: suppress identical toast messages within 2 seconds.
     this._lastToastTextMap ??= new Map();
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (this._lastToastTextMap.has(text) && now - this._lastToastTextMap.get(text) < 2000) return;
-    this._lastToastTextMap.set(text, now);
+    // v0.8.7 T1-2 (QA3-C2): prune entries older than 2s before insert. Pre-fix
+    // this map grew unbounded (every unique toast text accumulated forever) —
+    // a long-running session with autopilot could leak megabytes of strings
+    // over a few hours.
+    for (const [k, t] of this._lastToastTextMap) {
+      if (now - t > 2000) this._lastToastTextMap.delete(k);
+    }
+    // v0.8.8 A6 (F18) — for ERROR toasts include tile coords in the dedup
+    // key so per-tile failures (e.g. "Need 5 wood" on tile A then on tile
+    // B 200ms later) aren't suppressed when the player is rapidly trying
+    // multiple tiles. Non-error toasts keep simple text-based dedup so we
+    // don't spam success/info pulses.
+    const dedupKey = kind === "error" || kind === "err"
+      ? `${text}@${tileIx},${tileIz}`
+      : text;
+    if (this._lastToastTextMap.has(dedupKey) && now - this._lastToastTextMap.get(dedupKey) < 2000) return;
+    this._lastToastTextMap.set(dedupKey, now);
     // Throttle: ignore duplicate clicks on the same tile within 100ms.
     const key = `${tileIx},${tileIz}`;
     if (key === this.lastToastTileKey && (now - this.lastToastTimeMs) < 100) return;
@@ -3252,6 +3569,29 @@ export class SceneRenderer {
       node.style.animation = "none";
       node.style.opacity = "0";
     }, durationMs + 50);
+  }
+
+  /**
+   * v0.8.7 T3-3 (QA2-F3): clear all in-flight toast nodes. BuildToolbar's
+   * tool-change handler dispatches `utopia:toolChange`; GameApp listens and
+   * forwards to here so stale toasts don't bleed across tool changes (e.g.,
+   * "Need 5 wood" left over after switching from BUILD to ERASE).
+   */
+  clearToasts() {
+    if (!Array.isArray(this.toastPool)) return;
+    for (const node of this.toastPool) {
+      if (!node) continue;
+      if (node._utopiaToastTimer) {
+        clearTimeout(node._utopiaToastTimer);
+        node._utopiaToastTimer = null;
+      }
+      node.dataset.busy = "0";
+      node.style.animation = "none";
+      node.style.opacity = "0";
+      node.textContent = "";
+    }
+    // Drop the dedup map so the same text can re-fire under the next tool.
+    if (this._lastToastTextMap?.clear) this._lastToastTextMap.clear();
   }
 
   spawnDeathToast(worldX, worldZ, name, reason, tileIx = -1, tileIz = -1) {
@@ -3362,7 +3702,8 @@ export class SceneRenderer {
       this.lastShowTileIcons = showTileIconsNow;
       this.#rebuildTileModels();
       this.#rebuildTileIcons();
-      this.lastEntityRenderSignature = "";
+      // v0.8.8 A12 (QA3 L6) — NaN sentinel mismatches integer hash.
+      this.lastEntityRenderSignature = NaN;
     }
   }
 
@@ -3554,17 +3895,28 @@ export class SceneRenderer {
     const totalEntities = Number(this.state.agents?.length ?? 0) + Number(this.state.animals?.length ?? 0);
     const entityUpdateIntervalSec = this.#entityMeshUpdateIntervalSec(totalEntities);
     this.entityMeshUpdateAccumulatorSec += dt;
-    const entityRenderSignature = [
-      this.state.agents.length,
-      this.state.animals.length,
-      this.state.controls.showUnitSprites ? 1 : 0,
-      this.state.controls.visualPreset,
-      this.modelDisableThreshold,
-      this.modelTemplates.size,
-      display.renderMode,
-      display.resolutionScale,
-      display.entityAnimations ? 1 : 0,
-    ].join("|");
+    // v0.8.8 A12 (QA3 L6) — integer hash instead of join("|") string. The
+    // signature is computed every frame even when entities haven't changed,
+    // so avoiding the string concat + comparison saves microseconds at
+    // 60Hz and avoids one tiny allocation per frame. We fold 9 numeric
+    // inputs (string fields hashed via cheap rolling hash) using
+    // `(a * 31 + b) | 0` so the result fits in a 32-bit signed int.
+    const visualPreset = this.state.controls.visualPreset ?? "";
+    const renderMode = display.renderMode ?? "";
+    let presetHash = 0;
+    for (let i = 0; i < visualPreset.length; i += 1) presetHash = ((presetHash * 31) + visualPreset.charCodeAt(i)) | 0;
+    let modeHash = 0;
+    for (let i = 0; i < renderMode.length; i += 1) modeHash = ((modeHash * 31) + renderMode.charCodeAt(i)) | 0;
+    let entityRenderSignature = 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (this.state.agents.length | 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (this.state.animals.length | 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (this.state.controls.showUnitSprites ? 1 : 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + presetHash) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (this.modelDisableThreshold | 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (this.modelTemplates.size | 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + modeHash) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (Math.round(Number(display.resolutionScale ?? 0) * 1000) | 0)) | 0;
+    entityRenderSignature = ((entityRenderSignature * 31) + (display.entityAnimations ? 1 : 0)) | 0;
     const shouldUpdateEntities = entityRenderSignature !== this.lastEntityRenderSignature
       || entityUpdateIntervalSec <= 0
       || this.entityMeshUpdateAccumulatorSec >= entityUpdateIntervalSec;
@@ -3588,6 +3940,7 @@ export class SceneRenderer {
     this.#updatePlacementLens();
     this.#updateTerrainFertilityOverlay();
     this.#updateOverlayMeshes();
+    this.#updateConstructionOverlays();
 
     const pixelRatio = this.renderer.getPixelRatio();
     const targetWidth = Math.floor(this.canvas.clientWidth * pixelRatio);

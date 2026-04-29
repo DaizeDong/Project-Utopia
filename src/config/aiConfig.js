@@ -2,12 +2,18 @@
   environmentEndpoint: "/api/ai/environment",
   policyEndpoint: "/api/ai/policy",
   planEndpoint: "/api/ai/plan",
-  requestTimeoutMs: 120000,
+  // v0.8.5 Tier 3: 120000 → 30000. 30s LLM timeout — 120s ties up the
+  // request slot way past any reasonable "do useful work" window. Cost
+  // protection: a 120s timeout pays full token cost for a stalled model.
+  requestTimeoutMs: 30000,
   maxDirectiveDurationSec: 180,
   maxPolicyTtlSec: 120,
   minDecisionIntervalSec: 8,
   enableByDefault: false,
   retryAfterFailureSec: 8,
+  // v0.8.5 Tier 3: basic cost guardrail — cap LLM calls per hour at 240
+  // (~4/min) so a runaway loop or flapping director can't burn budget.
+  maxLLMCallsPerHour: 240,
 });
 
 export const GROUP_IDS = Object.freeze({

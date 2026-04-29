@@ -816,7 +816,16 @@ export class ColonyDirectorSystem {
       });
       if (result.ok) {
         state.buildings = rebuildBuildingStats(state.grid);
-        director.buildsPlaced += 1;
+        // v0.8.6 Tier 0 LR-C3: only count COMPLETED placements toward
+        // buildsPlaced. Pre-fix the counter incremented on every "blueprint"
+        // submission so a 33-blueprint queue with 0 actual completions still
+        // reported buildsPlaced=33 — confused autopilot diagnostics. Blueprint
+        // submissions are tracked separately via blueprintsSubmitted.
+        if (result.phase === "complete") {
+          director.buildsPlaced += 1;
+        } else {
+          director.blueprintsSubmitted = Number(director.blueprintsSubmitted ?? 0) + 1;
+        }
         // Phase B: attribute placement source so HUD/panels can distinguish
         // rule-based ColonyDirector builds from LLM-driven AgentDirector ones.
         // ColonyDirector is always the rule-based fallback path, so tag as

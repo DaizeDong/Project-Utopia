@@ -181,6 +181,63 @@ const MILESTONE_RULES = Object.freeze([
     baselineKey: "haulDeliveredLife",
     current: (state) => Number(state.metrics?.haulDeliveredLife ?? 0),
   },
+  // v0.8.5 Tier 4: late-game milestones. Give the player goals to chase
+  // after their colony has stabilised — population growth, year-1
+  // survival, defending against late-game raids, and reaching balanced
+  // dev-index dimensions.
+  {
+    kind: "pop_30",
+    key: "pop30",
+    label: "Population 30 · thriving township",
+    message: "Thirty colonists strong — the camp is now a town.",
+    baselineKey: "__devNever__",
+    current: (state) => {
+      const aliveWorkers = Array.isArray(state.agents)
+        ? state.agents.filter((a) => a && a.alive !== false && a.type === "WORKER").length
+        : 0;
+      return aliveWorkers >= 30 ? 1 : 0;
+    },
+  },
+  {
+    kind: "dev_year_1",
+    key: "devYear1",
+    label: "One year survived",
+    message: "365 days, and still growing. The colony has weathered every season.",
+    baselineKey: "__devNever__",
+    current: (state) => {
+      // 365 in-game days at DAY_CYCLE_PERIOD_SEC = 90 = 32850 in-game seconds.
+      const yearSec = 365 * 90;
+      return Number(state.metrics?.timeSec ?? 0) >= yearSec ? 1 : 0;
+    },
+  },
+  {
+    kind: "defended_tier_5",
+    key: "defendedTier5",
+    label: "Tier-5 raid defended",
+    message: "A late-game raid was repelled — your walls and GUARDs hold the line.",
+    baselineKey: "__devNever__",
+    current: (state) => {
+      const tier = Number(state.gameplay?.raidEscalation?.tier ?? 0);
+      const repelled = Number(state.metrics?.raidsRepelled ?? 0);
+      return tier >= 5 && repelled >= 1 ? 1 : 0;
+    },
+  },
+  {
+    kind: "all_dims_70",
+    key: "allDims70",
+    label: "All DevIndex dimensions ≥ 70",
+    message: "Every dimension of the colony is healthy — true balance achieved.",
+    baselineKey: "__devNever__",
+    current: (state) => {
+      const dims = state.gameplay?.devIndexDimensions;
+      if (!dims) return 0;
+      const keys = ["population", "economy", "infrastructure", "production", "defense", "resilience"];
+      for (const k of keys) {
+        if (Number(dims[k] ?? 0) < 70) return 0;
+      }
+      return 1;
+    },
+  },
 ]);
 
 function clamp(v, min, max) {
