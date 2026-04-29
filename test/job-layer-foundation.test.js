@@ -72,10 +72,16 @@ test("v0.9.0-a #1: JobScheduler picks JobWander when it is the only registered J
 
   scheduler.tickWorker(worker, state, services, 1 / 30);
 
-  assert.equal(worker.currentJob.id, "wander", "JobWander should win as the only Job");
-  // The registered Jobs array must contain exactly one entry in phase 0.9.0-a.
-  assert.equal(ALL_JOBS.length, 1, "phase 0.9.0-a registers JobWander only");
-  assert.ok(ALL_JOBS[0] instanceof JobWander, "JobRegistry holds a JobWander instance");
+  assert.equal(worker.currentJob.id, "wander", "JobWander should win when only it has a target");
+  // v0.9.0-b: registry now lists 5 Jobs (4 harvest + wander). On a bare-init
+  // map there are no FARM/LUMBER/QUARRY/HERB_GARDEN tiles, so the harvest
+  // Jobs' findTarget returns null and JobWander wins by default. Phase c
+  // appends deliver/eat/process/build/rest/guard.
+  assert.equal(ALL_JOBS.length, 5, "phase 0.9.0-b registers 4 harvest Jobs + JobWander");
+  assert.ok(
+    ALL_JOBS[ALL_JOBS.length - 1] instanceof JobWander,
+    "JobWander remains the terminal-floor entry",
+  );
 });
 
 test("v0.9.0-a #2: worker.currentJob populated after first tickWorker call", () => {

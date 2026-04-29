@@ -210,7 +210,11 @@ function readOccupancyCount(map, key, worker) {
   return Math.max(0, count);
 }
 
-function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null, services = null) {
+// v0.9.0-b — Job-layer hook: harvest Jobs reuse this exact utility scorer
+// so the Job-layer's findTarget yields the same tile picks as the legacy
+// handleHarvest path. No behaviour change while FEATURE_FLAGS.USE_JOB_LAYER
+// is OFF.
+export function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null, services = null) {
   const targetContext = state._workerTargetContext ?? buildWorkerTargetContext(state);
   const candidates = getWorkerTargetEntries(state, targetTileTypes, targetContext);
   if (candidates.length <= 0) return null;
@@ -647,13 +651,16 @@ function isTargetTileType(worker, state, targetTileTypes) {
   return targetTileTypes.includes(tile);
 }
 
-function isAtTargetTile(worker, state) {
+// v0.9.0-b — Job-layer hook: re-exported through JobHelpers.js so Jobs
+// share the same target-arrival predicate as legacy handlers.
+export function isAtTargetTile(worker, state) {
   if (!worker.targetTile) return false;
   const current = worldToTile(worker.x, worker.z, state.grid);
   return current.ix === worker.targetTile.ix && current.iz === worker.targetTile.iz;
 }
 
-function setIdleDesired(worker) {
+// v0.9.0-b — Job-layer hook: see isAtTargetTile.
+export function setIdleDesired(worker) {
   if (!worker.desiredVel) {
     worker.desiredVel = { x: 0, z: 0 };
     return;
@@ -1078,16 +1085,52 @@ export function handleHarvest(worker, state, services, dt) {
   }
 
   if (!isAtTargetTile(worker, state)) return;
+  // v0.9.0-b — extracted body. Both the legacy handler and the Job-layer
+  // (JobHarvestFarm/Lumber/Quarry/Herb) call applyHarvestStep so the
+  // yield-pool / soil-salinization / fertility-drain / telemetry semantics
+  // remain in a single place. Resource is auto-resolved from the tile the
+  // worker is standing on (HAUL handling preserved).
+  applyHarvestStep(worker, state, services, dt);
+}
+
+// v0.9.0-b — Shared harvest mechanic used by both the legacy handleHarvest
+// dispatch and the Job-layer's JobHarvestFarm/Lumber/Quarry/Herb tick.
+//
+// Preconditions: worker has arrived at a valid target tile of the correct
+// type (caller verifies via isAtTargetTile). Performs one tick of the
+// harvest cooldown machinery, including:
+//   - cooldown roll on entry, decrement on subsequent ticks
+//   - completion-tick credit into worker.carry[resourceKey] (or
+//     state.resources.food when no warehouse exists, food only)
+//   - yieldPool decrement + carry refund when pool is exhausted
+//   - soil salinization + fallow trigger (FARM only)
+//   - fertility drain (FARM/HERBS/LUMBER)
+//   - production telemetry recording (idle-reason inference)
+//
+// `tileType` and `resourceKey` are optional overrides for the Job-layer;
+// when omitted, both are resolved from the tile under worker.targetTile,
+// matching the legacy HAUL handling.
+export function applyHarvestStep(worker, state, services, dt, tileTypeOverride = null, resourceKeyOverride = null) {
+  if (!worker?.targetTile) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
   const isNight = Boolean(state.environment?.isNight);
   // Logistics efficiency: buildings connected to warehouse via road get bonus, isolated get penalty
   const logistics = state._logisticsSystem;
   const logisticsBonus = (logistics && worker.targetTile)
     ? logistics.getEfficiency(worker.targetTile.ix, worker.targetTile.iz) : 1.0;
-  // HAUL workers: determine resource type from tile they're standing on
+  // Resolve tile + role for this harvest step. The Job-layer passes explicit
+  // overrides (its findTarget already constrained the tile type); the legacy
+  // path resolves from the tile under worker.targetTile and HAUL→specific
+  // role. Both arrive at the same effectiveRole.
+  const tileAtTarget = tileTypeOverride
+    ?? getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
   let effectiveRole = worker.role;
-  if (worker.role === ROLE.HAUL && worker.targetTile) {
-    const tileAtTarget = getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
+  if (resourceKeyOverride) {
+    if (resourceKeyOverride === "food") effectiveRole = ROLE.FARM;
+    else if (resourceKeyOverride === "wood") effectiveRole = ROLE.WOOD;
+    else if (resourceKeyOverride === "stone") effectiveRole = ROLE.STONE;
+    else if (resourceKeyOverride === "herbs") effectiveRole = ROLE.HERBS;
+  } else if (worker.role === ROLE.HAUL) {
     if (tileAtTarget === TILE.FARM) effectiveRole = ROLE.FARM;
     else if (tileAtTarget === TILE.LUMBER) effectiveRole = ROLE.WOOD;
     else if (tileAtTarget === TILE.QUARRY) effectiveRole = ROLE.STONE;
