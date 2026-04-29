@@ -34,15 +34,13 @@ const TARGET_REFRESH_JITTER_SEC = 0.5;
 const WANDER_REFRESH_BASE_SEC = 0.9;
 const WANDER_REFRESH_JITTER_SEC = 0.7;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
-// v0.8.4 building-construction (Agent A) — `construct` and `seek_construct`
-// are task-locked so a BUILDER assigned to a site does not flip back to
-// FARM when the planner re-evaluates each manager interval. RoleAssignment
-// system controls when BUILDERs are demoted (sites empty); the FSM keeps
-// them committed during their assigned shift.
-export const TASK_LOCK_STATES = new Set([
-  "harvest", "deliver", "eat", "process", "seek_task",
-  "construct", "seek_construct",
-]);
+// v0.9.0-d — TASK_LOCK_STATES retired. The Job-utility layer's
+// `JobScheduler` hysteresis (sticky bonus + decay; see JobScheduler.js)
+// now provides the "incumbent retains under +stickyBonus, but loses to
+// clearly-better alternative" behaviour that the old hard-lock set
+// (harvest/deliver/eat/process/seek_task/construct/seek_construct)
+// approximated bluntly. Removing the set deletes ~120 LOC of
+// commitmentCycle / survivalInterrupt arithmetic in update() (phase d).
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 const WORKER_MEMORY_RECENT_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
@@ -434,93 +432,12 @@ function addEmotionalPrefix(worker, state, text) {
   return text;
 }
 
-export function chooseWorkerIntent(worker, state) {
-  const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
-  const hasCarry = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0) > 0;
-  const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
-  const carryAgeSec = Number(worker.blackboard?.carryAgeSec ?? 0);
-  const noWorkSite = (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) <= 0)
-    || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0)
-    || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
-    || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
-    || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
-    || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
-    || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
-    || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
-  const alreadyDelivering = String(worker.stateLabel ?? "").toLowerCase().includes("deliver");
-  const nearestWarehouseDistance = estimateNearestWarehouseDistance(worker, state);
-  const deliverThreshold = Number(BALANCE.workerDeliverThreshold ?? 2.4);
-  const carryPressureSec = Number(BALANCE.workerCarryPressureSec ?? 6);
-  const farDepotDistance = Number(BALANCE.workerFarDepotDistance ?? 14);
-
-  worker.debug ??= {};
-  const hunger = Number(worker.hunger ?? 1);
-  const hungerThreshold = getWorkerHungerSeekThreshold(worker);
-  if (hunger < hungerThreshold && Number(state.resources?.food ?? 0) > 0) {
-    worker.debug.lastIntentReason = `hunger=${hunger.toFixed(2)} < threshold=${hungerThreshold.toFixed(2)}, food=${Math.floor(state.resources.food)}`;
-    return "eat";
-  }
-  if (
-    hasCarry &&
-    hasWarehouse &&
-    (
-      carryTotal >= deliverThreshold
-      || alreadyDelivering
-      || noWorkSite
-      || carryAgeSec >= carryPressureSec
-      || nearestWarehouseDistance >= farDepotDistance
-    )
-  ) {
-    const trigReason = carryTotal >= deliverThreshold ? `carry=${carryTotal.toFixed(1)} ≥ threshold=${deliverThreshold.toFixed(1)}`
-      : alreadyDelivering ? "already delivering"
-      : noWorkSite ? `no worksite for role=${worker.role}`
-      : carryAgeSec >= carryPressureSec ? `carry age ${carryAgeSec.toFixed(0)}s ≥ ${carryPressureSec}s`
-      : `far depot dist=${nearestWarehouseDistance.toFixed(0)} ≥ ${farDepotDistance}`;
-    worker.debug.lastIntentReason = trigReason;
-    return "deliver";
-  }
-  if (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=FARM and farms=${state.buildings.farms}`;
-    return "farm";
-  }
-  if (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=WOOD and lumbers=${state.buildings.lumbers}`;
-    return "lumber";
-  }
-  if (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=STONE and quarries=${state.buildings.quarries}`;
-    return "quarry";
-  }
-  if (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=HERBS and herb_gardens=${state.buildings.herbGardens}`;
-    return "gather_herbs";
-  }
-  if (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=COOK and kitchens=${state.buildings.kitchens}`;
-    return "cook";
-  }
-  if (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=SMITH and smithies=${state.buildings.smithies}`;
-    return "smith";
-  }
-  if (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=HERBALIST and clinics=${state.buildings.clinics}`;
-    return "heal";
-  }
-  if (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) > 0) {
-    worker.debug.lastIntentReason = `role=HAUL and warehouses=${state.buildings.warehouses}`;
-    return "haul";
-  }
-  // Phase 3 / M1b — low-priority fog exploration fallback. Only surfaces when
-  // no role-specific work is available AND the colony still has HIDDEN tiles
-  // to scout. Sits below every normal role intent, above "wander".
-  if (hasHiddenFrontier(state)) {
-    worker.debug.lastIntentReason = `no role-matching worksite (role=${worker.role}); fog frontier present`;
-    return "explore_fog";
-  }
-  worker.debug.lastIntentReason = `no role-matching worksite (role=${worker.role}); fog cleared`;
-  return "wander";
-}
+// v0.9.0-d — chooseWorkerIntent removed. The Job-utility scoring path
+// (src/simulation/npc/jobs/) is the single source of truth for worker
+// decisions. The legacy intent string ("eat" / "deliver" / "farm" / etc.)
+// is now derived from `worker.currentJob?.id` and surfaces via
+// `worker.debug.lastIntentReason` written by the JobScheduler dispatch
+// in update().
 
 function hasHiddenFrontier(state) {
   const vis = state?.fog?.visibility;
@@ -1799,36 +1716,13 @@ export class WorkerAISystem {
           continue;
         }
 
-        // v0.8.3 worker-vs-raider combat — GUARD pre-emption. GUARD-role
-        // workers actively engage predators within their aggro radius before
-        // any regular FSM intent (farm/haul/eat). When no target is in range
-        // they fall through to wander-style idle handling so they remain
-        // patrolling near home. Mirrors the `isStressWorker` patrol branch.
-        //
-        // v0.9.0-c — flag-gate. When `FEATURE_FLAGS.USE_JOB_LAYER` is ON,
-        // GUARD workers are routed through JobScheduler so JobGuardEngage
-        // (priority 100) preempts. When OFF (production default), the
-        // legacy short-circuit below runs unchanged.
-        if (worker.role === ROLE.GUARD && !FEATURE_FLAGS.USE_JOB_LAYER) {
-          // Always tick the worker's attack cooldown so it can land a hit
-          // once range closes; handleGuardCombat will reset it on hit.
-          worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
-          if (handleGuardCombat(worker, state, services, dt)) {
-            continue;
-          }
-          // No threat in range — keep guard near current position rather than
-          // running off to harvest. Idle desired velocity is fine; the
-          // counter-attack on the predator-attack site still fires if a
-          // predator wanders into reach.
-          worker.debug ??= {};
-          worker.debug.lastIntent = "guard_idle";
-          worker.debug.lastIntentReason = "GUARD on watch — no predator in aggro range";
-          worker.stateLabel = "Watch";
-          worker.blackboard ??= {};
-          worker.blackboard.intent = "guard_idle";
-          setIdleDesired(worker);
-          continue;
-        }
+        // v0.9.0-d — GUARD pre-emption short-circuit removed. GUARD-role
+        // workers route through JobScheduler; JobGuardEngage (priority 100)
+        // preempts every other Job when a predator/saboteur is in aggro
+        // range. When no target is in range, JobGuardEngage's score drops
+        // and the wander/eat/rest Jobs surface naturally. The handleGuard*
+        // delegate functions still exist (Jobs call them); phase 0.9.0-e
+        // dedupes.
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
       // v0.8.3 worker-vs-raider combat — tick worker attack cooldown so the
@@ -2060,158 +1954,24 @@ export class WorkerAISystem {
         : -1;
 
       const nowSec = Number(state.metrics.timeSec ?? 0);
-      const fsm = worker.blackboard?.fsm ?? null;
-      const currentState = String(fsm?.state ?? "");
 
-      // Task Commitment Protocol: once a worker enters a work cycle
-      // (seek_task/harvest/deliver/process/eat), it commits to finishing.
-      // Only survival interrupts (hunger < 0.12) break commitment.
-      const commitment = worker.blackboard.commitmentCycle;
-      const survivalInterrupt = (worker.hunger ?? 1) < 0.12;
-
-      // Clear commitment if worker left the work cycle
-      if (commitment && !TASK_LOCK_STATES.has(currentState)) {
-        worker.blackboard.commitmentCycle = null;
-      }
-
-      // v0.8.12 F2 — escape latch when role has no matching worksite. Pre-fix
-      // workers stranded in seek_task for 60+s when (e.g.) STONE worker exists
-      // but no quarries; commitmentCycle entered seek_task and any subsequent
-      // wander/idle from the planner was rewritten to commitment:hold.
-      // Escape: if worker has been in seek_task >3s and role has no worksite,
-      // clear the latch so the planner's wander pick is allowed through.
-      if (commitment && currentState === "seek_task") {
-        const noWorkSiteEscape = (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) <= 0)
-          || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0)
-          || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
-          || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
-          || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
-          || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
-          || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
-          || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
-        const stuckInSeekTask = Number(commitment.startSec ?? nowSec);
-        if (noWorkSiteEscape && (nowSec - stuckInSeekTask) > 3.0) {
-          worker.blackboard.commitmentCycle = null;
-          worker.blackboard.taskLock = { state: "", untilSec: -Infinity };
-        }
-      }
-
-      const inCommitment = worker.blackboard.commitmentCycle?.entered === true && !survivalInterrupt;
-
-      // Re-planning cooldown: prevent oscillation from planning every tick.
-      // Workers only re-plan if (a) survival interrupt, or (b) 0.5s since last plan.
-      const lastPlanSec = Number(worker.blackboard.lastPlanSec ?? -Infinity);
-      const planCooldownReady = nowSec - lastPlanSec >= 0.5;
-
-      // v0.8.0 Phase 7.B — deliverWithoutCarry guard. `handleDeliver` records
-      // the `deliverWithoutCarryCount` metric whenever the deliver action
-      // executes while either (a) carry is empty, or (b) no warehouse exists
-      // to deliver to. Both conditions mean "the worker is stuck in deliver
-      // but cannot make progress". The plan-cooldown (0.5s), FSM hold (~0.8s),
-      // and commitment-cycle latch can all keep the FSM pinned to "deliver"
-      // after the unload completes OR after the only warehouse is destroyed,
-      // producing silent no-op ticks. Force an immediate, high-priority
-      // re-plan with no hold so the worker exits deliver the tick the
-      // stuck-condition is detected.
-      const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
-      // v0.8.12 F12 — extend deliver-stuck detection to cover the
-      // "warehouse exists but is unreachable" case. Pre-fix: a HAUL worker
-      // with carry >0 whose warehouse becomes path-blocked would sit in
-      // Deliver indefinitely (rule:deliver re-fires each replan but
-      // setTargetAndPath keeps failing). lastSuccessfulPathSec from F6 lets
-      // us detect "no fresh path acquired in the last 2s while in deliver".
-      // When this fires we ALSO clear commitmentCycle + taskLock below so
-      // the planner can pick wander next tick.
-      const lastPathSec = Number(
-        worker.blackboard?.lastSuccessfulPathSec ?? state.metrics.timeSec,
+      // v0.9.0-d — display-layer FSM tracking. Per the new contract, "Jobs
+      // determine action, FSM is display-layer." We still call the planner
+      // + transitionEntityState so the FSM history (`blackboard.fsm.state`,
+      // `lastStateNode`) keeps populating for telemetry / EntityFocusPanel /
+      // existing tests. The result does NOT gate worker behaviour — Jobs do.
+      // The legacy commitmentCycle / TASK_LOCK_STATES / survivalInterrupt /
+      // deliverStuckReplan arithmetic + the v0.8.12 F2/F12 escape branches
+      // were retired here in v0.9.0-d (~250 LOC); the JobScheduler's
+      // sticky-bonus hysteresis subsumes them.
+      const plan = planEntityDesiredState(worker, state, {}, services);
+      worker.blackboard.lastPlanSec = nowSec;
+      const stateNode = transitionEntityState(
+        worker, "workers", plan.desiredState, nowSec, plan.reason,
       );
-      const stuckTime = Number(state.metrics.timeSec ?? 0) - lastPathSec;
-      const stuckInDeliver = currentState === "deliver"
-        && carryNow > 0
-        && hasWarehouse
-        && stuckTime > 2.0;
-      const deliverStuckReplan = (currentState === "deliver"
-        && (carryNow <= 0 || !hasWarehouse))
-        || stuckInDeliver;
-
-      let plan;
-      if (!planCooldownReady && !survivalInterrupt && !deliverStuckReplan && currentState) {
-        plan = { desiredState: currentState, reason: "cooldown:hold" };
-      } else {
-        // v0.8.13 A2 — services threaded so StatePlanner / StateFeasibility
-        // can query services.reachability for fresh warehouse reachability
-        // rather than reading the stale debug.reachableFood snapshot.
-        plan = planEntityDesiredState(worker, state, {}, services);
-        worker.blackboard.lastPlanSec = nowSec;
-
-        if (deliverStuckReplan) {
-          // Break the commitment cycle so the planner's non-deliver choice
-          // (seek_task / idle / seek_food / etc.) is allowed through.
-          worker.blackboard.commitmentCycle = null;
-          // v0.8.12 F12 — also reset taskLock when stuck-in-deliver fires so
-          // the planner is free to pick wander on the next tick (the worker
-          // can then re-approach from a different tile and break the
-          // path-fail loop).
-          if (stuckInDeliver) {
-            worker.blackboard.taskLock = { state: "", untilSec: -Infinity };
-          }
-          if (plan.desiredState === "deliver") {
-            // Feasibility already blocks deliver when the preconditions fail,
-            // but if any upstream override still asks for it, reroute to a
-            // safe fallback state.
-            plan = { desiredState: "seek_task", reason: "deliver-stuck:seek_task" };
-          }
-        } else if (inCommitment) {
-          // Commitment allows forward progression within work cycle (harvest→deliver→seek_task)
-          // but blocks exits to non-work states (idle, wander)
-          if (!TASK_LOCK_STATES.has(plan.desiredState)) {
-            plan = { desiredState: currentState, reason: "commitment:hold" };
-          }
-        } else if (TASK_LOCK_STATES.has(plan.desiredState) && !worker.blackboard.commitmentCycle) {
-          worker.blackboard.commitmentCycle = { startSec: nowSec, entered: true };
-        }
-      }
-
-      const desiredState = plan.desiredState;
-      let stateNode = transitionEntityState(
-        worker,
-        "workers",
-        desiredState,
-        nowSec,
-        plan.reason,
-        // Force bypasses the FSM hold window so a stuck-deliver worker cannot
-        // stay pinned between the tick the stuck condition arises (unload
-        // finishes OR warehouse lost) and the hold expiry ~0.8s later.
-        deliverStuckReplan ? { force: true } : undefined,
-      );
-
-      // v0.8.0 Phase 7.B — defensive post-transition guard. Even after the
-      // plan-time guard above and the feasibility pass, multi-step state
-      // graph shortest-paths + hold windows can still land the FSM in
-      // "deliver" the same tick the stuck condition appears (e.g. warehouse
-      // just collapsed, or the force-transition from a non-deliver source
-      // routed through deliver). If `stateNode` is deliver but the action
-      // has no chance of progress (empty carry or no warehouse), immediately
-      // redirect to seek_task so `handleDeliver` never fires a no-op.
-      if (stateNode === "deliver" && (carryNow <= 0 || !hasWarehouse)) {
-        stateNode = transitionEntityState(
-          worker,
-          "workers",
-          "seek_task",
-          nowSec,
-          "deliver-stuck:post-guard",
-          { force: true },
-        );
-        worker.blackboard.commitmentCycle = null;
-      }
 
       worker.blackboard.intent = stateNode;
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
-      // v0.8.2 Round-7 (01e+02b) — emotional decision-context prefix stored on
-      // blackboard so EntityFocusPanel can render it alongside the intent reason.
-      if (worker.debug?.lastIntentReason) {
-        worker.blackboard.emotionalContext = addEmotionalPrefix(worker, state, worker.debug.lastIntentReason);
-      }
       worker.debug ??= {};
       const prevStateNode = worker.debug.lastStateNode;
       // Map role to intent name for eval tracking (eval expects "farm"/"lumber" etc., not FSM states)
@@ -2230,47 +1990,37 @@ export class WorkerAISystem {
         : stateNode;
       worker.debug.lastStateNode = stateNode;
 
-      // v0.9.0-a — Job layer dispatch (feature-flagged, default OFF). When
-      // FEATURE_FLAGS.USE_JOB_LAYER is true, JobScheduler.tickWorker drives
-      // the worker's per-tick action via the registered Jobs (currently
-      // only JobWander; phases b/c port the rest). Skips the legacy
-      // handle* dispatch below. Flag flips to true in phase 0.9.0-d.
-      if (FEATURE_FLAGS.USE_JOB_LAYER) {
-        this._jobScheduler ??= new JobScheduler();
-        this._jobScheduler.tickWorker(worker, state, services, dt);
-        updateIdleWithoutReasonMetric(worker, stateNode, dt, state);
-        continue;
+      // v0.9.0-d — Job layer is now the production path. JobScheduler.tickWorker
+      // re-scores all eligible Jobs every tick with sticky-bonus hysteresis on
+      // the incumbent (see JobScheduler.js). The Job's tick() method overwrites
+      // `worker.stateLabel`, `worker.blackboard.intent`, and drives the
+      // delegate handle* function. The FSM transition above is preserved for
+      // telemetry but no longer gates behaviour. Phase 0.9.0-e dedupes
+      // handle* functions where Jobs duplicate logic.
+      this._jobScheduler ??= new JobScheduler();
+      this._jobScheduler.tickWorker(worker, state, services, dt);
+
+      // Backward-compat: surface the chosen Job in the legacy debug field
+      // EntityFocusPanel reads. lastIntentReason is populated by individual
+      // handle* functions (GUARD branches still write it; harvest delegate
+      // does too).
+      const jobId = worker.currentJob?.id;
+      if (jobId) {
+        worker.debug.lastIntent = jobId;
       }
 
-      if (stateNode === "seek_food" || stateNode === "eat") {
-        handleEat(worker, state, services, dt);
-      } else if (stateNode === "deliver") {
-        handleDeliver(worker, state, services, dt);
-      } else if (stateNode === "process") {
-        handleProcess(worker, state, services, dt);
-      } else if (stateNode === "seek_task" || stateNode === "harvest") {
-        if (ROLE_PROCESS_CONFIG[worker.role]) {
-          handleProcess(worker, state, services, dt);
-        } else {
-          handleHarvest(worker, state, services, dt);
-        }
-      } else if (stateNode === "seek_rest" || stateNode === "rest") {
-        // Emit resting event on state transition
-        if (stateNode === "rest" && prevStateNode !== "rest") {
-          emitEvent(state, EVENT_TYPES.WORKER_RESTING, {
-            entityId: worker.id, entityName: worker.displayName ?? worker.id,
-            rest: worker.rest,
-          });
-        }
-        handleRest(worker, state, services, dt);
-      } else if (stateNode === "wander") {
-        handleWander(worker, state, services, dt);
-      } else if (stateNode === "seek_construct") {
-        handleSeekConstruct(worker, state, services, dt);
-      } else if (stateNode === "construct") {
-        handleConstruct(worker, state, services, dt);
-      } else {
-        setIdleDesired(worker);
+      // Emit resting event on state transition (legacy parity).
+      if (stateNode === "rest" && prevStateNode !== "rest") {
+        emitEvent(state, EVENT_TYPES.WORKER_RESTING, {
+          entityId: worker.id, entityName: worker.displayName ?? worker.id,
+          rest: worker.rest,
+        });
+      }
+
+      // v0.8.2 Round-7 (01e+02b) — emotional decision-context prefix stored on
+      // blackboard so EntityFocusPanel can render it alongside the intent reason.
+      if (worker.debug?.lastIntentReason) {
+        worker.blackboard.emotionalContext = addEmotionalPrefix(worker, state, worker.debug.lastIntentReason);
       }
 
       updateIdleWithoutReasonMetric(worker, stateNode, dt, state);

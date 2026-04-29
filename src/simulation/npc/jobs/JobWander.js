@@ -27,11 +27,16 @@ import {
   isPathStuck,
   setTargetAndPath,
 } from "../../navigation/Navigation.js";
-import { pickWanderNearby } from "../WorkerAISystem.js";
+import { _consumeEmergencyRationForJobLayer, pickWanderNearby } from "../WorkerAISystem.js";
 import { Job } from "./Job.js";
 
 const WANDER_REFRESH_BASE_SEC = 0.9;
 const WANDER_REFRESH_JITTER_SEC = 0.7;
+// v0.9.0-d — preserve v0.8.7 T0-2 carry-bypass into the Job layer. When a
+// worker ends up wandering with hunger < 0.18 and colony food > 0, draw
+// directly from the stockpile so the LR-C1 nutrition path keeps working
+// for walled-warehouse / no-worksite-role configurations (audit F3+F4).
+const EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 
 function isAtTargetTile(worker, state) {
   if (!worker.targetTile || !state?.grid) return false;
@@ -71,6 +76,16 @@ export class JobWander extends Job {
     worker.blackboard ??= {};
     worker.blackboard.intent = "wander";
     worker.stateLabel = "Wander";
+
+    // v0.9.0-d (audit F3+F4) — emergency-ration carry-bypass. Mirrors the
+    // legacy handleWander gate so a hungry worker with no reachable
+    // warehouse + no role-matching worksite still draws from the colony
+    // stockpile instead of starving in place.
+    const hungerNow = Number(worker.hunger ?? 0);
+    const colonyFood = Number(state?.resources?.food ?? 0);
+    if (hungerNow < EMERGENCY_RATION_HUNGER_THRESHOLD && colonyFood > 0) {
+      _consumeEmergencyRationForJobLayer(worker, state, dt, services);
+    }
 
     const blackboard = worker.blackboard;
     const nowSec = Number(state.metrics?.timeSec ?? 0);

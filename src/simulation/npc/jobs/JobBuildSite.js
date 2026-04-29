@@ -54,14 +54,18 @@ export class JobBuildSite extends Job {
     return { ix: site.ix, iz: site.iz, meta: { siteKey: `${site.ix},${site.iz}` } };
   }
 
-  score(worker, _state, _services, target) {
+  score(worker, state, _services, target) {
     if (!target) return 0;
     const role = String(worker?.role ?? "").toUpperCase();
     let base;
     if (role === ROLE.BUILDER) base = 0.85;
     else if (role === ROLE.HAUL || role === ROLE.FARM) base = 0.35;
     else base = 0;
-    const here = { ix: Number(worker?.x ?? 0), iz: Number(worker?.z ?? 0) };
+    // v0.9.0-d bugfix — convert worker world coords to tile coords before
+    // computing manhattan distance (see JobHarvestBase.score).
+    const here = state?.grid
+      ? worldToTile(Number(worker?.x ?? 0), Number(worker?.z ?? 0), state.grid)
+      : { ix: 0, iz: 0 };
     const distFactor = 1 / (1 + manhattan(target, here) * 0.05);
     return clamp(base * distFactor, 0, 0.95);
   }

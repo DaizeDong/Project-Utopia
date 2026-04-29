@@ -213,14 +213,11 @@ test("Worker in deliver state with carry=0 should NOT stay in deliver", () => {
     `Worker with empty carry should not stay in deliver, got: ${result.desiredState}`);
 });
 
-test("TASK_LOCK_STATES includes seek_task, harvest, deliver, eat, process", async () => {
-  const { TASK_LOCK_STATES } = await import("../src/simulation/npc/WorkerAISystem.js");
-  assert.ok(TASK_LOCK_STATES.has("seek_task"), "seek_task should be in TASK_LOCK_STATES");
-  assert.ok(TASK_LOCK_STATES.has("harvest"), "harvest should be in TASK_LOCK_STATES");
-  assert.ok(TASK_LOCK_STATES.has("deliver"), "deliver should be in TASK_LOCK_STATES");
-  assert.ok(TASK_LOCK_STATES.has("eat"), "eat should be in TASK_LOCK_STATES");
-  assert.ok(TASK_LOCK_STATES.has("process"), "process should be in TASK_LOCK_STATES");
-});
+// v0.9.0-d retirement note — TASK_LOCK_STATES was removed alongside the
+// commitmentCycle latch when JobScheduler hysteresis (sticky bonus + decay)
+// became the single source of stability. The replacement contract is asserted
+// by jobs-scheduler-hysteresis.test.js (existing) and by the deriver tests
+// in this file (incumbent retains under hysteresis, loses to alternatives).
 
 test("Worker in eat state with no food available does not stay in eat via hysteresis", () => {
   // If there's no food, hysteresis should not force eat state

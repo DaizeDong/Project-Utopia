@@ -221,13 +221,19 @@ test("v0.9.0-a #6: determinism — same seed + same world state → same Job pic
   assert.deepEqual(runA, runB, "deterministic pick across identical harness instances");
 });
 
-test("v0.9.0-a #7: feature flag OFF — WorkerAISystem.update does NOT instantiate JobScheduler", () => {
-  // Default flag value is false. Confirm WorkerAISystem leaves
-  // _jobScheduler untouched.
-  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, false, "default flag should be OFF");
+// v0.9.0-d retired tests #7/#8 — the flag default is now ON (production
+// path is the Job layer). The "flag OFF leaves _jobScheduler null" contract
+// no longer applies because there is no production-OFF path; both tests
+// were rewritten as a single positive assertion below.
+
+test("v0.9.0-d #7: feature flag ON (production default) — WorkerAISystem.update instantiates JobScheduler", () => {
+  // Default flag value is true. Confirm WorkerAISystem lazy-creates
+  // _jobScheduler on first update.
+  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, true, "default flag should be ON");
 
   const state = createInitialGameState({ seed: 1337, bareInitial: true });
   state.session.phase = "active";
+  state.resources.food = 9999; // remove hunger as a confound
   const services = createServices(state.world.mapSeed);
   const workerSystem = new WorkerAISystem();
   const boidsSystem = new BoidsSystem();
@@ -238,56 +244,46 @@ test("v0.9.0-a #7: feature flag OFF — WorkerAISystem.update does NOT instantia
   workerSystem.update(1 / 30, state, services);
   boidsSystem.update(1 / 30, state, services);
 
-  assert.equal(workerSystem._jobScheduler, null, "scheduler must remain null while flag is OFF");
+  assert.ok(workerSystem._jobScheduler, "scheduler instantiated on first update under flag ON");
 });
 
-test("v0.9.0-a #8: feature flag ON — JobScheduler invoked once per worker per tick", () => {
-  // Flip the flag, instrument JobScheduler.tickWorker, run one tick, count
-  // invocations vs active worker count.
-  _testSetFeatureFlag("USE_JOB_LAYER", true);
-  try {
-    const state = createInitialGameState({ seed: 1337, bareInitial: true });
-    state.session.phase = "active";
-    state.resources.food = 9999; // remove hunger as a confound
-    const services = createServices(state.world.mapSeed);
+test("v0.9.0-d #8: JobScheduler invoked once per non-stress worker per tick", () => {
+  // The flag is ON by default in v0.9.0-d. Stress workers still take the
+  // pre-Job-layer short-circuit; everyone else (including GUARDs) routes
+  // through the scheduler.
+  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, true, "default flag should be ON");
+  const state = createInitialGameState({ seed: 1337, bareInitial: true });
+  state.session.phase = "active";
+  state.resources.food = 9999; // remove hunger as a confound
+  const services = createServices(state.world.mapSeed);
 
-    const workerSystem = new WorkerAISystem();
-    const boidsSystem = new BoidsSystem();
+  const workerSystem = new WorkerAISystem();
+  const boidsSystem = new BoidsSystem();
 
-    // Run one tick. Stride is 1 at scale=1 + 12-worker bare-init so every
-    // worker is processed. The scheduler was lazily instantiated; spy on
-    // its tickWorker before the second tick to count invocations.
-    state.metrics.timeSec = (state.metrics.timeSec ?? 0) + 1 / 30;
-    state.metrics.tick = (state.metrics.tick ?? 0) + 1;
-    workerSystem.update(1 / 30, state, services);
-    boidsSystem.update(1 / 30, state, services);
-    assert.ok(workerSystem._jobScheduler, "scheduler instantiated under flag ON");
+  state.metrics.timeSec = (state.metrics.timeSec ?? 0) + 1 / 30;
+  state.metrics.tick = (state.metrics.tick ?? 0) + 1;
+  workerSystem.update(1 / 30, state, services);
+  boidsSystem.update(1 / 30, state, services);
+  assert.ok(workerSystem._jobScheduler, "scheduler instantiated under flag ON");
 
-    // Spy on the tickWorker method on the live scheduler instance and run
-    // a second tick. The active worker count is captured AFTER the
-    // _activeWorkers list rebuild inside update; we approximate by the
-    // pre-tick alive worker count which equals it for non-stress workers.
-    let invocations = 0;
-    const sched = workerSystem._jobScheduler;
-    const original = sched.tickWorker.bind(sched);
-    sched.tickWorker = (...args) => {
-      invocations += 1;
-      return original(...args);
-    };
+  let invocations = 0;
+  const sched = workerSystem._jobScheduler;
+  const original = sched.tickWorker.bind(sched);
+  sched.tickWorker = (...args) => {
+    invocations += 1;
+    return original(...args);
+  };
 
-    const expectedWorkers = aliveWorkers(state).filter((w) => !w.isStressWorker && w.role !== "GUARD").length;
+  const expectedWorkers = aliveWorkers(state).filter((w) => !w.isStressWorker).length;
 
-    state.metrics.timeSec += 1 / 30;
-    state.metrics.tick += 1;
-    workerSystem.update(1 / 30, state, services);
-    boidsSystem.update(1 / 30, state, services);
+  state.metrics.timeSec += 1 / 30;
+  state.metrics.tick += 1;
+  workerSystem.update(1 / 30, state, services);
+  boidsSystem.update(1 / 30, state, services);
 
-    assert.equal(
-      invocations,
-      expectedWorkers,
-      `expected one tickWorker call per non-stress non-GUARD worker; got ${invocations} for ${expectedWorkers}`,
-    );
-  } finally {
-    _testSetFeatureFlag("USE_JOB_LAYER", false);
-  }
+  assert.equal(
+    invocations,
+    expectedWorkers,
+    `expected one tickWorker call per non-stress worker; got ${invocations} for ${expectedWorkers}`,
+  );
 });

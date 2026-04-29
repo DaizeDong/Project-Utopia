@@ -1,6 +1,55 @@
 # Changelog
 
-## [Unreleased] - v0.9.0-c — JobDeliver/Build/Eat/Rest/Process×3/Guard (still feature-flagged)
+## [Unreleased] - v0.9.0-d — flag flipped ON; commitment latch retired
+
+Phase 4 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` default flipped to **true**. Legacy commitment-latch / `chooseWorkerIntent` / FSM-state dispatch retired from `WorkerAISystem.update`. Net delta: -507 LOC (838 deletions / 331 insertions across 18 files). Plus a structural Job-eligibility fix (this iteration, +64 LOC) that closes the scenario E regression by teaching `canTake` to declare ineligibility when every target tile is path-fail-blacklisted. **1654 tests pass / 0 fail / 3 skip. Trace harness E gate cleared (12 → 5).**
+
+### Removed (v0.9.0-d)
+
+- **`WorkerAISystem.TASK_LOCK_STATES`** — the hard-locked state Set retired; JobScheduler sticky-bonus hysteresis (sticky=0.25 fresh, decays to 0.05 floor over 30 s) replaces it.
+- **`WorkerAISystem.chooseWorkerIntent`** — the legacy intent resolver (~85 LOC) deleted. Job-utility scoring (canTake → findTarget → score) is the single source of truth.
+- **WorkerAISystem.update** legacy block (~210 LOC): the `commitmentCycle` / `survivalInterrupt` arithmetic, the v0.8.12 F2 escape branch (no-worksite latch escape), the v0.8.12 F12 deliverStuckReplan branch, and the entire FSM-state dispatch chain (`if (stateNode === "harvest") handleHarvest(...)` etc.).
+- **GUARD short-circuit** at the top of the per-worker loop — JobGuardEngage (priority 100) preempts via the scheduler.
+
+### Changed (v0.9.0-d)
+
+- **`src/config/constants.js`** — `_useJobLayer` default flipped `false → true`; comment updated to record the flip.
+- **`WorkerAISystem.update`** — per-worker loop simplified to: `planEntityDesiredState` (display-layer FSM only) → `transitionEntityState` (telemetry) → `JobScheduler.tickWorker` (production driver) → idle-without-reason metric. Stress-worker short-circuit kept (no Job equivalent yet; TODO phase e).
+- **`JobWander.tick`** — added the v0.8.7 T0-2 emergency-ration carry-bypass so a hungry worker without a reachable warehouse still draws from the colony stockpile.
+- **`JobEat.tick`** — when the chosen warehouse target is path-fail-blacklisted (`services.pathFailBlacklist`), fall through to `consumeEmergencyRation` instead of pinning the worker in seek_food.
+- **`JobDeliverWarehouse.canTake` / `findTarget`** — structural F12 fix: when every WAREHOUSE tile is on the worker's path-fail blacklist, `canTake` returns false (scheduler falls through to JobWander). `findTarget` also returns null when `chooseWorkerTarget`'s "best blacklisted" fallback would otherwise pin the Job to an unreachable target. `JobDeliverWarehouse.tick` proactively calls `markBlacklist` after 2 s of unsuccessful pathfinding (subsumes legacy F12 deliverStuckReplan).
+- **`JobEat.canTake` / `tick`** — symmetric blacklist guard: when every warehouse is blacklisted, the Job declares ineligible and the scheduler picks JobWander (which carries the same emergency-ration carry-bypass). When the chosen warehouse target is blacklisted at tick time and the colony stockpile has food, the tick falls through to `consumeEmergencyRation` instead of pinning in seek_food.
+- **`JobHarvestBase.canTake` / `findTarget`** — symmetric blacklist guard: when every harvest tile of the relevant type is blacklisted, `canTake` returns false; `findTarget` discards `chooseWorkerTarget`'s best-blacklisted fallback. Sticky targeting still reuses the worker's existing target if it's still a valid (non-blacklisted) harvest tile, preserving the legacy maybeRetarget semantics.
+- **`JobHarvestBase.score` / `JobProcessBase.score` / `JobBuildSite.score`** — bugfix: `worker.x/.z` are world coordinates; convert via `worldToTile` before computing manhattan distance to target. Pre-fix the score collapsed below the JobWander floor (0.05) for typical world-position values, causing a worker-on-farm score of 0.0165 → workers refused to harvest.
+
+### Tests reconciled (v0.9.0-d)
+
+- **Deleted** `test/task-commitment.test.js` — entire file asserted `commitmentCycle` / `TASK_LOCK_STATES` arithmetic that no longer exists.
+- **Deleted** `test/worker-task-lock.test.js` — same as above; the `TASK_LOCK_STATES` Set is gone.
+- **Deleted** `test/worker-intent.test.js` — entire file imported `chooseWorkerIntent` for priority assertions; rewritten as Job canTake checks in `phase1-resource-chains.test.js`.
+- **Deleted** `test/worker-ai-intent-because.test.js` — asserted `chooseWorkerIntent` populated `lastIntentReason`; the new flow populates the same field via the JobScheduler dispatch path.
+- **Rewrote** `test/phase1-resource-chains.test.js` worker-intent cases — replaced `chooseWorkerIntent(...) === "quarry"` with `new JobHarvestQuarry().canTake(...) === true` + parity checks; added an explicit JobWander-floor eligibility assertion.
+- **Rewrote** `test/fog-visibility.test.js` D-case — the legacy `chooseWorkerIntent → explore_fog` branch was deleted; documented the rewrite (no replacement assertion since the Job model handles fog wandering via JobWander + `pickWanderNearby`).
+- **Rewrote** `test/worker-ai-v0812.test.js` F12 case — was an FSM-state escape assertion; the new contract puts FSM in display-layer so the original assertion no longer applies. Documented the retirement; F2 and F3+F4 still pass.
+- **Rewrote** `test/worker-intent-stability.test.js` TASK_LOCK_STATES case — replaced with a v0.9.0-d retirement note; the rest of the file (deriveWorkerDesiredState hysteresis assertions) still validates.
+- **Rewrote** `test/job-layer-foundation.test.js` #7/#8 — flag default flipped ON, so "flag OFF leaves _jobScheduler null" no longer holds; rewrote as positive assertions.
+- **Rewrote** `test/job-extended.test.js` #14/#15 — GUARD short-circuit flag-gate cases became "GUARDs route through JobScheduler (default ON)" and "GUARD without hostiles falls through naturally".
+
+### Trace harness results (v0.9.0-d)
+
+| Scenario | v0.8.13 stuck>3s | v0.9.0-d stuck>3s | v0.8.13 plannerOut/min | v0.9.0-d plannerOut/min |
+|---|---|---|---|---|
+| A | 0 | 0 | 0 | 0 |
+| B | 5 | 0 | 364 | 11.58 |
+| C | 2 | 1 | 194 | 4.69 |
+| D | 4 | 1 | 230 | 8.33 |
+| **E** | **3** | **5** | **292** | **26.50** |
+| F | 13 | 1 | 39 | 0.51 |
+| G | 3 | 1 | 89 | 10.53 |
+
+Scenario E (warehouse walled mid-run, food=5 stockpile, hunger=0.3) was a 12-stuck regression in the initial flag-flip pass; the structural canTake fix in this iteration brings it to 5 — within the brief's <8 gate. The remaining stuck workers in E are eating from carry while their warehouse is unreachable; the metric counts "same-tile + no-path" but the workers are recovering hunger via the emergency-ration carry-bypass. plannerOutOfPicker dropped 800 → 26.50 across the same fix, confirming the architectural intent (Job declares its own eligibility based on concrete world state).
+
+
 
 Phase 3 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` stays default OFF; production behaviour is unchanged. This phase ports the remaining 8 worker handlers (Deliver/Build/Eat/Rest/Process×3/Guard) into Job classes that share the existing yield / construction / eat / rest / processing-cycle / combat semantics with the legacy `handle*` dispatch. `ALL_JOBS.length` is now 13.
 
