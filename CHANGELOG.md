@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - v0.8.10 Bare-Initial-Map
+
+Player now starts every new run on an empty map — zero pre-built warehouses, farms, lumber, quarries, herb gardens, kitchens, smithies, clinics, walls, gates, roads, or bridges. The colony must be built by hand to test "operational ability" (user mandate "全部手动建造"). Terrain features (water, ruins, mountains via elevation, biomes) and resource hints (FOREST/STONE/HERB nodeFlags + yieldPool on tileState) are preserved so the world's seed identity stays intact.
+
+### Added
+
+- **`stripInitialBuildings(grid)`** in `src/world/grid/Grid.js`. Iterates every tile and converts each player-buildable tile (WAREHOUSE / FARM / LUMBER / QUARRY / HERB_GARDEN / KITCHEN / SMITHY / CLINIC / WALL / GATE / ROAD / BRIDGE) back to GRASS via `setTile`, which routes through the `Erase-to-bare-tile` branch so `tileState.nodeFlags` and `tileState.yieldPool` survive. Returns the count of tiles stripped.
+- **`bareInitial: true` option** for `createInitialGameState({ templateId, seed, bareInitial: true })`. When set, runs `stripInitialBuildings(grid)` after `buildScenarioBundle` (which itself runs scenario stamping + the v0.8.6 bootstrap safety net) so the strip wipes everything those phases produced. Default is `bareInitial: false` for back-compat — existing tests that assert pre-stamped infrastructure (kitchen/smithy/clinic processing tests, scenario-family, balance-playability, mortality, worker-delivery, etc.) keep their old behavior. Game UI flips this flag in two places: `GameApp` constructor (initial state) and `GameApp.regenerateWorld` (regenerate world).
+- **2 new tests** in `test/terrain-diversity.test.js`:
+  1. "createInitialGameState produces zero buildings across templates" — sweeps all 6 templates × 3 seeds and asserts every player-buildable tile count is 0 plus `state.buildings.{farms,warehouses,lumbers,roads}` are 0.
+  2. "resource hints (FOREST/STONE/HERB nodeFlags) survive the strip" — verifies the Erase-to-bare-tile preservation contract: a bare temperate_plains map at seed=1337 still has ≥5 FOREST hints, ≥3 STONE hints, ≥1 HERB hint on tileState entries.
+
+### Changed
+
+- **Per-template validation `roadMinRatio` → 0** for `temperate_plains`, `rugged_highlands`, `fertile_riverlands`, `fortified_basin`. Generator still produces roads pre-strip, but with `bareInitial=true` they're wiped before `validateGeneratedGrid` runs. Setting the floor to 0 keeps validation honest in both modes (a bare grid has 0 roads, which is intentional).
+- **Default `farmMin` / `lumberMin` / `warehouseMin` in `validateGeneratedGrid` → 0**. Per-template `validation` objects can still override (e.g. a tutorial scenario could require `farmMin=1`); default is "no buildings required".
+- **Worker spawn fallback** in `createInitialEntitiesWithRandom` (`src/entities/EntityFactory.js`): worker spawn target list expanded from `[ROAD, FARM, LUMBER, WAREHOUSE]` to include `GRASS` first so workers spawn on plain grass under bare-init. `randomTileOfTypes` falls through to `randomPassableTile` when no listed types exist, so the change is defensive — bare maps spawn workers on GRASS via the fallback path; non-bare maps still prefer ROAD/FARM/LUMBER/WAREHOUSE.
+
+### Why the strip-after-generate approach
+
+Three scenario builders (`buildFrontierRepairScenario`, `buildGateChokepointScenario`, `buildIslandRelayScenario`) each stamp scenario-specific buildings via `setTileDirect`, plus `ensureBootstrapInfrastructure` re-adds a warehouse + farm safety net afterward, plus `applyQuirks` includes ROAD/FARM-stamping quirks (`ancientRoad`, `lostFarm`). Disabling each site individually would touch ≥4 functions across 2 files and risk missing a path. The post-stamping sweep is one place, handles every existing and future stamping path uniformly, and preserves `tileState` automatically via `setTile`'s existing `Erase-to-bare-tile` branch.
+
+### Test results
+
+1625 tests / 1622 pass / 0 fail / 3 pre-existing skips. `terrain-diversity.test.js` now has 10 tests (was 8) covering bare-init invariants and resource-hint preservation.
+
 ## [Unreleased] - v0.8.9 Terrain Rewrite
 
 Major terrain-generation rewrite addressing user feedback that "rivers all unbranched, all 6 templates feel like reskins". **Phase A (commit a78f764)**: zero pre-generated BRIDGE tiles, branching rivers with downhill flow + tributaries, per-seed macro features so different seeds on the same template look visibly different. **Phase B**: 7-biome classification driving resource-blob placement, 6 per-seed quirks (ruinsCluster / oasis / ancientRoad / marshPatch / stoneOutcrop / lostFarm), and tighter river branching. Net: 1623 tests / 1620 pass / 0 fail / 3 skip. `test/terrain-diversity.test.js` (8 tests) confirms ≥35% pairwise tile-diff and per-seed biome variance.

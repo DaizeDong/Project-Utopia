@@ -78,7 +78,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.08,
     roadDensity: 0.72,
     settlementDensity: 0.78,
-    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.35, passableMin: 0.60, passableMax: 0.96, roadMinRatio: 0.02 },
+    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.35, passableMin: 0.60, passableMax: 0.96, roadMinRatio: 0.0 },
   }),
   rugged_highlands: Object.freeze({
     waterLevel: 0.16,
@@ -103,7 +103,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.52,
     roadDensity: 0.44,
     settlementDensity: 0.42,
-    validation: { waterMinRatio: 0.04, waterMaxRatio: 0.50, passableMin: 0.10, passableMax: 0.94, roadMinRatio: 0.005 },
+    validation: { waterMinRatio: 0.04, waterMaxRatio: 0.50, passableMin: 0.10, passableMax: 0.94, roadMinRatio: 0.0 },
   }),
   archipelago_isles: Object.freeze({
     waterLevel: 0.22,
@@ -178,7 +178,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.1,
     roadDensity: 0.8,
     settlementDensity: 0.86,
-    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.45, passableMin: 0.45, passableMax: 0.96, roadMinRatio: 0.02 },
+    validation: { waterMinRatio: 0.03, waterMaxRatio: 0.45, passableMin: 0.45, passableMax: 0.96, roadMinRatio: 0.0 },
   }),
   fortified_basin: Object.freeze({
     waterLevel: 0.19,
@@ -203,7 +203,7 @@ const TEMPLATE_PROFILES = Object.freeze({
     mountainStrength: 0.22,
     roadDensity: 0.56,
     settlementDensity: 0.65,
-    validation: { waterMinRatio: 0.0, waterMaxRatio: 0.40, passableMin: 0.35, passableMax: 0.95, roadMinRatio: 0.015 },
+    validation: { waterMinRatio: 0.0, waterMaxRatio: 0.40, passableMin: 0.35, passableMax: 0.95, roadMinRatio: 0.0 },
   }),
 });
 
@@ -3549,6 +3549,38 @@ export function getTileState(grid, ix, iz) {
   return grid.tileState.get(toIndex(ix, iz, grid.width)) ?? null;
 }
 
+/**
+ * v0.8.10 — Strip every player-buildable tile back to GRASS for the bare-
+ * initial-map mode. Generation phases (roads, warehouses, farm/lumber/quarry/
+ * herb blobs, walls, gates), scenario stamping, and the bootstrap safety net
+ * all run normally; this sweep wipes their tile output afterward so the
+ * player starts from zero. tileState (FOREST/STONE/HERB nodeFlags +
+ * yieldPool) is preserved via setTile's Erase-to-bare-tile branch so the
+ * player can still see "this is a forest tile, build LUMBER here". WATER
+ * and RUINS stay untouched (terrain features, not buildings).
+ *
+ * @param {object} grid
+ * @returns {number} count of tiles converted to GRASS
+ */
+export function stripInitialBuildings(grid) {
+  if (!grid?.tiles) return 0;
+  const buildingTiles = new Set([
+    TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+    TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.WALL, TILE.GATE,
+    TILE.ROAD, TILE.BRIDGE,
+  ]);
+  let stripped = 0;
+  const { width, height } = grid;
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      if (buildingTiles.has(grid.tiles[ix + iz * width])) {
+        if (setTile(grid, ix, iz, TILE.GRASS)) stripped += 1;
+      }
+    }
+  }
+  return stripped;
+}
+
 export function setTileField(grid, ix, iz, field, value) {
   if (!inBounds(ix, iz, grid) || !grid.tileState) return;
   const idx = toIndex(ix, iz, grid.width);
@@ -3709,9 +3741,14 @@ export function validateGeneratedGrid(grid) {
   const passableMin = toNumberOr(validation.passableMin, 0.42);
   const passableMax = toNumberOr(validation.passableMax, 0.94);
 
-  const farmMin = toNumberOr(validation.farmMin, 2);
-  const lumberMin = toNumberOr(validation.lumberMin, 2);
-  const warehouseMin = toNumberOr(validation.warehouseMin, 1);
+  // v0.8.10 — bare-initial-map: building minimums default to 0 because the
+  // player builds everything by hand. Per-template validation can still
+  // override (e.g. a tutorial scenario could require farmMin=1) but default
+  // is "no buildings required". roadMinRatio is also implicitly tolerant
+  // because stripInitialBuildings wipes generated roads in the same pass.
+  const farmMin = toNumberOr(validation.farmMin, 0);
+  const lumberMin = toNumberOr(validation.lumberMin, 0);
+  const warehouseMin = toNumberOr(validation.warehouseMin, 0);
 
   if (unknownTiles > 0) issues.push(`unknown tiles present (${unknownTiles})`);
   if (roads < roadMin) issues.push(`road too low (${roads} < ${roadMin})`);

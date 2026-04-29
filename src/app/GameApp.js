@@ -146,7 +146,11 @@ function readOfflineAiFallbackFlag() {
 
 export class GameApp {
   constructor(canvas) {
-    this.state = createInitialGameState();
+    // v0.8.10 — game UI starts the player on a bare map (zero pre-built
+    // buildings/roads/walls). Headless tests / benchmarks / scenarios that
+    // need the legacy pre-stamped infrastructure call createInitialGameState
+    // without bareInitial (default false).
+    this.state = createInitialGameState({ bareInitial: true });
     this.#sanitizeControls(false);
     this.#applyDisplaySettingsToDom();
     // v0.8.2 Round0 01c-ui — Developer mode gate.
@@ -1369,7 +1373,7 @@ export class GameApp {
   }
 
   regenerateWorld({ templateId, seed, terrainTuning, width, height }, options = {}) {
-    const next = createInitialGameState({ templateId, seed, terrainTuning, width, height });
+    const next = createInitialGameState({ templateId, seed, terrainTuning, width, height, bareInitial: true });
     const currentWidth = Number(this.state.grid?.width ?? next.grid?.width ?? 96);
     const currentHeight = Number(this.state.grid?.height ?? next.grid?.height ?? 72);
     const chosenWidth = Number.isFinite(Number(width)) && Number(width) >= 24
