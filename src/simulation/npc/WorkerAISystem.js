@@ -1,5 +1,5 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { ANIMAL_KIND, EVENT_TYPE, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO, VISITOR_KIND } from "../../config/constants.js";
+import { ANIMAL_KIND, EVENT_TYPE, FEATURE_FLAGS, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO, VISITOR_KIND } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
@@ -20,6 +20,7 @@ import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
 import { recordProductionEntry } from "../economy/ResourceSystem.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
+import { JobScheduler } from "./jobs/JobScheduler.js";
 
 // v0.8.11 worker-AI bare-init responsiveness (Fix 5) — lower retarget
 // cooldown so a worker whose target was stolen mid-path resumes within
@@ -1382,7 +1383,10 @@ function neighborWorkerCount(map, ix, iz) {
   return n;
 }
 
-function pickWanderNearby(worker, state, services) {
+// v0.9.0-a — exported so the Job layer's JobWander can reuse the same
+// terminal-floor target-finder without a fork. WorkerAISystem.handleWander
+// continues to call this directly when FEATURE_FLAGS.USE_JOB_LAYER is OFF.
+export function pickWanderNearby(worker, state, services) {
   const grid = state.grid;
   if (!grid) return null;
   const random = () => services.rng.next();
@@ -1631,6 +1635,10 @@ export class WorkerAISystem {
     this.socialNeighborBuffer = [];
     this.relationshipNeighborBuffer = [];
     this.highLoadStride = 1;
+    // v0.9.0-a — JobScheduler is lazily allocated only when
+    // FEATURE_FLAGS.USE_JOB_LAYER fires for the first time. Production
+    // (flag OFF) never instantiates it; tests assert this.
+    this._jobScheduler = null;
   }
 
   update(dt, state, services) {
@@ -2153,6 +2161,18 @@ export class WorkerAISystem {
         ? (ROLE_TO_INTENT[worker.role] ?? stateNode)
         : stateNode;
       worker.debug.lastStateNode = stateNode;
+
+      // v0.9.0-a — Job layer dispatch (feature-flagged, default OFF). When
+      // FEATURE_FLAGS.USE_JOB_LAYER is true, JobScheduler.tickWorker drives
+      // the worker's per-tick action via the registered Jobs (currently
+      // only JobWander; phases b/c port the rest). Skips the legacy
+      // handle* dispatch below. Flag flips to true in phase 0.9.0-d.
+      if (FEATURE_FLAGS.USE_JOB_LAYER) {
+        this._jobScheduler ??= new JobScheduler();
+        this._jobScheduler.tickWorker(worker, state, services, dt);
+        updateIdleWithoutReasonMetric(worker, stateNode, dt, state);
+        continue;
+      }
 
       if (stateNode === "seek_food" || stateNode === "eat") {
         handleEat(worker, state, services, dt);

@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased] - v0.9.0-a — Job layer foundation (feature-flagged, default OFF)
+
+Phase 1 of 5 in the v0.9.0 Job-layer architectural rewrite per `/tmp/utopia-worker-architecture.md` audit items A1 (Job layer collapsing the triple-intent-picker) and A3 (utility hysteresis replacing the `commitmentCycle` global lock). This phase lands ONLY the foundation behind a feature flag default-OFF — `WorkerAISystem` dispatch is unchanged when the flag is false. Phases 0.9.0-b/c port the remaining handlers as Jobs (harvest / deliver / eat / process / construct / rest / guard); phase 0.9.0-d flips the flag and retires `commitmentCycle` + `TASK_LOCK_STATES` + `chooseWorkerIntent`; phase 0.9.0-e deletes the legacy dispatch entirely.
+
+### Added
+
+- **`src/simulation/npc/jobs/Job.js`** — base contract: `canTake` → `findTarget` → `score` → `tick` → `isComplete` → `onAbandon`. Each step is invoked only when the prior step returns truthy/non-null, so `score` can assume the target is concrete.
+- **`src/simulation/npc/jobs/JobRegistry.js`** — frozen `ALL_JOBS` array. Phase 0.9.0-a registers only `JobWander` (the terminal floor); future phases append.
+- **`src/simulation/npc/jobs/JobScheduler.js`** — per-worker dispatcher. Re-scores every eligible Job each tick (no global commitment latch). Hysteresis: incumbent gets `+stickyBonus`, starting at `STICKY_BONUS_FRESH = 0.25` and decaying linearly to `STICKY_BONUS_FLOOR = 0.05` over `STICKY_DECAY_SEC = 30` simulated seconds. Determinism: `worker.currentJob` retained across ticks → identical seed produces identical Job picks given identical world state. Tracks `pickCount / switchCount / abandonCount` for telemetry. Constructor accepts an alternate jobs array so tests can inject stubs.
+- **`src/simulation/npc/jobs/JobWander.js`** — terminal-floor Job. `canTake` always passes, `score` always returns 0.05, `findTarget` reuses the v0.8.11 `pickWanderNearby` (now exported from `WorkerAISystem.js`) with `randomPassableTile` fallback. `tick()` reproduces the minimum "follow path / pick a wander destination / refresh on cadence" loop directly — `handleWander` was deemed too coupled to legacy dispatch (autoBuild attempt, emergency-ration gate, fog-frontier retarget, `nextWanderRefreshSec` blackboard cadence) to extract cleanly without touching the existing handler. Wander destination distribution is identical because both paths run the same `pickWanderNearby`.
+- **`test/job-layer-foundation.test.js`** (8 cases): scheduler picks wander when alone / `worker.currentJob` populated / hysteresis retains fresh incumbent / hysteresis decay flips after 30 s / `onAbandon` fires on switch / determinism across harness instances / flag-OFF leaves `_jobScheduler` null / flag-ON invokes `tickWorker` once per worker per tick.
+
+### Changed
+
+- **`src/config/constants.js`** — adds `FEATURE_FLAGS` (frozen with a getter so the surface is immutable) and a test-only `_testSetFeatureFlag(name, value)` setter. `FEATURE_FLAGS.USE_JOB_LAYER` defaults to `false`. Production reads the flag exactly like a frozen field; tests flip and restore in `try/finally` to keep isolation.
+- **`src/simulation/npc/WorkerAISystem.js`** — adds `FEATURE_FLAGS` import and `JobScheduler` import. New flag-gated dispatch: when `FEATURE_FLAGS.USE_JOB_LAYER` is true, `_jobScheduler` is lazy-instantiated and `tickWorker` is called per active worker, then the legacy `if/else if (handle*)` chain is skipped via `continue`. When the flag is false (default), the legacy dispatch runs unchanged. `pickWanderNearby` was a function declaration → now `export function pickWanderNearby` so `JobWander.findTarget` can reuse the same picker without forking (anti-cluster behaviour stays in one place).
+- **`src/entities/EntityFactory.js`** — adds `currentJob: null` on the worker template. Populated by `JobScheduler` only when the flag is enabled; null in production.
+
+### Constraints honoured
+
+- **Zero behaviour change in this commit.** Flag default OFF; legacy dispatch path runs unchanged. No handler in `WorkerAISystem.js` (`handleHarvest`/`handleEat`/`handleDeliver`/`handleProcess`/`handleConstruct`/`handleRest`/`handleGuardCombat`) is modified.
+- `commitmentCycle`, `TASK_LOCK_STATES`, `chooseWorkerIntent`, `StatePlanner.deriveWorkerDesiredState`, `chooseWorkerTarget` untouched (phase 0.9.0-d territory).
+- No new BALANCE.* knobs. Hysteresis constants live inline in `JobScheduler.js`.
+- Trace harness NOT re-run this phase — there is no behaviour change to validate. Phase 0.9.0-d (flag-flip) re-runs A-G scenarios.
+
+### Test results
+
+1651 tests / 1648 pass / 0 fail / 3 pre-existing skips. v0.8.13 baseline was 1643/1640 — exactly +8 (the new file) with zero regressions.
+
+### Deferred to phases 0.9.0-b through 0.9.0-e
+
+- **0.9.0-b** — port `JobHarvest`, `JobDeliver`, `JobEat`, `JobProcess` (the resource pipeline). Each is a thin wrapper around the existing `handle*` helper with a utility scorer derived from the StatePlanner rule set.
+- **0.9.0-c** — port `JobConstruct`, `JobSeekConstruct`, `JobRest`, `JobGuardCombat`. Plus the bare-init "default Jobs" from audit A5: `JobHaulLoose`, `JobGatherFreeNode`, `JobScoutFog`.
+- **0.9.0-d** — flip `FEATURE_FLAGS.USE_JOB_LAYER` to true; trace harness re-runs A-G scenarios; retire `commitmentCycle` + `TASK_LOCK_STATES` + `chooseWorkerIntent`.
+- **0.9.0-e** — delete legacy dispatch and the `handle*` helpers now subsumed by Jobs; collapse the `if/else if` chain in `WorkerAISystem.update`.
+
 ## [Unreleased] - v0.8.13 — ReachabilityCache + PathFailBlacklist services (architectural prep)
 
 Architectural prep for the v0.9.0 Job-layer rewrite. Two pure-additive services (audit items A2 + A6 from `/tmp/utopia-worker-architecture.md`) that A1+A3 will consume next session; no behaviour change to the intent-pickers or commitment latch in this commit. The bigger A1+A3 rewrite (~2500 LOC across 25+ files) is deferred to v0.9.0 in a separate session.
