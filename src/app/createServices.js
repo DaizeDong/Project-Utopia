@@ -2,6 +2,8 @@ import { PathCache } from "../simulation/navigation/PathCache.js";
 import { PathWorkerPool } from "../simulation/navigation/PathWorkerPool.js";
 import { LLMClient } from "../simulation/ai/llm/LLMClient.js";
 import { buildEnvironmentFallback, buildPolicyFallback } from "../simulation/ai/llm/PromptBuilder.js";
+import { ReachabilityCache } from "../simulation/services/ReachabilityCache.js";
+import { PathFailBlacklist } from "../simulation/services/PathFailBlacklist.js";
 import { SeededRng, deriveRngSeed } from "./rng.js";
 import { createSnapshotService } from "./snapshotService.js";
 import { createReplayService } from "./replayService.js";
@@ -114,6 +116,15 @@ export function createServices(seed = 1337, options = {}) {
       skipped: 0,
       maxMs: pathBudgetMaxMs,
     },
+    // v0.8.13 — A2 audit. Per-(workerTile, tileTypes) reachability cache
+    // keyed on grid.version. Replaces the 2.5 s TTL previously baked into
+    // MortalitySystem.hasReachableNutritionSource so AI / mortality /
+    // feasibility consumers all read the same fresh result.
+    reachability: new ReachabilityCache(),
+    // v0.8.13 — A6 audit. (workerId, ix, iz, tileType) blacklist with 5 s
+    // TTL. chooseWorkerTarget skips blacklisted candidates so a worker
+    // doesn't infinitely re-pick the same tile A* just refused.
+    pathFailBlacklist: new PathFailBlacklist(),
     llmClient,
     fallbackEnvironment: buildEnvironmentFallback,
     fallbackPolicies: buildPolicyFallback,

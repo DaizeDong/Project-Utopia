@@ -209,7 +209,7 @@ function readOccupancyCount(map, key, worker) {
   return Math.max(0, count);
 }
 
-function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null) {
+function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null, services = null) {
   const targetContext = state._workerTargetContext ?? buildWorkerTargetContext(state);
   const candidates = getWorkerTargetEntries(state, targetTileTypes, targetContext);
   if (candidates.length <= 0) return null;
@@ -220,7 +220,13 @@ function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = nul
   const fallbackOccupancy = occupancyCache ? null : buildOccupancyMap(state, worker.id, worker.role);
   const occupancy = occupancyCache?.all ?? fallbackOccupancy?.all;
   const sameRoleOccupancy = occupancyCache?.byRole?.get(worker.role) ?? fallbackOccupancy?.sameRole;
+  // v0.8.13 A6 — skip blacklisted candidates. Fall back to best-blacklisted
+  // if every candidate is blacklisted (don't return null — that would
+  // strand the worker even longer than retrying a blacklisted tile).
+  const blacklist = services?.pathFailBlacklist;
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
   let best = null;
+  let bestBlacklisted = null;
 
   for (const entry of candidates) {
     const candidate = entry.tile;
@@ -281,27 +287,42 @@ function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = nul
       score -= 2.0;
     }
 
-    if (!best || score > best.score) {
-      best = {
-        tile: candidate,
-        score,
-        meta: {
-          frontierAffinity,
-          depotAffinity,
-          warehouseLoad,
-          ecologyPressure,
-        },
-      };
+    // v0.8.13 A6 — blacklisted tiles drop into the fallback bucket. They are
+    // never preferred over a non-blacklisted candidate, but the worker can
+    // still pick the best-blacklisted if every other candidate is blacklisted
+    // (audit recommendation: skip with last-resort fallback to avoid stranding).
+    const isBlacklisted = blacklist
+      ? blacklist.isBlacklisted(worker.id, candidate.ix, candidate.iz, tileType, nowSec)
+      : false;
+
+    const candidateEntry = {
+      tile: candidate,
+      score,
+      meta: {
+        frontierAffinity,
+        depotAffinity,
+        warehouseLoad,
+        ecologyPressure,
+      },
+    };
+
+    if (isBlacklisted) {
+      if (!bestBlacklisted || score > bestBlacklisted.score) bestBlacklisted = candidateEntry;
+    } else if (!best || score > best.score) {
+      best = candidateEntry;
     }
   }
 
+  // Prefer non-blacklisted; fall back to best-blacklisted only when every
+  // candidate has been recently rejected by A*.
+  const chosen = best ?? bestBlacklisted;
   worker.debug ??= {};
-  worker.debug.policyTargetScore = Number(best?.score ?? 0);
-  worker.debug.policyTargetFrontier = Number(best?.meta?.frontierAffinity ?? 0);
-  worker.debug.policyTargetDepot = Number(best?.meta?.depotAffinity ?? 0);
-  worker.debug.policyTargetWarehouseLoad = Number(best?.meta?.warehouseLoad ?? 0);
-  worker.debug.policyTargetEcology = Number(best?.meta?.ecologyPressure ?? 0);
-  return best?.tile ?? null;
+  worker.debug.policyTargetScore = Number(chosen?.score ?? 0);
+  worker.debug.policyTargetFrontier = Number(chosen?.meta?.frontierAffinity ?? 0);
+  worker.debug.policyTargetDepot = Number(chosen?.meta?.depotAffinity ?? 0);
+  worker.debug.policyTargetWarehouseLoad = Number(chosen?.meta?.warehouseLoad ?? 0);
+  worker.debug.policyTargetEcology = Number(chosen?.meta?.ecologyPressure ?? 0);
+  return chosen?.tile ?? null;
 }
 
 function getWorkerHungerSeekThreshold(worker) {
@@ -661,7 +682,7 @@ function getFarmEcologyYieldMultiplier(worker, state) {
   };
 }
 
-function consumeEmergencyRation(worker, state, dt, nowSec) {
+function consumeEmergencyRation(worker, state, dt, nowSec, services = null) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   const hungerNow = Number(worker.hunger ?? 0);
   if (hungerNow >= WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD) return;
@@ -681,8 +702,22 @@ function consumeEmergencyRation(worker, state, dt, nowSec) {
   //   - no warehouse → emergency carry-eat permitted (LR-C1 path)
   // Net effect: workers with carry food who can route to a warehouse will
   // deposit + eat from stockpile rather than munching carry directly.
+  // v0.8.13 A2: read fresh reachability from services.reachability rather
+  // than the stale debug.reachableFood snapshot.
   const hasWarehouse = (state.buildings?.warehouses ?? 0) > 0;
-  if (hasWarehouse && worker.debug?.reachableFood !== false) return;
+  if (hasWarehouse) {
+    let reachable;
+    const cache = services?.reachability;
+    if (cache && state.grid) {
+      const fromTile = worldToTile(worker.x, worker.z, state.grid);
+      let result = cache.isReachable(fromTile, [TILE.WAREHOUSE], state, services);
+      if (!result) result = cache.probeAndCache(fromTile, [TILE.WAREHOUSE], state, services, worker);
+      reachable = result ? result.reachable : worker.debug?.reachableFood;
+    } else {
+      reachable = worker.debug?.reachableFood;
+    }
+    if (reachable !== false) return;
+  }
   worker.blackboard ??= {};
   const nextAllowed = Number(worker.blackboard.emergencyRationCooldownSec ?? -Infinity);
   if (nowSec < nextAllowed) return;
@@ -734,7 +769,7 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
     const reservation = state._jobReservation;
     if (reservation) reservation.releaseAll(worker.id);
     const target = getPendingPathTarget(worker)
-      ?? chooseWorkerTarget(worker, state, targetTileTypes, state._workerTargetOccupancy)
+      ?? chooseWorkerTarget(worker, state, targetTileTypes, state._workerTargetOccupancy, services)
       ?? findNearestTileOfTypes(state.grid, worker, targetTileTypes);
     if (!target || !setTargetAndPath(worker, target, state, services)) {
       return false;
@@ -911,7 +946,7 @@ function handleEat(worker, state, services, dt) {
   }
 
   setIdleDesired(worker);
-  consumeEmergencyRation(worker, state, dt, Number(state.metrics.timeSec ?? 0));
+  consumeEmergencyRation(worker, state, dt, Number(state.metrics.timeSec ?? 0), services);
 }
 
 export function handleDeliver(worker, state, services, dt) {
@@ -1395,7 +1430,7 @@ function handleWander(worker, state, services, dt) {
   const hungerNow = Number(worker.hunger ?? 0);
   const colonyFood = Number(state.resources?.food ?? 0);
   if (hungerNow < WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD && colonyFood > 0) {
-    consumeEmergencyRation(worker, state, dt, Number(state.metrics?.timeSec ?? 0));
+    consumeEmergencyRation(worker, state, dt, Number(state.metrics?.timeSec ?? 0), services);
   }
 
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
@@ -1602,6 +1637,15 @@ export class WorkerAISystem {
     state._jobReservation ??= new JobReservation();
     const reservation = state._jobReservation;
     reservation.cleanupStale(state.metrics.timeSec);
+
+    // v0.8.13 A6 — purge expired blacklist entries once per tick before
+    // any worker queries it. TTL is 5 s simulated time.
+    if (services?.pathFailBlacklist?.purgeExpired) {
+      services.pathFailBlacklist.purgeExpired(Number(state.metrics?.timeSec ?? 0));
+    }
+    // v0.8.13 A2 — reset the per-tick reachability probe budget. Default 8;
+    // ReachabilityCache.probeAndCache decrements this and skips when ≤ 0.
+    state._reachabilityProbeBudget = 8;
 
     state._roadNetwork ??= new RoadNetwork();
     state._roadNetwork.rebuild(state.grid);
@@ -2018,7 +2062,10 @@ export class WorkerAISystem {
       if (!planCooldownReady && !survivalInterrupt && !deliverStuckReplan && currentState) {
         plan = { desiredState: currentState, reason: "cooldown:hold" };
       } else {
-        plan = planEntityDesiredState(worker, state);
+        // v0.8.13 A2 — services threaded so StatePlanner / StateFeasibility
+        // can query services.reachability for fresh warehouse reachability
+        // rather than reading the stale debug.reachableFood snapshot.
+        plan = planEntityDesiredState(worker, state, {}, services);
         worker.blackboard.lastPlanSec = nowSec;
 
         if (deliverStuckReplan) {

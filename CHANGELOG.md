@@ -1,5 +1,44 @@
 # Changelog
 
+## [Unreleased] - v0.8.13 — ReachabilityCache + PathFailBlacklist services (architectural prep)
+
+Architectural prep for the v0.9.0 Job-layer rewrite. Two pure-additive services (audit items A2 + A6 from `/tmp/utopia-worker-architecture.md`) that A1+A3 will consume next session; no behaviour change to the intent-pickers or commitment latch in this commit. The bigger A1+A3 rewrite (~2500 LOC across 25+ files) is deferred to v0.9.0 in a separate session.
+
+### Added
+
+- **`src/simulation/services/ReachabilityCache.js`** (A2) — per-(workerTile, tileTypes) reachability cache keyed on `state.grid.version`. Exposes `isReachable(workerTile, tileTypes, state, services)` (returns cached entry or `null` when not yet probed) + `probeAndCache(...)` (runs faction-aware A* and caches). Honours `state._reachabilityProbeBudget` (default 8/tick); skips probe when exhausted. Auto-invalidates when `grid.version` changes. Replaces the 2.5 s TTL inside `MortalitySystem.hasReachableNutritionSource` so AI / mortality / feasibility consumers all read the same fresh result. Audit measured 50-67 % staleness in scenarios D/E/F; trace post-A2 reads 0.0 %.
+- **`src/simulation/services/PathFailBlacklist.js`** (A6) — `(workerId, ix, iz, tileType)` tuples marked on A* failure with 5 s TTL. `chooseWorkerTarget` skips blacklisted candidates (with last-resort fall-back to "best blacklisted" so workers never strand). `forgetWorker(id)` is called on death/despawn so a recycled id doesn't inherit stale blacklists. Closes the path-fail loops the audit identified in scenarios E/F.
+- **`test/reachability-cache.test.js`** (6 cases): cache hit / gridVersion invalidation / probe-budget exhaustion / two-consumer share / same-tile fast-path / missing target type.
+- **`test/path-fail-blacklist.test.js`** (6 cases): mark+isBlacklisted within TTL / TTL expiry / forgetWorker / purgeExpired / chooseWorkerTarget integration / stats.
+
+### Changed
+
+- **`src/app/createServices.js`** — wires `services.reachability` (`ReachabilityCache`) and `services.pathFailBlacklist` (`PathFailBlacklist`).
+- **`src/simulation/lifecycle/MortalitySystem.js`** — `hasReachableNutritionSource` rewritten to query `services.reachability`; carry-fallback semantics preserved; the 2.5 s `lastFoodReachCheckSec` TTL is gone. Inspector telemetry (`worker.debug.reachableFood`/`.nutritionSourceType`) still populated as a per-tick snapshot — UI reads them but behaviour decisions read fresh from the cache. `releaseDeathSideEffects` now takes `services` and calls `pathFailBlacklist.forgetWorker(id)` on worker death. Dead `resolveReachability` helper + the corresponding `aStar` / `getEntityFaction` imports removed.
+- **`src/simulation/npc/state/StatePlanner.js`** — `deriveWorkerDesiredState` reads warehouse reachability via `services.reachability` (was the stale `worker.debug.reachableFood` snapshot). `planEntityDesiredState` now accepts `services` and threads it through to feasibility checks.
+- **`src/simulation/npc/state/StateFeasibility.js`** — the v0.8.6 Tier 2 F3 gate (`seek_food`/`eat`) reads fresh reachability from `services.reachability` rather than the snapshot. Same gate semantics; only blocks when `warehouses>0` AND probe says false.
+- **`src/simulation/npc/WorkerAISystem.js`** — `consumeEmergencyRation` reads fresh reachability via `services.reachability`. `chooseWorkerTarget` accepts `services` and skips blacklisted candidates (with last-resort fallback). `WorkerAISystem.update` calls `services.pathFailBlacklist.purgeExpired(timeSec)` once per tick and resets `state._reachabilityProbeBudget = 8`.
+- **`src/simulation/navigation/Navigation.js`** — both A* failure sites (worker-pool path + inline path) now call `services.pathFailBlacklist.mark(...)` for the failed `(workerId, ix, iz, tileType)` tuple.
+
+### Constraints honoured
+
+- StatePlanner gate logic (v0.8.12 F3+F4+F12) preserved — only the way it reads reachability changed.
+- `commitmentCycle`, `TASK_LOCK_STATES`, `chooseWorkerIntent` not touched (v0.9.0 territory).
+- No new BALANCE.* knobs.
+- `worker.debug.reachableFood` writes preserved — UI reads them.
+
+### Trace results vs v0.8.12 baseline
+
+Reach-stale% across scenarios A-G: A 9.1→0.0, B 9.1→0.0, C 7.3→0.0, D 61.3→0.0, E 67.3→0.0, F 52.4→0.0, G 3.0→0.0. Stuck>3s: E 8→3 (improvement), F 13→13 (no regression), G 2→3 (+1 of statistical noise in 1800 ticks of 30-worker scenario). Path-fail loops: E 11→9, others unchanged. Planner-out-of-picker/min: E 619→292 (halved), others unchanged. Headline A2 metric (reach-stale<5 % in D/E/F) and stuck>3s no-regression goal both hit.
+
+### Test results
+
+1643 tests / 1640 pass / 0 fail / 3 pre-existing skips. v0.8.12 baseline was 1631/1628 — exactly +12 (the two new test files) with zero regressions.
+
+### Deferred to v0.9.0
+
+A1 (Job-layer rewrite — collapse `chooseWorkerIntent` + `StatePlanner.deriveWorkerDesiredState` + `chooseWorkerTarget` into a unified RimWorld-style `JobGiver` pattern), A3 (utility hysteresis replacing `commitmentCycle`). L-cost, ~2500 LOC across 25+ files; needs its own session per audit scope estimate.
+
 ## [Unreleased] - v0.8.12 — worker AI deeper fixes (latch escape + reachability semantics)
 
 Post-v0.8.11 runtime trace audit (`/tmp/utopia-worker-findings.md`) surfaced 7 deeper issues in the worker AI pipeline — pre-existing in the StatePlanner / commitment / reachability layer, unrelated to the v0.8.11 bare-init fixes. Six surgical fixes (F1–F6, F12) address the user-visible "原地不动、一群聚在一起徘徊...饿死" complaint at the layer below v0.8.11. No FSM/StatePlanner/intent-picker redesign; no new BALANCE knobs.

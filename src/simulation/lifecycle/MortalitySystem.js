@@ -1,13 +1,9 @@
 import { ANIMAL_KIND, ENTITY_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { BALANCE } from "../../config/balance.js";
 import { pushWarning } from "../../app/warnings.js";
-import { aStar } from "../navigation/AStar.js";
-// v0.8.4 strategic walls + GATE (Agent C). Faction-aware reachability —
-// MortalitySystem checks nutrition reachability for hungry colony entities;
-// keeping this faction-aware ensures the cache key matches what
-// setTargetAndPath would write/read.
-import { getEntityFaction } from "../navigation/Faction.js";
-import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
+// v0.8.13 A2 — direct A* / Faction imports were removed alongside
+// resolveReachability. The faction-aware probe lives in services.reachability.
+import { worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { recordResourceFlow } from "../economy/ResourceSystem.js";
 import { audioSystem } from "../../audio/AudioSystem.js";
@@ -335,9 +331,14 @@ function markDeath(entity, reason, nowSec, context = null) {
 // refunded (visitors don't haul colony stockpile resources, animals don't
 // have `carry`); JobReservation is only owned by workers but `releaseAll`
 // is a no-op for unknown ids so it's safe to call uniformly.
-function releaseDeathSideEffects(state, entity) {
+function releaseDeathSideEffects(state, entity, services = null) {
   if (state?._jobReservation && typeof state._jobReservation.releaseAll === "function") {
     state._jobReservation.releaseAll(entity.id);
+  }
+  // v0.8.13 A6 — drop the worker's path-fail blacklist so a recycled id
+  // doesn't inherit stale entries.
+  if (entity?.type === ENTITY_TYPE.WORKER && services?.pathFailBlacklist?.forgetWorker) {
+    services.pathFailBlacklist.forgetWorker(entity.id);
   }
   if (entity?.type !== ENTITY_TYPE.WORKER) return;
   const carry = entity.carry;
@@ -428,86 +429,56 @@ function recomputeCombatMetrics(state) {
   };
 }
 
-function resolveReachability(entity, state, services, fromTile, target, sourceType) {
-  if (!target) return { reachable: false, sourceType: "none", pathLength: 0 };
-  if (fromTile.ix === target.ix && fromTile.iz === target.iz) {
-    return { reachable: true, sourceType, pathLength: 0 };
-  }
-
-  // v0.8.4 strategic walls + GATE (Agent C). Faction-aware reachability —
-  // matches what setTargetAndPath would actually return for this entity.
-  const faction = getEntityFaction(entity);
-  let path = services?.pathCache?.get?.(state.grid.version, fromTile, target, 0, faction) ?? null;
-  if (!path) {
-    path = aStar(state.grid, fromTile, target, state.weather.moveCostMultiplier, {
-      tiles: state.weather?.hazardTileSet ?? null,
-      penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
-    }, { faction });
-    if (path) {
-      services?.pathCache?.set?.(state.grid.version, fromTile, target, 0, faction, path);
-    }
-  }
-
-  const reachable = Array.isArray(path) && path.length > 0;
-  return {
-    reachable,
-    sourceType: reachable ? sourceType : "none",
-    pathLength: reachable ? Number(path.length ?? 0) : 0,
-  };
-}
+// v0.8.13 A2 — `resolveReachability` removed. All reachability probes now
+// flow through `services.reachability` (ReachabilityCache). The cache runs
+// a faction-aware A* internally, so MortalitySystem no longer needs a
+// direct aStar import.
 
 function hasReachableNutritionSource(entity, state, services, nowSec) {
+  // Carry-fallback semantics preserved: a worker with carry food is treated
+  // as having an immediate nutrition source regardless of grid topology. This
+  // is not a path probe — it's a fast-path that beats every cache.
   if (Number(entity.carry?.food ?? 0) > 0) {
     return { reachable: true, sourceType: "carry", pathLength: 0 };
   }
 
-  const bb = entity.blackboard ?? (entity.blackboard = {});
-  const deathCtx = bb.deathContext ?? (bb.deathContext = {});
-  const lastCheckSec = Number(deathCtx.lastFoodReachCheckSec ?? -Infinity);
-  if (nowSec - lastCheckSec < 2.5 && typeof deathCtx.lastFoodReachable === "boolean") {
-    return {
-      reachable: deathCtx.lastFoodReachable,
-      sourceType: String(deathCtx.lastFoodSourceType ?? "none"),
-      pathLength: Number(deathCtx.lastFoodPathLength ?? 0),
-    };
-  }
-
-  const fromTile = worldToTile(entity.x, entity.z, state.grid);
-
+  // v0.8.13 A2 — reachability is now a `services.reachability` query.
+  // Cache is keyed on (workerTile, tileTypes, gridVersion) so AI consumers
+  // (StatePlanner, StateFeasibility, consumeEmergencyRation) see the same
+  // fresh result this tick. The previous 2.5 s `lastFoodReachCheckSec` TTL
+  // is gone — staleness was 50-67 % in scenarios D/E/F per the audit trace.
   if (Number(state.resources?.food ?? 0) > 0 && Number(state.buildings?.warehouses ?? 0) > 0) {
-    const warehouse = findNearestTileOfTypes(state.grid, entity, [TILE.WAREHOUSE]);
-    const resolved = resolveReachability(entity, state, services, fromTile, warehouse, "warehouse");
-    if (resolved.reachable) {
-      deathCtx.lastFoodReachable = true;
-      deathCtx.lastFoodReachCheckSec = nowSec;
-      deathCtx.lastFoodSourceTile = warehouse;
-      deathCtx.lastFoodSourceType = resolved.sourceType;
-      deathCtx.lastFoodPathLength = resolved.pathLength;
-      return resolved;
+    const fromTile = worldToTile(entity.x, entity.z, state.grid);
+    const cache = services?.reachability;
+    let result = cache?.isReachable?.(fromTile, [TILE.WAREHOUSE], state, services) ?? null;
+    if (!result) {
+      result = cache?.probeAndCache?.(fromTile, [TILE.WAREHOUSE], state, services, entity) ?? null;
+    }
+    // When the probe budget is exhausted (`result == null`) the cache
+    // declined to answer this tick. Fall back to the previous tick's
+    // mortality snapshot (`entity.debug.reachableFood`) rather than
+    // falsely declaring "unreachable" — that would race with the AI's
+    // own next-tick probe and cause spurious deaths under high load.
+    if (!result) {
+      const snapshot = entity.debug?.reachableFood;
+      if (typeof snapshot === "boolean") {
+        return {
+          reachable: snapshot,
+          sourceType: snapshot ? String(entity.debug?.nutritionSourceType ?? "warehouse") : "none",
+          pathLength: 0,
+        };
+      }
+      // No snapshot yet (first tick of life). Be conservative: assume
+      // reachable so the worker doesn't die before the cache populates.
+      return { reachable: true, sourceType: "warehouse", pathLength: 0 };
+    }
+    if (result.reachable) {
+      return { reachable: true, sourceType: "warehouse", pathLength: 0 };
     }
   }
 
-  // v0.8.12 F3 — FARM probe removed.
-  //
-  // The previous probe declared `reachableFood=true` whenever any FARM tile
-  // was reachable, on the heuristic "farms exist therefore food is reachable".
-  // But `WorkerAISystem.handleEat` only consumes from `state.resources.food`
-  // after pathing to a TILE.WAREHOUSE — workers never eat at a farm tile.
-  // Worse, `consumeEmergencyRation` short-circuits when `reachableFood !== false`
-  // and a warehouse exists, so a walled-warehouse + reachable-farm + carry-food
-  // worker would refuse to eat their own carry and starve in place.
-  //
-  // Reachability semantics must match the consumer. Drop the FARM branch:
-  //   - if no warehouse exists, the no-warehouse short-circuit at
-  //     WorkerAISystem.js:1353 already routes carry-bearing workers to
-  //     consumeEmergencyRation;
-  //   - if a warehouse exists, the warehouse probe above is the source of truth.
-  // sourceType is now exactly one of: "carry" | "warehouse" | "none".
-
-  deathCtx.lastFoodReachable = false;
-  deathCtx.lastFoodReachCheckSec = nowSec;
-  deathCtx.lastFoodSourceType = "none";
-  deathCtx.lastFoodPathLength = 0;
+  // v0.8.12 F3 — FARM probe removed; sourceType is exactly one of
+  // "carry" | "warehouse" | "none". See archived comment in v0.8.12.
   return { reachable: false, sourceType: "none", pathLength: 0 };
 }
 
@@ -737,7 +708,7 @@ export class MortalitySystem {
           // refund carry the moment we observe `alive===false`. Idempotent
           // via the `deathRecorded` guard so re-entrant ticks don't double-
           // refund.
-          releaseDeathSideEffects(state, entity);
+          releaseDeathSideEffects(state, entity, services);
           recordDeath(state, entity, Boolean(entity.debug?.reachableFood), String(entity.debug?.nutritionSourceType ?? "none"), deathEvents);
         }
         continue;
@@ -771,7 +742,7 @@ export class MortalitySystem {
         deadIds.add(entity.id);
         // v0.8.3 entity-death cleanup (Bug A+D) — same cleanup as the
         // already-dead branch above, fired on the tick where alive flips.
-        releaseDeathSideEffects(state, entity);
+        releaseDeathSideEffects(state, entity, services);
         recordDeath(state, entity, reachableFood, nutritionSourceType, deathEvents);
       }
     }
@@ -782,7 +753,7 @@ export class MortalitySystem {
         if (!animal.deathRecorded) {
           // Animals don't hold reservations or carry, but call the helper
           // for consistency — releaseAll on a non-worker id is a no-op.
-          releaseDeathSideEffects(state, animal);
+          releaseDeathSideEffects(state, animal, services);
           recordDeath(state, animal, false, "none", deathEvents);
         }
         continue;
@@ -802,7 +773,7 @@ export class MortalitySystem {
 
       if (animal.alive === false) {
         deadIds.add(animal.id);
-        releaseDeathSideEffects(state, animal);
+        releaseDeathSideEffects(state, animal, services);
         recordDeath(state, animal, reachableFood, "none", deathEvents);
       }
     }

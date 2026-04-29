@@ -9,6 +9,28 @@ import {
   recordFeasibilityReject,
 } from "./StateFeasibility.js";
 
+// v0.8.13 A2 — fresh-read of warehouse reachability via services.reachability.
+// Returns boolean (cache hit / probed), or `undefined` (no services / no
+// warehouse / probe budget exhausted) so the caller's `=== false` guards
+// behave identically to the pre-v0.8.13 `worker.debug.reachableFood` reads.
+function readWorkerReachableFood(worker, state, services) {
+  if (!worker || !state?.grid) return undefined;
+  const cache = services?.reachability;
+  if (!cache) {
+    // Fallback to the snapshot — UI / external tests may construct workers
+    // without the new service wired (e.g. legacy createInitialGameState
+    // unit tests). Behaviour matches v0.8.12 in that case.
+    return worker.debug?.reachableFood;
+  }
+  const fromTile = worldToTile(worker.x, worker.z, state.grid);
+  let result = cache.isReachable(fromTile, [TILE.WAREHOUSE], state, services);
+  if (!result) {
+    result = cache.probeAndCache(fromTile, [TILE.WAREHOUSE], state, services, worker);
+  }
+  if (!result) return worker.debug?.reachableFood; // budget exhausted; reuse snapshot
+  return result.reachable;
+}
+
 const POLICY_INTENT_TO_STATE = Object.freeze({
   workers: Object.freeze({
     eat: "seek_food",
@@ -93,7 +115,7 @@ function isTargetTileType(entity, state, targetTileTypes) {
   return targetTileTypes.includes(tile);
 }
 
-function deriveWorkerDesiredState(worker, state) {
+function deriveWorkerDesiredState(worker, state, services = null) {
   const currentFsmState = worker.blackboard?.fsm?.state;
   const hunger = worker.hunger ?? 1;
 
@@ -108,7 +130,9 @@ function deriveWorkerDesiredState(worker, state) {
   // v0.8.7 T0-2 carry-bypass at WorkerAISystem.handleWander → consumeEmergencyRation.
   // Pre-fix: walled-warehouse + no carry → permanent seek_food latch + starvation.
   // Depends on F3: reachableFood must reflect warehouse-reachability only.
-  const reachableFood = worker.debug?.reachableFood;
+  // v0.8.13 A2 — read fresh reachability from services.reachability rather
+  // than the stale debug.reachableFood snapshot (was 50-67 % stale per audit).
+  const reachableFood = readWorkerReachableFood(worker, state, services);
   const carryFood = Number(worker.carry?.food ?? 0);
   const starvingPreemptBlocked = reachableFood === false && carryFood <= 0;
   if (hunger < starvingThreshold && hasFoodSource && !starvingPreemptBlocked) {
@@ -555,13 +579,15 @@ export function recordDesiredGoal(entity, desiredState, state, nowSec) {
   entity.debug.lastGoalSetSec = nowSec;
 }
 
-export function planEntityDesiredState(entity, state, context = {}) {
+export function planEntityDesiredState(entity, state, context = {}, services = null) {
   const nowSec = Number(state.metrics.timeSec ?? 0);
   const groupId = String(entity.groupId ?? "");
 
   let local = { desiredState: "idle", reason: "rule:idle" };
   if (groupId === "workers") {
-    local = deriveWorkerDesiredState(entity, state);
+    // v0.8.13 A2 — services are threaded through so the worker planner
+    // can query services.reachability for fresh warehouse reachability.
+    local = deriveWorkerDesiredState(entity, state, services);
   } else if (groupId === "traders") {
     local = deriveTraderDesiredState(entity, state);
   } else if (groupId === "saboteurs") {
@@ -574,7 +600,7 @@ export function planEntityDesiredState(entity, state, context = {}) {
 
   const feasibilityContext = buildFeasibilityContext(entity, groupId, state, context);
   const checkState = (stateNode) =>
-    isStateFeasible(entity, groupId, stateNode, state, { ...context, feasibilityContext });
+    isStateFeasible(entity, groupId, stateNode, state, { ...context, feasibilityContext, services });
   const fallbackState = defaultFallbackState(groupId);
 
   const policyMerged = applyPolicyIntentPreference(groupId, local.desiredState, local.reason, entity, state);

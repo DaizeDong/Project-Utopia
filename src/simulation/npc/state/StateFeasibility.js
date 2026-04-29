@@ -1,6 +1,23 @@
-import { ROLE } from "../../../config/constants.js";
+import { ROLE, TILE } from "../../../config/constants.js";
+import { worldToTile } from "../../../world/grid/Grid.js";
 
 const HERBIVORE_FLEE_ENTER_DIST = 3.4;
+
+// v0.8.13 A2 — fresh reachability read via services.reachability. Mirrors
+// the helper in StatePlanner; falls back to the entity.debug snapshot when
+// services aren't wired (legacy callers / unit tests).
+function readReachableFood(entity, state, services) {
+  if (!entity || !state?.grid) return undefined;
+  const cache = services?.reachability;
+  if (!cache) return entity.debug?.reachableFood;
+  const fromTile = worldToTile(entity.x, entity.z, state.grid);
+  let result = cache.isReachable(fromTile, [TILE.WAREHOUSE], state, services);
+  if (!result) {
+    result = cache.probeAndCache(fromTile, [TILE.WAREHOUSE], state, services, entity);
+  }
+  if (!result) return entity.debug?.reachableFood;
+  return result.reachable;
+}
 
 function aliveList(list = []) {
   return list.filter((item) => item && item.alive !== false);
@@ -100,7 +117,7 @@ export function isStateFeasible(entity, groupId, desiredState, state, context = 
         return { ok: false, reason: "no reachable food source" };
       }
     }
-    // v0.8.6 Tier 2 F3: also gate on `entity.debug.reachableFood`. Pre-fix
+    // v0.8.6 Tier 2 F3: also gate on warehouse reachability. Pre-fix
     // `hasAnyFoodSource` only checked stockpile + warehouse counts; a
     // walled-off worker with intact warehouses would loop seek_food → fail
     // → seek_food forever. With this gate, the feasibility check defers
@@ -108,10 +125,14 @@ export function isStateFeasible(entity, groupId, desiredState, state, context = 
     // v0.8.7 T0-2: Skip the reachability gate when no warehouse exists —
     // the carry-bypass eat path doesn't need a warehouse to be reachable
     // (it consumes from state.resources.food directly via consumeEmergencyRation).
-    if ((stateNode === "seek_food" || stateNode === "eat")
-        && entity?.debug && entity.debug.reachableFood === false
-        && fctx.warehouses > 0) {
-      return { ok: false, reason: "food not reachable from current position" };
+    // v0.8.13 A2: read fresh reachability from services.reachability
+    // rather than the stale entity.debug.reachableFood snapshot. Same
+    // gate semantics: only blocks when warehouses>0 AND probe says false.
+    if ((stateNode === "seek_food" || stateNode === "eat") && fctx.warehouses > 0) {
+      const reachable = readReachableFood(entity, state, context?.services ?? null);
+      if (reachable === false) {
+        return { ok: false, reason: "food not reachable from current position" };
+      }
     }
     // v0.8.4 building-construction (Agent A) — construction states require
     // at least one site in `state.constructionSites`. RoleAssignmentSystem
