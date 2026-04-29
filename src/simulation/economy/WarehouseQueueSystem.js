@@ -29,6 +29,10 @@ export class WarehouseQueueSystem {
   update(_dt, state, _services) {
     state.warehouseQueues ??= {};
     const queues = state.warehouseQueues;
+    // v0.8.7.1 P8 — early-exit when no warehouses have active queues. Skips
+    // the per-tick worker map build on the common no-deposit-pending path.
+    const keys = Object.keys(queues);
+    if (keys.length === 0) return;
     const tick = Number(state.metrics?.tick ?? 0);
     const maxWait = Number(BALANCE.warehouseQueueMaxWaitTicks ?? 120);
     const grid = state.grid;
@@ -44,7 +48,6 @@ export class WarehouseQueueSystem {
       }
     }
 
-    const keys = Object.keys(queues);
     for (const key of keys) {
       const entry = queues[key];
       if (!entry) {

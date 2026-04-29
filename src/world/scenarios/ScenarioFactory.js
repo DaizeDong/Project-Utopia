@@ -1,6 +1,6 @@
 import { EVENT_TYPE, NODE_FLAGS, TILE, WEATHER } from "../../config/constants.js";
 import { BALANCE } from "../../config/balance.js";
-import { setTileField } from "../grid/Grid.js";
+import { findNearestTileOfTypes, listTilesByType, setTileField, tileToWorld } from "../grid/Grid.js";
 
 const SCENARIO_FAMILY_BY_TEMPLATE = Object.freeze({
   temperate_plains: "frontier_repair",
@@ -284,7 +284,15 @@ function buildFrontierRepairScenario(grid) {
     ix: clamp(center.ix - 9, 3, grid.width - 4),
     iz: clamp(center.iz - 3, 3, grid.height - 4),
   };
-  const westWilds = {
+  // v0.8.7 T4-1 (R7 / v0.8.6 T3-5 deferred): wildlife zone now anchors on
+  // the nearest LUMBER cluster instead of a fixed offset from westOutpost.
+  // Old behaviour: westWilds = westOutpost + (-2, -3). When the templated
+  // offset clipped to the corner / overlapped a road / fell on water, the
+  // wildlife label hung over a tile with no narrative context.
+  // New behaviour: compute the fixed offset as a fallback, then snap to
+  // the nearest LUMBER (preferred) or RUINS tile after the cluster stamps
+  // run. If no such tile exists, keep the fallback.
+  const westWildsFallback = {
     ix: clamp(westOutpost.ix - 2, 2, grid.width - 3),
     iz: clamp(westOutpost.iz - 3, 2, grid.height - 3),
   };
@@ -296,7 +304,7 @@ function buildFrontierRepairScenario(grid) {
   clearFootprint(grid, center, 8, 6);
   clearFootprint(grid, eastDepot, 5, 4);
   clearFootprint(grid, westOutpost, 5, 4);
-  clearFootprint(grid, westWilds, 3, 3);
+  clearFootprint(grid, westWildsFallback, 3, 3);
 
   stampRoad(grid, center.ix - 2, center.iz, center.ix + 2, center.iz);
   stampRoad(grid, center.ix, center.iz - 1, center.ix, center.iz + 2);
@@ -308,6 +316,19 @@ function buildFrontierRepairScenario(grid) {
   stampCluster(grid, center, [{ x: 1, z: 2 }, { x: 2, z: 2 }, { x: -1, z: 2 }, { x: -2, z: 2 }], TILE.FARM);
   stampCluster(grid, center, [{ x: 3, z: -1 }], TILE.LUMBER);
   stampCluster(grid, westOutpost, [{ x: 0, z: 0 }], TILE.LUMBER);
+  // Snap westWilds to the nearest LUMBER/RUINS cluster post-stamping.
+  const centerWorld = tileToWorld(center.ix, center.iz, grid);
+  const lumberNear = findNearestTileOfTypes(
+    grid,
+    { x: centerWorld.x, z: centerWorld.z },
+    [TILE.LUMBER, TILE.RUINS],
+  );
+  const westWilds = lumberNear
+    ? {
+        ix: clamp(lumberNear.ix - 1, 2, grid.width - 3),
+        iz: clamp(lumberNear.iz - 1, 2, grid.height - 3),
+      }
+    : westWildsFallback;
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
   setTileDirect(grid, westOutpost.ix + 3, westOutpost.iz, TILE.RUINS);
@@ -431,7 +452,8 @@ function buildGateChokepointScenario(grid) {
     ix: clamp(center.ix + 3, 2, grid.width - 3),
     iz: clamp(center.iz + 4, 2, grid.height - 3),
   };
-  const westWilds = {
+  // v0.8.7 T4-1: westWilds anchor snaps to nearest LUMBER/RUINS post-stamp.
+  const westWildsFallback = {
     ix: clamp(center.ix - 10, 2, grid.width - 3),
     iz: clamp(center.iz + 1, 2, grid.height - 3),
   };
@@ -439,7 +461,7 @@ function buildGateChokepointScenario(grid) {
   clearFootprint(grid, center, 8, 8);
   clearFootprint(grid, northTimber, 4, 4);
   clearFootprint(grid, southGranary, 5, 4);
-  clearFootprint(grid, westWilds, 3, 3);
+  clearFootprint(grid, westWildsFallback, 3, 3);
 
   stampRoad(grid, center.ix - 2, center.iz, center.ix + 2, center.iz);
   stampRoad(grid, center.ix, center.iz - 2, center.ix, center.iz + 2);
@@ -452,6 +474,19 @@ function buildGateChokepointScenario(grid) {
   stampCluster(grid, center, [{ x: 1, z: 2 }], TILE.FARM);
   stampCluster(grid, southGranary, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
+  // Snap westWilds to nearest LUMBER/RUINS cluster.
+  const centerWorld2 = tileToWorld(center.ix, center.iz, grid);
+  const lumberNear2 = findNearestTileOfTypes(
+    grid,
+    { x: centerWorld2.x, z: centerWorld2.z },
+    [TILE.LUMBER, TILE.RUINS],
+  );
+  const westWilds = lumberNear2
+    ? {
+        ix: clamp(lumberNear2.ix - 1, 2, grid.width - 3),
+        iz: clamp(lumberNear2.iz - 1, 2, grid.height - 3),
+      }
+    : westWildsFallback;
   stampCluster(grid, westWilds, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
   stampCluster(grid, center, [
@@ -576,7 +611,8 @@ function buildIslandRelayScenario(grid) {
     ix: clamp(center.ix + 5, 3, grid.width - 4),
     iz: clamp(center.iz - 1, 3, grid.height - 4),
   };
-  const northIslet = {
+  // v0.8.7 T4-1: northIslet anchor snaps to nearest LUMBER/RUINS post-stamp.
+  const northIsletFallback = {
     ix: clamp(northTimber.ix + 2, 3, grid.width - 4),
     iz: clamp(northTimber.iz - 2, 3, grid.height - 4),
   };
@@ -585,7 +621,7 @@ function buildIslandRelayScenario(grid) {
   clearFootprint(grid, relayDepot, 4, 4);
   clearFootprint(grid, eastFields, 5, 4);
   clearFootprint(grid, northTimber, 4, 4);
-  clearFootprint(grid, northIslet, 3, 3);
+  clearFootprint(grid, northIsletFallback, 3, 3);
   stampGrassCorridor(grid, harbor.ix + 2, harbor.iz, relayDepot.ix - 2, relayDepot.iz, 1);
   stampGrassCorridor(grid, relayDepot.ix + 2, relayDepot.iz, eastFields.ix - 2, eastFields.iz, 1);
   stampGrassCorridor(grid, relayDepot.ix, relayDepot.iz - 2, northTimber.ix, northTimber.iz + 2, 1);
@@ -598,6 +634,19 @@ function buildIslandRelayScenario(grid) {
 
   stampCluster(grid, eastFields, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
+  // Snap northIslet to nearest LUMBER/RUINS cluster from the relay depot.
+  const relayDepotWorld = tileToWorld(relayDepot.ix, relayDepot.iz, grid);
+  const lumberNear3 = findNearestTileOfTypes(
+    grid,
+    { x: relayDepotWorld.x, z: relayDepotWorld.z },
+    [TILE.LUMBER, TILE.RUINS],
+  );
+  const northIslet = lumberNear3
+    ? {
+        ix: clamp(lumberNear3.ix + 1, 3, grid.width - 4),
+        iz: clamp(lumberNear3.iz - 1, 3, grid.height - 4),
+      }
+    : northIsletFallback;
   stampCluster(grid, northIslet, [{ x: 0, z: 0 }, { x: 1, z: 0 }], TILE.RUINS);
 
   setTileDirect(grid, westCauseway.ix, westCauseway.iz, TILE.RUINS);
@@ -832,12 +881,42 @@ function setNodeOnTile(grid, ix, iz, flag, yieldPool) {
 }
 
 function seedForestNodes(grid, rngFn) {
-  // Poisson-disk-ish sampling with min-distance 3 tiles. Walk a shuffled list
-  // of GRASS tiles and accept a candidate if it sits >= MIN_DIST from all
-  // previously accepted FOREST nodes.
+  // Poisson-disk-ish sampling with min-distance 3 tiles. Walk a list of GRASS
+  // tiles SORTED by score so the best candidates are tried first.
+  // v0.8.6 Tier 3 R1: bias toward moist mid-elevation tiles. Pre-fix the
+  // candidate list was uniform-random; FOREST nodes ended up scattered across
+  // any random GRASS tile regardless of moisture/elevation. The score
+  // formula prefers high moisture + mid elevation (peak at 0.55) + a small
+  // jitter so two adjacent candidates with identical fields don't always tie.
   const MIN_DIST = 3;
   const count = rangeInt(rngFn, BALANCE.forestNodeCountRange, 18, 32);
-  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const grass = collectGrassTiles(grid);
+  const moisture = grid.moisture;
+  const elevation = grid.elevation;
+  const width = grid.width;
+  if (moisture && elevation) {
+    // v0.8.7 T0-1: arrays are Float32Array in [0,1], NOT Uint8Array. The v0.8.6
+    // /255 divisor + ?? 128 fallback was a bug — divided already-normalized
+    // floats and produced near-zero scores so all candidates ranked ~equal.
+    // Read floats directly with ?? 0.5 fallback. Clamp elev-penalty term to
+    // Math.max(0, ...) before scaling: |elev-0.55|*2 can exceed 1 and produce
+    // a negative contribution that depresses near-edge candidates twice.
+    grass.sort((a, b) => {
+      const ai = a.ix + a.iz * width;
+      const bi = b.ix + b.iz * width;
+      const aMoist = Number(moisture[ai] ?? 0.5);
+      const bMoist = Number(moisture[bi] ?? 0.5);
+      const aElev = Number(elevation[ai] ?? 0.5);
+      const bElev = Number(elevation[bi] ?? 0.5);
+      const aElevTerm = Math.max(0, 1 - Math.abs(aElev - 0.55) * 2);
+      const bElevTerm = Math.max(0, 1 - Math.abs(bElev - 0.55) * 2);
+      const aScore = 0.7 * aMoist + 0.3 * aElevTerm + rngFn() * 0.1;
+      const bScore = 0.7 * bMoist + 0.3 * bElevTerm + rngFn() * 0.1;
+      return bScore - aScore;
+    });
+  } else {
+    shuffleInPlace(grass, rngFn);
+  }
   const accepted = [];
   for (const tile of grass) {
     if (accepted.length >= count) break;
@@ -857,8 +936,32 @@ function seedForestNodes(grid, rngFn) {
 function seedStoneNodes(grid, rngFn) {
   // Cluster-walk from N seed GRASS tiles; each seed walks 3-6 steps in random
   // 4-directional moves, laying a STONE flag on each GRASS step.
+  // v0.8.6 Tier 3 R2: filter seeds to ridge>0.5 OR elevation>0.6 so STONE
+  // nodes cluster on rocky / mountainous terrain instead of uniform random.
+  // Pre-fix Quarry buildings used elevation gating but the underlying STONE
+  // nodes did not, leading to "quarry on a flat field" UX dissonance.
   const count = rangeInt(rngFn, BALANCE.stoneNodeCountRange, 10, 18);
-  const grass = shuffleInPlace(collectGrassTiles(grid), rngFn);
+  const grassRaw = collectGrassTiles(grid);
+  const ridge = grid.ridge;
+  const elevation = grid.elevation;
+  const width = grid.width;
+  let grass;
+  if (ridge && elevation) {
+    // v0.8.7 T0-1: ridge and elevation are Float32Array in [0,1]. The v0.8.6
+    // /255 divisor on `e` made the elevation>0.6 branch unreachable in practice
+    // (real values divided by 255 → ~0). Read floats directly with ?? 0.5
+    // fallback so the ridge OR elevation OR fallback all behave correctly.
+    grass = grassRaw.filter((t) => {
+      const i = t.ix + t.iz * width;
+      const r = Number(ridge[i] ?? 0);
+      const e = Number(elevation[i] ?? 0.5);
+      return r > 0.5 || e > 0.6;
+    });
+    if (grass.length === 0) grass = grassRaw; // safe fallback
+  } else {
+    grass = grassRaw;
+  }
+  shuffleInPlace(grass, rngFn);
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   let placed = 0;
   const seeds = grass.slice(0, count);
@@ -884,28 +987,41 @@ function seedStoneNodes(grid, rngFn) {
 }
 
 function seedHerbNodes(grid, rngFn) {
-  // Link-seek: prefer GRASS tiles adjacent to WATER or FARM. Fall back to
-  // any GRASS tile if preferred candidates are exhausted.
+  // v0.8.6 Tier 3 R3: rank candidates by moisture (descending) with bonus for
+  // WATER-adjacent. Drop the FARM-adjacency criterion — FARMs are placed by
+  // scenario stamping later, so seeding HERB nodes against farms only worked
+  // for a tiny minority of cases. Real herb meadows correlate with water and
+  // moist soil, not adjacent farmland.
   const count = rangeInt(rngFn, BALANCE.herbNodeCountRange, 12, 22);
-  const preferred = [];
-  const fallback = [];
-  for (let iz = 0; iz < grid.height; iz += 1) {
-    for (let ix = 0; ix < grid.width; ix += 1) {
-      if (grid.tiles[gridIndex(grid, ix, iz)] !== TILE.GRASS) continue;
-      const hasLink =
-        (ix + 1 < grid.width && (grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix + 1, iz)] === TILE.FARM)) ||
-        (ix - 1 >= 0 && (grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.WATER || grid.tiles[gridIndex(grid, ix - 1, iz)] === TILE.FARM)) ||
-        (iz + 1 < grid.height && (grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz + 1)] === TILE.FARM)) ||
-        (iz - 1 >= 0 && (grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.WATER || grid.tiles[gridIndex(grid, ix, iz - 1)] === TILE.FARM));
-      if (hasLink) preferred.push({ ix, iz });
-      else fallback.push({ ix, iz });
-    }
+  const grass = collectGrassTiles(grid);
+  const moisture = grid.moisture;
+  const width = grid.width;
+  const isWaterAt = (ix, iz) => {
+    if (ix < 0 || iz < 0 || ix >= grid.width || iz >= grid.height) return false;
+    return grid.tiles[gridIndex(grid, ix, iz)] === TILE.WATER;
+  };
+  if (moisture) {
+    // v0.8.7 T0-1: moisture is Float32Array in [0,1]. Drop the v0.8.6 /255
+    // divisor + ?? 128 fallback (legacy Uint8Array assumption that did not
+    // match Grid.js reality) so HERB nodes actually rank by real moisture.
+    grass.sort((a, b) => {
+      const ai = a.ix + a.iz * width;
+      const bi = b.ix + b.iz * width;
+      const aMoist = Number(moisture[ai] ?? 0.5);
+      const bMoist = Number(moisture[bi] ?? 0.5);
+      const aWaterAdj = (isWaterAt(a.ix + 1, a.iz) || isWaterAt(a.ix - 1, a.iz)
+        || isWaterAt(a.ix, a.iz + 1) || isWaterAt(a.ix, a.iz - 1)) ? 0.2 : 0;
+      const bWaterAdj = (isWaterAt(b.ix + 1, b.iz) || isWaterAt(b.ix - 1, b.iz)
+        || isWaterAt(b.ix, b.iz + 1) || isWaterAt(b.ix, b.iz - 1)) ? 0.2 : 0;
+      const aScore = aMoist + aWaterAdj + rngFn() * 0.05;
+      const bScore = bMoist + bWaterAdj + rngFn() * 0.05;
+      return bScore - aScore;
+    });
+  } else {
+    shuffleInPlace(grass, rngFn);
   }
-  shuffleInPlace(preferred, rngFn);
-  shuffleInPlace(fallback, rngFn);
-  const ordered = preferred.concat(fallback);
   let placed = 0;
-  for (const tile of ordered) {
+  for (const tile of grass) {
     if (placed >= count) break;
     setNodeOnTile(grid, tile.ix, tile.iz, NODE_FLAGS.HERB, BALANCE.nodeYieldPoolHerb ?? 60);
     placed += 1;
@@ -987,6 +1103,13 @@ export function buildScenarioBundle(grid) {
       ? buildIslandRelayScenario(grid)
       : buildFrontierRepairScenario(grid);
   scenario.nextActionContext = buildScenarioNextActionContext(scenario);
+  // v0.8.6 Tier 0 LR-C2: bootstrap safety net. After scenario stamping, ensure
+  // at least 1 warehouse + 1 farm exist somewhere on the grid. Without this,
+  // a scenario that ships with 0 warehouses (or has them destroyed pre-tick)
+  // produces an unwinnable colony — workers harvest into carry but can never
+  // deposit, and the food cache never accumulates. Place at coreWarehouse if
+  // missing.
+  ensureBootstrapInfrastructure(grid, scenario);
   // Scenario stamping uses setTileDirect, which writes grid.tiles but skips
   // tileState — so any FARM/LUMBER/HERB_GARDEN/QUARRY placed by scenario has no
   // yieldPool. Reconcile now so M1 harvest-gating sees a seeded pool from tick 0.
@@ -998,6 +1121,55 @@ export function buildScenarioBundle(grid) {
     objectives: [],
     objectiveHint: scenario.hintCopy.initial,
   };
+}
+
+/**
+ * v0.8.6 Tier 0 LR-C2 — Bootstrap safety net.
+ *
+ * Guarantees at least 1 WAREHOUSE and 1 FARM exist on the grid post-scenario
+ * stamping. The fix mounts at the coreWarehouse anchor when present (so
+ * scenarios like Broken Frontier that name their core but somehow lose the
+ * warehouse tile recover deterministically). Falls back to map center.
+ */
+function ensureBootstrapInfrastructure(grid, scenario) {
+  const anchor = scenario?.anchors?.coreWarehouse
+    ?? { ix: Math.floor(grid.width / 2), iz: Math.floor(grid.height / 2) };
+  const cx = clamp(Number(anchor.ix ?? Math.floor(grid.width / 2)), 1, grid.width - 2);
+  const cz = clamp(Number(anchor.iz ?? Math.floor(grid.height / 2)), 1, grid.height - 2);
+
+  let hasWarehouse = false;
+  let hasFarm = false;
+  for (let i = 0; i < grid.tiles.length; i += 1) {
+    if (grid.tiles[i] === TILE.WAREHOUSE) hasWarehouse = true;
+    if (grid.tiles[i] === TILE.FARM) hasFarm = true;
+    if (hasWarehouse && hasFarm) return;
+  }
+
+  if (!hasWarehouse) {
+    setTileDirect(grid, cx, cz, TILE.WAREHOUSE);
+  }
+  if (!hasFarm) {
+    // Place farm 2 tiles east of the warehouse anchor; fall back to other
+    // adjacent tiles if east is blocked (water/wall/etc).
+    const candidates = [
+      { ix: cx + 2, iz: cz },
+      { ix: cx - 2, iz: cz },
+      { ix: cx, iz: cz + 2 },
+      { ix: cx, iz: cz - 2 },
+      { ix: cx + 1, iz: cz + 1 },
+    ];
+    for (const c of candidates) {
+      if (c.ix < 0 || c.iz < 0 || c.ix >= grid.width || c.iz >= grid.height) continue;
+      const cur = grid.tiles[toIndex(c.ix, c.iz, grid.width)];
+      if (cur === TILE.WATER || cur === TILE.WALL || cur === TILE.WAREHOUSE) continue;
+      setTileDirect(grid, c.ix, c.iz, TILE.FARM);
+      hasFarm = true;
+      break;
+    }
+    // Last resort — overwrite the anchor itself if every candidate failed.
+    if (!hasFarm) setTileDirect(grid, cx, cz === grid.height - 2 ? cz - 1 : cz + 1, TILE.FARM);
+  }
+  grid.version = Number(grid.version ?? 0) + 1;
 }
 
 export function isInfrastructureNetworkTile(tileType) {

@@ -1,6 +1,12 @@
 ﻿import { MOVE_DIRECTIONS_4, TILE_INFO } from "../../config/constants.js";
 import { TERRAIN_MECHANICS } from "../../config/balance.js";
 import { inBounds, toIndex } from "../../world/grid/Grid.js";
+// v0.8.4 strategic walls + GATE (Agent C). isTilePassableForFaction returns
+// false on WALL for everyone and false on GATE for non-colony factions.
+// Combined with the TILE_INFO.passable check (which still gates WATER, etc.)
+// this lets a single search produce different paths for "colony" vs.
+// "hostile" callers without ever rebuilding the grid.
+import { isTilePassableForFaction } from "./Faction.js";
 
 class MinHeap {
   constructor() {
@@ -78,8 +84,18 @@ function reconstructPath(cameFrom, currentKey, width) {
  *  hazards?: {tiles?: Set<string>, penaltyMultiplier?: number, penaltyByKey?: Record<string, number>|null},
  *  traffic?: {penaltyByKey?: Record<string, number>|null}
  * }|null} dynamicCosts
+ * @param {{ faction?: "colony"|"hostile"|"neutral" }} [options]
+ *   v0.8.4 Agent C — passed through to the per-tile faction check.
+ *   Defaults to "colony" so pre-v0.8.4 callers keep their old behaviour:
+ *   walls block everyone, gates are passable. Hostile callers (raiders,
+ *   predators, saboteurs) pass `faction: "hostile"` so gates also block
+ *   them.
  */
-export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicCosts = null) {
+export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicCosts = null, options = {}) {
+  // v0.8.4 strategic walls + GATE (Agent C). Default "colony" so the
+  // existing test surface (which never threaded a faction) keeps treating
+  // gates as passable doorways. Hostiles must opt in via options.faction.
+  const faction = String(options?.faction ?? "colony");
   const width = grid.width;
   const height = grid.height;
   const startKey = toIndex(start.ix, start.iz, width);
@@ -140,6 +156,14 @@ export function aStar(grid, start, goal, weatherMoveCostMultiplier = 1, dynamicC
       const tileType = grid.tiles[nKey];
       const tileInfo = TILE_INFO[tileType];
       if (!tileInfo.passable) continue;
+      // v0.8.4 strategic walls + GATE (Agent C). After the base passable
+      // check (which gates WATER and friends regardless of faction), apply
+      // the faction-specific filter: hostiles cannot cross gates, and walls
+      // are off-limits to everyone (handled here as a redundant safety net
+      // — TILE_INFO marks WALL as not-passable so this is effectively a
+      // no-op for walls today, but kept here so the rule is colocated with
+      // the gate check should TILE_INFO.WALL.passable ever flip).
+      if (!isTilePassableForFaction(tileType, faction)) continue;
 
       let stepCost = tileInfo.baseCost;
       if (grid.elevation) {

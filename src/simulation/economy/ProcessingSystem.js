@@ -52,7 +52,11 @@ export class ProcessingSystem {
   #computeEffectiveCycle(state, kind) {
     const toolMult = Number(state.gameplay?.toolProductionMultiplier ?? 1);
     const isNight = Boolean(state.environment?.isNight);
-    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    // v0.8.5 Tier 3: ProcessingSystem operates on buildings, not per-worker,
+    // so we use the floor (the legacy flat multiplier) here. Worker-level
+    // harvest paths in WorkerAISystem use the rest-scaled getter.
+    const nightFloor = Number(BALANCE.workerNightProductivityFloor ?? BALANCE.workerNightProductivityMultiplier ?? 0.6);
+    const nightPenalty = isNight ? (1 / Math.max(0.1, nightFloor)) : 1;
     const weather = state.weather?.current ?? "clear";
     let cycleSec, weatherMult;
     if (kind === "kitchen") {
@@ -138,7 +142,10 @@ export class ProcessingSystem {
     // Apply tool bonus, night penalty, and weather to cycle time
     const toolMult = Number(state.gameplay?.toolProductionMultiplier ?? 1);
     const isNight = Boolean(state.environment?.isNight);
-    const nightPenalty = isNight ? (1 / Number(BALANCE.workerNightProductivityMultiplier ?? 0.6)) : 1;
+    // v0.8.5 Tier 3: building-level processing uses the night-productivity
+    // floor since there's no per-worker context here.
+    const nightFloor = Number(BALANCE.workerNightProductivityFloor ?? BALANCE.workerNightProductivityMultiplier ?? 0.6);
+    const nightPenalty = isNight ? (1 / Math.max(0.1, nightFloor)) : 1;
     const effectiveCycle = (cycleSec * nightPenalty * weatherMult) / toolMult;
 
     let timer = this.buildingTimers.get(key);

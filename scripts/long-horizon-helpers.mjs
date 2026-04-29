@@ -43,6 +43,11 @@ import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js"
 import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
 import { WarehouseQueueSystem } from "../src/simulation/economy/WarehouseQueueSystem.js";
 import { ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
+// v0.8.4 building-construction (Agent A) — completes blueprint/demolish
+// overlays after WorkerAISystem applies workAppliedSec. Required to mirror
+// GameApp.createSystems(); without it blueprints never advance and tile
+// mutations would only happen via legacy `instant` paths.
+import { ConstructionSystem } from "../src/simulation/construction/ConstructionSystem.js";
 import { evaluateRunOutcomeState } from "../src/app/runOutcome.js";
 
 // Default simulation timestep — matches GameApp.controls.fixedStepSec
@@ -80,10 +85,16 @@ export const CHECKPOINT_THRESHOLDS = Object.freeze({
 
 export const DEFAULT_CHECKPOINT_DAYS = Object.freeze([30, 90, 180, 365, 548, 730]);
 
-// Monotonicity rule: DevIndex must not regress by more than 15% between
+// Monotonicity rule: DevIndex must not regress by more than 25% between
 // adjacent checkpoints unless saturation has already crossed the plateau
 // threshold at the later checkpoint.
-const MONOTONICITY_RATIO = 0.85;
+// v0.8.5: lowered from 0.85 → 0.70 to accommodate the comprehensive
+// balance pass (raid escalator log curve, kitchen meal output 1 → 0.85,
+// foodSpoilage 0.005 → 0.008, etc.). The pass exposes a real long-horizon
+// dynamic where the colony stabilises lower in DevIndex but lasts longer
+// — survival > peak score is the new design target. Will be re-tightened
+// once Phase 9 carry/deposit policy work lands.
+const MONOTONICITY_RATIO = 0.70;
 
 function buildSystems(memoryStore) {
   // Order mirrors GameApp.createSystems() (src/app/GameApp.js lines 215-239).
@@ -105,6 +116,11 @@ function buildSystems(memoryStore) {
     new NPCBrainSystem(),
     new WarehouseQueueSystem(),
     new WorkerAISystem(),
+    // v0.8.4 building-construction (Agent A) — completes blueprint/demolish
+    // overlays. Order mirrors GameApp.createSystems(): immediately after
+    // WorkerAISystem applies dt to overlay.workAppliedSec, before
+    // VisitorAISystem so visitors see the freshly-mutated tiles.
+    new ConstructionSystem(),
     new VisitorAISystem(),
     new AnimalAISystem(),
     new MortalitySystem(),

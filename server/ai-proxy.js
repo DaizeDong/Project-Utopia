@@ -47,6 +47,28 @@ const OPENAI_MODEL_RAW = modelConfig.configuredModel;
 const OPENAI_MODEL = modelConfig.model;
 const OPENAI_BASE_URL = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/+$/, "");
 const OPENAI_REQUEST_TIMEOUT_MS = Math.max(8000, Number(process.env.OPENAI_REQUEST_TIMEOUT_MS ?? 120000) || 120000);
+// v0.8.7 T4-3: per-attempt timeout (lower than the overall request timeout)
+// so a hung upstream attempt aborts before the wall-clock budget is gone,
+// freeing the next retry to actually run. Defaults to the overall timeout
+// (back-compat — single-shot when not configured).
+const OPENAI_REQUEST_ATTEMPT_TIMEOUT_MS = Math.max(
+  500,
+  Number(process.env.OPENAI_REQUEST_ATTEMPT_TIMEOUT_MS ?? OPENAI_REQUEST_TIMEOUT_MS)
+    || OPENAI_REQUEST_TIMEOUT_MS,
+);
+// Total attempts allowed = OPENAI_MAX_RETRIES (so a value of 2 = up to 2
+// upstream calls per proxy request). Default 1 = no retry, back-compat.
+const OPENAI_MAX_RETRIES = Math.max(
+  1,
+  Number(process.env.OPENAI_MAX_RETRIES ?? 1) || 1,
+);
+// Base backoff between retries, in ms. Used as the floor for 429 (when
+// the upstream did not provide a Retry-After header) and as a fixed delay
+// for timeout retries.
+const OPENAI_RETRY_BASE_DELAY_MS = Math.max(
+  0,
+  Number(process.env.OPENAI_RETRY_BASE_DELAY_MS ?? 250) || 0,
+);
 const MODEL_SOURCE = modelConfig.source;
 const API_KEY_SOURCE = OPENAI_API_KEY
   ? (envLoadResult.loadedKeys.includes("OPENAI_API_KEY") ? "env" : "process")
@@ -110,12 +132,39 @@ function extractApiErrorMessage(text) {
 }
 
 class OpenAIHttpError extends Error {
-  constructor(status, bodyMessage) {
+  constructor(status, bodyMessage, retryAfter = null) {
     super(`OpenAI HTTP ${status}: ${bodyMessage}`);
     this.name = "OpenAIHttpError";
     this.status = status;
     this.bodyMessage = bodyMessage;
+    // v0.8.7 T4-3: capture the Retry-After header for 429 retries.
+    this.retryAfter = retryAfter;
   }
+}
+
+// v0.8.7 T4-3: helper — true when the abort triggered the request to bail.
+function isTimeoutError(err) {
+  const msg = String(err?.message ?? err ?? "").toLowerCase();
+  return msg.includes("aborted") || msg.includes("timeout");
+}
+
+// Parse a Retry-After header into ms. Accepts seconds (HTTP/1.1) or HTTP-date.
+function parseRetryAfterMs(headerVal, fallbackMs) {
+  if (!headerVal) return fallbackMs;
+  const asNum = Number(headerVal);
+  if (Number.isFinite(asNum) && asNum >= 0) {
+    // seconds → ms; cap at 10s so a runaway upstream can't wedge us.
+    return Math.min(10000, asNum * 1000);
+  }
+  const ts = Date.parse(headerVal);
+  if (Number.isFinite(ts)) {
+    return Math.max(0, Math.min(10000, ts - Date.now()));
+  }
+  return fallbackMs;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
 
 function isModelConfigError(err) {
@@ -163,7 +212,7 @@ function buildDebugPayload({
   };
 }
 
-async function callOpenAI(systemPrompt, userPrompt, modelName) {
+async function callOpenAIOnce(systemPrompt, userPrompt, modelName) {
   const body = {
     model: modelName,
     messages: [
@@ -178,7 +227,9 @@ async function callOpenAI(systemPrompt, userPrompt, modelName) {
   };
 
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort("timeout"), OPENAI_REQUEST_TIMEOUT_MS);
+  // v0.8.7 T4-3: per-attempt timeout — must be < overall budget so a
+  // retry can fit within the same caller-visible wall-clock window.
+  const timeout = setTimeout(() => ctrl.abort("timeout"), OPENAI_REQUEST_ATTEMPT_TIMEOUT_MS);
   let resp;
   try {
     resp = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
@@ -196,7 +247,8 @@ async function callOpenAI(systemPrompt, userPrompt, modelName) {
 
   if (!resp.ok) {
     const text = await resp.text();
-    throw new OpenAIHttpError(resp.status, extractApiErrorMessage(text));
+    const retryAfter = resp.headers?.get?.("Retry-After") ?? null;
+    throw new OpenAIHttpError(resp.status, extractApiErrorMessage(text), retryAfter);
   }
 
   const data = await resp.json();
@@ -217,6 +269,41 @@ async function callOpenAI(systemPrompt, userPrompt, modelName) {
       responseFormat: body.response_format?.type ?? "json_object",
     },
   };
+}
+
+// v0.8.7 T4-3: retry wrapper. Retries at most OPENAI_MAX_RETRIES total
+// attempts on either:
+//   - HTTP 429: backoff = max(Retry-After header, OPENAI_RETRY_BASE_DELAY_MS)
+//   - request timeout (abort with "timeout"): backoff = OPENAI_RETRY_BASE_DELAY_MS * 2^attempt
+// Other errors (model-config, schema failures, 5xx without Retry-After) bubble
+// up to the model-fallback / route handler so the existing rule-based
+// fallback path runs as before. The total attempts used is recorded on the
+// returned shape so the proxy can surface it in `debug.requestPayload.attemptsUsed`.
+async function callOpenAI(systemPrompt, userPrompt, modelName) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= OPENAI_MAX_RETRIES; attempt += 1) {
+    try {
+      const result = await callOpenAIOnce(systemPrompt, userPrompt, modelName);
+      result.attemptsUsed = attempt;
+      // Tag the upstream's per-attempt count into the debug-passthrough
+      // requestPayload so test/proxy-retry can inspect it.
+      if (result.requestPayload && typeof result.requestPayload === "object") {
+        result.requestPayload = { ...result.requestPayload, attemptsUsed: attempt };
+      }
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= OPENAI_MAX_RETRIES) break;
+      const isRateLimited = err instanceof OpenAIHttpError && Number(err.status) === 429;
+      const isTimeout = isTimeoutError(err);
+      if (!isRateLimited && !isTimeout) break;
+      const backoff = isRateLimited
+        ? parseRetryAfterMs(err.retryAfter, OPENAI_RETRY_BASE_DELAY_MS)
+        : OPENAI_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
 }
 
 async function callOpenAIWithModelFallback(systemPrompt, userPrompt) {

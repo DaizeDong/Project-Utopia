@@ -1,6 +1,8 @@
 import { emitEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 
-const DAY_CYCLE_PERIOD_SEC = 60; // 60s = one full day/night cycle
+// v0.8.5 Tier 3: 60 → 90s. 45s day / 45s night = meaningful tactical
+// phases (workers actually rest at night, raiders use the cover).
+const DAY_CYCLE_PERIOD_SEC = 90;
 
 export class SimulationClock {
   constructor() {

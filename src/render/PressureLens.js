@@ -640,6 +640,12 @@ export function classifyPlacementTiles(state, tool) {
 // Heat-mode signature: cheap string the renderer can diff per frame to know
 // whether to rebuild the marker set. Covers grid topology + colony resources +
 // warehouse density metrics (the three inputs the precompute uses).
+// v0.8.7.1 P9 — dropped tileStateVersion. Heat-lens markers are about TILE
+// types (warehouses / processors / producers), NOT per-tile yieldPool state.
+// Including tileStateVersion forced a rebuild every farm/quarry harvest, so
+// the lens recomputed ~5×/sec even with no topological change. Resource
+// quantities + warehouseDensity metrics already capture the relevant
+// economic shifts.
 export function heatLensSignature(state) {
   const density = state.metrics?.warehouseDensity;
   const hot = Array.isArray(density?.hotWarehouses)
@@ -655,7 +661,6 @@ export function heatLensSignature(state) {
   ].map((v) => Math.max(0, Math.round(Number(v ?? 0))));
   return [
     state.grid?.version ?? 0,
-    state.grid?.tileStateVersion ?? 0,
     r.join("|"),
     hot,
     peak,

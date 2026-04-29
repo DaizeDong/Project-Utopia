@@ -26,9 +26,11 @@ test("RaidEscalator: DI=0 yields tier 0 and baseline interval/intensity", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Case 2 — devIndexSmoothed = 30 ⇒ tier 2 (default devIndexPerRaidTier = 15).
+// Case 2 — devIndexSmoothed = 30 ⇒ tier 3 (v0.8.5 log curve).
+// Pre-v0.8.5 used floor(DI/15) = floor(2) = 2; v0.8.5 S1 shifted to
+// floor(2.5 × log2(1 + DI/15)) = floor(3.96) = 3 to soften late-game tiers.
 // ---------------------------------------------------------------------------
-test("RaidEscalator: DI=30 yields tier 2", () => {
+test("RaidEscalator: DI=30 yields tier 3 (v0.8.5 log curve)", () => {
   const state = createInitialGameState({ seed: 102 });
   const services = createServices(state.world.mapSeed);
   state.gameplay.devIndexSmoothed = 30;
@@ -37,13 +39,15 @@ test("RaidEscalator: DI=30 yields tier 2", () => {
   sys.update(1 / 30, state, services);
 
   const esc = state.gameplay.raidEscalation;
-  assert.equal(esc.tier, 2, `expected tier 2 at DI=30, got ${esc.tier}`);
+  assert.equal(esc.tier, 3, `expected tier 3 at DI=30 (log-curve), got ${esc.tier}`);
   const expectedInterval = Math.max(
     Number(BALANCE.raidIntervalMinTicks),
-    Number(BALANCE.raidIntervalBaseTicks) - 2 * Number(BALANCE.raidIntervalReductionPerTier),
+    Number(BALANCE.raidIntervalBaseTicks) - 3 * Number(BALANCE.raidIntervalReductionPerTier),
   );
   assert.equal(esc.intervalTicks, expectedInterval);
-  assert.ok(Math.abs(esc.intensityMultiplier - (1 + 2 * Number(BALANCE.raidIntensityPerTier))) < 1e-9);
+  // DI=30 is below the fortified-plateau threshold (60), so the intensity
+  // is just the linear tier × intensityPerTier.
+  assert.ok(Math.abs(esc.intensityMultiplier - (1 + 3 * Number(BALANCE.raidIntensityPerTier))) < 1e-9);
   assert.equal(esc.devIndexSample, 30);
 });
 

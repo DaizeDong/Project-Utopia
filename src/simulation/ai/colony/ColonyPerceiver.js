@@ -184,10 +184,31 @@ export function detectClusters(grid, agents = []) {
       iz: c.tileCount > 0 ? Math.round(c.sumIz / c.tileCount) : 0,
     };
 
-    // Count workers within cluster coverage
-    const workerCount = workerPositions.filter(w => {
-      return c.tiles.some(t => Math.abs(w.ix - t.ix) + Math.abs(w.iz - t.iz) <= 3);
-    }).length;
+    // v0.8.7.1 P4 — compute cluster bounding box once. Worker coverage check
+    // first rejects against cluster bbox (+ 3-tile margin) before the inner
+    // tile-vs-worker scan, replacing an O(W × T) per-cluster scan with the
+    // bbox reject for distant workers.
+    let bboxMinIx = Infinity, bboxMinIz = Infinity;
+    let bboxMaxIx = -Infinity, bboxMaxIz = -Infinity;
+    for (const t of c.tiles) {
+      if (t.ix < bboxMinIx) bboxMinIx = t.ix;
+      if (t.ix > bboxMaxIx) bboxMaxIx = t.ix;
+      if (t.iz < bboxMinIz) bboxMinIz = t.iz;
+      if (t.iz > bboxMaxIz) bboxMaxIz = t.iz;
+    }
+
+    // Count workers within cluster coverage. bbox reject (+3 margin) skips
+    // most distant workers before the inner tile scan.
+    let workerCount = 0;
+    for (const w of workerPositions) {
+      if (w.ix < bboxMinIx - 3 || w.ix > bboxMaxIx + 3
+          || w.iz < bboxMinIz - 3 || w.iz > bboxMaxIz + 3) continue;
+      let nearAny = false;
+      for (const t of c.tiles) {
+        if (Math.abs(w.ix - t.ix) + Math.abs(w.iz - t.iz) <= 3) { nearAny = true; break; }
+      }
+      if (nearAny) workerCount += 1;
+    }
 
     // Compute warehouse coverage ratio (production tiles within WAREHOUSE_COVERAGE_RADIUS of a warehouse)
     const prodTiles = c.tiles.filter(t => {
@@ -197,23 +218,22 @@ export function detectClusters(grid, agents = []) {
     });
     const whTiles = c.tiles.filter(t => grid.tiles[toIndex(t.ix, t.iz, width)] === TILE.WAREHOUSE);
     let covered = 0;
-    for (const pt of prodTiles) {
-      const isCovered = whTiles.some(w =>
-        Math.abs(w.ix - pt.ix) + Math.abs(w.iz - pt.iz) <= WAREHOUSE_COVERAGE_RADIUS);
-      if (isCovered) covered++;
-    }
-    const coverageRatio = prodTiles.length > 0 ? covered / prodTiles.length : 1.0;
-
-    // Compute avg warehouse distance for production tiles
     let totalDist = 0;
     let distCount = 0;
     for (const pt of prodTiles) {
       if (whTiles.length === 0) break;
-      const minDist = Math.min(...whTiles.map(w =>
-        Math.abs(w.ix - pt.ix) + Math.abs(w.iz - pt.iz)));
+      // Single pass: track min distance for both coverage + avg dist.
+      let minDist = Infinity;
+      for (const w of whTiles) {
+        const d = Math.abs(w.ix - pt.ix) + Math.abs(w.iz - pt.iz);
+        if (d < minDist) minDist = d;
+        if (minDist === 0) break;
+      }
+      if (minDist <= WAREHOUSE_COVERAGE_RADIUS) covered++;
       totalDist += minDist;
       distCount++;
     }
+    const coverageRatio = prodTiles.length > 0 ? covered / prodTiles.length : 1.0;
 
     return {
       id: c.id,
@@ -1170,11 +1190,78 @@ export function sampleNodeDepletionCounts(grid) {
   return out;
 }
 
+// v0.8.7.1 P4 — single-pass connected-components labeling for water
+// connectivity. The previous implementation ran a BFS PER producer tile,
+// which on dense maps was N × O(BFS) ≈ O(N × R²) per perceiver tick.
+// This labels every passable cell once and tags components that contain a
+// warehouse. Producer queries become O(1) bitmask lookups.
+const _waterConnectivityCache = new WeakMap();
+function getWaterConnectivityLabels(grid) {
+  const cached = _waterConnectivityCache.get(grid);
+  if (cached && cached.version === grid.version) return cached;
+  const { width, height } = grid;
+  const total = width * height;
+  const labels = new Int32Array(total).fill(-1);
+  const componentHasWarehouse = []; // index = label
+  let nextLabel = 0;
+  const queue = new Int32Array(total);
+  for (let iz = 0; iz < height; iz += 1) {
+    for (let ix = 0; ix < width; ix += 1) {
+      const startIdx = ix + iz * width;
+      if (labels[startIdx] !== -1) continue;
+      if (grid.tiles[startIdx] === TILE.WATER) continue;
+      const label = nextLabel++;
+      let head = 0;
+      let tail = 0;
+      queue[tail++] = startIdx;
+      labels[startIdx] = label;
+      let hasWh = grid.tiles[startIdx] === TILE.WAREHOUSE;
+      while (head < tail) {
+        const idx = queue[head++];
+        const cx = idx % width;
+        const cz = (idx - cx) / width;
+        if (grid.tiles[idx] === TILE.WAREHOUSE) hasWh = true;
+        if (cx > 0) {
+          const n = idx - 1;
+          if (labels[n] === -1 && grid.tiles[n] !== TILE.WATER) {
+            labels[n] = label;
+            queue[tail++] = n;
+          }
+        }
+        if (cx < width - 1) {
+          const n = idx + 1;
+          if (labels[n] === -1 && grid.tiles[n] !== TILE.WATER) {
+            labels[n] = label;
+            queue[tail++] = n;
+          }
+        }
+        if (cz > 0) {
+          const n = idx - width;
+          if (labels[n] === -1 && grid.tiles[n] !== TILE.WATER) {
+            labels[n] = label;
+            queue[tail++] = n;
+          }
+        }
+        if (cz < height - 1) {
+          const n = idx + width;
+          if (labels[n] === -1 && grid.tiles[n] !== TILE.WATER) {
+            labels[n] = label;
+            queue[tail++] = n;
+          }
+        }
+      }
+      componentHasWarehouse[label] = hasWh;
+    }
+  }
+  const entry = { version: grid.version, labels, componentHasWarehouse };
+  _waterConnectivityCache.set(grid, entry);
+  return entry;
+}
+
 /**
  * sampleWaterConnectivity — detect production tiles isolated by water.
- * Reuses the BFS logic from ColonyPlanner._detectWaterIsolation by scanning
- * all production tiles for water-adjacent unreachable cases.
- * Returns the count of isolated tiles and the first bridge coordinate.
+ * v0.8.7.1 P4 — uses single-pass connected-component labeling cached against
+ * grid.version, replacing the per-producer BFS that ran O(N × BFS_RADIUS²).
  * @param {object} state
  * @returns {{waterIsolatedResources:number, bridgeRecommended:boolean, bridgeCoord:{ix:number,iz:number}|null}}
  */
@@ -1185,43 +1272,21 @@ export function sampleWaterConnectivity(state) {
 
   const { width, height } = grid;
   const PRODUCER_TYPES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
+  const cc = getWaterConnectivityLabels(grid);
+  const labels = cc.labels;
+  const componentHasWarehouse = cc.componentHasWarehouse;
 
   for (let iz = 0; iz < height; iz++) {
     for (let ix = 0; ix < width; ix++) {
-      const tileType = grid.tiles[toIndex(ix, iz, width)];
+      const idx = toIndex(ix, iz, width);
+      const tileType = grid.tiles[idx];
       if (!PRODUCER_TYPES.has(tileType)) continue;
 
-      // BFS connectivity check — look for warehouse reachable from this tile
-      // Uses a simple BFS over passable (non-water) tiles up to radius 14.
-      const visited = new Set();
-      const start = toIndex(ix, iz, width);
-      visited.add(start);
-      const queue = [[ix, iz, 0]];
-      let head = 0;
-      let reachable = false;
-      const BFS_RADIUS = 14;
-
-      while (head < queue.length) {
-        const [cx, cz, hops] = queue[head++];
-        if (hops > BFS_RADIUS) continue;
-        const cIdx = toIndex(cx, cz, width);
-        if (grid.tiles[cIdx] === TILE.WAREHOUSE) { reachable = true; break; }
-        for (const { dx, dz } of MOVE_DIRECTIONS_4) {
-          const nx = cx + dx;
-          const nz = cz + dz;
-          if (!inBounds(nx, nz, grid)) continue;
-          const nIdx = toIndex(nx, nz, width);
-          if (visited.has(nIdx)) continue;
-          const nTile = grid.tiles[nIdx];
-          if (nTile === TILE.WATER) continue; // water blocks passage
-          visited.add(nIdx);
-          queue.push([nx, nz, hops + 1]);
-        }
-      }
+      const label = labels[idx];
+      const reachable = label >= 0 && componentHasWarehouse[label];
 
       if (!reachable) {
         out.waterIsolatedResources++;
-        // Record the first bridge coord (water neighbor of the isolated tile)
         if (!out.bridgeCoord) {
           for (const { dx, dz } of MOVE_DIRECTIONS_4) {
             const nx = ix + dx;

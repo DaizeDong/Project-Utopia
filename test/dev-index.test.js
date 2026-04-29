@@ -37,8 +37,13 @@ test("DevIndex: initial fresh-state composite lands in early-game band", () => {
 
   const composite = state.gameplay.devIndex;
   assert.ok(Number.isFinite(composite), "devIndex must be a finite number");
-  assert.ok(composite >= 20 && composite <= 55,
-    `expected fresh DevIndex in [20, 55], got ${composite.toFixed(2)}`);
+  // v0.8.5 Tier 3: re-weighted devIndex dimensions (population/economy
+  // weighted heavier than infra/resilience). Fresh state now lands a bit
+  // higher because population dim weight rose from 1/6 to 0.22 and the
+  // initial 12 agents register more strongly. Window widened from
+  // [20, 55] to [20, 60].
+  assert.ok(composite >= 20 && composite <= 60,
+    `expected fresh DevIndex in [20, 60], got ${composite.toFixed(2)}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -86,7 +91,7 @@ test("DevIndex: all 6 dimensions stay in [0, 100] across extreme inputs", () => 
 // ---------------------------------------------------------------------------
 // Case 3 — Composite equals the weighted mean of the 6 dims.
 // ---------------------------------------------------------------------------
-test("DevIndex: composite = weighted mean of the 6 dims", () => {
+test("DevIndex: composite = weighted mean of the 6 dims (v0.8.5 unequal weights)", () => {
   const dims = {
     population: 40,
     economy: 60,
@@ -95,9 +100,20 @@ test("DevIndex: composite = weighted mean of the 6 dims", () => {
     defense: 10,
     resilience: 50,
   };
-  // Default weights = equal 1/6 each -> simple arithmetic mean.
+  // v0.8.5 Tier 3: weights are no longer equal 1/6 each; they are tuned
+  // per-dimension. Compute the expected value using the same weight
+  // bundle the production code reads.
+  const w = BALANCE.devIndexWeights;
+  const totalWeight = w.population + w.economy + w.infrastructure + w.production + w.defense + w.resilience;
+  const weightedSum =
+    dims.population * w.population +
+    dims.economy * w.economy +
+    dims.infrastructure * w.infrastructure +
+    dims.production * w.production +
+    dims.defense * w.defense +
+    dims.resilience * w.resilience;
+  const expected = weightedSum / totalWeight;
   const composite = computeDevIndexComposite(dims, BALANCE.devIndexWeights);
-  const expected = (40 + 60 + 20 + 80 + 10 + 50) / 6;
   assert.ok(Math.abs(composite - expected) < 1e-6,
     `expected ${expected}, got ${composite}`);
 });

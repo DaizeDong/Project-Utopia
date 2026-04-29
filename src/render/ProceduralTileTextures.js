@@ -142,6 +142,20 @@ export const PROCEDURAL_TILE_TEXTURE_PROFILES = Object.freeze({
     detail: "#c4a878",
     line: "#6e5434",
   }),
+  // v0.8.4 strategic walls + GATE (Agent C). Wood-and-iron palette so
+  // gates read as a doorway in the wall line, not another wall segment.
+  // The "gate" pattern is a vertical-plank door with iron banding —
+  // visually distinct from the brick wall pattern next to it.
+  [TILE.GATE]: Object.freeze({
+    size: 72,
+    repeatX: 1,
+    repeatY: 1,
+    pattern: "gate",
+    base: "#8b6f47",
+    accent: "#a98552",
+    detail: "#5e4a2c",
+    line: "#3a2c18",
+  }),
 });
 
 export function resolveTileTextureMode(manifest = null) {
@@ -217,13 +231,11 @@ function drawRoad(ctx, profile) {
 }
 
 function drawFarm(ctx, profile) {
-  // TODO (Phase 7, M1 visual polish): overlay dry-soil crack pattern when
-  // `tileState.salinized > 0.5`. Textures are currently baked once per tile
-  // TYPE (not per tile instance) and returned as a shared CanvasTexture, so
-  // per-tile dynamic salinized-state cannot be threaded through without
-  // restructuring the renderer to a per-instance material/texture variant
-  // (e.g. an atlas + salinization overlay blended in-shader, or per-instance
-  // uniform). Deferred to the Phase 7 visuals pass per spec § 3 M1.
+  // v0.8.8 A13 — TODO removed. Per-tile dynamic salinization cannot be
+  // expressed in a shared per-TYPE CanvasTexture; signalling exhausted
+  // soil is handled instead via the SoilExhaustion overlay layer
+  // (renderInstancedTileOverlays in SceneRenderer.js), which paints a
+  // tinted decal on top of farm tiles whose salinized > 0.5.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);
@@ -527,6 +539,55 @@ function drawClinic(ctx, profile) {
   drawNoiseDots(ctx, size, profile.detail, 40, 1, 2.2, 0.2);
 }
 
+// v0.8.4 strategic walls + GATE (Agent C). Procedural gate texture — two
+// vertical plank panels with an iron band across the midline and a small
+// gap (the door opening) down the centre. Mirrors the wall texture's
+// pixel grid so gates and walls visually align in a row.
+function drawGate(ctx, profile) {
+  const { width: size } = ctx.canvas;
+  // Wood base.
+  ctx.fillStyle = profile.base;
+  ctx.fillRect(0, 0, size, size);
+  // Vertical plank lines: 4 planks per side (8 total), with a 6px gap in
+  // the centre representing the door opening.
+  ctx.save();
+  ctx.strokeStyle = profile.line;
+  ctx.lineWidth = 1.4;
+  ctx.globalAlpha = 0.36;
+  const half = size / 2;
+  const plankWidth = (half - 4) / 4;
+  for (let i = 0; i < 4; i += 1) {
+    const xL = 2 + i * plankWidth;
+    const xR = half + 6 + i * plankWidth;
+    ctx.beginPath(); ctx.moveTo(xL, 4); ctx.lineTo(xL, size - 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xR, 4); ctx.lineTo(xR, size - 4); ctx.stroke();
+  }
+  ctx.restore();
+  // Iron banding across midline.
+  ctx.save();
+  ctx.fillStyle = profile.detail;
+  ctx.globalAlpha = 0.74;
+  ctx.fillRect(0, half - 4, size, 8);
+  ctx.restore();
+  // Iron rivets on banding.
+  ctx.save();
+  ctx.fillStyle = profile.line;
+  ctx.globalAlpha = 0.6;
+  for (let x = 8; x < size; x += 12) {
+    ctx.beginPath();
+    ctx.arc(x, half, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  // Centre gap shadow (the doorway).
+  ctx.save();
+  ctx.fillStyle = profile.line;
+  ctx.globalAlpha = 0.28;
+  ctx.fillRect(half - 3, 4, 6, size - 8);
+  ctx.restore();
+  drawNoiseDots(ctx, size, profile.accent, 28, 0.6, 1.2, 0.18);
+}
+
 function drawBridge(ctx, profile) {
   const { width: size } = ctx.canvas;
   // Dark water base
@@ -610,6 +671,10 @@ function drawPattern(ctx, profile) {
       return;
     case "bridge":
       drawBridge(ctx, profile);
+      return;
+    case "gate":
+      // v0.8.4 strategic walls + GATE (Agent C).
+      drawGate(ctx, profile);
       return;
     case "grass":
     default:

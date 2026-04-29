@@ -13,6 +13,10 @@ export const BUILD_COST = Object.freeze({
   smithy: { wood: 6, stone: 5 },
   clinic: { wood: 6, herbs: 2 },
   bridge: { wood: 3, stone: 1 },
+  // v0.8.4 strategic walls + GATE (Agent C). GATE is a wall-line door; same
+  // base wood cost as a small structure plus 1 stone for the hinges/lintel.
+  // Soft-cost escalator below applies to the Nth gate.
+  gate: { wood: 4, stone: 1 },
 });
 
 // v0.8.2 Round-5 Wave-3 (02c-speedrunner) — Building-stacking soft-cost
@@ -35,16 +39,36 @@ export const BUILD_COST = Object.freeze({
 //    chain.
 //  - herb_garden: softTarget=2 matches the scenario recipe gate for a
 //    clinic pipeline.
+// v0.8.5 Tier 3 build-cost escalator changes:
+//  - warehouse perExtra 0.20 → 0.30 (warehouses are the design pivot;
+//    steeper escalation forces spatial planning), perExtraBeyondCap 0.08
+//    → 0.25 (post-cap was effectively flat; spam costs ~4× base now),
+//    hardCap 20 → 15 (20 was effectively no cap).
+//  - wall perExtraBeyondCap 0.05 → 0.18 (anti-cheese intent).
+//  - kitchen perExtra 0.35 → 0.25 (LLM never built 2nd kitchen even when
+//    needed; soften the punishment).
+//  - farm softTarget 6 → 4 (the 6-flat-cost zone is exactly the cluster
+//    the spec wanted to discourage).
+//  - lumber softTarget 4 → 2 (combined with bigger nodes, 2 free lumbers
+//    per node is the right ratio).
+// v0.8.5.1 hotfix — over-tightened farm/lumber softTargets caused Day 30
+// DevIndex regression (33.56 → 22.88). Compromise back to mid-points:
+// farm softTarget 4 → 5; lumber softTarget 2 → 3. Depletion still
+// tightens vs v0.8.4 but early growth has more headroom.
 export const BUILD_COST_ESCALATOR = Object.freeze({
-  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.2, cap: 2.5, perExtraBeyondCap: 0.08, hardCap: 20 }),
-  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0, perExtraBeyondCap: 0.05, hardCap: 40 }),
-  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
+  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.3, cap: 2.5, perExtraBeyondCap: 0.25, hardCap: 15 }),
+  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0, perExtraBeyondCap: 0.18, hardCap: 40 }),
+  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.25, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
   smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
   clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
-  farm: Object.freeze({ softTarget: 6, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
-  lumber: Object.freeze({ softTarget: 4, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
+  farm: Object.freeze({ softTarget: 5, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
+  lumber: Object.freeze({ softTarget: 3, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
   quarry: Object.freeze({ softTarget: 3, perExtra: 0.15, cap: 1.8, perExtraBeyondCap: 0.05 }),
   herb_garden: Object.freeze({ softTarget: 2, perExtra: 0.15, cap: 2.0, perExtraBeyondCap: 0.05 }),
+  // v0.8.4 strategic walls + GATE (Agent C). Soft-cost mirrors wall but with
+  // a tighter softTarget (4) so the price escalates after the first quartet
+  // — players placing a 5th gate are likely creating a leaky wall line.
+  gate: Object.freeze({ softTarget: 4, perExtra: 0.15, cap: 2.0, perExtraBeyondCap: 0.05, hardCap: 24 }),
 });
 
 /**
@@ -119,6 +143,9 @@ export function pluralBuildingKey(kind) {
     case "lumber": return "lumbers";
     case "quarry": return "quarries";
     case "herb_garden": return "herbGardens";
+    // v0.8.4 strategic walls + GATE (Agent C) — gate count tracked under
+    // `state.buildings.gates` so the escalator can read existing count.
+    case "gate": return "gates";
     default: return kind;
   }
 }
@@ -302,13 +329,19 @@ export const BALANCE = Object.freeze({
     farmCannibaliseEnabled: true,
     farmCannibaliseFoodMult: 1.5,
     farmCannibaliseCooldownTicks: 3,
-    cookPerWorker: 1 / 8,
+    // v0.8.5 Tier 3: 1/8 → 1/10. Over-provisioning; 16-pop = 1 cook is plenty
+    // (1 cook = ~21 meals/min vs ~3/min consumption per 16 workers).
+    cookPerWorker: 1 / 10,
     haulPerWorker: 1 / 6,
     herbalistPerWorker: 1 / 12,
     smithPerWorker: 1 / 10,
     stonePerWorker: 1 / 8,
     herbsPerWorker: 1 / 10,
-    haulMinPopulation: 8,
+    // v0.8.5 Tier 1 B4: 8 → 6. Fixes a doc/code drift where bandTable allowed
+    // haul=1 for pop 6-7, but RoleAssignmentSystem gated haul on n >= 8 and
+    // silently overrode the band entry. Lower to 6 so bandTable haul=1
+    // actually fires.
+    haulMinPopulation: 6,
     minFloor: 1,
     emergencyOverrideCooks: 1,
   }),
@@ -343,13 +376,20 @@ export const BALANCE = Object.freeze({
   // When BUILDING_DESTROYED fires within this window, OBJECTIVE_REGRESSED is
   // back-annotated with cause='wildfire'/'erase'. Beyond window, cause='unknown'.
   scenarioObjectiveRegressionWindowSec: 8,
-  // Phase 7.A § 14.2: 0.6 → 0.4. Slower decay keeps the colony committed to
-  // its chosen objective longer, so long-range plans stop thrashing.
-  objectiveHoldDecayPerSecond: 0.4,
+  // v0.8.7 T4-2: removed `objectiveHoldDecayPerSecond` — declared but never
+  // read (audited the codebase: zero call sites consume it). Was originally
+  // intended for StrategicDirector / ColonyPlanner objective-score decay
+  // but the implementation never landed; deletion is simpler than wiring it
+  // up post-hoc since the v0.8.6 R2/R3 LLM directors took over objective
+  // arbitration with their own commitment tracking.
   recoveryCooldownSec: 30,
   recoveryWindowSec: 16,
-  recoveryChargeCap: 3,
-  recoveryHintRiskThreshold: 55,
+  // v0.8.5 Tier 3: 3 → 2. 3 says "the system fixed it"; 2 feels like real
+  // comebacks (the player has to actually rebuild after a crisis).
+  recoveryChargeCap: 2,
+  // v0.8.5 Tier 3: 55 → 45. Wider warning band gives 30-60s lead time
+  // before the trigger threshold (58) fires.
+  recoveryHintRiskThreshold: 45,
   recoveryTriggerRiskThreshold: 58,
   recoveryCriticalResourceThreshold: 12,
   recoveryCriticalProsperityThreshold: 30,
@@ -382,12 +422,23 @@ export const BALANCE = Object.freeze({
   },
   sabotageCooldownMinSec: 18,
   sabotageCooldownMaxSec: 30,
-  environmentDecisionIntervalSec: 12,
+  // v0.8.5 Tier 3: 12 → 22. Match event durations to avoid mid-event
+  // director thrash (most events run 20-30s).
+  environmentDecisionIntervalSec: 22,
   policyDecisionIntervalSec: 10,
-  policyTtlDefaultSec: 24,
+  // v0.8.5 Tier 3: 24 → 30. Eliminate overlap with refresh interval so
+  // policy churn doesn't compound the director thrash.
+  policyTtlDefaultSec: 30,
   doctrineMasteryRewardMultiplier: 1.08,
   maxEventIntensity: 3,
   wildlifeSpawnRadiusBonus: 3,
+  // v0.8.8 B2 — leash radius (Manhattan) for animals that fail to find a
+  // valid in-zone target. Pre-fix the fallback used randomPassableTile()
+  // which could teleport animals across the entire map, breaking the
+  // illusion of territory. Now we sample inside this radius around the
+  // home zone anchor (or current pos as last resort) before falling
+  // back to "stay put".
+  wildlifeZoneLeashRadius: 12,
   weatherPressureProsperityPenalty: 4.5,
   eventPressureProsperityPenalty: 3.0,
   contestedZoneProsperityPenalty: 0.8,
@@ -401,7 +452,9 @@ export const BALANCE = Object.freeze({
   banditRaidHazardPressureScale: 0.52,
   // Phase 7.A § 14.2: 0.36 → 0.28. The raid escalator already scales
   // intensity by DevIndex tier; the per-pressure loss was double-taxing.
-  banditRaidLossPerPressure: 0.28,
+  // v0.8.5 Tier 3: 0.28 → 0.22. High-tier raid still double-taxes via
+  // escalator + this; soften further now that escalator is on log curve.
+  banditRaidLossPerPressure: 0.22,
   banditRaidSecondaryImpactPressure: 1.2,
   tradeCaravanDepotReadyBonus: 0.42,
   tradeCaravanConnectedRouteBonus: 0.24,
@@ -417,9 +470,17 @@ export const BALANCE = Object.freeze({
   herbGardenProductionPerSecond: 0.28,
   // Phase 7.A § 14.2: 3.0 → 2.8. Shorter kitchen cycle eases the
   // wood-equivalent bottleneck on meal throughput.
-  kitchenCycleSec: 2.8,
+  // v0.8.5.1 hotfix: 2.8 → 2.3. After the v0.8.5 mealOutput drop the
+  // colony-wide meal flow tightened; faster cycle restores throughput
+  // for the recovering Day-30 baseline without rolling back mealOutput.
+  kitchenCycleSec: 2.3,
   kitchenFoodCost: 2,
-  kitchenMealOutput: 1,
+  // v0.8.5 Tier 3: 1 → 0.85. Meals × 2.0 mult = effectively 2-equiv at
+  // half eat-rate; making kitchen flow-equivalent (not flow-multiplier)
+  // reduces day-30 over-conversion that was starving raw food.
+  // v0.8.5.1 hotfix: 0.85 was too steep (Day-30 DevIndex 22.88 vs 33.56).
+  // 0.95 is just enough to dampen over-conversion without choking meal flow.
+  kitchenMealOutput: 0.95,
   smithyCycleSec: 8,
   smithyStoneCost: 3,
   smithyWoodCost: 2,
@@ -428,34 +489,67 @@ export const BALANCE = Object.freeze({
   clinicHerbsCost: 1,
   clinicMedicineOutput: 1,
   mealHungerRecoveryMultiplier: 2.0,
-  toolHarvestSpeedBonus: 0.15,
-  toolMaxEffective: 3,
+  // v0.8.5 Tier 3: 0.15 → 0.10 + 3 → 5. Spread the same total bonus over
+  // more tools (5 × 0.10 = 0.50 ≈ old 3 × 0.15 = 0.45) so smithy stays
+  // productive longer.
+  // v0.8.5.1 hotfix: 0.10 was too small (Day-30 regression). 0.12 still
+  // softer than v0.8.4's 0.15 but per-tool boost feels meaningful.
+  toolHarvestSpeedBonus: 0.12,
+  toolMaxEffective: 5,
   medicineHealPerSecond: 6,
   // Phase 1: Weather modifiers for new tiles
   quarryWeatherModifiers: { clear: 1.0, rain: 0.85, storm: 0.7, drought: 1.0, winter: 0.9 },
   herbGardenWeatherModifiers: { clear: 1.0, rain: 1.15, storm: 0.9, drought: 0.4, winter: 0.3 },
   // Rest & morale system
   workerRestDecayPerSecond: 0.004,
-  workerRestNightDecayMultiplier: 2.4,
+  // v0.8.5 Tier 3: 2.4 → 1.8. Retain night pressure without double-tax
+  // (combined with carryFatigue 1.5 → 1.25 = 2.25× HAUL load instead of 3.6×).
+  workerRestNightDecayMultiplier: 1.8,
   workerRestRecoveryPerSecond: 0.18,
   workerRestSeekThreshold: 0.2,
   workerRestRecoverThreshold: 0.5,
   workerNightRestThreshold: 0.65,
   workerMoraleDecayPerSecond: 0.001,
   workerMoraleRecoveryPerSecond: 0.02,
+  // v0.8.5 Tier 3: was a flat 0.6 multiplier. Now scales by avgRest at
+  // worker-AI evaluation time: 0.6 + 0.4 × clamp(avgRest, 0, 1). A
+  // well-rested colony hits 1.0 productivity at night. The flat 0.6
+  // remains the floor for backwards-compatible callers that read this
+  // BALANCE constant directly without the rest-based scaling.
   workerNightProductivityMultiplier: 0.6,
+  workerNightProductivityFloor: 0.6,
+  workerNightProductivityRestBonus: 0.4,
   // Action duration constants
-  workerHarvestDurationSec: 1.5,
+  // v0.8.5 Tier 3: 1.5 → 2.0. Restore some harvest friction (spec § 4.1
+  // was 2.5; 2.0 is the middle ground).
+  // v0.8.5.1 hotfix: 2.0 was 33% slower than v0.8.4 (1.5) and the biggest
+  // single contributor to the Day-30 DevIndex regression. 1.7 = 13%
+  // slower vs v0.8.4 instead of 33%.
+  workerHarvestDurationSec: 1.7,
   workerProcessDurationSec: 3.0,
   // --- Living World v0.8.0 — Phase 1 (M3 + M4), values per spec § 14.1 ---
   // M3 carry fatigue: rest decay multiplier while carrying anything (>0 carry.total).
-  carryFatigueLoadedMultiplier: 1.5,
+  // v0.8.5 Tier 3: 1.5 → 1.25. Combined with night 1.8 = 2.25× for HAUL;
+  // less brutal than the prior 3.6× max.
+  carryFatigueLoadedMultiplier: 1.25,
   // M3 in-transit spoilage: per-second decay of carried perishables while off-road.
   // Grace period halves the rate for the first spoilageGracePeriodTicks off-road ticks
   // since the worker last fully unloaded (see WorkerAISystem.handleDeliver).
-  foodSpoilageRatePerSec: 0.005,
+  // v0.8.5 Tier 3: 0.005 → 0.008 (60% bump makes haul-time-on-road
+  // actually differentiate good and bad logistics) + 500 → 300 (shorter
+  // grace to support the bumped rate).
+  // v0.8.5.1 hotfix: 0.008 was too aggressive on long hauls (~5% loss).
+  // 0.007 is a modest 40% bump vs v0.8.4 instead of 60%.
+  foodSpoilageRatePerSec: 0.007,
   herbSpoilageRatePerSec: 0.01,
-  spoilageGracePeriodTicks: 500,
+  spoilageGracePeriodTicks: 300,
+  // v0.8.8 C1 — multiplier on spoilage rate when worker is on a ROAD or
+  // BRIDGE tile. 0 preserves the original "roads are free perishable
+  // freezers" behaviour required by carry-spoilage.test.js +
+  // m3-m4-integration.test.js. The Tier C instruction allowed "0.3 OR
+  // zero"; we keep zero so existing regression tests remain valid, while
+  // leaving the multiplier knob in place for future tuning passes.
+  spoilageOnRoadMultiplier: 0,
   // v0.8.0 Phase 5 § 13.2 patch 13: planner's spoilage postcondition flags haul
   // steps whose estimated transit exceeds this half-life. Treated as a soft
   // alarm — violation does not abort the plan but emits a riskSpoilage note the
@@ -467,9 +561,12 @@ export const BALANCE = Object.freeze({
   yieldPoolDepletedThreshold: 60,
   // M4 road compounding: per-step speed stack accrued while consecutive on-road steps land.
   // Effective bonus = 1 + (roadSpeedMultiplier - 1) × (1 - wear) × (1 + min(step, cap) × perStep).
-  // roadStep resets when the worker steps off a ROAD/BRIDGE tile. Max 1.6× at 20 steps.
-  roadStackPerStep: 0.03,
-  roadStackStepCap: 20,
+  // roadStep resets when the worker steps off a ROAD/BRIDGE tile.
+  // v0.8.8 C2 — bump perStep 0.03 → 0.04 and reduce stepCap 20 → 15. Net
+  // peak unchanged (1.56× at cap), but ramp time 25% faster so short
+  // road-trips also benefit, supporting Tier C road-roi exploit recovery.
+  roadStackPerStep: 0.04,
+  roadStackStepCap: 15,
   // M4 isolation deposit penalty: unload rate multiplier when delivering to a warehouse
   // whose logistics efficiency matches ISOLATION_PENALTY (no connected road). Lower = slower.
   isolationDepositPenalty: 0.8,
@@ -488,8 +585,11 @@ export const BALANCE = Object.freeze({
   warehouseFireIgniteChancePerTick: 0.008,
   verminSwarmIgniteChancePerTick: 0.005,
   // M2b loss fractions and caps applied to colony-wide stockpile on ignition.
-  warehouseFireLossFraction: 0.2,
-  warehouseFireLossCap: 30,
+  // v0.8.5 Tier 3: density risk currently steals only 1/sec from an 8-producer
+  // cluster. 0.20 → 0.30 makes it felt without cratering production; cap 30 →
+  // 60 keeps proportionality to mid-game stockpiles.
+  warehouseFireLossFraction: 0.3,
+  warehouseFireLossCap: 60,
   verminSwarmLossFraction: 0.15,
   verminSwarmLossCap: 40,
   // --- Living World v0.8.0 — Phase 3 (M1 soil + yieldPool), spec § 14 ---
@@ -508,8 +608,17 @@ export const BALANCE = Object.freeze({
   // Slow passive per-tick decay of tileState.salinized.
   soilSalinizationDecayPerTick: 0.00002,
   // Fresh-farm yieldPool initial value, idle regen per tick, and cap.
-  farmYieldPoolInitial: 120,
-  farmYieldPoolRegenPerTick: 0.1,
+  // v0.8.5 Tier 3: 120 → 80 (initial pool halved so depletion bites within
+  // 2-3 game-min, exactly when the player evaluates "do I build another
+  // farm?"); 0.10 → 0.04 (8× regen-vs-depletion ratio fixed; 2-worker
+  // farms now tip negative, forcing distribution).
+  // v0.8.5.1 hotfix: 80/0.04 was the single biggest contributor to the
+  // Day-30 regression (~10% slower early food, ~15% slower long-term).
+  // Half-rollback: 100 (depletion still bites earlier than v0.8.4's 120,
+  // but not as hard); 0.08 (still tighter than v0.8.4's 0.10 but
+  // softens the long-term throughput throttling).
+  farmYieldPoolInitial: 100,
+  farmYieldPoolRegenPerTick: 0.08,
   farmYieldPoolMax: 180,
   // --- Living World v0.8.0 — Phase 3 (M1c demolition recycling), spec § 3 M1c + § 14.1 ---
   // Per-resource recovery fractions applied on demolish ("erase" tool) to the
@@ -517,20 +626,23 @@ export const BALANCE = Object.freeze({
   // Stone is partially recoverable (blocks can be re-dressed); wood is partially
   // recoverable (beams re-cut). Food and herbs are biodegradable — zero recovery.
   // On success, BuildSystem emits DEMOLITION_RECYCLED with { ix, iz, refund }.
-  demoStoneRecovery: 0.35,
-  demoWoodRecovery: 0.25,
+  // v0.8.5 Tier 3: stone is permanent — recovery is the relocation lubricant.
+  // 0.35 → 0.50. Wood 0.25 → 0.40 so demolishing a 5w farm refunds 2w net of
+  // 1w demolish cost = 1w net gain (was 0).
+  demoStoneRecovery: 0.50,
+  demoWoodRecovery: 0.40,
   demoFoodRecovery: 0.0,
   demoHerbsRecovery: 0.0,
   // --- Living World v0.8.0 — Phase 3 (M1b fog of war), spec § 3 M1b + § 14.1 ---
   // Manhattan reveal radius around every live actor per tick. Tiles within this
   // Chebyshev/Manhattan square become VISIBLE; HIDDEN tiles upgrade to VISIBLE.
-  fogRevealRadius: 5,
+  // v0.8.5 Tier 3: 5 → 4. Scouts are needed but not painful (econ agent
+  // wanted 3; 4 keeps the middle ground).
+  fogRevealRadius: 4,
   // Initial reveal radius centred on the colony spawn. 6 ⇒ 13×13 area (169 tiles).
-  // v0.8.0 Phase 7.A tuning: 4 → 6. Previous 9×9 (81 tiles) forced the planner to
-  // cram all early buildings into a tiny footprint, accelerating soil salinization
-  // via co-located farm clusters. 6 keeps fog gameplay intact while giving the AI
-  // enough initial buildable area to spread farms and depots across soil zones.
-  fogInitialRevealRadius: 6,
+  // v0.8.5 Tier 3: 6 → 5. Revert ~half of the Phase 7.A bump; combined with
+  // bigger nodes, fog-clear pacing improves.
+  fogInitialRevealRadius: 5,
   // Master toggle. Disable for benchmark presets that need full vision.
   fogEnabled: true,
   // --- Living World v0.8.0 — Phase 3 (M1a resource nodes), spec § 14 ---
@@ -543,19 +655,26 @@ export const BALANCE = Object.freeze({
   // Yield pool per-node at spawn. Consumed on each harvest; regenerates
   // per-tick at the nodeRegenPerTickX rate when not currently being harvested.
   // Stone nodes do not regenerate (finite mineral deposit).
-  nodeYieldPoolForest: 80,
-  nodeYieldPoolStone: 120,
-  nodeYieldPoolHerb: 60,
-  nodeRegenPerTickForest: 0.15,
+  // v0.8.5 Tier 3: bigger node pools restore the spec's intended depletion
+  // arc (current depletion in ~10 min was 60-70% below spec). Stone is
+  // permanent; bigger pool is the lubricant for stone supply.
+  nodeYieldPoolForest: 150,
+  nodeYieldPoolStone: 200,
+  nodeYieldPoolHerb: 100,
+  // Regen rates lowered slightly because the bigger pools mean less regen
+  // is needed to feel "infinite-but-throttled".
+  nodeRegenPerTickForest: 0.10,
   nodeRegenPerTickStone: 0.0,
-  nodeRegenPerTickHerb: 0.08,
+  nodeRegenPerTickHerb: 0.06,
   // --- Living World v0.8.0 — Phase 4 (Survival Mode), spec §§ 5.1-5.6 ---
   // Endless survival mode replaces the 3-objective win path. ProgressionSystem
   // accrues a running score at `state.metrics.survivalScore` that rewards
   // longevity and births while penalising colonist deaths. The colony-wiped
   // condition (no remaining agents) remains the sole loss trigger.
   survivalScorePerSecond: 1,
-  survivalScorePerBirth: 5,
+  // v0.8.5 Tier 3: 5 → 10. Match the death penalty so churn is net-zero,
+  // not net-negative; recruit churn no longer drags the score down.
+  survivalScorePerBirth: 10,
   survivalScorePenaltyPerDeath: 10,
   // --- Living World v0.8.0 — Phase 4 (DevIndex), spec § 5.6 ---
   // DevIndexSystem ring-buffer window size (sim ticks). The smoothed score
@@ -563,21 +682,28 @@ export const BALANCE = Object.freeze({
   // the last N per-tick composite samples.
   devIndexWindowTicks: 60,
   // Per-dimension weights for the composite (must normalise internally;
-  // DevIndexSystem divides by the sum of active weights). Default = equal
-  // 1/6 each. Tune during balance sweeps per spec § 16.
+  // DevIndexSystem divides by the sum of active weights).
+  // v0.8.5 Tier 3: previously equal 1/6 each. infra saturated trivially
+  // (any colony with 1+ warehouse + 2+ farms hit ~80 in infra) and was
+  // pulling the composite up artificially. Re-weight so population /
+  // economy / production / defense / resilience carry more signal.
   devIndexWeights: Object.freeze({
-    population: 1 / 6,
-    economy: 1 / 6,
-    infrastructure: 1 / 6,
-    production: 1 / 6,
-    defense: 1 / 6,
-    resilience: 1 / 6,
+    population: 0.22,
+    economy: 0.20,
+    infrastructure: 0.10,
+    production: 0.18,
+    defense: 0.15,
+    resilience: 0.15,
   }),
   // Economy dim: resource stockpile targets. Reaching the target scores 80;
   // saturating at 100 requires ~25% over the target.
-  devIndexResourceTargets: Object.freeze({ food: 200, wood: 150, stone: 100 }),
+  // v0.8.5 Tier 3: small bumps to compensate for the reweight (food +20,
+  // wood +20). Stone stays put.
+  devIndexResourceTargets: Object.freeze({ food: 220, wood: 170, stone: 100 }),
   // Population dim: agent count that scores 80 points.
-  devIndexAgentTarget: 30,
+  // v0.8.5 Tier 3: 30 → 24. Aligns score-80 with producerTarget=24, the
+  // natural colony build-out size.
+  devIndexAgentTarget: 24,
   // Production dim: unique producer-tile count that scores 80 points (sum of
   // FARM + LUMBER + QUARRY + HERB_GARDEN + KITCHEN + SMITHY + CLINIC).
   devIndexProducerTarget: 24,
@@ -658,13 +784,14 @@ export const BALANCE = Object.freeze({
   // §7 Risk #2 lifted to 360s (~50% slower) alongside the 02a raidFallback
   // tightening above.
   eventDirectorBaseIntervalSec: 360,
+  // v0.8.5 Tier 3: moraleBreak 0.07 → 0.10. Rare event was invisible at 0.07.
   eventDirectorWeights: Object.freeze({
     banditRaid: 0.30,
     animalMigration: 0.25,
     tradeCaravan: 0.18,
     diseaseOutbreak: 0.10,
     wildfire: 0.10,
-    moraleBreak: 0.07,
+    moraleBreak: 0.10,
   }),
   eventDirectorTuning: Object.freeze({
     banditRaid: Object.freeze({ durationSec: 30, intensity: 1 }),
@@ -711,7 +838,12 @@ export const BALANCE = Object.freeze({
   // efficient: task-switch cooldown multiplier applied to workerIntentCooldownSec
   traitEfficientTaskMult: 0.85,
   // resilient: death threshold delta (negative = harder to die)
-  traitResilientDeathThresholdDelta: -0.05,
+  // v0.8.5 Tier 3: -0.05 → -0.10 (≈ 16s extra survival vs. the old ≈ 8s).
+  traitResilientDeathThresholdDelta: -0.10,
+  // v0.8.5 Tier 3: careful trait was previously a strict-worse trait (speed
+  // penalty with no upside). Add a +0.10 yield bonus on harvest actions so
+  // the trade-off is meaningful. Read by WorkerAISystem in harvest paths.
+  traitCarefulYieldBonus: 0.10,
   // --- v0.8.3 worker-vs-raider combat (bidirectional melee) -------------
   // When a predator hits a worker, the directly hit worker fights back with
   // `workerCounterAttackDamage`. GUARD-role workers actively pathfind
@@ -719,8 +851,12 @@ export const BALANCE = Object.freeze({
   // `meleeReachTiles` is the world-distance threshold for landing a hit
   // (matches predatorAttackDistance scale). `workerAttackCooldownSec` paces
   // the counter so a single worker can't infinite-stunlock a predator.
-  workerCounterAttackDamage: 6,
-  guardAttackDamage: 14,
+  // v0.8.5 Tier 3: 6 → 9. Worker self-defense becomes meaningful — a 2-3
+  // worker melee can kill a raider before it kills any farmer.
+  workerCounterAttackDamage: 9,
+  // v0.8.5 Tier 3: 14 → 18. 1 GUARD vs 1 wolf needs to be survivable;
+  // 18 brings GUARD DPS to 11.25 matching bear's 10.
+  guardAttackDamage: 18,
   // v0.8.3 worker-vs-raider combat — Iteration tuning. 4-tile aggro felt
   // too short in the live probe (GUARDs auto-promoted from idle workers
   // were often 5-7 tiles from the spawn-injected raider and never closed
@@ -738,21 +874,139 @@ export const BALANCE = Object.freeze({
   // raider_beast stat-randomisation envelope. Same seed must reproduce the
   // same draw — see EntityFactory.createAnimal raider branch. Wolf/bear
   // remain on their fixed BALANCE values to keep the wildlife loop stable.
-  raiderStatsVariance: 0.25,
+  // v0.8.5 Tier 3: 0.25 → 0.15. ±25% HP/dmg too wide; 0.15 keeps flavour
+  // without 1-shotting GUARDs.
+  raiderStatsVariance: 0.15,
   // Threat-driven plan injection thresholds. ColonyPlanner.generateFallback
   // Plan pre-pends GUARD-promotion / wall steps when activeThreats meets
   // these gates. `targetGuardsPerThreat` is the headcount the planner asks
   // RoleAssignmentSystem to promote (capped by population).
   threatActiveThreshold: 1,
+  // v0.8.5 Tier 3: was flat 4. Now scales with workers via runtime
+  // computation: clamp(floor(workers/4), 2, 8). 4-cap left late-game raids
+  // with ≥5 raiders unopposed; the scaled cap lets bigger colonies
+  // promote enough GUARDs without bleeding small colonies dry.
   threatGuardCap: 4,
-  targetGuardsPerThreat: 1,
+  threatGuardCapMin: 2,
+  threatGuardCapMax: 8,
+  threatGuardCapPerWorkers: 4,
+  // v0.8.5 Tier 3: 1 → 2. 2v1 is decisive; 1v1 with HP variance is a
+  // coin-flip and ~30% of GUARD encounters lost a worker pre-v0.8.5.
+  targetGuardsPerThreat: 2,
+  // --- v0.8.4 Strategic walls + GATE (Agent C) ---------------------------
+  // Walls now have HP and can be attacked by hostile factions (predators,
+  // raiders, saboteurs). When wallHp drops to 0 the tile mutates to RUINS,
+  // re-opening the path for everyone. The same hp pool covers GATE tiles —
+  // a separate gateMaxHp could be split out later but the core mechanic is
+  // identical, so we reuse `wallMaxHp`. `wallAttackDamagePerSec` is the
+  // per-second damage one hostile applies while standing adjacent. Multiple
+  // hostiles stack damage. Gate cost lives in BUILD_COST.gate.
+  // v0.8.7 T4-2: removed `gateCost` — duplicated BUILD_COST.gate. Gate
+  // cost is sourced exclusively from BUILD_COST.gate in BuildAdvisor /
+  // BuildSystem now, so the duplicate field was both dead and a footgun
+  // (could drift apart if either side were edited independently).
+  wallMaxHp: 50,
+  wallAttackDamagePerSec: 5,
+  // v0.8.5 Tier 2 S2: Walls now regenerate HP toward maxHp at 0.1 HP/sec
+  // (full heal in ~8.3 game-min) when no hostile is within 4 tiles AND
+  // the wall has not taken damage in the last 30 seconds. Closes the
+  // irreversible-decay loop where surviving a raid at 50% HP meant the
+  // next raid broke walls in 5s instead of 10s.
+  wallHpRegenPerSec: 0.1,
+  wallRegenHostileRadius: 4,
+  wallRegenSafeWindowSec: 30,
+  // v0.8.5 Tier 3: gates earn their stone cost with a higher HP pool than
+  // walls. Backwards compatible — code that reads BALANCE.wallMaxIp still
+  // works for plain walls.
+  gateMaxHp: 75,
+  // v0.8.7 T4-2: gateCost removed (duplicate of BUILD_COST.gate).
+  // --- v0.8.4 Building lifecycle (Agent A) -------------------------------
+  // Per-tool work-seconds required to complete a build blueprint. When a
+  // BUILDER is at the construction site, WorkerAISystem accumulates dt onto
+  // tileState.construction.workAppliedSec; ConstructionSystem mutates the
+  // tile when workAppliedSec >= workTotalSec. `default` is the fallback for
+  // any build kind not enumerated here (e.g. future tile types).
+  // v0.8.4 Round 2 polish — work-seconds reduced ~25–35% across the board to
+  // restore long-horizon throughput. The legacy auto-spawn ran every 10s
+  // (recruitCooldown) and assumed instant builds; with construction-in-progress
+  // each structure adds 4–8s of worker time, so the previous values starved
+  // the colony of effective work cycles per simulated day.
+  constructionWorkSec: Object.freeze({
+    road: 1.0,
+    farm: 2.5,
+    lumber: 2.5,
+    warehouse: 5.0,
+    wall: 2.0,
+    quarry: 3.0,
+    herb_garden: 2.0,
+    kitchen: 4.5,
+    smithy: 5.0,
+    clinic: 4.0,
+    bridge: 3.5,
+    gate: 2.5,
+    default: 2.5,
+  }),
+  // Demolish work-seconds keyed by the OLD tile being torn down. RUINS
+  // clear fastest (debris already loose); walls/gates intermediate;
+  // built structures fall back to `default`.
+  demolishWorkSec: Object.freeze({
+    default: 3.0,
+    ruins: 1.5,
+    wall: 2.5,
+    gate: 2.5,
+  }),
+  // Resource cost charged up-front when an erase commission is registered
+  // (BuildSystem.placeToolAt with tool="erase"). Salvage refund is granted
+  // on completion via tile-specific BUILD_COST × demolish recovery ratios.
+  demolishToolCost: Object.freeze({ wood: 1 }),
+  // BUILDER quota: target headcount = clamp(ceil(sites * builderPerSite),
+  // builderMin, builderMax). v0.8.4 Round 2 polish — perSite stays 1.5 so
+  // small colonies don't over-strip the economy chasing parallel builders;
+  // max stays 6 so a long-running plan with many open sites can't drain the
+  // entire workforce off farms. The construction-time reductions
+  // (constructionWorkSec halved) carry the throughput improvement instead.
+  // v0.8.5 Tier 3: builders 1.5/site → 1.0/site (eliminates idle clumping at
+  // a single site); max 6 → 5 (tighter cap pairs with reduction);
+  // builderMaxFraction 0.30 (cap builders at floor(workers × 0.30) so a
+  // small colony can't strip 50% of its workforce off farms).
+  builderPerSite: 1.0,
+  builderMin: 0,
+  builderMax: 5,
+  builderMaxFraction: 0.30,
+  // --- v0.8.4 Recruitment (Agent D) --------------------------------------
+  // Replaces the legacy auto-reproduction loop. Workers no longer "birth"
+  // for free; instead the player (or LLM/rules) explicitly requests
+  // recruits, gated by food cost + cooldown.
+  // v0.8.4 Round 2 polish — cooldown 30→12s keeps pace with the legacy 10s
+  // auto-spawn (+ a small safety pause per spawn). minFoodBuffer kept at 80
+  // (the original v0.8.4 contract value) — relaxing it tipped seed=3 into a
+  // starvation spiral because queued spawns kept firing as food drained.
+  // The fallback planner's emit threshold was relaxed from
+  // `food > recruitMinFoodBuffer + 30` to `food > recruitMinFoodBuffer`
+  // — see ColonyPlanner.generateFallbackPlan. Spawn branch in
+  // PopulationGrowthSystem now gates spawn on `food >= recruitMinFoodBuffer`
+  // (in addition to the existing `food >= recruitFoodCost` check) so the
+  // queue can't drain food past the buffer.
+  recruitFoodCost: 25,             // food deducted per spawn
+  // v0.8.5.1 hotfix: 12 → 9. Faster recruitment for early game so the
+  // colony grows into its target headcount sooner. Pairs with the food
+  // buffer drop (recruitMinFoodBuffer 80 → 50).
+  recruitCooldownSec: 9,           // pacing between auto-spawns
+  recruitMaxQueueSize: 12,         // queue cap (UI + LLM clamp here)
+  // v0.8.5 Tier 3: 80 → 50. 80 blocked recruit during food-deficit phase,
+  // causing seed-7 collapse; 50 still safe (cooldown × cost = 25/12 ≈ 2.1/s
+  // drain).
+  recruitMinFoodBuffer: 50,        // skip auto-recruit below this food stock
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
+// v0.8.7.1 U1 — toast retiming: errors shorter (3500 → 2800) so they don't
+// linger past the next gameplay event, success bumped (1400 → 2200) so quick
+// player wins are actually readable.
 export const CASUAL_UX = Object.freeze({
-  errToastMs: 3500,
+  errToastMs: 2800,
   warnToastMs: 2600,
-  successToastMs: 1400,
+  successToastMs: 2200,
   struggleBannerGraceSec: 20,
   struggleFoodPctOfEmergency: 1.1,
   toolTierUnlockTimeSec: Object.freeze({ secondary: 180, advanced: 360 }),
@@ -764,11 +1018,16 @@ export const CASUAL_UX = Object.freeze({
 
 // --- Terrain depth constants ---
 
+// v0.8.5 Tier 3: rebalance the salvage roll table so rare loot feels like
+// real loot. Common-loot weight 60 → 50 (still the modal outcome but no
+// longer dominant), rare-loot weight 15 → 25 (1 in 4 ruin salvages now
+// finds tools / medicine), rare-loot rewards bumped from [1,1]/[0,1] to
+// [1,3]/[1,2] so the rare hit is meaningful.
 export const RUIN_SALVAGE = Object.freeze({
   rolls: Object.freeze([
-    { weight: 60, rewards: { wood: [2, 5], stone: [1, 3] } },
+    { weight: 50, rewards: { wood: [2, 5], stone: [1, 3] } },
     { weight: 25, rewards: { food: [3, 8], herbs: [1, 3] } },
-    { weight: 15, rewards: { tools: [1, 1], medicine: [0, 1] } },
+    { weight: 25, rewards: { tools: [1, 3], medicine: [1, 2] } },
   ]),
 });
 

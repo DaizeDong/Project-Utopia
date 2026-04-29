@@ -27,8 +27,11 @@ test("resolveGlobalShortcut exposes a camera reset shortcut", () => {
 });
 
 test("resolveGlobalShortcut maps every numbered build tool advertised by the toolbar", () => {
-  assert.match(SHORTCUT_HINT, /1-0\/-\/= tools/i);
+  // v0.8.7.1 U3 — hint copy now reads "0 select | 1-9/-/= tools" after
+  // Digit0 was reclaimed for the Select / Inspect tool.
+  assert.match(SHORTCUT_HINT, /0 select \| 1-9\/-\/= tools/i);
   const cases = [
+    ["Digit0", "0", "select"],
     ["Digit1", "1", "road"],
     ["Digit2", "2", "farm"],
     ["Digit3", "3", "lumber"],
@@ -38,7 +41,6 @@ test("resolveGlobalShortcut maps every numbered build tool advertised by the too
     ["Digit7", "7", "erase"],
     ["Digit8", "8", "quarry"],
     ["Digit9", "9", "herb_garden"],
-    ["Digit0", "0", "kitchen"],
     ["Minus", "-", "smithy"],
     ["Equal", "=", "clinic"],
   ];

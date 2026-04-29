@@ -191,7 +191,12 @@ const ENTITY_FOCUS_ROW_SORT_ORDER = Object.freeze([
 ]);
 
 const ENTITY_FOCUS_GROUP_META = Object.freeze({
-  starving: Object.freeze({ label: "Starving", shortLabel: "Starving" }),
+  // v0.8.7 T3-1 (QA2-F1): rename to "Critical hunger" so the focus-panel
+  // group label disambiguates from the FSM/MortalitySystem "starvation"
+  // death cause. Threshold (hunger<0.2) is unchanged — only the human-
+  // facing string. Players were misreading "Starving" as "about to die"
+  // when in fact it just means hunger<20% (still has 30+ ticks of buffer).
+  starving: Object.freeze({ label: "Critical hunger", shortLabel: "Critical" }),
   hungry: Object.freeze({ label: "Hungry", shortLabel: "Hungry" }),
   blocked: Object.freeze({ label: "Blocked", shortLabel: "Blocked" }),
   idle: Object.freeze({ label: "Idle", shortLabel: "Idle" }),
@@ -807,6 +812,10 @@ export class EntityFocusPanel {
     const engClasses = `casual-hidden dev-only`;
 
     const hungerN = Number(entity.hunger);
+    // v0.8.7 T3-1 (QA2-F1): bottom band relabel "Starving" → "Critical (<20%)"
+    // so the detail row matches the renamed group meta and reads as "very
+    // hungry" rather than "actively dying" (which is what MortalitySystem's
+    // starvation death cause means). Threshold unchanged.
     const hungerLabel = !Number.isFinite(hungerN)
       ? "Unknown"
       : hungerN >= 0.8
@@ -815,7 +824,7 @@ export class EntityFocusPanel {
           ? "Peckish"
           : hungerN >= 0.2
             ? "Hungry"
-            : "Starving";
+            : "Critical (<20%)";
     const hungerPct = Number.isFinite(hungerN)
       ? Math.round(Math.max(0, Math.min(1, hungerN)) * 100)
       : null;

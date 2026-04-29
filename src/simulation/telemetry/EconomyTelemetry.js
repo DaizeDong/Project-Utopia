@@ -27,6 +27,28 @@ import { ENTITY_TYPE, TILE } from "../../config/constants.js";
 
 const DEFAULT_RESOURCE_TARGETS = Object.freeze({ food: 200, wood: 150, stone: 100 });
 
+// v0.8.7 T2-2 (QA3-H2): hoist the wanted-tile Set so the tallyTiles cache key
+// matches by identity. Re-creating this Set on every collectEconomySnapshot
+// call would defeat memoization (the wantedSet identity check would always
+// fail).
+const ECON_WANTED_TILES = new Set();
+let __econWantedTilesInit = false;
+function ensureEconWantedTiles() {
+  if (__econWantedTilesInit) return ECON_WANTED_TILES;
+  ECON_WANTED_TILES.add(TILE.ROAD);
+  ECON_WANTED_TILES.add(TILE.WAREHOUSE);
+  ECON_WANTED_TILES.add(TILE.WALL);
+  ECON_WANTED_TILES.add(TILE.FARM);
+  ECON_WANTED_TILES.add(TILE.LUMBER);
+  ECON_WANTED_TILES.add(TILE.QUARRY);
+  ECON_WANTED_TILES.add(TILE.HERB_GARDEN);
+  ECON_WANTED_TILES.add(TILE.KITCHEN);
+  ECON_WANTED_TILES.add(TILE.SMITHY);
+  ECON_WANTED_TILES.add(TILE.CLINIC);
+  __econWantedTilesInit = true;
+  return ECON_WANTED_TILES;
+}
+
 function clamp01To100(value) {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;
@@ -42,16 +64,46 @@ function safeNum(value, fallback = 0) {
 /**
  * Count tiles of the given types in state.grid.tiles. Accepts a Set for O(1)
  * membership checks. Returns a plain tally object keyed by TILE id.
+ *
+ * v0.8.7 T2-2 (QA3-H2): memoize against grid.version. Pre-fix this was called
+ * every tick from collectEconomySnapshot → DevIndexSystem and walked all
+ * 96×72 = 6912 tiles unconditionally; with EconomyTelemetry running on every
+ * fixed step (30Hz) that adds up to ~200k ops/sec just for tile counts even
+ * when the grid has not changed. The grid.version counter is bumped by every
+ * tile mutation (mutateTile in TileMutationHooks) so cache invalidation is
+ * already plumbed correctly — we just need to consume it.
  */
-function tallyTiles(tiles, wantedSet) {
-  const tally = new Map();
-  for (const id of wantedSet) tally.set(id, 0);
-  if (!tiles) return tally;
-  for (let i = 0; i < tiles.length; i += 1) {
-    const t = tiles[i];
-    if (wantedSet.has(t)) tally.set(t, (tally.get(t) ?? 0) + 1);
+function tallyTiles(grid, wantedSet) {
+  const tiles = grid?.tiles ?? null;
+  // Plain-array fast path (tests pass Uint8Array directly)
+  if (!grid || typeof grid.version !== "number") {
+    const tally = new Map();
+    for (const id of wantedSet) tally.set(id, 0);
+    if (!tiles) return tally;
+    for (let i = 0; i < tiles.length; i += 1) {
+      const t = tiles[i];
+      if (wantedSet.has(t)) tally.set(t, (tally.get(t) ?? 0) + 1);
+    }
+    return tally;
   }
-  return tally;
+  // Cache shape: { version, counts: Map<TILE, number> } stored on grid
+  // under a non-enumerable symbol-ish key. The wantedSet is fixed across
+  // calls (collectEconomySnapshot reuses the same Set literal) so we only
+  // recompute when grid.version changes.
+  const cached = grid.__econTileTallyCache;
+  if (cached && cached.version === grid.version && cached.wantedSet === wantedSet) {
+    return cached.counts;
+  }
+  const counts = new Map();
+  for (const id of wantedSet) counts.set(id, 0);
+  if (tiles) {
+    for (let i = 0; i < tiles.length; i += 1) {
+      const t = tiles[i];
+      if (wantedSet.has(t)) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+  }
+  grid.__econTileTallyCache = { version: grid.version, wantedSet, counts };
+  return counts;
 }
 
 /**
@@ -101,11 +153,10 @@ export function collectEconomySnapshot(state) {
   };
 
   // ------ Tile tallies ------
-  const wantedTiles = new Set([
-    TILE.ROAD, TILE.WAREHOUSE, TILE.WALL, TILE.FARM, TILE.LUMBER,
-    TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC,
-  ]);
-  const tally = tallyTiles(tiles, wantedTiles);
+  // v0.8.7 T2-2: pass `grid` (not raw `tiles`) so tallyTiles can memoize
+  // against grid.version. Identity-stable wanted-set hoisted to module scope.
+  const wantedTiles = ensureEconWantedTiles();
+  const tally = tallyTiles(grid, wantedTiles);
   const tileCounts = {
     road: tally.get(TILE.ROAD) ?? 0,
     warehouse: tally.get(TILE.WAREHOUSE) ?? 0,

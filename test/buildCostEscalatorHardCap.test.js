@@ -13,17 +13,20 @@ describe("computeEscalatedBuildCost beyond-cap linear extension", () => {
     assert.ok(cost.wood < 25, "wood < cap cost (25)");
   });
 
-  it("warehouse at count=9 is below cap (rawMult=2.4)", () => {
-    // over=7, rawMult=1+0.2*7≈2.4 < cap=2.5 → standard branch, wood=ceil(10*2.4)=25 (float epsilon)
-    const cost = computeEscalatedBuildCost("warehouse", 9);
-    assert.ok(cost.wood >= 24 && cost.wood <= 25, `wood=${cost.wood} expected 24-25`);
+  it("warehouse at count=5 is at the cap plateau (v0.8.5 perExtra=0.30)", () => {
+    // v0.8.5 Tier 3: warehouse perExtra 0.20 → 0.30. count=5: over=3,
+    // rawMult=1+0.3*3=1.9 < cap=2.5 → standard branch, wood=ceil(10*1.9)=19.
+    // count=7: over=5, rawMult=1+0.3*5=2.5 == cap, wood=ceil(10*2.5)=25.
+    const cost = computeEscalatedBuildCost("warehouse", 5);
+    assert.ok(cost.wood >= 16 && cost.wood <= 25, `wood=${cost.wood} expected 16-25`);
   });
 
-  it("warehouse beyond cap continues growing (no cheese plateau)", () => {
-    // count=20: over=18, rawMult=1+0.2*18=4.6 > cap=2.5
-    // beyond = 4.6-2.5 = 2.1, multiplier = 2.5 + 2.1*0.08 = 2.668, wood = ceil(10*2.668)=27
-    const costAtCap = computeEscalatedBuildCost("warehouse", 9);
-    const costBeyond = computeEscalatedBuildCost("warehouse", 20);
+  it("warehouse beyond cap continues growing (no cheese plateau) — v0.8.5 perExtraBeyondCap=0.25", () => {
+    // v0.8.5 Tier 3: perExtraBeyondCap 0.08 → 0.25. count=14 sits past
+    // the new hardCap=15 boundary; we use a count comfortably past cap
+    // for the comparison.
+    const costAtCap = computeEscalatedBuildCost("warehouse", 5);
+    const costBeyond = computeEscalatedBuildCost("warehouse", 14);
     assert.ok(costBeyond.wood > costAtCap.wood, "beyond-cap is more expensive than at-cap");
   });
 
@@ -35,16 +38,17 @@ describe("computeEscalatedBuildCost beyond-cap linear extension", () => {
 });
 
 describe("isBuildKindHardCapped", () => {
-  it("warehouse at 19 is not capped (hardCap=20)", () => {
-    const r = isBuildKindHardCapped("warehouse", 19);
+  it("warehouse at 14 is not capped (v0.8.5 hardCap=15)", () => {
+    // v0.8.5 Tier 3: warehouse hardCap 20 → 15.
+    const r = isBuildKindHardCapped("warehouse", 14);
     assert.strictEqual(r.capped, false);
-    assert.strictEqual(r.hardCap, 20);
+    assert.strictEqual(r.hardCap, 15);
   });
 
-  it("warehouse at 20 is capped (hardCap=20)", () => {
-    const r = isBuildKindHardCapped("warehouse", 20);
+  it("warehouse at 15 is capped (v0.8.5 hardCap=15)", () => {
+    const r = isBuildKindHardCapped("warehouse", 15);
     assert.strictEqual(r.capped, true);
-    assert.strictEqual(r.hardCap, 20);
+    assert.strictEqual(r.hardCap, 15);
   });
 
   it("warehouse at 25 is also capped (≥ hardCap)", () => {

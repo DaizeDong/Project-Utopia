@@ -40,12 +40,16 @@ self.onmessage = (event) => {
   let error = "";
   try {
     if (!currentGrid) throw new Error("path worker has no grid snapshot");
+    // v0.8.4 strategic walls + GATE (Agent C). Faction is passed via the
+    // 6th-parameter options bag so off-thread A* matches main-thread
+    // semantics (gates blocked for hostiles, walls blocked for everyone).
     path = aStar(
       currentGrid,
       job.start,
       job.goal,
       Number(job.weatherMoveCostMultiplier ?? 1),
       normalizeDynamicCosts(job.dynamicCosts),
+      { faction: String(job.faction ?? "colony") },
     );
   } catch (err) {
     error = String(err?.message ?? err);

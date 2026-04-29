@@ -1,7 +1,12 @@
-import { ANIMAL_KIND, ENTITY_TYPE, TILE } from "../../config/constants.js";
+import { ANIMAL_KIND, ENTITY_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { BALANCE } from "../../config/balance.js";
 import { pushWarning } from "../../app/warnings.js";
 import { aStar } from "../navigation/AStar.js";
+// v0.8.4 strategic walls + GATE (Agent C). Faction-aware reachability —
+// MortalitySystem checks nutrition reachability for hungry colony entities;
+// keeping this faction-aware ensures the cache key matches what
+// setTargetAndPath would write/read.
+import { getEntityFaction } from "../navigation/Faction.js";
 import { findNearestTileOfTypes, worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { recordResourceFlow } from "../economy/ResourceSystem.js";
@@ -257,6 +262,31 @@ function ensureLogicBucket(state) {
 }
 
 function incrementDeathCounters(state, entity, reason, reachableFood) {
+  // v0.8.6 Tier 2 CB-H2 / CB-L3: distinguish hostile (predator / saboteur)
+  // deaths from colonist deaths. Hostile deaths SHOULD NOT increment
+  // deathsTotal — that metric drives survival score penalty, raid death
+  // budget, and player-facing "deaths" count. Killing a saboteur or
+  // raider_beast was the colony's WIN condition for the threat, so before
+  // this fix it perversely penalized the player for successful defense.
+  const isHostilePredator = entity.type === "ANIMAL" && entity.kind === "PREDATOR";
+  const isHostileSaboteur = entity.type === "VISITOR" && entity.kind === "SABOTEUR";
+  const isHostileSlain = (isHostilePredator || isHostileSaboteur) && reason === "killed-by-worker";
+
+  if (isHostileSlain) {
+    // Track hostiles slain separately (encourages defense, drives metrics).
+    state.metrics.hostilesSlain = Number(state.metrics.hostilesSlain ?? 0) + 1;
+    if (isHostilePredator) {
+      const species = String(entity.species ?? "");
+      const sub = species === "raider_beast" ? "raidersSlain" : "predatorsSlain";
+      state.metrics[sub] = Number(state.metrics[sub] ?? 0) + 1;
+    } else {
+      state.metrics.saboteursSlain = Number(state.metrics.saboteursSlain ?? 0) + 1;
+    }
+    // Skip the deathsTotal/deathsByGroup/raid-budget cascades — those track
+    // colonist mortality only.
+    return;
+  }
+
   state.metrics.deathsTotal = Number(state.metrics.deathsTotal ?? 0) + 1;
   state.metrics.deathsByReason ??= {};
   state.metrics.deathsByReason[reason] = Number(state.metrics.deathsByReason[reason] ?? 0) + 1;
@@ -274,7 +304,24 @@ function incrementDeathCounters(state, entity, reason, reachableFood) {
 
 function markDeath(entity, reason, nowSec, context = null) {
   entity.alive = false;
-  entity.deathReason = reason;
+  // v0.8.6 Tier 0 LR-C4: guard against `killed-by-worker` mis-attribution to
+  // a colonist (WORKER) or trader (VISITOR/TRADER). Only PREDATOR animals and
+  // SABOTEUR visitors are valid recipients of that reason; any other entity
+  // hitting this code path with that label is a stale-write bug — coerce it
+  // back to a defensible cause.
+  let safeReason = String(reason ?? "");
+  if (safeReason === "killed-by-worker") {
+    const isAnimalPredator = entity.type === "ANIMAL" && entity.kind === "PREDATOR";
+    const isSaboteur = entity.type === "VISITOR" && entity.kind === "SABOTEUR";
+    if (!isAnimalPredator && !isSaboteur) {
+      // Worker / trader / herbivore mis-attributed: prefer starvation if it
+      // was the active hunger fall-off, otherwise "unknown".
+      safeReason = (Number(entity.starvationSec ?? 0) >= 0.5)
+        ? "starvation"
+        : "unknown";
+    }
+  }
+  entity.deathReason = safeReason;
   entity.deathSec = nowSec;
   entity.deathContext = context ?? null;
 }
@@ -321,21 +368,44 @@ function recomputeCombatMetrics(state) {
     activePredators += 1;
     if (String(a.species ?? "") === "raider_beast") activeRaiders += 1;
   }
+  // v0.8.6 Tier 1 CB-C1 / CB-H6: count active SABOTEUR visitors (live VISITOR
+  // entities with kind=SABOTEUR) and include their distance in
+  // nearestThreatDistance.
+  // v0.8.7 T2-1 (QA3-H1): pre-collect saboteurArr to avoid quadratic walks.
+  // v0.8.8 A7 (QA1 L1): single-pass agent walk now also collects workerArr,
+  // eliminating the second `for (const w of agents)` and dropping the
+  // distance-scan from O(agents²) to O(workers × (predators + saboteurs)).
+  let activeSaboteurs = 0;
   let guardCount = 0;
   let workerCount = 0;
+  const saboteurArr = [];
+  const workerArr = [];
   for (const w of agents) {
-    if (!w || w.alive === false || w.type !== ENTITY_TYPE.WORKER) continue;
+    if (!w || w.alive === false) continue;
+    if (w.type === ENTITY_TYPE.VISITOR && w.kind === VISITOR_KIND.SABOTEUR) {
+      activeSaboteurs += 1;
+      saboteurArr.push(w);
+      continue;
+    }
+    if (w.type !== ENTITY_TYPE.WORKER) continue;
     workerCount += 1;
+    workerArr.push(w);
     if (w.role === "GUARD") guardCount += 1;
   }
+  const activeThreats = activePredators + activeSaboteurs;
   let nearestSq = Infinity;
-  if (activePredators > 0 && workerCount > 0) {
-    for (const w of agents) {
-      if (!w || w.alive === false || w.type !== ENTITY_TYPE.WORKER) continue;
+  if (activeThreats > 0 && workerCount > 0) {
+    for (const w of workerArr) {
       for (const a of animals) {
         if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
         const dx = a.x - w.x;
         const dz = a.z - w.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < nearestSq) nearestSq = d2;
+      }
+      for (const v of saboteurArr) {
+        const dx = v.x - w.x;
+        const dz = v.z - w.z;
         const d2 = dx * dx + dz * dz;
         if (d2 < nearestSq) nearestSq = d2;
       }
@@ -346,9 +416,10 @@ function recomputeCombatMetrics(state) {
   const existing = state.metrics.combat ?? {};
   state.metrics.combat = {
     ...existing,
-    activeThreats: activePredators,
+    activeThreats,
     activeRaiders,
     activePredators,
+    activeSaboteurs,
     guardCount,
     workerCount,
     nearestThreatDistance: nearestSq === Infinity ? -1 : Math.sqrt(nearestSq),
@@ -361,14 +432,17 @@ function resolveReachability(entity, state, services, fromTile, target, sourceTy
     return { reachable: true, sourceType, pathLength: 0 };
   }
 
-  let path = services?.pathCache?.get?.(state.grid.version, fromTile, target) ?? null;
+  // v0.8.4 strategic walls + GATE (Agent C). Faction-aware reachability —
+  // matches what setTargetAndPath would actually return for this entity.
+  const faction = getEntityFaction(entity);
+  let path = services?.pathCache?.get?.(state.grid.version, fromTile, target, 0, faction) ?? null;
   if (!path) {
     path = aStar(state.grid, fromTile, target, state.weather.moveCostMultiplier, {
       tiles: state.weather?.hazardTileSet ?? null,
       penaltyMultiplier: state.weather?.hazardPenaltyMultiplier ?? 1,
-    });
+    }, { faction });
     if (path) {
-      services?.pathCache?.set?.(state.grid.version, fromTile, target, 0, path);
+      services?.pathCache?.set?.(state.grid.version, fromTile, target, 0, faction, path);
     }
   }
 
@@ -504,6 +578,18 @@ function buildDeathContext(entity, state, reason, reachableFood, nutritionSource
 }
 
 function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEvents) {
+  // v0.8.6 Tier 0 LR-C4: re-coerce a mis-attributed "killed-by-worker" on a
+  // colonist before any downstream metric / log captures it. (Idempotent
+  // with markDeath; cheap and defensive.)
+  if (entity.deathReason === "killed-by-worker") {
+    const isAnimalPredator = entity.type === "ANIMAL" && entity.kind === "PREDATOR";
+    const isSaboteur = entity.type === "VISITOR" && entity.kind === "SABOTEUR";
+    if (!isAnimalPredator && !isSaboteur) {
+      entity.deathReason = (Number(entity.starvationSec ?? 0) >= 0.5)
+        ? "starvation"
+        : "unknown";
+    }
+  }
   incrementDeathCounters(state, entity, entity.deathReason || "event", reachableFood);
   if (entity.kind === ANIMAL_KIND.HERBIVORE || entity.kind === ANIMAL_KIND.PREDATOR) {
     const reason = String(entity.deathReason || "event");
@@ -525,7 +611,14 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
       ?? (entity.targetTile ? { ix: entity.targetTile.ix, iz: entity.targetTile.iz } : null);
     const tileSuffix = tile ? ` near (${tile.ix},${tile.iz})` : "";
     const name = entity.displayName ?? entity.id;
-    const line = `[${nowSec.toFixed(1)}s] ${name} died (${reason})${tileSuffix}`;
+    // v0.8.7.1 P12 — hostile entities (SABOTEUR visitors and PREDATOR animals)
+    // get a "Hostile slain:" prefix in the objective log so the player
+    // doesn't conflate enemy deaths with colonist losses.
+    const isHostile = (entity.type === ENTITY_TYPE.VISITOR && entity.kind === VISITOR_KIND.SABOTEUR)
+      || (entity.type === ENTITY_TYPE.ANIMAL && entity.kind === ANIMAL_KIND.PREDATOR);
+    const line = isHostile
+      ? `[${nowSec.toFixed(1)}s] Hostile slain: ${name} (${reason})${tileSuffix}`
+      : `[${nowSec.toFixed(1)}s] ${name} died (${reason})${tileSuffix}`;
     if (state.gameplay) {
       if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
       state.gameplay.objectiveLog.unshift(line);
@@ -605,6 +698,13 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
   });
   state.metrics.deathTimestamps ??= [];
   state.metrics.deathTimestamps.push(Number(state.metrics.timeSec ?? 0));
+  // v0.8.7 T1-1 (QA3-C1): cap death-timestamp history at 256. Pre-fix this
+  // array grew unbounded over a long-horizon run (10k+ entries on a 7-day
+  // benchmark) since nothing ever pruned it; downstream consumers (ColonyEvalSystem,
+  // PerformancePanel) only need the recent tail for rate calculations.
+  if (state.metrics.deathTimestamps.length > 256) {
+    state.metrics.deathTimestamps.splice(0, state.metrics.deathTimestamps.length - 256);
+  }
 }
 
 export class MortalitySystem {

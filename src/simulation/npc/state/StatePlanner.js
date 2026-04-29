@@ -151,8 +151,11 @@ function deriveWorkerDesiredState(worker, state) {
   }
 
   // Weather-responsive behavior: storms force shelter, adverse weather reduces productivity
+  // v0.8.5 Tier 3: storm 0.92 → 0.55 (92%-rested workers shouldn't shelter
+  // — match winter); rain 0.4 → 0.3 (rain is the most common weather; 0.4
+  // over-sheltered).
   const weatherType = state.weather?.current ?? "clear";
-  if (weatherType === "storm" && restLevel < 0.92) {
+  if (weatherType === "storm" && restLevel < 0.55) {
     return { desiredState: "seek_rest", reason: "rule:storm-shelter" };
   }
   if (weatherType === "winter" && restLevel < 0.55) {
@@ -161,7 +164,7 @@ function deriveWorkerDesiredState(worker, state) {
   if (weatherType === "drought" && restLevel < 0.5) {
     return { desiredState: "seek_rest", reason: "rule:drought-rest" };
   }
-  if (weatherType === "rain" && restLevel < 0.4) {
+  if (weatherType === "rain" && restLevel < 0.3) {
     return { desiredState: "seek_rest", reason: "rule:rain-rest" };
   }
 
@@ -186,6 +189,30 @@ function deriveWorkerDesiredState(worker, state) {
     : Number(BALANCE.workerDeliverThreshold ?? 2.4);
   if (hasWarehouse && carryTotal > 0 && (carryTotal >= deliverEntryThreshold || noWorkSite)) {
     return { desiredState: "deliver", reason: "rule:deliver" };
+  }
+
+  // v0.8.4 building-construction (Agent A) — BUILDER branch. Sits AFTER the
+  // deliver hysteresis (so a BUILDER carrying full hands first deposits)
+  // and BEFORE the FARM/WOOD specialist branches. We pick `construct` when
+  // the worker's targetTile already matches one of the active sites,
+  // otherwise `seek_construct` so Navigation routes them there.
+  if (worker.role === ROLE.BUILDER
+      && Array.isArray(state.constructionSites)
+      && state.constructionSites.length > 0) {
+    let onSite = false;
+    if (worker.targetTile) {
+      for (const site of state.constructionSites) {
+        if (!site) continue;
+        if (site.ix === worker.targetTile.ix && site.iz === worker.targetTile.iz) {
+          onSite = isAtTargetTile(worker, state);
+          break;
+        }
+      }
+    }
+    return {
+      desiredState: onSite ? "construct" : "seek_construct",
+      reason: "rule:builder",
+    };
   }
 
   if (worker.role === ROLE.FARM && state.buildings.farms > 0) {

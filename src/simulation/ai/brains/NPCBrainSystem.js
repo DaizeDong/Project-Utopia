@@ -637,16 +637,29 @@ export class NPCBrainSystem {
         state.metrics.combat.policyDeltaMatchedIds = validation.matchedDeltaIds;
       }
       const llmStateTargets = normalizeStateTargetsForRuntime(this.pendingResult.data?.stateTargets ?? [], state);
+      // v0.8.6 Tier 0 LR-H1: dedup the "Dropped infeasible state target" spam.
+      // Without this gate the trader policy emitting `seek_trade` against a
+      // 0-warehouse colony fired the warning every ~5s for the entire run.
+      // Rate-limit per (groupId, targetState) key to once per 30 sim seconds.
+      state.ai ??= {};
+      state.ai._infeasibleWarnings ??= {};
+      const dedupBucket = state.ai._infeasibleWarnings;
+      const dedupNow = Number(state.metrics?.timeSec ?? 0);
       const stateTargets = mergeStateTargetsWithPolicyFallback(policies, llmStateTargets, state)
         .filter((target) => {
           const feasible = isTargetFeasibleForGroup(state, target);
           if (!feasible) {
-            pushWarning(
-              state,
-              `Dropped infeasible state target ${target.groupId}:${target.targetState}.`,
-              "warn",
-              "NPCBrainSystem",
-            );
+            const key = `${target.groupId}:${target.targetState}`;
+            const lastEmittedSec = Number(dedupBucket[key] ?? -Infinity);
+            if (dedupNow - lastEmittedSec >= 30) {
+              dedupBucket[key] = dedupNow;
+              pushWarning(
+                state,
+                `Dropped infeasible state target ${target.groupId}:${target.targetState}.`,
+                "warn",
+                "NPCBrainSystem",
+              );
+            }
           }
           return feasible;
         });

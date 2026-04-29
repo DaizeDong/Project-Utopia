@@ -31,7 +31,23 @@ const PRESET = "temperate_plains";
 const TICK_RATE = 1;
 const CHECKPOINTS = [30, 90, 180];
 
+// v0.8.5.1 — seed=3 was previously skipped (v0.8.4 algorithmic-fallback farm
+// collapse). The v0.8.5 balance pass softened the raid escalator (log curve,
+// intensity cap), tightened farm yieldPool regen, and added wall-HP regen +
+// saboteur engagement. Re-enabling seed=3 to see if the structural fix
+// reaches the algorithmic-fallback trajectory. If it regresses, restore the
+// skip with a v0.8.6 tracker note.
+const KNOWN_ISSUE_SEEDS_V0_8_4 = new Set();
+
 for (const seed of SEEDS) {
+  if (KNOWN_ISSUE_SEEDS_V0_8_4.has(seed)) {
+    test(
+      `monotonicity seed=${seed} — DevIndex non-regression across surviving checkpoints`,
+      { skip: "v0.8.4 known issue — algorithmic fallback collapses farms by day 90; tracked for v0.8.5" },
+      () => {},
+    );
+    continue;
+  }
   test(`monotonicity seed=${seed} — DevIndex non-regression across surviving checkpoints`, () => {
     const sim = bootHeadlessSim({ seed, preset: PRESET, tickRate: TICK_RATE });
     const rawCheckpoints = [];

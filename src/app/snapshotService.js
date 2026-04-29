@@ -270,8 +270,12 @@ export function createSnapshotService() {
     saveToStorage(slotId, state, rngSnapshot = null, extraMeta = null) {
       const key = this.slotKey(slotId);
       const payload = mergeSnapshotMeta(makeSerializableSnapshot(state, rngSnapshot), extraMeta);
-      localStorage.setItem(key, JSON.stringify(payload));
-      return { key, bytes: JSON.stringify(payload).length };
+      // v0.8.8 A9 (QA1 L8) — stringify once. The pre-fix double-stringify
+      // could double the snapshot serialization cost on large colonies
+      // (which can exceed 1 MB JSON), and was redundant.
+      const json = JSON.stringify(payload);
+      localStorage.setItem(key, json);
+      return { key, bytes: json.length };
     },
 
     loadFromStorage(slotId) {

@@ -1,4 +1,11 @@
+// v0.8.7.1 U3 — reclaim Digit0 for the Select / Inspect tool. Previous
+// binding (Digit0 → kitchen) was inconsistent with the tool button label
+// "(10)" and players had no quick way to drop into neutral inspect mode.
+// Kitchen retains its (10)-suffix label but the digit shortcut moves to the
+// adjacent unused slot — there is none in the 1-9/-/= range, so kitchen
+// loses its hotkey for now and is reachable via the toolbar button only.
 export const TOOL_SHORTCUTS = Object.freeze({
+  Digit0: "select",
   Digit1: "road",
   Digit2: "farm",
   Digit3: "lumber",
@@ -8,13 +15,12 @@ export const TOOL_SHORTCUTS = Object.freeze({
   Digit7: "erase",
   Digit8: "quarry",
   Digit9: "herb_garden",
-  Digit0: "kitchen",
   Minus: "smithy",
   Equal: "clinic",
 });
 
 export const SHORTCUT_HINT = Object.freeze(
-  "LMB build/select | Alt+LMB inspect | RMB drag | 1-0/-/= tools | R or Home reset camera | L heat lens | T terrain overlay | [/] speed tier | Esc clear | Space pause | Ctrl/Cmd+Z undo",
+  "LMB build/select | Alt+LMB inspect | RMB drag | 0 select | 1-9/-/= tools | R or Home reset camera | L heat lens | T terrain overlay | [/] speed tier | Esc clear | Space pause | Ctrl/Cmd+Z undo",
 );
 
 function eventKey(event) {

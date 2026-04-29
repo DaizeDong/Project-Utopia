@@ -1,5 +1,6 @@
 import { BALANCE } from "../../config/balance.js";
 import { ROLE } from "../../config/constants.js";
+import { releaseBuilderSite } from "../construction/ConstructionSites.js";
 
 
 function clamp(v, min, max) {
@@ -26,6 +27,14 @@ function setWorkerRole(state, worker, newRole) {
   if (currentRole === newRole) return;
   if (state?._jobReservation && typeof state._jobReservation.releaseAll === "function") {
     state._jobReservation.releaseAll(worker.id);
+  }
+  // v0.8.6 Tier 2 BH3: when transitioning OUT of BUILDER, release any builder-
+  // site reservation so a demoted ex-BUILDER doesn't permanently hold a
+  // construction site's `builderId` slot. Pre-fix, the site was wasted until
+  // the worker died — reservations cleared via JobReservation are a different
+  // datum (per-tile reservations) and didn't touch ConstructionSites.builderId.
+  if (currentRole === "BUILDER" && newRole !== "BUILDER") {
+    releaseBuilderSite(state, worker);
   }
   worker.role = newRole;
 }
@@ -168,12 +177,20 @@ export class RoleAssignmentSystem {
     const hintGuards = Math.max(0, Number(state.ai?.fallbackHints?.pendingGuardCount ?? 0) | 0);
     const combat = state.metrics?.combat ?? null;
     const activeRaiders = Number(combat?.activeRaiders ?? 0);
+    // v0.8.7 T0-4 (QA1-H2): saboteurs are also a hostile-threat type that
+    // should pull GUARD draft. MortalitySystem.recomputeCombatMetrics now
+    // populates `combat.activeSaboteurs`; treat raiders+saboteurs as a
+    // combined threat headcount so a saboteur breach without raiders still
+    // promotes guards (was dead-field pre-fix — saboteurs were invisible to
+    // RoleAssignmentSystem, leaving farms exposed during pure-saboteur runs).
+    const activeSaboteurs = Number(combat?.activeSaboteurs ?? 0);
+    const totalActiveThreats = activeRaiders + activeSaboteurs;
     const nearestDist = Number(combat?.nearestThreatDistance ?? -1);
     // Tight proximity gate (~6 tiles) keeps the live-promotion responsive
     // for actual raids while avoiding any ambient draft.
     const proximityGate = 6;
-    const liveTargetGuards = (activeRaiders > 0 && nearestDist > 0 && nearestDist <= proximityGate)
-      ? Math.min(guardCap, Math.max(1, activeRaiders * Number(BALANCE.targetGuardsPerThreat ?? 1)))
+    const liveTargetGuards = (totalActiveThreats > 0 && nearestDist > 0 && nearestDist <= proximityGate)
+      ? Math.min(guardCap, Math.max(1, totalActiveThreats * Number(BALANCE.targetGuardsPerThreat ?? 1)))
       : 0;
     const requestedGuards = Math.max(0, Math.min(
       guardCap,
@@ -193,6 +210,9 @@ export class RoleAssignmentSystem {
       if (need > 0) {
         // Find the nearest threat anchor for ordering. Falls back to
         // farming-skill ascending when no live predator is recorded yet.
+        // v0.8.7 T0-4: include hostile saboteurs (state.agents VISITORs) as
+        // threat anchors so guard top-up orders by distance to whichever
+        // hostile is closest (saboteurs live in agents[], predators in animals[]).
         let threat = null;
         let threatD2 = Infinity;
         for (const a of state.animals ?? []) {
@@ -205,6 +225,19 @@ export class RoleAssignmentSystem {
             if (d2 < threatD2) {
               threatD2 = d2;
               threat = a;
+            }
+          }
+        }
+        for (const v of state.agents ?? []) {
+          if (!v || v.alive === false) continue;
+          if (v.type !== "VISITOR" || v.kind !== "SABOTEUR") continue;
+          for (const w of allWorkers) {
+            const dx = v.x - w.x;
+            const dz = v.z - w.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < threatD2) {
+              threatD2 = d2;
+              threat = v;
             }
           }
         }
@@ -238,15 +271,86 @@ export class RoleAssignmentSystem {
     for (const w of currentGuardSet) {
       if (!guardSet.has(w)) setWorkerRole(state, w, "FARM");
     }
-    // The rest of the allocator works on `workers` (non-GUARD pool).
-    const workers = allWorkers.filter((w) => !guardSet.has(w));
+
+    // v0.8.4 building-construction (Agent A) — BUILDER allocation. Sized
+    // by `clamp(ceil(sites * builderPerSite), builderMin, builderMax)` and
+    // never strips below the GUARD count + 1 economy worker. Sites empty
+    // ⇒ all current BUILDERs revert to FARM (the economy allocator will
+    // re-spread them).
+    const sitesArr = Array.isArray(state?.constructionSites) ? state.constructionSites : [];
+    const sitesCount = sitesArr.length;
+    const builderPerSite = Number(BALANCE.builderPerSite ?? 1.5);
+    const builderMin = Math.max(0, Number(BALANCE.builderMin ?? 0));
+    const builderMax = Math.max(0, Number(BALANCE.builderMax ?? 6));
+    let targetBuilders = sitesCount > 0
+      ? Math.ceil(sitesCount * builderPerSite)
+      : 0;
+    targetBuilders = Math.max(builderMin, Math.min(builderMax, targetBuilders));
+    // v0.8.6 Tier 3 BC3: enforce BALANCE.builderMaxFraction (default 0.30) so
+    // a small population with ambitious construction queues can't drain
+    // economy workers into BUILDER. Pre-fix the constant existed in balance.js
+    // but was never read — 5 of 7 workers could end up BUILDER while food
+    // production crashed. Floor result so 1 builder is always allowed when
+    // sites exist.
+    const builderMaxFraction = Number(BALANCE.builderMaxFraction ?? 0.30);
+    if (sitesCount > 0) {
+      const fractionCap = Math.max(1, Math.floor(totalWorkerCount * builderMaxFraction));
+      targetBuilders = Math.min(targetBuilders, fractionCap);
+    }
+    // Don't draft more BUILDERs than the post-GUARD pool can spare while
+    // still leaving at least one non-GUARD economy worker.
+    const economyHeadroom = Math.max(0, totalWorkerCount - guards.length - 1);
+    targetBuilders = Math.min(targetBuilders, economyHeadroom);
+
+    const currentBuilderSet = new Set(allWorkers.filter((w) => w.role === "BUILDER" && !guardSet.has(w)));
+    let builders = [];
+    if (targetBuilders > 0) {
+      // Prefer existing BUILDERs (preserve site reservation), then
+      // top-up with the nearest idle worker to a site centroid. Falls back
+      // to spawn order so determinism is preserved.
+      builders = Array.from(currentBuilderSet).slice(0, targetBuilders);
+      const need = targetBuilders - builders.length;
+      if (need > 0) {
+        const candidates = allWorkers
+          .filter((w) => !guardSet.has(w) && !currentBuilderSet.has(w))
+          .map((w, i) => {
+            let nearestSiteDist = Infinity;
+            for (const s of sitesArr) {
+              if (!s) continue;
+              const dx = (s.ix - 0.5) - (w.x ?? 0);
+              const dz = (s.iz - 0.5) - (w.z ?? 0);
+              const d = Math.abs(dx) + Math.abs(dz);
+              if (d < nearestSiteDist) nearestSiteDist = d;
+            }
+            return { w, i, dist: nearestSiteDist };
+          })
+          .sort((a, b) => {
+            if (a.dist !== b.dist) return a.dist - b.dist;
+            return a.i - b.i;
+          });
+        for (let i = 0; i < need && i < candidates.length; i += 1) {
+          builders.push(candidates[i].w);
+        }
+      }
+    }
+    const builderSet = new Set(builders);
+    for (const w of builders) setWorkerRole(state, w, "BUILDER");
+    // Any current BUILDER that didn't make the cut reverts to FARM. When
+    // sites empty (targetBuilders === 0) this drains the entire BUILDER pool.
+    for (const w of currentBuilderSet) {
+      if (!builderSet.has(w)) setWorkerRole(state, w, "FARM");
+    }
+
+    // The rest of the allocator works on `workers` (non-GUARD, non-BUILDER pool).
+    const workers = allWorkers.filter((w) => !guardSet.has(w) && !builderSet.has(w));
     const n = workers.length;
     if (n === 0) {
-      // All workers are guards — still publish counts and bail.
+      // All workers are guards or builders — still publish counts and bail.
       state.metrics ??= {};
       state.metrics.roleCounts = {
         FARM: 0, WOOD: 0, STONE: 0, HERBS: 0, COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0,
         GUARD: guards.length,
+        BUILDER: builders.length,
       };
       return;
     }
@@ -564,7 +668,11 @@ export class RoleAssignmentSystem {
     // on "kitchen exists but COOK=0". Counts reflect the post-assignment
     // distribution.
     state.metrics ??= {};
-    const counts = { FARM: 0, WOOD: 0, STONE: 0, HERBS: 0, COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0, GUARD: 0 };
+    const counts = {
+      FARM: 0, WOOD: 0, STONE: 0, HERBS: 0,
+      COOK: 0, SMITH: 0, HERBALIST: 0, HAUL: 0,
+      GUARD: 0, BUILDER: 0,
+    };
     for (const worker of allWorkers) {
       const r = worker.role;
       if (r && counts[r] !== undefined) counts[r] += 1;

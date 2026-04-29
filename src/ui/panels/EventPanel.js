@@ -99,7 +99,11 @@ export class EventPanel {
     // { name, role, trait, cause, location, timeSec }) populated by
     // MortalitySystem.recordDeath. Shown inside a <details> element so the
     // player can collapse it when it grows long.
-    const deathLogStructured = this.state.gameplay?.deathLogStructured ?? [];
+    // v0.8.8 A3 (F9) — cap rendered chronicle entries to 100 to prevent
+    // unbounded DOM growth on long survival runs (death log itself is
+    // capped elsewhere but this avoids paying the render cost in render()).
+    const deathLogStructuredAll = this.state.gameplay?.deathLogStructured ?? [];
+    const deathLogStructured = deathLogStructuredAll.slice(0, 100);
     if (deathLogStructured.length > 0) {
       const chronEntries = deathLogStructured.map((d) => {
         const day = Math.floor(Number(d.timeSec ?? 0) / 60);
@@ -109,9 +113,12 @@ export class EventPanel {
         const locSafe = String(d.location ?? "the colony").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
         return `<div class="chronicle-entry">&#128128; <strong>${nameSafe}</strong>${trait} &mdash; ${causeSafe} near ${locSafe} <span class="chronicle-day">Day ${day}</span></div>`;
       }).join("");
+      const truncatedNote = deathLogStructuredAll.length > deathLogStructured.length
+        ? ` (showing latest ${deathLogStructured.length})`
+        : "";
       html += `
         <details class="chronicle-section">
-          <summary class="chronicle-header">Chronicles &middot; ${deathLogStructured.length} fallen</summary>
+          <summary class="chronicle-header">Chronicles &middot; ${deathLogStructuredAll.length} fallen${truncatedNote}</summary>
           <div class="chronicle-list">${chronEntries}</div>
         </details>
         <style>
