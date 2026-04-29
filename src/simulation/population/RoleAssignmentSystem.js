@@ -138,12 +138,35 @@ export class RoleAssignmentSystem {
   constructor() {
     this.name = "RoleAssignmentSystem";
     this.timer = 0;
+    // v0.8.11 worker-AI bare-init responsiveness (Fix 4) — track the last
+    // observed sites/buildings totals so a player rapid-placing blueprints
+    // doesn't have to wait up to managerIntervalSec (1.2s) before workers
+    // are reassigned as BUILDERs. When either count changes mid-cooldown
+    // we force the timer to zero on the next tick.
+    this._lastSitesCount = -1;
+    this._lastBuildingsSum = -1;
   }
 
   update(dt, state) {
+    // v0.8.11 Fix 4 — early-fire trigger when sitesCount or building totals
+    // changed since the last assignment pass. Cheap O(1) sum comparison.
+    const sitesCountNow = Array.isArray(state?.constructionSites) ? state.constructionSites.length : 0;
+    const buildingsSumNow = Number(state.buildings?.farms ?? 0)
+      + Number(state.buildings?.lumbers ?? 0)
+      + Number(state.buildings?.quarries ?? 0)
+      + Number(state.buildings?.herbGardens ?? 0)
+      + Number(state.buildings?.kitchens ?? 0)
+      + Number(state.buildings?.smithies ?? 0)
+      + Number(state.buildings?.clinics ?? 0)
+      + Number(state.buildings?.warehouses ?? 0);
+    if (this.timer > 0 && (sitesCountNow !== this._lastSitesCount || buildingsSumNow !== this._lastBuildingsSum)) {
+      this.timer = 0;
+    }
     this.timer -= dt;
     if (this.timer > 0) return;
     this.timer = BALANCE.managerIntervalSec;
+    this._lastSitesCount = sitesCountNow;
+    this._lastBuildingsSum = buildingsSumNow;
 
     const allWorkers = state.agents.filter((a) => a.type === "WORKER");
 
@@ -293,7 +316,24 @@ export class RoleAssignmentSystem {
     // production crashed. Floor result so 1 builder is always allowed when
     // sites exist.
     const builderMaxFraction = Number(BALANCE.builderMaxFraction ?? 0.30);
-    if (sitesCount > 0) {
+    // v0.8.11 worker-AI bare-init responsiveness (Fix 1) — when no functional
+    // economy buildings exist (bare-init bootstrap) AND blueprints are pending,
+    // the fractionCap of 0.30 strands workers as wandering FARMs against
+    // farms=0 → StatePlanner returns "wander". Bypass the fraction cap during
+    // this narrow bootstrap window so the colony can actually build itself
+    // out of the bare state. economyHeadroom still enforces the "leave ≥1
+    // non-GUARD economy worker" invariant so the colony can't strip itself
+    // entirely into BUILDERs.
+    const economyBuildingsSum = Number(state.buildings?.farms ?? 0)
+      + Number(state.buildings?.lumbers ?? 0)
+      + Number(state.buildings?.quarries ?? 0)
+      + Number(state.buildings?.herbGardens ?? 0)
+      + Number(state.buildings?.kitchens ?? 0)
+      + Number(state.buildings?.smithies ?? 0)
+      + Number(state.buildings?.clinics ?? 0)
+      + Number(state.buildings?.warehouses ?? 0);
+    const noEconomyBootstrap = economyBuildingsSum === 0 && sitesCount > 0;
+    if (sitesCount > 0 && !noEconomyBootstrap) {
       const fractionCap = Math.max(1, Math.floor(totalWorkerCount * builderMaxFraction));
       targetBuilders = Math.min(targetBuilders, fractionCap);
     }
