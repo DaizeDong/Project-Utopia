@@ -12,6 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createInitialGrid, MAP_TEMPLATES, BIOME, BIOME_NAMES } from "../src/world/grid/Grid.js";
+import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { TILE } from "../src/config/constants.js";
 
 const DIVERSITY_SEEDS = [1, 7, 42, 1337, 2025];
@@ -141,6 +142,61 @@ test("quirks fire deterministically: same seed -> same quirk-affected tiles", ()
       assert.equal(biomeDiff, 0, `${tpl} seed ${seed}: biomes diverged`);
     }
   }
+});
+
+// v0.8.10 — bare-initial-map. createInitialGameState must produce a grid with
+// zero player-buildable tiles (warehouse / farm / lumber / quarry / herb /
+// kitchen / smithy / clinic / wall / gate / road / bridge). Terrain features
+// (water, ruins, grass) and resource hints (FOREST/STONE/HERB nodeFlags +
+// yieldPool on tileState) must remain intact so the player builds from zero
+// without losing the world's identity.
+test("bare-initial-map: createInitialGameState produces zero buildings across templates", () => {
+  const buildingTiles = [
+    TILE.WAREHOUSE, TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN,
+    TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.WALL, TILE.GATE,
+    TILE.ROAD, TILE.BRIDGE,
+  ];
+  for (const tpl of MAP_TEMPLATES) {
+    for (const seed of [1, 1337, 42]) {
+      const state = createInitialGameState({ templateId: tpl.id, seed, bareInitial: true });
+      const counts = {};
+      for (let i = 0; i < state.grid.tiles.length; i += 1) {
+        const t = state.grid.tiles[i];
+        if (buildingTiles.includes(t)) {
+          counts[t] = (counts[t] ?? 0) + 1;
+        }
+      }
+      const total = Object.values(counts).reduce((s, n) => s + n, 0);
+      assert.equal(
+        total, 0,
+        `${tpl.id} seed=${seed}: expected 0 buildings, got ${JSON.stringify(counts)}`,
+      );
+      // state.buildings reflects the same zero counts.
+      assert.equal(state.buildings.farms, 0);
+      assert.equal(state.buildings.warehouses, 0);
+      assert.equal(state.buildings.lumbers, 0);
+      assert.equal(state.buildings.roads, 0);
+    }
+  }
+});
+
+test("bare-initial-map: resource hints (FOREST/STONE/HERB nodeFlags) survive the strip", () => {
+  // Resource hints persist on tileState so the player can still see where
+  // forests / stone deposits / herb beds are when they decide where to build
+  // LUMBER / QUARRY / HERB_GARDEN. nodeFlags bitmask: FOREST=1, STONE=2, HERB=4.
+  const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337, bareInitial: true });
+  let forestNodes = 0;
+  let stoneNodes = 0;
+  let herbNodes = 0;
+  for (const entry of state.grid.tileState.values()) {
+    const flags = Number(entry?.nodeFlags ?? 0);
+    if (flags & 1) forestNodes += 1;
+    if (flags & 2) stoneNodes += 1;
+    if (flags & 4) herbNodes += 1;
+  }
+  assert.ok(forestNodes >= 5, `expected at least 5 FOREST hints, got ${forestNodes}`);
+  assert.ok(stoneNodes >= 3, `expected at least 3 STONE hints, got ${stoneNodes}`);
+  assert.ok(herbNodes >= 1, `expected at least 1 HERB hint, got ${herbNodes}`);
 });
 
 // Sanity: BIOME constants are exported and consistent.
