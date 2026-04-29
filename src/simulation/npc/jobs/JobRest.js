@@ -1,11 +1,12 @@
 // v0.9.0-c — JobRest: rest-in-place recovery. canTake gates on
 // `worker.rest < workerRestSeekThreshold`. score collapses above threshold
 // (so a rested worker never picks Rest). isComplete fires at
-// `workerRestRecoverThreshold`. tick delegates to handleRest.
+// `workerRestRecoverThreshold`. v0.9.0-e — body inlined; legacy handleRest
+// deleted from WorkerAISystem.js.
 
 import { clamp } from "../../../app/math.js";
 import { BALANCE } from "../../../config/balance.js";
-import { handleRest } from "../WorkerAISystem.js";
+import { setIdleDesired } from "./JobHelpers.js";
 import { Job } from "./Job.js";
 
 export class JobRest extends Job {
@@ -30,11 +31,22 @@ export class JobRest extends Job {
     return clamp(1.05 - rest, 0, 0.95);
   }
 
-  tick(worker, state, services, dt) {
+  tick(worker, state, _services, dt) {
     worker.blackboard ??= {};
     worker.blackboard.intent = "rest";
     worker.stateLabel = "Rest";
-    handleRest(worker, state, services, dt);
+    // v0.9.0-e — inlined from former handleRest. Workers rest in place;
+    // recover rest+morale and update progress for duration tracking.
+    setIdleDesired(worker);
+    const restRecovery = Number(BALANCE.workerRestRecoveryPerSecond ?? 0.08);
+    const moraleRecovery = Number(BALANCE.workerMoraleRecoveryPerSecond ?? 0.02);
+    worker.rest = clamp(Number(worker.rest ?? 1) + restRecovery * dt, 0, 1);
+    worker.morale = clamp(Number(worker.morale ?? 1) + moraleRecovery * dt, 0, 1);
+    worker.progress = clamp(Number(worker.rest ?? 0), 0, 1);
+    worker.workRemaining = Math.max(
+      0,
+      Number(BALANCE.workerRestRecoverThreshold ?? 0.6) - Number(worker.rest ?? 0),
+    );
   }
 
   isComplete(worker, _state, _services) {

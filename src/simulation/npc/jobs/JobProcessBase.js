@@ -6,18 +6,21 @@
 // Worker behaviour: walk to the building tile and stay idle. ProcessingSystem
 // (next system in tick) detects the role-fit worker within 1 manhattan and
 // runs the consume+produce cycle. JobProcess does NOT mutate resources
-// itself — yield equivalence with handleProcess is guaranteed because
-// production happens entirely inside ProcessingSystem.
+// itself — yield equivalence with the legacy handleProcess is guaranteed
+// because production happens entirely inside ProcessingSystem. v0.9.0-e
+// dedupe: legacy handleProcess deleted; JobProcessBase setIdleDesired's
+// at the building (no movement once arrived) which mirrors what
+// handleProcess did when called by the Job-layer.
 
 import { clamp } from "../../../app/math.js";
 import { ROLE } from "../../../config/constants.js";
 import { worldToTile } from "../../../world/grid/Grid.js";
-import { handleProcess } from "../WorkerAISystem.js";
 import {
   arrivedAtTarget,
   chooseWorkerTarget,
   executeMovement,
   releaseReservation,
+  setIdleDesired,
   tryAcquirePath,
 } from "./JobHelpers.js";
 import { Job } from "./Job.js";
@@ -99,8 +102,11 @@ export class JobProcessBase extends Job {
     }
     worker.blackboard.intent = ctor.intentLabel;
     worker.stateLabel = ctor.stateLabel;
-    // TODO v0.9.0-d: dedupe with handleProcess after legacy retired.
-    handleProcess(worker, state, services, dt);
+    // v0.9.0-e — at the building tile: stand idle. ProcessingSystem (next
+    // system in the SYSTEM_ORDER) detects the role-fit worker within 1
+    // manhattan and runs the consume+produce cycle. No worker-side
+    // resource mutation here (yield-equivalence preserved).
+    setIdleDesired(worker);
   }
 
   isComplete(_worker, _state, _services) { return false; }
