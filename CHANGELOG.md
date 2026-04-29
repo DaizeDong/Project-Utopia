@@ -1,5 +1,44 @@
 # Changelog
 
+## [Unreleased] - v0.9.0-c — JobDeliver/Build/Eat/Rest/Process×3/Guard (still feature-flagged)
+
+Phase 3 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` stays default OFF; production behaviour is unchanged. This phase ports the remaining 8 worker handlers (Deliver/Build/Eat/Rest/Process×3/Guard) into Job classes that share the existing yield / construction / eat / rest / processing-cycle / combat semantics with the legacy `handle*` dispatch. `ALL_JOBS.length` is now 13.
+
+### Added
+
+- **`src/simulation/npc/jobs/JobDeliverWarehouse.js`** — score by carry-fullness (`0 → 0.4`, full → ~0.95) with a small HAUL-role bonus. Tick walks to the nearest reachable warehouse and delegates to legacy `handleDeliver` for the M2 warehouse-queue / M4 isolation / mood-output / spoilage-reset semantics.
+- **`src/simulation/npc/jobs/JobBuildSite.js`** — BUILDER role + low-priority HAUL/FARM bypass when `sitesCount > activeWorkers` (matches v0.8.11 noEconomyBootstrap intent). `findTarget` delegates to `findOrReserveBuilderSite` so claim semantics live in `ConstructionSites.js`. Score: BUILDER=0.85, HAUL/FARM=0.35, others=0.
+- **`src/simulation/npc/jobs/JobEat.js`** — gated on hunger below `BALANCE.workerHungerSeekThreshold`. `1.05 - hunger` clamped to [0, 0.95] so hunger=0.10 → ~0.95 (preempts harvest), above threshold → 0 (no thrash). Falls through to `consumeEmergencyRation` when no warehouse exists or warehouse food is unreachable; otherwise delegates to `handleEat` at the warehouse for meal-vs-food preference.
+- **`src/simulation/npc/jobs/JobRest.js`** — sleep-in-place mechanic. canTake gates on rest below `workerRestSeekThreshold`; `1.05 - rest` clamped score; isComplete fires at `workerRestRecoverThreshold`. Tick delegates to `handleRest` for the rest+morale recovery arithmetic.
+- **`src/simulation/npc/jobs/JobProcessBase.js`** — shared base for the three process Jobs, mirroring `JobHarvestBase`. canTake gates on role-fit + building-count + input-resource availability; score blends output-stockpile pressure with distance. Tick delegates to `handleProcess` for the walk-to-building loop. Yield equivalence is guaranteed because actual production happens entirely inside `ProcessingSystem` (which reads from `state.resources` and the per-tile timer).
+- **`src/simulation/npc/jobs/JobProcessKitchen.js`** — COOK role + KITCHEN tile. Consumes food → produces meals (cycle owned by `ProcessingSystem`).
+- **`src/simulation/npc/jobs/JobProcessSmithy.js`** — SMITH role + SMITHY tile. Consumes stone + wood → produces tools.
+- **`src/simulation/npc/jobs/JobProcessClinic.js`** — HERBALIST role + CLINIC tile. Consumes herbs → produces medicine.
+- **`src/simulation/npc/jobs/JobGuardEngage.js`** — combat preempt at priority 100. canTake gates on `role === GUARD` AND any active hostile (PREDATOR or SABOTEUR) within `BALANCE.guardAggroRadius`. findTarget encodes `entityId + position` so the scheduler's hysteresis can match a specific target across ticks. Score = 0.95. Tick delegates to `handleGuardCombat` for the path-fail dwell / melee reach / attackCooldown / saboteur-engagement semantics.
+- **`test/job-extended.test.js`** (15 cases): smoke per Job (canTake + findTarget + score behave for the obvious case); 2 hysteresis cases (JobEat preempts mid-harvest when hunger drops; JobDeliverWarehouse takes over when carry hits the full cap); full-registry resolution (hungry BUILDER + 5 sites + 2 farms picks JobEat first, then JobBuildSite once fed); **yield-equivalence** for JobProcessKitchen meal output and JobProcessSmithy/Clinic tool/medicine outputs (`Math.abs(jobLayer - legacy) < 1e-6` after running 80 half-second ticks under flag-OFF and flag-ON); GUARD short-circuit flag-gate verification under flag-ON (JobGuardEngage picked) and flag-OFF (legacy short-circuit's `guard_idle` intent set).
+
+### Changed
+
+- **`src/simulation/npc/jobs/JobRegistry.js`** — `ALL_JOBS` now lists 13 Jobs in priority order: GuardEngage (100) / Eat (80) / Rest (70) / BuildSite (30) / DeliverWarehouse (20) / Process×3 (15) / Harvest×4 (10) / Wander (0).
+- **`src/simulation/npc/WorkerAISystem.js`** — exports `handleEat`, `handleProcess`, `handleRest`, `handleGuardCombat` so the new Jobs can delegate to them without forking. Adds `_consumeEmergencyRationForJobLayer(worker, state, dt, services)` thin wrapper so JobEat can fall through to the carry-eat path. **Flag-gates the GUARD short-circuit** at the top of the worker loop on `!FEATURE_FLAGS.USE_JOB_LAYER` — when ON, GUARD workers route through JobScheduler so JobGuardEngage preempts; when OFF (production default) the legacy short-circuit runs unchanged.
+- **`test/job-layer-foundation.test.js`** — phase-a test #1's `ALL_JOBS.length === 5` assertion bumped to `=== 13`.
+
+### Constraints honoured
+
+- **Zero behaviour change in production.** `FEATURE_FLAGS.USE_JOB_LAYER = false` stays. Legacy dispatch path runs unchanged. The GUARD short-circuit flag-gate is the only conditional that fires only when the flag is ON.
+- `commitmentCycle`, `TASK_LOCK_STATES`, `chooseWorkerIntent`, `StatePlanner`, `StateFeasibility`, `RoleAssignmentSystem` untouched (phase 0.9.0-d territory).
+- No new BALANCE.* knobs. Job scoring constants live inline.
+- Trace harness NOT re-run this phase — the only flag-conditional code path is the GUARD short-circuit gate, which is exercised by the unit tests under both flag values. Trace re-run is phase 0.9.0-d (after flag flip).
+
+### Test results
+
+1676 tests / 1673 pass / 0 fail / 3 pre-existing skips. v0.9.0-b baseline was 1661/1658 — exactly +15 (the new test file) with zero regressions.
+
+### Deferred to phases 0.9.0-d / e
+
+- **0.9.0-d** — flip `FEATURE_FLAGS.USE_JOB_LAYER` default to ON; retire `commitmentCycle` + `TASK_LOCK_STATES` + `chooseWorkerIntent` + `StatePlanner.deriveWorkerDesiredState`. Re-run trace harness against the A-G scenarios. Physical move of helpers from `WorkerAISystem.js` into `JobHelpers.js`. Dedupe of the legacy `handle*` bodies whose tick is currently delegated from a Job (TODO comments left in JobBuildSite/JobDeliverWarehouse/JobEat/JobProcessBase/JobGuardEngage point at the dedupe sites).
+- **0.9.0-e** — delete the `handle*` helpers and the `if/else if` dispatch chain in `WorkerAISystem.update`.
+
 ## [Unreleased] - v0.9.0-b — JobHarvest×4 + JobHelpers extraction (still feature-flagged)
 
 Phase 2 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` stays default OFF; production behaviour is unchanged. This phase ports the four harvest handlers (Farm/Lumber/Quarry/Herb) into Job classes that share the existing yield-pool / soil-salinization / node-flag / fertility-drain semantics with the legacy `handleHarvest`.

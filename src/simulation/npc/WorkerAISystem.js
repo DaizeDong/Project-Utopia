@@ -749,6 +749,15 @@ function consumeEmergencyRation(worker, state, dt, nowSec, services = null) {
   worker.blackboard.emergencyRationCooldownSec = nowSec + WORKER_EMERGENCY_RATION_COOLDOWN_SEC;
 }
 
+// v0.9.0-c — JobEat falls through to consumeEmergencyRation when no
+// warehouse exists (or the worker is unreachable from one). Exposed via
+// a thin wrapper so the legacy handler retains its module-private nowSec
+// resolution.
+export function _consumeEmergencyRationForJobLayer(worker, state, dt, services = null) {
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
+  consumeEmergencyRation(worker, state, dt, nowSec, services);
+}
+
 function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   const nowSec = state.metrics.timeSec;
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
@@ -806,7 +815,11 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
  * the regular FSM); false when no target was found and the worker should
  * fall through to the regular role handling (e.g. wander).
  */
-function handleGuardCombat(worker, state, services, dt) {
+// v0.9.0-c — exported so JobGuardEngage can reuse the same melee + path-fail
+// dwell semantics without forking. WorkerAISystem still calls it directly
+// for the GUARD short-circuit at the top of the worker loop when the flag
+// is OFF.
+export function handleGuardCombat(worker, state, services, dt) {
   const animals = Array.isArray(state?.animals) ? state.animals : [];
   const agents = Array.isArray(state?.agents) ? state.agents : [];
 
@@ -907,7 +920,9 @@ function handleGuardCombat(worker, state, services, dt) {
   return true;
 }
 
-function handleEat(worker, state, services, dt) {
+// v0.9.0-c — exported so JobEat can reuse the meal-vs-food preference and
+// recovery arithmetic without forking.
+export function handleEat(worker, state, services, dt) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
     clearPath(worker);
@@ -1323,7 +1338,10 @@ function applyNodeYieldHarvest(state, worker, carryKey, amount) {
   setTileField(state.grid, ix, iz, "lastHarvestTick", Number(state.metrics?.tick ?? 0));
 }
 
-function handleProcess(worker, state, services, dt) {
+// v0.9.0-c — exported so JobProcessKitchen/Smithy/Clinic can reuse the
+// walk-to-building + path follow loop without forking. ProcessingSystem
+// (next system in tick) still owns the actual production cycle.
+export function handleProcess(worker, state, services, dt) {
   const config = ROLE_PROCESS_CONFIG[worker.role];
   if (!config) {
     setIdleDesired(worker);
@@ -1371,7 +1389,9 @@ function attemptAutoBuild(worker, state, services) {
   return false;
 }
 
-function handleRest(worker, state, services, dt) {
+// v0.9.0-c — exported so JobRest can reuse the rest+morale recovery
+// arithmetic without forking.
+export function handleRest(worker, state, services, dt) {
   // Workers rest in place — recover rest and morale
   setIdleDesired(worker);
   const restRecovery = Number(BALANCE.workerRestRecoveryPerSecond ?? 0.08);
@@ -1784,7 +1804,12 @@ export class WorkerAISystem {
         // any regular FSM intent (farm/haul/eat). When no target is in range
         // they fall through to wander-style idle handling so they remain
         // patrolling near home. Mirrors the `isStressWorker` patrol branch.
-        if (worker.role === ROLE.GUARD) {
+        //
+        // v0.9.0-c — flag-gate. When `FEATURE_FLAGS.USE_JOB_LAYER` is ON,
+        // GUARD workers are routed through JobScheduler so JobGuardEngage
+        // (priority 100) preempts. When OFF (production default), the
+        // legacy short-circuit below runs unchanged.
+        if (worker.role === ROLE.GUARD && !FEATURE_FLAGS.USE_JOB_LAYER) {
           // Always tick the worker's attack cooldown so it can land a hit
           // once range closes; handleGuardCombat will reset it on hit.
           worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
