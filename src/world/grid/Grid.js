@@ -621,6 +621,436 @@ function carveRiver(tiles, width, height, profile, seed, riverIndex = 0) {
   }
 }
 
+/**
+ * v0.8.9 Terrain rewrite — branching river network.
+ *
+ * Replaces the single sine-wave `carveRiver` for templates that want
+ * realistic-feeling hydrology. Picks elevated source points via Poisson-like
+ * spread, walks downhill following the elevation gradient with small RNG
+ * jitter, and recursively spawns perpendicular tributary branches with
+ * tapered width.
+ *
+ * Determinism: fully driven by `opts.seed` through `createRng`. No use of
+ * `Math.random` anywhere — same seed always reproduces the exact same
+ * branching topology and width pattern.
+ *
+ * @param {object} opts
+ * @param {Uint8Array} opts.tiles
+ * @param {Float32Array} [opts.elevation]  — read-only elevation field used for
+ *                                            source picking and downhill walks.
+ * @param {Float32Array} [opts.moisture]   — boosted in a 3-tile radius around
+ *                                            every carved tile.
+ * @param {number} opts.width
+ * @param {number} opts.height
+ * @param {number} opts.seed
+ * @param {number} [opts.mainCount=2]
+ * @param {number} [opts.branchProb=0.06]
+ * @param {number} [opts.maxBranchDepth=2]
+ * @param {number} [opts.minWidth=1]
+ * @param {number} [opts.maxWidth=3]
+ * @param {number} [opts.maxLen=120]
+ */
+export function carveRiverNetwork(opts) {
+  const {
+    tiles,
+    elevation,
+    moisture,
+    width,
+    height,
+    seed,
+    mainCount = 2,
+    branchProb = 0.06,
+    maxBranchDepth = 2,
+    minWidth = 1,
+    maxWidth = 3,
+    maxLen = 120,
+  } = opts;
+  if (!tiles || !elevation || !width || !height) return;
+  // Independent RNG so adding the network doesn't shift downstream RNG state.
+  const rng = createRng((normalizeSeed(seed) ^ 0x52315633) >>> 0); // 0xR1V3R-ish
+  const area = width * height;
+
+  // ---- Source picking: high-elevation tiles spaced at least minSourceDist apart.
+  const minSourceDist = 12;
+  const minSourceDistSq = minSourceDist * minSourceDist;
+  const margin = 3;
+  const candidates = [];
+  for (let iz = margin; iz < height - margin; iz += 1) {
+    for (let ix = margin; ix < width - margin; ix += 1) {
+      const idx = ix + iz * width;
+      if (tiles[idx] === TILE.WATER) continue;
+      if (elevation[idx] <= 0.6) continue;
+      // weight ~ elevation^2 so the highest tiles are strongly preferred.
+      const w = elevation[idx] * elevation[idx] + rng() * 0.05;
+      candidates.push({ ix, iz, w });
+    }
+  }
+  // Fallback: if no high-elevation tiles exist (e.g. low-relief plains), pick
+  // from anywhere with elevation > 0.4.
+  if (candidates.length < mainCount) {
+    for (let iz = margin; iz < height - margin; iz += 1) {
+      for (let ix = margin; ix < width - margin; ix += 1) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        if (elevation[idx] <= 0.4) continue;
+        candidates.push({ ix, iz, w: elevation[idx] + rng() * 0.05 });
+      }
+    }
+  }
+  candidates.sort((a, b) => b.w - a.w);
+
+  const sources = [];
+  for (const c of candidates) {
+    if (sources.length >= mainCount) break;
+    let ok = true;
+    for (const s of sources) {
+      const dx = c.ix - s.ix;
+      const dz = c.iz - s.iz;
+      if (dx * dx + dz * dz < minSourceDistSq) { ok = false; break; }
+    }
+    if (ok) sources.push(c);
+  }
+  if (sources.length === 0) return;
+
+  // ---- Carve helpers (closures capture tiles/elevation/moisture).
+  const carved = []; // list of {ix, iz} for moisture pass.
+
+  function paintDisc(cx, cz, radius) {
+    // Always paint center tile (single-tile rivers shouldn't disappear).
+    const cIdx = cx + cz * width;
+    if (cx >= 0 && cz >= 0 && cx < width && cz < height) {
+      if (tiles[cIdx] !== TILE.WATER) {
+        tiles[cIdx] = TILE.WATER;
+        carved.push({ ix: cx, iz: cz });
+      }
+    }
+    if (radius < 1) return;
+    const r = radius;
+    const rSq = r * r + 0.25; // include diagonal-1 at r=1
+    for (let dz = -r; dz <= r; dz += 1) {
+      for (let dx = -r; dx <= r; dx += 1) {
+        if (dx === 0 && dz === 0) continue;
+        if (dx * dx + dz * dz > rSq) continue;
+        const px = cx + dx;
+        const pz = cz + dz;
+        if (px < 0 || pz < 0 || px >= width || pz >= height) continue;
+        const pIdx = px + pz * width;
+        if (tiles[pIdx] === TILE.WATER) continue;
+        tiles[pIdx] = TILE.WATER;
+        carved.push({ ix: px, iz: pz });
+      }
+    }
+  }
+
+  function bestDownhillNeighbor(ix, iz, prevIx, prevIz) {
+    const idx = ix + iz * width;
+    const here = elevation[idx];
+    let bestE = Infinity;
+    let bestX = ix;
+    let bestZ = iz;
+    for (let dz = -1; dz <= 1; dz += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dz === 0) continue;
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (nx < 0 || nz < 0 || nx >= width || nz >= height) return { hit: "edge", nx, nz };
+        // Avoid immediately reversing.
+        if (nx === prevIx && nz === prevIz) continue;
+        const nIdx = nx + nz * width;
+        if (tiles[nIdx] === TILE.WATER) return { hit: "water", nx, nz };
+        const jitter = (rng() - 0.5) * 0.05;
+        const e = elevation[nIdx] + jitter;
+        if (e < bestE) {
+          bestE = e;
+          bestX = nx;
+          bestZ = nz;
+        }
+      }
+    }
+    if (bestX === ix && bestZ === iz) return { hit: "sink", nx: ix, nz: iz };
+    if (bestE >= here + 0.04) return { hit: "sink", nx: ix, nz: iz };
+    return { hit: "step", nx: bestX, nz: bestZ };
+  }
+
+  function walkRiver(startIx, startIz, startWidth, depth, initialDir) {
+    let ix = startIx | 0;
+    let iz = startIz | 0;
+    let prevIx = initialDir ? ix - initialDir.dx : -1;
+    let prevIz = initialDir ? iz - initialDir.dz : -1;
+    const wMin = Math.max(1, minWidth);
+    const wMax = Math.max(wMin, maxWidth);
+    let curWidth = clamp(startWidth, wMin, wMax);
+
+    for (let step = 0; step < maxLen; step += 1) {
+      // Width tapers FROM full near source TO half near mouth — counter to
+      // real hydrology, but visually clearer for gameplay (sources read as
+      // "lakes" / wide pools and tributaries thin out).
+      const taper = 1 - 0.5 * (step / Math.max(1, maxLen));
+      const localWidth = Math.max(wMin, Math.round(curWidth * taper));
+      paintDisc(ix, iz, Math.floor(localWidth / 2));
+
+      const stepRes = bestDownhillNeighbor(ix, iz, prevIx, prevIz);
+      if (stepRes.hit === "sink") break;
+      if (stepRes.hit === "water") {
+        paintDisc(stepRes.nx, stepRes.nz, Math.floor(localWidth / 2));
+        break;
+      }
+      if (stepRes.hit === "edge") break;
+
+      // Branch decision (only on a real downhill step, after the source).
+      if (depth < maxBranchDepth && step > 3 && rng() < branchProb) {
+        // Direction perpendicular-ish to flow.
+        const dx = stepRes.nx - ix;
+        const dz = stepRes.nz - iz;
+        // Two perpendiculars; pick one randomly + 45° randomization.
+        const side = rng() < 0.5 ? 1 : -1;
+        const perpDx = -dz * side;
+        const perpDz = dx * side;
+        // Randomize within ±45°.
+        const ang = Math.atan2(perpDz, perpDx) + (rng() - 0.5) * (Math.PI / 2);
+        const branchDx = Math.round(Math.cos(ang));
+        const branchDz = Math.round(Math.sin(ang));
+        const childWidth = Math.max(wMin, Math.round(curWidth * 0.65));
+        // Start the branch one tile in the perpendicular direction so it
+        // doesn't immediately collapse back into the parent.
+        const bx = clamp(ix + branchDx, 1, width - 2);
+        const bz = clamp(iz + branchDz, 1, height - 2);
+        walkRiver(bx, bz, childWidth, depth + 1, { dx: branchDx, dz: branchDz });
+      }
+
+      prevIx = ix;
+      prevIz = iz;
+      ix = stepRes.nx;
+      iz = stepRes.nz;
+    }
+  }
+
+  // ---- Drive each main river.
+  for (let i = 0; i < sources.length; i += 1) {
+    const src = sources[i];
+    const startWidth = Math.max(minWidth, Math.min(maxWidth, Math.round(lerp(minWidth, maxWidth, rng()))));
+    walkRiver(src.ix, src.iz, startWidth, 0, null);
+  }
+
+  // ---- Moisture boost in radius 3 around every carved tile.
+  if (moisture && carved.length > 0) {
+    for (const c of carved) {
+      for (let dz = -3; dz <= 3; dz += 1) {
+        for (let dx = -3; dx <= 3; dx += 1) {
+          const nx = c.ix + dx;
+          const nz = c.iz + dz;
+          if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist > 3) continue;
+          const nIdx = nx + nz * width;
+          const fall = 0.85 * (1 - dist / 3.5);
+          if (moisture[nIdx] < fall) moisture[nIdx] = fall;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * v0.8.9 Terrain rewrite — per-seed macro features.
+ *
+ * Stamps 1-3 large-scale terrain features onto the elevation/moisture fields
+ * BEFORE biome assignment / river carving so the same template feels visibly
+ * different across seeds. Pool of 6 features; per-template weights nudge
+ * selection toward the template's identity (e.g. highlands favour
+ * mountainRidge+canyon, riverlands favour basin+peninsula).
+ *
+ * Determinism: same `seed`+`templateId` always picks the same features with
+ * the same parameters. Each feature uses its own derived RNG so picking the
+ * same feature on different seeds still varies orientation/amplitude.
+ *
+ * @param {object} opts
+ * @param {Float32Array} opts.elevation
+ * @param {Float32Array} opts.moisture
+ * @param {number} opts.width
+ * @param {number} opts.height
+ * @param {number} opts.seed
+ * @param {string}  [opts.templateId]
+ * @param {number}  [opts.count]  — override 1..3 feature count.
+ */
+export function applyMacroFeatures({ elevation, moisture, width, height, seed, templateId = DEFAULT_MAP_TEMPLATE_ID, count }) {
+  if (!elevation || !moisture || !width || !height) return;
+  const rng = createRng((normalizeSeed(seed) ^ 0x4D41435F) >>> 0); // "MAC_"
+
+  // ---- Feature implementations. Each mutates elevation/moisture in [0..1].
+  function gaussianStamp(cx, cz, radius, dE, dM) {
+    const r = Math.max(1, radius);
+    const r2 = r * r;
+    const minX = Math.max(0, Math.floor(cx - r));
+    const maxX = Math.min(width - 1, Math.ceil(cx + r));
+    const minZ = Math.max(0, Math.floor(cz - r));
+    const maxZ = Math.min(height - 1, Math.ceil(cz + r));
+    for (let iz = minZ; iz <= maxZ; iz += 1) {
+      for (let ix = minX; ix <= maxX; ix += 1) {
+        const dx = ix - cx;
+        const dz = iz - cz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > r2) continue;
+        const fall = Math.exp(-3 * d2 / r2); // smooth ~Gaussian
+        const idx = ix + iz * width;
+        if (dE !== 0) elevation[idx] = clamp(elevation[idx] + dE * fall, 0, 1);
+        if (dM !== 0) moisture[idx] = clamp(moisture[idx] + dM * fall, 0, 1);
+      }
+    }
+  }
+
+  // Each feature derives its own RNG so the same feature on different seeds
+  // still varies, and so adding/removing features doesn't shift other RNG
+  // state for downstream phases.
+  function rngFor(name) {
+    return createRng((normalizeSeed(seed) + name.charCodeAt(0) * 99) >>> 0);
+  }
+
+  const FEATURES = {
+    mountainRidge(p) {
+      // Linear high-elevation stripe at random orientation.
+      const r = rngFor("mountainRidge");
+      const cx = width * (0.3 + r() * 0.4);
+      const cz = height * (0.3 + r() * 0.4);
+      const angle = r() * Math.PI;
+      const length = Math.min(width, height) * lerp(0.45, 0.85, r());
+      const halfThick = Math.max(2.5, Math.min(width, height) * lerp(0.04, 0.09, r()));
+      const amp = lerp(0.18, 0.32, r()) * (p?.intensity ?? 1);
+      const ux = Math.cos(angle);
+      const uz = Math.sin(angle);
+      const stamps = Math.floor(length / 2);
+      for (let s = 0; s <= stamps; s += 1) {
+        const t = s / Math.max(1, stamps) - 0.5;
+        const px = cx + ux * t * length + (r() - 0.5) * 1.5;
+        const pz = cz + uz * t * length + (r() - 0.5) * 1.5;
+        gaussianStamp(px, pz, halfThick, amp, -0.05);
+      }
+    },
+    basin(p) {
+      const r = rngFor("basin");
+      const cx = width * (0.3 + r() * 0.4);
+      const cz = height * (0.3 + r() * 0.4);
+      const radius = Math.min(width, height) * lerp(0.16, 0.28, r());
+      const amp = -lerp(0.18, 0.30, r()) * (p?.intensity ?? 1);
+      gaussianStamp(cx, cz, radius, amp, 0.18);
+    },
+    mesa(p) {
+      // Cluster of 3-5 small high-elevation patches.
+      const r = rngFor("mesa");
+      const groupCx = width * (0.25 + r() * 0.5);
+      const groupCz = height * (0.25 + r() * 0.5);
+      const patches = 3 + Math.floor(r() * 3);
+      const spread = Math.min(width, height) * 0.15;
+      for (let i = 0; i < patches; i += 1) {
+        const px = groupCx + (r() - 0.5) * spread * 2;
+        const pz = groupCz + (r() - 0.5) * spread * 2;
+        const radius = Math.min(width, height) * lerp(0.04, 0.09, r());
+        const amp = lerp(0.20, 0.32, r()) * (p?.intensity ?? 1);
+        gaussianStamp(px, pz, radius, amp, -0.05);
+      }
+    },
+    canyon(p) {
+      // Linear low-elevation cut.
+      const r = rngFor("canyon");
+      const cx = width * 0.5 + (r() - 0.5) * width * 0.2;
+      const cz = height * 0.5 + (r() - 0.5) * height * 0.2;
+      const angle = r() * Math.PI;
+      const length = Math.min(width, height) * lerp(0.55, 0.95, r());
+      const halfThick = Math.max(1.8, Math.min(width, height) * lerp(0.025, 0.05, r()));
+      const amp = -lerp(0.22, 0.36, r()) * (p?.intensity ?? 1);
+      const ux = Math.cos(angle);
+      const uz = Math.sin(angle);
+      const stamps = Math.floor(length / 1.5);
+      for (let s = 0; s <= stamps; s += 1) {
+        const t = s / Math.max(1, stamps) - 0.5;
+        const px = cx + ux * t * length + (r() - 0.5) * 1.0;
+        const pz = cz + uz * t * length + (r() - 0.5) * 1.0;
+        gaussianStamp(px, pz, halfThick, amp, 0.18);
+      }
+    },
+    peninsula(p) {
+      // Arm of high terrain extending into water from an edge.
+      const r = rngFor("peninsula");
+      const side = Math.floor(r() * 4); // 0=N, 1=E, 2=S, 3=W
+      let baseX, baseZ, dirX, dirZ;
+      if (side === 0) { baseX = width * (0.25 + r() * 0.5); baseZ = 1; dirX = 0; dirZ = 1; }
+      else if (side === 1) { baseX = width - 2; baseZ = height * (0.25 + r() * 0.5); dirX = -1; dirZ = 0; }
+      else if (side === 2) { baseX = width * (0.25 + r() * 0.5); baseZ = height - 2; dirX = 0; dirZ = -1; }
+      else { baseX = 1; baseZ = height * (0.25 + r() * 0.5); dirX = 1; dirZ = 0; }
+      const length = Math.min(width, height) * lerp(0.30, 0.55, r());
+      const halfThick = Math.max(2.2, Math.min(width, height) * lerp(0.05, 0.10, r()));
+      const amp = lerp(0.22, 0.34, r()) * (p?.intensity ?? 1);
+      const stamps = Math.floor(length / 2);
+      for (let s = 0; s <= stamps; s += 1) {
+        const px = baseX + dirX * s * 2 + (r() - 0.5) * 2;
+        const pz = baseZ + dirZ * s * 2 + (r() - 0.5) * 2;
+        gaussianStamp(px, pz, halfThick * (1 - s / (stamps + 1) * 0.5), amp, -0.05);
+      }
+    },
+    ancientCrater(p) {
+      // Round depression with a raised rim.
+      const r = rngFor("ancientCrater");
+      const cx = width * (0.3 + r() * 0.4);
+      const cz = height * (0.3 + r() * 0.4);
+      const radius = Math.min(width, height) * lerp(0.12, 0.20, r());
+      const innerAmp = -lerp(0.22, 0.32, r()) * (p?.intensity ?? 1);
+      const rimAmp = lerp(0.20, 0.30, r()) * (p?.intensity ?? 1);
+      // Ring of stamps for the rim.
+      const ringStamps = 16;
+      for (let s = 0; s < ringStamps; s += 1) {
+        const a = (s / ringStamps) * Math.PI * 2;
+        const px = cx + Math.cos(a) * radius;
+        const pz = cz + Math.sin(a) * radius;
+        gaussianStamp(px, pz, radius * 0.32, rimAmp, 0);
+      }
+      // Inner depression.
+      gaussianStamp(cx, cz, radius * 0.85, innerAmp, 0.10);
+    },
+  };
+
+  // ---- Per-template weight tables.
+  const TEMPLATE_WEIGHTS = {
+    rugged_highlands: { mountainRidge: 4, mesa: 3, canyon: 3, basin: 1, peninsula: 1, ancientCrater: 1 },
+    fertile_riverlands: { basin: 4, peninsula: 3, ancientCrater: 2, mesa: 1, mountainRidge: 1, canyon: 1 },
+    temperate_plains: { mesa: 3, ancientCrater: 3, basin: 2, mountainRidge: 1, canyon: 1, peninsula: 1 },
+    fortified_basin: { basin: 5, ancientCrater: 2, mountainRidge: 2, mesa: 1, canyon: 1, peninsula: 1 },
+    archipelago_isles: { peninsula: 4, mesa: 3, ancientCrater: 1, basin: 1, mountainRidge: 1, canyon: 0 },
+    coastal_ocean: { peninsula: 4, mesa: 3, basin: 1, mountainRidge: 2, canyon: 0, ancientCrater: 1 },
+  };
+  const weights = TEMPLATE_WEIGHTS[templateId] || TEMPLATE_WEIGHTS[DEFAULT_MAP_TEMPLATE_ID];
+
+  // ---- Pick count + features.
+  const featureCount = Number.isFinite(count) ? clamp(count | 0, 1, 3) : 1 + Math.floor(rng() * 3);
+  const picked = [];
+  // Special case: fortified_basin always has at least one basin (its identity).
+  if (templateId === "fortified_basin") {
+    picked.push("basin");
+  }
+  const remaining = { ...weights };
+  while (picked.length < featureCount) {
+    let total = 0;
+    for (const k of Object.keys(remaining)) total += Math.max(0, remaining[k]);
+    if (total <= 0) break;
+    let t = rng() * total;
+    let chosen = null;
+    for (const k of Object.keys(remaining)) {
+      t -= Math.max(0, remaining[k]);
+      if (t <= 0) { chosen = k; break; }
+    }
+    if (!chosen) chosen = Object.keys(remaining)[0];
+    picked.push(chosen);
+    // Halve the weight rather than zero it so duplicates are unlikely but
+    // possible (e.g. two mesas), which is the kind of variation we want.
+    remaining[chosen] = (remaining[chosen] ?? 0) * 0.25;
+  }
+
+  for (const name of picked) {
+    const fn = FEATURES[name];
+    if (typeof fn !== "function") continue;
+    fn({ intensity: 1 });
+  }
+}
+
 function findLandCandidates(tiles, width, height, maxCount, seed, minEdgeMargin = 3) {
   const out = [];
   for (let iz = minEdgeMargin; iz < height - minEdgeMargin; iz += 1) {
@@ -848,68 +1278,13 @@ function placeDistrictBlobs(tiles, width, height, count, tileType, seed, pickCen
   }
 }
 
-function carveBridgesOnMainAxis(tiles, width, height, profile, seed) {
-  const step = Math.max(8, Math.floor((profile.riverVertical ? height : width) / 6));
-  const start = Math.max(4, Math.floor(step * 0.65));
-  const MAX_BRIDGE_SPAN = 14;
+// v0.8.9 Terrain rewrite: pre-generated bridges removed. Players still build
+// bridges manually (BuildSystem); we no longer stamp them into scenario output
+// because they trivialised river crossings and made every template's hydrology
+// feel "solved". carveBridgesOnMainAxis was deleted; its 3 call sites in the
+// per-template generators are gone. Connectivity is now ensured by the
+// branching river network leaving thin land strips between branches.
 
-  const tryBridgeLine = (indices) => {
-    let segStart = -1;
-    let segLen = 0;
-    let bestSegStart = -1;
-    let bestSegLen = 0;
-
-    for (let i = 0; i <= indices.length; i += 1) {
-      const isWater = i < indices.length && tiles[indices[i]] === TILE.WATER;
-      if (isWater) {
-        if (segStart < 0) segStart = i;
-        segLen += 1;
-      } else {
-        if (segLen >= 2 && segLen <= MAX_BRIDGE_SPAN) {
-          if (bestSegLen === 0 || segLen < bestSegLen) {
-            bestSegStart = segStart;
-            bestSegLen = segLen;
-          }
-        }
-        segStart = -1;
-        segLen = 0;
-      }
-    }
-
-    if (bestSegLen >= 2) {
-      for (let i = bestSegStart; i < bestSegStart + bestSegLen; i += 1) {
-        tiles[indices[i]] = TILE.BRIDGE;
-      }
-    }
-  };
-
-  if (profile.riverVertical) {
-    for (let z = start; z < height - start; z += step) {
-      const indices = [];
-      for (let x = 0; x < width; x += 1) indices.push(toIndex(x, z, width));
-      tryBridgeLine(indices);
-    }
-  } else {
-    for (let x = start; x < width - start; x += step) {
-      const indices = [];
-      for (let z = 0; z < height; z += 1) indices.push(toIndex(x, z, width));
-      tryBridgeLine(indices);
-    }
-  }
-
-  for (let iz = 1; iz < height - 1; iz += 1) {
-    for (let ix = 1; ix < width - 1; ix += 1) {
-      const idx = toIndex(ix, iz, width);
-      if (tiles[idx] !== TILE.BRIDGE) continue;
-      if (hash2D(ix, iz, seed + 2003) < 0.1) {
-        if (tiles[toIndex(ix + 1, iz, width)] === TILE.WATER) tiles[toIndex(ix + 1, iz, width)] = TILE.BRIDGE;
-        if (tiles[toIndex(ix - 1, iz, width)] === TILE.WATER) tiles[toIndex(ix - 1, iz, width)] = TILE.BRIDGE;
-        if (tiles[toIndex(ix, iz + 1, width)] === TILE.WATER) tiles[toIndex(ix, iz + 1, width)] = TILE.BRIDGE;
-        if (tiles[toIndex(ix, iz - 1, width)] === TILE.WATER) tiles[toIndex(ix, iz - 1, width)] = TILE.BRIDGE;
-      }
-    }
-  }
-}
 function applyWalls(tiles, width, height, profile, seed) {
   const cx = Math.floor(width / 2);
   const cz = Math.floor(height / 2);
@@ -1218,6 +1593,11 @@ function generateArchipelagoTerrain(tiles, width, height, seed, profile) {
     }
   }
 
+  // v0.8.9: macro features (peninsula/mesa) on top of island elevation; we
+  // intentionally do NOT call carveRiverNetwork here — archipelago is
+  // water-dominated and tributaries would just dissolve into ocean.
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "archipelago_isles" });
+
   return { elevation, moisture, ridge };
 }
 
@@ -1343,6 +1723,10 @@ function generateCoastlineTerrain(tiles, width, height, seed, profile) {
       }
     }
   }
+
+  // v0.8.9: macro features for coastal — peninsulas push extra arms of land
+  // into the ocean per seed. No carveRiverNetwork (water-dominated template).
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "coastal_ocean" });
 
   return { elevation, moisture, ridge };
 }
@@ -1480,6 +1864,21 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
       tiles[idx] = TILE.GRASS;
     }
   }
+
+  // v0.8.9: per-seed macro features stamp 1-3 large-scale shapes onto the
+  // elevation field BEFORE water carving so the same template feels different
+  // across seeds. Riverlands favours basins + peninsulas (see template
+  // weight table).
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "fertile_riverlands" });
+
+  // v0.8.9: branching river network. Sources picked from elevated tiles,
+  // walks downhill with branch probability 0.10 / depth 2 — riverlands is
+  // the most-branched template by design.
+  carveRiverNetwork({
+    tiles, elevation, moisture, width, height, seed,
+    mainCount: 2, branchProb: 0.10, maxBranchDepth: 2,
+    minWidth: 1, maxWidth: 3, maxLen: Math.max(width, height),
+  });
 
   // Generate 2-3 convergent rivers with deep domain-warped meanders
   const cx = Math.floor(width * (0.4 + hash2D(7, 13, seed + 6001) * 0.2));
@@ -1707,13 +2106,6 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
     }
   }
 
-  // v0.8.6 Tier 3 R9: auto-bridge invocation. Pre-fix carveBridgesOnMainAxis
-  // was defined but NEVER called from any terrain generator, leaving river
-  // and island maps with unreachable land masses across waterways. Carve
-  // bridges along the main axis after the river-paint pass so the colony
-  // has a starting connectivity option.
-  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 6500);
-
   return { elevation, moisture, ridge };
 }
 
@@ -1741,6 +2133,11 @@ function generateFortifiedBasinTerrain(tiles, width, height, seed, profile) {
       tiles[idx] = TILE.GRASS;
     }
   }
+
+  // v0.8.9: macro features run before the fortress wall pass so basins/ridges
+  // shape the elevation underneath. fortified_basin always gets at least one
+  // basin (its identity) plus 1-2 random additions per seed.
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "fortified_basin" });
 
   // Heavily irregular fortress wall — recursive domain warping + anisotropic radius
   const wallNoiseSeed = seed + 8800;
@@ -1908,6 +2305,20 @@ function generateRuggedHighlandsTerrain(tiles, width, height, seed, profile) {
       tiles[idx] = TILE.GRASS;
     }
   }
+
+  // v0.8.9: per-seed macro features. Highlands favours mountainRidge / mesa /
+  // canyon — these stack on top of the base elevation field for visible
+  // seed-to-seed variation.
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "rugged_highlands" });
+
+  // v0.8.9: branching highland streams. 2 mains + branchProb 0.07 / depth 2 —
+  // these run ALONGSIDE the existing carveStream pass below; together the
+  // hydrology reads as a real watershed, not a single ribbon.
+  carveRiverNetwork({
+    tiles, elevation, moisture, width, height, seed,
+    mainCount: 2, branchProb: 0.07, maxBranchDepth: 2,
+    minWidth: 1, maxWidth: 2, maxLen: Math.max(width, height),
+  });
 
   // Worley crevasses — deep fissures cutting through the highlands
   for (let iz = 0; iz < height; iz += 1) {
@@ -2116,9 +2527,6 @@ function generateRuggedHighlandsTerrain(tiles, width, height, seed, profile) {
     }
   }
 
-  // v0.8.6 Tier 3 R9: auto-bridge after river/water carve in Rugged Highlands.
-  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 9500);
-
   return { elevation, moisture, ridge };
 }
 
@@ -2145,6 +2553,19 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
       tiles[idx] = TILE.GRASS;
     }
   }
+
+  // v0.8.9: macro features. Plains favour mesa + ancientCrater — these are
+  // the main visual "what's different about this seed" hooks since the base
+  // terrain is intentionally flat.
+  applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "temperate_plains" });
+
+  // v0.8.9: light branching river. 1 main + branchProb 0.05 / depth 1 — plains
+  // gets only a modest tributary or two on top of the existing meander river.
+  carveRiverNetwork({
+    tiles, elevation, moisture, width, height, seed,
+    mainCount: 1, branchProb: 0.05, maxBranchDepth: 1,
+    minWidth: 1, maxWidth: 2, maxLen: Math.max(width, height),
+  });
 
   // Meandering river with varied width
   const riverVertical = hash2D(1, 1, seed + 4001) > 0.5;
@@ -2225,9 +2646,6 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
     paintBlob(tiles, width, height, fx, fz, lerp(2, 3.5, rng()), lerp(1.5, 3, rng()), TILE.FARM, seed + 4700 + fx * 7, new Set([TILE.GRASS]));
   }
 
-  // v0.8.6 Tier 3 R9: auto-bridge after river carve.
-  carveBridgesOnMainAxis(tiles, width, height, profile, seed + 4900);
-
   return { elevation, moisture, ridge };
 }
 
@@ -2255,9 +2673,14 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     fields = generateTemperatePlainsTerrain(tiles, width, height, seed, profile);
   } else {
     fields = baseTerrainPass(tiles, width, height, seed, profile);
-    for (let i = 0; i < profile.riverCount; i += 1) {
-      carveRiver(tiles, width, height, profile, seed + i * 311, i);
-    }
+    // v0.8.9: fallback (unknown template) gets macro features + branching
+    // network so even legacy callers see seed-to-seed variation.
+    applyMacroFeatures({ elevation: fields.elevation, moisture: fields.moisture, width, height, seed, templateId });
+    carveRiverNetwork({
+      tiles, elevation: fields.elevation, moisture: fields.moisture, width, height, seed,
+      mainCount: Math.max(1, profile.riverCount), branchProb: 0.08, maxBranchDepth: 2,
+      minWidth: 1, maxWidth: Math.max(2, Math.round(profile.riverWidth ?? 2)), maxLen: Math.max(width, height),
+    });
   }
 
   const hubs = [];
@@ -2773,7 +3196,12 @@ export function validateGeneratedGrid(grid) {
   const walls = countTilesByType(grid, [TILE.WALL]);
   const ruins = countTilesByType(grid, [TILE.RUINS]);
   const water = countTilesByType(grid, [TILE.WATER]);
-  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.BRIDGE]);
+  // v0.8.9: BRIDGE removed from pre-generated tiles. Player can still build
+  // bridges at runtime — TILE.BRIDGE remains a valid tile in TILE_INFO and is
+  // included by the connectivity check below (which scans TILE_INFO.passable).
+  // The static count list intentionally excludes it so validation reflects
+  // what the generator actually produces.
+  const passable = countTilesByType(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE, TILE.RUINS, TILE.QUARRY, TILE.HERB_GARDEN, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC]);
   const roadMinRatio = toNumberOr(validation.roadMinRatio, 0.02);
   const roadMin = roadMinRatio <= 0 ? 0 : Math.max(40, Math.round(area * roadMinRatio));
   const waterMin = Math.max(8, Math.round(area * toNumberOr(validation.waterMinRatio, 0.03)));

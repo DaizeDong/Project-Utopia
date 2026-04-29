@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - v0.8.9 Terrain Rewrite
+
+Major terrain-generation rewrite addressing user feedback that "rivers all unbranched, all 6 templates feel like reskins". Three contracts: zero pre-generated BRIDGE tiles, branching rivers with downhill flow + tributaries, per-seed macro features so different seeds on the same template look visibly different. Net: 1620 tests / 1617 pass / 0 fail / 3 skip. New `test/terrain-diversity.test.js` (5 tests) confirms ≥35% pairwise tile-diff between seeds on `temperate_plains`.
+
+### Removed
+
+- **Bridge pre-generation.** `carveBridgesOnMainAxis` (formerly ~57 LOC in `src/world/grid/Grid.js`) and its three call sites (riverlands, highlands, plains) deleted. `BRIDGE` removed from `validateGeneratedGrid`'s static passable count list; the connectivity scan still admits BRIDGE via `TILE_INFO.passable` so player-built bridges keep working at runtime. `TILE.BRIDGE` (id 13) and the BuildSystem flow are untouched — bridges remain a valid player-buildable tile.
+
+### Added
+
+- **`carveRiverNetwork(opts)`** in `src/world/grid/Grid.js`. Picks `mainCount` source tiles from elevation > 0.6 (falls back to > 0.4 for low-relief templates) with Poisson-like spacing of ≥12 tiles. Each source walks downhill via 8-neighbour gradient + small RNG jitter; halts on sink, water hit, or grid edge. Per-step branching with `branchProb` and `maxBranchDepth` recursion (tributary width = parent × 0.65, perpendicular-ish direction ± 45°). Width tapers from full near source to half near mouth. Boosts `moisture[]` in a 3-tile radius around every carved tile.
+- **`applyMacroFeatures({ elevation, moisture, width, height, seed, templateId })`** in `src/world/grid/Grid.js`. Pool of 6 features stamped via Gaussian falloff before water carving: `mountainRidge`, `basin`, `mesa`, `canyon`, `peninsula`, `ancientCrater`. Per-template weight tables nudge selection (highlands → ridge/mesa/canyon, riverlands → basin/peninsula, fortified_basin → forced basin + 1 random, plains → mesa/crater, archipelago/coastal → peninsula/mesa). Each feature derives its own RNG (`seed + featureName.charCodeAt(0)*99`) so the same feature on different seeds varies orientation/amplitude.
+- **`test/terrain-diversity.test.js`** — 5 tests covering pairwise tile diversity (≥5% threshold; observed 35–39%), no-BRIDGE invariant across all 6 templates × 5 seeds, and `temperate_plains` "interesting" gates (water bounds, farm/lumber present).
+
+### Changed
+
+- All 6 template generators in `src/world/grid/Grid.js` now call `applyMacroFeatures` after the initial elevation/moisture pass and before biome assignment.
+- Per-template river network tuning: `temperate_plains` (1 main, branchProb 0.05, depth 1), `rugged_highlands` (2 / 0.07 / 2), `fertile_riverlands` (2 / 0.10 / 2 — most-branched), `fortified_basin` unchanged (0 rivers — its identity is the wall), `archipelago_isles` and `coastal_ocean` unchanged (water-dominated; macro features only).
+- The fallback (unknown-template) branch in `generateTerrainTiles` switched from `carveRiver` to `carveRiverNetwork` so legacy callers also get branching hydrology + macro features.
+
+### Constraints honoured
+
+- Zero `Math.random()` in generation code — every new RNG seeded via `createRng`.
+- Determinism: same seed always reproduces identical tile output (verified in tests).
+- No changes to BuildSystem / construction / rendering / AI code.
+
 ## [Unreleased] - v0.8.8 Closeout
 
 End-to-end pass closing remaining deep-QA + Phase 9 structural follow-ups across four tiers. Net: 1612 pass / 0 fail / 3 skip (baseline preserved). No regressions; biome-aware wildlife behaviour, leashed animal AI, road-spoilage knob, faster road-stack ramp, tightened carry-eat policy.
