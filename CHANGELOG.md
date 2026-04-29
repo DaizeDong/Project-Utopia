@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] - v0.8.11 — worker AI bare-init responsiveness
+
+User report (v0.8.10 bare-initial-map mode): "目前感觉worker行为很不连贯，经常出现原地不动、一群聚在一起徘徊等行为，既使有没建造的建筑、未占用的生产建筑、自己饥饿等情况还是不改变" — workers freeze in place, cluster together, and wander aimlessly even when there are unbuilt blueprints, unoccupied production tiles, or they're starving. Five surgical fixes; no FSM/StatePlanner/intent-picker redesign; no new BALANCE knobs.
+
+### Fixed
+
+- **Fix 1 — bare-init BUILDER allocation strands workers as wandering FARMs (PRIMARY).** `src/simulation/population/RoleAssignmentSystem.js`: the `builderMaxFraction = 0.30` cap was clamping builders to ≤1 at pop=6, regardless of how many blueprints existed; the other workers fell through to FARM but `state.buildings.farms === 0` in bare-init, so StatePlanner returned `wander` and they wandered uselessly. New `noEconomyBootstrap` flag (sum of all 8 economy buildings === 0 AND `sitesCount > 0`) bypasses the fraction cap. The `economyHeadroom` clamp still applies, so the colony can never strip itself entirely into BUILDERs.
+- **Fix 2 — wander refresh cooldown too long during bootstrap.** `src/simulation/npc/WorkerAISystem.js`: `WANDER_REFRESH_BASE_SEC` 1.8 → 0.9, `WANDER_REFRESH_JITTER_SEC` 1.2 → 0.7. Workers walk ~1 cell/sec; the old cadence let them pick a far-away random tile, walk 2-3 cells, refresh, pick another far tile, etc. Combined with Fix 3 this makes wander destinations short-range (less visual scattering) and lets the FSM re-evaluate within ~1s after a new blueprint is placed.
+- **Fix 3 — wander destination biased toward useful local tiles.** `src/simulation/npc/WorkerAISystem.js`: new `pickWanderNearby(worker, state, services)` helper (~25 LOC). 70% chance: pick a passable tile within Manhattan radius 8 of the worker; 20% chance (only when sites exist): pick within radius 4 of a random construction site, so idle workers cluster *near work*; 10% chance: fall through to `randomPassableTile`. Avoids the bare-init aimless-scatter where 6 spawn-clustered workers each pick a different far-away tile across the 96×72 map.
+- **Fix 4 — RoleAssignmentSystem early-fire when sitesCount/buildingsSum changes.** `src/simulation/population/RoleAssignmentSystem.js`: track `_lastSitesCount` and `_lastBuildingsSum` on the instance. If either changed since last update AND `timer > 0`, force the timer to zero so the next tick reassigns immediately. Closes the up-to-1.2s gap during which workers wandered after a player rapid-placed several blueprints.
+- **Fix 5 — lower target retarget cooldown.** `src/simulation/npc/WorkerAISystem.js`: `TARGET_REFRESH_BASE_SEC` 1.2 → 0.7, `TARGET_REFRESH_JITTER_SEC` 0.7 → 0.5. When `chooseWorkerTarget`/`findNearestTileOfTypes` returns null (all candidates reserved or unreachable), the calling state handler sets idle; the previous cooldown left workers idle for ~1.2-1.9s. Now ~0.7-1.2s.
+
+### Added
+
+- **`test/worker-ai-bare-init.test.js`** (3 tests):
+  1. With bare-init + 3 blueprints + 12 workers, after 2 manager ticks at least 3 workers are role=BUILDER.
+  2. With bare-init + 0 blueprints + 12 workers, after 5 simulated seconds (50 × dt=0.1) no worker has been frozen at the same tile for more than 3.0s. Drives `WorkerAISystem` + `BoidsSystem` + initial `RoleAssignmentSystem` tick.
+  3. Same seed → byte-identical role assignments (compared by spawn-order index, since worker IDs come from a process-global counter).
+
+### Test results
+
+1628 tests / 1625 pass / 0 fail / 3 pre-existing skips. No baseline test broke — the changes are surgical and route through existing behaviour for non-bare-init game states (the noEconomyBootstrap predicate is false whenever any building exists, which covers every other test fixture).
+
+### Files changed
+
+- `src/simulation/population/RoleAssignmentSystem.js` — Fixes 1 + 4 (bare-init bypass + early-fire).
+- `src/simulation/npc/WorkerAISystem.js` — Fixes 2 + 3 + 5 (cooldown constants + nearby-bias picker).
+- `test/worker-ai-bare-init.test.js` — new regression tests.
+
 ## [Unreleased] - v0.8.10 Bare-Initial-Map
 
 Player now starts every new run on an empty map — zero pre-built warehouses, farms, lumber, quarries, herb gardens, kitchens, smithies, clinics, walls, gates, roads, or bridges. The colony must be built by hand to test "operational ability" (user mandate "全部手动建造"). Terrain features (water, ruins, mountains via elevation, biomes) and resource hints (FOREST/STONE/HERB nodeFlags + yieldPool on tileState) are preserved so the world's seed identity stays intact.

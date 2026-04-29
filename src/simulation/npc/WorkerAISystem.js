@@ -21,10 +21,17 @@ import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.j
 import { recordProductionEntry } from "../economy/ResourceSystem.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
 
-const TARGET_REFRESH_BASE_SEC = 1.2;
-const TARGET_REFRESH_JITTER_SEC = 0.7;
-const WANDER_REFRESH_BASE_SEC = 1.8;
-const WANDER_REFRESH_JITTER_SEC = 1.2;
+// v0.8.11 worker-AI bare-init responsiveness (Fix 5) — lower retarget
+// cooldown so a worker whose target was stolen mid-path resumes within
+// ~0.7-1.2s instead of ~1.2-1.9s. Reduces visible idle stalls.
+const TARGET_REFRESH_BASE_SEC = 0.7;
+const TARGET_REFRESH_JITTER_SEC = 0.5;
+// v0.8.11 worker-AI bare-init responsiveness (Fix 2) — lower wander refresh
+// cadence (was 1.8/1.2) so wander destinations stay short-range and the FSM
+// re-evaluates ~once per second. Combined with Fix 3's nearby-bias picker,
+// this turns aimless wandering into local milling near base or worksites.
+const WANDER_REFRESH_BASE_SEC = 0.9;
+const WANDER_REFRESH_JITTER_SEC = 0.7;
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 // v0.8.4 building-construction (Agent A) — `construct` and `seek_construct`
 // are task-locked so a BUILDER assigned to a site does not flip back to
@@ -1297,6 +1304,41 @@ function handleRest(worker, state, services, dt) {
   worker.workRemaining = Math.max(0, Number(BALANCE.workerRestRecoverThreshold ?? 0.6) - Number(worker.rest ?? 0));
 }
 
+/**
+ * v0.8.11 worker-AI bare-init responsiveness (Fix 3) — pick a wander
+ * destination biased toward useful local tiles instead of a uniform-random
+ * distant tile across the 96×72 map. Distribution:
+ *   70% — passable tile within Manhattan radius 8 of worker's current position
+ *   20% — passable tile within radius 4 of a random construction site
+ *         (so idle workers cluster near work, not far away)
+ *   10% — fall back to randomPassableTile (full-map random)
+ * Returns null if no nearby passable tile is found within the retry budget;
+ * caller falls back to randomPassableTile.
+ */
+function pickWanderNearby(worker, state, services) {
+  const grid = state.grid;
+  if (!grid) return null;
+  const random = () => services.rng.next();
+  const origin = worldToTile(worker.x, worker.z, grid);
+  const sites = Array.isArray(state.constructionSites) ? state.constructionSites : [];
+  const roll = random();
+  let cx = origin.ix; let cz = origin.iz; let radius = 8;
+  if (roll >= 0.70 && roll < 0.90 && sites.length > 0) {
+    const site = sites[Math.floor(random() * sites.length) % sites.length] ?? sites[0];
+    cx = Number(site.ix ?? origin.ix); cz = Number(site.iz ?? origin.iz); radius = 4;
+  } else if (roll >= 0.90) {
+    return null;
+  }
+  for (let i = 0; i < 12; i += 1) {
+    const dx = Math.floor((random() * 2 - 1) * radius);
+    const dz = Math.floor((random() * 2 - 1) * radius);
+    const ix = Math.max(0, Math.min(grid.width - 1, cx + dx));
+    const iz = Math.max(0, Math.min(grid.height - 1, cz + dz));
+    if (TILE_INFO[getTile(grid, ix, iz)]?.passable) return { ix, iz };
+  }
+  return null;
+}
+
 function handleWander(worker, state, services, dt) {
   if (attemptAutoBuild(worker, state, services)) {
     return; // Built something, skip normal wander
@@ -1329,7 +1371,14 @@ function handleWander(worker, state, services, dt) {
     if (shouldRetarget && !hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
       clearPath(worker);
       const fogTarget = wantsFogExploration ? findNearestHiddenTile(worker, state) : null;
-    const target = getPendingPathTarget(worker) ?? fogTarget ?? randomPassableTile(state.grid, () => services.rng.next());
+    // v0.8.11 Fix 3 — when no fog frontier, prefer a tile near the worker's
+    // current position or near a construction site, falling through to
+    // randomPassableTile. Avoids the bare-init aimless-scatter behaviour
+    // where 6 spawn-clustered workers each pick a different far-away tile.
+    const target = getPendingPathTarget(worker)
+      ?? fogTarget
+      ?? pickWanderNearby(worker, state, services)
+      ?? randomPassableTile(state.grid, () => services.rng.next());
       if (setTargetAndPath(worker, target, state, services)) {
         blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
       }
