@@ -102,7 +102,16 @@ function deriveWorkerDesiredState(worker, state) {
   const starvingThreshold = Number(BALANCE.workerStarvingPreemptThreshold ?? 0.22);
   const hasFoodSource = (state.resources.food > 0 && state.buildings.warehouses > 0)
     || Number(worker.carry?.food ?? 0) > 0;
-  if (hunger < starvingThreshold && hasFoodSource) {
+  // v0.8.12 F4 — don't commit a starving worker to seek_food when no food is
+  // actually reachable AND they have no carry to fall back on. Falling through
+  // to the regular planner path lets the worker pick `wander` and reach the
+  // v0.8.7 T0-2 carry-bypass at WorkerAISystem.handleWander → consumeEmergencyRation.
+  // Pre-fix: walled-warehouse + no carry → permanent seek_food latch + starvation.
+  // Depends on F3: reachableFood must reflect warehouse-reachability only.
+  const reachableFood = worker.debug?.reachableFood;
+  const carryFood = Number(worker.carry?.food ?? 0);
+  const starvingPreemptBlocked = reachableFood === false && carryFood <= 0;
+  if (hunger < starvingThreshold && hasFoodSource && !starvingPreemptBlocked) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"
@@ -112,9 +121,14 @@ function deriveWorkerDesiredState(worker, state) {
   }
 
   // Eat hysteresis: if already eating/seeking food, stay until hunger recovers past recover threshold
+  // v0.8.12 F4 — same gate as starving-preempt: don't pin to seek_food when no
+  // food is reachable AND no carry. Without this, the hysteresis re-engages
+  // every tick while hunger stays low, undoing the F4 escape from the
+  // starving-preempt branch.
   if ((currentFsmState === "eat" || currentFsmState === "seek_food")
     && hunger < Number(BALANCE.workerHungerRecoverThreshold ?? 0.35)
-    && state.resources.food > 0 && state.buildings.warehouses > 0) {
+    && state.resources.food > 0 && state.buildings.warehouses > 0
+    && !starvingPreemptBlocked) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"
@@ -123,7 +137,8 @@ function deriveWorkerDesiredState(worker, state) {
     };
   }
 
-  if (hunger < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0) {
+  if (hunger < getWorkerHungerSeekThreshold(worker) && state.resources.food > 0 && state.buildings.warehouses > 0
+    && !starvingPreemptBlocked) {
     return {
       desiredState: isAtTargetTile(worker, state) && isTargetTileType(worker, state, [TILE.WAREHOUSE])
         ? "eat"

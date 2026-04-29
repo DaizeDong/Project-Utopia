@@ -202,6 +202,11 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
       taskLock: { state: "", untilSec: -Infinity },
       emergencyRationCooldownSec: -Infinity,
       lastFeasibilityReject: null,
+      // v0.8.12 F6 — stall-detection field. Initialised to null so freshly
+      // spawned workers don't trigger the F12 deliver-stuck detector on
+      // their first tick; consumers fall back to state.metrics.timeSec via
+      // `?? nowSec` which makes stuckTime=0 until the first successful path.
+      lastSuccessfulPathSec: null,
     },
     policy: null,
     alive: true,

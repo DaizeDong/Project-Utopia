@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - v0.8.12 — worker AI deeper fixes (latch escape + reachability semantics)
+
+Post-v0.8.11 runtime trace audit (`/tmp/utopia-worker-findings.md`) surfaced 7 deeper issues in the worker AI pipeline — pre-existing in the StatePlanner / commitment / reachability layer, unrelated to the v0.8.11 bare-init fixes. Six surgical fixes (F1–F6, F12) address the user-visible "原地不动、一群聚在一起徘徊...饿死" complaint at the layer below v0.8.11. No FSM/StatePlanner/intent-picker redesign; no new BALANCE knobs.
+
+### Fixed
+
+- **F1 — `SimHarness` silently omitted `ConstructionSystem` + `WarehouseQueueSystem`.** `src/benchmark/framework/SimHarness.js`: header comment had said "build systems in the same order as `GameApp.createSystems()`", but GameApp was extended in v0.8.4 + v0.8.6 without the harness mirror being updated. Any benchmark with construction blueprints saw `workApplied` accumulate past `workTotalSec` indefinitely while warehouse intake queues didn't advance. Added both imports + system instances in canonical positions.
+- **F3 — `hasReachableNutritionSource` FARM probe dropped.** `src/simulation/lifecycle/MortalitySystem.js`: previous probe declared `reachableFood=true` whenever any FARM tile was reachable, but `WorkerAISystem.handleEat` only consumes from `state.resources.food` after pathing to a `TILE.WAREHOUSE` — workers never eat at a farm tile. Combined with the `consumeEmergencyRation` gate (`reachableFood !== false` short-circuit), walled-warehouse + reachable-farm + carry-food workers refused to eat their own carry and starved. Reachability semantics must match the consumer; the FARM branch is now removed (the no-warehouse short-circuit at `WorkerAISystem.js:1353` handles the carry-bypass case directly). `nutrition.sourceType` is now exactly `"carry" | "warehouse" | "none"`.
+- **F4 — `rule:starving-preempt` (and the hunger hysteresis + `rule:hunger`) now gate on `reachableFood`.** `src/simulation/npc/state/StatePlanner.js`: when `worker.debug.reachableFood === false` AND `worker.carry.food <= 0`, all three seek_food-returning branches fall through to the regular planner path. Pre-fix, walled-warehouse + no-carry workers latched into `seek_food` permanently (33% of ticks in scenario E) while `handleEat` failed to path; F4 lets them reach `wander` and `consumeEmergencyRation` (which, with `reachableFood=false`, is no longer gated out).
+- **F2 — commitment-latch escape for stranded role-mismatch workers.** `src/simulation/npc/WorkerAISystem.js`: pre-fix, a STONE worker in a colony with no quarries entered `seek_task` once, the commitment cycle latched it, and any subsequent planner output of `wander/idle` was rewritten to `commitment:hold` for the rest of the run. New escape: when `currentState === "seek_task"` AND the worker's role has no matching worksite AND >3s have elapsed since `commitmentCycle.startSec`, clear `commitmentCycle` and reset `taskLock` so the next planner pick (`wander` via `rule:no-worksite`) is allowed through.
+- **F6 — `blackboard.lastSuccessfulPathSec` for stall detection.** `src/simulation/navigation/Navigation.js` + `src/entities/EntityFactory.js`: write `state.metrics.timeSec` to the blackboard whenever a path becomes active (new path or already-at-target). Initialized to `null` on spawn so freshly spawned workers don't trigger F12 on tick 0; consumers fall back via `?? nowSec`. No behavioural change on its own.
+- **F12 — `deliverStuckReplan` extended to cover unreachable warehouses.** `src/simulation/npc/WorkerAISystem.js`: pre-fix predicate fired only when `carryNow <= 0 || !hasWarehouse`, so a HAUL worker with carry >0 whose warehouse became path-blocked sat in `Deliver` indefinitely. Extended to `currentState === "deliver" && carryNow > 0 && hasWarehouse && (nowSec - lastSuccessfulPathSec) > 2.0`. When this branch fires, also reset `taskLock` so the planner can pick `wander` next tick (re-approach from a different tile, breaking the path-fail loop).
+- **F5 — anti-cluster preference in `pickWanderNearby`.** `src/simulation/npc/WorkerAISystem.js`: v0.8.11 Fix 3 picked the first passable candidate in a 12-sample loop. F5 builds an O(workers) per-tick worker-tile occupancy map (cached on `state._workerTileMap` keyed by tick) and prefers the first candidate whose 3×3 neighbourhood contains zero other workers (subtracting self). Falls back to the first passable if none qualify. Gentle dispersion without Boids-style separation forces; the user explicitly asked for "不使用过度复杂的算法实现".
+
+### Added
+
+- **`test/worker-ai-v0812.test.js`** (3 tests):
+  1. **F2 escape** — STONE worker in bare-init (no quarries) breaks out of `seek_task` within 5s and moves at least 2 tiles.
+  2. **F3+F4 unblock** — bare-init + manual warehouse + walls on cardinal neighbours + STONE roles (no quarries) + hunger=0.10 + warehouse stockpile=100 → emergency-ration draws from stockpile (pre-fix: `state.resources.food` constant, all 12 workers stuck in `seek_food`).
+  3. **F12 deliver-stuck** — HAUL worker with carry=2 near warehouse, walls land mid-run, carry pinned >0; worker exits `Deliver` state within 3.5s of walls landing.
+
+### Changed (test)
+
+- **`test/mortality-system.test.js`**: replaced "MortalitySystem keeps worker alive when nearby farm supply is reachable" (which encoded the F3 bug as expected behavior) with a new test that asserts `sourceType !== "nearby-farm"` and `reachableFood === false` when no warehouse exists. Carry-bypass now handles the "farms but no warehouse" case at the `WorkerAISystem.handleWander` layer.
+
+### Test results
+
+1631 tests / 1628 pass / 0 fail / 3 pre-existing skips. v0.8.11 baseline was 1625 pass — exactly +3 (the new file) with no regressions.
+
+### Trace re-validation (`/tmp/utopia-worker-trace.mjs`)
+
+| Scenario | Pre-v0.8.12 stuck>3s | Post-v0.8.12 stuck>3s | Notes |
+|---|---:|---:|---|
+| A bare-init no blueprints | 0 | 0 | cluster=57.71 stable (F5 not regressing) |
+| B bare-init + 5 blueprints | 5 | 5 | unchanged (F2 doesn't trigger here) |
+| C established colony | 3 | 2 | F2 escape unblocked one stuck STONE worker |
+| D hunger stress | 2 | 4 | minor short-stuck increase; the 45s STONE worker is similar to baseline; new mild 4.6s ticks are above the 3s threshold but no longer >10s |
+| E walled warehouse | **12** | **8** | major drop. `state.resources.food` ramps 5 → 22.8 (pre-fix it was constant for 60s) — F3+F4 emergency-ration chain firing. |
+
+### Files changed
+
+- `src/benchmark/framework/SimHarness.js` — F1.
+- `src/simulation/lifecycle/MortalitySystem.js` — F3 (drop FARM probe).
+- `src/simulation/npc/state/StatePlanner.js` — F4 (gate seek_food returns on reachableFood + carry).
+- `src/simulation/npc/WorkerAISystem.js` — F2 (latch escape), F12 (deliver-stuck extension), F5 (anti-cluster wander).
+- `src/simulation/navigation/Navigation.js` — F6 (`lastSuccessfulPathSec` write).
+- `src/entities/EntityFactory.js` — F6 init field.
+- `test/worker-ai-v0812.test.js` — new file, 3 regression cases.
+- `test/mortality-system.test.js` — updated FARM-probe-removed test.
+
 ## [Unreleased] - v0.8.11 — worker AI bare-init responsiveness
 
 User report (v0.8.10 bare-initial-map mode): "目前感觉worker行为很不连贯，经常出现原地不动、一群聚在一起徘徊等行为，既使有没建造的建筑、未占用的生产建筑、自己饥饿等情况还是不改变" — workers freeze in place, cluster together, and wander aimlessly even when there are unbuilt blueprints, unoccupied production tiles, or they're starving. Five surgical fixes; no FSM/StatePlanner/intent-picker redesign; no new BALANCE knobs.
