@@ -62,24 +62,33 @@ test("MortalitySystem starves worker if food exists but no reachable warehouse",
   assert.equal(state.metrics.deathByReasonAndReachability["starvation:unreachable"], 1);
 });
 
-test("MortalitySystem keeps worker alive when nearby farm supply is reachable", () => {
+// v0.8.12 F3 — FARM probe removed from hasReachableNutritionSource.
+// `handleEat` only consumes from warehouse stockpile, so reachability now
+// only counts carry + warehouse. A worker with no warehouse and only farms
+// nearby is no longer treated as having reachable food; the no-warehouse
+// short-circuit in WorkerAISystem (carry-bypass) handles that case directly.
+test("MortalitySystem treats no-warehouse colony as no reachable food (FARM probe removed)", () => {
   const state = createInitialGameState();
   state.resources.food = 0;
   state.buildings.warehouses = 0;
+  // Farms remain in the bootstrap state, but reachability must reflect the
+  // consumer (handleEat → warehouse only).
   const farm = findNearestTileOfTypes(state.grid, { x: 0, z: 0 }, [TILE.FARM]);
   const pos = farm ? tileToWorld(farm.ix, farm.iz, state.grid) : { x: 0, z: 0 };
   const worker = createWorker(pos.x, pos.z, () => 0.5);
   worker.hunger = 0;
-  worker.starvationSec = 33;
+  worker.starvationSec = 0;
   state.agents = [worker];
   state.animals = [];
 
   const system = new MortalitySystem();
   system.update(1 / 30, state, { pathCache: { get: () => null, set: () => {} } });
 
-  assert.equal(state.agents.length, 1);
-  assert.equal(Number(state.metrics.deathsTotal ?? 0), 0);
-  assert.equal(String(worker.debug?.nutritionSourceType ?? ""), "nearby-farm");
+  // sourceType must be one of "carry" | "warehouse" | "none" post-F3.
+  const sourceType = String(worker.debug?.nutritionSourceType ?? "none");
+  assert.notEqual(sourceType, "nearby-farm");
+  assert.equal(sourceType, "none");
+  assert.equal(Boolean(worker.debug?.reachableFood), false);
 });
 
 test("MortalitySystem writes enriched deathContext fields", () => {

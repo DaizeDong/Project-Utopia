@@ -12,7 +12,9 @@ import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { recordResourceFlow } from "../economy/ResourceSystem.js";
 import { audioSystem } from "../../audio/AudioSystem.js";
 
-const NEARBY_FARM_SUPPLY_MAX_PATH_LEN = 16;
+// v0.8.12 F3 — NEARBY_FARM_SUPPLY_MAX_PATH_LEN removed; the FARM probe in
+// hasReachableNutritionSource was dropped because workers don't actually eat
+// at farm tiles. See comment at hasReachableNutritionSource for rationale.
 const WORKER_MEMORY_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
 const WITNESS_NEARBY_DISTANCE = 12;
@@ -485,18 +487,22 @@ function hasReachableNutritionSource(entity, state, services, nowSec) {
     }
   }
 
-  if (Number(state.buildings?.farms ?? 0) > 0) {
-    const farm = findNearestTileOfTypes(state.grid, entity, [TILE.FARM]);
-    const resolved = resolveReachability(entity, state, services, fromTile, farm, "nearby-farm");
-    if (resolved.reachable && resolved.pathLength <= NEARBY_FARM_SUPPLY_MAX_PATH_LEN) {
-      deathCtx.lastFoodReachable = true;
-      deathCtx.lastFoodReachCheckSec = nowSec;
-      deathCtx.lastFoodSourceTile = farm;
-      deathCtx.lastFoodSourceType = resolved.sourceType;
-      deathCtx.lastFoodPathLength = resolved.pathLength;
-      return resolved;
-    }
-  }
+  // v0.8.12 F3 — FARM probe removed.
+  //
+  // The previous probe declared `reachableFood=true` whenever any FARM tile
+  // was reachable, on the heuristic "farms exist therefore food is reachable".
+  // But `WorkerAISystem.handleEat` only consumes from `state.resources.food`
+  // after pathing to a TILE.WAREHOUSE — workers never eat at a farm tile.
+  // Worse, `consumeEmergencyRation` short-circuits when `reachableFood !== false`
+  // and a warehouse exists, so a walled-warehouse + reachable-farm + carry-food
+  // worker would refuse to eat their own carry and starve in place.
+  //
+  // Reachability semantics must match the consumer. Drop the FARM branch:
+  //   - if no warehouse exists, the no-warehouse short-circuit at
+  //     WorkerAISystem.js:1353 already routes carry-bearing workers to
+  //     consumeEmergencyRation;
+  //   - if a warehouse exists, the warehouse probe above is the source of truth.
+  // sourceType is now exactly one of: "carry" | "warehouse" | "none".
 
   deathCtx.lastFoodReachable = false;
   deathCtx.lastFoodReachCheckSec = nowSec;

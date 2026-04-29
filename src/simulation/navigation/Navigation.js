@@ -184,6 +184,11 @@ export function setTargetAndPath(entity, targetTile, state, services) {
       entity.pathGridVersion = state.grid.version;
       entity.pathTrafficVersion = getDynamicPathVersion(state);
       entity.targetTile = targetTile;
+      // v0.8.12 F6 — already-at-target counts as a successful resolution; keep
+      // stall detector quiet until the worker actually needs a fresh path.
+      if (entity.blackboard) {
+        entity.blackboard.lastSuccessfulPathSec = nowSec;
+      }
       if (retryState) retryState.nextPathRetrySec = -Infinity;
       return true;
     }
@@ -377,6 +382,14 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   entity.pathGridVersion = state.grid.version;
   entity.pathTrafficVersion = pathCostVersion;
   entity.targetTile = targetTile;
+  // v0.8.12 F6 — record last successful path acquisition for stall detection.
+  // Consumers: WorkerAISystem deliverStuckReplan (F12), commitment-latch
+  // escape (F2). Workers whose targets keep failing A* will not update this
+  // field; if (nowSec - lastSuccessfulPathSec) grows, downstream logic can
+  // force a re-plan / wander.
+  if (entity.blackboard) {
+    entity.blackboard.lastSuccessfulPathSec = Number(state.metrics?.timeSec ?? 0);
+  }
   if (astarStats) {
     astarStats.success += 1;
     astarStats.lastPathLength = path.length;

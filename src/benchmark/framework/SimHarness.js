@@ -21,14 +21,22 @@ import { ProcessingSystem } from "../../simulation/economy/ProcessingSystem.js";
 import { PopulationGrowthSystem } from "../../simulation/population/PopulationGrowthSystem.js";
 import { TileStateSystem } from "../../simulation/economy/TileStateSystem.js";
 import { ColonyDirectorSystem } from "../../simulation/meta/ColonyDirectorSystem.js";
+import { ConstructionSystem } from "../../simulation/construction/ConstructionSystem.js";
+import { WarehouseQueueSystem } from "../../simulation/economy/WarehouseQueueSystem.js";
 import { evaluateRunOutcomeState } from "../../app/runOutcome.js";
 import { applyPreset } from "../BenchmarkPresets.js";
 
 export const DT_SEC = 1 / 30;
 
 /**
- * Build systems in the same order as GameApp.createSystems() (line 189-212).
+ * Build systems in the same order as GameApp.createSystems() (line 373-412).
  * This matches the real game's update order exactly.
+ *
+ * v0.8.12 F1 — added WarehouseQueueSystem (v0.8.6) before WorkerAISystem and
+ * ConstructionSystem (v0.8.4) after WorkerAISystem. Pre-fix: harness silently
+ * omitted both, so any benchmark involving construction never completed
+ * blueprints (workers applied labour past workTotalSec indefinitely) and
+ * warehouse intake queues did not advance.
  */
 function buildDefaultSystems(memoryStore) {
   return [
@@ -42,7 +50,9 @@ function buildDefaultSystems(memoryStore) {
     new WorldEventSystem(),
     new TileStateSystem(),
     new NPCBrainSystem(),
+    new WarehouseQueueSystem(),
     new WorkerAISystem(),
+    new ConstructionSystem(),
     new VisitorAISystem(),
     new AnimalAISystem(),
     new MortalitySystem(),

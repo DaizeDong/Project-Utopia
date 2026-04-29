@@ -1315,6 +1315,38 @@ function handleRest(worker, state, services, dt) {
  * Returns null if no nearby passable tile is found within the retry budget;
  * caller falls back to randomPassableTile.
  */
+// v0.8.12 F5 — gentle dispersion: prefer wander destinations not adjacent to
+// other workers. Builds a per-tick worker-tile occupancy map (cached on
+// state._workerTileMap keyed by tick so multiple wandering workers in the same
+// tick reuse the same map). The 3x3-neighbour count is cheap O(workers).
+function getWorkerTileMap(state) {
+  const tick = Number(state.metrics?.tick ?? 0);
+  const cached = state._workerTileMap;
+  if (cached && cached.tick === tick) return cached.map;
+  const map = new Map();
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  for (const a of agents) {
+    if (!a || a.type !== "WORKER" || a.alive === false) continue;
+    const t = worldToTile(a.x, a.z, state.grid);
+    if (!t) continue;
+    const key = `${t.ix},${t.iz}`;
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  state._workerTileMap = { tick, map };
+  return map;
+}
+
+function neighborWorkerCount(map, ix, iz) {
+  let n = 0;
+  for (let dz = -1; dz <= 1; dz += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const k = `${ix + dx},${iz + dz}`;
+      n += map.get(k) ?? 0;
+    }
+  }
+  return n;
+}
+
 function pickWanderNearby(worker, state, services) {
   const grid = state.grid;
   if (!grid) return null;
@@ -1329,14 +1361,26 @@ function pickWanderNearby(worker, state, services) {
   } else if (roll >= 0.90) {
     return null;
   }
+  const tileMap = getWorkerTileMap(state);
+  // Subtract self so the worker's own tile doesn't penalise its own picks.
+  const selfTile = origin;
+  let firstPassable = null;
   for (let i = 0; i < 12; i += 1) {
     const dx = Math.floor((random() * 2 - 1) * radius);
     const dz = Math.floor((random() * 2 - 1) * radius);
     const ix = Math.max(0, Math.min(grid.width - 1, cx + dx));
     const iz = Math.max(0, Math.min(grid.height - 1, cz + dz));
-    if (TILE_INFO[getTile(grid, ix, iz)]?.passable) return { ix, iz };
+    if (!TILE_INFO[getTile(grid, ix, iz)]?.passable) continue;
+    if (!firstPassable) firstPassable = { ix, iz };
+    let neighbors = neighborWorkerCount(tileMap, ix, iz);
+    // Remove self from the neighbour count if the candidate tile's 3x3 contains
+    // the worker's own tile (else we would always count ourselves as a neighbour).
+    if (Math.abs(selfTile.ix - ix) <= 1 && Math.abs(selfTile.iz - iz) <= 1) {
+      neighbors -= 1;
+    }
+    if (neighbors <= 0) return { ix, iz };
   }
-  return null;
+  return firstPassable;
 }
 
 function handleWander(worker, state, services, dt) {
@@ -1910,6 +1954,28 @@ export class WorkerAISystem {
         worker.blackboard.commitmentCycle = null;
       }
 
+      // v0.8.12 F2 — escape latch when role has no matching worksite. Pre-fix
+      // workers stranded in seek_task for 60+s when (e.g.) STONE worker exists
+      // but no quarries; commitmentCycle entered seek_task and any subsequent
+      // wander/idle from the planner was rewritten to commitment:hold.
+      // Escape: if worker has been in seek_task >3s and role has no worksite,
+      // clear the latch so the planner's wander pick is allowed through.
+      if (commitment && currentState === "seek_task") {
+        const noWorkSiteEscape = (worker.role === ROLE.FARM && Number(state.buildings?.farms ?? 0) <= 0)
+          || (worker.role === ROLE.WOOD && Number(state.buildings?.lumbers ?? 0) <= 0)
+          || (worker.role === ROLE.STONE && Number(state.buildings?.quarries ?? 0) <= 0)
+          || (worker.role === ROLE.HERBS && Number(state.buildings?.herbGardens ?? 0) <= 0)
+          || (worker.role === ROLE.COOK && Number(state.buildings?.kitchens ?? 0) <= 0)
+          || (worker.role === ROLE.SMITH && Number(state.buildings?.smithies ?? 0) <= 0)
+          || (worker.role === ROLE.HERBALIST && Number(state.buildings?.clinics ?? 0) <= 0)
+          || (worker.role === ROLE.HAUL && Number(state.buildings?.warehouses ?? 0) <= 0);
+        const stuckInSeekTask = Number(commitment.startSec ?? nowSec);
+        if (noWorkSiteEscape && (nowSec - stuckInSeekTask) > 3.0) {
+          worker.blackboard.commitmentCycle = null;
+          worker.blackboard.taskLock = { state: "", untilSec: -Infinity };
+        }
+      }
+
       const inCommitment = worker.blackboard.commitmentCycle?.entered === true && !survivalInterrupt;
 
       // Re-planning cooldown: prevent oscillation from planning every tick.
@@ -1928,8 +1994,25 @@ export class WorkerAISystem {
       // re-plan with no hold so the worker exits deliver the tick the
       // stuck-condition is detected.
       const hasWarehouse = Number(state.buildings?.warehouses ?? 0) > 0;
-      const deliverStuckReplan = currentState === "deliver"
-        && (carryNow <= 0 || !hasWarehouse);
+      // v0.8.12 F12 — extend deliver-stuck detection to cover the
+      // "warehouse exists but is unreachable" case. Pre-fix: a HAUL worker
+      // with carry >0 whose warehouse becomes path-blocked would sit in
+      // Deliver indefinitely (rule:deliver re-fires each replan but
+      // setTargetAndPath keeps failing). lastSuccessfulPathSec from F6 lets
+      // us detect "no fresh path acquired in the last 2s while in deliver".
+      // When this fires we ALSO clear commitmentCycle + taskLock below so
+      // the planner can pick wander next tick.
+      const lastPathSec = Number(
+        worker.blackboard?.lastSuccessfulPathSec ?? state.metrics.timeSec,
+      );
+      const stuckTime = Number(state.metrics.timeSec ?? 0) - lastPathSec;
+      const stuckInDeliver = currentState === "deliver"
+        && carryNow > 0
+        && hasWarehouse
+        && stuckTime > 2.0;
+      const deliverStuckReplan = (currentState === "deliver"
+        && (carryNow <= 0 || !hasWarehouse))
+        || stuckInDeliver;
 
       let plan;
       if (!planCooldownReady && !survivalInterrupt && !deliverStuckReplan && currentState) {
@@ -1942,6 +2025,13 @@ export class WorkerAISystem {
           // Break the commitment cycle so the planner's non-deliver choice
           // (seek_task / idle / seek_food / etc.) is allowed through.
           worker.blackboard.commitmentCycle = null;
+          // v0.8.12 F12 — also reset taskLock when stuck-in-deliver fires so
+          // the planner is free to pick wander on the next tick (the worker
+          // can then re-approach from a different tile and break the
+          // path-fail loop).
+          if (stuckInDeliver) {
+            worker.blackboard.taskLock = { state: "", untilSec: -Infinity };
+          }
           if (plan.desiredState === "deliver") {
             // Feasibility already blocks deliver when the preconditions fail,
             // but if any upstream override still asks for it, reroute to a
