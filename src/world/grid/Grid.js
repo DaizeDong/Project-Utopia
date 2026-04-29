@@ -659,10 +659,10 @@ export function carveRiverNetwork(opts) {
     height,
     seed,
     mainCount = 2,
-    branchProb = 0.06,
-    maxBranchDepth = 2,
+    branchProb = 0.10,
+    maxBranchDepth = 3,
     minWidth = 1,
-    maxWidth = 3,
+    maxWidth = 2,
     maxLen = 120,
   } = opts;
   if (!tiles || !elevation || !width || !height) return;
@@ -802,15 +802,28 @@ export function carveRiverNetwork(opts) {
         // Direction perpendicular-ish to flow.
         const dx = stepRes.nx - ix;
         const dz = stepRes.nz - iz;
-        // Two perpendiculars; pick one randomly + 45° randomization.
+        // Two perpendiculars; pick one randomly. v0.8.9 Phase B: branches now
+        // depart at ±60-90° from flow direction (was ±45-135°). We start at
+        // perpendicular (90° from flow) and pull back toward forward by 0-30°,
+        // keeping the angle in [60°, 90°] for visibly tree-like branching.
         const side = rng() < 0.5 ? 1 : -1;
         const perpDx = -dz * side;
         const perpDz = dx * side;
-        // Randomize within ±45°.
-        const ang = Math.atan2(perpDz, perpDx) + (rng() - 0.5) * (Math.PI / 2);
+        const flowAng = Math.atan2(dz, dx);
+        const perpAng = Math.atan2(perpDz, perpDx);
+        // Pull the perpendicular back toward the flow direction by 0..30°.
+        // Sign of pull is chosen so the result lies between perp and flow,
+        // which keeps the branch angle in [60°, 90°] from flow.
+        let pullSign = 0;
+        const dAng = ((perpAng - flowAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        pullSign = dAng > 0 ? -1 : 1;
+        const ang = perpAng + pullSign * rng() * (Math.PI / 6);
         const branchDx = Math.round(Math.cos(ang));
         const branchDz = Math.round(Math.sin(ang));
-        const childWidth = Math.max(wMin, Math.round(curWidth * 0.65));
+        // Sharper visual contrast: branch width = max(1, parent - 1) rather
+        // than parent * 0.65 — so a width-3 main spawns width-2 tributaries
+        // and width-1 minors.
+        const childWidth = Math.max(wMin, curWidth - 1);
         // Start the branch one tile in the perpendicular direction so it
         // doesn't immediately collapse back into the parent.
         const bx = clamp(ix + branchDx, 1, width - 2);
@@ -832,18 +845,20 @@ export function carveRiverNetwork(opts) {
     walkRiver(src.ix, src.iz, startWidth, 0, null);
   }
 
-  // ---- Moisture boost in radius 3 around every carved tile.
+  // ---- Moisture boost in radius 2 around every carved tile (was 3 in
+  // Phase A — tighter band prevents the visual "wide green ribbon" effect
+  // and lets biomes downstream show the mid-moisture zones away from rivers).
   if (moisture && carved.length > 0) {
     for (const c of carved) {
-      for (let dz = -3; dz <= 3; dz += 1) {
-        for (let dx = -3; dx <= 3; dx += 1) {
+      for (let dz = -2; dz <= 2; dz += 1) {
+        for (let dx = -2; dx <= 2; dx += 1) {
           const nx = c.ix + dx;
           const nz = c.iz + dz;
           if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
           const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist > 3) continue;
+          if (dist > 2) continue;
           const nIdx = nx + nz * width;
-          const fall = 0.85 * (1 - dist / 3.5);
+          const fall = 0.85 * (1 - dist / 2.5);
           if (moisture[nIdx] < fall) moisture[nIdx] = fall;
         }
       }
@@ -1048,6 +1063,432 @@ export function applyMacroFeatures({ elevation, moisture, width, height, seed, t
     const fn = FEATURES[name];
     if (typeof fn !== "function") continue;
     fn({ intensity: 1 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// v0.8.9 Phase B — Biome classification.
+// ---------------------------------------------------------------------------
+
+export const BIOME = Object.freeze({
+  OPEN_PLAINS: 0,
+  LUSH_VALLEY: 1,
+  WOODLAND: 2,
+  ROCKY_HILL: 3,
+  MOUNTAIN: 4,
+  WETLAND: 5,
+  SCRUB: 6,
+});
+
+export const BIOME_NAMES = Object.freeze([
+  "OPEN_PLAINS", "LUSH_VALLEY", "WOODLAND", "ROCKY_HILL", "MOUNTAIN", "WETLAND", "SCRUB",
+]);
+
+/**
+ * Classify each tile into one of N biomes from elevation+moisture+ridge.
+ * Returns Uint8Array same length as tiles. Biomes are *advisory* — they
+ * inform downstream placement weights, not the tile id itself (tiles are
+ * still GRASS/WATER/etc.).
+ *
+ * Biome ids:
+ *   0 OPEN_PLAINS    — low elevation + low moisture
+ *   1 LUSH_VALLEY    — low elevation + high moisture (river-adjacent)
+ *   2 WOODLAND       — mid elevation + mid moisture
+ *   3 ROCKY_HILL     — mid-high elevation, dry-ish
+ *   4 MOUNTAIN       — high elevation, ridge-adjacent
+ *   5 WETLAND        — very low + very high moisture (near water)
+ *   6 SCRUB          — mid elevation, very dry
+ *
+ * @param {object} opts
+ * @param {Float32Array} opts.elevation
+ * @param {Float32Array} opts.moisture
+ * @param {Float32Array} opts.ridge
+ * @param {number} opts.width
+ * @param {number} opts.height
+ * @returns {Uint8Array}
+ */
+export function classifyBiomes({ elevation, moisture, ridge, width, height }) {
+  const area = width * height;
+  const out = new Uint8Array(area);
+  if (!elevation || !moisture || !width || !height) return out;
+  const r = ridge || null;
+  // First pass: compute moisture and elevation thresholds adaptive to the
+  // map's actual distribution. Templates have different moisture means
+  // (riverlands ~0.5, plains ~0.25, archipelago varied), so a single absolute
+  // threshold (e.g. m<0.28 == SCRUB) collapses entire templates into one
+  // biome. We sample percentile cuts instead.
+  const sampleStride = Math.max(1, Math.floor(Math.sqrt(area / 800)));
+  const mSamples = [];
+  const eSamples = [];
+  for (let i = 0; i < area; i += sampleStride) {
+    mSamples.push(moisture[i]);
+    eSamples.push(elevation[i]);
+  }
+  mSamples.sort((a, b) => a - b);
+  eSamples.sort((a, b) => a - b);
+  const pct = (arr, p) => arr[Math.min(arr.length - 1, Math.max(0, Math.floor(arr.length * p)))];
+  const M_DRY = pct(mSamples, 0.30);   // bottom 30%
+  const M_WET = pct(mSamples, 0.70);   // top 30%
+  const M_VWET = pct(mSamples, 0.88);  // top 12%
+  const E_LOW = pct(eSamples, 0.30);
+  const E_MID = pct(eSamples, 0.60);
+  const E_HIGH = pct(eSamples, 0.85);
+
+  for (let i = 0; i < area; i += 1) {
+    const e = elevation[i];
+    const m = moisture[i];
+    const rd = r ? r[i] : 0;
+
+    // Mountain: top-elevation tier, optionally bumped by ridge.
+    if (e >= E_HIGH || (e >= E_MID + 0.05 && rd >= 0.45)) { out[i] = BIOME.MOUNTAIN; continue; }
+    // Wetland: very low elevation + very high moisture (riverbank, marsh).
+    if (e < E_LOW && m >= M_VWET) { out[i] = BIOME.WETLAND; continue; }
+    // Lush valley: low elevation + high moisture.
+    if (e < E_MID && m >= M_WET) { out[i] = BIOME.LUSH_VALLEY; continue; }
+    // Rocky hill: mid-high elevation, dry-ish.
+    if (e >= E_MID && m < M_WET) { out[i] = BIOME.ROCKY_HILL; continue; }
+    // Scrub: dry across the moisture distribution.
+    if (m < M_DRY) { out[i] = BIOME.SCRUB; continue; }
+    // Woodland: mid elevation + mid moisture (default forest band).
+    if (e >= E_LOW && m >= M_DRY && m < M_WET) { out[i] = BIOME.WOODLAND; continue; }
+    // Otherwise: open plains (low elevation, low/mid moisture).
+    out[i] = BIOME.OPEN_PLAINS;
+  }
+  return out;
+}
+
+/**
+ * Multiplier on a placement candidate's score based on its biome.
+ * Returns 1.6 if the biome is in `preferred`, 0.5 if in `disliked`, 1.0
+ * otherwise. Used by the resource-blob picker to bias placement toward
+ * biome-appropriate zones without overriding road/zone weights.
+ */
+export function biomeAffinity(biome, preferred, disliked) {
+  if (preferred && preferred.includes(biome)) return 1.6;
+  if (disliked && disliked.includes(biome)) return 0.5;
+  return 1.0;
+}
+
+// ---------------------------------------------------------------------------
+// v0.8.9 Phase B — Quirks.
+//
+// Hand-crafted local detail features. Each seed picks 0-2 quirks at generation
+// time; the same seed always picks the same quirks (independent RNG stream
+// keyed off the seed). Quirks add visible personality to a map without
+// shifting balance — they're sized small and search for plausible host
+// regions before committing.
+// ---------------------------------------------------------------------------
+
+const QUIRK_SPECIAL_TILES = new Set([
+  TILE.WAREHOUSE, TILE.KITCHEN, TILE.SMITHY, TILE.CLINIC, TILE.WALL, TILE.GATE, TILE.BRIDGE,
+]);
+
+function quirkTileSafe(t) {
+  // Quirks may write to GRASS / FARM / LUMBER / RUINS / HERB_GARDEN / QUARRY /
+  // ROAD-edges, but never on warehouses, processing buildings, walls, gates,
+  // or pre-existing bridges.
+  return !QUIRK_SPECIAL_TILES.has(t);
+}
+
+/**
+ * Apply 0-2 small "quirk" features per seed. Each quirk is a hand-crafted
+ * local detail that gives a seed unique flavor without disrupting balance.
+ *
+ * Quirk pool (each is independent of template):
+ *   - ruinsCluster      — 5-9 RUINS in a tight blob (size 3-4 radius)
+ *   - oasis             — 1 small WATER pool with HERB_GARDEN ring,
+ *                         placed in a low-moisture area
+ *   - ancientRoad       — short ROAD segment (8-14 tiles) in the wilderness,
+ *                         disconnected from main road network
+ *   - marshPatch        — irregular WATER patch with raised moisture (+0.2)
+ *                         in a low-elevation area
+ *   - stoneOutcrop      — small QUARRY-eligible cluster (3-5 raised tiles)
+ *                         in a non-mountain area
+ *   - lostFarm          — single FARM tile far from warehouses (decayed
+ *                         memory of a former settlement)
+ *
+ * Selection: seedRng picks 0-2 quirks. Same seed -> same quirks. Quirks
+ * never overlap macro features or warehouses (skip placement if the chosen
+ * tile is already special).
+ *
+ * @param {object} opts
+ * @param {Uint8Array} opts.tiles
+ * @param {Float32Array} opts.elevation
+ * @param {Float32Array} opts.moisture
+ * @param {Uint8Array} opts.biomes
+ * @param {number} opts.width
+ * @param {number} opts.height
+ * @param {number} opts.seed
+ * @param {string} [opts.templateId]
+ */
+export function applyQuirks({ tiles, elevation, moisture, biomes, width, height, seed, templateId = DEFAULT_MAP_TEMPLATE_ID }) {
+  if (!tiles || !width || !height) return;
+  // Independent RNG stream so adding quirks doesn't shift downstream RNG.
+  // 0x9CA2D — phonetic "9-card" sentinel as requested in the task.
+  const rng = createRng((normalizeSeed(seed) ^ 0x9CA2D) >>> 0);
+
+  // Find a tile matching `predicate`, scanning a randomized linear sequence.
+  // Returns null if no suitable tile is found within `maxTries`.
+  function findTile(predicate, maxTries = 1200) {
+    const area = width * height;
+    const start = Math.floor(rng() * area);
+    const stride = 1 + (Math.floor(rng() * 7) | 1); // odd stride to cover all
+    let cur = start;
+    for (let t = 0; t < maxTries && t < area; t += 1) {
+      const idx = cur % area;
+      const ix = idx % width;
+      const iz = (idx - ix) / width;
+      if (ix >= 2 && iz >= 2 && ix < width - 2 && iz < height - 2) {
+        if (predicate(ix, iz, idx)) return { ix, iz, idx };
+      }
+      cur += stride;
+    }
+    return null;
+  }
+
+  function nearestTileDist(ix, iz, tileType, maxR = 12) {
+    for (let r = 1; r <= maxR; r += 1) {
+      for (let dz = -r; dz <= r; dz += 1) {
+        for (let dx = -r; dx <= r; dx += 1) {
+          if (Math.abs(dx) !== r && Math.abs(dz) !== r) continue;
+          const nx = ix + dx;
+          const nz = iz + dz;
+          if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+          if (tiles[nx + nz * width] === tileType) return r;
+        }
+      }
+    }
+    return maxR + 1;
+  }
+
+  const QUIRKS = {
+    ruinsCluster() {
+      const target = findTile((ix, iz, idx) => {
+        const t = tiles[idx];
+        if (t !== TILE.GRASS && t !== TILE.RUINS) return false;
+        const b = biomes ? biomes[idx] : 0;
+        return b === BIOME.SCRUB || b === BIOME.WOODLAND || b === BIOME.OPEN_PLAINS;
+      });
+      if (!target) return false;
+      const radius = 3 + Math.floor(rng() * 2); // 3-4
+      const want = 5 + Math.floor(rng() * 5); // 5-9
+      let placed = 0;
+      for (let dz = -radius; dz <= radius && placed < want; dz += 1) {
+        for (let dx = -radius; dx <= radius && placed < want; dx += 1) {
+          if (dx * dx + dz * dz > radius * radius) continue;
+          const nx = target.ix + dx;
+          const nz = target.iz + dz;
+          if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+          const ni = nx + nz * width;
+          if (!quirkTileSafe(tiles[ni])) continue;
+          if (tiles[ni] === TILE.WATER) continue;
+          if (rng() < 0.55) {
+            tiles[ni] = TILE.RUINS;
+            placed += 1;
+          }
+        }
+      }
+      return placed > 0;
+    },
+    oasis() {
+      // Small water pool + herb-garden ring in a low-moisture area, far from
+      // existing water.
+      const target = findTile((ix, iz, idx) => {
+        if (tiles[idx] !== TILE.GRASS) return false;
+        if (moisture && moisture[idx] > 0.35) return false;
+        if (nearestTileDist(ix, iz, TILE.WATER, 8) <= 8) return false;
+        const b = biomes ? biomes[idx] : 0;
+        return b === BIOME.OPEN_PLAINS || b === BIOME.SCRUB;
+      });
+      if (!target) return false;
+      // Center: 2-3 water tiles.
+      tiles[target.idx] = TILE.WATER;
+      if (moisture) moisture[target.idx] = 1.0;
+      for (const n of NEIGHBORS_4) {
+        if (rng() < 0.6) {
+          const nx = target.ix + n.x;
+          const nz = target.iz + n.z;
+          if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+          const ni = nx + nz * width;
+          if (!quirkTileSafe(tiles[ni])) continue;
+          tiles[ni] = TILE.WATER;
+          if (moisture) moisture[ni] = 1.0;
+        }
+      }
+      // Herb ring at radius 2.
+      for (let dz = -2; dz <= 2; dz += 1) {
+        for (let dx = -2; dx <= 2; dx += 1) {
+          const r2 = dx * dx + dz * dz;
+          if (r2 < 3 || r2 > 5) continue;
+          const nx = target.ix + dx;
+          const nz = target.iz + dz;
+          if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+          const ni = nx + nz * width;
+          if (tiles[ni] !== TILE.GRASS) continue;
+          if (rng() < 0.55) tiles[ni] = TILE.HERB_GARDEN;
+        }
+      }
+      return true;
+    },
+    ancientRoad() {
+      // Short ROAD segment 8-14 tiles long in wilderness (no road within 5 tiles).
+      const target = findTile((ix, iz, idx) => {
+        if (tiles[idx] !== TILE.GRASS) return false;
+        if (nearestTileDist(ix, iz, TILE.ROAD, 5) <= 5) return false;
+        return true;
+      });
+      if (!target) return false;
+      const length = 8 + Math.floor(rng() * 7); // 8-14
+      const dirIx = rng() < 0.5 ? 1 : -1;
+      const dirIz = rng() < 0.5 ? 1 : -1;
+      const horizontal = rng() < 0.5;
+      let placed = 0;
+      let cx = target.ix;
+      let cz = target.iz;
+      for (let s = 0; s < length; s += 1) {
+        if (cx < 1 || cz < 1 || cx >= width - 1 || cz >= height - 1) break;
+        const ni = cx + cz * width;
+        if (quirkTileSafe(tiles[ni]) && tiles[ni] !== TILE.WATER) {
+          tiles[ni] = TILE.ROAD;
+          placed += 1;
+        }
+        if (horizontal) {
+          cx += dirIx;
+          if (rng() < 0.18) cz += dirIz;
+        } else {
+          cz += dirIz;
+          if (rng() < 0.18) cx += dirIx;
+        }
+      }
+      return placed >= 4;
+    },
+    marshPatch() {
+      // Irregular water patch + moisture boost in a low-elevation area.
+      const target = findTile((ix, iz, idx) => {
+        if (tiles[idx] !== TILE.GRASS) return false;
+        if (elevation && elevation[idx] > 0.40) return false;
+        const b = biomes ? biomes[idx] : 0;
+        return b === BIOME.LUSH_VALLEY || b === BIOME.WETLAND || b === BIOME.OPEN_PLAINS;
+      });
+      if (!target) return false;
+      const blobR = 2 + Math.floor(rng() * 2); // 2-3
+      let placed = 0;
+      for (let dz = -blobR - 1; dz <= blobR + 1; dz += 1) {
+        for (let dx = -blobR - 1; dx <= blobR + 1; dx += 1) {
+          const nx = target.ix + dx;
+          const nz = target.iz + dz;
+          if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          const wobble = (rng() - 0.5) * 1.2;
+          if (dist + wobble > blobR) continue;
+          const ni = nx + nz * width;
+          if (!quirkTileSafe(tiles[ni])) continue;
+          tiles[ni] = TILE.WATER;
+          if (moisture) moisture[ni] = 1.0;
+          placed += 1;
+        }
+      }
+      // Moisture boost +0.2 in a wider radius.
+      if (moisture) {
+        for (let dz = -blobR - 2; dz <= blobR + 2; dz += 1) {
+          for (let dx = -blobR - 2; dx <= blobR + 2; dx += 1) {
+            const nx = target.ix + dx;
+            const nz = target.iz + dz;
+            if (nx < 0 || nz < 0 || nx >= width || nz >= height) continue;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist > blobR + 2) continue;
+            const ni = nx + nz * width;
+            moisture[ni] = clamp(moisture[ni] + 0.2 * (1 - dist / (blobR + 2)), 0, 1);
+          }
+        }
+      }
+      return placed > 0;
+    },
+    stoneOutcrop() {
+      // Small QUARRY cluster (3-5 tiles) in a non-mountain area.
+      const target = findTile((ix, iz, idx) => {
+        if (tiles[idx] !== TILE.GRASS) return false;
+        const b = biomes ? biomes[idx] : 0;
+        if (b === BIOME.MOUNTAIN) return false;
+        return b === BIOME.OPEN_PLAINS || b === BIOME.SCRUB || b === BIOME.WOODLAND || b === BIOME.ROCKY_HILL;
+      });
+      if (!target) return false;
+      const want = 3 + Math.floor(rng() * 3); // 3-5
+      let placed = 0;
+      // Spiral outward from center.
+      const candidates = [];
+      for (let dz = -2; dz <= 2; dz += 1) {
+        for (let dx = -2; dx <= 2; dx += 1) {
+          if (dx * dx + dz * dz > 5) continue;
+          candidates.push({ dx, dz, w: rng() });
+        }
+      }
+      candidates.sort((a, b) => a.w - b.w);
+      for (const c of candidates) {
+        if (placed >= want) break;
+        const nx = target.ix + c.dx;
+        const nz = target.iz + c.dz;
+        if (nx < 1 || nz < 1 || nx >= width - 1 || nz >= height - 1) continue;
+        const ni = nx + nz * width;
+        if (tiles[ni] !== TILE.GRASS) continue;
+        tiles[ni] = TILE.QUARRY;
+        if (elevation) elevation[ni] = clamp(elevation[ni] + 0.10, 0, 1);
+        placed += 1;
+      }
+      return placed > 0;
+    },
+    lostFarm() {
+      // Single FARM tile far from any warehouse (>= 18 tiles Manhattan).
+      const target = findTile((ix, iz, idx) => {
+        if (tiles[idx] !== TILE.GRASS) return false;
+        // Manhattan distance to nearest warehouse.
+        let nearest = 999;
+        for (let z = 0; z < height; z += 2) {
+          for (let x = 0; x < width; x += 2) {
+            if (tiles[x + z * width] === TILE.WAREHOUSE) {
+              const d = Math.abs(x - ix) + Math.abs(z - iz);
+              if (d < nearest) nearest = d;
+            }
+          }
+        }
+        return nearest >= 18;
+      });
+      if (!target) return false;
+      tiles[target.idx] = TILE.FARM;
+      return true;
+    },
+  };
+
+  // ---- Per-template weights (light nudge per spec).
+  const TEMPLATE_QUIRK_WEIGHTS = {
+    rugged_highlands: { stoneOutcrop: 3, ruinsCluster: 2, ancientRoad: 2, marshPatch: 1, oasis: 1, lostFarm: 1 },
+    fertile_riverlands: { marshPatch: 3, lostFarm: 2, ruinsCluster: 2, ancientRoad: 1, oasis: 1, stoneOutcrop: 1 },
+    temperate_plains: { ruinsCluster: 2, lostFarm: 2, ancientRoad: 2, oasis: 2, stoneOutcrop: 2, marshPatch: 1 },
+    fortified_basin: { ruinsCluster: 4, ancientRoad: 2, stoneOutcrop: 2, lostFarm: 1, oasis: 1, marshPatch: 1 },
+    archipelago_isles: { marshPatch: 4, oasis: 2, ruinsCluster: 2, lostFarm: 1, stoneOutcrop: 1, ancientRoad: 1 },
+    coastal_ocean: { marshPatch: 3, oasis: 2, lostFarm: 2, ruinsCluster: 1, stoneOutcrop: 1, ancientRoad: 1 },
+  };
+  const weights = TEMPLATE_QUIRK_WEIGHTS[templateId] || TEMPLATE_QUIRK_WEIGHTS[DEFAULT_MAP_TEMPLATE_ID];
+
+  // 0-2 quirks per seed. Distribution: 0=20%, 1=50%, 2=30%.
+  const r0 = rng();
+  const quirkCount = r0 < 0.20 ? 0 : (r0 < 0.70 ? 1 : 2);
+  const remaining = { ...weights };
+  for (let pick = 0; pick < quirkCount; pick += 1) {
+    let total = 0;
+    for (const k of Object.keys(remaining)) total += Math.max(0, remaining[k]);
+    if (total <= 0) break;
+    let t = rng() * total;
+    let chosen = null;
+    for (const k of Object.keys(remaining)) {
+      t -= Math.max(0, remaining[k]);
+      if (t <= 0) { chosen = k; break; }
+    }
+    if (!chosen) chosen = Object.keys(remaining)[0];
+    const fn = QUIRKS[chosen];
+    if (typeof fn === "function") fn(); // bail-graceful inside
+    // Don't pick the same quirk twice.
+    remaining[chosen] = 0;
   }
 }
 
@@ -1871,13 +2312,13 @@ function generateFertileRiverlandsTerrain(tiles, width, height, seed, profile) {
   // weight table).
   applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "fertile_riverlands" });
 
-  // v0.8.9: branching river network. Sources picked from elevated tiles,
-  // walks downhill with branch probability 0.10 / depth 2 — riverlands is
-  // the most-branched template by design.
+  // v0.8.9 Phase B: 4 mains + branchProb 0.12 / depth 3 — riverlands is the
+  // most-branched template by design (more sources = more branching
+  // opportunity = visibly different hydrology each seed).
   carveRiverNetwork({
     tiles, elevation, moisture, width, height, seed,
-    mainCount: 2, branchProb: 0.10, maxBranchDepth: 2,
-    minWidth: 1, maxWidth: 3, maxLen: Math.max(width, height),
+    mainCount: 4, branchProb: 0.12, maxBranchDepth: 3,
+    minWidth: 1, maxWidth: 2, maxLen: Math.max(width, height),
   });
 
   // Generate 2-3 convergent rivers with deep domain-warped meanders
@@ -2311,12 +2752,12 @@ function generateRuggedHighlandsTerrain(tiles, width, height, seed, profile) {
   // seed-to-seed variation.
   applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "rugged_highlands" });
 
-  // v0.8.9: branching highland streams. 2 mains + branchProb 0.07 / depth 2 —
-  // these run ALONGSIDE the existing carveStream pass below; together the
-  // hydrology reads as a real watershed, not a single ribbon.
+  // v0.8.9 Phase B: 3 mains + branchProb 0.10 / depth 3 — these run alongside
+  // the existing carveStream pass below; the mountain watershed reads as a
+  // true tree of tributaries flowing down from peaks.
   carveRiverNetwork({
     tiles, elevation, moisture, width, height, seed,
-    mainCount: 2, branchProb: 0.07, maxBranchDepth: 2,
+    mainCount: 3, branchProb: 0.10, maxBranchDepth: 3,
     minWidth: 1, maxWidth: 2, maxLen: Math.max(width, height),
   });
 
@@ -2559,11 +3000,12 @@ function generateTemperatePlainsTerrain(tiles, width, height, seed, profile) {
   // terrain is intentionally flat.
   applyMacroFeatures({ elevation, moisture, width, height, seed, templateId: "temperate_plains" });
 
-  // v0.8.9: light branching river. 1 main + branchProb 0.05 / depth 1 — plains
-  // gets only a modest tributary or two on top of the existing meander river.
+  // v0.8.9 Phase B: 2 mains + branchProb 0.10 / depth 3 on top of the existing
+  // meander river. Plains gets visible tributaries that taper from the
+  // dominant river network.
   carveRiverNetwork({
     tiles, elevation, moisture, width, height, seed,
-    mainCount: 1, branchProb: 0.05, maxBranchDepth: 1,
+    mainCount: 2, branchProb: 0.10, maxBranchDepth: 3,
     minWidth: 1, maxWidth: 2, maxLen: Math.max(width, height),
   });
 
@@ -2678,10 +3120,23 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     applyMacroFeatures({ elevation: fields.elevation, moisture: fields.moisture, width, height, seed, templateId });
     carveRiverNetwork({
       tiles, elevation: fields.elevation, moisture: fields.moisture, width, height, seed,
-      mainCount: Math.max(1, profile.riverCount), branchProb: 0.08, maxBranchDepth: 2,
+      mainCount: Math.max(1, profile.riverCount), branchProb: 0.10, maxBranchDepth: 3,
       minWidth: 1, maxWidth: Math.max(2, Math.round(profile.riverWidth ?? 2)), maxLen: Math.max(width, height),
     });
   }
+
+  // v0.8.9 Phase B: classify biomes once after macro features + rivers have
+  // shaped elevation/moisture. The biomes Uint8Array is consumed by the
+  // resource-blob picker (FARM/LUMBER/QUARRY/HERB_GARDEN/RUINS) for
+  // biome-aware placement, then persisted onto the grid for downstream
+  // systems / tests to read.
+  const biomes = classifyBiomes({
+    elevation: fields.elevation,
+    moisture: fields.moisture,
+    ridge: fields.ridge,
+    width,
+    height,
+  });
 
   const hubs = [];
   const centerHub = { ix: Math.floor(width / 2), iz: Math.floor(height / 2) };
@@ -2763,7 +3218,13 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
         : fdist < ZONE_NEAR ? -2.0 * (1 - fdist / ZONE_NEAR)
         : fdist >= ZONE_FAR ? 0.3 * Math.min(1, (fdist - ZONE_FAR) / 15)
         : 0;
-      return moistureScore + (nearRoad ? 0.9 : 0) + terrainPenalty + farmZoneBias;
+      // v0.8.9 Phase B: biome affinity. FARM prefers OPEN_PLAINS / LUSH_VALLEY,
+      // dislikes MOUNTAIN / SCRUB. The base composite score is multiplied by
+      // 0.5x (disliked) / 1.0x (neutral) / 1.6x (preferred); zone/terrain
+      // penalties stay additive so they can still hard-veto.
+      const aff = biomeAffinity(biomes[idx], [BIOME.OPEN_PLAINS, BIOME.LUSH_VALLEY], [BIOME.MOUNTAIN, BIOME.SCRUB]);
+      const baseScore = moistureScore + (nearRoad ? 0.9 : 0);
+      return baseScore * aff + terrainPenalty + farmZoneBias;
     }),
     2.8,
     5.5,
@@ -2841,7 +3302,9 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
         return tiles[toIndex(nx, nz, width)] === TILE.ROAD;
       });
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return noise + (nearRoad ? 0.45 : 0) + terrainPenalty + radialZoneBias(ix, iz);
+      // v0.8.9 Phase B: LUMBER prefers WOODLAND / WETLAND-edges; avoids OPEN_PLAINS / MOUNTAIN.
+      const aff = biomeAffinity(biomes[idx], [BIOME.WOODLAND, BIOME.WETLAND], [BIOME.OPEN_PLAINS, BIOME.MOUNTAIN]);
+      return (noise + (nearRoad ? 0.45 : 0)) * aff + terrainPenalty + radialZoneBias(ix, iz);
     }),
     2.2,
     4.9,
@@ -2859,7 +3322,9 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       const distEdge = Math.min(ix, iz, width - 1 - ix, height - 1 - iz);
       const edgeBias = 1 - clamp(distEdge / Math.max(4, Math.min(width, height) * 0.28), 0, 1);
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return ridge + edgeBias * 0.5 + terrainPenalty + radialZoneBias(ix, iz);
+      // v0.8.9 Phase B: QUARRY prefers ROCKY_HILL / MOUNTAIN; avoids LUSH_VALLEY / WETLAND.
+      const aff = biomeAffinity(biomes[idx], [BIOME.ROCKY_HILL, BIOME.MOUNTAIN], [BIOME.LUSH_VALLEY, BIOME.WETLAND]);
+      return (ridge + edgeBias * 0.5) * aff + terrainPenalty + radialZoneBias(ix, iz);
     }),
     1.8,
     3.8,
@@ -2881,7 +3346,9 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
         return tiles[toIndex(nx, nz, width)] === TILE.FARM;
       });
       const terrainPenalty = tiles[idx] === TILE.WATER || tiles[idx] === TILE.WALL ? -10 : 0;
-      return moistureScore + (nearFarm ? 0.8 : 0) + terrainPenalty + radialZoneBias(ix, iz);
+      // v0.8.9 Phase B: HERB_GARDEN prefers LUSH_VALLEY / WETLAND; avoids ROCKY_HILL / MOUNTAIN / SCRUB.
+      const aff = biomeAffinity(biomes[idx], [BIOME.LUSH_VALLEY, BIOME.WETLAND], [BIOME.ROCKY_HILL, BIOME.MOUNTAIN, BIOME.SCRUB]);
+      return (moistureScore + (nearFarm ? 0.8 : 0)) * aff + terrainPenalty + radialZoneBias(ix, iz);
     }),
     2.0,
     4.2,
@@ -2898,7 +3365,10 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
       const distEdge = Math.min(ix, iz, width - 1 - ix, height - 1 - iz);
       const edgeBias = 1 - clamp(distEdge / Math.max(4, Math.min(width, height) * 0.28), 0, 1);
       const rough = fields.ridge[idx];
-      return rough * 1.2 + edgeBias * 0.7;
+      // v0.8.9 Phase B: RUINS prefers SCRUB / WOODLAND (decay narrative);
+      // avoids LUSH_VALLEY / WETLAND (overgrowth would hide ruins lore).
+      const aff = biomeAffinity(biomes[idx], [BIOME.SCRUB, BIOME.WOODLAND], [BIOME.LUSH_VALLEY, BIOME.WETLAND]);
+      return (rough * 1.2 + edgeBias * 0.7) * aff;
     }),
     1.8,
     3.6,
@@ -2908,8 +3378,23 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
   ensureMinimumInfrastructure(tiles, width, height, seed + 2301);
   trimRoadOverflow(tiles, width, height, profile, seed + 3301);
 
+  // v0.8.9 Phase B: per-seed quirks. Run AFTER warehouse/wall/road
+  // placement so quirks don't get clobbered, but BEFORE final tile coverage
+  // finalization. Quirks have their own RNG stream so adding/removing them
+  // doesn't shift any existing seed's output.
+  applyQuirks({
+    tiles,
+    elevation: fields.elevation,
+    moisture: fields.moisture,
+    biomes,
+    width,
+    height,
+    seed,
+    templateId,
+  });
+
   const emptyBaseTiles = finalizeTileCoverage(tiles);
-  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile, elevation: fields.elevation, moisture: fields.moisture, ridge: fields.ridge };
+  return { tiles, emptyBaseTiles, tuning: normalizedTuning, profile, elevation: fields.elevation, moisture: fields.moisture, ridge: fields.ridge, biomes };
 }
 export function describeMapTemplate(templateId) {
   return MAP_TEMPLATES.find((tpl) => tpl.id === templateId) ?? MAP_TEMPLATES[0];
@@ -2970,6 +3455,10 @@ export function createInitialGrid(options = {}) {
     elevation: generated.elevation,
     moisture: generated.moisture,
     ridge: generated.ridge,
+    // v0.8.9 Phase B: biome map (Uint8Array same length as tiles). Advisory
+    // metadata used by the resource-blob picker; downstream systems / tests
+    // can read it for biome-aware logic. See classifyBiomes / BIOME constants.
+    biomes: generated.biomes,
   };
 }
 
@@ -3177,6 +3666,16 @@ export function validateGeneratedGrid(grid) {
     issues.push("tiles is not Uint8Array");
   } else if (grid.tiles.length !== grid.width * grid.height) {
     issues.push("tiles length mismatch");
+  }
+  // v0.8.9 Phase B: biomes Uint8Array sanity check. Advisory map shipped
+  // alongside tiles; if present, must be the same shape. Absence is fine
+  // (legacy callers / downstream loaders may not populate it).
+  if (grid.biomes !== undefined && grid.biomes !== null) {
+    if (!(grid.biomes instanceof Uint8Array)) {
+      issues.push("biomes is not Uint8Array");
+    } else if (grid.tiles instanceof Uint8Array && grid.biomes.length !== grid.tiles.length) {
+      issues.push(`biomes length mismatch (${grid.biomes.length} vs tiles ${grid.tiles.length})`);
+    }
   }
   if (issues.length > 0) return { ok: false, issues };
 

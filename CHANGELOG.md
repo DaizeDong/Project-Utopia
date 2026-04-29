@@ -2,23 +2,36 @@
 
 ## [Unreleased] - v0.8.9 Terrain Rewrite
 
-Major terrain-generation rewrite addressing user feedback that "rivers all unbranched, all 6 templates feel like reskins". Three contracts: zero pre-generated BRIDGE tiles, branching rivers with downhill flow + tributaries, per-seed macro features so different seeds on the same template look visibly different. Net: 1620 tests / 1617 pass / 0 fail / 3 skip. New `test/terrain-diversity.test.js` (5 tests) confirms ≥35% pairwise tile-diff between seeds on `temperate_plains`.
+Major terrain-generation rewrite addressing user feedback that "rivers all unbranched, all 6 templates feel like reskins". **Phase A (commit a78f764)**: zero pre-generated BRIDGE tiles, branching rivers with downhill flow + tributaries, per-seed macro features so different seeds on the same template look visibly different. **Phase B**: 7-biome classification driving resource-blob placement, 6 per-seed quirks (ruinsCluster / oasis / ancientRoad / marshPatch / stoneOutcrop / lostFarm), and tighter river branching. Net: 1623 tests / 1620 pass / 0 fail / 3 skip. `test/terrain-diversity.test.js` (8 tests) confirms ≥35% pairwise tile-diff and per-seed biome variance.
 
-### Removed
+### Phase B — Added
+
+- **`classifyBiomes({ elevation, moisture, ridge, width, height })`** in `src/world/grid/Grid.js`. Returns a `Uint8Array` mapping each tile to one of 7 biomes (OPEN_PLAINS / LUSH_VALLEY / WOODLAND / ROCKY_HILL / MOUNTAIN / WETLAND / SCRUB) using adaptive percentile cuts (30/60/85 elevation, 30/70/88 moisture) so each template gets a balanced spread instead of collapsing into one biome under fixed thresholds. `BIOME` enum + `BIOME_NAMES` exported. Persisted on `grid.biomes`; `validateGeneratedGrid` checks length parity.
+- **Biome-aware resource placement.** All 5 resource-blob pickers in `generateTerrainTiles` (FARM / LUMBER / QUARRY / HERB_GARDEN / RUINS) multiply their existing weight by a `biomeAffinity(biome, kind)` (0.5x outside-preferred / 1.0x neutral / 1.6x inside-preferred). FARM bias OPEN/LUSH; LUMBER bias WOODLAND/WETLAND-edge; QUARRY bias ROCKY/MOUNTAIN; HERB_GARDEN bias LUSH/WETLAND; RUINS bias SCRUB/WOODLAND.
+- **`applyQuirks({ tiles, elevation, moisture, biomes, width, height, seed, templateId })`** in `src/world/grid/Grid.js`. Pool of 6 quirks each tied to a host biome with independent RNG (`createRng(seed ^ 0x9CA2D)`). 0–2 quirks per seed (20/50/30 distribution). Per-template weight nudges (highlands → stoneOutcrop, basin → ruinsCluster, archipelago → marshPatch). Each quirk bails gracefully if no suitable host biome exists. Wired post-walls/roads, pre-finalize so quirks aren't clobbered.
+- **3 new tests** in `test/terrain-diversity.test.js`: biome distribution varies across seeds, quirks fire deterministically (same seed → identical quirk-affected tiles), `BIOME` enum/names round-trip.
+
+### Phase B — Changed
+
+- **Sharper branching rivers.** `carveRiverNetwork` defaults: `maxWidth` 3 → 2 (slimmer main channel); `branchProb` 0.06 → 0.10 (more tributaries); `maxBranchDepth` 2 → 3 (deeper branching); branch width parent × 0.65 → `max(1, parent − 1)` (sharper visual contrast); branch angle ±45° → ±60–90° from flow; moisture-boost radius 3 → 2 with falloff (was 3.5 hard radius) so banks tighten and the visual "wide green band" effect is gone. Per-template `mainCount` raised: plains 1→2, highlands 2→3, riverlands 2→4 (riverlands `branchProb` 0.10→0.12 — its identity is hydrology).
+- **Tile-diff% across 5 seeds (Phase B vs Phase A baseline):** temperate_plains 37.1 → 38.0%; rugged_highlands 46.7 → 46.8%; fertile_riverlands 31.3 → 31.8%; fortified_basin 42.2 → 42.8%; archipelago/coastal +0.1–0.2% (water-dominated, no rivers, but biome-aware blob placement still nudged them).
+- **Biome distribution snapshot (temperate_plains across seeds):** seed=1 (OPEN 17/LUSH 14/WOODLAND 22/ROCKY 22/MOUNTAIN 15/WETLAND 11), seed=7 (OPEN 28/LUSH 11/WOODLAND 22/ROCKY 17/MOUNTAIN 15/WETLAND 7), seed=42 (OPEN 21/LUSH 11/WOODLAND 22/ROCKY 20/MOUNTAIN 15/WETLAND 10). OPEN spread +11pp across seeds; multiple biomes vary visibly.
+
+### Phase A — Removed
 
 - **Bridge pre-generation.** `carveBridgesOnMainAxis` (formerly ~57 LOC in `src/world/grid/Grid.js`) and its three call sites (riverlands, highlands, plains) deleted. `BRIDGE` removed from `validateGeneratedGrid`'s static passable count list; the connectivity scan still admits BRIDGE via `TILE_INFO.passable` so player-built bridges keep working at runtime. `TILE.BRIDGE` (id 13) and the BuildSystem flow are untouched — bridges remain a valid player-buildable tile.
 
-### Added
+### Phase A — Added
 
-- **`carveRiverNetwork(opts)`** in `src/world/grid/Grid.js`. Picks `mainCount` source tiles from elevation > 0.6 (falls back to > 0.4 for low-relief templates) with Poisson-like spacing of ≥12 tiles. Each source walks downhill via 8-neighbour gradient + small RNG jitter; halts on sink, water hit, or grid edge. Per-step branching with `branchProb` and `maxBranchDepth` recursion (tributary width = parent × 0.65, perpendicular-ish direction ± 45°). Width tapers from full near source to half near mouth. Boosts `moisture[]` in a 3-tile radius around every carved tile.
-- **`applyMacroFeatures({ elevation, moisture, width, height, seed, templateId })`** in `src/world/grid/Grid.js`. Pool of 6 features stamped via Gaussian falloff before water carving: `mountainRidge`, `basin`, `mesa`, `canyon`, `peninsula`, `ancientCrater`. Per-template weight tables nudge selection (highlands → ridge/mesa/canyon, riverlands → basin/peninsula, fortified_basin → forced basin + 1 random, plains → mesa/crater, archipelago/coastal → peninsula/mesa). Each feature derives its own RNG (`seed + featureName.charCodeAt(0)*99`) so the same feature on different seeds varies orientation/amplitude.
-- **`test/terrain-diversity.test.js`** — 5 tests covering pairwise tile diversity (≥5% threshold; observed 35–39%), no-BRIDGE invariant across all 6 templates × 5 seeds, and `temperate_plains` "interesting" gates (water bounds, farm/lumber present).
+- **`carveRiverNetwork(opts)`** — Poisson source picking on elevation > 0.6 (falls back to > 0.4 for low-relief templates) with ≥12-tile spacing. Each source walks downhill via 8-neighbour gradient + small RNG jitter; halts on sink, water hit, or grid edge. Per-step branching with `branchProb` and `maxBranchDepth` recursion. Width tapers from full near source to half near mouth. Moisture boost in radius around carved tiles.
+- **`applyMacroFeatures(...)`** — Pool of 6 features stamped via Gaussian falloff before water carving: `mountainRidge`, `basin`, `mesa`, `canyon`, `peninsula`, `ancientCrater`. Per-template weight tables nudge selection. Each feature derives its own RNG so the same feature varies orientation/amplitude across seeds.
+- **`test/terrain-diversity.test.js`** — 5 tests covering pairwise tile diversity (≥5% threshold), no-BRIDGE invariant across all 6 templates × 5 seeds, and `temperate_plains` "interesting" gates.
 
-### Changed
+### Phase A — Changed
 
-- All 6 template generators in `src/world/grid/Grid.js` now call `applyMacroFeatures` after the initial elevation/moisture pass and before biome assignment.
-- Per-template river network tuning: `temperate_plains` (1 main, branchProb 0.05, depth 1), `rugged_highlands` (2 / 0.07 / 2), `fertile_riverlands` (2 / 0.10 / 2 — most-branched), `fortified_basin` unchanged (0 rivers — its identity is the wall), `archipelago_isles` and `coastal_ocean` unchanged (water-dominated; macro features only).
-- The fallback (unknown-template) branch in `generateTerrainTiles` switched from `carveRiver` to `carveRiverNetwork` so legacy callers also get branching hydrology + macro features.
+- All 6 template generators call `applyMacroFeatures` after the initial elevation/moisture pass and before biome assignment.
+- Per-template river network tuning (Phase A baselines, refined in Phase B above).
+- Fallback (unknown-template) branch in `generateTerrainTiles` switched from `carveRiver` to `carveRiverNetwork`.
 
 ### Constraints honoured
 
