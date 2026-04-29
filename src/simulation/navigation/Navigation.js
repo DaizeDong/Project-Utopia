@@ -299,6 +299,14 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   }
 
   if (resolvedByWorker && !path) {
+    // v0.8.13 A6 — mark the failed (worker, tile, tileType) tuple in the
+    // path-fail blacklist so chooseWorkerTarget skips it next pick. TTL 5 s
+    // simulated time. Closes the path-fail loops that the audit identified
+    // in F-scenario (~3 stuck-loops, residual after v0.8.12 F12).
+    if (services?.pathFailBlacklist?.mark && entity?.id != null) {
+      const tileType = state?.grid ? getTile(state.grid, targetTile.ix, targetTile.iz) : 0;
+      services.pathFailBlacklist.mark(entity.id, targetTile.ix, targetTile.iz, tileType, nowSec);
+    }
     entity.path = null;
     entity.pathIndex = 0;
     entity.pathGridVersion = -1;
@@ -354,6 +362,11 @@ export function setTargetAndPath(entity, targetTile, state, services) {
   }
 
   if (!path) {
+    // v0.8.13 A6 — same blacklist mark as the worker-pool fail path.
+    if (services?.pathFailBlacklist?.mark && entity?.id != null) {
+      const tileType = state?.grid ? getTile(state.grid, targetTile.ix, targetTile.iz) : 0;
+      services.pathFailBlacklist.mark(entity.id, targetTile.ix, targetTile.iz, tileType, nowSec);
+    }
     entity.path = null;
     entity.pathIndex = 0;
     entity.pathGridVersion = -1;
