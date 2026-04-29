@@ -73,11 +73,12 @@ test("v0.9.0-a #1: JobScheduler picks JobWander when it is the only registered J
   scheduler.tickWorker(worker, state, services, 1 / 30);
 
   assert.equal(worker.currentJob.id, "wander", "JobWander should win when only it has a target");
-  // v0.9.0-b: registry now lists 5 Jobs (4 harvest + wander). On a bare-init
-  // map there are no FARM/LUMBER/QUARRY/HERB_GARDEN tiles, so the harvest
-  // Jobs' findTarget returns null and JobWander wins by default. Phase c
-  // appends deliver/eat/process/build/rest/guard.
-  assert.equal(ALL_JOBS.length, 5, "phase 0.9.0-b registers 4 harvest Jobs + JobWander");
+  // v0.9.0-c: registry now lists 13 Jobs (Guard, Eat, Rest, Build, Deliver,
+  // Process×3, Harvest×4, Wander). On a bare-init map there are no economy
+  // tiles, the worker is fed/rested, and there are no hostiles, so all
+  // findTarget probes return null and JobWander wins by default. Phase d
+  // flips the feature flag and retires legacy dispatch.
+  assert.equal(ALL_JOBS.length, 13, "phase 0.9.0-c registers 13 Jobs");
   assert.ok(
     ALL_JOBS[ALL_JOBS.length - 1] instanceof JobWander,
     "JobWander remains the terminal-floor entry",
