@@ -1,13 +1,12 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-import { ANIMAL_KIND, EVENT_TYPE, FEATURE_FLAGS, FOG_STATE, NODE_FLAGS, ROLE, TILE, TILE_INFO, VISITOR_KIND } from "../../config/constants.js";
+// v0.9.0-e — ANIMAL_KIND/VISITOR_KIND/FOG_STATE imports retired alongside
+// handleGuardCombat (moved into JobGuardEngage) and handleWander (moved
+// into JobWander). FEATURE_FLAGS still referenced in comments only; can be
+// removed once the audit-A4 blackboard rename lands in v0.9.1.
+import { EVENT_TYPE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
-import { BuildSystem } from "../construction/BuildSystem.js";
-import {
-  applyConstructionWork,
-  findOrReserveBuilderSite,
-  releaseBuilderSite,
-} from "../construction/ConstructionSites.js";
+import { releaseBuilderSite } from "../construction/ConstructionSites.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, hasPendingPathRequest, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
 import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
 import { planEntityDesiredState } from "./state/StatePlanner.js";
@@ -27,12 +26,8 @@ import { JobScheduler } from "./jobs/JobScheduler.js";
 // ~0.7-1.2s instead of ~1.2-1.9s. Reduces visible idle stalls.
 const TARGET_REFRESH_BASE_SEC = 0.7;
 const TARGET_REFRESH_JITTER_SEC = 0.5;
-// v0.8.11 worker-AI bare-init responsiveness (Fix 2) — lower wander refresh
-// cadence (was 1.8/1.2) so wander destinations stay short-range and the FSM
-// re-evaluates ~once per second. Combined with Fix 3's nearby-bias picker,
-// this turns aimless wandering into local milling near base or worksites.
-const WANDER_REFRESH_BASE_SEC = 0.9;
-const WANDER_REFRESH_JITTER_SEC = 0.7;
+// v0.9.0-e — WANDER_REFRESH_* constants moved to JobWander.js alongside the
+// rest of the wander cadence; WorkerAISystem no longer drives a wander loop.
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 // v0.9.0-d — TASK_LOCK_STATES retired. The Job-utility layer's
 // `JobScheduler` hysteresis (sticky bonus + decay; see JobScheduler.js)
@@ -334,7 +329,10 @@ function getWorkerHungerSeekThreshold(worker) {
   return clamp(override, 0.05, 0.8);
 }
 
-function getWorkerEatRecoveryTarget(worker) {
+// v0.9.0-e — exported so JobEat can resolve the per-worker (metabolism-aware)
+// eat target and per-food recovery rate when inlining the eat body. Private
+// callers (consumeEmergencyRation, …) still use them within this module.
+export function getWorkerEatRecoveryTarget(worker) {
   const base = Number(BALANCE.workerEatRecoveryTarget ?? 0.68);
   const override = Number(worker?.metabolism?.eatRecoveryTarget ?? base);
   return clamp(override, 0.2, 0.98);
@@ -346,7 +344,9 @@ function getWorkerHungerDecayPerSecond(worker) {
   return Math.max(0, base * clamp(multiplier, 0.5, 1.5));
 }
 
-function getWorkerRecoveryPerFoodUnit(worker) {
+// v0.9.0-e — exported alongside getWorkerEatRecoveryTarget for the JobEat
+// inline.
+export function getWorkerRecoveryPerFoodUnit(worker) {
   const base = Number(BALANCE.workerHungerEatRecoveryPerFoodUnit ?? BALANCE.hungerEatRecoveryPerFoodUnit ?? 0.04);
   const multiplier = Number(worker?.metabolism?.eatRecoveryPerFoodMultiplier ?? 1);
   return Math.max(1e-4, base * clamp(multiplier, 0.5, 1.5));
@@ -439,59 +439,9 @@ function addEmotionalPrefix(worker, state, text) {
 // `worker.debug.lastIntentReason` written by the JobScheduler dispatch
 // in update().
 
-function hasHiddenFrontier(state) {
-  const vis = state?.fog?.visibility;
-  if (!(vis instanceof Uint8Array)) return false;
-  // v0.8.0 Phase 3 post-review — cache moved off state.fog (owned by
-  // VisibilitySystem) onto state._fogFrontierCache so a fog reset cannot
-  // orphan stale fields (legacy-sweep SHOULD-CLEAN #7).
-  const cache = state._fogFrontierCache ??= { version: -1, grid: -1, found: false };
-  const gridVersion = Number(state?.grid?.version ?? 0);
-  const fogVersion = Number(state.fog.version ?? 0);
-  if (cache.version === fogVersion && cache.grid === gridVersion) return cache.found;
-  let found = false;
-  for (let i = 0; i < vis.length; i += 1) {
-    if (vis[i] === FOG_STATE.HIDDEN) { found = true; break; }
-  }
-  cache.version = fogVersion;
-  cache.grid = gridVersion;
-  cache.found = found;
-  return found;
-}
-
-/**
- * Find the nearest HIDDEN tile that has at least one non-HIDDEN neighbor
- * (the fog frontier) relative to the worker's current tile. Manhattan metric.
- * Returns null if the grid is fully explored.
- */
-export function findNearestHiddenTile(worker, state) {
-  const vis = state?.fog?.visibility;
-  const grid = state?.grid;
-  if (!(vis instanceof Uint8Array) || !grid) return null;
-  const width = Number(grid.width ?? 0);
-  const height = Number(grid.height ?? 0);
-  if (width <= 0 || height <= 0) return null;
-  const current = worldToTile(worker.x, worker.z, grid);
-  let best = null;
-  let bestDist = Infinity;
-  for (let iz = 0; iz < height; iz += 1) {
-    for (let ix = 0; ix < width; ix += 1) {
-      if (vis[ix + iz * width] !== FOG_STATE.HIDDEN) continue;
-      let onFrontier = false;
-      if (ix + 1 < width && vis[(ix + 1) + iz * width] !== FOG_STATE.HIDDEN) onFrontier = true;
-      else if (ix - 1 >= 0 && vis[(ix - 1) + iz * width] !== FOG_STATE.HIDDEN) onFrontier = true;
-      else if (iz + 1 < height && vis[ix + (iz + 1) * width] !== FOG_STATE.HIDDEN) onFrontier = true;
-      else if (iz - 1 >= 0 && vis[ix + (iz - 1) * width] !== FOG_STATE.HIDDEN) onFrontier = true;
-      if (!onFrontier) continue;
-      const d = Math.abs(ix - current.ix) + Math.abs(iz - current.iz);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { ix, iz };
-      }
-    }
-  }
-  return best;
-}
+// v0.9.0-e — hasHiddenFrontier / findNearestHiddenTile deleted along with
+// handleWander. The fog-frontier wander bias has not been re-introduced as
+// a Job; if a future phase adds JobExploreFog, it will own that scan.
 
 function estimateNearestWarehouseDistance(worker, state) {
   if (!state?.grid || !Number.isFinite(worker?.x) || !Number.isFinite(worker?.z)) return 0;
@@ -718,177 +668,16 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   return hasActivePath(worker, state) || isAtTargetTile(worker, state);
 }
 
-/**
- * v0.8.3 worker-vs-raider combat — GUARD-role AI driver.
- *
- * Scans `state.animals` for the nearest live PREDATOR within
- * `BALANCE.guardAggroRadius`. If one exists, the GUARD pathfinds toward
- * the predator's tile and lands a melee hit (`BALANCE.guardAttackDamage`)
- * when within `BALANCE.meleeReachTiles` of it. Sidesteps the regular
- * intent FSM exactly like `handleStressWorkerPatrol` does — guards do
- * not farm/haul.
- *
- * Returns true when a target was acquired (caller should `continue` past
- * the regular FSM); false when no target was found and the worker should
- * fall through to the regular role handling (e.g. wander).
- */
-// v0.9.0-c — exported so JobGuardEngage can reuse the same melee + path-fail
-// dwell semantics without forking. WorkerAISystem still calls it directly
-// for the GUARD short-circuit at the top of the worker loop when the flag
-// is OFF.
-export function handleGuardCombat(worker, state, services, dt) {
-  const animals = Array.isArray(state?.animals) ? state.animals : [];
-  const agents = Array.isArray(state?.agents) ? state.agents : [];
+// v0.9.0-e — handleGuardCombat / handleEat deleted. JobGuardEngage and
+// JobEat inline the bodies (engageNearestHostile + at-warehouse eat). The
+// legacy GUARD short-circuit at the top of WorkerAISystem.update was retired
+// in phase d; the JobScheduler routes GUARDs through JobGuardEngage at
+// priority 100.
 
-  const aggroRadius = Number(BALANCE.guardAggroRadius ?? 4);
-  const aggro2 = aggroRadius * aggroRadius;
-  let target = null;
-  let bestD2 = Infinity;
-  for (const a of animals) {
-    if (!a || a.alive === false) continue;
-    if (a.kind !== ANIMAL_KIND.PREDATOR) continue;
-    const dx = a.x - worker.x;
-    const dz = a.z - worker.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 <= aggro2 && d2 < bestD2) {
-      bestD2 = d2;
-      target = a;
-    }
-  }
-  // v0.8.5 Tier 2 S3: saboteur engagement. GUARDs now also chase active
-  // SABOTEUR visitors within aggro range so the colony has a real counter
-  // beyond walls. Saboteurs have HP (initialised in EntityFactory) and
-  // die when hp drops to 0 — same melee path as predator engagement.
-  for (const v of agents) {
-    if (!v || v.alive === false) continue;
-    if (v.type !== "VISITOR") continue;
-    if (v.kind !== VISITOR_KIND.SABOTEUR) continue;
-    const dx = v.x - worker.x;
-    const dz = v.z - worker.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 <= aggro2 && d2 < bestD2) {
-      bestD2 = d2;
-      target = v;
-    }
-  }
-  if (!target) return false;
-
-  worker.attackCooldownSec = Math.max(0, Number(worker.attackCooldownSec ?? 0) - dt);
-  worker.debug ??= {};
-  worker.debug.lastIntent = "guard_engage";
-  worker.debug.lastIntentReason = `GUARD engaging ${target.species ?? "predator"} at d=${Math.sqrt(bestD2).toFixed(2)}`;
-  worker.stateLabel = "Engage";
-  worker.blackboard ??= {};
-  worker.blackboard.intent = "guard_engage";
-
-  const targetTile = worldToTile(target.x, target.z, state.grid);
-  const meleeReach = Number(BALANCE.meleeReachTiles ?? 1.0);
-
-  // Refresh path if stale or absent.
-  const pathStale = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
-  const noPath = !hasActivePath(worker, state);
-  let pathAcquired = !noPath;
-  if ((pathStale || noPath) && canAttemptPath(worker, state)) {
-    pathAcquired = setTargetAndPath(worker, targetTile, state, services);
-  }
-  if (hasActivePath(worker, state)) {
-    const step = followPath(worker, state, dt);
-    worker.desiredVel = step.desired;
-    worker.blackboard.guardPathFailDwellSec = 0;
-  } else {
-    // v0.8.6 Tier 2 CB-H1: GUARD path-fail fallback. Pre-fix, when A* failed
-    // to reach the threat (walled off, on a different island, etc.) the
-    // GUARD just idled — leaving the threat free to operate. Now: track
-    // dwell, after 1.5s without a successful path, switch to wandering or
-    // demote out of GUARD so the FSM picks something useful instead of
-    // burning a worker slot doing nothing.
-    // v0.8.7.1 P11 — clamp dwell counter to a reasonable upper bound so an
-    // unreachable target on a long-running save can't push the value into
-    // pathological ranges.
-    const dwell = Math.min(5, Number(worker.blackboard.guardPathFailDwellSec ?? 0) + dt);
-    worker.blackboard.guardPathFailDwellSec = dwell;
-    if (dwell >= 1.5) {
-      setIdleDesired(worker);
-      // Don't demote here (RoleAssignmentSystem owns that). Just clear the
-      // engagement so handleWander or the next manager tick can re-route.
-      worker.debug.lastIntentReason = `GUARD path-fail dwell=${dwell.toFixed(1)}s`;
-      return false; // fall through to regular FSM (wander/idle/etc.)
-    }
-    setIdleDesired(worker);
-  }
-
-  // Melee hit when within reach.
-  const dist = Math.sqrt(bestD2);
-  if (dist <= meleeReach && Number(worker.attackCooldownSec ?? 0) <= 0
-      && Number(target.hp ?? 0) > 0) {
-    const dmg = Number(BALANCE.guardAttackDamage ?? 14);
-    target.hp = Math.max(0, Number(target.hp ?? 0) - dmg);
-    worker.attackCooldownSec = Number(BALANCE.workerAttackCooldownSec ?? 1.6);
-    target.memory ??= { recentEvents: [] };
-    target.memory.recentEvents ??= [];
-    target.memory.recentEvents.unshift("guard-hit");
-    target.memory.recentEvents.length = Math.min(target.memory.recentEvents.length, 6);
-    if (target.hp <= 0 && target.alive !== false) {
-      target.alive = false;
-      target.deathReason = "killed-by-worker";
-      target.deathSec = state.metrics.timeSec;
-    }
-  }
-  return true;
-}
-
-// v0.9.0-c — exported so JobEat can reuse the meal-vs-food preference and
-// recovery arithmetic without forking.
-export function handleEat(worker, state, services, dt) {
-  const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
-  if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
-    clearPath(worker);
-    setIdleDesired(worker);
-    return;
-  }
-
-  const canUseWarehouse = state.buildings.warehouses > 0;
-  if (canUseWarehouse && maybeRetarget(worker, state, services, "seek_food", [TILE.WAREHOUSE])) {
-    if (hasActivePath(worker, state)) {
-      const step = followPath(worker, state, dt);
-      worker.desiredVel = step.desired;
-      if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
-    } else {
-      setIdleDesired(worker);
-    }
-    if (isAtTargetTile(worker, state)) {
-      const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
-      const gainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
-      const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
-
-      // Prefer meals over raw food
-      if (Number(state.resources.meals ?? 0) > 0) {
-        const recoveryPerMeal = recoveryPerFood * Number(BALANCE.mealHungerRecoveryMultiplier ?? 2.0);
-        const mealGainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
-        const desiredMeals = Math.min(BALANCE.hungerEatRatePerSecond * dt, mealGainCap / recoveryPerMeal);
-        const eatMeals = Math.min(desiredMeals, state.resources.meals);
-        if (eatMeals > 0) {
-          state.resources.meals -= eatMeals;
-          worker.hunger = clamp(worker.hunger + eatMeals * recoveryPerMeal, 0, 1);
-        }
-      } else {
-        const eat = Math.min(desiredFood, state.resources.food);
-        if (eat <= 0) return;
-        state.resources.food -= eat;
-        worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
-      }
-
-      if ((worker.hunger ?? 0) >= eatRecoveryTarget) {
-        clearPath(worker);
-      }
-    }
-    return;
-  }
-
-  setIdleDesired(worker);
-  consumeEmergencyRation(worker, state, dt, Number(state.metrics.timeSec ?? 0), services);
-}
-
+// v0.9.0-e KEPT: handleDeliver is exercised by warehouse-queue.test.js as a
+// yield-equivalence harness (drives unloads at a stationary worker without
+// running the full WorkerAISystem.update path). JobDeliverWarehouse inlines
+// the same body via this export.
 export function handleDeliver(worker, state, services, dt) {
   const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   if (carryTotal <= 0 || Number(state.buildings?.warehouses ?? 0) <= 0) {
@@ -1255,70 +1044,9 @@ function applyNodeYieldHarvest(state, worker, carryKey, amount) {
   setTileField(state.grid, ix, iz, "lastHarvestTick", Number(state.metrics?.tick ?? 0));
 }
 
-// v0.9.0-c — exported so JobProcessKitchen/Smithy/Clinic can reuse the
-// walk-to-building + path follow loop without forking. ProcessingSystem
-// (next system in tick) still owns the actual production cycle.
-export function handleProcess(worker, state, services, dt) {
-  const config = ROLE_PROCESS_CONFIG[worker.role];
-  if (!config) {
-    setIdleDesired(worker);
-    return;
-  }
-  if (!maybeRetarget(worker, state, services, config.intentKey, config.tileTypes)) return;
-
-  if (hasActivePath(worker, state)) {
-    const step = followPath(worker, state, dt);
-    worker.desiredVel = step.desired;
-    if (worker.debug) worker.debug.lastPathLength = worker.path?.length ?? 0;
-  } else {
-    setIdleDesired(worker);
-  }
-
-  // Worker stays at the building; actual processing is handled by ProcessingSystem
-}
-
-function getActiveWorkerPolicy(state) {
-  if (!state.ai?.groupPolicies) return null;
-  return state.ai.groupPolicies.get("workers") ?? null;
-}
-
-function attemptAutoBuild(worker, state, services) {
-  const policy = getActiveWorkerPolicy(state);
-  if (!policy?.buildQueue?.length) return false;
-
-  const buildItem = policy.buildQueue[0];
-  const tool = String(buildItem.type ?? "");
-  if (!tool) return false;
-
-  // Find a grass tile near the worker for placement
-  const workerTile = worldToTile(worker.x, worker.z, state.grid);
-  const target = findNearestTileOfTypes(state.grid, workerTile, [0]); // TILE.GRASS = 0
-  if (!target) return false;
-
-  // Use BuildSystem to place (handles cost, validation, stats)
-  const buildSystem = new BuildSystem();
-  const result = buildSystem.placeToolAt(state, tool, target.ix, target.iz, { recordHistory: false, services });
-  if (result.ok) {
-    policy.buildQueue.shift();
-    state.metrics.aiDecisions = (state.metrics.aiDecisions ?? 0) + 1;
-    return true;
-  }
-  return false;
-}
-
-// v0.9.0-c — exported so JobRest can reuse the rest+morale recovery
-// arithmetic without forking.
-export function handleRest(worker, state, services, dt) {
-  // Workers rest in place — recover rest and morale
-  setIdleDesired(worker);
-  const restRecovery = Number(BALANCE.workerRestRecoveryPerSecond ?? 0.08);
-  const moraleRecovery = Number(BALANCE.workerMoraleRecoveryPerSecond ?? 0.02);
-  worker.rest = clamp(Number(worker.rest ?? 1) + restRecovery * dt, 0, 1);
-  worker.morale = clamp(Number(worker.morale ?? 1) + moraleRecovery * dt, 0, 1);
-  // Update progress for duration tracking
-  worker.progress = clamp(Number(worker.rest ?? 0), 0, 1);
-  worker.workRemaining = Math.max(0, Number(BALANCE.workerRestRecoverThreshold ?? 0.6) - Number(worker.rest ?? 0));
-}
+// v0.9.0-e — handleProcess / handleRest deleted. JobProcessBase and JobRest
+// inline their bodies; ProcessingSystem still owns the actual production
+// cycle (yield-equivalence preserved).
 
 /**
  * v0.8.11 worker-AI bare-init responsiveness (Fix 3) — pick a wander
@@ -1402,58 +1130,12 @@ export function pickWanderNearby(worker, state, services) {
   return firstPassable;
 }
 
-function handleWander(worker, state, services, dt) {
-  if (attemptAutoBuild(worker, state, services)) {
-    return; // Built something, skip normal wander
-  }
-
-  // v0.8.7 T0-2: when feasibility blocked seek_food/eat (e.g., no warehouse +
-  // reachableFood probe missed) and the worker is hungry while colony food
-  // exists, route through the carry-bypass eat. This ensures LR-C1 reaches
-  // workers even when they end up in `wander` rather than `eat`.
-  const hungerNow = Number(worker.hunger ?? 0);
-  const colonyFood = Number(state.resources?.food ?? 0);
-  if (hungerNow < WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD && colonyFood > 0) {
-    consumeEmergencyRation(worker, state, dt, Number(state.metrics?.timeSec ?? 0), services);
-  }
-
-  const blackboard = worker.blackboard ?? (worker.blackboard = {});
-  // v0.8.0 Phase 3 M1b post-review — if fog has hidden tiles, bias the wander
-  // destination toward the nearest frontier so "explore_fog" intent is actually
-  // load-bearing (was dead label per legacy-sweep MUST #2 / silent-failure H2).
-  const wantsFogExploration = hasHiddenFrontier(state);
-  blackboard.intentTargetIntent = wantsFogExploration ? "explore_fog" : "wander";
-
-  const nowSec = state.metrics.timeSec;
-  const nextWanderRefreshSec = Number(blackboard.nextWanderRefreshSec ?? -Infinity);
-  const stalePath = Boolean(worker.path) && worker.pathGridVersion !== state.grid.version;
-  const pathStuck = isPathStuck(worker, state, 2.3);
-  if (!hasActivePath(worker, state) || pathStuck) {
-    const driftedFromTarget = worker.targetTile ? !isAtTargetTile(worker, state) : true;
-    const shouldRetarget = stalePath || driftedFromTarget || nowSec >= nextWanderRefreshSec || pathStuck;
-    if (shouldRetarget && !hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
-      clearPath(worker);
-      const fogTarget = wantsFogExploration ? findNearestHiddenTile(worker, state) : null;
-    // v0.8.11 Fix 3 — when no fog frontier, prefer a tile near the worker's
-    // current position or near a construction site, falling through to
-    // randomPassableTile. Avoids the bare-init aimless-scatter behaviour
-    // where 6 spawn-clustered workers each pick a different far-away tile.
-    const target = getPendingPathTarget(worker)
-      ?? fogTarget
-      ?? pickWanderNearby(worker, state, services)
-      ?? randomPassableTile(state.grid, () => services.rng.next());
-      if (setTargetAndPath(worker, target, state, services)) {
-        blackboard.nextWanderRefreshSec = nowSec + WANDER_REFRESH_BASE_SEC + services.rng.next() * WANDER_REFRESH_JITTER_SEC;
-      }
-    }
-  }
-
-  if (hasActivePath(worker, state)) {
-    worker.desiredVel = followPath(worker, state, dt).desired;
-  } else {
-    setIdleDesired(worker);
-  }
-}
+// v0.9.0-e — handleWander / attemptAutoBuild / getActiveWorkerPolicy deleted.
+// JobWander.tick replicates the wander cadence (carry-bypass eat + path
+// retarget loop). The fog-frontier bias was specific to the legacy intent
+// "explore_fog" and is not currently restored in JobWander; if a future
+// phase re-introduces fog exploration as a Job, it would call findNearestHiddenTile
+// itself.
 
 function chooseStressPatrolTile(worker, state, services) {
   const origin = worldToTile(worker.x, worker.z, state.grid);
@@ -1505,85 +1187,9 @@ function handleStressWorkerPatrol(worker, state, services, dt) {
   }
 }
 
-/**
- * v0.8.4 building-construction (Agent A) — BUILDER state handlers.
- *
- * `handleSeekConstruct` routes the BUILDER to its assigned site (or claims
- * the nearest unassigned one). When the worker's tile matches the site,
- * StatePlanner's BUILDER branch transitions them to `construct`, where
- * `handleConstruct` accumulates dt onto the overlay's workAppliedSec.
- *
- * Both handlers fall back to "idle" if no sites exist. RoleAssignmentSystem
- * demotes BUILDERs to FARM when sites empty so this is mostly a guard
- * against a same-tick race (last site completes between role-assign and
- * worker tick).
- */
-function handleSeekConstruct(worker, state, services, dt) {
-  const site = findOrReserveBuilderSite(state, worker);
-  if (!site) {
-    setIdleDesired(worker);
-    return;
-  }
-  const targetTile = { ix: site.ix, iz: site.iz };
-  // Always set targetTile so StatePlanner's BUILDER branch can detect when
-  // the worker reaches the site (and transition `seek_construct → construct`).
-  if (!worker.targetTile
-    || worker.targetTile.ix !== targetTile.ix
-    || worker.targetTile.iz !== targetTile.iz) {
-    worker.targetTile = { ix: targetTile.ix, iz: targetTile.iz };
-  }
-  // Already on the target tile — no path needed; next planner tick will
-  // resolve to `construct`.
-  if (isAtTile(worker, targetTile, state)) {
-    setIdleDesired(worker);
-    return;
-  }
-  if (!hasActivePath(worker, state)) {
-    if (canAttemptPath(worker, state) && !hasPendingPathRequest(worker, services)) {
-      setTargetAndPath(worker, targetTile, state, services);
-    }
-  }
-  if (hasActivePath(worker, state)) {
-    worker.desiredVel = followPath(worker, state, dt).desired;
-  } else {
-    setIdleDesired(worker);
-  }
-}
-
-function handleConstruct(worker, state, services, dt) {
-  const site = findOrReserveBuilderSite(state, worker);
-  if (!site) {
-    setIdleDesired(worker);
-    return;
-  }
-  const targetTile = { ix: site.ix, iz: site.iz };
-  if (!isAtTile(worker, targetTile, state)) {
-    // We thought we were at the site but the FSM resolved `construct`
-    // anyway — re-route via seek_construct logic on the same tick.
-    if (canAttemptPath(worker, state) && !hasPendingPathRequest(worker, services)) {
-      setTargetAndPath(worker, targetTile, state, services);
-    }
-    if (hasActivePath(worker, state)) {
-      worker.desiredVel = followPath(worker, state, dt).desired;
-    } else {
-      setIdleDesired(worker);
-    }
-    return;
-  }
-  // At the site — apply work seconds to the overlay. ConstructionSystem
-  // (next system in tick) will detect completion and mutate the tile.
-  setIdleDesired(worker);
-  applyConstructionWork(state, site.ix, site.iz, dt);
-  if (worker.debug) {
-    worker.debug.lastConstructApplySec = Number(state.metrics?.timeSec ?? 0);
-  }
-}
-
-function isAtTile(worker, target, state) {
-  if (!target || !state?.grid) return false;
-  const current = worldToTile(worker.x, worker.z, state.grid);
-  return current.ix === target.ix && current.iz === target.iz;
-}
+// v0.9.0-e — handleSeekConstruct / handleConstruct / isAtTile deleted.
+// JobBuildSite now owns the seek + construct loop directly: it pathfinds
+// to the site claim, then calls applyConstructionWork in place.
 
 function updateIdleWithoutReasonMetric(worker, stateNode, dt, state) {
   if (stateNode !== "idle" && stateNode !== "wander") return;

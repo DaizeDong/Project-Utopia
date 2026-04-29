@@ -1,5 +1,66 @@
 # Changelog
 
+## [Unreleased] - v0.9.0-e — Dedupe legacy handlers + final polish (v0.9.0 complete)
+
+Phase 5 of 5 in the v0.9.0 Job-layer rewrite. Final cleanup: the `handle*` functions in `WorkerAISystem.js` that Jobs were delegating to are inlined into the Job ticks (or deleted as dead code), the trace harness's stuck>3s metric is refined to count carry-eat ticks correctly, and the v0.9.0 milestone is feature-complete. **1654 tests pass / 0 fail / 3 skip (baseline preserved).**
+
+### Removed (v0.9.0-e)
+
+- **`WorkerAISystem.handleEat`** — body inlined into `JobEat.tick` at the warehouse. Meal-vs-food preference and recovery arithmetic preserved (yield-equivalent).
+- **`WorkerAISystem.handleProcess`** — deleted entirely; `JobProcessBase.tick` now calls `setIdleDesired` at the building tile and `ProcessingSystem` (next system in tick) runs the consume+produce cycle, mirroring the legacy contract.
+- **`WorkerAISystem.handleRest`** — body inlined into `JobRest.tick`. Rest+morale recovery + progress tracking preserved.
+- **`WorkerAISystem.handleGuardCombat`** — body moved into `JobGuardEngage` as a private `engageNearestHostile` helper. Aggro-radius scan, melee + path-fail dwell semantics preserved.
+- **`WorkerAISystem.handleSeekConstruct` / `handleConstruct`** — already dead code (JobBuildSite owns seek + construct directly via `applyConstructionWork`); deleted.
+- **`WorkerAISystem.handleWander`** — already dead code (JobWander owns the wander cadence); deleted along with its private helpers `attemptAutoBuild`, `getActiveWorkerPolicy`, `hasHiddenFrontier`, `findNearestHiddenTile`. The fog-frontier wander bias has not been re-introduced as a Job; if a future phase adds JobExploreFog (audit A5), it will own that scan.
+- **`WANDER_REFRESH_BASE_SEC` / `WANDER_REFRESH_JITTER_SEC`** module-level constants — only used by deleted handleWander; their JobWander equivalents live in `JobWander.js`.
+- **Imports** — `BuildSystem`, `ANIMAL_KIND`, `VISITOR_KIND`, `FOG_STATE`, `applyConstructionWork`, `findOrReserveBuilderSite` no longer used in `WorkerAISystem.js` (each was only referenced by a now-deleted `handle*`).
+
+### Kept (v0.9.0-e)
+
+- **`WorkerAISystem.handleDeliver`** — exercised by `test/warehouse-queue.test.js` as a yield-equivalence harness (drives unloads at a stationary worker without spinning up the full ECS pipeline). `JobDeliverWarehouse.tick` calls this same export.
+- **`WorkerAISystem.handleHarvest`** — exercised by `test/job-harvest.test.js` (yield-equivalence vs `applyHarvestStep`), `test/farm-yield-pool-lazy-init.test.js` (lazy-init bug fixture), and `test/soil-salinization.test.js` (M1 fallow trigger). Both the legacy export and the Job-layer `JobHarvestBase.tick` call into the shared `applyHarvestStep`, so yield-equivalence holds.
+- **`WorkerAISystem.handleStressWorkerPatrol`** — owned by WorkerAISystem (called from the per-worker loop's `worker.isStressWorker` short-circuit). Stress workers are an inspector-mode synthetic, not a Job; deferred to v0.9.1+ if needed.
+
+### Changed (v0.9.0-e)
+
+- **`getWorkerEatRecoveryTarget`, `getWorkerRecoveryPerFoodUnit`** now exported so `JobEat.tick` can resolve the per-worker (metabolism-aware) eat target without duplicating trait math.
+- **`JobRest`** — body inlined; no longer imports from `WorkerAISystem.js` (just `BALANCE` and `JobHelpers.setIdleDesired`).
+- **`JobProcessBase`** — `handleProcess` call replaced with a direct `setIdleDesired`. Comment updated to record yield-equivalence with `ProcessingSystem`.
+- **`JobGuardEngage`** — added `engageNearestHostile` private helper with the inlined combat body. Aggro-radius / melee-reach / path-fail-dwell constants unchanged.
+- **`JobEat`** — at-warehouse eat body inlined; the meal-vs-food / recovery / clearPath-when-satiated branches mirror the deleted `handleEat`.
+
+### LOC delta (v0.9.0-e)
+
+- `WorkerAISystem.js`: **2081 → 1687** lines (-394).
+- Net across worker AI (`WorkerAISystem.js` + all `jobs/*.js`): **3509 → 3259** lines (**-250**, within the brief's -200 to -500 target).
+
+### Hysteresis tuning result (v0.9.0-e)
+
+**Unchanged.** Trace metrics across all seven scenarios (A–G) show no worker oscillating between Jobs >5/min and no worker stuck on a Job past >10s in a way that would suggest a tuning issue. Phase d's defaults (`STICKY_BONUS_FRESH = 0.25`, `STICKY_BONUS_FLOOR = 0.05`, `STICKY_DECAY_SEC = 30`) are working as designed.
+
+### Trace harness metric refinement (v0.9.0-e)
+
+The `analyzeStuck` definition in `/tmp/utopia-arch-trace.mjs` was tightened. **Old:** `(sameTile && noPath)` for >3s. **New:** `(sameTile && noPath && !carryEatTick && !hungerGainTick)` — a worker whose `carry.food` decreased by >0.001 OR whose hunger increased by >0.001 in the past tick is doing useful work even if the tile didn't change. Phase d's E-scenario stuck count was 5; with the refined metric the count is **still 5** in this run because the specific stuck workers in E are NOT carry-eating during their stuck window — they're genuinely path-failing on harvest / seek_food. (Two of the five — `worker_95` and `worker_96`, both HAUL — _do_ have carry-eat windows elsewhere in the run; those ticks were correctly excluded.) The phase-d brief's framing ("workers eating from carry") was approximate; the refinement is correct in principle and applies elsewhere even when E doesn't move.
+
+The residual E-tail (5 stuck>3s, all in path-fail blacklist deadlock) is logged in the retrospective as the next architectural item: faction-aware reachability cache (audit A2 follow-up). It will not move with metric polish alone.
+
+### v0.9.0 milestone status
+
+**Feature-complete.** Five phases (a/b/c/d/e) shipped: Job foundation + JobWander, four harvest Jobs + JobHelpers, eight remaining Jobs (Deliver/Build/Eat/Rest/Process×3/Guard), flag flipped ON + commitment latch retired (~370 LOC of legacy deleted), and final dedupe (this phase). Worker AI now has a single source of truth (`worker.currentJob`) with utility scoring + sticky-bonus hysteresis. Test baseline: 1654 / 1651 pass / 0 fail / 3 skip (carried through every phase).
+
+### Documentation (v0.9.0-e)
+
+- **`docs/superpowers/plans/2026-04-29-job-layer-rewrite-retrospective.md`** — new. Architectural shift, what NOT to revert to, metric table v0.8.10 → v0.9.0-e, known limitations, forward pointers to v0.9.1+ work (A4 hygiene, A5 default jobs, A8 event queue, A2 faction-aware reachability).
+- **`CLAUDE.md`** — Architecture and Current State sections updated to reflect v0.9.0 completion. Worker AI pipeline description rewritten to describe the JobScheduler model.
+
+### Deferred to v0.9.1+
+
+- **A4** — `worker.debug.*` → `worker.blackboard.*` rename for consistency with the Job-layer's writeback contract. Pure hygiene.
+- **A5** — Default Jobs (HaulLoose / GatherFreeNode / ScoutFog). ScoutFog would re-introduce the fog-frontier wander bias retired with `handleWander`.
+- **A8** — Per-tick scratch event queue for inter-Job signalling.
+- **A2 follow-up** — Faction-aware reachability cache (would zero E's residual stuck>3s tail).
+- **A3** — Cut the display FSM (StateGraph + StatePlanner) over to derive its label from `worker.currentJob.id` directly, retiring the parallel-tick.
+
 ## [Unreleased] - v0.9.0-d — flag flipped ON; commitment latch retired
 
 Phase 4 of 5 in the v0.9.0 Job-layer rewrite. `FEATURE_FLAGS.USE_JOB_LAYER` default flipped to **true**. Legacy commitment-latch / `chooseWorkerIntent` / FSM-state dispatch retired from `WorkerAISystem.update`. Net delta: -507 LOC (838 deletions / 331 insertions across 18 files). Plus a structural Job-eligibility fix (this iteration, +64 LOC) that closes the scenario E regression by teaching `canTake` to declare ineligibility when every target tile is path-fail-blacklisted. **1654 tests pass / 0 fail / 3 skip. Trace harness E gate cleared (12 → 5).**

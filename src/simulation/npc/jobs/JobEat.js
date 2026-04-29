@@ -1,22 +1,26 @@
 // v0.9.0-c — JobEat: hunger-driven Job. canTake gates on hunger below the
 // seek threshold AND food available somewhere. score = 0.95 at hunger=0.10,
 // collapses to 0 above the seek threshold. Tick body: walk to warehouse,
-// delegate to handleEat. When unreachable / no warehouse, falls through
-// to consumeEmergencyRation.
+// then eat at-tile (preferring meals over raw food). When unreachable /
+// no warehouse, falls through to consumeEmergencyRation. v0.9.0-e dedupe
+// inlines the at-warehouse eat body; legacy handleEat deleted.
 
 import { clamp } from "../../../app/math.js";
 import { BALANCE } from "../../../config/balance.js";
 import { TILE } from "../../../config/constants.js";
 import { listTilesByType } from "../../../world/grid/Grid.js";
+import { clearPath } from "../../navigation/Navigation.js";
 import {
   _consumeEmergencyRationForJobLayer,
-  handleEat,
+  getWorkerEatRecoveryTarget,
+  getWorkerRecoveryPerFoodUnit,
 } from "../WorkerAISystem.js";
 import {
   arrivedAtTarget,
   chooseWorkerTarget,
   executeMovement,
   releaseReservation,
+  setIdleDesired,
   tryAcquirePath,
 } from "./JobHelpers.js";
 import { Job } from "./Job.js";
@@ -125,8 +129,36 @@ export class JobEat extends Job {
     }
     worker.blackboard.intent = "eat";
     worker.stateLabel = "Eat";
-    // TODO v0.9.0-d: dedupe with handleEat after legacy retired.
-    handleEat(worker, state, services, dt);
+    // v0.9.0-e — at-warehouse eat body, inlined from former handleEat.
+    // Prefer cooked meals over raw food (mealHungerRecoveryMultiplier).
+    // Stop walking once satiated (recovery target met).
+    const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
+    if (Number(worker.hunger ?? 0) >= eatRecoveryTarget) {
+      clearPath(worker);
+      setIdleDesired(worker);
+      return;
+    }
+    const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
+    const gainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
+    const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
+    if (Number(state.resources.meals ?? 0) > 0) {
+      const recoveryPerMeal = recoveryPerFood * Number(BALANCE.mealHungerRecoveryMultiplier ?? 2.0);
+      const mealGainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
+      const desiredMeals = Math.min(BALANCE.hungerEatRatePerSecond * dt, mealGainCap / recoveryPerMeal);
+      const eatMeals = Math.min(desiredMeals, state.resources.meals);
+      if (eatMeals > 0) {
+        state.resources.meals -= eatMeals;
+        worker.hunger = clamp(worker.hunger + eatMeals * recoveryPerMeal, 0, 1);
+      }
+    } else {
+      const eat = Math.min(desiredFood, state.resources.food);
+      if (eat <= 0) return;
+      state.resources.food -= eat;
+      worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+    }
+    if (Number(worker.hunger ?? 0) >= eatRecoveryTarget) {
+      clearPath(worker);
+    }
   }
 
   isComplete(worker, _state, _services) {
