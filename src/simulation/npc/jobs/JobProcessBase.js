@@ -11,6 +11,7 @@
 
 import { clamp } from "../../../app/math.js";
 import { ROLE } from "../../../config/constants.js";
+import { worldToTile } from "../../../world/grid/Grid.js";
 import { handleProcess } from "../WorkerAISystem.js";
 import {
   arrivedAtTarget,
@@ -68,7 +69,13 @@ export class JobProcessBase extends Job {
     const stockpile = Number(state?.resources?.[ctor.output] ?? 0);
     const soft = Math.max(1, Number(ctor.outputSoftTarget ?? 8));
     const pressure = clamp(1 - stockpile / soft, 0.2, 1.0);
-    const here = { ix: Number(worker?.x ?? 0), iz: Number(worker?.z ?? 0) };
+    // v0.9.0-d bugfix — convert worker world coords to tile coords before
+    // computing manhattan distance (see JobHarvestBase.score for the same
+    // fix). Pre-fix the score collapsed below the JobWander floor whenever
+    // the worker had non-trivial world-space coordinates.
+    const here = state?.grid
+      ? worldToTile(Number(worker?.x ?? 0), Number(worker?.z ?? 0), state.grid)
+      : { ix: 0, iz: 0 };
     const distFactor = 1 / (1 + manhattan(target, here) * 0.05);
     return clamp(pressure * distFactor * 0.9, 0, 0.9);
   }

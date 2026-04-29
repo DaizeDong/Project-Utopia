@@ -7,7 +7,19 @@ import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js"
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
 import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js";
-import { chooseWorkerIntent } from "../src/simulation/npc/WorkerAISystem.js";
+// Import WorkerAISystem first so its module-init triggers the JobScheduler
+// → JobRegistry → JobHarvest* chain in the canonical order. Without this,
+// importing a single Job (e.g. JobHarvestQuarry) before WorkerAISystem
+// re-enters JobHarvestBase initialization while it's mid-load and trips a
+// TDZ ReferenceError. (Same shape as production — WorkerAISystem is the
+// production entry point and so the chain is always primed.)
+import "../src/simulation/npc/WorkerAISystem.js";
+import { JobHarvestQuarry } from "../src/simulation/npc/jobs/JobHarvestQuarry.js";
+import { JobHarvestHerb } from "../src/simulation/npc/jobs/JobHarvestHerb.js";
+import { JobProcessKitchen } from "../src/simulation/npc/jobs/JobProcessKitchen.js";
+import { JobProcessSmithy } from "../src/simulation/npc/jobs/JobProcessSmithy.js";
+import { JobProcessClinic } from "../src/simulation/npc/jobs/JobProcessClinic.js";
+import { JobWander } from "../src/simulation/npc/jobs/JobWander.js";
 import { BuildSystem } from "../src/simulation/construction/BuildSystem.js";
 import { tileToWorld, listTilesByType } from "../src/world/grid/Grid.js";
 
@@ -501,56 +513,68 @@ test("RoleAssignment: specialist roles not assigned when building does not exist
 });
 
 // ---------------------------------------------------------------------------
-// 4. Worker Intent Tests
+// 4. Worker Intent / Job-eligibility Tests
+//
+// v0.9.0-d — Rewritten from chooseWorkerIntent assertions to JobScheduler
+// canTake checks. The legacy chooseWorkerIntent was a precondition-string
+// resolver; in the Job model, canTake on the corresponding Job is the
+// equivalent gate. We assert that:
+//   - the building-gated harvest/process Job is eligible (canTake → true)
+//     when its building exists; ineligible when it does not;
+//   - JobWander remains the floor that is always eligible.
+// (Score / target resolution requires a full grid; phase 0.9.0-e exercises
+// that end-to-end. Here we focus on the routing decision the original
+// chooseWorkerIntent test covered.)
 // ---------------------------------------------------------------------------
 
-test("Worker intent: STONE role chooses 'quarry' when quarries exist", () => {
+test("Worker intent: STONE role's quarry Job eligible when quarries exist", () => {
   const state = makeMinimalState({ buildings: { quarries: 1, warehouses: 1, farms: 1, lumbers: 1 } });
   const worker = makeMinimalWorker(ROLE.STONE);
-  assert.equal(chooseWorkerIntent(worker, state), "quarry");
+  assert.equal(new JobHarvestQuarry().canTake(worker, state), true);
 });
 
-test("Worker intent: HERBS role chooses 'gather_herbs' when herb gardens exist", () => {
+test("Worker intent: HERBS role's gather Job eligible when herb gardens exist", () => {
   const state = makeMinimalState({ buildings: { herbGardens: 1, warehouses: 1, farms: 1, lumbers: 1 } });
   const worker = makeMinimalWorker(ROLE.HERBS);
-  assert.equal(chooseWorkerIntent(worker, state), "gather_herbs");
+  assert.equal(new JobHarvestHerb().canTake(worker, state), true);
 });
 
-test("Worker intent: COOK role chooses 'cook' when kitchens exist", () => {
+test("Worker intent: COOK role's kitchen Job eligible when kitchens exist", () => {
   const state = makeMinimalState({ buildings: { kitchens: 1, warehouses: 1, farms: 1, lumbers: 1 } });
   const worker = makeMinimalWorker(ROLE.COOK);
-  assert.equal(chooseWorkerIntent(worker, state), "cook");
+  assert.equal(new JobProcessKitchen().canTake(worker, state), true);
 });
 
-test("Worker intent: SMITH role chooses 'smith' when smithies exist", () => {
+test("Worker intent: SMITH role's smithy Job eligible when smithies exist", () => {
   const state = makeMinimalState({ buildings: { smithies: 1, warehouses: 1, farms: 1, lumbers: 1 } });
   const worker = makeMinimalWorker(ROLE.SMITH);
-  assert.equal(chooseWorkerIntent(worker, state), "smith");
+  assert.equal(new JobProcessSmithy().canTake(worker, state), true);
 });
 
-test("Worker intent: HERBALIST role chooses 'heal' when clinics exist", () => {
+test("Worker intent: HERBALIST role's clinic Job eligible when clinics exist", () => {
   const state = makeMinimalState({ buildings: { clinics: 1, warehouses: 1, farms: 1, lumbers: 1 } });
   const worker = makeMinimalWorker(ROLE.HERBALIST);
-  assert.equal(chooseWorkerIntent(worker, state), "heal");
+  assert.equal(new JobProcessClinic().canTake(worker, state), true);
 });
 
-test("Worker intent: specialist roles fall back to 'wander' if building is destroyed", () => {
+test("Worker intent: specialist Jobs ineligible when building is destroyed; JobWander always eligible", () => {
   const state = makeMinimalState({ buildings: { quarries: 0, herbGardens: 0, kitchens: 0, smithies: 0, clinics: 0, warehouses: 1, farms: 1, lumbers: 1 } });
 
   const stoneWorker = makeMinimalWorker(ROLE.STONE);
-  assert.equal(chooseWorkerIntent(stoneWorker, state), "wander", "STONE with no quarries => wander");
+  assert.equal(new JobHarvestQuarry().canTake(stoneWorker, state), false, "STONE with no quarries => quarry Job ineligible");
+  assert.equal(new JobWander().canTake(stoneWorker, state), true, "wander always eligible (terminal floor)");
 
   const herbsWorker = makeMinimalWorker(ROLE.HERBS);
-  assert.equal(chooseWorkerIntent(herbsWorker, state), "wander", "HERBS with no herbGardens => wander");
+  assert.equal(new JobHarvestHerb().canTake(herbsWorker, state), false, "HERBS with no herbGardens => gather Job ineligible");
 
   const cookWorker = makeMinimalWorker(ROLE.COOK);
-  assert.equal(chooseWorkerIntent(cookWorker, state), "wander", "COOK with no kitchens => wander");
+  assert.equal(new JobProcessKitchen().canTake(cookWorker, state), false, "COOK with no kitchens => kitchen Job ineligible");
 
   const smithWorker = makeMinimalWorker(ROLE.SMITH);
-  assert.equal(chooseWorkerIntent(smithWorker, state), "wander", "SMITH with no smithies => wander");
+  assert.equal(new JobProcessSmithy().canTake(smithWorker, state), false, "SMITH with no smithies => smithy Job ineligible");
 
   const herbalistWorker = makeMinimalWorker(ROLE.HERBALIST);
-  assert.equal(chooseWorkerIntent(herbalistWorker, state), "wander", "HERBALIST with no clinics => wander");
+  assert.equal(new JobProcessClinic().canTake(herbalistWorker, state), false, "HERBALIST with no clinics => clinic Job ineligible");
 });
 
 // ---------------------------------------------------------------------------

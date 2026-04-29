@@ -7,6 +7,7 @@
 import { clamp } from "../../../app/math.js";
 import { BALANCE } from "../../../config/balance.js";
 import { ROLE } from "../../../config/constants.js";
+import { listTilesByType, worldToTile } from "../../../world/grid/Grid.js";
 import {
   applyHarvestStep,
   arrivedAtTarget,
@@ -49,14 +50,67 @@ export class JobHarvestBase extends Job {
     const ctor = this.constructor;
     if (Number(state?.buildings?.[ctor.buildingCountKey] ?? 0) <= 0) return false;
     const carryCap = Number(BALANCE.workerDeliverThreshold ?? 1.6) * CARRY_FULL_FACTOR;
-    return carryTotal(worker) < carryCap;
+    if (carryTotal(worker) >= carryCap) return false;
+    // v0.9.0-d (audit F12 structural fix, symmetric with JobDeliverWarehouse) —
+    // if every target tile of this harvest type is on the worker's path-fail
+    // blacklist, declare the Job ineligible. Without this, a stranded WOOD
+    // worker can loop on unreachable lumber forever; instead the scheduler
+    // falls through to JobWander (or another Job).
+    const blacklist = services?.pathFailBlacklist;
+    if (blacklist?.isBlacklisted && state?.grid) {
+      const tiles = listTilesByType(state.grid, ctor.targetTileTypes);
+      if (tiles.length > 0) {
+        const nowSec = Number(state?.metrics?.timeSec ?? 0);
+        let anyUsable = false;
+        for (const t of tiles) {
+          const tt = state.grid.tiles[t.ix + t.iz * state.grid.width];
+          if (!blacklist.isBlacklisted(worker.id, t.ix, t.iz, tt, nowSec)) {
+            anyUsable = true;
+            break;
+          }
+        }
+        if (!anyUsable) return false;
+      }
+    }
+    return true;
   }
 
   findTarget(worker, state, services) {
-    return chooseWorkerTarget(
-      worker, state, this.constructor.targetTileTypes,
+    const ctor = this.constructor;
+    const blacklist = services?.pathFailBlacklist;
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    // v0.9.0-d — sticky targeting within the Job. If the worker already has
+    // a valid harvest target (matching tile-type, not blacklisted), reuse it
+    // so we don't re-pick a different tile every tick. This mirrors the
+    // legacy maybeRetarget behaviour and keeps a worker committed to the
+    // tile they're already standing on / walking toward.
+    const existing = worker.currentJob?.target ?? worker.targetTile ?? null;
+    if (existing && state?.grid) {
+      const tileAt = state.grid.tiles[existing.ix + existing.iz * state.grid.width];
+      if (ctor.targetTileTypes.includes(tileAt)) {
+        const blacklisted = blacklist?.isBlacklisted
+          ? blacklist.isBlacklisted(worker.id, existing.ix, existing.iz, tileAt, nowSec)
+          : false;
+        if (!blacklisted) return { ix: existing.ix, iz: existing.iz };
+      }
+    }
+    const target = chooseWorkerTarget(
+      worker, state, ctor.targetTileTypes,
       state._workerTargetOccupancy, services,
     );
+    // v0.9.0-d (audit F12 structural fix) — chooseWorkerTarget may return a
+    // blacklisted tile as its "best fallback" when every candidate is
+    // blacklisted (the harvest semantic of "keep trying the only farm"). For
+    // the Job-layer eligibility model, treat that as no target so the
+    // scheduler picks JobWander rather than retrying a known-unreachable
+    // tile each tick. Mirrors JobDeliverWarehouse's blacklist guard.
+    if (target && blacklist?.isBlacklisted) {
+      const tt = state.grid.tiles[target.ix + target.iz * state.grid.width];
+      if (blacklist.isBlacklisted(worker.id, target.ix, target.iz, tt, nowSec)) {
+        return null;
+      }
+    }
+    return target;
   }
 
   score(worker, state, services, target) {
@@ -68,7 +122,14 @@ export class JobHarvestBase extends Job {
     const soft = Math.max(1, Number(ctor.pressureSoftTarget ?? 18));
     // Pressure ∈ [0.1, 1.0]: stocked colony still harvests a bit.
     const pressure = clamp(1 - stockpile / soft, 0.1, 1.0);
-    const here = { ix: Number(worker?.x ?? 0), iz: Number(worker?.z ?? 0) };
+    // v0.9.0-d bugfix — distance must be computed in tile coordinates.
+    // Pre-fix the score formula used `worker.x/.z` (world space) as if
+    // they were tile indices, producing a >50× underestimate of distFactor
+    // and dropping a worker-on-farm score from ~0.085 to ~0.0165 (less
+    // than the JobWander floor of 0.05 — workers refused to harvest).
+    const here = state?.grid
+      ? worldToTile(Number(worker?.x ?? 0), Number(worker?.z ?? 0), state.grid)
+      : { ix: 0, iz: 0 };
     const distFactor = 1 / (1 + manhattan(target, here) * 0.05);
     return clamp(roleFit * pressure * distFactor * 0.85, 0, 1);
   }

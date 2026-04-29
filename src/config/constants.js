@@ -192,13 +192,16 @@ export const SYSTEM_ORDER = Object.freeze([
 // exactly like a static frozen field; tests call `_testSetFeatureFlag`
 // from this module only (NOT exported anywhere else).
 //
-// USE_JOB_LAYER — Phase 1 of 5 in the v0.9.0 Job-layer rewrite. When false
-// (production default), WorkerAISystem.update runs the legacy chooseWorker*
-// + commitmentCycle dispatch (zero behaviour change). When true,
-// WorkerAISystem routes through src/simulation/npc/jobs/JobScheduler.
-// Will flip to true in phase 0.9.0-d after harvest/deliver/eat/build/rest
-// /process/guard Jobs are ported and validated against the trace harness.
-let _useJobLayer = false;
+// USE_JOB_LAYER — Phase 4 of 5 in the v0.9.0 Job-layer rewrite. v0.9.0-d
+// flipped this default ON after harvest/deliver/eat/build/rest/process/guard
+// Jobs were ported (phases a/b/c) and validated against the trace harness.
+// WorkerAISystem.update routes worker decisions through
+// src/simulation/npc/jobs/JobScheduler. The legacy chooseWorkerIntent +
+// commitmentCycle / TASK_LOCK_STATES dispatch was removed in v0.9.0-d.
+// The flag remains queryable so a follow-up phase can compare layers, but
+// no production code path depends on `false` any more — tests that set it
+// false simulate an empty/no-op path. Phase 0.9.0-e is the tuning pass.
+let _useJobLayer = true;
 
 export const FEATURE_FLAGS = Object.freeze({
   get USE_JOB_LAYER() { return _useJobLayer; },

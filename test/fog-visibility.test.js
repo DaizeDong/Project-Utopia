@@ -4,10 +4,9 @@ import assert from "node:assert/strict";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { createServices } from "../src/app/createServices.js";
 import { VisibilitySystem } from "../src/simulation/world/VisibilitySystem.js";
-import { chooseWorkerIntent } from "../src/simulation/npc/WorkerAISystem.js";
 import { evaluateBuildPreview } from "../src/simulation/construction/BuildAdvisor.js";
 import { BALANCE } from "../src/config/balance.js";
-import { FOG_STATE, ROLE, TILE } from "../src/config/constants.js";
+import { FOG_STATE, TILE } from "../src/config/constants.js";
 import { tileToWorld, worldToTile } from "../src/world/grid/Grid.js";
 
 function setTileAt(state, ix, iz, tileType) {
@@ -126,43 +125,12 @@ test("M1b fog: BuildAdvisor rejects placement on HIDDEN tile", () => {
 });
 
 // ---------------------------------------------------------------------------
-// D — explore_fog intent surfaces when HIDDEN tiles exist and no other role
-// intent applies.
+// D — fog frontier detection (legacy chooseWorkerIntent → explore_fog branch
+// retired in v0.9.0-d). The Job-utility model does not currently surface a
+// dedicated explore_fog Job — wandering with the JobWander floor + the
+// scenario harness's reachable-tile picker covers fog clearance via natural
+// movement. The hasHiddenFrontier signal is still used internally
+// (WorkerAISystem.js) to gate fallback wander targets near unexplored
+// regions; that test lives elsewhere. Original assertion deleted as it
+// validated the legacy chooseWorkerIntent contract.
 // ---------------------------------------------------------------------------
-test("M1b fog: chooseWorkerIntent returns explore_fog when HIDDEN tiles remain and no role work", () => {
-  const state = createInitialGameState({ seed: 4242 });
-  const services = createServices(state.world.mapSeed);
-  const vis = new VisibilitySystem();
-
-  removeAllAgents(state);
-  vis.update(0.1, state, services);
-
-  // Zero out buildings for every role-gated intent so the planner can't pick
-  // farm/lumber/quarry/etc. The worker should also carry no resources.
-  state.buildings = {
-    farms: 0,
-    lumbers: 0,
-    quarries: 0,
-    herbGardens: 0,
-    kitchens: 0,
-    smithies: 0,
-    clinics: 0,
-    warehouses: 0,
-  };
-
-  const worker = {
-    id: "worker_explore_1",
-    type: "WORKER",
-    alive: true,
-    role: ROLE.FARM,
-    x: 0,
-    z: 0,
-    hunger: 1,
-    carry: { food: 0, wood: 0, stone: 0, herbs: 0 },
-    blackboard: {},
-  };
-
-  const intent = chooseWorkerIntent(worker, state);
-  assert.equal(intent, "explore_fog", `expected explore_fog fallback, got "${intent}"`);
-  void services;
-});

@@ -428,7 +428,9 @@ function runProcessLoop({ setupBuilding, inputs, role, output, ix, iz, useFlag, 
     }
     return Number(state.resources[output] ?? 0);
   } finally {
-    _testSetFeatureFlag("USE_JOB_LAYER", false);
+    // v0.9.0-d — production default is ON. Restore default after the test
+    // toggles the flag for the legacy/job comparison.
+    _testSetFeatureFlag("USE_JOB_LAYER", true);
   }
 }
 
@@ -467,57 +469,57 @@ test("v0.9.0-c #13: yield-equivalence — JobProcessSmithy + JobProcessClinic ou
 // 14. GUARD short-circuit flag-gate: when ON, GUARDs route through scheduler
 // ---------------------------------------------------------------------------
 
-test("v0.9.0-c #14: GUARD short-circuit flag-gate — flag ON routes GUARDs through JobScheduler", () => {
+test("v0.9.0-d #14: GUARDs route through JobScheduler (flag default ON)", () => {
   // Confirm registry length first.
   assert.equal(ALL_JOBS.length, 13, "registry now has 13 Jobs");
+  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, true, "flag default is ON in v0.9.0-d");
 
-  _testSetFeatureFlag("USE_JOB_LAYER", true);
-  try {
-    const state = makeState({ bareInitial: true });
-    state.resources.food = 9999;
-    const services = createServices(state.world.mapSeed);
-    const worker = aWorker(state);
-    placeWorkerAt(worker, state, 10, 10, ROLE.GUARD);
-    // Place a predator within aggro range.
-    const predPos = tileToWorld(11, 10, state.grid);
-    state.animals.push({
-      id: "pred-engage-1",
-      kind: ANIMAL_KIND.PREDATOR,
-      species: "wolf",
-      x: predPos.x,
-      z: predPos.z,
-      alive: true,
-      hp: 30,
-    });
-
-    const workerSystem = new WorkerAISystem();
-    const boidsSystem = new BoidsSystem();
-    state.metrics.timeSec += 1 / 30;
-    state.metrics.tick += 1;
-    workerSystem.update(1 / 30, state, services);
-    boidsSystem.update(1 / 30, state, services);
-
-    // Under flag ON, JobScheduler should have set worker.currentJob to
-    // guard_engage (priority-100 preempt).
-    assert.ok(workerSystem._jobScheduler, "scheduler instantiated under flag ON");
-    assert.equal(
-      worker.currentJob?.id,
-      "guard_engage",
-      "GUARD with hostile in range → JobGuardEngage picked by scheduler",
-    );
-  } finally {
-    _testSetFeatureFlag("USE_JOB_LAYER", false);
-  }
-});
-
-test("v0.9.0-c #15: GUARD short-circuit flag-gate — flag OFF preserves legacy short-circuit", () => {
-  // Default flag value is false.
-  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, false, "default flag is OFF");
   const state = makeState({ bareInitial: true });
+  state.resources.food = 9999;
   const services = createServices(state.world.mapSeed);
   const worker = aWorker(state);
   placeWorkerAt(worker, state, 10, 10, ROLE.GUARD);
-  // No hostiles — GUARD should idle on Watch.
+  // Place a predator within aggro range.
+  const predPos = tileToWorld(11, 10, state.grid);
+  state.animals.push({
+    id: "pred-engage-1",
+    kind: ANIMAL_KIND.PREDATOR,
+    species: "wolf",
+    x: predPos.x,
+    z: predPos.z,
+    alive: true,
+    hp: 30,
+  });
+
+  const workerSystem = new WorkerAISystem();
+  const boidsSystem = new BoidsSystem();
+  state.metrics.timeSec += 1 / 30;
+  state.metrics.tick += 1;
+  workerSystem.update(1 / 30, state, services);
+  boidsSystem.update(1 / 30, state, services);
+
+  // JobScheduler should have set worker.currentJob to guard_engage
+  // (priority-100 preempt).
+  assert.ok(workerSystem._jobScheduler, "scheduler instantiated");
+  assert.equal(
+    worker.currentJob?.id,
+    "guard_engage",
+    "GUARD with hostile in range → JobGuardEngage picked by scheduler",
+  );
+});
+
+// v0.9.0-d retired #15 — the legacy GUARD short-circuit was deleted in
+// phase d. JobGuardEngage (priority 100) is the sole engagement path.
+// When no hostile is in range, JobGuardEngage.canTake returns false and
+// the worker falls through to wander/eat/rest naturally.
+test("v0.9.0-d #15: GUARD without hostiles falls through to wander/eat/rest naturally", () => {
+  assert.equal(FEATURE_FLAGS.USE_JOB_LAYER, true, "flag default is ON in v0.9.0-d");
+  const state = makeState({ bareInitial: true });
+  state.resources.food = 9999;
+  const services = createServices(state.world.mapSeed);
+  const worker = aWorker(state);
+  placeWorkerAt(worker, state, 10, 10, ROLE.GUARD);
+  // No hostiles — JobGuardEngage.canTake should return false.
   state.animals = [];
   state.agents = state.agents.filter((a) => a.id === worker.id || a.type !== "VISITOR");
 
@@ -528,7 +530,11 @@ test("v0.9.0-c #15: GUARD short-circuit flag-gate — flag OFF preserves legacy 
   workerSystem.update(1 / 30, state, services);
   boidsSystem.update(1 / 30, state, services);
 
-  // Flag-OFF: scheduler not instantiated, legacy GUARD short-circuit ran.
-  assert.equal(workerSystem._jobScheduler, null, "scheduler null under flag OFF");
-  assert.equal(worker.blackboard?.intent, "guard_idle", "legacy GUARD short-circuit set guard_idle");
+  assert.ok(workerSystem._jobScheduler, "scheduler instantiated");
+  // GUARD without hostiles → some non-combat Job (wander/eat/rest) wins.
+  assert.notEqual(
+    worker.currentJob?.id,
+    "guard_engage",
+    "without a hostile, GUARD does not pick guard_engage",
+  );
 });
