@@ -96,6 +96,11 @@ const MAT_S = new THREE.Vector3();
 const COLOR_TMP = new THREE.Color();
 const VEC_TMP = new THREE.Vector3();
 
+// v0.9.1 perf — hoisted out of the per-frame terrain-overlay loops and the
+// per-tooltip header loop. Allocating a fresh Set on every overlay rebuild was
+// pure waste; a frozen module-scope Set has identical Set#has semantics.
+const TERRAIN_OVERLAY_RESOURCE_TILES = Object.freeze(new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]));
+
 // Screen-space proximity fallback + build-guard.
 // The worker InstancedMesh geometry has radius ~0.35 world units, which at
 // typical camera zoom translates to roughly 8–12 screen pixels. That means
@@ -554,8 +559,11 @@ export class SceneRenderer {
     this.lastPlacementLensSignature = "";
     // Terrain Overlay — toggled by T key. null | "fertility" | "elevation" | "connectivity" | "nodeDepletion"
     this.terrainLensMode = null;
-    this.terrainOverlayPool = [];
+    // v0.9.1 perf — replaced 6912-element Mesh pool with InstancedMesh buckets
+    // keyed by opacity tier. See #setupPressureLensMeshes for the live state.
+    this.terrainOverlayBuckets = null;
     this.lastTerrainVersion = -1;
+    this.lastTerrainLensMode = null;
     // Tile info tooltip DOM element (resolved lazily).
     this.tileInfoTooltipEl = null;
     this.tileInfoLastTile = null;
@@ -1594,10 +1602,24 @@ export class SceneRenderer {
     this.heatTileOverlayPool = [];
     this.scene.add(this.heatTileOverlayRoot);
 
-    // Terrain Fertility Overlay mesh pool — same geometry as heat tiles.
+    // Terrain Property Overlay (fertility / elevation / connectivity / nodeDepletion).
+    //
+    // v0.9.1 perf — replace the per-tile Mesh pool (~6912 individual draw calls
+    // and ~6912 MeshBasicMaterial allocations on first activation) with a small
+    // set of InstancedMesh "buckets", one per distinct opacity tier. Each
+    // bucket has a single material with a fixed opacity; per-instance color is
+    // written via `setColorAt`. This collapses 6912 draw calls into ≤4 (worst
+    // case is fertility/elevation modes which use 4 opacity tiers each).
+    //
+    // Visual fidelity is preserved: every tile that previously rendered with
+    // (color, opacity) is now in the bucket whose material.opacity equals that
+    // opacity, and its instance color equals the previous color. Layout
+    // (position, rotation, plane size) is unchanged.
     this.terrainOverlayRoot = new THREE.Group();
     this.terrainOverlayGeometry = new THREE.PlaneGeometry(this.state.grid.tileSize * 0.97, this.state.grid.tileSize * 0.97);
-    this.terrainOverlayPool = [];
+    this.terrainOverlayGeometry.rotateX(-Math.PI / 2);
+    this.terrainOverlayBuckets = new Map(); // opacity (rounded to 0.001) -> InstancedMesh
+    this.terrainOverlayCapacity = Math.max(1, Number(this.state.grid.width ?? 0) * Number(this.state.grid.height ?? 0));
     this.scene.add(this.terrainOverlayRoot);
 
     this.placementLensRoot = new THREE.Group();
@@ -1707,141 +1729,135 @@ export class SceneRenderer {
     for (const mesh of this.heatTileOverlayPool) mesh.visible = false;
   }
 
-  // === Terrain Fertility Overlay ===
+  // === Terrain Property Overlay ===
+  //
+  // v0.9.1 perf — InstancedMesh buckets keyed by opacity tier. Up to 4 buckets
+  // are active at once (one per distinct opacity in the current mode); each
+  // bucket renders in a single draw call regardless of instance count. Per-tile
+  // color is written via `setColorAt`, position via `setMatrixAt`. Compared to
+  // the prior pool-of-Meshes design (6912 individual meshes / draw calls), this
+  // is a >1000x reduction in GPU-side draw cost on first activation and on
+  // every subsequent frame the lens stays on.
+  //
+  // Bucket lifecycle:
+  //   - Lazily created the first time a given opacity is needed (any mode).
+  //   - Reused across modes: switching from "fertility" to "elevation" reuses
+  //     the same buckets if opacities overlap, and creates new ones if not.
+  //   - All buckets are always present in `terrainOverlayRoot`; per-frame, only
+  //     the buckets used by the active mode have `count > 0` and `visible=true`.
 
-  #createTerrainOverlayEntry() {
-    const mesh = new THREE.Mesh(this.terrainOverlayGeometry, new THREE.MeshBasicMaterial({
+  #getOrCreateTerrainBucket(opacity) {
+    const key = Math.round(opacity * 1000) / 1000;
+    let mesh = this.terrainOverlayBuckets.get(key);
+    if (mesh) return mesh;
+    const material = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0,
+      opacity: key,
       side: THREE.DoubleSide,
       depthTest: false,
       depthWrite: false,
-    }));
-    mesh.rotation.x = -Math.PI / 2;
+      vertexColors: false,
+    });
+    mesh = new THREE.InstancedMesh(this.terrainOverlayGeometry, material, this.terrainOverlayCapacity);
+    mesh.count = 0;
     mesh.renderOrder = RENDER_ORDER.TILE_OVERLAY + 2;
     mesh.frustumCulled = false;
     mesh.visible = false;
+    // mesh.count gates rendering, so unset instances beyond `count` never paint.
+    // setColorAt lazily allocates `instanceColor` on first call; we don't
+    // pre-fill — cheaper to let the first flush touch only the live slots.
     this.terrainOverlayRoot.add(mesh);
+    this.terrainOverlayBuckets.set(key, mesh);
     return mesh;
   }
 
-  #ensureTerrainOverlayPool(count) {
-    while (this.terrainOverlayPool.length < count) {
-      this.terrainOverlayPool.push(this.#createTerrainOverlayEntry());
+  #hideTerrainOverlay() {
+    if (!this.terrainOverlayBuckets) return;
+    for (const mesh of this.terrainOverlayBuckets.values()) {
+      mesh.count = 0;
+      mesh.visible = false;
     }
   }
 
-  #hideTerrainOverlay() {
-    for (const mesh of this.terrainOverlayPool) mesh.visible = false;
+  // Per-mode tile -> (color, opacity) classification.
+  // Fertility: 4 opacity tiers (0.50 / 0.40 / 0.38 / 0.28).
+  // Elevation: 4 opacity tiers (0.50 / 0.45 / 0.40 / 0.35).
+  // Connectivity: 2 opacity tiers (0.60 / 0.40).
+  // Node depletion: 2 opacity tiers (0.60 / 0.50).
+  // The classifier writes directly into bucket-keyed instance arrays via
+  // #emitTerrainTile; no temporary marker objects are allocated on the per-
+  // tile loop.
+
+  #emitTerrainTile(buckets, ix, iz, color, opacity) {
+    const mesh = this.#getOrCreateTerrainBucket(opacity);
+    let entry = buckets.get(mesh);
+    if (entry === undefined) {
+      // Reuse persistent scratch arrays per bucket so per-rebuild allocation
+      // stays at zero. The arrays are sized to grid capacity once and live on
+      // the InstancedMesh itself.
+      let scratch = mesh.userData?.scratch;
+      if (!scratch) {
+        scratch = {
+          hexes: new Int32Array(this.terrainOverlayCapacity),
+          ix: new Int16Array(this.terrainOverlayCapacity),
+          iz: new Int16Array(this.terrainOverlayCapacity),
+        };
+        mesh.userData = mesh.userData ?? {};
+        mesh.userData.scratch = scratch;
+      }
+      entry = { count: 0, hexes: scratch.hexes, ix: scratch.ix, iz: scratch.iz };
+      buckets.set(mesh, entry);
+    }
+    const n = entry.count;
+    entry.hexes[n] = color;
+    entry.ix[n] = ix;
+    entry.iz[n] = iz;
+    entry.count = n + 1;
   }
 
-  // Build an array of { ix, iz, color (hex), opacity } for all non-water tiles
-  // based on moisture. Called when terrain lens is active.
-  #buildTerrainFertilityMarkers() {
+  #classifyTerrainFertility(buckets) {
     const grid = this.state.grid;
     const { width, height, tiles, moisture } = grid;
-    const markers = [];
-    if (!moisture) return markers;
-    for (let iz = 0; iz < height; iz++) {
-      for (let ix = 0; ix < width; ix++) {
-        const idx = ix + iz * width;
-        const tileType = tiles[idx];
-        // Skip water — it has no farming suitability.
-        if (tileType === TILE.WATER) continue;
-        const m = Number(moisture[idx] ?? 0);
-        let color, opacity;
-        if (m > 0.65) {
-          color = 0x1a7f2a; // dark green — excellent
-          opacity = 0.50;
-        } else if (m > 0.40) {
-          color = 0x4aad3a; // medium green — good
-          opacity = 0.40;
-        } else if (m > 0.20) {
-          color = 0xb8c03a; // yellow-green — poor
-          opacity = 0.38;
-        } else {
-          color = 0x6a6a6a; // gray — barren
-          opacity = 0.28;
-        }
-        markers.push({ ix, iz, color, opacity });
-      }
-    }
-    return markers;
-  }
-
-  #updateTerrainFertilityOverlay() {
-    if (!this.terrainLensMode) {
-      this.#hideTerrainOverlay();
-      return;
-    }
-    const gridVersion = this.state.grid?.version ?? 0;
-    if (gridVersion === this.lastTerrainVersion && this.terrainOverlayPool.length > 0) {
-      // Already up to date — just ensure visibility.
-      return;
-    }
-    this.lastTerrainVersion = gridVersion;
-    let markers;
-    if (this.terrainLensMode === "elevation") {
-      markers = this.#buildTerrainElevationMarkers();
-    } else if (this.terrainLensMode === "connectivity") {
-      markers = this.#buildTerrainConnectivityMarkers();
-    } else if (this.terrainLensMode === "nodeDepletion") {
-      markers = this.#buildTerrainNodeDepletionMarkers();
-    } else {
-      markers = this.#buildTerrainFertilityMarkers();
-    }
-    this.#ensureTerrainOverlayPool(markers.length);
-    for (let i = 0; i < this.terrainOverlayPool.length; i++) {
-      const mesh = this.terrainOverlayPool[i];
-      const marker = markers[i];
-      if (!marker) { mesh.visible = false; continue; }
-      const p = tileToWorld(marker.ix, marker.iz, this.state.grid);
-      mesh.visible = true;
-      mesh.position.set(p.x, 0.18, p.z);
-      mesh.material.color.setHex(marker.color);
-      mesh.material.opacity = marker.opacity;
-    }
-  }
-
-  // Build elevation markers. Color tiles by their elevation value.
-  #buildTerrainElevationMarkers() {
-    const grid = this.state.grid;
-    const { width, height, tiles, elevation } = grid;
-    const markers = [];
-    if (!elevation) return markers;
+    if (!moisture) return;
     for (let iz = 0; iz < height; iz++) {
       for (let ix = 0; ix < width; ix++) {
         const idx = ix + iz * width;
         if (tiles[idx] === TILE.WATER) continue;
-        const e = Number(elevation[idx] ?? 0);
+        const m = moisture[idx];
         let color, opacity;
-        if (e > 0.7) {
-          color = 0xcc4444; // red — very high
-          opacity = 0.50;
-        } else if (e > 0.4) {
-          color = 0xcc8833; // orange — high
-          opacity = 0.45;
-        } else if (e > 0.2) {
-          color = 0xaacc33; // yellow-green — mid
-          opacity = 0.40;
-        } else {
-          color = 0x88aacc; // light blue — low
-          opacity = 0.35;
-        }
-        markers.push({ ix, iz, color, opacity });
+        if (m > 0.65)      { color = 0x1a7f2a; opacity = 0.50; }
+        else if (m > 0.40) { color = 0x4aad3a; opacity = 0.40; }
+        else if (m > 0.20) { color = 0xb8c03a; opacity = 0.38; }
+        else                { color = 0x6a6a6a; opacity = 0.28; }
+        this.#emitTerrainTile(buckets, ix, iz, color, opacity);
       }
     }
-    return markers;
   }
 
-  // Build connectivity markers. Color non-water tiles by road proximity (Manhattan ≤ 3).
-  // v0.8.7.1 P3 — uses precomputed road-distance field (cached per grid.version).
-  #buildTerrainConnectivityMarkers() {
+  #classifyTerrainElevation(buckets) {
+    const grid = this.state.grid;
+    const { width, height, tiles, elevation } = grid;
+    if (!elevation) return;
+    for (let iz = 0; iz < height; iz++) {
+      for (let ix = 0; ix < width; ix++) {
+        const idx = ix + iz * width;
+        if (tiles[idx] === TILE.WATER) continue;
+        const e = elevation[idx];
+        let color, opacity;
+        if (e > 0.7)      { color = 0xcc4444; opacity = 0.50; }
+        else if (e > 0.4) { color = 0xcc8833; opacity = 0.45; }
+        else if (e > 0.2) { color = 0xaacc33; opacity = 0.40; }
+        else               { color = 0x88aacc; opacity = 0.35; }
+        this.#emitTerrainTile(buckets, ix, iz, color, opacity);
+      }
+    }
+  }
+
+  #classifyTerrainConnectivity(buckets) {
     const grid = this.state.grid;
     const { width, height, tiles } = grid;
     const field = this.#getRoadDistanceField();
-    const markers = [];
     for (let iz = 0; iz < height; iz++) {
       for (let ix = 0; ix < width; ix++) {
         const idx = ix + iz * width;
@@ -1849,10 +1865,9 @@ export class SceneRenderer {
         const hasRoad = field[idx] <= 3;
         const color = hasRoad ? 0x44cc44 : 0xcc4444;
         const opacity = hasRoad ? 0.60 : 0.40;
-        markers.push({ ix, iz, color, opacity });
+        this.#emitTerrainTile(buckets, ix, iz, color, opacity);
       }
     }
-    return markers;
   }
 
   // v0.8.7.1 P3 — return cached road-distance field, rebuilding only when
@@ -1869,36 +1884,92 @@ export class SceneRenderer {
     return data;
   }
 
-  // Build node-depletion markers. Color resource buildings by soil exhaustion.
-  #buildTerrainNodeDepletionMarkers() {
+  #classifyTerrainNodeDepletion(buckets) {
     const grid = this.state.grid;
     const { width, height, tiles } = grid;
-    const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
-    const markers = [];
     for (let iz = 0; iz < height; iz++) {
       for (let ix = 0; ix < width; ix++) {
         const idx = ix + iz * width;
         const tileType = tiles[idx];
-        if (!RESOURCE_TILES.has(tileType)) continue;
+        if (!TERRAIN_OVERLAY_RESOURCE_TILES.has(tileType)) continue;
         const ts = grid.tileState?.get?.(idx);
         const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
-        const maxExhaustion = 8.0; // matches TERRAIN_MECHANICS.soilExhaustionMax
-        const ratio = exhaustion / maxExhaustion;
+        const ratio = exhaustion / 8.0; // matches TERRAIN_MECHANICS.soilExhaustionMax
         let color, opacity;
-        if (ratio > 0.7) {
-          color = 0xcc2222; // red — heavily depleted
-          opacity = 0.60;
-        } else if (ratio > 0.4) {
-          color = 0xcc8822; // orange — moderate depletion
-          opacity = 0.50;
-        } else {
-          color = 0x33cc33; // green — healthy
-          opacity = 0.50;
-        }
-        markers.push({ ix, iz, color, opacity });
+        if (ratio > 0.7)      { color = 0xcc2222; opacity = 0.60; }
+        else if (ratio > 0.4) { color = 0xcc8822; opacity = 0.50; }
+        else                   { color = 0x33cc33; opacity = 0.50; }
+        this.#emitTerrainTile(buckets, ix, iz, color, opacity);
       }
     }
-    return markers;
+  }
+
+  #updateTerrainFertilityOverlay() {
+    if (!this.terrainLensMode) {
+      this.#hideTerrainOverlay();
+      this.lastTerrainLensMode = null;
+      this.lastTerrainVersion = -1;
+      return;
+    }
+    const gridVersion = this.state.grid?.version ?? 0;
+    // tileStateVersion captures soil-exhaustion drift, which only "nodeDepletion"
+    // mode reads. Cheap to include in the cache key — other modes already settle
+    // on grid.version so they short-circuit anyway.
+    const tileStateVersion = this.state.grid?.tileStateVersion ?? 0;
+    const cacheKey = `${this.terrainLensMode}|${gridVersion}|${this.terrainLensMode === "nodeDepletion" ? tileStateVersion : 0}`;
+    if (cacheKey === this._terrainOverlayCacheKey
+        && this.lastTerrainLensMode === this.terrainLensMode
+        && this.terrainOverlayBuckets.size > 0) {
+      // Already up to date — buckets already have their counts + visibility set.
+      return;
+    }
+    this._terrainOverlayCacheKey = cacheKey;
+    this.lastTerrainVersion = gridVersion;
+    this.lastTerrainLensMode = this.terrainLensMode;
+
+    // Reset bucket counts before re-classifying.
+    const usedBuckets = new Map();
+    for (const mesh of this.terrainOverlayBuckets.values()) mesh.count = 0;
+
+    if (this.terrainLensMode === "elevation") {
+      this.#classifyTerrainElevation(usedBuckets);
+    } else if (this.terrainLensMode === "connectivity") {
+      this.#classifyTerrainConnectivity(usedBuckets);
+    } else if (this.terrainLensMode === "nodeDepletion") {
+      this.#classifyTerrainNodeDepletion(usedBuckets);
+    } else {
+      this.#classifyTerrainFertility(usedBuckets);
+    }
+
+    // Flush each bucket's instance arrays into its InstancedMesh.
+    // tileToWorld is inlined here (offsetX/offsetZ + tileSize multiply) to
+    // avoid 6912 small-object allocations per rebuild.
+    const grid = this.state.grid;
+    const tileSize = grid.tileSize;
+    const offsetX = (-grid.width / 2 + 0.5) * tileSize;
+    const offsetZ = (-grid.height / 2 + 0.5) * tileSize;
+    const tmpColor = COLOR_TMP;
+    for (const [mesh, entry] of usedBuckets) {
+      const n = entry.count;
+      for (let i = 0; i < n; i++) {
+        const wx = entry.ix[i] * tileSize + offsetX;
+        const wz = entry.iz[i] * tileSize + offsetZ;
+        setInstancedMatrix(mesh, i, wx, 0.18, wz);
+        tmpColor.setHex(entry.hexes[i]);
+        mesh.setColorAt(i, tmpColor);
+      }
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.visible = n > 0;
+    }
+    // Buckets that exist but were not used by this mode get count=0 + hidden.
+    for (const mesh of this.terrainOverlayBuckets.values()) {
+      if (!usedBuckets.has(mesh)) {
+        mesh.count = 0;
+        mesh.visible = false;
+      }
+    }
   }
 
   // === Tile Info Tooltip ===
@@ -1926,9 +1997,8 @@ export class SceneRenderer {
       }
     } else if (tool === "lumber" || tool === "clinic") {
       // Node depletion / soil exhaustion is the key metric.
-      const RESOURCE_TILES = new Set([TILE.FARM, TILE.LUMBER, TILE.QUARRY, TILE.HERB_GARDEN]);
       const tileType = grid.tiles[idx];
-      if (RESOURCE_TILES.has(tileType)) {
+      if (TERRAIN_OVERLAY_RESOURCE_TILES.has(tileType)) {
         const ts = grid.tileState?.get?.(idx);
         const exhaustion = Number(ts?.exhaustion ?? ts?.soilExhaustion ?? 0);
         const maxExhaustion = 8.0;
