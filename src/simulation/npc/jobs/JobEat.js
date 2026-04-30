@@ -169,4 +169,22 @@ export class JobEat extends Job {
   onAbandon(worker, state, _services) {
     releaseReservation(worker, state);
   }
+
+  // v0.9.4 — survival-bypass. Trace evidence (BUG CAPTURE
+  // pre-tick t=57.53s): a worker at hunger=0.18 with incumbent
+  // JobDeliverWarehouse at raw=0.90 + stickyBonus=0.246 wins adj=1.146
+  // against JobEat at raw=0.87 (no bonus, non-incumbent). Hysteresis
+  // pins the worker on the productive Job past the seek threshold; only
+  // at hunger ≪ 0.10 does JobEat's raw score (≈0.95) reliably beat
+  // incumbent + decayed bonus.
+  //
+  // Architectural fix: when a non-incumbent candidate reports
+  // `isSurvivalCritical`, the scheduler drops the incumbent's bonus
+  // for that comparison so JobEat competes on raw vs raw — which it
+  // wins from hunger=0.18 on down. Predicate matches canTake so we
+  // never preempt when JobEat couldn't actually act (food unavailable
+  // or all warehouses blacklisted).
+  isSurvivalCritical(worker, state, services) {
+    return this.canTake(worker, state, services);
+  }
 }

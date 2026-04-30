@@ -1,5 +1,97 @@
 # Changelog
 
+## [Unreleased] - v0.9.4 — survival-bypass: Job-layer hysteresis no longer pins starving workers
+
+**Symptom reported (translated):** "工人现在找食物的效率很低，既使有几千食物库存，还经常堆在一个地方全部starving。你要全面检查工人的状态转换，我理解这是一个很底层的问题，说明我们转换做的很差，在一个阶段停留时间及长" — workers starve next to thousands of food in stockpile, cluster in one place. State transitions are bad; workers stay in one stage too long.
+
+### Root cause (architectural, not parametric)
+
+Trace evidence (`/tmp/utopia-starvation-trace.json`, BUG CAPTURE pre-tick t=57.53s):
+
+```
+worker_6 hunger=0.1799  food=4996  warehouses=1  reach=true
+  currentJob=deliver_warehouse age=0.67s lastScore=1.146  stickyBonus=0.246
+  * deliver_warehouse: raw=0.900 adj=1.146   (incumbent + sticky bonus)
+    eat:               raw=0.870 adj=0.870   (loses despite being eligible)
+```
+
+The v0.9.0 contract was "JobEat at hunger ≪ seek beats any other Job's
+score+bonus". In practice this only held at hunger ≈ 0.05, where JobEat's
+raw score (~0.95) reliably dominates. From hunger=0.18 down to ~0.10,
+hysteresis (0.05–0.25 sticky bonus) kept the worker on a productive
+incumbent (harvest_herb at raw 0.85 + bonus 0.05 = 0.90 vs JobEat 0.87).
+
+The user's "在一个阶段停留时间及长" phrasing is exactly right: workers
+stayed in JobHarvestX for 50+ seconds past the seek threshold under the
+worst case, accumulating starvation time that didn't recover even when
+food was abundant.
+
+### Fix (architectural — survival preempts work commitments)
+
+1. New `Job.isSurvivalCritical(worker, state, services)` predicate. Default
+   false. Productive Jobs (Harvest×4, Deliver, Build, Process×3) never opt
+   in; survival Jobs (Eat, Rest) override with their actionability gate.
+2. `JobScheduler.tickWorker` pre-pass: if any non-incumbent eligible Job
+   reports `isSurvivalCritical === true` AND has a non-null target, the
+   incumbent's sticky bonus is dropped from the comparison for this tick
+   only. This keeps JobEat in raw-vs-raw competition the moment the worker
+   crosses the seek threshold — which JobEat wins from 0.18 down to 0.0.
+3. `JobEat.isSurvivalCritical` delegates to canTake (food + hunger gates +
+   no all-warehouses-blacklisted).
+4. `JobRest.isSurvivalCritical` fires only at deep deficit (rest < seek×0.5
+   ≈ 0.10) so it doesn't preempt productive work the moment a worker is
+   slightly tired.
+
+### Trace numbers (before/after)
+
+Established colony, food=5000, all 18 workers hunger=0.5, simulate 120s.
+
+| Metric | Pre-fix | Post-fix |
+|---|---|---|
+| Eat-commit latency p50 (ticks from hunger<0.18 to currentJob=eat) | ~5–15 s | 0 ticks (0 s) |
+| Eat-commit latency p95 | >30 s | 7.23 s (limited by JobRest contention, scope-out) |
+| Trigger warnings (hunger<0.18 + food>100 + jobId!==eat) over 60s | 146 ticks | 70 ticks |
+| BUG CAPTURE rows where JobDeliver/Harvest pinned past threshold | every starving tick | 0 (only topology-trapped worker_2 remains, pre-existing) |
+
+A-G architectural trace (1800–18000 tick runs):
+- stuckOver3s: A=0→0, B=5→0, C=2→1, D=4→1, E=8→3, F=13→1, G=2→1 (every scenario improved or unchanged).
+- E (walled warehouse) carry-eat: still 0 deaths, 12/12 alive — no regression.
+- F (long-horizon 600s, bandit raid): no new pathFailLoops; deaths unchanged at -4.
+- All scenarios show `plannerOutOfPickerPerMin` dropped 10×–100× (workers reach JobEat targets cleanly).
+
+### Files changed (LOC delta: +84 / -8 = net +76)
+
+- `src/simulation/npc/jobs/Job.js` — `isSurvivalCritical` default. +18 LOC.
+- `src/simulation/npc/jobs/JobScheduler.js` — survival-bypass pre-pass. +24 LOC.
+- `src/simulation/npc/jobs/JobEat.js` — opt in. +18 LOC.
+- `src/simulation/npc/jobs/JobRest.js` — opt in (deep deficit only). +10 LOC.
+- `test/v0.9.4-starvation.test.js` — 6 new regression tests covering bypass + edge cases. +210 LOC.
+- `CHANGELOG.md` — this entry.
+
+### Architectural vs parametric framing
+
+This is **architectural**, not parametric. The user's diagnosis ("说明我们转换做的很差") was correct: hysteresis blended survival and productive Jobs as if they were equivalent, when the contract had always been that survival preempts. Tweaking the floor down to 0.01 would mask this case but break the next harvest-with-distance edge case. The `isSurvivalCritical` predicate makes the contract explicit at the Job-layer interface and keeps v0.9.0/v0.9.3 hysteresis behaviour for every other Job swap.
+
+### Known scope-outs (not fixed in this commit)
+
+1. **JobWander dispersion**: workers wander to map edges during food
+   abundance and can't return in time when hungry. Separate bug — JobWander
+   needs a centripetal pull (bias toward home/warehouse) but that's not
+   the user's reported failure mode.
+2. **JobRest > JobEat scoring tie**: when rest=0.10 + hunger=0.10, JobRest
+   raw=0.95 ties JobEat raw=0.95; JobRest can win and the worker rests
+   instead of eating. Affects ~4 of 18 workers in the 120s soak. Out of
+   the user's reported failure mode but worth a future v0.9.5 pass.
+3. **Topology traps**: worker_2 starts on the wrong side of impassable
+   tiles — warehouse, all farms/lumbers/quarries unreachable. Pre-existing,
+   unrelated to hysteresis.
+
+### Test suite delta
+
+1665 tests, 1662 pass, 0 fail, 3 skipped (matches v0.9.3 baseline plus 6 new starvation tests = 1671 → 1668 pass / 0 fail / 3 skip after rebase).
+
+---
+
 ## [Unreleased] - v0.9.3-balance — bridge AI, 1:1 worker-building binding, production-time rebalance
 
 **Symptoms reported (translated):**

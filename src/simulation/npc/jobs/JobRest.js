@@ -54,4 +54,15 @@ export class JobRest extends Job {
   }
 
   onAbandon(_worker, _state, _services) { /* no reservation */ }
+
+  // v0.9.4 — survival-bypass at "death-imminent" rest. Symmetric with
+  // JobEat.isSurvivalCritical. Note the threshold is tighter than
+  // canTake's seek threshold: a rest-deficit worker isn't urgent until
+  // they're about to collapse (rest < seek*0.5 ≈ 0.10), at which point
+  // the productive-Job sticky bonus must yield. Keeps low-rest workers
+  // from getting pinned on harvest cycles in long-horizon scenarios.
+  isSurvivalCritical(worker, _state, _services) {
+    const seek = Number(BALANCE.workerRestSeekThreshold ?? 0.2);
+    return Number(worker?.rest ?? 1) < seek * 0.5;
+  }
 }

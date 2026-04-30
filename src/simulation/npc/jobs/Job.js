@@ -56,4 +56,23 @@ export class Job {
 
   // eslint-disable-next-line no-unused-vars
   onAbandon(worker, state, services) {}
+
+  /**
+   * v0.9.4 — survival-bypass predicate.
+   *
+   * When the scheduler is comparing this Job (as a candidate, not the
+   * incumbent) and `isSurvivalCritical` returns true, the incumbent's
+   * sticky bonus is ignored — i.e. raw-vs-raw comparison. This makes
+   * survival jobs (JobEat below the seek threshold, JobRest below the
+   * death threshold) preempt productive incumbents whose decayed-bonus
+   * scores would otherwise pin a starving worker on a harvest tile.
+   *
+   * Default false: only Jobs that explicitly opt in (JobEat, JobRest)
+   * trigger preemption. This preserves v0.9.0/v0.9.3 hysteresis for
+   * every other Job swap (harvest → deliver → harvest, etc.).
+   */
+  // eslint-disable-next-line no-unused-vars
+  isSurvivalCritical(worker, state, services) {
+    return false;
+  }
 }
