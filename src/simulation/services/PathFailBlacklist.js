@@ -5,8 +5,10 @@
 // skips blacklisted candidates so a worker doesn't infinitely re-pick the
 // same tile that just failed to path.
 //
-// Architectural prep for v0.9.0 Job-layer rewrite (A1+A3): the Job-layer
-// target-finder will consult the same blacklist before scoring candidates.
+// v0.10.0 (FSM): the Priority-FSM dispatcher's `pathFailedRecently` condition
+// + SEEKING_X.tick path-fail fallback consult this blacklist; the v0.9.x
+// Job-layer target-finder that originally drove this service was retired
+// in v0.10.0-d.
 
 const DEFAULT_TTL_SEC = 5;
 

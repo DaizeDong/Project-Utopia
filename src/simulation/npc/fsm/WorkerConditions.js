@@ -19,9 +19,9 @@ import { getTile, listTilesByType, worldToTile } from "../../../world/grid/Grid.
 
 /**
  * True when worker.role === GUARD and a hostile (PREDATOR animal or
- * SABOTEUR visitor) is within BALANCE.guardAggroRadius.
- *
- * TODO v0.10.0-d: dedupe with retired Job code (JobGuardEngage.findNearestHostile).
+ * SABOTEUR visitor) is within BALANCE.guardAggroRadius. Originally ported
+ * from v0.9.4 JobGuardEngage.findNearestHostile (Job layer retired in
+ * v0.10.0-d).
  */
 export function hostileInAggroRadiusForGuard(worker, state, _services) {
   if (String(worker?.role ?? "").toUpperCase() !== ROLE.GUARD) return false;
@@ -60,9 +60,8 @@ export function noHostileInRange(worker, state, _services) {
 
 /**
  * True when worker.hunger < workerHungerSeekThreshold AND food is available
- * (warehouse stockpile OR carry). Mirrors v0.9.4 JobEat.canTake gate.
- *
- * TODO v0.10.0-d: dedupe with retired Job code (JobEat.canTake).
+ * (warehouse stockpile OR carry). Originally ported from v0.9.4
+ * JobEat.canTake (Job layer retired in v0.10.0-d).
  */
 export function hungryAndFoodAvailable(worker, state, _services) {
   const seek = Number(BALANCE.workerHungerSeekThreshold ?? 0.18);

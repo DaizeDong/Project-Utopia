@@ -6,9 +6,10 @@
 // probes, and consumeEmergencyRation all read the same fresh result so
 // decisions agree within the same tick.
 //
-// Architectural prep for v0.9.0 Job-layer rewrite (A1+A3): the Job-layer
-// target-finder will call this same service so reachability is fused with
-// scoring rather than computed independently per consumer.
+// v0.10.0 (FSM): the FSM `hungryAndFoodAvailable` condition + carry-eat
+// fallback in SEEKING_FOOD.onEnter use this cache to skip orbit-on-
+// unreachable-warehouse loops. The v0.9.x Job-layer target-finder that
+// originally also drove this service was retired in v0.10.0-d.
 
 import { aStar } from "../navigation/AStar.js";
 import { listTilesByType, worldToTile } from "../../world/grid/Grid.js";

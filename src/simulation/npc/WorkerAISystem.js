@@ -1566,9 +1566,17 @@ export class WorkerAISystem {
       // `blackboard.intent`, `worker.stateLabel`, `lastStateNode` for
       // EntityFocusPanel / chronicle / existing display tests; they no
       // longer gate worker behaviour (the FSM dispatcher below does).
-      // The Priority-FSM state bodies overwrite `stateLabel` / `intent`
-      // immediately after, so the planner's output is the legacy fallback
-      // when an FSM tick path doesn't override.
+      //
+      // v0.10.0-e — `worker.stateLabel` final write is hoisted into
+      // WorkerFSM.tickWorker (DISPLAY_LABEL[fsm.state]). The legacy
+      // mapStateToDisplayLabel write below is now a transient that the FSM
+      // dispatcher overwrites on the same tick; kept only because the
+      // planner's `transitionEntityState` call has the side effect of
+      // updating `blackboard.fsm.state` (the legacy display FSM that
+      // WorldSummary / NPCBrainAnalytics still read), and removing the
+      // label-write here would split the legacy pipeline mid-flight.
+      // FSM state bodies write `blackboard.intent` directly; the
+      // `intent = stateNode` line below is overwritten by the FSM tick.
       const plan = planEntityDesiredState(worker, state, {}, services);
       worker.blackboard.lastPlanSec = nowSec;
       const stateNode = transitionEntityState(
