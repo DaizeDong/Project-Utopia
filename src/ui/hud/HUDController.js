@@ -235,6 +235,10 @@ export class HUDController {
     this.statusThreatBar = document.getElementById("statusThreatBar");
     this.hudFood = document.getElementById("hudFood");
     this.hudWood = document.getElementById("hudWood");
+    // v0.9.2-ui (F14) — capture stone/herbs chip parents so we can mirror
+    // the live trend into their title= attribute (tooltip).
+    this.hudStone = document.getElementById("hudStone");
+    this.hudHerbs = document.getElementById("hudHerbs");
     this.hudWorkers = document.getElementById("hudWorkers");
     this.statusObjectiveTime = document.getElementById("statusObjectiveTime");
     this.statusObjectiveScore = document.getElementById("statusObjectiveScore");
@@ -1389,14 +1393,65 @@ export class HUDController {
     if (this.frameVal) this.frameVal.textContent = `${state.metrics.frameMs.toFixed(2)} ms`;
     if (this.agentVal) this.agentVal.textContent = String(totalAgents);
 
-    if (this.statusFood) this.statusFood.textContent = Math.floor(state.resources.food);
-    if (this.statusWood) this.statusWood.textContent = Math.floor(state.resources.wood);
-    if (this.statusStone) this.statusStone.textContent = Math.floor(state.resources.stone);
-    if (this.statusHerbs) this.statusHerbs.textContent = Math.floor(state.resources.herbs);
+    // v0.9.2-ui (F14) — append a trend triangle to each resource chip so
+    // players can see direction at a glance without opening the Colony
+    // panel. ▲ rising / ▼ falling / · stable. Frostpunk reference:
+    // resource chips always show current + trend. Rates come from the
+    // 3s-window cache (_lastComputedRates, /min). The full breakdown is
+    // mirrored into the parent chip's title= (the existing data-tip
+    // migrateTitles MO converts that to the styled tooltip).
+    const trendRates = this._lastComputedRates ?? null;
+    const trendArrow = (rate) => {
+      if (rate == null || !Number.isFinite(rate)) return "";
+      if (Math.abs(rate) < 0.5) return ` <span class="hud-trend hud-trend-flat" style="opacity:0.5;font-size:0.78em;">·</span>`;
+      const tone = rate > 0 ? "#8ebf8e" : "#e07070";
+      const glyph = rate > 0 ? "▲" : "▼";
+      return ` <span class="hud-trend" style="color:${tone};font-size:0.78em;font-weight:700;">${glyph}</span>`;
+    };
+    const setChipNumber = (el, value, rate) => {
+      if (!el) return;
+      // innerHTML over textContent so the trend span renders. The number
+      // itself is escaped via Math.floor (always Number).
+      if (typeof el !== "object") return;
+      try {
+        el.innerHTML = `${Math.floor(value)}${trendArrow(rate)}`;
+      } catch {
+        // Mock nodes in tests may not implement innerHTML setter; fall back.
+        el.textContent = String(Math.floor(value));
+      }
+    };
+    setChipNumber(this.statusFood, state.resources.food, trendRates?.food);
+    setChipNumber(this.statusWood, state.resources.wood, trendRates?.wood);
+    setChipNumber(this.statusStone, state.resources.stone, trendRates?.stone);
+    setChipNumber(this.statusHerbs, state.resources.herbs, trendRates?.herbs);
     if (this.statusWorkers) this.statusWorkers.textContent = state.metrics?.populationStats?.workers ?? 0;
-    if (this.statusMeals) this.statusMeals.textContent = Math.floor(state.resources.meals);
-    if (this.statusTools) this.statusTools.textContent = Math.floor(state.resources.tools);
-    if (this.statusMedicine) this.statusMedicine.textContent = Math.floor(state.resources.medicine);
+    setChipNumber(this.statusMeals, state.resources.meals, trendRates?.meals);
+    setChipNumber(this.statusTools, state.resources.tools, trendRates?.tools);
+    setChipNumber(this.statusMedicine, state.resources.medicine, trendRates?.medicine);
+
+    // v0.9.2-ui (F14) — mirror full breakdown into the parent chip's title.
+    // hudFood / hudWood / hudStone / hudHerbs are the outer containers in
+    // index.html (lines 1888-1956). Existing static title= attributes are
+    // preserved and prefixed with the live rate snippet.
+    const formatTrend = (rate) => {
+      if (rate == null || !Number.isFinite(rate)) return "rate: —";
+      if (Math.abs(rate) < 0.05) return "rate: ≈ 0/min";
+      return rate >= 0 ? `rate: ▲ +${rate.toFixed(1)}/min` : `rate: ▼ ${rate.toFixed(1)}/min`;
+    };
+    const setChipTitle = (el, rate) => {
+      if (!el || typeof el.setAttribute !== "function") return;
+      const trend = formatTrend(rate);
+      const stored = el.dataset?.baseTitle ?? null;
+      const base = stored != null ? stored : (el.getAttribute?.("title") || "");
+      if (stored == null && el.dataset) {
+        try { el.dataset.baseTitle = base; } catch { /* dataset write may fail in mocks */ }
+      }
+      el.setAttribute("title", `${base}\n${trend}`);
+    };
+    setChipTitle(this.hudFood, trendRates?.food);
+    setChipTitle(this.hudWood, trendRates?.wood);
+    setChipTitle(this.hudStone, trendRates?.stone);
+    setChipTitle(this.hudHerbs, trendRates?.herbs);
     if (this.statusProsperity) this.statusProsperity.textContent = (state.gameplay?.prosperity ?? 0).toFixed(0);
     if (this.statusThreat) this.statusThreat.textContent = (state.gameplay?.threat ?? 0).toFixed(0);
 

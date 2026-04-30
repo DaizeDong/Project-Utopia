@@ -2217,7 +2217,19 @@ export class GameApp {
     const { settings } = sanitizeDisplaySettings(this.state.controls.display, DEFAULT_DISPLAY_SETTINGS);
     this.state.controls.display = settings;
     if (typeof document === "undefined") return;
-    document.documentElement.style.setProperty("--utopia-ui-scale", settings.uiScale.toFixed(2));
+    // v0.9.2-ui (F15) — kept --utopia-ui-scale for backward compatibility,
+    // but layout now scales by rem via --utopia-font-scale. zoom() squashed
+    // pixels; rem reflows layout so shrinking re-flows instead of forcing
+    // visual shrinkage. The slider (80-140%) maps to a 0.85-1.15x scaling
+    // of the responsive base (clamp(12px, 0.6vw + 0.55rem, 16px)) so the
+    // player's UI-Scale choice adjusts legibility without forcing pixel
+    // shrinkage.
+    const scale = Number(settings.uiScale ?? 1);
+    document.documentElement.style.setProperty("--utopia-ui-scale", scale.toFixed(2));
+    // Map 0.8-1.4 slider range to a 0.85-1.15× type-scale multiplier so
+    // visual change is smoother and legibility stays readable at extremes.
+    const typeScale = 0.85 + 0.3 * Math.max(0, Math.min(1, (scale - 0.8) / 0.6));
+    document.documentElement.style.setProperty("--utopia-font-scale", typeScale.toFixed(3));
   }
 
   #sanitizeControls(notify = false) {

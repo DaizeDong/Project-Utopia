@@ -2378,9 +2378,53 @@ export class SceneRenderer {
       el.style.opacity = count >= 3 ? "0.7" : "";
       el.textContent = labelText;
       el.title = entry.hoverTooltip ? String(entry.hoverTooltip) : labelText;
+      // v0.9.2-ui (F10) — viewport-edge clamp + anchor flip. The default
+      // CSS transform centers the label horizontally above the marker
+      // (translate(-50%, -160%)). On tiles near the right edge the label
+      // would extend off-canvas and get clipped by #pressureLabelLayer's
+      // overflow:hidden. We measure el.offsetWidth/Height once after
+      // textContent is written, then nudge `left` (and flip the ::after
+      // triangle via data-anchor) to keep the entire label inside the
+      // viewport. Reference: Cities Skylines / Dwarf Fortress flip the
+      // anchor when label would clip. ≤24 visible labels is the budget,
+      // so the extra layout pass is cheap.
       el.style.left = `${left}px`;
       el.style.top = `${top}px`;
       el.style.display = "block";
+      try {
+        const labelW = el.offsetWidth || 0;
+        const labelH = el.offsetHeight || 0;
+        // Default anchor: bottom-center triangle, label sits ABOVE the marker.
+        let anchor = "bottom";
+        let adjLeft = left;
+        // Default visual extent: label spans [left - labelW/2, left + labelW/2]
+        // because of translate(-50%, ...). Clamp horizontally:
+        const halfW = labelW / 2;
+        const minLeft = halfW + 8;
+        const maxLeft = vpW + offsetLeft - halfW - 8;
+        if (adjLeft > maxLeft) {
+          adjLeft = maxLeft;
+          anchor = "right";
+        } else if (adjLeft < minLeft) {
+          adjLeft = minLeft;
+          anchor = "left";
+        }
+        // Vertical: label sits at top - 160% of its own height (the
+        // ::after triangle hangs 10px BELOW the box). If that pushes the
+        // top above the viewport, flip to below the marker.
+        const labelTopVisual = top - labelH * 1.6;
+        if (labelTopVisual < offsetTop + 8) {
+          // Flip below the marker (anchor=top, triangle at top).
+          el.style.transform = "translate(-50%, 60%)";
+          anchor = anchor === "bottom" ? "top" : `${anchor}-top`;
+        } else {
+          el.style.transform = "";
+        }
+        el.dataset.anchor = anchor;
+        if (adjLeft !== left) el.style.left = `${Math.round(adjLeft)}px`;
+      } catch {
+        // offsetWidth/Height read can fail in headless test DOMs; ignore.
+      }
       nextSigs.set(i, sig);
     }
     this._prevLabelSignatures = nextSigs;

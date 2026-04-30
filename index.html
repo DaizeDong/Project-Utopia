@@ -28,12 +28,25 @@
 
     /* === RESET === */
     *, *::before, *::after { box-sizing: border-box; }
+    /* v0.9.2-ui (F15) — switch from CSS `zoom` (pixel-squash) to rem-based
+       scaling. html font-size grows fluidly with viewport
+       (clamp(12px, 0.6vw + 0.55rem, 16px) ~= 13.3px@1366, 14.7px@1920,
+       16px@2560+) and is multiplied by --utopia-font-scale (0.85-1.15)
+       from the UI-Scale slider. The slider now re-flows layout instead
+       of squashing pixels, so long localized strings get more pixels
+       rather than fewer at 80% scale. Reference: RimWorld / Songs of
+       Conquest each expose two orthogonal sliders (UI Scale = legibility
+       / typography in rems, World Zoom = canvas/scene); we keep the
+       UI-Scale slider but tie it to typography only. */
+    html {
+      font-size: calc(clamp(12px, 0.6vw + 0.55rem, 16px) * var(--utopia-font-scale, 1));
+    }
     html, body {
       margin: 0; height: 100%;
       background: #0a1420;
       color: var(--text);
       font-family: "Segoe UI", "Trebuchet MS", sans-serif;
-      font-size: 13px;
+      font-size: 0.92rem; /* was 13px — rem-anchored so panels can rescale */
     }
 
     /* === LAYOUT === */
@@ -46,36 +59,41 @@
     #ui {
       position: absolute; inset: 0; z-index: 10;
       pointer-events: none;
-      zoom: var(--utopia-ui-scale);
+      /* v0.9.2-ui (F15) — `zoom` removed; UI scale now flows through
+         html font-size via --utopia-font-scale so layout reflows. */
     }
 
-    #statusBar,
-    #speedControls,
-    #entityFocusOverlay,
-    #authorTickerStrip,
-    #gameStateOverlay {
-      zoom: var(--utopia-ui-scale);
-    }
+    /* v0.9.2-ui (F15) — `zoom: var(--utopia-ui-scale)` removed from the
+       HUD surfaces. Their type sizes are now rem-anchored and inherit
+       the html font-size, which the UI-Scale slider drives. */
 
     /* Legacy layout controls — hidden in new UI */
     #layoutControls { display: none; }
 
-    /* === HUD STATUS BAR === */
+    /* === HUD STATUS BAR ===
+       v0.9.2-ui (F6) — bar wraps to 2 rows on narrow viewports rather
+       than display:none-hiding chips. height becomes min-height so the
+       bar grows organically; #sidebarPanelArea reads --hud-height as
+       padding-top so panel content still clears the topbar. Frostpunk
+       reference: HUD always shows resource trends + latest event ribbon
+       even at 1366×768 by growing to two lines. */
     #statusBar {
       position: absolute; top: 0; left: 0; right: 36px; z-index: 15;
       display: flex; align-items: center; gap: 3px;
-      height: 32px; max-height: 32px;
-      padding: 0 8px;
+      min-height: var(--hud-height, 32px);
+      padding: 2px 8px;
       background: linear-gradient(180deg, rgba(12, 22, 35, 0.97), rgba(8, 16, 28, 0.93));
       border-bottom: 1px solid var(--panel-border);
       font-size: 11px; font-weight: 700; color: #d0e8ff;
       pointer-events: none;
       box-shadow: 0 2px 12px rgba(0,0,0,0.4);
-      flex-wrap: nowrap;
-      overflow: hidden;
+      flex-wrap: wrap;
+      row-gap: 2px;
     }
-    /* Keep right edge clear for sidebar tab strip */
-    #wrap.sidebar-open #statusBar { right: 280px; }
+    /* Keep right edge clear for sidebar tab strip.
+       v0.9.2-ui (F1) — pulls the sidebar width from the same custom property
+       so the status bar tracks the (now responsive) sidebar geometry. */
+    #wrap.sidebar-open #statusBar { right: clamp(280px, 22vw, 460px); }
 
     /* Hide secondary resources from status bar — they live in Colony panel */
     #statusBar [data-resource-tier="secondary"] { display: none !important; }
@@ -95,11 +113,16 @@
     #statusScoreboard #statusScenarioHeadline {
       flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    /* Scenario headline — keep single line */
+    /* Scenario headline — wraps to multi-line on the (now flex-wrap) bar.
+       v0.9.2-ui (F9) — drop the 1-line nowrap clamp so 3-sentence briefings
+       are visible without hover. Compact mode keeps a 1-line clamp via the
+       existing rule below. Songs of Conquest reference: scenario briefings
+       are always visible by clicking the briefing card. */
     .hud-scenario {
       -webkit-line-clamp: unset;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-      max-width: min(280px, 22vw);
+      white-space: normal;
+      max-width: clamp(280px, 32vw, 560px);
+      overflow: hidden;
     }
     /* Hide verbose scoreboard items in the slim status bar */
     #statusScoreboard #statusNextAction,
@@ -109,8 +132,17 @@
     #statusScoreboard #statusScoreBreak { display: none !important; }
     /* Crisis alert — keep visible but constrained */
     #statusAutopilotCrisis { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* Autopilot chip — never shrink below legibility; priority over middle content */
-    #aiAutopilotChip { flex-shrink: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+    /* Autopilot chip — never shrink below legibility; priority over middle content.
+       v0.9.2-ui (F8) — raise cap with clamp so "Manual control · next policy
+       in 9.8s" does not become "Manual contro…". flex-shrink:0 retained so
+       the chip never loses pixels to neighbours; bar wraps before the chip
+       does. */
+    #aiAutopilotChip {
+      flex-shrink: 0;
+      max-width: clamp(180px, 18vw, 320px);
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: normal;
+    }
     /* Objective — show only survival time; hide score and dev (they live in Debug panel) */
     #statusObjective {
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -120,12 +152,17 @@
     #statusObjective span { white-space: nowrap; }
     #statusBar #statusObjectiveScore,
     #statusBar #statusObjectiveDev { display: none !important; }
-    /* Status action — floating toast at bottom-left, not in bar */
+    /* Status action — floating toast at bottom-left, not in bar.
+       v0.9.2-ui (F7) — cap raised with clamp so a multi-clause reason
+       ("Cannot place: blueprint already in progress on this tile") wraps
+       onto multiple lines instead of ellipsizing.
+       Bottom offset uses max() with --entity-focus-height so it never
+       overlaps the EntityFocus overlay on small viewports. */
     #statusAction {
       position: fixed;
-      bottom: 36px;
+      bottom: max(36px, calc(var(--entity-focus-height, 230px) + 8px));
       left: 8px;
-      max-width: 420px;
+      max-width: clamp(420px, 38vw, 720px);
       background: rgba(20,20,30,0.88);
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 4px;
@@ -157,8 +194,11 @@
     .hud-label { font-size: 11px; font-weight: 800; line-height: 1.1; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
     .hud-sublabel { font-size: 8px; font-weight: 700; line-height: 1; opacity: 0.65; color: var(--text-muted, #9cb3c9); }
     .hud-label-sm { font-size: 9px; color: rgba(200,224,248,0.55); margin-right: 2px; letter-spacing: 0.02em; line-height: 1; }
-    /* Hide progress bars in status bar — too tall for 32px bar */
-    #statusBar .hud-bar { display: none; }
+    /* v0.9.2-ui (F14) — slim 2px ambient bar restored. Frostpunk-style:
+       resource fill is always present as background context but does not
+       claim vertical pixels. Previously hidden because 6px bars made the
+       32px topbar feel cramped; 2px is invisible until you look at it. */
+    #statusBar .hud-bar { display: block !important; height: 2px !important; }
     .hud-bar { width: 36px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); overflow: hidden; }
     .hud-bar-fill { height: 100%; width: 0; border-radius: 2px; transition: width 0.3s ease; }
     .hud-bar-food { background: linear-gradient(90deg, #4caf50, #8bc34a); }
@@ -490,6 +530,25 @@
       color: rgba(80,160,220,0.85);
       pointer-events: none;
     }
+    /* v0.9.2-ui (F10) — anchor flip variants. SceneRenderer writes
+       data-anchor="left|right|top|bottom|left-top|right-top" when it shifts
+       a label off the centered position to keep it in-viewport. The
+       triangle moves toward the original marker so the player can still
+       trace label → marker. */
+    .pressure-label[data-anchor="left"]::after,
+    .pressure-label[data-anchor="left-top"]::after {
+      left: 12px; transform: none;
+    }
+    .pressure-label[data-anchor="right"]::after,
+    .pressure-label[data-anchor="right-top"]::after {
+      left: auto; right: 12px; transform: none;
+    }
+    .pressure-label[data-anchor="top"]::after,
+    .pressure-label[data-anchor="left-top"]::after,
+    .pressure-label[data-anchor="right-top"]::after {
+      bottom: auto; top: -10px;
+      content: '\25B4'; /* upward triangle when label is below the marker */
+    }
     /* v0.8.2 Round-6 Wave-1 (01c-ui Step 6) — merged-count badge. When the
        dedup helper collapses N markers onto one centroid, SceneRenderer
        writes data-merged="1" + data-count="N"; the label text already
@@ -648,20 +707,30 @@
       color: #fff;
     }
 
-    /* === RIGHT SIDEBAR === */
+    /* === RIGHT SIDEBAR ===
+       v0.9.2-ui (F1) — sidebar widens with viewport. clamp(280, 22vw, 460)
+       gives ~422px on 1920 monitors and ~563px on 2560 (capped 460), but
+       stays at the 280px floor on 1280 laptops. Internally we expose
+       --sidebar-width so the collapsed translate stays in sync (panel area
+       is sidebar minus the 36px tab strip). RimWorld/Frostpunk/Songs of
+       Conquest reference: panels grow with viewport up to ~25% of width
+       before tabs are introduced. */
     #sidebar {
       position: fixed; top: 0; right: 0; bottom: 0;
-      width: 280px; z-index: 20;
+      --sidebar-width: clamp(280px, 22vw, 460px);
+      --sidebar-panel-width: calc(var(--sidebar-width) - 36px);
+      width: var(--sidebar-width); z-index: 20;
       display: flex; flex-direction: row;
       pointer-events: none;
       transition: transform 0.22s ease;
       overflow: hidden;
     }
     /* Collapsed: sidebar slides right, but tab strip (first in flex) stays visible.
-       Tab strip is 36px wide and is the FIRST child, so translateX(244px) moves
-       the whole sidebar 244px right, keeping 36px of tab strip in viewport. */
+       Tab strip is 36px wide and is the FIRST child, so translating the
+       sidebar by --sidebar-panel-width hides the panel column while the
+       36px tab strip remains in viewport. */
     #wrap:not(.sidebar-open) #sidebar {
-      transform: translateX(244px);
+      transform: translateX(var(--sidebar-panel-width));
     }
     /* Ensure sidebar-collapsed from legacy JS doesn't interfere when sidebar-open is set */
     #wrap.sidebar-open #sidebar {
@@ -836,10 +905,14 @@
     .subpanel[open] > summary { border-bottom-color: var(--divider); }
     .subpanel-body { padding: 8px 10px; }
 
-    /* === TOOL GRID === */
+    /* === TOOL GRID ===
+       v0.9.2-ui (F1) — auto-fit so tool grid grows from 2-col on the
+       narrow 280px sidebar to 3-4 col when the sidebar widens with
+       the viewport. Each button claims at least 96px wide so the icon
+       + label still reads cleanly. */
     .tool-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
       gap: 5px;
     }
     .tool-icon { width: 16px; height: 16px; image-rendering: pixelated; vertical-align: middle; margin-right: 2px; }
@@ -942,10 +1015,43 @@
     }
     input[type="checkbox"] { accent-color: var(--accent); }
 
+    /* === INSPECTOR TABS (v0.9.2-ui F2) ===
+       Hide non-active sections when a tab is selected. All sections are
+       still emitted into innerHTML so test harnesses that grep for
+       <b>Building</b> / <b>Processing</b> still pass — only display:none
+       gates visibility for the player. The .inspector-section gate is
+       cumulative with the tab strip's data-active-tab so a single click
+       on a tab button toggles which subsection is visible without a
+       full re-render of the tile/entity payload. */
+    .inspector-tabs[data-active-tab="terrain"] > .inspector-section:not([data-inspector-section="terrain"]),
+    .inspector-tabs[data-active-tab="building"] > .inspector-section:not([data-inspector-section="building"]),
+    .inspector-tabs[data-active-tab="path"] > .inspector-section:not([data-inspector-section="path"]),
+    .inspector-tabs[data-active-tab="memory"] > .inspector-section:not([data-inspector-section="memory"]) {
+      display: none;
+    }
+    .inspector-tab-strip > button:hover {
+      background: rgba(80,160,220,0.14) !important;
+      color: #d0e8ff !important;
+    }
+
     /* === DATA DISPLAY === */
+    /* v0.9.2-ui (F5) — flex children get min-width:0 so long Chinese labels +
+       multi-clause rate values can shrink/wrap instead of overflowing the
+       sidebar. flex-wrap fallback drops long values onto a second row at
+       narrow widths. Last child uses tabular-nums so resource numbers align
+       column-style across rows (Banished pattern). The hud-rate badges
+       still pack inline because they live INSIDE the value cell. */
     .kv {
       display: flex; justify-content: space-between; gap: 8px;
       margin-top: 3px; font-size: 12px;
+      flex-wrap: wrap;
+    }
+    .kv > * { min-width: 0; }
+    .kv > :last-child {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      max-width: 100%;
+      overflow-wrap: anywhere;
     }
     .bar {
       height: 6px; margin-top: 3px; border-radius: 999px;
@@ -1266,17 +1372,23 @@
     /* Positioned at bottom-left to avoid blocking the center game canvas.
        When the sidebar is open, the right edge is pushed left of the
        sidebar; when closed, it uses its own max-width. */
+    /* v0.9.2-ui (F3) — overlay grows with viewport (28vw envelope, 540 cap)
+       and gets a tall vertical envelope so worker / family / event lists
+       don't get silently chopped off. overflow:visible so the worker-list
+       drop shadow is not clipped on tall content; the body's own
+       overflow-y:auto carries scrolling when content actually exceeds. */
     #entityFocusOverlay {
       position: absolute; bottom: 50px; left: 8px;
-      width: min(300px, calc(50vw - 20px));
-      max-height: 230px;
+      width: clamp(300px, 28vw, 540px);
+      max-height: min(70vh, 720px);
       z-index: 12;
       border: 1px solid var(--panel-border);
       border-radius: 10px;
       background: var(--panel-bg);
       box-shadow: var(--panel-shadow);
       backdrop-filter: blur(8px);
-      overflow: hidden; color: var(--text);
+      color: var(--text);
+      display: flex; flex-direction: column;
     }
     /* When game is not active (pregame), keep entity focus hidden */
     #wrap:not(.game-active) #entityFocusOverlay { display: none; }
@@ -1288,26 +1400,40 @@
     }
     #entityFocusOverlay > summary::-webkit-details-marker { display: none; }
     #entityFocusOverlay[open] > summary { border-bottom-color: var(--divider); }
+    /* v0.9.2-ui (F3) — body fills the remaining height of the overlay envelope.
+       Inner max-height removed so the outer clamp() decides the cap; body
+       still scrolls when content exceeds. */
     #entityFocusBody {
-      max-height: min(50vh, 400px);
+      flex: 1 1 auto; min-height: 0;
       overflow-y: auto; overflow-x: hidden;
       padding: 8px 10px; font-size: 11px;
       line-height: 1.35; color: rgba(208,232,255,0.85);
     }
     /* Worker-list strip above the detail pane — cycles through all alive
-       workers for casual players. */
+       workers for casual players.
+       v0.9.2-ui (F3) — list cap raised so a tall overlay shows more rows
+       without scrolling; on small overlays the cap stays effective. */
     .entity-worker-list {
-      max-height: 140px;
+      max-height: clamp(140px, 28vh, 320px);
       overflow-y: auto;
       padding: 6px 8px;
       border-bottom: 1px solid var(--divider);
       display: flex;
       flex-direction: column;
       gap: 2px;
+      flex-shrink: 0;
     }
     .entity-worker-list:empty { display: none; }
+    /* v0.9.2-ui (F4) — flex row triplet with min-width:0 so each field
+       (name / role / state / hunger) shrinks individually rather than
+       overflowing the parent. Name takes priority and ellipsizes first;
+       role + state stay visible. Mirrored full text via title= so hover
+       reveals the unabridged row through the customTooltip MO at L3060. */
     .entity-worker-row {
-      display: block;
+      display: flex;
+      gap: 6px;
+      align-items: baseline;
+      min-width: 0;
       width: 100%;
       text-align: left;
       padding: 3px 6px;
@@ -1319,6 +1445,37 @@
       color: rgba(208,232,255,0.8);
       cursor: pointer;
       font-family: inherit;
+    }
+    .entity-worker-row > span { min-width: 0; }
+    .entity-worker-row > .ewr-name {
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+    .entity-worker-row > .ewr-role {
+      flex: 0 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0.78;
+    }
+    .entity-worker-row > .ewr-state {
+      flex: 0 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 0.78;
+    }
+    .entity-worker-row > .ewr-hunger {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      opacity: 0.85;
+    }
+    .entity-worker-row > .ewr-sep {
+      flex: 0 0 auto;
+      opacity: 0.4;
     }
     .entity-worker-row:hover {
       background: rgba(80,140,200,0.12);
@@ -1351,13 +1508,17 @@
       color: rgba(208,232,255,0.75);
     }
 
-    /* === DEV DOCK === */
+    /* === DEV DOCK ===
+       v0.9.2-ui (F12) — height becomes responsive (clamp(160, 24vh, 360))
+       so taller monitors get more telemetry. Grid is auto-fit so wide
+       monitors get wider cards. RimWorld debug-menu reference: tabbed
+       sub-windows, only the selected concern claims pixels. */
     #devDock {
       position: absolute; bottom: 0; left: 0; right: 0; z-index: 11;
       background: var(--panel-bg);
       border-top: 1px solid var(--panel-border);
       display: flex; flex-direction: column;
-      max-height: 200px;
+      max-height: clamp(160px, 24vh, 360px);
       backdrop-filter: blur(8px);
       pointer-events: auto;
       transition: opacity 0.2s ease;
@@ -1380,10 +1541,12 @@
     #devDockControls { display: flex; gap: 4px; }
     #devDockControls button { padding: 3px 6px; font-size: 10px; }
 
+    /* v0.9.2-ui (F12) — auto-fit columns (220px min) so wide monitors get
+       wider telemetry cards rather than 6×227px columns of `<pre>`. */
     #devDockGrid {
       flex: 1; min-height: 0;
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 6px; padding: 6px;
       overflow: hidden;
     }
@@ -1504,8 +1667,9 @@
     #ui > .switch:has(#compactToggle),
     #ui > .legend-bar { display: none; }
 
-    /* Sidebar-open state hides the alert stack from overlapping sidebar */
-    #wrap.sidebar-open #alertStack { right: 296px; }
+    /* Sidebar-open state hides the alert stack from overlapping sidebar.
+       v0.9.2-ui (F1) — track responsive sidebar width + 16px gutter. */
+    #wrap.sidebar-open #alertStack { right: calc(clamp(280px, 22vw, 460px) + 16px); }
 
     /* === SCROLLBAR STYLING === */
     .panel-body-scroll::-webkit-scrollbar,
@@ -1660,9 +1824,11 @@
       .hud-goal-chip:nth-child(n+4) { display: none !important; }
       #statusNextAction { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
     }
+    /* v0.9.2-ui (F6) — 1280px band keeps verbose chips visible (statusBar
+       now wraps to 2 rows instead of display:none-hiding). Score breakdown
+       is dev-only — left hidden on narrow viewports. */
     @media (max-width: 1280px) and (min-width: 1025px) {
-      #statusScenario { display: none !important; }
-      #statusNextAction { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+      #statusNextAction { max-width: clamp(160px, 22vw, 320px); }
       #statusScoreBreak { display: none !important; }
       .panel-toggle { font-size: 10px; padding: 3px 6px; }
     }
@@ -1976,7 +2142,11 @@
           <!-- #statusBuildHint surfaces BuildSystem.previewToolAt reasonText on
                invalid hover tiles. #statusAutopilotCrisis is the banner raised
                when FOOD_CRISIS_DETECTED auto-pauses the colony. -->
-          <span id="statusBuildHint" class="hud-build-hint" hidden style="color:#ffa35c;font-size:11px;padding:2px 6px;max-width:380px;overflow:hidden;text-overflow:ellipsis;"></span>
+          <!-- v0.9.2-ui (F11) — raise cap to clamp(380, 36vw, 720) and let
+               multi-clause reasons wrap (white-space:normal) instead of
+               ellipsizing. Banished reference: build cursor shows blocker
+               reason as a multiline floating tooltip near the cursor. -->
+          <span id="statusBuildHint" class="hud-build-hint" hidden style="color:#ffa35c;font-size:11px;padding:2px 6px;max-width:clamp(380px,36vw,720px);white-space:normal;overflow-wrap:anywhere;"></span>
           <span id="statusAutopilotCrisis" class="hud-autopilot-crisis" role="alert" hidden style="background:#5a1c1c;color:#ffc8c8;padding:4px 8px;font-size:12px;border-radius:4px;"></span>
           <span id="statusScoreBreak" class="hud-score-break dev-only" title="Survival score rules (per second / per birth / per death)" style="font-size:11px;opacity:0.7;"></span>
           <!-- Most-recent-death row. HUDController.render() populates

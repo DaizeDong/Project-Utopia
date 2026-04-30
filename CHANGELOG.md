@@ -1,5 +1,66 @@
 # Changelog
 
+## [Unreleased] - v0.9.2-ui — UI breathing room: kill truncation, surface tile data, drop forced shrinkage
+
+**Symptom reported (translated):** "目前的UI还可以有很大优化空间，很多地方都文本都显示不全，或者显示很少。你要参考优秀的设计，思考如何让美的各方的文本都显示全面，不要因为分辨率而被迫收缩" — text gets clipped at every chip, the EntityFocus + Inspector show too little, and the UI-Scale slider used CSS `zoom` so shrinking the UI made letters smaller without re-flowing the layout (the literal "被迫收缩" pain).
+
+This release lands all 15 findings from the v0.9.1 UI audit (`/tmp/utopia-ui-audit.md`), referencing the polished colony-sim families (RimWorld inspector tabs, Frostpunk responsive resource bar, Songs of Conquest scenario panel, Banished tile inspector, Dwarf Fortress edge-clamping tooltips).
+
+### Block 1 — pure CSS pass (highest ROI, lowest risk)
+
+- **F5 — `.kv` ergonomics** (`index.html:946-963`). Added `.kv > * { min-width: 0 }`, `.kv { flex-wrap: wrap }`, and `.kv > :last-child { font-variant-numeric: tabular-nums; text-align: right; max-width: 100%; overflow-wrap: anywhere }`. Closes the audit's "single highest-impact CSS change — fixes ~30% of all listed truncations" — long Chinese resource names now wrap to a second row instead of overflowing the sidebar; numeric values right-align in a tabular column (Banished pattern).
+- **F1 — Sidebar clamp** (`index.html:651-707`). Replaced `width: 280px` with `width: clamp(280px, 22vw, 460px)`, exposed `--sidebar-width` + `--sidebar-panel-width` custom properties so the collapsed-state translate stays in sync. Tracking changes: `#wrap.sidebar-open #statusBar { right: clamp(280px, 22vw, 460px) }`, `#alertStack` right offset uses `calc(... + 16px)`. BuildToolbar's tool grid switched to `repeat(auto-fit, minmax(96px, 1fr))` so it picks up extra width gracefully (2-col @ 280px, 3-4 col @ 1920px). At 1920px panel becomes ~422px wide; at 1366px stays at 300px floor.
+- **F3 — EntityFocus container responsive** (`index.html:1290-1330`). Outer changed to `width: clamp(300px, 28vw, 540px); max-height: min(70vh, 720px)`. Inner `max-height` removed; body uses `flex:1 1 auto; min-height:0; overflow-y:auto` so scrolling kicks in only when content exceeds. Outer drops `overflow:hidden` so worker-list shadow no longer clips on tall content. Worker-list cap raised to `clamp(140px, 28vh, 320px)` so tall overlays show more rows without scrolling.
+- **F4 — EntityFocus row ellipsis triplet** (`index.html:1340-1395`, `src/ui/panels/EntityFocusPanel.js:582-595`). `.entity-worker-row` is now `display:flex; gap:6px; align-items:baseline; min-width:0`. Each field (`name`, `role`, `state`, `hungerLabel`) wraps in its own `<span class="ewr-*">`; name has `flex:1` so it shrinks/ellipsizes first while role+state stay visible. Full row mirrored into `title=` so hover (via the existing `migrateTitles` MO at `index.html:3060`) reveals unabridged content.
+- **F6 — Status bar wrap** (`index.html:64-78`). Replaced `flex-wrap:nowrap; overflow:hidden` with `flex-wrap:wrap; row-gap:2px`. `height` became `min-height: var(--hud-height, 32px)` so the bar can grow to 2 rows on narrow viewports rather than ellipsize-and-hide chips. Dropped the 1280px `display:none !important` rules for `#statusScenario` and `#latestDeathRow` (Frostpunk reference: HUD always shows resource trends + latest event ribbon at 1366×768 by growing to two lines).
+- **F7 — `#statusAction` cap raised** (`index.html:135-150`). `max-width` raised to `clamp(420px, 38vw, 720px)`. Bottom offset uses `max(36px, calc(var(--entity-focus-height, 230px) + 8px))` so a multi-clause action toast no longer overlaps the EntityFocus overlay on small viewports.
+- **F8 — `#aiAutopilotChip` cap raised** (`index.html:122-130`). `max-width` raised from `180px` to `clamp(180px, 18vw, 320px)`; `white-space: normal` so "Manual control · next policy in 9.8s" is fully visible at 1366px instead of "Manual contro…".
+- **F9 — Scenario headline wrap** (`index.html:108-118`). `.hud-scenario` dropped the `-webkit-line-clamp:2` clamp; now `white-space:normal` + `max-width: clamp(280px, 32vw, 560px)`. The bar's flex-wrap (F6) lets it occupy a 2nd row when needed. Compact mode keeps a 1-line clamp via the existing rule.
+- **F11 — `#statusBuildHint` cap raised** (`index.html:2092`). Inline `max-width:380px` raised to `clamp(380px, 36vw, 720px)`; `white-space:normal; overflow-wrap:anywhere` lets a long blocker reason wrap onto multiple lines.
+- **F15 — `zoom` → rem-based scaling** (`index.html:30-58`, `src/app/GameApp.js:2216-2235`). The CSS `zoom: var(--utopia-ui-scale)` declarations (literal "被迫收缩") are removed. New flow: `html { font-size: calc(clamp(12px, 0.6vw + 0.55rem, 16px) * var(--utopia-font-scale, 1)) }` — viewport-fluid base from 12px (1366) to 16px (2560) — and the slider drives `--utopia-font-scale` (0.85-1.15× of the responsive base). `body` font-size becomes `0.92rem`. Layout now reflows when the player shrinks the UI; long Chinese strings get more pixels rather than fewer at 80% scale. RimWorld / Songs of Conquest reference: separate UI-Scale (typography) and World Zoom (canvas) sliders.
+
+### Block 2 — Inspector + EntityFocus content surfacing
+
+- **F2 — Inspector tabs** (`src/ui/panels/InspectorPanel.js`, `index.html:946-967`). Wrapped the inspector in 4 tabs (Terrain / Building / Path / Memory) so each concern owns the full sidebar width. A tab strip lives at the top of `#inspect`; each subsection is wrapped in `<div class="inspector-section" data-inspector-section="...">` and the active tab is gated via the `.inspector-tabs[data-active-tab="..."]` CSS rule. Active tab persisted to `localStorage["utopiaInspectorTab"]`. Each `<pre>` JSON dump (blackboard / policy / groupPolicy / memory / debug) is wrapped in `<details>` collapsed by default so the Memory tab no longer becomes a 600-line vertical waterfall the moment you click. RimWorld pattern: Bio / Health / Gear / Schedule / Social — width pressure is split across tabs.
+- **F13 — Surface tile data** (`src/ui/panels/InspectorPanel.js:347-379`). New "Terrain Data" subsection inside the Terrain tab always renders fertility / moisture / soilExhaustion / salinization / yieldPool with inline 0-1 bars; nodeFlags decoded into "FOREST, STONE, HERB"; fog state visible/discovered/unknown; wallHp shown for WALL/GATE with red tint <50%. Closes the audit's "显示很少" complaint — values that the simulation tracked but never surfaced are now visible on click.
+
+### Block 3 — Visual polish + dev hygiene
+
+- **F10 — Pressure label edge clamping** (`src/render/SceneRenderer.js:2380-2425`, `index.html:484-510`). After `el.style.display="block"`, measure `el.offsetWidth/offsetHeight`; nudge `left` to keep the label inside `[8, vpW-8]` and flip `transform` (`translate(-50%, 60%)`) when the top would be clipped above the canvas. Triangle anchor flips via `data-anchor="left|right|top|bottom|left-top|right-top"` CSS variants. Cities Skylines / Dwarf Fortress reference. ≤24 visible labels → one extra layout pass per frame, negligible cost.
+- **F14 — HUD trend triangles** (`src/ui/hud/HUDController.js:1395-1457`, `index.html:177-181`). Each resource chip number now appends ▲ rising / ▼ falling / · stable next to the value, colour-coded green/red/muted. Slim 2px hud-bar restored as ambient signal (was `display:none`); full breakdown mirrored into the parent chip's `title=` so hover via the data-tip MO shows "rate: ▲ +1.2/min". Frostpunk pattern: resource chips always show current + trend.
+- **F12 — Dev dock responsive** (`index.html:1390-1435`). `max-height: 200px` → `clamp(160px, 24vh, 360px)`; grid is `repeat(auto-fit, minmax(220px, 1fr))` so wide monitors get wider cards. RimWorld debug-menu reference.
+
+### Cross-cutting
+
+- **Tooltip wrapper convention**: `#aiAutopilotChip` already had `setAttribute("title", status.title)`; `.hud-storyteller` already gets title= from HUDController; `.entity-worker-row` now sets `title=` to the unabridged row content. All three previously missing surfaces are now title-mirrored.
+
+### Files changed
+
+- `index.html` — CSS pass: `.kv`, `#sidebar`, `#entityFocusOverlay`, `#statusBar`, `.hud-scenario`, `#aiAutopilotChip`, `#statusAction`, `#statusBuildHint`, `.entity-worker-row`, `#devDock` + `#devDockGrid`, slim hud-bar, inspector-tabs CSS, F15 html font-size and zoom removal, F10 pressure-label anchor flip variants, tool-grid auto-fit. ~ +95 / -25 LOC.
+- `src/ui/panels/InspectorPanel.js` — tabbed rendering, Terrain Data block (F13), Memory dumps wrapped in `<details>` (F2), tab click delegate + localStorage persistence. ~ +180 / -50 LOC.
+- `src/ui/panels/EntityFocusPanel.js` — worker-row span triplet (F4) + `title=` mirror. ~ +12 / -2 LOC.
+- `src/ui/hud/HUDController.js` — resource chip trend triangles + title mirroring (F14), hudStone/hudHerbs cached. ~ +50 / -8 LOC.
+- `src/render/SceneRenderer.js` — pressure-label viewport-edge clamp + anchor flip (F10). ~ +50 / 0 LOC.
+- `src/app/GameApp.js` — `--utopia-font-scale` derived from UI-Scale slider (F15). ~ +12 / -2 LOC.
+
+### Test suite delta
+
+**1654 tests pass / 0 fail / 3 skip** (matches v0.9.1-perf baseline). No tests pinned old truncation behaviour — the `.kv` ellipsis fix and the inspector tabbing keep all previously-asserted strings (`<b>Building</b>`, `<b>Processing</b>`, `<b>HP:</b>`) in `innerHTML` because every section is always emitted into the DOM (only `display:none` gates visibility per active tab). No test pinned absolute-pixel font sizes (`grep -n "font-size:" test/` returned nothing), so the F15 rem switch broke nothing.
+
+### Visual verification
+
+No Playwright / browser available in this environment; verification is **code-inspection only**. Risk note: F10's edge-clamp logic relies on `el.offsetWidth` being meaningful, which only happens after the label is `display:block`'d — the new code re-orders `display:block` BEFORE the measurement to guarantee a real layout pass. The tab-strip click delegate is bound once per InspectorPanel lifetime so re-renders don't accumulate listeners. The `--utopia-font-scale` value defaults to 1 when the slider hasn't been touched, so first-load layout matches v0.9.1.
+
+### Three most impactful fixes for the user's pain (judgment)
+
+1. **F15 (zoom → rem)** — the literal "被迫收缩" fix. The user's exact pain word now no longer applies; UI grows with viewport, slider re-flows layout instead of squashing pixels.
+2. **F2 + F13 (Inspector tabs + Terrain Data)** — closes the "显示很少" complaint by surfacing fertility/moisture/yieldPool/etc. that the sim tracked but never showed, AND splitting the dump across tabs so each concern owns the full sidebar width.
+3. **F5 (`.kv` ergonomics)** — single CSS rule that fixes ~30% of all reported truncations. Long Chinese resource names + multi-clause rate values can now wrap onto a 2nd row.
+
+### Punted
+
+None of the 15 audit findings were skipped — all 15 landed. The browser-based visual regression check was punted (no headless Chromium in this environment); risk noted above.
+
 ## [Unreleased] - v0.9.1-perf — Terrain property overlay InstancedMesh refactor
 
 **Symptom reported:** Opening property overlays (fertility / 肥沃度, elevation, connectivity, node depletion) was very laggy ("特别卡"). Confirmed root cause and fixed without lowering visual fidelity.
