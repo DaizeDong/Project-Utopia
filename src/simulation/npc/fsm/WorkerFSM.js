@@ -55,6 +55,8 @@ export class WorkerFSM {
       worker.fsm = {
         state: DEFAULT_STATE,
         enteredAtSec: Number(state?.metrics?.timeSec ?? 0),
+        target: null,
+        payload: undefined,
       };
       this._behavior[DEFAULT_STATE]?.onEnter?.(worker, state, services);
     }
@@ -79,6 +81,11 @@ export class WorkerFSM {
    * Internal: transition `worker.fsm.state` from its current value to
    * `newName`, firing onExit (old) → onEnter (new). Self-transitions
    * (oldName === newName) are no-ops and do NOT bump transitionCount.
+   *
+   * v0.10.0-b — `target` is cleared on every transition; the new state's
+   * onEnter rewrites it via worker.fsm.target = ... when the state needs a
+   * target tile. The `payload` field is also reset so per-state scratch
+   * doesn't leak across states.
    */
   _enterState(worker, state, services, newName) {
     const oldName = worker.fsm.state;
@@ -87,6 +94,8 @@ export class WorkerFSM {
     worker.fsm = {
       state: newName,
       enteredAtSec: Number(state?.metrics?.timeSec ?? 0),
+      target: null,
+      payload: undefined,
     };
     this._behavior[newName]?.onEnter?.(worker, state, services);
     this._stats.transitionCount += 1;

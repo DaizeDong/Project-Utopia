@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.10.0-b — Worker FSM state bodies + full transition table (still feature-flagged)
+
+Phase 2 of 5. All 14 STATE_BEHAVIOR entries populated; STATE_TRANSITIONS
+fully wired with priority-ordered conditions. Flag still default OFF;
+production unchanged.
+
+- WorkerConditions.js — ~18 named predicates (hungryAndFoodAvailable,
+  hostileInAggroRadiusForGuard, carryFull, arrivedAtFsmTarget, tooTired,
+  pathFailedRecently, harvestAvailableForRole, processInputDepleted,
+  yieldPoolDriedUp, etc.) reused across multiple state transitions.
+- WorkerStates.js — onEnter/tick/onExit ports of v0.9.4 Job tick bodies.
+  Reuses applyHarvestStep, pickWanderNearby, _consumeEmergencyRationForJobLayer,
+  chooseWorkerTarget, tryAcquirePath, handleDeliver, applyConstructionWork
+  from WorkerAISystem.js / JobHelpers.js / ConstructionSites.js (phase d
+  will dedupe imports as legacy retires; each delegating state body
+  carries a "TODO v0.10.0-d" comment for the inventory).
+- WorkerTransitions.js — 4 reusable transition rows (COMBAT_PREEMPT,
+  SURVIVAL_FOOD, SURVIVAL_REST, PATH_FAIL_FALLBACK) plus per-state-specific
+  transitions per plan §3.5 diagram. ~14 states × avg 4-5 transitions =
+  ~60 transition entries; helper rows mean ~17 unique conditions across all.
+- WorkerFSM._enterState now resets `target` and `payload` on every
+  transition (per phase-a's flagged item §1) so onEnter writes a fresh
+  target. worker.fsm shape extended to {state, enteredAtSec, target?, payload?}.
+- 20 new tests in test/v0.10.0-b-fsm-states.test.js cover state
+  initialization (14 smoke tests, one per state), transition firing
+  (HARVESTING preempts to SEEKING_FOOD when hungry), lifecycle hooks
+  (SEEKING_HARVEST onEnter→tryReserve, onExit→releaseAll), EATING
+  resource consumption, IDLE→SEEKING_HARVEST role-driven dispatch,
+  and 60-tick determinism.
+
+Phase 0.10.0-c re-runs the full A-G trace with USE_FSM=true to gate the
+flip; phase d flips and retires the v0.9.x Job layer.
+
 ## v0.10.0-a — Worker FSM foundation (feature-flagged, default OFF)
 
 Phase 1 of 5 in the worker-AI Priority FSM rewrite per
