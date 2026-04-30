@@ -176,11 +176,13 @@ test("v0.10.0-a #5: STATE enum has exactly 14 entries matching the plan", () => 
   for (const name of expected) {
     assert.equal(STATE[name], name, `STATE.${name} stringifies to "${name}"`);
   }
-  // STATE_BEHAVIOR / STATE_TRANSITIONS must cover every STATE.
+  // STATE_BEHAVIOR / STATE_TRANSITIONS must cover every STATE. Phase-b
+  // populates STATE_TRANSITIONS so we no longer assert empty lists; we
+  // only assert each list is a frozen array (potentially non-empty).
   for (const name of expected) {
     assert.ok(STATE_BEHAVIOR[name], `STATE_BEHAVIOR has entry for ${name}`);
     assert.ok(STATE_TRANSITIONS[name], `STATE_TRANSITIONS has entry for ${name}`);
-    assert.equal(STATE_TRANSITIONS[name].length, 0, `phase-a STATE_TRANSITIONS[${name}] is empty`);
+    assert.ok(Array.isArray(STATE_TRANSITIONS[name]), `STATE_TRANSITIONS[${name}] is an array`);
   }
   // STATE itself must be frozen.
   assert.ok(Object.isFrozen(STATE), "STATE is frozen");
