@@ -8,12 +8,15 @@
 // 0.10.0-d once states/transitions are populated and validated).
 //
 // Contract per §3.2:
-//   1. `worker.fsm = { state, enteredAtSec }` is the unique behaviour
-//      field. No `currentJob`, `stateLabel`, `blackboard.intent`, or
-//      `debug.lastIntent` synchronisation.
+//   1. `worker.fsm = { state, enteredAtSec, target, payload }` is the
+//      unique behaviour field. v0.10.0-e: the dispatcher also writes
+//      `worker.stateLabel` derived from DISPLAY_LABEL[fsm.state] (single
+//      source of truth for display); state bodies write `blackboard.intent`
+//      (semantic, distinct from the display label).
 //   2. Each tick: walk the current state's priority-ordered transition
 //      list. First `when()` that returns true wins; we enterState() and
 //      stop walking. Then we tick the (possibly new) current state.
+//      Finally we write `worker.stateLabel = DISPLAY_LABEL[fsm.state]`.
 //   3. enterState() fires onExit on the previous state and onEnter on
 //      the new one. The dispatcher is the only writer to worker.fsm.
 //
@@ -21,7 +24,7 @@
 // lives entirely in STATE_BEHAVIOR / STATE_TRANSITIONS — adding a new
 // state is a 3-method object + a row in the transitions table.
 
-import { STATE_BEHAVIOR } from "./WorkerStates.js";
+import { DISPLAY_LABEL, STATE_BEHAVIOR } from "./WorkerStates.js";
 import { STATE_TRANSITIONS } from "./WorkerTransitions.js";
 
 const DEFAULT_STATE = "IDLE";
@@ -75,6 +78,16 @@ export class WorkerFSM {
     const behavior = this._behavior[worker.fsm.state];
     behavior?.tick?.(worker, state, services, dt);
     this._stats.tickCount += 1;
+
+    // v0.10.0-e — single-write of `worker.stateLabel`. State bodies no
+    // longer write this field; the dispatcher derives it from
+    // `worker.fsm.state` here so the label is unambiguously sourced from
+    // the FSM. EntityFocusPanel / InspectorPanel / chronicle search logic
+    // still read `worker.stateLabel` directly. Falls back to the previous
+    // label if the state is somehow not in DISPLAY_LABEL (defensive — every
+    // STATE entry has a row).
+    const label = DISPLAY_LABEL[worker.fsm.state];
+    if (label !== undefined) worker.stateLabel = label;
   }
 
   /**

@@ -1,10 +1,10 @@
 // v0.10.0-b — Worker FSM state-behavior map. Phase 2 of 5 per
 // docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md §3.1.
 // Each state is a frozen { onEnter, tick, onExit } triple. State bodies port
-// v0.9.4 Job tick bodies via JobHelpers.js / WorkerAISystem.js helpers
-// (applyHarvestStep, handleDeliver, pickWanderNearby, etc.); phase 0.10.0-d
-// dedupes once the legacy Job layer retires. Each delegating state carries
-// a "TODO v0.10.0-d" comment listing the Job class to dedupe.
+// v0.9.4 Job tick bodies via WorkerAISystem.js helpers (applyHarvestStep,
+// handleDeliver, pickWanderNearby, etc.). v0.10.0-d retired the Job layer
+// itself; the helpers live in WorkerAISystem.js / WorkerHelpers.js and are
+// the only consumers.
 //
 // Hook signatures (§3.2): onEnter(worker, state, services),
 // tick(worker, state, services, dt), onExit(worker, state, services).
@@ -80,11 +80,48 @@ export const STATE = Object.freeze({
 
 // Shared helpers (private — inlined to keep state bodies ≤ ~40 LOC each).
 
-function setIntent(worker, label, intent) {
+// v0.10.0-e — single-source-of-truth display label. State bodies no longer
+// write `worker.stateLabel`; the dispatcher (WorkerFSM.tickWorker) reads
+// DISPLAY_LABEL[fsm.state] post-tick and writes it once. The setIntent
+// helper still writes `worker.blackboard.intent` because the intent string
+// (`"seek_food"`, `"harvest"`, …) carries semantics distinct from the
+// display label (e.g. SEEKING_HARVEST → label "Seek Task" vs intent
+// "harvest"). Centralising both writes in the dispatcher would mean
+// hard-coding "harvest" alongside "Seek Task" in DISPLAY_LABEL — but
+// EntityFocusPanel's search/grouping logic uses both fields independently,
+// so we keep `intent` per-state (still single-write per state body) and
+// hoist the label up to the dispatcher.
+function setIntent(worker, _label, intent) {
   worker.blackboard ??= {};
-  worker.stateLabel = label;
   worker.blackboard.intent = intent;
 }
+
+/**
+ * Display labels keyed by FSM state name. The dispatcher
+ * (WorkerFSM.tickWorker) reads from this map post-tick to set
+ * `worker.stateLabel`. Keep in sync with STATE_BEHAVIOR; new states added
+ * to STATE must add a label here too. Labels match the per-state-body
+ * strings used pre-v0.10.0-e for back-compat with EntityFocusPanel /
+ * inspector / chronicle search logic.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+export const DISPLAY_LABEL = Object.freeze({
+  IDLE: "Wander",
+  SEEKING_FOOD: "Seek Food",
+  EATING: "Eat",
+  SEEKING_REST: "Seek Rest",
+  RESTING: "Rest",
+  FIGHTING: "Engage",
+  SEEKING_HARVEST: "Seek Task",
+  HARVESTING: "Harvest",
+  DELIVERING: "Deliver",
+  DEPOSITING: "Deliver",
+  SEEKING_BUILD: "Seek Construct",
+  BUILDING: "Construct",
+  SEEKING_PROCESS: "Seek Process",
+  PROCESSING: "Process",
+});
 
 function syncTargetTile(worker) {
   const t = worker.fsm?.target;
@@ -118,7 +155,6 @@ const IDLE = Object.freeze({
     if (worker.fsm) worker.fsm.target = null;
     setIntent(worker, "Wander", "wander");
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobWander.tick).
   tick(worker, state, services, dt) {
     setIntent(worker, "Wander", "wander");
     worker.blackboard ??= {};
@@ -265,9 +301,11 @@ const EATING = Object.freeze({
   // each, drained the stockpile in 200 s, and the colony starved
   // (12 deaths in F vs −4 in baseline). The cooldown-gated emergency
   // ration matches the v0.9.4 yield-equivalent so deaths-in-F = baseline.
-  // TODO v0.10.0-d: revisit once Job layer is retired and real "at-
-  // warehouse" arrival semantics can be measured directly without the
-  // legacy display FSM noise.
+  // Deferred to v0.10.1+: revisit at-warehouse fast-eat semantics now
+  // the Job layer is retired (v0.10.0-d). The cooldown-gated path is
+  // yield-equivalent to v0.9.4 baseline; switching to fast-eat would
+  // require re-tuning the warehouse intake cap or workers stampede the
+  // stockpile (see scenario F regression noted in this comment).
   tick(worker, state, services, dt) {
     setIntent(worker, "Eat", "eat");
     setIdleDesired(worker);
@@ -314,7 +352,6 @@ const RESTING = Object.freeze({
   onEnter(worker, _state, _services) {
     setIntent(worker, "Rest", "rest");
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobRest.tick).
   tick(worker, _state, _services, dt) {
     setIntent(worker, "Rest", "rest");
     setIdleDesired(worker);
@@ -341,7 +378,6 @@ const FIGHTING = Object.freeze({
       };
     }
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobGuardEngage.engageNearestHostile).
   tick(worker, state, services, dt) {
     setIntent(worker, "Engage", "guard_engage");
     const target = findNearestHostile(worker, state);
@@ -597,7 +633,6 @@ const PROCESSING = Object.freeze({
   onEnter(worker, _state, _services) {
     setIntent(worker, "Process", "process");
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobProcessBase.tick at-target body).
   tick(worker, _state, _services, _dt) {
     setIntent(worker, "Process", "process");
     setIdleDesired(worker);

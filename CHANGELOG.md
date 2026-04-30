@@ -1,5 +1,91 @@
 # Changelog
 
+## v0.10.0-e — stateLabel single-write + integration audit + retrospective (2026-04-30)
+
+Phase 5 of 5 in the Priority-FSM rewrite, finalising v0.10.0.
+
+### `worker.stateLabel` collapsed to single-write at the dispatcher
+
+State bodies in `src/simulation/npc/fsm/WorkerStates.js` no longer write
+`worker.stateLabel`. Instead, `WorkerFSM.tickWorker` writes
+`worker.stateLabel = DISPLAY_LABEL[fsm.state]` once at the end of every
+tick (after the transition + state-body tick). The new `DISPLAY_LABEL`
+map (exported from `WorkerStates.js`) keys all 14 STATE entries to their
+display strings ("Wander" / "Seek Food" / "Eat" / etc.). The
+per-state-body `setIntent(worker, label, intent)` helper now writes only
+`worker.blackboard.intent` because the intent string carries semantics
+distinct from the display label (e.g. SEEKING_HARVEST → label "Seek
+Task" vs intent "harvest"); EntityFocusPanel's search/grouping logic
+uses both fields independently. Approach B (kept-field, single-write at
+dispatcher) was chosen over Approach A (full getter on the worker shape)
+because it carries no risk of breaking serialisation or test fixtures
+that set `stateLabel: "..."` directly.
+
+### Stale-Job-layer reference sweep
+
+- Dropped `currentJob: null` field from `EntityFactory.baseAgent` (the
+  v0.9.x JobScheduler chosen-Job pointer; FSM doesn't read it).
+- `WorkerStates.js` header comment updated: removed "phase 0.10.0-d
+  dedupes" forward-reference; the dedupe happened.
+- 5 stale `TODO v0.10.0-d` comments removed from `WorkerStates.js` /
+  `WorkerConditions.js` (dedupe targets retired with the Job layer).
+- `ReachabilityCache.js` / `PathFailBlacklist.js` "Architectural prep
+  for v0.9.0 Job-layer rewrite" headers updated to past-tense + point
+  at the FSM consumers that drive them today.
+- `WorkerAISystem.js` line-1564 comment updated: clarifies that the
+  legacy display planner's `worker.stateLabel` write is overwritten by
+  the FSM dispatcher on the same tick (kept only because
+  `transitionEntityState` has the side effect of updating
+  `entity.blackboard.fsm.state` for legacy UI consumers).
+
+### Documentation
+
+- `CLAUDE.md` Current State leads with v0.10.0; v0.9.0 entry preserved
+  as the predecessor with a "Superseded by v0.10.0" pointer.
+- New retrospective:
+  `docs/superpowers/plans/2026-04-30-fsm-rewrite-retrospective.md`.
+  Modelled on the v0.9.0 retrospective; covers phase-by-phase summary,
+  bugs caught between phases (3 trace-c iteration fixes + 3 phase-d
+  onEnter target leaks), what worked well, deferred items.
+
+### Integration audit results
+
+- **Behaviour-equivalence**: trace-parity test
+  `test/v0.10.0-c-fsm-trace-parity.test.js` re-run solo, all 5 hard
+  gates pass.
+- **Consumer audit**: SceneRenderer, EntityFocusPanel, MortalitySystem,
+  RoleAssignmentSystem all read worker state correctly post-FSM. The
+  legacy display FSM (`entity.blackboard.fsm.state`) still ticks for
+  WorldSummary / NPCBrainAnalytics / EntityFocusPanel's blackboard.fsm.path
+  display; cutting those over to read `worker.fsm.state` directly is a
+  v0.10.1+ task.
+- **Service audit**: ReachabilityCache, PathFailBlacklist, JobReservation
+  all wired into the FSM (via WorkerConditions + WorkerStates onEnter
+  bodies + WorkerHelpers).
+- **Test cleanup**: no Job-layer test files survive (4 retired in
+  phase d). Tests still referencing "hysteresis" / "deliver hysteresis"
+  in `worker-intent-stability.test.js` test the legacy display FSM's
+  StatePlanner — accurate for what they test (the parallel display
+  pipeline).
+- **Dead-code audit**: nothing orphan in `src/simulation/npc/fsm/`;
+  every export consumed by the FSM dispatcher or by tests.
+
+### Test-baseline delta
+
+| | post-v0.10.0-d | post-v0.10.0-e |
+|---|---|---|
+| pass | 1646 | 1646 |
+| fail | 0 | 0 |
+| skip | 2 | 2 |
+
+No behaviour change intended; consolidating writes is mechanically
+equivalent to the prior per-state-body writes.
+
+### Cumulative v0.10.0 LOC delta
+
+`26e23c3^..HEAD` across `src/` + `test/`: **+981 / -3511 = -2530 LOC**
+(plan target -1300; over-delivered 2.0×).
+
 ## v0.10.0-d — Worker FSM is the production worker dispatcher; v0.9.x Job layer retired (2026-04-29)
 
 Phase 4 of 5 in the Priority-FSM rewrite. `FEATURE_FLAGS.USE_FSM` default

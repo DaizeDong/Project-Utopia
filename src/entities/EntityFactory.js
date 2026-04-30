@@ -208,11 +208,11 @@ function baseAgent(id, type, x, z, displayName, random = Math.random) {
       // `?? nowSec` which makes stuckTime=0 until the first successful path.
       lastSuccessfulPathSec: null,
     },
-    // v0.10.0-d — currentJob retired with the v0.9.x JobScheduler. The
-    // FSM's `worker.fsm = { state, enteredAtSec, target, payload }` is
-    // the unique behaviour field. Field kept here as `null` for back-
-    // compat with serialised state snapshots.
-    currentJob: null,
+    // v0.10.0-e — `currentJob` (v0.9.x JobScheduler chosen-Job pointer)
+    // dropped from the worker shape. The FSM's `worker.fsm = { state,
+    // enteredAtSec, target, payload }` is the unique behaviour field; it
+    // is allocated lazily by `WorkerFSM.tickWorker` on first dispatcher
+    // pass.
     policy: null,
     alive: true,
     hp: 100,
