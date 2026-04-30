@@ -1,13 +1,14 @@
-// v0.9.0-b — Shared movement + tile primitives for the Job-layer.
+// v0.10.0-d — Worker FSM movement + tile primitives. Phase 4 of 5 in the
+// Priority-FSM rewrite per
+// docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
 //
-// Per the v0.9.0-b brief: import + re-export the existing helpers from
-// WorkerAISystem.js (now exported from there) rather than physically move
-// them. Phase d will move once the legacy handlers retire.
-//
-// Re-exports: chooseWorkerTarget, isAtTargetTile, setIdleDesired,
-// applyHarvestStep, pickWanderNearby.
-// Locally defined: executeMovement, arrivedAtTarget, tryAcquirePath,
-// releaseReservation, markBlacklist.
+// These helpers were previously co-located in
+// src/simulation/npc/jobs/JobHelpers.js (v0.9.0-b) and consumed by both the
+// Job layer and the FSM state bodies. v0.10.0-d retires the Job layer, so
+// the FSM-only helpers move here. The five WorkerAISystem.js helpers
+// (applyHarvestStep, chooseWorkerTarget, isAtTargetTile, pickWanderNearby,
+// setIdleDesired) are re-exported from WorkerAISystem.js directly by
+// importers — this file owns only the composite + reservation primitives.
 
 import {
   canAttemptPath,
@@ -20,14 +21,6 @@ import { getTile } from "../../../world/grid/Grid.js";
 import {
   isAtTargetTile as _isAtTargetTile,
   setIdleDesired as _setIdleDesired,
-} from "../WorkerAISystem.js";
-
-export {
-  applyHarvestStep,
-  chooseWorkerTarget,
-  isAtTargetTile,
-  pickWanderNearby,
-  setIdleDesired,
 } from "../WorkerAISystem.js";
 
 /** Composite: drive the worker along its active path or idle if none. */

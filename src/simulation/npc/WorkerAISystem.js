@@ -1,9 +1,9 @@
 ﻿import { BALANCE } from "../../config/balance.js";
-// v0.9.0-e — ANIMAL_KIND/VISITOR_KIND/FOG_STATE imports retired alongside
-// handleGuardCombat (moved into JobGuardEngage) and handleWander (moved
-// into JobWander). FEATURE_FLAGS still referenced in comments only; can be
-// removed once the audit-A4 blackboard rename lands in v0.9.1.
-import { EVENT_TYPE, FEATURE_FLAGS, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
+// v0.10.0-d — FEATURE_FLAGS no longer consulted at runtime in this file
+// (USE_FSM is the only flag and the FSM is now the only dispatcher); kept
+// here only because EVENT_TYPE / NODE_FLAGS / ROLE / TILE / TILE_INFO are
+// still consumed by helper bodies below.
+import { EVENT_TYPE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { releaseBuilderSite } from "../construction/ConstructionSites.js";
@@ -19,7 +19,6 @@ import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
 import { recordProductionEntry } from "../economy/ResourceSystem.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
-import { JobScheduler } from "./jobs/JobScheduler.js";
 import { WorkerFSM } from "./fsm/WorkerFSM.js";
 
 // v0.8.11 worker-AI bare-init responsiveness (Fix 5) — lower retarget
@@ -27,16 +26,14 @@ import { WorkerFSM } from "./fsm/WorkerFSM.js";
 // ~0.7-1.2s instead of ~1.2-1.9s. Reduces visible idle stalls.
 const TARGET_REFRESH_BASE_SEC = 0.7;
 const TARGET_REFRESH_JITTER_SEC = 0.5;
-// v0.9.0-e — WANDER_REFRESH_* constants moved to JobWander.js alongside the
-// rest of the wander cadence; WorkerAISystem no longer drives a wander loop.
+// v0.10.0-d — WANDER_REFRESH_* constants live in fsm/WorkerStates.js
+// alongside the IDLE state's wander loop; WorkerAISystem no longer drives
+// a wander cadence directly.
 const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
-// v0.9.0-d — TASK_LOCK_STATES retired. The Job-utility layer's
-// `JobScheduler` hysteresis (sticky bonus + decay; see JobScheduler.js)
-// now provides the "incumbent retains under +stickyBonus, but loses to
-// clearly-better alternative" behaviour that the old hard-lock set
-// (harvest/deliver/eat/process/seek_task/construct/seek_construct)
-// approximated bluntly. Removing the set deletes ~120 LOC of
-// commitmentCycle / survivalInterrupt arithmetic in update() (phase d).
+// v0.10.0-d — Job-utility scheduler retired. The Priority-FSM
+// (fsm/WorkerFSM.js) is the only worker dispatcher; v0.9.x's
+// TASK_LOCK_STATES + JobScheduler sticky-bonus hysteresis are subsumed by
+// FSM state-transition priorities (see WorkerTransitions.js).
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
 const WORKER_MEMORY_RECENT_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
@@ -204,10 +201,9 @@ function readOccupancyCount(map, key, worker) {
   return Math.max(0, count);
 }
 
-// v0.9.0-b — Job-layer hook: harvest Jobs reuse this exact utility scorer
-// so the Job-layer's findTarget yields the same tile picks as the legacy
-// handleHarvest path. No behaviour change while FEATURE_FLAGS.USE_JOB_LAYER
-// is OFF.
+// v0.10.0-d — Worker target-selection scorer. Used by the FSM SEEKING_*
+// state bodies to pick the next tile to walk to (same scorer that the
+// retired v0.9.x JobHarvestBase.findTarget consumed; behaviour preserved).
 export function chooseWorkerTarget(worker, state, targetTileTypes, occupancyCache = null, services = null) {
   const targetContext = state._workerTargetContext ?? buildWorkerTargetContext(state);
   const candidates = getWorkerTargetEntries(state, targetTileTypes, targetContext);
@@ -433,16 +429,17 @@ function addEmotionalPrefix(worker, state, text) {
   return text;
 }
 
-// v0.9.0-d — chooseWorkerIntent removed. The Job-utility scoring path
-// (src/simulation/npc/jobs/) is the single source of truth for worker
+// v0.10.0-d — chooseWorkerIntent + JobScheduler removed. The Priority-FSM
+// (src/simulation/npc/fsm/) is the single source of truth for worker
 // decisions. The legacy intent string ("eat" / "deliver" / "farm" / etc.)
-// is now derived from `worker.currentJob?.id` and surfaces via
-// `worker.debug.lastIntentReason` written by the JobScheduler dispatch
-// in update().
+// is derived from FSM state via `worker.blackboard.intent` (set by each
+// state body's onEnter / tick) and surfaced via `worker.debug.lastIntent`
+// in update() below.
 
 // v0.9.0-e — hasHiddenFrontier / findNearestHiddenTile deleted along with
-// handleWander. The fog-frontier wander bias has not been re-introduced as
-// a Job; if a future phase adds JobExploreFog, it will own that scan.
+// handleWander. v0.10.0-d — the fog-frontier wander bias has not been
+// re-introduced; if a future phase adds an EXPLORING_FOG state, it will
+// own that scan.
 
 function estimateNearestWarehouseDistance(worker, state) {
   if (!state?.grid || !Number.isFinite(worker?.x) || !Number.isFinite(worker?.z)) return 0;
@@ -519,15 +516,16 @@ function isTargetTileType(worker, state, targetTileTypes) {
   return targetTileTypes.includes(tile);
 }
 
-// v0.9.0-b — Job-layer hook: re-exported through JobHelpers.js so Jobs
-// share the same target-arrival predicate as legacy handlers.
+// v0.10.0-d — exported so the FSM SEEKING_* state bodies share the same
+// target-arrival predicate (used to be re-exported through JobHelpers.js).
 export function isAtTargetTile(worker, state) {
   if (!worker.targetTile) return false;
   const current = worldToTile(worker.x, worker.z, state.grid);
   return current.ix === worker.targetTile.ix && current.iz === worker.targetTile.iz;
 }
 
-// v0.9.0-b — Job-layer hook: see isAtTargetTile.
+// v0.10.0-d — exported for FSM state bodies (no movement intent on this
+// tick): see isAtTargetTile.
 export function setIdleDesired(worker) {
   if (!worker.desiredVel) {
     worker.desiredVel = { x: 0, z: 0 };
@@ -558,7 +556,7 @@ function getFarmEcologyYieldMultiplier(worker, state) {
   };
 }
 
-function consumeEmergencyRation(worker, state, dt, nowSec, services = null) {
+function _emergencyRationStep(worker, state, dt, nowSec, services = null) {
   const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
   const hungerNow = Number(worker.hunger ?? 0);
   if (hungerNow >= WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD) return;
@@ -617,13 +615,14 @@ function consumeEmergencyRation(worker, state, dt, nowSec, services = null) {
   worker.blackboard.emergencyRationCooldownSec = nowSec + WORKER_EMERGENCY_RATION_COOLDOWN_SEC;
 }
 
-// v0.9.0-c — JobEat falls through to consumeEmergencyRation when no
-// warehouse exists (or the worker is unreachable from one). Exposed via
-// a thin wrapper so the legacy handler retains its module-private nowSec
-// resolution.
-export function _consumeEmergencyRationForJobLayer(worker, state, dt, services = null) {
+// v0.10.0-d — Public entry point for the FSM EATING / SEEKING_FOOD states
+// (and IDLE wander branch when hunger crosses the seek threshold). Wraps
+// the module-private _emergencyRationStep with the standard nowSec lookup.
+// Renamed from _consumeEmergencyRationForJobLayer when the Job layer
+// retired in v0.10.0-d.
+export function consumeEmergencyRation(worker, state, dt, services = null) {
   const nowSec = Number(state?.metrics?.timeSec ?? 0);
-  consumeEmergencyRation(worker, state, dt, nowSec, services);
+  _emergencyRationStep(worker, state, dt, nowSec, services);
 }
 
 function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
@@ -669,16 +668,17 @@ function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   return hasActivePath(worker, state) || isAtTargetTile(worker, state);
 }
 
-// v0.9.0-e — handleGuardCombat / handleEat deleted. JobGuardEngage and
-// JobEat inline the bodies (engageNearestHostile + at-warehouse eat). The
-// legacy GUARD short-circuit at the top of WorkerAISystem.update was retired
-// in phase d; the JobScheduler routes GUARDs through JobGuardEngage at
-// priority 100.
+// v0.10.0-d — Legacy handleGuardCombat / handleEat / Job classes have all
+// been retired. Engage logic + at-warehouse eat live inline in the FSM
+// FIGHTING / EATING state bodies. The legacy GUARD short-circuit at the
+// top of WorkerAISystem.update was retired in v0.9.0-d; FSM
+// FIGHTING transitions priority=0 from every state when a hostile is in
+// aggro range.
 
-// v0.9.0-e KEPT: handleDeliver is exercised by warehouse-queue.test.js as a
-// yield-equivalence harness (drives unloads at a stationary worker without
-// running the full WorkerAISystem.update path). JobDeliverWarehouse inlines
-// the same body via this export.
+// v0.10.0-d KEPT: handleDeliver is exercised by warehouse-queue.test.js as
+// a yield-equivalence harness (drives unloads at a stationary worker
+// without running the full WorkerAISystem.update path) and the FSM
+// DEPOSITING state inlines the same body via this export.
 export function handleDeliver(worker, state, services, dt) {
   const carryTotal = Number(worker.carry?.food ?? 0) + Number(worker.carry?.wood ?? 0) + Number(worker.carry?.stone ?? 0) + Number(worker.carry?.herbs ?? 0);
   if (carryTotal <= 0 || Number(state.buildings?.warehouses ?? 0) <= 0) {
@@ -807,16 +807,16 @@ export function handleHarvest(worker, state, services, dt) {
   }
 
   if (!isAtTargetTile(worker, state)) return;
-  // v0.9.0-b — extracted body. Both the legacy handler and the Job-layer
-  // (JobHarvestFarm/Lumber/Quarry/Herb) call applyHarvestStep so the
-  // yield-pool / soil-salinization / fertility-drain / telemetry semantics
-  // remain in a single place. Resource is auto-resolved from the tile the
-  // worker is standing on (HAUL handling preserved).
+  // v0.10.0-d — extracted body. The FSM HARVESTING state body calls
+  // applyHarvestStep so the yield-pool / soil-salinization / fertility-
+  // drain / telemetry semantics remain in a single place. Resource is
+  // auto-resolved from the tile the worker is standing on (HAUL handling
+  // preserved).
   applyHarvestStep(worker, state, services, dt);
 }
 
-// v0.9.0-b — Shared harvest mechanic used by both the legacy handleHarvest
-// dispatch and the Job-layer's JobHarvestFarm/Lumber/Quarry/Herb tick.
+// v0.10.0-d — Shared harvest mechanic used by the FSM HARVESTING state
+// body (and by the legacy handleHarvest export for warehouse-queue test).
 //
 // Preconditions: worker has arrived at a valid target tile of the correct
 // type (caller verifies via isAtTargetTile). Performs one tick of the
@@ -829,9 +829,8 @@ export function handleHarvest(worker, state, services, dt) {
 //   - fertility drain (FARM/HERBS/LUMBER)
 //   - production telemetry recording (idle-reason inference)
 //
-// `tileType` and `resourceKey` are optional overrides for the Job-layer;
-// when omitted, both are resolved from the tile under worker.targetTile,
-// matching the legacy HAUL handling.
+// `tileType` and `resourceKey` are optional overrides; when omitted, both
+// are resolved from the tile under worker.targetTile (HAUL preserved).
 export function applyHarvestStep(worker, state, services, dt, tileTypeOverride = null, resourceKeyOverride = null) {
   if (!worker?.targetTile) return;
   const toolMultiplier = Number(state.gameplay?.toolProductionMultiplier ?? 1);
@@ -840,10 +839,10 @@ export function applyHarvestStep(worker, state, services, dt, tileTypeOverride =
   const logistics = state._logisticsSystem;
   const logisticsBonus = (logistics && worker.targetTile)
     ? logistics.getEfficiency(worker.targetTile.ix, worker.targetTile.iz) : 1.0;
-  // Resolve tile + role for this harvest step. The Job-layer passes explicit
-  // overrides (its findTarget already constrained the tile type); the legacy
-  // path resolves from the tile under worker.targetTile and HAUL→specific
-  // role. Both arrive at the same effectiveRole.
+  // Resolve tile + role for this harvest step. Callers may pass explicit
+  // overrides (constrained tile type from FSM SEEKING_HARVEST.onEnter);
+  // otherwise we resolve from the tile under worker.targetTile and
+  // HAUL→specific role. Both arrive at the same effectiveRole.
   const tileAtTarget = tileTypeOverride
     ?? getTile(state.grid, worker.targetTile.ix, worker.targetTile.iz);
   let effectiveRole = worker.role;
@@ -1092,9 +1091,9 @@ function neighborWorkerCount(map, ix, iz) {
   return n;
 }
 
-// v0.9.0-a — exported so the Job layer's JobWander can reuse the same
-// terminal-floor target-finder without a fork. WorkerAISystem.handleWander
-// continues to call this directly when FEATURE_FLAGS.USE_JOB_LAYER is OFF.
+// v0.10.0-d — wander-target picker exported for the FSM IDLE state's
+// wander loop. (v0.9.x's JobWander shared this picker before the Job
+// layer retired.)
 export function pickWanderNearby(worker, state, services) {
   const grid = state.grid;
   if (!grid) return null;
@@ -1222,13 +1221,10 @@ export class WorkerAISystem {
     this.socialNeighborBuffer = [];
     this.relationshipNeighborBuffer = [];
     this.highLoadStride = 1;
-    // v0.9.0-a — JobScheduler is lazily allocated only when
-    // FEATURE_FLAGS.USE_JOB_LAYER fires for the first time. Production
-    // (flag OFF) never instantiates it; tests assert this.
-    this._jobScheduler = null;
-    // v0.10.0-a — WorkerFSM is lazily allocated only when
-    // FEATURE_FLAGS.USE_FSM fires for the first time. Default OFF in
-    // phase a; production never instantiates it. See
+    // v0.10.0-d — Single dispatcher: WorkerFSM. Lazily allocated on the
+    // first update() call so test harnesses that never tick the system
+    // pay nothing. Replaced the v0.9.x dual-allocator (JobScheduler +
+    // WorkerFSM) when the Job layer retired. See
     // docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
     this._workerFSM = null;
   }
@@ -1328,13 +1324,11 @@ export class WorkerAISystem {
           continue;
         }
 
-        // v0.9.0-d — GUARD pre-emption short-circuit removed. GUARD-role
-        // workers route through JobScheduler; JobGuardEngage (priority 100)
-        // preempts every other Job when a predator/saboteur is in aggro
-        // range. When no target is in range, JobGuardEngage's score drops
-        // and the wander/eat/rest Jobs surface naturally. The handleGuard*
-        // delegate functions still exist (Jobs call them); phase 0.9.0-e
-        // dedupes.
+        // v0.10.0-d — GUARD pre-emption is owned by the FSM transition
+        // table: every state has FIGHTING at priority 0 (highest) when
+        // findNearestHostile() returns non-null in aggro range. Outside
+        // aggro range, GUARDs flow through SEEKING_HARVEST / IDLE /
+        // wander naturally via role-based transitions.
 
       worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
       // v0.8.3 worker-vs-raider combat — tick worker attack cooldown so the
@@ -1567,15 +1561,14 @@ export class WorkerAISystem {
 
       const nowSec = Number(state.metrics.timeSec ?? 0);
 
-      // v0.9.0-d — display-layer FSM tracking. Per the new contract, "Jobs
-      // determine action, FSM is display-layer." We still call the planner
-      // + transitionEntityState so the FSM history (`blackboard.fsm.state`,
-      // `lastStateNode`) keeps populating for telemetry / EntityFocusPanel /
-      // existing tests. The result does NOT gate worker behaviour — Jobs do.
-      // The legacy commitmentCycle / TASK_LOCK_STATES / survivalInterrupt /
-      // deliverStuckReplan arithmetic + the v0.8.12 F2/F12 escape branches
-      // were retired here in v0.9.0-d (~250 LOC); the JobScheduler's
-      // sticky-bonus hysteresis subsumes them.
+      // v0.10.0-d — display-layer planner kept as a parallel telemetry
+      // pipeline. The planner + transitionEntityState populate
+      // `blackboard.intent`, `worker.stateLabel`, `lastStateNode` for
+      // EntityFocusPanel / chronicle / existing display tests; they no
+      // longer gate worker behaviour (the FSM dispatcher below does).
+      // The Priority-FSM state bodies overwrite `stateLabel` / `intent`
+      // immediately after, so the planner's output is the legacy fallback
+      // when an FSM tick path doesn't override.
       const plan = planEntityDesiredState(worker, state, {}, services);
       worker.blackboard.lastPlanSec = nowSec;
       const stateNode = transitionEntityState(
@@ -1602,37 +1595,22 @@ export class WorkerAISystem {
         : stateNode;
       worker.debug.lastStateNode = stateNode;
 
-      // v0.9.0-d — Job layer is now the production path. JobScheduler.tickWorker
-      // re-scores all eligible Jobs every tick with sticky-bonus hysteresis on
-      // the incumbent (see JobScheduler.js). The Job's tick() method overwrites
-      // `worker.stateLabel`, `worker.blackboard.intent`, and drives the
-      // delegate handle* function. The FSM transition above is preserved for
-      // telemetry but no longer gates behaviour. Phase 0.9.0-e dedupes
-      // handle* functions where Jobs duplicate logic.
-      //
-      // v0.10.0-a — Priority-FSM dispatcher is gated behind
-      // FEATURE_FLAGS.USE_FSM (default OFF). When the flag is ON,
-      // WorkerFSM.tickWorker replaces JobScheduler entirely. Phase a
-      // ships only the dispatcher + skeletal STATE_BEHAVIOR /
-      // STATE_TRANSITIONS (every state stubs to no-op, every transition
-      // list is empty), so flipping the flag in tests pins workers in
-      // IDLE forever — exactly what the phase-a contract requires.
-      // Phase b populates state bodies; phase d flips the default ON.
-      if (FEATURE_FLAGS.USE_FSM) {
-        this._workerFSM ??= new WorkerFSM();
-        this._workerFSM.tickWorker(worker, state, services, dt);
-      } else {
-        this._jobScheduler ??= new JobScheduler();
-        this._jobScheduler.tickWorker(worker, state, services, dt);
-      }
+      // v0.10.0-d — Priority-FSM is the only worker dispatcher. The
+      // v0.9.x JobScheduler (utility scoring + sticky-bonus hysteresis)
+      // was retired here; FSM state-transition priorities + per-state
+      // onEnter target selection subsume the entire Job-layer surface.
+      // FEATURE_FLAGS.USE_FSM is queryable for trace-parity tests but
+      // production code unconditionally instantiates the FSM.
+      this._workerFSM ??= new WorkerFSM();
+      this._workerFSM.tickWorker(worker, state, services, dt);
 
-      // Backward-compat: surface the chosen Job in the legacy debug field
-      // EntityFocusPanel reads. lastIntentReason is populated by individual
-      // handle* functions (GUARD branches still write it; harvest delegate
-      // does too).
-      const jobId = worker.currentJob?.id;
-      if (jobId) {
-        worker.debug.lastIntent = jobId;
+      // Backward-compat: surface the FSM state name in the legacy
+      // `worker.debug.lastIntent` field that EntityFocusPanel reads.
+      // The FSM state bodies write `worker.blackboard.intent` directly;
+      // this just mirrors that into the debug surface.
+      const fsmIntent = worker.blackboard?.intent;
+      if (fsmIntent) {
+        worker.debug.lastIntent = fsmIntent;
       }
 
       // Emit resting event on state transition (legacy parity).

@@ -1,5 +1,96 @@
 # Changelog
 
+## v0.10.0-d — Worker FSM is the production worker dispatcher; v0.9.x Job layer retired (2026-04-29)
+
+Phase 4 of 5 in the Priority-FSM rewrite. `FEATURE_FLAGS.USE_FSM` default
+flipped from `false` → `true` and `FEATURE_FLAGS.USE_JOB_LAYER` removed
+entirely. The v0.9.x Job-utility scheduler + 13 Job classes + JobRegistry
++ JobHelpers are deleted. WorkerAISystem.update unconditionally
+instantiates `WorkerFSM` and routes every non-stress worker through
+`WorkerFSM.tickWorker` — the single source of truth for "what should
+this worker do this tick".
+
+### Code delta
+
+- **3513 LOC deleted** across 19 jobs/* files + 4 retired test files
+  (`job-extended`, `job-harvest`, `job-layer-foundation`,
+  `v0.9.4-starvation`) + the JobScheduler-canTake section of
+  `phase1-resource-chains.test.js` + the JobReservation/JobHarvest
+  primitive blocks of `v0.9.3-balance.test.js`.
+- **216 LOC added**: 77 in the new `src/simulation/npc/fsm/WorkerHelpers.js`
+  (composite movement + reservation primitives migrated out of the
+  retired `jobs/JobHelpers.js`); the rest are dispatch comment rewrites,
+  `consumeEmergencyRation` rename (was `_consumeEmergencyRationForJobLayer`),
+  and 3 small FSM state-body fixes.
+- **Net −3297 LOC** (plan target was −1500; over-delivered by 2.2×
+  because the JobReservation/JobHarvest primitive tests were duplicated
+  by `test/job-reservation.test.js` and the v0.9.x mid-phase audit-A4
+  cleanup had been deferred).
+
+### FSM state-body fixes shaken out by the flip
+
+When phase c validated trace-parity with USE_FSM=true, three latent FSM
+bugs were masked because phase c's harness never asserted on
+"BUILDER completes a building" or "single-tick harvest yield". Flipping
+the default exposed them via `test/construction-in-progress.test.js`,
+`test/animal-ecology.test.js`, and `test/worker-delivery-throughput.test.js`:
+
+1. **`HARVESTING.onEnter` did not lift `worker.targetTile` into
+   `worker.fsm.target`.** The dispatcher resets `fsm.target=null` on
+   every transition (deliberate per WorkerFSM `_enterState`), so
+   HARVESTING.tick's `if (!t) return;` early-exited every tick after
+   `SEEKING_HARVEST → HARVESTING`. Yield was zero. Fix: HARVESTING.onEnter
+   now copies `worker.targetTile` into `worker.fsm.target` before
+   reserving via `tryReserve`.
+2. **`BUILDING.onEnter` did not refetch the builder site target.**
+   Same root cause; BUILDING.tick's `if (!t) return;` skipped
+   `applyConstructionWork` indefinitely. Fix: BUILDING.onEnter calls
+   `findOrReserveBuilderSite` (idempotent — the site already holds the
+   `builderId` reservation from SEEKING_BUILD.onEnter) and writes the
+   site coords into `worker.fsm.target`.
+3. **`DEPOSITING.onEnter` left `fsm.target=null`.** `handleDeliver`
+   reads from `worker.targetTile` so unloads still happened, but the
+   intent invariant (every state body should be able to read its own
+   `fsm.target`) was violated. Fix: lift `worker.targetTile` into
+   `fsm.target` in `DEPOSITING.onEnter`.
+
+### Helper rename + flag retirement
+
+- `_consumeEmergencyRationForJobLayer` → `consumeEmergencyRation`
+  (publicly exported for FSM SEEKING_FOOD / EATING / IDLE state bodies).
+- `FEATURE_FLAGS.USE_JOB_LAYER` deleted; `USE_FSM` is the only flag
+  surface. `_testSetFeatureFlag("USE_FSM", false)` still toggles for
+  trace-parity self-comparison harnesses.
+- `WorkerAISystem.update`'s conditional dispatch (`if USE_FSM ... else
+  JobScheduler ...`) collapsed to an unconditional FSM call.
+  Constructor's `_jobScheduler = null` field deleted.
+
+### Trace re-validation
+
+`test/v0.10.0-c-fsm-trace-parity.test.js` re-runs all 5 phase-c gates
+post-flip — all pass. Because `_testSetFeatureFlag("USE_FSM", false)`
+no longer routes anywhere different (the JobScheduler is gone), the
+"baseline" and "fsm" branches of each test now both execute the FSM
+dispatcher; the assertions still hold trivially (self-consistency)
+plus exercise the harness against the freshly-flipped production path.
+
+### Test-baseline delta
+
+| | v0.9.0 retro baseline | post-v0.10.0-d |
+|---|---|---|
+| pass | 1654 | 1646 |
+| fail | 0 | 0 |
+| skip | 3 | 2 |
+
+Net pass count drop is 8: 4 retired test files contributed roughly
+1308 assertions (`job-extended.test.js` 15 tests; `job-harvest.test.js`
+10 tests; `job-layer-foundation.test.js` 8 tests; `v0.9.4-starvation.test.js`
+6 tests = 39 retired test functions). The `phase1-resource-chains`
+"Worker intent / Job-eligibility" block dropped 6 more, and
+`v0.9.3-balance` dropped 9. Total 54 retired sub-tests; offset by ~46
+gained from the iteration coverage that survived. Skip count dropped
+1 (one of the v0.9.0 deferred items rolled forward).
+
 ## v0.10.0-c — Worker FSM trace-parity validation (still feature-flagged)
 
 Phase 3 of 5. Full A-G architectural trace re-run with

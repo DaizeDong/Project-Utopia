@@ -188,39 +188,28 @@ export const SYSTEM_ORDER = Object.freeze([
 
 // v0.9.0-a — Feature flags. Object.freeze with a getter so the surface is
 // immutable but `_testSetFeatureFlag` can flip the underlying state for
-// test isolation. Production code reads `FEATURE_FLAGS.USE_JOB_LAYER`
-// exactly like a static frozen field; tests call `_testSetFeatureFlag`
-// from this module only (NOT exported anywhere else).
+// test isolation. Production code reads `FEATURE_FLAGS.USE_FSM` exactly
+// like a static frozen field; tests call `_testSetFeatureFlag` from this
+// module only (NOT exported anywhere else).
 //
-// USE_JOB_LAYER — Phase 4 of 5 in the v0.9.0 Job-layer rewrite. v0.9.0-d
-// flipped this default ON after harvest/deliver/eat/build/rest/process/guard
-// Jobs were ported (phases a/b/c) and validated against the trace harness.
-// WorkerAISystem.update routes worker decisions through
-// src/simulation/npc/jobs/JobScheduler. The legacy chooseWorkerIntent +
-// commitmentCycle / TASK_LOCK_STATES dispatch was removed in v0.9.0-d.
-// The flag remains queryable so a follow-up phase can compare layers, but
-// no production code path depends on `false` any more — tests that set it
-// false simulate an empty/no-op path. Phase 0.9.0-e is the tuning pass.
-let _useJobLayer = true;
-
-// USE_FSM — v0.10.0-a — Worker FSM rewrite. Default OFF until phase
-// 0.10.0-d. Phase 1 of 5 lands the FSM dispatcher infrastructure
-// (WorkerFSM + skeletal STATE_BEHAVIOR/STATE_TRANSITIONS) behind this
-// flag with zero behaviour change. WorkerAISystem only routes through
-// WorkerFSM when USE_FSM is true; production stays on the v0.9.4 Job-
-// layer path. Phase b populates state bodies, phase c validates via
-// trace, phase d flips the default ON, phase e retires the Job layer.
+// USE_FSM — v0.10.0-a/d — Worker FSM rewrite (Priority FSM, replaces the
+// v0.9.x Job-utility scheduler). Phase a/b shipped the dispatcher +
+// state bodies behind this flag (default OFF). Phase c validated trace
+// parity across 7 scenarios A-G. v0.10.0-d flipped the default to true
+// and retired the Job layer entirely (JobScheduler + 13 Job classes +
+// JobRegistry + JobHelpers ~1700 LOC deleted). The flag remains
+// queryable so trace-parity tests can flip it for self-comparison; no
+// production code path depends on `false` any more (the v0.9.x
+// JobScheduler that `false` previously routed to has been deleted).
 // See docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
-let _useFsm = false;
+let _useFsm = true;
 
 export const FEATURE_FLAGS = Object.freeze({
-  get USE_JOB_LAYER() { return _useJobLayer; },
   get USE_FSM() { return _useFsm; },
 });
 
 // Test-only setter. Do NOT call from production code paths.
 // Restores the flag to its default in afterEach hooks to keep tests isolated.
 export function _testSetFeatureFlag(name, value) {
-  if (name === "USE_JOB_LAYER") _useJobLayer = Boolean(value);
   if (name === "USE_FSM") _useFsm = Boolean(value);
 }
