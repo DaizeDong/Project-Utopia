@@ -721,29 +721,23 @@ export class EntityFocusPanel {
     }
   }
 
+  // v0.10.1-e — terse one-liner. Was a multi-clause prose explanation;
+  // the player can hover for details if they want the long-form text.
   #buildAiImpact(entity, groupPolicy) {
-    if (!groupPolicy) return "No active group policy.";
+    if (!groupPolicy) return "no group policy";
     const group = entity.groupId ?? "";
     if (group === "workers") {
       const farmW = Number(groupPolicy.intentWeights?.farm ?? 0);
       const woodW = Number(groupPolicy.intentWeights?.wood ?? 0);
       const sum = farmW + woodW;
       if (sum > 0) {
-        const farmRatio = farmW / sum;
-        return `Worker policy biases FARM ratio to ${fmtNum(farmRatio * 100, 1)}% (farm=${fmtNum(farmW)} wood=${fmtNum(woodW)}).`;
+        return `FARM ${fmtNum(farmW / sum * 100, 0)}% (${fmtNum(farmW, 1)}/${fmtNum(woodW, 1)})`;
       }
-      return "Worker policy has no farm/wood bias.";
+      return "no farm/wood bias";
     }
-    if (group === "traders") {
-      const trade = Number(groupPolicy.intentWeights?.trade ?? 0);
-      return `Trader trade weight=${fmtNum(trade)}; higher value increases warehouse-focused behavior.`;
-    }
-    if (group === "saboteurs") {
-      const sabotage = Number(groupPolicy.intentWeights?.sabotage ?? 0);
-      return `Saboteur sabotage weight=${fmtNum(sabotage)}; higher value increases sabotage pressure.`;
-    }
-    const topIntent = summarizeTopWeights(groupPolicy.intentWeights ?? {});
-    return `Top intents: ${topIntent}`;
+    if (group === "traders") return `trade ${fmtNum(Number(groupPolicy.intentWeights?.trade ?? 0))}`;
+    if (group === "saboteurs") return `sabotage ${fmtNum(Number(groupPolicy.intentWeights?.sabotage ?? 0))}`;
+    return summarizeTopWeights(groupPolicy.intentWeights ?? {});
   }
 
   render() {
@@ -917,13 +911,14 @@ export class EntityFocusPanel {
     // BEFORE the engineering block (FSM/policy/path) so casual-profile users
     // still see the narrative first; the `<details>` wrapper lets power
     // users collapse it alongside everything else.
-    // v0.8.2 Round-7 (01e+02b) — trait descriptions and grief notice.
+    // v0.10.1-e — trait labels only; descriptions moved to title= tooltip
+    // so the panel no longer wastes a line on "(extra survival margin in
+    // crises)" prose. Hover the tag to see the explanation.
     const traitsText = Array.isArray(entity.traits) && entity.traits.length > 0
       ? entity.traits.map((t) => {
           const desc = TRAIT_DESC[t];
-          return desc
-            ? `<span class="trait-tag">${escapeHtml(t)}<span class="trait-desc"> (${escapeHtml(desc)})</span></span>`
-            : `<span class="trait-tag">${escapeHtml(t)}</span>`;
+          const titleAttr = desc ? ` title="${escapeHtml(desc)}"` : "";
+          return `<span class="trait-tag"${titleAttr}>${escapeHtml(t)}</span>`;
         }).join(", ")
       : "(none)";
     // Grief notice: rendered in character block header when grief is active.
@@ -1018,16 +1013,26 @@ export class EntityFocusPanel {
       }
       familyLine = `<div class="small"><b>Family:</b> ${segs.join(" \u00B7 ")}</div>`;
     }
+    // v0.10.1-e — only render "Relationships" / "Recent Memory" when they
+    // actually contain content. Empty placeholders ("(no relationships
+    // yet)" / "(no memories yet)") were dominating the panel for fresh
+    // workers with no history. Same for the family chip block (already
+    // gated above).
+    const relationsBlock = topRelations.length > 0
+      ? `<div class="small"><b>Relationships:</b> ${relationsLine}</div>`
+      : "";
+    const memoryBlock = recentMemories.length > 0
+      ? `<div class="small" style="margin-top:4px;"><b>${memorySourceLabel}:</b></div>${memoryLines}`
+      : "";
     const characterBlock = `
       <details data-focus-key="focus:character" style="margin-top:6px;">
         <summary class="small"><b>Character</b></summary>
         ${griefNotice}
         <div class="small" style="margin-top:4px;"><b>Traits:</b> ${traitsText}</div>
         ${hasCharacterStats ? `<div class="small"><b>Mood:</b> ${fmtNum(moodN, 2)} | <b>Morale:</b> ${fmtNum(moraleN, 2)} | <b>Social:</b> ${fmtNum(socialN, 2)} | <b>Rest:</b> ${fmtNum(restN, 2)}</div>` : ""}
-        <div class="small"><b>Relationships:</b> ${relationsLine}</div>
+        ${relationsBlock}
         ${familyLine}
-        <div class="small" style="margin-top:4px;"><b>${memorySourceLabel}:</b></div>
-        ${memoryLines}
+        ${memoryBlock}
       </details>
     `;
 
@@ -1038,13 +1043,17 @@ export class EntityFocusPanel {
     // previously could not see. FSM / Policy Influence / Decision Time /
     // Velocity / Path / Target Selection / Path Nodes / AI Exchange remain
     // dev-only.
+    // v0.10.1-e — Why block: <b>Bias</b> label + terse aiImpact, dropped
+    // the standalone unlabeled paragraph. Decision Context only renders
+    // when there's actually content (was always rendering "none").
+    const decisionContextText = entityInsights.join(" | ");
     const whyBlock = `
       <details data-focus-key="focus:why" style="margin-top:6px;">
         <summary class="small"><b>Why is this worker doing this?</b></summary>
         <div class="small" style="margin-top:4px;"><b>Top Intents:</b> ${escapeHtml(topIntent)}</div>
         <div class="small"><b>Top Targets:</b> ${escapeHtml(topTargets)}</div>
-        <div class="small" style="margin-top:4px;">${escapeHtml(aiImpact)}</div>
-        <div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(entityInsights.join(" | ") || "none")}</div>
+        <div class="small"><b>Bias:</b> ${escapeHtml(aiImpact)}</div>
+        ${decisionContextText ? `<div class="small" style="margin-top:4px;"><b>Decision Context:</b> ${escapeHtml(decisionContextText)}</div>` : ""}
         ${emotionalContext ? `<div class="small" style="margin-top:2px;color:#c9a94e;font-style:italic;"><b>Mood:</b> ${escapeHtml(emotionalContext)}</div>` : ""}
       </details>
     `;
@@ -1055,7 +1064,6 @@ export class EntityFocusPanel {
       ${characterBlock}
       ${whyBlock}
       <div class="small"><b>Policy Focus:</b> ${escapeHtml(policyFocus)}</div>
-      <div class="small"><b>Policy Summary:</b> ${escapeHtml(policySummary)}</div>
       <div class="small"><b>Policy Notes:</b> ${escapeHtml(policyNotes)}</div>
       <div class="small" style="margin-top:4px;"><b>Type:</b> ${escapeHtml(entity.type)}${entity.kind ? ` / ${escapeHtml(entity.kind)}` : ""} | <b>Role:</b> ${escapeHtml(entity.role ?? "-")} | <b>Group:</b> ${escapeHtml(entity.groupId ?? "-")}</div>
       <div class="small"><b>State:</b> ${escapeHtml(entity.stateLabel ?? "-")} | <b>Intent:</b> ${escapeHtml(entity.debug?.lastIntent ?? entity.blackboard?.intent ?? "-")}${entity.debug?.lastIntentReason ? ` <span class="muted">(because: ${escapeHtml(entity.debug.lastIntentReason)})</span>` : ""}</div>

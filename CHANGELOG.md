@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.10.1-e — worker focus prose trim + restart repro (2026-04-30)
+
+User reported: the worker focus panel still autoexpands as content
+piles up; please make the prose tighter. Also reported "all workers
+stop moving after game restart". Investigated both.
+
+### Worker focus prose trim
+- Trait labels render bare; descriptions live in `title=` tooltips
+  (was: "resilient (extra survival margin in crises)" → now: hover
+  "resilient" to see the explanation).
+- "Relationships: (no relationships yet)" and "Recent Memory: (no
+  memories yet)" placeholder rows are now hidden entirely when empty.
+- Dropped the standalone "Policy Summary" line — its content was
+  already covered by `Policy Focus` + `Policy Notes` above/below.
+- "Decision Context" row hidden when empty (was always rendering "none").
+- `aiImpact` text condensed: "Worker policy biases FARM ratio to
+  72.7% (farm=1.60 wood=0.60)." → "FARM 73% (1.6/0.6)" with a `Bias:`
+  label so the row keeps its semantic anchor.
+
+### Restart bug — could not reproduce in tests
+Added `test/v0.10.1-restart-workers-move.test.js` (2 tests: minimal
++ stable-system-instance). Both pass: workers acquire targets and
+their physical x/z advances after `regenerateWorld`. The user's
+report ("workers don't move after restart") is real but isolating
+it requires more diagnostic info (browser console logs, whether
+specific roles are affected, whether path or render is the freeze
+point). Deferred a defensive grid-identity reset because an
+initial implementation broke a legitimate test pattern (single
+WorkerAISystem instance ticking two parallel state objects in
+`animal-ecology.test.js`). Will revisit once we have clearer repro
+steps.
+
+Tests: 1648 / 0 / 2 (was 1646 / 0 / 2; +2 from the new restart suite).
+
 ## v0.10.1-d — top bar slim + worker focus viewport-fit (2026-04-30)
 
 User-reported follow-ups to v0.10.1-c:
