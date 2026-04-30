@@ -431,10 +431,12 @@ function addEmotionalPrefix(worker, state, text) {
 
 // v0.10.0-d — chooseWorkerIntent + JobScheduler removed. The Priority-FSM
 // (src/simulation/npc/fsm/) is the single source of truth for worker
-// decisions. The legacy intent string ("eat" / "deliver" / "farm" / etc.)
-// is derived from FSM state via `worker.blackboard.intent` (set by each
-// state body's onEnter / tick) and mirrored to `worker.debug.lastIntent`
-// in update() below as a backward-compat surface for EntityFocusPanel.
+// decisions. The intent string ("eat" / "deliver" / "farm" / etc.) is
+// derived from FSM state via `worker.blackboard.intent`, written by
+// each state body's onEnter / tick. EntityFocusPanel reads stateLabel
+// (FSM-sourced) + blackboard.intent directly; the legacy
+// worker.debug.lastIntent fallback is no longer wired up for workers
+// (animals/visitors still own that surface via their own AI systems).
 
 // v0.9.0-e — hasHiddenFrontier / findNearestHiddenTile deleted along with
 // handleWander. v0.10.0-d — the fog-frontier wander bias has not been
@@ -1597,15 +1599,6 @@ export class WorkerAISystem {
       // production code unconditionally instantiates the FSM.
       this._workerFSM ??= new WorkerFSM();
       this._workerFSM.tickWorker(worker, state, services, dt);
-
-      // Backward-compat: surface the FSM state name in the legacy
-      // `worker.debug.lastIntent` field that EntityFocusPanel reads.
-      // The FSM state bodies write `worker.blackboard.intent` directly;
-      // this just mirrors that into the debug surface.
-      const fsmIntent = worker.blackboard?.intent;
-      if (fsmIntent) {
-        worker.debug.lastIntent = fsmIntent;
-      }
 
       // Emit resting event on state transition (legacy parity).
       if (stateNode === "rest" && prevStateNode !== "rest") {

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.10.1-a — retire worker.debug.lastIntent FSM mirror (2026-04-30)
+
+Second cut of the v0.10.0 deferred `lastIntent` redundancy. The mirror
+write `worker.debug.lastIntent = fsmIntent` (post-FSM-tick, line ~1605
+of WorkerAISystem.js) is gone. EntityFocusPanel's
+`stateLabel ?? blackboard.intent ?? lastIntent ?? "-"` fallback chain
+never reaches the third arm for workers because `stateLabel` is
+single-written by `WorkerFSM.tickWorker` every tick (v0.10.0-e). Animals
++ visitors still own `entity.debug.lastIntent` for their AI systems'
+display; the field initializer in `baseAgent` is preserved for visitor
+compat. Net delete: 8 LOC + comment update. Tests: 1646 / 0 / 2.
+
 ## v0.10.0-f — drop dead worker `lastIntent` write (2026-04-30)
 
 Small follow-up to the v0.10.0 deferred list. The pre-FSM legacy
