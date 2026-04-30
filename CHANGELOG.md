@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.10.1-i — island spawn bias + harbor farm + eat rate 0.60 (2026-04-30)
+
+Fixes two scenarios (archipelago_isles, coastal_ocean) that produced only
+26–46% effective worker action due to workers stranding on isolated terrain
+islands. Also reduces EATING-state duration by doubling the eat rate.
+
+### Worker spawn bias for island_relay scenarios
+
+`createInitialEntitiesWithRandom` now uses `randomTileNearAnchorOfTypes`
+with radius 8 around `scenario.anchors.coreWarehouse` when
+`scenario.family === "island_relay"`. Workers spawn on the harbor island
+instead of random isolated terrain islands (which lack warehouse access).
+Other scenario families are unaffected — their terrain is fully connected.
+
+### Harbor subsistence farm (island_relay)
+
+Added one FARM tile at `harbor + (-3, 0)` in `buildIslandRelayScenario` so
+workers on the harbor island have something to harvest before causeways are
+bridged. Total farms = 2 (harbor + east fields), below the logistics target
+of 3, so the "leave one farm to build" invariant is preserved.
+
+### Eat rate doubled (balance.js)
+
+`warehouseEatRatePerWorkerPerSecond` 0.30 → 0.60 food/s. Workers eat in
+~9 s instead of ~18 s, freeing more time for productive work. Global cap
+(4.0 food/s) now covers ~6.7 workers at full rate; workers 7–16 fall
+through to `carryEatStep` at the same 0.60/s rate. Average food drain is
+~0.09 food/s per worker (well within stockpile capacity).
+
+### Benchmark results (30-day, 6 scenarios, no player AI)
+
+| Scenario | eat% | prod% | prod+eat% |
+|----------|------|-------|-----------|
+| temperate | 29.7 | 66.9 | 96.6% ✓ |
+| highlands | 30.3 | 67.2 | 97.5% ✓ |
+| archipelago | 36.1 | 61.6 | 97.7% ✓ (was 68.5%) |
+| riverlands | 37.8 | 59.5 | 97.3% ✓ |
+| coastal | 26.2 | 70.8 | 97.0% ✓ (was 76.0%) |
+| fortified | 28.3 | 69.4 | 97.7% ✓ |
+
+All scenarios now meet the "有效动作 ≥ 90%" (effective worker action)
+target. All colonies survive 30 days with minFood > 100.
+
+### Files changed
+
+- `src/config/balance.js` — `warehouseEatRatePerWorkerPerSecond` 0.30 → 0.60.
+- `src/entities/EntityFactory.js` — island_relay spawn bias toward
+  `coreWarehouse` anchor.
+- `src/world/scenarios/ScenarioFactory.js` — harbor FARM tile in
+  `buildIslandRelayScenario`.
+- `test/p4-warehouse-eat-bench.mjs` — dynamic eat-rate label; BALANCE import.
+
+Tests: 1664 / 0 / 3 (baseline preserved; 0 new failures from these changes).
+
 ## v0.10.1-h — at-warehouse fast-eat + carry-eat path (P4) (2026-04-30)
 
 Replaces the v0.10.0-c `consumeEmergencyRation` no-op with two concrete
