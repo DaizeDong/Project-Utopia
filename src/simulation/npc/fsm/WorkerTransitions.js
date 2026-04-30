@@ -23,10 +23,12 @@ import {
   carryEmpty,
   carryFull,
   fsmTargetGone,
+  fsmTargetNull,
   harvestAvailableForRole,
   hostileInAggroRadiusForGuard,
   hungerRecovered,
   hungryAndFoodAvailable,
+  noFoodAvailable,
   noHostileInRange,
   pathFailedRecently,
   processAvailableForRole,
@@ -86,6 +88,9 @@ const IDLE_TRANSITIONS = Object.freeze([
 const SEEKING_FOOD_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
   { priority: 1, to: STATE.EATING, when: arrivedAtFsmTarget },
+  // v0.10.0-c — onEnter may set target=null (no warehouse + no carry food in
+  // bare-init scenarios). Drop back to IDLE rather than orbit forever.
+  { priority: 8, to: STATE.IDLE, when: fsmTargetNull },
   // Path failed without carry food → fall back to IDLE so the wander layer
   // can try a different approach (or trigger reachability re-probe).
   { priority: 9, to: STATE.IDLE, when: (worker, state, services) => {
@@ -97,6 +102,11 @@ const SEEKING_FOOD_TRANSITIONS = Object.freeze([
 const EATING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
   { priority: 1, to: STATE.IDLE, when: hungerRecovered },
+  // v0.10.0-c — bail out of EATING when the colony has nothing to eat (no
+  // warehouse food, no meals, no carry). Without this transition workers
+  // latch into EATING when the stockpile drains mid-meal and never harvest
+  // more food → total famine in scenario F (long-horizon 600s).
+  { priority: 2, to: STATE.IDLE, when: noFoodAvailable },
 ]);
 
 const SEEKING_REST_TRANSITIONS = Object.freeze([
@@ -122,6 +132,9 @@ const SEEKING_HARVEST_TRANSITIONS = Object.freeze([
   SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.HARVESTING, when: arrivedAtFsmTarget },
+  // v0.10.0-c — onEnter may set target=null when chooseWorkerTarget can't
+  // find an eligible tile. Drop back to IDLE.
+  { priority: 7, to: STATE.IDLE, when: fsmTargetNull },
   { priority: 8, to: STATE.IDLE, when: yieldPoolDriedUp },
   PATH_FAIL_FALLBACK,
 ]);
@@ -142,6 +155,8 @@ const DELIVERING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
   SURVIVAL_FOOD,
   { priority: 3, to: STATE.DEPOSITING, when: arrivedAtFsmTarget },
+  // v0.10.0-c — onEnter may set target=null (no warehouse). Bail to IDLE.
+  { priority: 7, to: STATE.IDLE, when: fsmTargetNull },
   PATH_FAIL_FALLBACK,
 ]);
 
@@ -155,6 +170,8 @@ const SEEKING_BUILD_TRANSITIONS = Object.freeze([
   SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.BUILDING, when: arrivedAtFsmTarget },
+  // v0.10.0-c — onEnter may set target=null (no eligible site). Bail to IDLE.
+  { priority: 7, to: STATE.IDLE, when: fsmTargetNull },
   { priority: 8, to: STATE.IDLE, when: fsmTargetGone },
   PATH_FAIL_FALLBACK,
 ]);
@@ -171,6 +188,8 @@ const SEEKING_PROCESS_TRANSITIONS = Object.freeze([
   SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.PROCESSING, when: arrivedAtFsmTarget },
+  // v0.10.0-c — onEnter may set target=null (no eligible processing tile).
+  { priority: 7, to: STATE.IDLE, when: fsmTargetNull },
   PATH_FAIL_FALLBACK,
 ]);
 

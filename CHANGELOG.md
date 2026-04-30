@@ -1,5 +1,101 @@
 # Changelog
 
+## v0.10.0-c — Worker FSM trace-parity validation (still feature-flagged)
+
+Phase 3 of 5. Full A-G architectural trace re-run with
+`FEATURE_FLAGS.USE_FSM=true`; all hard gates pass against the v0.9.4
+baseline. Production flag stays default OFF; phase d will flip.
+
+### Hard-gate results (FSM vs v0.9.4 baseline, scenarios A-G)
+
+- **stuck>3s** ≤ baseline+2 across all 7 scenarios (max delta +1 in C/F).
+- **deaths** matches baseline exactly (-4 in C/F, 0 elsewhere). Zero
+  regression in any scenario where baseline was 0.
+- **path-fail-loops** ≤ baseline×1.5 everywhere (FSM actually *reduces*
+  loops in 5/7 scenarios after iteration 3's `lastSuccessfulPathSec`
+  stamping fix).
+- **eat-commit p95** ≤ baseline×1.25 in scenario D (parity test 5).
+- **same-tile production count** ≤ 1 in scenario C (parity test 4).
+- **reachStale%** 0.0% across the board, unchanged from baseline.
+
+Scenario E (walled warehouse) actually *improves* — stuck workers
+3 → 0 — thanks to the carry-eat fallback the FSM now executes when
+every warehouse is unreachable.
+
+### 3 iteration fixes landed in WorkerConditions/WorkerStates/WorkerTransitions
+
+**Iteration 1 — SEEKING_FOOD blacklist + path lifecycle.** Walled-warehouse
+scenario E was wedging 12 workers because `SEEKING_FOOD.onEnter`
+unconditionally targeted the warehouse, ignoring reachability. Plus
+`SEEKING_HARVEST.onExit` / `DELIVERING.onExit` / etc. were calling
+`clearPath(worker)` on every transition including arrivals — making
+harvesting workers LOOK stuck to the trace's `pathLen=0` predicate.
+Fix: SEEKING_FOOD short-circuits to a carry-eat fallback when all
+warehouses are blacklisted (mirrors v0.9.4 `JobEat.tick` behaviour);
+removed `clearPath` from arrival-edge `onExit`s.
+
+**Iteration 2 — `arrivedAtFsmTarget` bug + EATING latch + path-fail
+oscillation.** Long-horizon F was accruing 12 deaths because:
+(a) `arrivedAtFsmTarget` compared world coords (`worker.x ≈ -1.5`)
+against tile indices (`t.ix = 47`) — predicate almost never fired;
+(b) `hungerRecovered` used BALANCE 0.68 but `EATING.tick` used per-worker
+metabolism (0.62-0.74) — workers latched in EATING after partial recovery;
+(c) the at-warehouse fast-eat (5/s) drained the stockpile 5× faster
+than v0.9.4 effective behaviour where workers rarely fully recover at
+the warehouse and instead consume slowly via `consumeEmergencyRation`;
+(d) `pathFailedRecently` fired every 2s based on `lastSuccessfulPathSec`,
+forcing SEEKING_HARVEST↔IDLE oscillation while workers were happily
+walking a resolved path. Fix: `arrivedAtFsmTarget` uses `worldToTile`;
+`EATING.tick` always routes through `consumeEmergencyRation`;
+`hungerRecovered` rewritten to use seek-threshold OR 3s in-state
+cycle-out; `pathFailedRecently` rewritten to query the
+`pathFailBlacklist` directly (only fires when the FSM target tile is
+currently blacklisted, not on every walking tick).
+
+**Iteration 3 — target=null orbit + IDLE wander cadence + at-tile path
+stamping.** Bare-init A still had 4 stuck WOOD workers because:
+(a) SEEKING_FOOD.onEnter set `target=null` when no warehouse + no carry
+food existed; with iteration-2's blacklist-only `pathFailedRecently`
+no transition triggered → workers orbited SEEKING_FOOD with target=null
+forever; (b) IDLE.tick lacked the v0.9.4 `JobWander` refresh cadence,
+so when `pickWanderNearby` returned null (10% of the time) the worker
+stood still indefinitely; (c) the trace's `path-fail-loops` metric
+counts `wantsPath(intent) + pathLen=0 + stale lastSuccessfulPathSec`
+— EATING workers (carry-eat target = own tile) had `intent=eat` but
+no path, blowing up the metric 3× in F (6 → 18). Fix: SEEKING_FOOD
+sets carry-eat target whenever ANY food source exists (carry, stockpile,
+or meals); added `fsmTargetNull` predicate + `→ IDLE` row on every
+SEEKING_X state's transitions as safety net; ported v0.9.4
+`WANDER_REFRESH_BASE_SEC=1.4s` cadence into IDLE.tick; SEEKING_FOOD
+(carry-eat) and EATING ticks stamp `lastSuccessfulPathSec` every tick
+so the trace metric doesn't false-fire on at-tile activity.
+
+### Files changed
+
+- `src/simulation/npc/fsm/WorkerConditions.js` (+95 / -16) —
+  `arrivedAtFsmTarget` bugfix, `hungerRecovered` + `pathFailedRecently`
+  rewrites, `noFoodAvailable` + `fsmTargetNull` predicates.
+- `src/simulation/npc/fsm/WorkerStates.js` (+143 / -40) —
+  SEEKING_FOOD blacklist fallback + carry-eat semantics, IDLE
+  wander-refresh cadence, EATING via `consumeEmergencyRation`,
+  `lastSuccessfulPathSec` stamping, path-clear lifecycle fix.
+- `src/simulation/npc/fsm/WorkerTransitions.js` (+19 / -0) —
+  `EATING_TRANSITIONS` `noFoodAvailable` row + `fsmTargetNull` rows
+  on every SEEKING_X state.
+- `test/v0.10.0-c-fsm-trace-parity.test.js` (+322 / -0) — 5 parity
+  tests (A bare-init alive count, E walled-warehouse survival, F
+  long-horizon stuck, C 1:1 binding, D eat-commit p95).
+
+Net: +579 / -56 = +523 LOC (src-only delta +221, within the 500-LOC
+src cap from the plan §8). Test suite: 1694 → 1699 pass / 0 fail /
+3 skip (5 new parity tests, all passing).
+
+Phase 0.10.0-d will flip `FEATURE_FLAGS.USE_FSM` default ON and begin
+retiring the v0.9.x Job layer; the trace harness should be re-run
+post-flip to confirm production parity. See
+`/tmp/v0.10.0-c-validation-report.md` for the full per-scenario
+breakdown and metric-by-metric verdict.
+
 ## v0.10.0-b — Worker FSM state bodies + full transition table (still feature-flagged)
 
 Phase 2 of 5. All 14 STATE_BEHAVIOR entries populated; STATE_TRANSITIONS

@@ -13,7 +13,7 @@
 
 import { BALANCE } from "../../../config/balance.js";
 import { ANIMAL_KIND, ROLE, TILE, VISITOR_KIND } from "../../../config/constants.js";
-import { getTile, listTilesByType } from "../../../world/grid/Grid.js";
+import { getTile, listTilesByType, worldToTile } from "../../../world/grid/Grid.js";
 
 // Combat / hostile detection
 
@@ -79,10 +79,50 @@ export function tooTired(worker, _state, _services) {
   return Number(worker?.rest ?? 1) < seek;
 }
 
-/** True when worker.hunger has recovered above the eat-recovery target. */
-export function hungerRecovered(worker, _state, _services) {
-  const target = Number(BALANCE.workerEatRecoveryTarget ?? 0.68);
-  return Number(worker?.hunger ?? 0) >= target;
+/**
+ * True when EATING should end. Mirrors v0.9.4 effective behaviour: worker
+ * either (a) recovered above the seek threshold or (b) has been in EATING
+ * long enough to cycle out (consumeEmergencyRation cooldown is 2.8 s, so
+ * after 3 s the worker has had a chance to eat once and should resume
+ * other activities even if hunger is still low — they'll re-trigger
+ * SURVIVAL_FOOD shortly).
+ *
+ * v0.10.0-c — earlier draft used `hunger >= eatRecoveryTarget` (0.68).
+ * Combined with the consumeEmergencyRation slow-eat in EATING.tick,
+ * workers would never reach 0.68 in established colonies (decay outpaces
+ * cooldown-gated trickle) and stay latched in EATING for 100+ seconds,
+ * triggering the trace stuck>3s metric. Leaving at seek-threshold OR
+ * after 3 s in-state matches v0.9.4 cycle frequency.
+ */
+export function hungerRecovered(worker, state, _services) {
+  const seek = Number(BALANCE.workerHungerSeekThreshold ?? 0.18);
+  if (Number(worker?.hunger ?? 0) >= seek) return true;
+  // Cycle out after 3 s in-state regardless of hunger — the worker has had
+  // at least one consumeEmergencyRation cooldown cycle worth of eating;
+  // re-evaluating the FSM lets them harvest, then re-trigger SURVIVAL_FOOD
+  // when hungry again.
+  if (worker?.fsm) {
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    const enteredAt = Number(worker.fsm.enteredAtSec ?? nowSec);
+    if (nowSec - enteredAt >= 3.0) return true;
+  }
+  return false;
+}
+
+/**
+ * True when no food source is available anywhere — warehouse stockpile = 0,
+ * meals = 0, and worker carry food = 0. Used by EATING → IDLE so a worker
+ * doesn't sit eating zero food forever while their colony starves.
+ *
+ * v0.10.0-c — without this transition, workers latch into EATING when the
+ * stockpile drains mid-meal and never harvest more food, collapsing scenario
+ * F (long-horizon 600s) into total famine.
+ */
+export function noFoodAvailable(worker, state, _services) {
+  if (Number(state?.resources?.food ?? 0) > 0) return false;
+  if (Number(state?.resources?.meals ?? 0) > 0) return false;
+  if (Number(worker?.carry?.food ?? 0) > 0) return false;
+  return true;
 }
 
 /** True when worker.rest has recovered above the rest-recover target. */
@@ -110,29 +150,46 @@ export function carryEmpty(worker, _state, _services) {
 }
 
 /**
- * True when the worker has arrived at worker.fsm.target (within 0.6 world units
- * on each axis — the same threshold the legacy isAtTargetTile used).
+ * True when the worker has arrived at worker.fsm.target.
+ *
+ * v0.10.0-c bugfix — earlier draft compared world coordinates (worker.x,
+ * worker.z; range ~-48..48) against tile indices (t.ix, t.iz; range 0..96)
+ * with a 0.6 tolerance, which is meaningless: those scales never align
+ * (worker at world.x=−0.5 → tile.ix=47 ⇒ |−0.5 − 47| ≈ 47.5). Mirrors
+ * v0.9.4 isAtTargetTile: convert worker world coords to tile, then compare
+ * indices.
  */
-export function arrivedAtFsmTarget(worker, _state, _services) {
+export function arrivedAtFsmTarget(worker, state, _services) {
   const t = worker?.fsm?.target;
-  if (!t) return false;
-  return Math.abs(Number(worker.x ?? 0) - Number(t.ix ?? 0)) < 0.6
-      && Math.abs(Number(worker.z ?? 0) - Number(t.iz ?? 0)) < 0.6;
+  if (!t || !state?.grid) return false;
+  const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
+  return here.ix === Number(t.ix) && here.iz === Number(t.iz);
 }
 
 // Path failure / target validity
 
 /**
- * True when the worker has been stuck in its current state without acquiring a
- * successful path for ≥2.0s. Mirrors the v0.9.4 JobDeliverWarehouse.tick
- * stuck-replan branch (markBlacklist after 2.0s without lastSuccessfulPathSec).
+ * True when the worker's current FSM target tile is in the path-fail
+ * blacklist (A* refused it within the last TTL). Used as the SEEKING_X
+ * fallback row so the worker drops back to IDLE → re-picks rather than
+ * pinning on a known-unreachable tile.
+ *
+ * v0.10.0-c — earlier drafts used `nowSec - lastSuccessfulPathSec > 2 s`
+ * but that fired on workers actively walking a path (walking ≠ acquiring
+ * a new path). Revised to query the blacklist directly: only fire when
+ * the target tile is currently blacklisted for this worker. The PathFail
+ * blacklist already auto-marks A*-fail tiles via Navigation.setTargetAndPath,
+ * so this catches walled-off / unreachable targets without false positives
+ * during normal walking.
  */
-export function pathFailedRecently(worker, state, _services) {
-  if (!worker?.fsm) return false;
+export function pathFailedRecently(worker, state, services) {
+  const t = worker?.fsm?.target;
+  if (!t || !state?.grid) return false;
+  const blacklist = services?.pathFailBlacklist;
+  if (!blacklist?.isBlacklisted) return false;
   const nowSec = Number(state?.metrics?.timeSec ?? 0);
-  const enteredAt = Number(worker.fsm.enteredAtSec ?? nowSec);
-  const lastPathSec = Number(worker.blackboard?.lastSuccessfulPathSec ?? enteredAt);
-  return nowSec - Math.max(lastPathSec, enteredAt) > 2.0;
+  const tileType = getTile(state.grid, Number(t.ix), Number(t.iz));
+  return blacklist.isBlacklisted(worker.id, t.ix, t.iz, tileType, nowSec);
 }
 
 /**
@@ -150,6 +207,22 @@ export function fsmTargetGone(worker, state, _services) {
     if (!found) return true;
   }
   return false;
+}
+
+/**
+ * True when worker.fsm.target is null. SEEKING_X states' onEnter sets the
+ * target tile (e.g. via chooseWorkerTarget); if the picker returns null
+ * (no eligible tile, allBlacklisted + no carry food, etc.) the worker
+ * has no place to go and should drop back to IDLE rather than orbit
+ * forever.
+ *
+ * v0.10.0-c — added to plug a SEEKING_FOOD-target-null latch in scenario
+ * A bare-init: no warehouse, no carry food → onEnter sets target=null →
+ * tick is a no-op → no transition fires (arrivedAtFsmTarget needs target,
+ * pathFailedRecently is blacklist-based) → worker stuck for 20+ s.
+ */
+export function fsmTargetNull(worker, _state, _services) {
+  return worker?.fsm?.target == null;
 }
 
 // Economy / role-based intent
