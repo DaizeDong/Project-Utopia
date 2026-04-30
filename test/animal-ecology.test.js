@@ -114,6 +114,12 @@ test("herbivore grazing pressure reduces worker harvest yield", () => {
       path: [],
     },
   };
+  // v0.10.0-d — Pin the FSM state directly so the dispatcher routes
+  // through HARVESTING.tick on the first update() call (otherwise
+  // bootstrap goes IDLE → SEEKING_HARVEST and applyHarvestStep doesn't
+  // fire until tick #2). The legacy `blackboard.fsm.state` above is the
+  // display-FSM history, not the dispatcher's source of truth.
+  pressuredWorker.fsm = { state: "HARVESTING", enteredAtSec: 0, target: { ix: farmTile.ix, iz: farmTile.iz }, payload: undefined };
   pressuredState.agents = [pressuredWorker];
   pressuredState.animals = [];
 
@@ -135,6 +141,7 @@ test("herbivore grazing pressure reduces worker harvest yield", () => {
       path: [],
     },
   };
+  cleanWorker.fsm = { state: "HARVESTING", enteredAtSec: 0, target: { ix: farmTile.ix, iz: farmTile.iz }, payload: undefined };
   cleanState.agents = [cleanWorker];
   cleanState.animals = [];
   cleanState.metrics.ecology = {

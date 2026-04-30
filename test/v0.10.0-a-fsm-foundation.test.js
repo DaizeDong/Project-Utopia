@@ -190,61 +190,44 @@ test("v0.10.0-a #5: STATE enum has exactly 14 entries matching the plan", () => 
   assert.ok(Object.isFrozen(STATE_TRANSITIONS), "STATE_TRANSITIONS is frozen");
 });
 
-test("v0.10.0-a #6: USE_FSM defaults to false; flipping it changes WorkerAISystem dispatch", () => {
-  // Default: flag OFF → JobScheduler path. _workerFSM stays null; the
-  // existing v0.9.x _jobScheduler is allocated.
-  assert.equal(FEATURE_FLAGS.USE_FSM, false, "USE_FSM defaults to false");
+test("v0.10.0-a #6: USE_FSM defaults to true (v0.10.0-d); WorkerAISystem allocates _workerFSM", () => {
+  // v0.10.0-d — flag default flipped ON; the JobScheduler that the OFF
+  // path used to route to is deleted. The flag remains queryable so
+  // trace-parity tests can flip it for self-comparison, but production
+  // unconditionally allocates the FSM.
+  assert.equal(FEATURE_FLAGS.USE_FSM, true, "USE_FSM defaults to true (v0.10.0-d)");
 
-  const state1 = createInitialGameState({ seed: 1337, bareInitial: true });
-  state1.session.phase = "active";
-  state1.resources.food = 9999;
-  const services1 = createServices(state1.world.mapSeed);
-  const sys1 = new WorkerAISystem();
-  const boids1 = new BoidsSystem();
+  const state2 = createInitialGameState({ seed: 1337, bareInitial: true });
+  state2.session.phase = "active";
+  state2.resources.food = 9999;
+  const services2 = createServices(state2.world.mapSeed);
+  const sys2 = new WorkerAISystem();
+  const boids2 = new BoidsSystem();
 
-  state1.metrics.timeSec = (state1.metrics.timeSec ?? 0) + 1 / 30;
-  state1.metrics.tick = (state1.metrics.tick ?? 0) + 1;
-  sys1.update(1 / 30, state1, services1);
-  boids1.update(1 / 30, state1, services1);
+  state2.metrics.timeSec = (state2.metrics.timeSec ?? 0) + 1 / 30;
+  state2.metrics.tick = (state2.metrics.tick ?? 0) + 1;
+  sys2.update(1 / 30, state2, services2);
+  boids2.update(1 / 30, state2, services2);
 
-  assert.equal(sys1._workerFSM, null, "USE_FSM=false: _workerFSM stays null");
-  assert.ok(sys1._jobScheduler, "USE_FSM=false: _jobScheduler is allocated (v0.9.x path)");
+  assert.ok(sys2._workerFSM, "USE_FSM=true: _workerFSM allocated");
+  assert.equal(sys2._jobScheduler, undefined,
+    "USE_FSM=true: _jobScheduler not present on the system instance (Job layer retired)");
 
-  // Flip flag ON, run a fresh harness, verify the dispatch path swaps.
-  _testSetFeatureFlag("USE_FSM", true);
+  // Stats counter proves WorkerFSM.tickWorker actually ran for at
+  // least one worker. Bare-init scenarios place workers near home; with
+  // populated transitions they may move out of IDLE on the first tick,
+  // so we don't assert on transitionCount or final state — only that
+  // tickWorker ran.
+  const stats = sys2._workerFSM.getStats();
+  assert.ok(stats.tickCount >= 1, `WorkerFSM.tickWorker ran (tickCount=${stats.tickCount})`);
+
+  // Verify the flag-flip toggle still functions even though prod is now
+  // unconditional (used by trace-parity self-comparison harnesses).
+  _testSetFeatureFlag("USE_FSM", false);
   try {
-    assert.equal(FEATURE_FLAGS.USE_FSM, true, "USE_FSM flipped to true");
-
-    const state2 = createInitialGameState({ seed: 1337, bareInitial: true });
-    state2.session.phase = "active";
-    state2.resources.food = 9999;
-    const services2 = createServices(state2.world.mapSeed);
-    const sys2 = new WorkerAISystem();
-    const boids2 = new BoidsSystem();
-
-    state2.metrics.timeSec = (state2.metrics.timeSec ?? 0) + 1 / 30;
-    state2.metrics.tick = (state2.metrics.tick ?? 0) + 1;
-    sys2.update(1 / 30, state2, services2);
-    boids2.update(1 / 30, state2, services2);
-
-    assert.ok(sys2._workerFSM, "USE_FSM=true: _workerFSM allocated");
-    assert.equal(sys2._jobScheduler, null, "USE_FSM=true: _jobScheduler not allocated");
-
-    // Stats counter proves WorkerFSM.tickWorker actually ran for at
-    // least one worker. Phase-a dispatcher pins everyone in IDLE so
-    // transitionCount stays 0, but tickCount is the worker count.
-    const stats = sys2._workerFSM.getStats();
-    assert.ok(stats.tickCount >= 1, `WorkerFSM.tickWorker ran (tickCount=${stats.tickCount})`);
-    assert.equal(stats.transitionCount, 0, "phase-a empty transitions: no transitions fire");
-
-    // Every alive worker should now be in IDLE (the default state with
-    // an empty IDLE.transitions list — no escape).
-    for (const w of aliveWorkers(state2).filter((w) => !w.isStressWorker)) {
-      assert.equal(w.fsm?.state, "IDLE", `worker ${w.id} pinned in IDLE`);
-    }
+    assert.equal(FEATURE_FLAGS.USE_FSM, false, "USE_FSM flippable to false for parity tests");
   } finally {
-    // Restore default to keep tests isolated (precedent: v0.9.0-a tests).
-    _testSetFeatureFlag("USE_FSM", false);
+    _testSetFeatureFlag("USE_FSM", true);
   }
-  assert.equal(FEATURE_FLAGS.USE_FSM, false, "flag restored to default after test");
+  assert.equal(FEATURE_FLAGS.USE_FSM, true, "flag restored to default after test");
 });

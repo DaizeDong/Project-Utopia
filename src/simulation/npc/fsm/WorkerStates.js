@@ -26,19 +26,22 @@ import {
   setTargetAndPath,
 } from "../../navigation/Navigation.js";
 import { worldToTile } from "../../../world/grid/Grid.js";
+// v0.10.0-d — Job layer retired. The five WorkerAISystem helpers
+// (applyHarvestStep, chooseWorkerTarget, pickWanderNearby, setIdleDesired,
+// handleDeliver, getWorkerEatRecoveryTarget, getWorkerRecoveryPerFoodUnit,
+// consumeEmergencyRation) are imported directly; the composite movement +
+// reservation helpers (executeMovement, tryAcquirePath, ...) live in
+// WorkerHelpers.js (sibling).
+import { executeMovement, tryAcquirePath } from "./WorkerHelpers.js";
 import {
   applyHarvestStep,
   chooseWorkerTarget,
-  executeMovement,
-  setIdleDesired,
-  tryAcquirePath,
-} from "../jobs/JobHelpers.js";
-import {
-  _consumeEmergencyRationForJobLayer,
+  consumeEmergencyRation,
   getWorkerEatRecoveryTarget,
   getWorkerRecoveryPerFoodUnit,
   handleDeliver,
   pickWanderNearby,
+  setIdleDesired,
 } from "../WorkerAISystem.js";
 import { findNearestHostile, getRoleHarvestTiles, getRoleProcessConfig } from "./WorkerConditions.js";
 
@@ -274,7 +277,7 @@ const EATING = Object.freeze({
     // the worker is actively eating in place.
     worker.blackboard ??= {};
     worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
-    _consumeEmergencyRationForJobLayer(worker, state, dt, services);
+    consumeEmergencyRation(worker, state, dt, services);
   },
   onExit(_worker, _state, _services) {
     // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
@@ -419,9 +422,17 @@ const SEEKING_HARVEST = Object.freeze({
 // HARVESTING
 
 const HARVESTING = Object.freeze({
+  // v0.10.0-d — onEnter recovers the harvest target from worker.targetTile
+  // (set by SEEKING_HARVEST.tick via syncTargetTile). The dispatcher resets
+  // worker.fsm.target on every transition, so HARVESTING needs to lift
+  // the tile back into worker.fsm.target before its tick body looks at it.
   onEnter(worker, state, _services) {
     setIntent(worker, "Harvest", "harvest");
-    const t = worker.fsm?.target;
+    if (!worker.fsm) return;
+    if (worker.targetTile) {
+      worker.fsm.target = { ix: worker.targetTile.ix, iz: worker.targetTile.iz };
+    }
+    const t = worker.fsm.target;
     if (!t) return;
     const reservation = state?._jobReservation;
     const nowSec = Number(state?.metrics?.timeSec ?? 0);
@@ -429,7 +440,6 @@ const HARVESTING = Object.freeze({
       reservation.tryReserve(worker.id, t.ix, t.iz, "harvest", nowSec);
     }
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobHarvestBase.tick at-target body).
   tick(worker, state, services, dt) {
     setIntent(worker, "Harvest", "harvest");
     setIdleDesired(worker);
@@ -473,10 +483,15 @@ const DELIVERING = Object.freeze({
 // DEPOSITING (port of JobDeliverWarehouse at-warehouse unload body)
 
 const DEPOSITING = Object.freeze({
+  // v0.10.0-d — Lift target from worker.targetTile so handleDeliver has a
+  // valid warehouse coordinate to unload at (the dispatcher resets
+  // fsm.target on every transition).
   onEnter(worker, _state, _services) {
     setIntent(worker, "Deliver", "deliver");
+    if (worker.fsm && worker.targetTile) {
+      worker.fsm.target = { ix: worker.targetTile.ix, iz: worker.targetTile.iz };
+    }
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (handleDeliver in WorkerAISystem.js).
   tick(worker, state, services, dt) {
     setIntent(worker, "Deliver", "deliver");
     syncTargetTile(worker);
@@ -518,10 +533,20 @@ const SEEKING_BUILD = Object.freeze({
 // BUILDING (port of JobBuildSite.tick at-site body)
 
 const BUILDING = Object.freeze({
-  onEnter(worker, _state, _services) {
+  // v0.10.0-d — onEnter re-resolves the site target. The dispatcher
+  // resets fsm.target on every transition (deliberate — see WorkerFSM
+  // _enterState), but BUILDING's tick body needs a target to apply work.
+  // Re-fetching via findOrReserveBuilderSite is idempotent (the site
+  // already holds builderId from SEEKING_BUILD.onEnter; this returns the
+  // same site).
+  onEnter(worker, state, _services) {
     setIntent(worker, "Construct", "construct");
+    if (!worker.fsm) return;
+    const site = findOrReserveBuilderSite(state, worker);
+    if (site) {
+      worker.fsm.target = { ix: site.ix, iz: site.iz, meta: { siteKey: `${site.ix},${site.iz}` } };
+    }
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobBuildSite.tick).
   tick(worker, state, _services, dt) {
     setIntent(worker, "Construct", "construct");
     setIdleDesired(worker);

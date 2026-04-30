@@ -35,6 +35,11 @@ test("WorkerAISystem unloads gradually when the target warehouse is congested", 
     history: [],
     path: [],
   };
+  // v0.10.0-d — Priority-FSM is the only worker dispatcher. Pin the
+  // worker into DEPOSITING so the FSM tick routes through handleDeliver
+  // (the legacy display-FSM `blackboard.fsm.state="deliver"` above is
+  // ignored by the dispatcher). worker.fsm is the truth field.
+  worker.fsm = { state: "DEPOSITING", enteredAtSec: 0, target: { ix: warehouse.ix, iz: warehouse.iz }, payload: undefined };
 
   state.metrics.logistics = {
     warehouseLoadByKey: {
