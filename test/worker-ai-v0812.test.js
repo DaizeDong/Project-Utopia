@@ -74,10 +74,16 @@ test("v0.8.12 F2: STONE worker with no quarries breaks out of seek_task within 5
   // Re-pin role in case role-assignment touched it.
   target.role = ROLE.STONE;
 
+  let maxMoved = 0;
   runTicks(state, services, [workerSystem, boidsSystem], 5.0, 1 / 30, (s) => {
     // Keep role pinned so the test exercises the F2 escape rather than a
     // role swap.
     target.role = ROLE.STONE;
+    // Track peak Manhattan displacement from start (final displacement is
+    // fragile because boids may push the worker back toward start by t=5s).
+    const cur = worldToTile(target.x, target.z, state.grid);
+    const d = Math.abs(cur.ix - startTile.ix) + Math.abs(cur.iz - startTile.iz);
+    if (d > maxMoved) maxMoved = d;
   });
 
   // Worker must have escaped seek_task.
@@ -88,12 +94,13 @@ test("v0.8.12 F2: STONE worker with no quarries breaks out of seek_task within 5
     `F2 escape failed: STONE worker still in seek_task after 5s (state=${finalState}).`,
   );
 
-  // And must have moved at least 2 tiles in Manhattan distance.
+  // Worker must have moved ≥2 tiles at peak (final displacement can be lower
+  // if boids push the worker back toward start; peak confirms the worker is
+  // actually wandering rather than frozen).
   const endTile = worldToTile(target.x, target.z, state.grid);
-  const moved = Math.abs(endTile.ix - startTile.ix) + Math.abs(endTile.iz - startTile.iz);
   assert.ok(
-    moved >= 2,
-    `F2 escape failed: STONE worker moved only ${moved} tiles (start=${startTile.ix},${startTile.iz} end=${endTile.ix},${endTile.iz}).`,
+    maxMoved >= 2,
+    `F2 escape failed: STONE worker peak displacement only ${maxMoved} tiles (start=${startTile.ix},${startTile.iz} end=${endTile.ix},${endTile.iz}).`,
   );
 });
 

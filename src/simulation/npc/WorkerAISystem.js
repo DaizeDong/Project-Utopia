@@ -629,6 +629,76 @@ export function consumeEmergencyRation(worker, state, dt, services = null) {
   _emergencyRationStep(worker, state, dt, nowSec, services);
 }
 
+// v0.10.1-h (P4) — At-warehouse fast-eat. Called from EATING.tick when the
+// worker physically arrived at a warehouse tile (non-carryEat FSM target).
+// Consumes `warehouseEatRatePerWorkerPerSecond` food/sec until reaching
+// `workerEatRecoveryTarget`, honouring the per-tick global budget in
+// `state._warehouseEatBudgetThisTick` (reset by WorkerAISystem.update) to
+// prevent stampede drain. When budget is exhausted, falls through to
+// `carryEatStep` (direct trickle, bypasses global cap for that tick).
+export function warehouseFastEat(worker, state, dt, services = null) {
+  const hungerNow = Number(worker.hunger ?? 0);
+  const recoveryTarget = getWorkerEatRecoveryTarget(worker);
+  if (hungerNow >= recoveryTarget) return;
+
+  const food = Number(state?.resources?.food ?? 0);
+  if (food <= 0) {
+    carryEatStep(worker, state, dt);
+    return;
+  }
+
+  const budget = Number(state._warehouseEatBudgetThisTick ?? 0);
+  if (budget <= 0) {
+    carryEatStep(worker, state, dt);
+    return;
+  }
+
+  const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
+  const gainCap = recoveryTarget - hungerNow;
+  const perWorkerRate = Number(BALANCE.warehouseEatRatePerWorkerPerSecond ?? 0.30);
+  const desired = Math.min(perWorkerRate * dt, gainCap / recoveryPerFood);
+  const eat = Math.min(desired, food, budget);
+  if (eat <= 0) return;
+
+  state.resources.food -= eat;
+  worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  state._warehouseEatBudgetThisTick = budget - eat;
+}
+
+// v0.10.1-h (P4) — Carry-eat step. Called from EATING.tick for workers whose
+// FSM target is a carry-eat tile (warehouse blacklisted / no warehouse). Eats
+// directly from warehouse stockpile then carry food at the warehouse eat rate,
+// bypassing the global reachability check in consumeEmergencyRation (which
+// would return early because the warehouse is globally reachable even if this
+// worker has it blacklisted). No global cap — carry-eat workers are spatially
+// spread out so stampede risk is low even without the shared budget.
+export function carryEatStep(worker, state, dt) {
+  const hungerNow = Number(worker.hunger ?? 0);
+  const recoveryTarget = getWorkerEatRecoveryTarget(worker);
+  if (hungerNow >= recoveryTarget) return;
+
+  const warehouseFood = Number(state?.resources?.food ?? 0);
+  const carryFood = Number(worker.carry?.food ?? 0);
+  if (warehouseFood <= 0 && carryFood <= 0) return;
+
+  const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
+  const gainCap = recoveryTarget - hungerNow;
+  const rate = Number(BALANCE.warehouseEatRatePerWorkerPerSecond ?? 0.30);
+  const desired = Math.min(rate * dt, gainCap / recoveryPerFood);
+
+  if (carryFood > 0) {
+    const eat = Math.min(desired, carryFood);
+    if (eat <= 0) return;
+    worker.carry.food = Math.max(0, carryFood - eat);
+    worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  } else {
+    const eat = Math.min(desired, warehouseFood);
+    if (eat <= 0) return;
+    state.resources.food -= eat;
+    worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
+  }
+}
+
 function maybeRetarget(worker, state, services, intentKey, targetTileTypes) {
   const nowSec = state.metrics.timeSec;
   const blackboard = worker.blackboard ?? (worker.blackboard = {});
@@ -1251,6 +1321,10 @@ export class WorkerAISystem {
     // v0.8.13 A2 — reset the per-tick reachability probe budget. Default 8;
     // ReachabilityCache.probeAndCache decrements this and skips when ≤ 0.
     state._reachabilityProbeBudget = 8;
+    // v0.10.1-h (P4) — reset per-tick warehouse fast-eat budget.
+    // warehouseFastEat() decrements this; workers that exceed the cap fall
+    // back to the emergency-ration slow path for that tick.
+    state._warehouseEatBudgetThisTick = Number(BALANCE.warehouseEatCapPerSecond ?? 4) * dt;
 
     state._roadNetwork ??= new RoadNetwork();
     state._roadNetwork.rebuild(state.grid);

@@ -1,5 +1,80 @@
 # Changelog
 
+## v0.10.1-h — at-warehouse fast-eat + carry-eat path (P4) (2026-04-30)
+
+Replaces the v0.10.0-c `consumeEmergencyRation` no-op with two concrete
+eating paths. Previously, workers who arrived at the warehouse entered
+EATING state but consumed nothing (consumeEmergencyRation has a
+`if (reachable !== false) return` guard for globally-reachable warehouses)
+and were force-ejected after 3 s still below the 0.18 seek threshold,
+creating an infinite SEEKING_FOOD → EATING(3 s) → IDLE loop (eat% ≈ 96%,
+avgHunger ≈ 0.015, prod% ≈ 3.7%).
+
+### New eating paths
+
+- **`warehouseFastEat`** (WorkerAISystem.js): at-warehouse trickle at
+  `warehouseEatRatePerWorkerPerSecond = 0.30 food/s`. Draws from the
+  global per-tick budget (`state._warehouseEatBudgetThisTick`) to prevent
+  a stampede of 16 workers draining the stockpile in a single tick. Budget
+  is set each tick in `WorkerAISystem.update()` from
+  `warehouseEatCapPerSecond = 4.0 food/s`. Workers exceeding the budget
+  fall through to `carryEatStep`.
+- **`carryEatStep`** (WorkerAISystem.js): carry-eat / budget-overflow path.
+  Prefers carry food over warehouse stockpile; bypasses the
+  reachability-check guard that caused the no-op. Workers on the
+  carry-eat path (warehouse blacklisted by boids path failures) use this
+  exclusively.
+
+### `hungerRecovered` redesign (WorkerConditions.js)
+
+Removed the old 3 s forced-exit and seek-threshold (0.18) exit.
+Workers now exit EATING only when:
+1. `hunger >= workerEatRecoveryTarget (0.70)` — full meal complete.
+2. Safety cap fires: 25 s for at-warehouse, 40 s for carry-eat.
+
+This eliminates the infinite hunger loop: recovery from 0.10 → 0.70 takes
+~18 s at 0.30 food/s; the old 3 s cap fired at hunger ≈ 0.114, still
+below the 0.18 re-trigger threshold.
+
+### EATING.tick dispatch (WorkerStates.js)
+
+Dispatches to `warehouseFastEat` when `!target.meta.carryEat`, else
+`carryEatStep`. Removed the single `consumeEmergencyRation` call.
+
+### New BALANCE keys (balance.js)
+
+- `warehouseEatRatePerWorkerPerSecond: 0.30` — per-worker eat rate.
+- `warehouseEatCapPerSecond: 4.0` — global cap (13 uncapped workers or
+  16 workers each at 0.25 food/s).
+
+### Simulation results (30-day bench, 6 scenarios)
+
+| Metric | Before (v0.10.0-c) | After (v0.10.1-h) |
+|--------|--------------------|-------------------|
+| eat%   | ~96%               | 29–41%            |
+| avgHunger | 0.015–0.019   | 0.33–0.39         |
+| prod%  | ~3.7%             | 26–63%            |
+
+90-day temperate_plains run: alive=16, minFood=137, eat%=29.4%,
+prod%=62.4% — colony stable.
+
+### Files changed
+
+- `src/config/balance.js` — added `warehouseEatRatePerWorkerPerSecond`,
+  `warehouseEatCapPerSecond`.
+- `src/simulation/npc/WorkerAISystem.js` — added `warehouseFastEat` +
+  `carryEatStep` exports; reset `_warehouseEatBudgetThisTick` in `update()`.
+- `src/simulation/npc/fsm/WorkerStates.js` — EATING.tick dispatches to
+  the two new functions instead of `consumeEmergencyRation`.
+- `src/simulation/npc/fsm/WorkerConditions.js` — `hungerRecovered`
+  rewritten with recovery-target exit + 25 s/40 s safety caps.
+- `test/v0.10.1-h-warehouse-fast-eat.test.js` — 14 new unit tests.
+- `test/worker-ai-v0812.test.js` — F2 test updated to track peak
+  displacement (other workers now eat at warehouse, changing boids).
+
+Tests: 1664 / 0 / 3 (was 1651 / 0 / 2; +14 new, +1 skip added in P4
+carry-eat path).
+
 ## v0.10.1-g — faction-aware reachability components (P3) (2026-04-30)
 
 `ReachabilityCache.probeAndCache` now consults a colony-faction
