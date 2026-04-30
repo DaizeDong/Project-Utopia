@@ -231,8 +231,15 @@ function entityCarryTotal(entity) {
 }
 
 function entityFocusStateNode(entity) {
+  // v0.10.1-b — workers expose FSM state directly via `entity.fsm.state`
+  // (uppercase: "IDLE" / "HARVESTING" / "DELIVERING" / ...). Animals +
+  // visitors still use the legacy display planner via
+  // `entity.blackboard.fsm.state` (lowercase: "idle" / "graze" / ...).
+  // Lowercasing both unifies the vocabulary for downstream regex
+  // classification (classifyEntityFocusGroup).
   return String(
-    entity?.blackboard?.fsm?.state
+    entity?.fsm?.state
+      ?? entity?.blackboard?.fsm?.state
       ?? entity?.debug?.lastStateNode
       ?? entity?.blackboard?.intent
       ?? entity?.debug?.lastIntent
@@ -288,7 +295,7 @@ function classifyEntityFocusGroup(entity) {
 
   const stateNode = entityFocusStateNode(entity);
   const text = normalizeSearchText(entity?.stateLabel, entity?.debug?.lastIntent, stateNode);
-  if (entityCarryTotal(entity) > 0.05 || /\b(deliver|haul|hauling)\b/.test(text)) return "hauling";
+  if (entityCarryTotal(entity) > 0.05 || /\b(deliver|delivering|depositing|haul|hauling)\b/.test(text)) return "hauling";
   if (stateNode === "idle" || stateNode === "wander" || /\b(idle|wander)\b/.test(text)) return "idle";
   return "other";
 }
@@ -779,9 +786,19 @@ export class EntityFocusPanel {
     const envSec = fmtSec(this.state.ai.lastEnvironmentResultSec);
     const hp = Number(entity.hp ?? entity.maxHp ?? 0);
     const maxHp = Number(entity.maxHp ?? 0);
-    const fsmState = entity.blackboard?.fsm?.state ?? "-";
-    const fsmPrev = entity.blackboard?.fsm?.previousState ?? "-";
-    const fsmPath = Array.isArray(entity.blackboard?.fsm?.path) ? entity.blackboard.fsm.path.join(" -> ") : "-";
+    // v0.10.1-b — workers expose FSM state via `entity.fsm`. Animals +
+    // visitors still use the legacy display planner; show its breadcrumb
+    // (previousState / path) for them. The FSM has no path concept for
+    // workers — `previousState` and `path` show "-".
+    const fsmState = entity.fsm?.state ?? entity.blackboard?.fsm?.state ?? "-";
+    const fsmPrev = entity.fsm
+      ? "-"
+      : entity.blackboard?.fsm?.previousState ?? "-";
+    const fsmPath = entity.fsm
+      ? "-"
+      : Array.isArray(entity.blackboard?.fsm?.path)
+        ? entity.blackboard.fsm.path.join(" -> ")
+        : "-";
     const aiTargetState = entity.blackboard?.aiTargetState ?? "-";
     const aiTargetMeta = entity.blackboard?.aiTargetMeta ?? null;
     const aiTargetTtl = aiTargetMeta ? Math.max(0, Number(aiTargetMeta.expiresAtSec ?? 0) - Number(this.state.metrics.timeSec ?? 0)) : 0;

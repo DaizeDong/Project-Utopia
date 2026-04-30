@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.10.1-b — UI consumers prefer FSM state (2026-04-30)
+
+P1a of UI migration off the legacy display FSM. Three UI consumers now
+read `entity.fsm.state` (worker FSM, uppercase: "IDLE" / "HARVESTING")
+in preference to `entity.blackboard.fsm.state` (legacy display planner,
+lowercase: "idle" / "harvest"). Animals + visitors fall through to the
+legacy chain unchanged. The legacy display planner (StatePlanner /
+StateGraph) STILL ticks for workers in this phase — the read-side flip
+is independent of the tick-side removal (deferred to P1b).
+
+### Migrated read sites
+- `EntityFocusPanel.entityFocusStateNode` — group classifier reads FSM
+  first, lowercased; legacy fallback preserved.
+- `EntityFocusPanel.classifyEntityFocusGroup` regex — added
+  "delivering" / "depositing" to the hauling pattern (FSM vocab).
+- `EntityFocusPanel` worker focus debug dump — `fsmState` reads FSM;
+  `previousState` / `path` show "-" for workers (FSM has no breadcrumb).
+- `WorldSummary.buildPolicySummary` — workers + animals histogram keys
+  lowercased + FSM-first read.
+- `NPCBrainAnalytics` idle classification — added "resting" to the idle
+  set (FSM vocab; legacy was "rest"); FSM-first read.
+
+### Vocabulary changes (visible to user)
+- WorldSummary's per-group `states` histogram for workers shifts from
+  legacy keys ("harvest" / "deliver" / "eat") to FSM keys
+  ("harvesting" / "delivering" / "eating"). Analytics dashboards that
+  bucket by these keys will see the shift.
+- EntityFocusPanel's worker focus FSM-state line shows the FSM state
+  ID ("HARVESTING" etc.) rather than the legacy planner state.
+- Animal / visitor displays unchanged.
+
+Tests: 1646 / 0 / 2 preserved.
+
 ## v0.10.1-a — retire worker.debug.lastIntent FSM mirror (2026-04-30)
 
 Second cut of the v0.10.0 deferred `lastIntent` redundancy. The mirror
