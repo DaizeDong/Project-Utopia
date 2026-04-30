@@ -28,7 +28,11 @@ test("ReachabilityCache: hit returns cached entry without re-probing", () => {
 
   const worker = state.agents.find((a) => a.type === "WORKER");
   assert.ok(worker, "expected a worker");
-  const fromTile = pickProbeTile(state);
+  // v0.10.1-g — use worker tile, not first-grass-scan, so we're
+  // guaranteed in the same colony connected component as the warehouse.
+  // Otherwise the new component-skip fast path returns reachable:false
+  // without running A*, and probes stays 0.
+  const fromTile = worldToTile(worker.x, worker.z, state.grid);
 
   // First call probes (miss → probe → cache).
   const first = cache.probeAndCache(fromTile, [TILE.WAREHOUSE], state, services, worker);
@@ -102,7 +106,8 @@ test("ReachabilityCache: two consumers share the same probe", () => {
   state._reachabilityProbeBudget = 8;
 
   const worker = state.agents.find((a) => a.type === "WORKER");
-  const fromTile = pickProbeTile(state);
+  // v0.10.1-g — same tile-selection note as the test above.
+  const fromTile = worldToTile(worker.x, worker.z, state.grid);
 
   // Mortality consumer:
   const mort = cache.probeAndCache(fromTile, [TILE.WAREHOUSE], state, services, worker);

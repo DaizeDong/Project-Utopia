@@ -8,8 +8,10 @@ import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { releaseBuilderSite } from "../construction/ConstructionSites.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, hasPendingPathRequest, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
-import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
-import { planEntityDesiredState } from "./state/StatePlanner.js";
+// v0.10.1-f (P1b) — legacy display planner imports retired. The FSM
+// dispatcher (this._workerFSM) is the only worker decision pipeline;
+// VisitorAISystem + AnimalAISystem still import StatePlanner /
+// StateGraph for their own legacy FSM ticks.
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { drainFertility, getTileFertility } from "../economy/TileStateSystem.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
@@ -1195,8 +1197,13 @@ function handleStressWorkerPatrol(worker, state, services, dt) {
 
 function updateIdleWithoutReasonMetric(worker, stateNode, dt, state) {
   if (stateNode !== "idle" && stateNode !== "wander") return;
-  const reason = String(worker.blackboard?.fsm?.reason ?? "");
-  if (!reason.includes("no-worksite") && !reason.includes("idle")) return;
+  // v0.10.1-f (P1b) — legacy planner's `blackboard.fsm.reason` no longer
+  // populated for workers. Substitute equivalent FSM-derived signal: a
+  // worker in IDLE/WANDER without an active path is a stuck worker for
+  // telemetry purposes (covers the previous "no-worksite" + "idle"
+  // reasons; both led to no path being acquired).
+  const hasPath = Array.isArray(worker.path) && worker.path.length > 0;
+  if (hasPath) return;
 
   const metrics = state.metrics;
   metrics.idleWithoutReasonSec ??= {};
@@ -1563,45 +1570,32 @@ export class WorkerAISystem {
 
       const nowSec = Number(state.metrics.timeSec ?? 0);
 
-      // v0.10.0-d — display-layer planner kept as a parallel telemetry
-      // pipeline. The planner + transitionEntityState populate
-      // `blackboard.intent`, `worker.stateLabel`, `lastStateNode` for
-      // EntityFocusPanel / chronicle / existing display tests; they no
-      // longer gate worker behaviour (the FSM dispatcher below does).
-      //
-      // v0.10.0-e — `worker.stateLabel` final write is hoisted into
-      // WorkerFSM.tickWorker (DISPLAY_LABEL[fsm.state]). The legacy
-      // mapStateToDisplayLabel write below is now a transient that the FSM
-      // dispatcher overwrites on the same tick; kept only because the
-      // planner's `transitionEntityState` call has the side effect of
-      // updating `blackboard.fsm.state` (the legacy display FSM that
-      // WorldSummary / NPCBrainAnalytics still read), and removing the
-      // label-write here would split the legacy pipeline mid-flight.
-      // FSM state bodies write `blackboard.intent` directly; the
-      // `intent = stateNode` line below is overwritten by the FSM tick.
-      const plan = planEntityDesiredState(worker, state, {}, services);
-      worker.blackboard.lastPlanSec = nowSec;
-      const stateNode = transitionEntityState(
-        worker, "workers", plan.desiredState, nowSec, plan.reason,
-      );
-
-      worker.blackboard.intent = stateNode;
-      worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
+      // v0.10.1-f (P1b) — legacy display-FSM planner retired for workers.
+      // The Priority-FSM (`this._workerFSM`) is the sole worker dispatcher;
+      // it writes `worker.fsm.state`, `worker.stateLabel`, and
+      // `worker.blackboard.intent` directly. The pre-tick
+      // `planEntityDesiredState` + `transitionEntityState` call that used
+      // to populate `worker.blackboard.fsm.*` for EntityFocusPanel +
+      // WorldSummary + NPCBrainAnalytics is gone — those consumers
+      // migrated to FSM-first reads in v0.10.1-b. Visitor + Animal AI
+      // still tick the legacy planner via their own systems.
       worker.debug ??= {};
-      const prevStateNode = worker.debug.lastStateNode;
-      worker.debug.lastStateNode = stateNode;
+      const prevFsmState = worker.fsm?.state;
 
-      // v0.10.0-d — Priority-FSM is the only worker dispatcher. The
-      // v0.9.x JobScheduler (utility scoring + sticky-bonus hysteresis)
-      // was retired here; FSM state-transition priorities + per-state
-      // onEnter target selection subsume the entire Job-layer surface.
-      // FEATURE_FLAGS.USE_FSM is queryable for trace-parity tests but
-      // production code unconditionally instantiates the FSM.
       this._workerFSM ??= new WorkerFSM();
       this._workerFSM.tickWorker(worker, state, services, dt);
 
-      // Emit resting event on state transition (legacy parity).
-      if (stateNode === "rest" && prevStateNode !== "rest") {
+      // Mirror FSM state name into the legacy `worker.debug.lastStateNode`
+      // surface (lowercased) so EntityFocusPanel's fallback chain still
+      // resolves correctly for any code path that hasn't migrated to
+      // `worker.fsm.state` directly.
+      const fsmStateLower = worker.fsm?.state ? String(worker.fsm.state).toLowerCase() : "";
+      worker.debug.lastStateNode = fsmStateLower;
+
+      // Emit resting event on state transition (legacy parity). FSM
+      // RESTING transition replaces the legacy planner's "rest" state
+      // entry as the trigger.
+      if (worker.fsm?.state === "RESTING" && prevFsmState !== "RESTING") {
         emitEvent(state, EVENT_TYPES.WORKER_RESTING, {
           entityId: worker.id, entityName: worker.displayName ?? worker.id,
           rest: worker.rest,
@@ -1614,7 +1608,7 @@ export class WorkerAISystem {
         worker.blackboard.emotionalContext = addEmotionalPrefix(worker, state, worker.debug.lastIntentReason);
       }
 
-      updateIdleWithoutReasonMetric(worker, stateNode, dt, state);
+      updateIdleWithoutReasonMetric(worker, fsmStateLower, dt, state);
       }
     }
     state._workerTargetOccupancy = null;
