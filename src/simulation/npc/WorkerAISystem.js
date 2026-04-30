@@ -3,7 +3,7 @@
 // handleGuardCombat (moved into JobGuardEngage) and handleWander (moved
 // into JobWander). FEATURE_FLAGS still referenced in comments only; can be
 // removed once the audit-A4 blackboard rename lands in v0.9.1.
-import { EVENT_TYPE, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
+import { EVENT_TYPE, FEATURE_FLAGS, NODE_FLAGS, ROLE, TILE, TILE_INFO } from "../../config/constants.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, getTileState, listTilesByType, randomPassableTile, setTileField, worldToTile } from "../../world/grid/Grid.js";
 import { releaseBuilderSite } from "../construction/ConstructionSites.js";
@@ -20,6 +20,7 @@ import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.j
 import { recordProductionEntry } from "../economy/ResourceSystem.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
 import { JobScheduler } from "./jobs/JobScheduler.js";
+import { WorkerFSM } from "./fsm/WorkerFSM.js";
 
 // v0.8.11 worker-AI bare-init responsiveness (Fix 5) — lower retarget
 // cooldown so a worker whose target was stolen mid-path resumes within
@@ -1225,6 +1226,11 @@ export class WorkerAISystem {
     // FEATURE_FLAGS.USE_JOB_LAYER fires for the first time. Production
     // (flag OFF) never instantiates it; tests assert this.
     this._jobScheduler = null;
+    // v0.10.0-a — WorkerFSM is lazily allocated only when
+    // FEATURE_FLAGS.USE_FSM fires for the first time. Default OFF in
+    // phase a; production never instantiates it. See
+    // docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
+    this._workerFSM = null;
   }
 
   update(dt, state, services) {
@@ -1603,8 +1609,22 @@ export class WorkerAISystem {
       // delegate handle* function. The FSM transition above is preserved for
       // telemetry but no longer gates behaviour. Phase 0.9.0-e dedupes
       // handle* functions where Jobs duplicate logic.
-      this._jobScheduler ??= new JobScheduler();
-      this._jobScheduler.tickWorker(worker, state, services, dt);
+      //
+      // v0.10.0-a — Priority-FSM dispatcher is gated behind
+      // FEATURE_FLAGS.USE_FSM (default OFF). When the flag is ON,
+      // WorkerFSM.tickWorker replaces JobScheduler entirely. Phase a
+      // ships only the dispatcher + skeletal STATE_BEHAVIOR /
+      // STATE_TRANSITIONS (every state stubs to no-op, every transition
+      // list is empty), so flipping the flag in tests pins workers in
+      // IDLE forever — exactly what the phase-a contract requires.
+      // Phase b populates state bodies; phase d flips the default ON.
+      if (FEATURE_FLAGS.USE_FSM) {
+        this._workerFSM ??= new WorkerFSM();
+        this._workerFSM.tickWorker(worker, state, services, dt);
+      } else {
+        this._jobScheduler ??= new JobScheduler();
+        this._jobScheduler.tickWorker(worker, state, services, dt);
+      }
 
       // Backward-compat: surface the chosen Job in the legacy debug field
       // EntityFocusPanel reads. lastIntentReason is populated by individual

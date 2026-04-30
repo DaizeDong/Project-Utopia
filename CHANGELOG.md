@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.10.0-a — Worker FSM foundation (feature-flagged, default OFF)
+
+Phase 1 of 5 in the worker-AI Priority FSM rewrite per
+docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
+
+- WorkerFSM dispatcher (~30 LOC core) at src/simulation/npc/fsm/WorkerFSM.js.
+  Per-worker priority-ordered state-transition pipeline replacing the
+  v0.9.0-v0.9.4 JobScheduler utility-scoring layer.
+- 14 STATE enum (IDLE, SEEKING_FOOD, EATING, SEEKING_REST, RESTING, FIGHTING,
+  SEEKING_HARVEST, HARVESTING, DELIVERING, DEPOSITING, SEEKING_BUILD, BUILDING,
+  SEEKING_PROCESS, PROCESSING) with skeletal STATE_BEHAVIOR + empty
+  STATE_TRANSITIONS — phase b populates.
+- FEATURE_FLAGS.USE_FSM default false; WorkerAISystem routes through
+  WorkerFSM only when flag is ON. Production stays on the v0.9.4 Job-layer
+  path. Zero behavior change in this commit.
+- 6 tests in test/v0.10.0-a-fsm-foundation.test.js verify dispatcher
+  initialization, transition + lifecycle hook firing, STATE enum integrity,
+  flag-gated routing.
+
+Phases 0.10.0-b/c/d/e port states + transitions, validate via trace, flip
+the flag, retire the Job layer.
+
 ## [Unreleased] - v0.9.4 — survival-bypass: Job-layer hysteresis no longer pins starving workers
 
 **Symptom reported (translated):** "工人现在找食物的效率很低，既使有几千食物库存，还经常堆在一个地方全部starving。你要全面检查工人的状态转换，我理解这是一个很底层的问题，说明我们转换做的很差，在一个阶段停留时间及长" — workers starve next to thousands of food in stockpile, cluster in one place. State transitions are bad; workers stay in one stage too long.

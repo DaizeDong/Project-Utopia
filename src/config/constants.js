@@ -203,12 +203,24 @@ export const SYSTEM_ORDER = Object.freeze([
 // false simulate an empty/no-op path. Phase 0.9.0-e is the tuning pass.
 let _useJobLayer = true;
 
+// USE_FSM — v0.10.0-a — Worker FSM rewrite. Default OFF until phase
+// 0.10.0-d. Phase 1 of 5 lands the FSM dispatcher infrastructure
+// (WorkerFSM + skeletal STATE_BEHAVIOR/STATE_TRANSITIONS) behind this
+// flag with zero behaviour change. WorkerAISystem only routes through
+// WorkerFSM when USE_FSM is true; production stays on the v0.9.4 Job-
+// layer path. Phase b populates state bodies, phase c validates via
+// trace, phase d flips the default ON, phase e retires the Job layer.
+// See docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
+let _useFsm = false;
+
 export const FEATURE_FLAGS = Object.freeze({
   get USE_JOB_LAYER() { return _useJobLayer; },
+  get USE_FSM() { return _useFsm; },
 });
 
 // Test-only setter. Do NOT call from production code paths.
 // Restores the flag to its default in afterEach hooks to keep tests isolated.
 export function _testSetFeatureFlag(name, value) {
   if (name === "USE_JOB_LAYER") _useJobLayer = Boolean(value);
+  if (name === "USE_FSM") _useFsm = Boolean(value);
 }
