@@ -6,6 +6,7 @@
 //   deaths | alive | avgFood | minFood | avgHunger | eat%state | prod%state
 
 import { SimHarness, DT_SEC } from "../src/benchmark/framework/SimHarness.js";
+import { BALANCE } from "../src/config/balance.js";
 
 const DAY_SEC = 90;
 const SIM_DAYS = 30;
@@ -66,7 +67,8 @@ const SCENARIOS = [
   { label: "fortified    ", opts: { templateId: "fortified_basin", seed: 2025 } },
 ];
 
-console.log(`P4 warehouse-eat benchmark  [${SIM_DAYS}-day runs, cap=4 food/s, rate=0.30/worker/s]`);
+const eatRate = Number(BALANCE?.warehouseEatRatePerWorkerPerSecond ?? 0.60);
+console.log(`P4 warehouse-eat benchmark  [${SIM_DAYS}-day runs, cap=4 food/s, rate=${eatRate}/worker/s]`);
 console.log("─".repeat(90));
 console.log(
   "scenario       " +

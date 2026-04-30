@@ -194,12 +194,12 @@ export const BALANCE = Object.freeze({
   workerHungerEatRecoveryPerFoodUnit: 0.11,
   // v0.10.1-h (P4) — at-warehouse fast-eat flow cap.
   // hungerRecovered exits EATING when hunger >= workerEatRecoveryTarget (0.70).
-  // Per-worker: 0.30 food/sec → (0.70-0.10)/0.11/0.30 ≈ 18 s full recovery.
-  // Global cap: 4.0 food/sec shared → 13 uncapped workers OR 16 workers
-  //   each at 0.25 food/s (19 s). Contended workers fall back to emergency-
-  //   ration trickle for that tick (budget exhausted).
-  // 18–19 s eat + 94.5 s work = ~83% productive (well above 0% baseline).
-  warehouseEatRatePerWorkerPerSecond: 0.30,
+  // Per-worker: 0.60 food/sec → (0.70-0.10)/0.11/0.60 ≈ 9 s full recovery.
+  // Global cap: 4.0 food/sec shared → 6.7 uncapped workers; workers 7-16
+  //   spill to carryEatStep (also 0.60/s). Total drain ≤ ~9.6 food/s peak,
+  //   but with 94.5 s work cycle average demand is only ~0.09 food/s per worker.
+  // 9 s eat + 94.5 s work = ~91% productive (from ~83% at 0.30/s).
+  warehouseEatRatePerWorkerPerSecond: 0.60,
   warehouseEatCapPerSecond: 4.0,
   resourceCollapseCarryGrace: 0.5,
   visitorHungerDecayPerSecond: 0.0085,

@@ -663,13 +663,26 @@ function createInitialEntitiesWithRandom(grid, random, scenario = null) {
   // never collide on "3 Mose"-type duplicates. Bank size (84) >> 13 so the
   // reroll cap inside pickWorkerName almost never fires for initial pop.
   const initialNameExcludeSet = new Set();
+  // v0.10.1-i — island_relay scenarios (archipelago, coastal) have isolated
+  // terrain islands; workers stranded there can't eat or work. Bias spawn
+  // toward coreWarehouse anchor so all workers start on the harbor island.
+  // Only applied for island_relay family — other scenarios have connected
+  // terrain so no bias is needed (and clustering hurts bare-init boids tests).
+  const spawnAnchor =
+    (scenario?.family === "island_relay" && anchors.coreWarehouse)
+      ? anchors.coreWarehouse
+      : null;
+  const SPAWN_RADIUS = 8;
+  const WORKER_SPAWN_TYPES = [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE];
   for (let i = 0; i < INITIAL_POPULATION.workers; i += 1) {
     // v0.8.10 — bare-initial-map. Roads/farms/lumber/warehouses are stripped
     // before this runs, so workers spawn on plain GRASS. randomTileOfTypes
     // accepts the strip tiles as fallback — they're now empty so the picker
     // falls through to GRASS, but listing all four keeps any future tutorial
     // mode that preserves buildings working without further changes.
-    const tile = randomTileOfTypes(grid, [TILE.GRASS, TILE.ROAD, TILE.FARM, TILE.LUMBER, TILE.WAREHOUSE], random);
+    const tile =
+      randomTileNearAnchorOfTypes(grid, spawnAnchor, SPAWN_RADIUS, WORKER_SPAWN_TYPES, random) ??
+      randomTileOfTypes(grid, WORKER_SPAWN_TYPES, random);
     const p = tileToWorld(tile.ix, tile.iz, grid);
     const worker = createWorker(p.x, p.z, random, { excludeSet: initialNameExcludeSet });
     // Only the bare given-name (without numeric suffix / surname) is added —

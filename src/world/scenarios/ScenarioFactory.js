@@ -631,6 +631,9 @@ function buildIslandRelayScenario(grid) {
   stampRoad(grid, relayDepot.ix, relayDepot.iz - 1, relayDepot.ix, relayDepot.iz + 1);
   setTileDirect(grid, relayDepot.ix, relayDepot.iz, TILE.ROAD);
   setTileDirect(grid, harbor.ix, harbor.iz, TILE.WAREHOUSE);
+  // v0.10.1-i: harbor subsistence patch — one garden tile on the harbor island
+  // so workers have something to harvest before bridges are built.
+  stampCluster(grid, harbor, [{ x: -3, z: 0 }], TILE.FARM);
 
   stampCluster(grid, eastFields, [{ x: 0, z: 0 }], TILE.FARM);
   stampCluster(grid, northTimber, [{ x: 0, z: 0 }], TILE.LUMBER);
