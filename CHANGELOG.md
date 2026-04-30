@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.10.0-f — drop dead worker `lastIntent` write (2026-04-30)
+
+Small follow-up to the v0.10.0 deferred list. The pre-FSM legacy
+`worker.debug.lastIntent` write at WorkerAISystem.js:1601 (with its local
+`ROLE_TO_INTENT` map) was always overridden 17 lines later by the FSM
+mirror write `worker.debug.lastIntent = fsmIntent`. Deleted the dead map
++ write (-14 LOC); `worker.debug.lastStateNode` write retained because
+EntityFocusPanel reads it as a fallback. Tests: 1646 / 0 / 2 (preserved).
+
 ## v0.10.0-e — stateLabel single-write + integration audit + retrospective (2026-04-30)
 
 Phase 5 of 5 in the Priority-FSM rewrite, finalising v0.10.0.
