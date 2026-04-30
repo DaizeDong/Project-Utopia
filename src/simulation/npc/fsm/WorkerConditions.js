@@ -79,31 +79,41 @@ export function tooTired(worker, _state, _services) {
 }
 
 /**
- * True when EATING should end. Mirrors v0.9.4 effective behaviour: worker
- * either (a) recovered above the seek threshold or (b) has been in EATING
- * long enough to cycle out (consumeEmergencyRation cooldown is 2.8 s, so
- * after 3 s the worker has had a chance to eat once and should resume
- * other activities even if hunger is still low — they'll re-trigger
- * SURVIVAL_FOOD shortly).
+ * True when EATING should end.
  *
- * v0.10.0-c — earlier draft used `hunger >= eatRecoveryTarget` (0.68).
- * Combined with the consumeEmergencyRation slow-eat in EATING.tick,
- * workers would never reach 0.68 in established colonies (decay outpaces
- * cooldown-gated trickle) and stay latched in EATING for 100+ seconds,
- * triggering the trace stuck>3s metric. Leaving at seek-threshold OR
- * after 3 s in-state matches v0.9.4 cycle frequency.
+ * v0.10.1-h (P4) — two-path exit:
+ *
+ * At-warehouse fast-eat (non-carryEat target): exit when hunger reaches the
+ * full recovery target (workerEatRecoveryTarget = 0.70). The fast-eat body
+ * runs at 0.30 food/s and recovers ~4.7 food in ~16 s, giving workers a
+ * full hunger top-up before returning to productive work. A 25 s safety cap
+ * prevents indefinite latching if the warehouse is depleted mid-meal.
+ *
+ * Carry-eat / emergency-ration path (carryEat target or no warehouse): cycle
+ * out after 3 s (matching v0.9.4 frequency). Workers can't fully recover on
+ * carry alone; they re-trigger SEEKING_FOOD naturally when hunger drops.
+ *
+ * v0.10.0-c note: the old approach used seek-threshold (0.18) + 3 s cap.
+ * With fast-eat, workers recover to 0.18 in ~5 s — past the cap — so the
+ * 3 s exit fired first, leaving hunger still below 0.18, causing an
+ * infinite SEEKING_FOOD → EATING(3s) → IDLE → SEEKING_FOOD loop (96% eat%).
  */
 export function hungerRecovered(worker, state, _services) {
-  const seek = Number(BALANCE.workerHungerSeekThreshold ?? 0.18);
-  if (Number(worker?.hunger ?? 0) >= seek) return true;
-  // Cycle out after 3 s in-state regardless of hunger — the worker has had
-  // at least one consumeEmergencyRation cooldown cycle worth of eating;
-  // re-evaluating the FSM lets them harvest, then re-trigger SURVIVAL_FOOD
-  // when hungry again.
+  const hungerNow = Number(worker?.hunger ?? 0);
+  const isCarryEat = Boolean(worker?.fsm?.target?.meta?.carryEat);
+
+  // Both paths exit when hunger reaches the recovery target. The safety cap
+  // differs: warehouse (fast-eat, global budget) uses 25 s; carry-eat (no
+  // cap, slightly slower when contended) uses 40 s. The cap handles the
+  // case where the food source runs dry mid-meal — `noFoodAvailable` will
+  // also fire then, providing a second exit.
+  const recoveryTarget = Number(BALANCE.workerEatRecoveryTarget ?? 0.70);
+  if (hungerNow >= recoveryTarget) return true;
   if (worker?.fsm) {
     const nowSec = Number(state?.metrics?.timeSec ?? 0);
     const enteredAt = Number(worker.fsm.enteredAtSec ?? nowSec);
-    if (nowSec - enteredAt >= 3.0) return true;
+    const cap = isCarryEat ? 40.0 : 25.0;
+    if (nowSec - enteredAt >= cap) return true;
   }
   return false;
 }

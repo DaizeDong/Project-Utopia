@@ -26,15 +26,13 @@ import {
   setTargetAndPath,
 } from "../../navigation/Navigation.js";
 import { worldToTile } from "../../../world/grid/Grid.js";
-// v0.10.0-d — Job layer retired. The five WorkerAISystem helpers
-// (applyHarvestStep, chooseWorkerTarget, pickWanderNearby, setIdleDesired,
-// handleDeliver, getWorkerEatRecoveryTarget, getWorkerRecoveryPerFoodUnit,
-// consumeEmergencyRation) are imported directly; the composite movement +
-// reservation helpers (executeMovement, tryAcquirePath, ...) live in
-// WorkerHelpers.js (sibling).
+// v0.10.0-d — Job layer retired. WorkerAISystem helpers imported directly;
+// composite movement + reservation helpers (executeMovement, tryAcquirePath)
+// live in WorkerHelpers.js (sibling). v0.10.1-h adds warehouseFastEat.
 import { executeMovement, tryAcquirePath } from "./WorkerHelpers.js";
 import {
   applyHarvestStep,
+  carryEatStep,
   chooseWorkerTarget,
   consumeEmergencyRation,
   getWorkerEatRecoveryTarget,
@@ -42,6 +40,7 @@ import {
   handleDeliver,
   pickWanderNearby,
   setIdleDesired,
+  warehouseFastEat,
 } from "../WorkerAISystem.js";
 import { findNearestHostile, getRoleHarvestTiles, getRoleProcessConfig } from "./WorkerConditions.js";
 
@@ -288,34 +287,29 @@ const EATING = Object.freeze({
   onEnter(worker, _state, _services) {
     setIntent(worker, "Eat", "eat");
   },
-  // v0.10.0-c — Mirror v0.9.4 effective behaviour rather than the
-  // formal at-warehouse fast-eat body. In v0.9.4 trace, scenario F
-  // workers spend 76% in seek_food and only 5% in eat — they almost
-  // never actually arrive at the warehouse (boids cluster + path retry
-  // cooldown), so JobEat.tick falls through to consumeEmergencyRation
-  // which slowly nibbles food via the 2.8 s cooldown. The "full
-  // recovery to 0.68" path is a rare event in established colonies.
+  // v0.10.1-h (P4) — at-warehouse fast-eat with global flow cap.
+  // Workers who arrive at the warehouse (non-carryEat target) call
+  // warehouseFastEat which honours the per-tick global budget in
+  // state._warehouseEatBudgetThisTick (reset by WorkerAISystem.update).
+  // Workers with a carryEat target (warehouse unreachable / blacklisted)
+  // or when the warehouse food is exhausted fall through to the slow
+  // consumeEmergencyRation path so they still make trickle progress.
   //
-  // Earlier FSM draft routed every EATING tick through the fast-eat
-  // body: 16 workers piled into the warehouse, fully recovered to 0.68
-  // each, drained the stockpile in 200 s, and the colony starved
-  // (12 deaths in F vs −4 in baseline). The cooldown-gated emergency
-  // ration matches the v0.9.4 yield-equivalent so deaths-in-F = baseline.
-  // Deferred to v0.10.1+: revisit at-warehouse fast-eat semantics now
-  // the Job layer is retired (v0.10.0-d). The cooldown-gated path is
-  // yield-equivalent to v0.9.4 baseline; switching to fast-eat would
-  // require re-tuning the warehouse intake cap or workers stampede the
-  // stockpile (see scenario F regression noted in this comment).
+  // v0.10.0-c note preserved for history: the earlier FSM draft routed
+  // ALL EATING ticks through fast-eat without a cap, draining the scenario
+  // F stockpile in 200 s (12 deaths). The flow cap (4 food/s colony-wide)
+  // prevents that stampede while still recovering workers in ~16 s.
   tick(worker, state, services, dt) {
     setIntent(worker, "Eat", "eat");
     setIdleDesired(worker);
-    // v0.10.0-c — EATING is at-tile (carryEat or warehouse). Refresh
-    // lastSuccessfulPathSec so the trace path-fail-loops metric (which
-    // counts seek_food intent + pathLen=0 + stale path) doesn't fire while
-    // the worker is actively eating in place.
     worker.blackboard ??= {};
     worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
-    consumeEmergencyRation(worker, state, dt, services);
+    const atWarehouse = worker.fsm?.target && !worker.fsm?.target?.meta?.carryEat;
+    if (atWarehouse) {
+      warehouseFastEat(worker, state, dt, services);
+    } else {
+      carryEatStep(worker, state, dt);
+    }
   },
   onExit(_worker, _state, _services) {
     // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
