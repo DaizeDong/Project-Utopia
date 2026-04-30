@@ -433,8 +433,8 @@ function addEmotionalPrefix(worker, state, text) {
 // (src/simulation/npc/fsm/) is the single source of truth for worker
 // decisions. The legacy intent string ("eat" / "deliver" / "farm" / etc.)
 // is derived from FSM state via `worker.blackboard.intent` (set by each
-// state body's onEnter / tick) and surfaced via `worker.debug.lastIntent`
-// in update() below.
+// state body's onEnter / tick) and mirrored to `worker.debug.lastIntent`
+// in update() below as a backward-compat surface for EntityFocusPanel.
 
 // v0.9.0-e — hasHiddenFrontier / findNearestHiddenTile deleted along with
 // handleWander. v0.10.0-d — the fog-frontier wander bias has not been
@@ -1587,20 +1587,6 @@ export class WorkerAISystem {
       worker.stateLabel = mapStateToDisplayLabel("workers", stateNode);
       worker.debug ??= {};
       const prevStateNode = worker.debug.lastStateNode;
-      // Map role to intent name for eval tracking (eval expects "farm"/"lumber" etc., not FSM states)
-      const ROLE_TO_INTENT = {
-        [ROLE.FARM]: "farm",
-        [ROLE.WOOD]: "lumber",
-        [ROLE.STONE]: "quarry",
-        [ROLE.HERBS]: "gather_herbs",
-        [ROLE.COOK]: "cook",
-        [ROLE.SMITH]: "smith",
-        [ROLE.HERBALIST]: "heal",
-        [ROLE.HAUL]: "haul",
-      };
-      worker.debug.lastIntent = (stateNode === "harvest" || stateNode === "seek_task" || stateNode === "process")
-        ? (ROLE_TO_INTENT[worker.role] ?? stateNode)
-        : stateNode;
       worker.debug.lastStateNode = stateNode;
 
       // v0.10.0-d — Priority-FSM is the only worker dispatcher. The
