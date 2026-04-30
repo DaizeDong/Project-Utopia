@@ -345,6 +345,38 @@ function findPlacementTile(state, buildSystem, tool, services = null) {
     return preview.ok ? { ix, iz } : null;
   }
 
+  // v0.9.3-balance — node-flag-priority placement for resource buildings.
+  // Lumber/quarry/herb_garden have NODE_GATED_TOOLS gates that require an
+  // adjacent FOREST/STONE/HERB nodeFlag. The legacy anchor-radius scan
+  // would walk shells around existing roads/warehouses; if no such node
+  // exists within radius-10 of infrastructure, AI silently dropped the
+  // build. Fix: enumerate nodeFlag-bearing tiles directly first, sort by
+  // distance to nearest warehouse, and try the closest. This is what
+  // makes "采石场没有石头" go away — AI now seeks out stone deposits
+  // wherever they are, not just where roads happen to reach.
+  if (tool === "lumber" || tool === "quarry" || tool === "herb_garden") {
+    const flag = tool === "lumber" ? 1 : tool === "quarry" ? 2 : 4;
+    const nodeTiles = findNodeFlagTiles(grid, flag);
+    const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+    if (nodeTiles.length > 0) {
+      // Sort by distance to nearest warehouse so the AI builds a
+      // node-near-infrastructure path even when nodes are far from roads.
+      nodeTiles.sort((a, b) => {
+        const da = warehouses.length > 0
+          ? Math.min(...warehouses.map((w) => Math.abs(w.ix - a.ix) + Math.abs(w.iz - a.iz)))
+          : 0;
+        const db = warehouses.length > 0
+          ? Math.min(...warehouses.map((w) => Math.abs(w.ix - b.ix) + Math.abs(w.iz - b.iz)))
+          : 0;
+        return da - db;
+      });
+      for (const t of nodeTiles) {
+        const r = tryTile(t.ix, t.iz);
+        if (r) return r;
+      }
+    }
+  }
+
   // Phase 1: Try preferred anchors first (worksites near warehouses, etc.)
   const preferred = getPreferredAnchors(state, tool);
   if (preferred && preferred.length > 0) {
@@ -379,6 +411,95 @@ function findPlacementTile(state, buildSystem, tool, services = null) {
 
   // No full grid scan — keep production buildings near existing infrastructure
   return null;
+}
+
+// v0.9.3-balance — enumerate every grid tile with a given nodeFlag bit
+// set on its tileState. Used by the resource-building placement helper to
+// site lumber/quarry/herb_garden directly on resource nodes regardless of
+// where existing infrastructure happens to be.
+function findNodeFlagTiles(grid, flag) {
+  const out = [];
+  if (!grid?.tileState) return out;
+  const w = Number(grid.width ?? 0);
+  for (const [idx, entry] of grid.tileState) {
+    const flags = Number(entry?.nodeFlags ?? 0) | 0;
+    if ((flags & flag) === 0) continue;
+    // Only consider tiles that haven't been built on yet (oldType GRASS).
+    // Tiles already converted to LUMBER/QUARRY/HERB_GARDEN preserve the
+    // nodeFlag but rebuild would fail in previewToolAt anyway; skipping
+    // them here keeps the loop short.
+    if (Number(grid.tiles[idx]) !== TILE.GRASS) continue;
+    const ix = idx % w;
+    const iz = Math.floor(idx / w);
+    out.push({ ix, iz });
+  }
+  return out;
+}
+
+// v0.9.3-balance — Bridge AI. The user reports "AI does not build bridges".
+// Root cause: assessColonyNeeds proposes bridge at priority 60, which
+// almost never wins when 6+ higher-priority needs are eligible. There is
+// also no reachability-driven placement — workers stranded by water do
+// not trigger a bridge.
+//
+// Fix: a small standalone proposer that runs once per ColonyDirector tick
+// (independent of the priority queue). It identifies "narrow water
+// crossings" — WATER tiles with ≥2 land neighbours on opposite sides —
+// and places a bridge blueprint on the most useful one. Throttled by
+// `lastBridgeProposalSec` so we don't spam.
+function proposeBridgesForReachability(state, buildSystem, services = null) {
+  const grid = state.grid;
+  if (!grid) return 0;
+  const director = ensureDirectorState(state);
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const lastSec = Number(director.lastBridgeProposalSec ?? -Infinity);
+  if (nowSec - lastSec < 30) return 0; // throttle: at most one bridge / 30s
+
+  const cost = BUILD_COST.bridge ?? {};
+  if (!canAfford(state.resources ?? {}, cost)) return 0;
+
+  // Find narrow water crossings: WATER tiles with passable land on at
+  // least two opposite-axis neighbours. A 1-tile bridge there connects
+  // two land regions across a river/strait.
+  const w = Number(grid.width ?? 0);
+  const h = Number(grid.height ?? 0);
+  const candidates = [];
+  for (let iz = 1; iz < h - 1; iz += 1) {
+    for (let ix = 1; ix < w - 1; ix += 1) {
+      if (grid.tiles[ix + iz * w] !== TILE.WATER) continue;
+      const N = grid.tiles[ix + (iz - 1) * w];
+      const S = grid.tiles[ix + (iz + 1) * w];
+      const E = grid.tiles[(ix + 1) + iz * w];
+      const W = grid.tiles[(ix - 1) + iz * w];
+      const isLand = (t) => t !== TILE.WATER && t !== undefined;
+      const NS = isLand(N) && isLand(S);
+      const EW = isLand(E) && isLand(W);
+      if (!NS && !EW) continue;
+      // Distance to nearest warehouse — prefer crossings near the colony
+      // so the bridge actually unlocks reachable production tiles.
+      const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
+      const distWh = warehouses.length > 0
+        ? Math.min(...warehouses.map((wh) => Math.abs(wh.ix - ix) + Math.abs(wh.iz - iz)))
+        : 999;
+      candidates.push({ ix, iz, distWh });
+    }
+  }
+  if (candidates.length === 0) return 0;
+  candidates.sort((a, b) => a.distWh - b.distWh);
+
+  for (const c of candidates) {
+    const preview = buildSystem.previewToolAt(state, "bridge", c.ix, c.iz, services);
+    if (!preview.ok) continue;
+    const result = buildSystem.placeToolAt(state, "bridge", c.ix, c.iz, {
+      recordHistory: false, services, owner: "autopilot", reason: "ai bridge — connect across narrow water",
+    });
+    if (result.ok) {
+      state.buildings = rebuildBuildingStats(state.grid);
+      director.lastBridgeProposalSec = nowSec;
+      return 1;
+    }
+  }
+  return 0;
 }
 
 /**
@@ -789,6 +910,19 @@ export class ColonyDirectorSystem {
     director.buildsPlaced += scenarioBuilds;
 
     if (!autopilotEnabled) return;
+
+    // v0.9.3-balance — Priority 1.5: bridge AI. The user reports "AI does
+    // not build bridges". Run a small reachability-driven proposer that
+    // bypasses the priority queue (where bridge@60 routinely loses to
+    // expansion@70+ needs). Throttled internally to ≤1 bridge / 30 sim-s
+    // and only fires when affordable. Runs only when autopilot is on so
+    // a manual player can still place bridges where they want.
+    const bridgeBuilds = proposeBridgesForReachability(state, this._buildSystem, services);
+    if (bridgeBuilds > 0) {
+      director.buildsPlaced += bridgeBuilds;
+      director.lastBuildSource = "fallback";
+      director.lastBuildTimeSec = nowSec;
+    }
 
     // Priority 2: phase-based colony development (including expansion after complete)
     // Scale build rate with colony resources — build faster when resources are abundant

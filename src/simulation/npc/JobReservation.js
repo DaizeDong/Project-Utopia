@@ -38,6 +38,65 @@ export class JobReservation {
   }
 
   /**
+   * v0.9.3-balance — atomic reservation claim. Returns true iff the tile is
+   * either unreserved or already reserved by this worker; in both cases the
+   * reservation is recorded/refreshed with a fresh timestamp. Returns false
+   * if a different worker holds the tile, in which case state is unchanged.
+   *
+   * This is the "1:1 worker→tile binding" primitive. Harvest Jobs call
+   * tryReserve on arrival; a `false` result means the worker lost the race
+   * and should abandon to JobWander (or another non-bound Job).
+   *
+   * @param {string} workerId
+   * @param {number} ix
+   * @param {number} iz
+   * @param {string} intentKey
+   * @param {number} nowSec
+   * @returns {boolean}
+   */
+  tryReserve(workerId, ix, iz, intentKey, nowSec) {
+    const key = `${ix},${iz}`;
+    const entry = this._tiles.get(key);
+    if (entry && entry.workerId !== workerId) return false;
+    // Either unreserved or already ours — refresh the timestamp + intent.
+    if (entry && entry.workerId === workerId) {
+      entry.timestamp = nowSec;
+      entry.intentKey = intentKey;
+      // Make sure the reverse map points here.
+      this._workerToTile.set(workerId, key);
+      return true;
+    }
+    // Unreserved — release any other reservation for this worker first so
+    // a worker only holds one tile at a time.
+    const prevKey = this._workerToTile.get(workerId);
+    if (prevKey !== undefined && prevKey !== key) {
+      const prevEntry = this._tiles.get(prevKey);
+      if (prevEntry && prevEntry.workerId === workerId) {
+        this._tiles.delete(prevKey);
+      }
+    }
+    this._tiles.set(key, { workerId, intentKey, timestamp: nowSec });
+    this._workerToTile.set(workerId, key);
+    return true;
+  }
+
+  /**
+   * v0.9.3-balance — return the workerId currently holding the tile, or
+   * null if unreserved. Used by `findTarget` to filter candidates so the
+   * scheduler doesn't repeatedly send a worker toward a tile already bound
+   * to another worker.
+   *
+   * @param {number} ix
+   * @param {number} iz
+   * @returns {string|null}
+   */
+  getOccupant(ix, iz) {
+    const key = `${ix},${iz}`;
+    const entry = this._tiles.get(key);
+    return entry?.workerId ?? null;
+  }
+
+  /**
    * Release the reservation for a specific worker on a specific tile.
    * @param {string} workerId
    * @param {number} ix
