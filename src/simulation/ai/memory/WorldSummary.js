@@ -248,8 +248,11 @@ export function buildWorldSummary(state) {
 export function buildPolicySummary(state) {
   const byGroup = {};
 
+  // v0.10.1-b — workers expose FSM state via `a.fsm.state`; animals via
+  // legacy `a.blackboard.fsm.state`. Lowercase to keep histogram keys
+  // case-consistent across entity types.
   for (const a of state.agents) {
-    const stateNode = a.blackboard?.fsm?.state ?? a.stateLabel ?? "idle";
+    const stateNode = (a.fsm?.state ?? a.blackboard?.fsm?.state ?? a.stateLabel ?? "idle").toLowerCase();
     byGroup[a.groupId] ??= { count: 0, avgHunger: 0, carrying: 0, states: {} };
     byGroup[a.groupId].count += 1;
     byGroup[a.groupId].avgHunger += a.hunger ?? 0;
@@ -258,7 +261,7 @@ export function buildPolicySummary(state) {
   }
 
   for (const a of state.animals) {
-    const stateNode = a.blackboard?.fsm?.state ?? a.stateLabel ?? "idle";
+    const stateNode = (a.fsm?.state ?? a.blackboard?.fsm?.state ?? a.stateLabel ?? "idle").toLowerCase();
     byGroup[a.groupId] ??= { count: 0, states: {} };
     byGroup[a.groupId].count += 1;
     byGroup[a.groupId].states[stateNode] = (byGroup[a.groupId].states[stateNode] ?? 0) + 1;

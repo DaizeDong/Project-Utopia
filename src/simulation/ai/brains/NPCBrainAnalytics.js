@@ -120,8 +120,12 @@ export function computeGroupAnalytics(state) {
       const z = safeNumber(m.z, height / 2);
       xs.push(x);
       zs.push(z);
-      const fsm = m.blackboard?.fsm?.state ?? m.stateLabel ?? "idle";
-      const isIdle = fsm === "idle" || fsm === "wander" || fsm === "rest" || fsm === "roam";
+      // v0.10.1-b — workers expose FSM state via `m.fsm.state` (uppercase
+      // "IDLE" / "WANDER" / "RESTING"); animals via legacy lowercase
+      // `m.blackboard.fsm.state`. Lowercase before comparing.
+      const fsm = (m.fsm?.state ?? m.blackboard?.fsm?.state ?? m.stateLabel ?? "idle").toLowerCase();
+      const isIdle = fsm === "idle" || fsm === "wander" || fsm === "rest"
+        || fsm === "resting" || fsm === "roam";
       if (isIdle) idleCount += 1;
       else activeCount += 1;
       const recent = m.memory?.recentEvents ?? [];
