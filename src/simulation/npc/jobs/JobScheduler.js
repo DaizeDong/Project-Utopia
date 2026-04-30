@@ -63,13 +63,37 @@ export class JobScheduler {
     let bestTarget = null;
     let bestScore = -Infinity;
 
+    // v0.9.4 — survival-bypass pre-pass. If any non-incumbent eligible Job
+    // reports `isSurvivalCritical(worker, state)`, the incumbent's sticky
+    // bonus is dropped from the comparison so a starving / collapsing
+    // worker isn't pinned on a productive incumbent by hysteresis.
+    //
+    // Architectural rationale: the v0.9.0 contract was "JobEat at hunger
+    // ≪ seek beats any other Job's score+bonus". The trace showed harvest
+    // raw=0.85 + decayed bonus=0.05 = 0.90 still beats JobEat raw=0.87 at
+    // hunger=0.18, so the contract holds only at hunger ≪ seek (≈0.05).
+    // Survival-critical preemption restores the contract end-to-end:
+    // crossing the seek threshold immediately makes JobEat compete on raw
+    // score, which it wins from 0.18 down to 0.0.
+    let survivalActive = false;
+    for (const job of this._jobs) {
+      if (incumbent && job.constructor === incumbent.constructor) continue;
+      if (!job.canTake(worker, state, services)) continue;
+      if (typeof job.isSurvivalCritical === "function"
+          && job.isSurvivalCritical(worker, state, services)) {
+        const target = job.findTarget(worker, state, services);
+        if (target) { survivalActive = true; break; }
+      }
+    }
+    const effectiveStickyBonus = survivalActive ? 0 : stickyBonus;
+
     for (const job of this._jobs) {
       if (!job.canTake(worker, state, services)) continue;
       const target = job.findTarget(worker, state, services);
       if (!target) continue;
       const raw = Number(job.score(worker, state, services, target) ?? 0);
       const isIncumbent = incumbent && job.constructor === incumbent.constructor;
-      const adjusted = isIncumbent ? raw + stickyBonus : raw;
+      const adjusted = isIncumbent ? raw + effectiveStickyBonus : raw;
       if (adjusted > bestScore) {
         bestScore = adjusted;
         bestJob = job;
