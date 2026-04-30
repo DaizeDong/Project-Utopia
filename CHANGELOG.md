@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.10.1-c — EntityFocus overlap + text-overflow fixes (2026-04-30)
+
+User-reported layout regression: bottom-left worker focus panel was
+overlapping with `#statusAction` toast and several inner texts were
+escaping the panel's right edge.
+
+### Root causes
+1. `--entity-focus-height` CSS variable was referenced by
+   `#statusAction`'s `bottom` offset but never set — defaulted to
+   `230px` regardless of actual overlay height.
+2. The offset formula `var(--entity-focus-height) + 8px` ignored the
+   overlay's own `bottom: 50px` anchor, so even with the variable set
+   correctly, statusAction sat ~50 px lower than its intended top edge
+   and intersected the overlay's vertical band.
+3. `#entityFocusBody` had `overflow-x: hidden` but no `word-break` /
+   `overflow-wrap`, so long unbroken tokens (entity IDs, AI exchange
+   text, policy state names) silently clipped off the right edge
+   instead of wrapping.
+
+### Fixes
+- `EntityFocusPanel` now installs a ResizeObserver on
+  `#entityFocusOverlay` that writes `--entity-focus-height` to the
+  document root on every resize (mirroring HUDController's
+  `--hud-height` pattern).
+- CSS formula corrected to `max(36px, calc(50px + var(--entity-focus-height, 230px) + 8px))`
+  so `#statusAction` always sits one 8 px gap above the overlay's top
+  edge.
+- `#entityFocusBody` gets `word-break: break-word; overflow-wrap: anywhere;`
+  + `min-width: 0` on direct children + `pre`/`code` `white-space: pre-wrap`
+  with the same wrap rules.
+
+Tests: 22 / 0 in UI-panel suite (full suite already at 1646 / 0 / 2
+post v0.10.1-b; this commit adds CSS + a browser-only ResizeObserver).
+
 ## v0.10.1-b — UI consumers prefer FSM state (2026-04-30)
 
 P1a of UI migration off the legacy display FSM. Three UI consumers now

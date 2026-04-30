@@ -474,6 +474,27 @@ export class EntityFocusPanel {
     this.#bindInteractionGuards();
     this.#bindWorkerListDelegate();
     this.#bindFamilyChipDelegate();
+    this.#observeOverlayHeight();
+  }
+
+  // v0.10.1-c — keep the bottom-left status toast (`#statusAction`) and any
+  // future bottom-left HUD elements clear of the EntityFocus overlay. The
+  // CSS `bottom: max(36px, calc(var(--entity-focus-height, 230px) + 8px))`
+  // formula needs the overlay's actual rendered height; without this
+  // observer the variable was never set and the toast collided with the
+  // overlay whenever the overlay grew past ~230 px.
+  #observeOverlayHeight() {
+    if (typeof ResizeObserver === "undefined" || !this.wrapper) return;
+    let lastH = -1;
+    const observer = new ResizeObserver((entries) => {
+      const h = Math.round(entries[0]?.contentRect?.height ?? 0);
+      if (Math.abs(h - lastH) < 2) return;
+      lastH = h;
+      const root = document.documentElement;
+      if (root?.style) root.style.setProperty("--entity-focus-height", `${h}px`);
+    });
+    observer.observe(this.wrapper);
+    this._overlayObserver = observer;
   }
 
   #bindWorkerListDelegate() {
