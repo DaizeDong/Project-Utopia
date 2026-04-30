@@ -6,7 +6,7 @@
 
 import { clamp } from "../../../app/math.js";
 import { BALANCE } from "../../../config/balance.js";
-import { ROLE } from "../../../config/constants.js";
+import { ROLE, TILE } from "../../../config/constants.js";
 import { listTilesByType, worldToTile } from "../../../world/grid/Grid.js";
 import {
   applyHarvestStep,
@@ -32,6 +32,44 @@ function manhattan(a, b) {
     + Math.abs(Number(a?.iz ?? 0) - Number(b?.iz ?? 0));
 }
 
+// v0.9.3-balance — when the utility-best tile is reserved by another worker
+// under 1:1 binding, walk the full candidate list (cheap; ≤ a few dozen
+// per scenario) and pick the highest-score tile that's not reserved by a
+// different worker, not blacklisted, and not yield-pool-empty.
+function pickUnreservedFallback(worker, state, targetTileTypes, services) {
+  const grid = state?.grid;
+  if (!grid) return null;
+  const reservation = state._jobReservation;
+  const blacklist = services?.pathFailBlacklist;
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
+  const tiles = listTilesByType(grid, targetTileTypes);
+  const here = worldToTile(Number(worker?.x ?? 0), Number(worker?.z ?? 0), grid);
+  let best = null;
+  let bestScore = -Infinity;
+  for (const t of tiles) {
+    if (reservation?.getOccupant) {
+      const occ = reservation.getOccupant(t.ix, t.iz);
+      if (occ && occ !== worker.id) continue;
+    }
+    if (blacklist?.isBlacklisted) {
+      const tt = grid.tiles[t.ix + t.iz * grid.width];
+      if (blacklist.isBlacklisted(worker.id, t.ix, t.iz, tt, nowSec)) continue;
+    }
+    if (grid.tileState && targetTileTypes[0] !== TILE.FARM) {
+      const ts = grid.tileState.get(t.ix + t.iz * grid.width);
+      if (Number(ts?.yieldPool ?? 0) <= 0) continue;
+    }
+    const dist = manhattan(t, here);
+    // Inverse-distance score so the closest unreserved tile wins.
+    const score = -dist;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { ix: t.ix, iz: t.iz };
+    }
+  }
+  return best;
+}
+
 export class JobHarvestBase extends Job {
   // Subclasses override these statics:
   static id = "harvest_base";
@@ -51,39 +89,67 @@ export class JobHarvestBase extends Job {
     if (Number(state?.buildings?.[ctor.buildingCountKey] ?? 0) <= 0) return false;
     const carryCap = Number(BALANCE.workerDeliverThreshold ?? 1.6) * CARRY_FULL_FACTOR;
     if (carryTotal(worker) >= carryCap) return false;
-    // v0.9.0-d (audit F12 structural fix, symmetric with JobDeliverWarehouse) —
-    // if every target tile of this harvest type is on the worker's path-fail
-    // blacklist, declare the Job ineligible. Without this, a stranded WOOD
-    // worker can loop on unreachable lumber forever; instead the scheduler
-    // falls through to JobWander (or another Job).
+    // v0.9.3-balance — eligibility is now narrower:
+    //   1) at least one tile of this type must have yieldPool > 0 (an
+    //      exhausted forest is functionally an idle building and should
+    //      drop out of the eligible Job list so JobWander wins, exposing
+    //      the depletion to the player rather than wasting worker time).
+    //   2) at least one tile must NOT be reserved by another worker (1:1
+    //      binding — if every tile of this type is already bound, this
+    //      Job is full and the next worker should pick something else).
+    //   3) at least one tile must not be path-fail blacklisted for this
+    //      worker (legacy v0.9.0-d guard).
+    //
+    // Test compatibility: when state.grid is missing (minimal-state unit
+    // tests), trust the building count and skip the per-tile gate. The
+    // grid-aware gates only fire in real simulation states.
+    if (!state?.grid) return true;
+    const tiles = listTilesByType(state.grid, ctor.targetTileTypes);
+    if (tiles.length <= 0) return false;
     const blacklist = services?.pathFailBlacklist;
-    if (blacklist?.isBlacklisted && state?.grid) {
-      const tiles = listTilesByType(state.grid, ctor.targetTileTypes);
-      if (tiles.length > 0) {
-        const nowSec = Number(state?.metrics?.timeSec ?? 0);
-        let anyUsable = false;
-        for (const t of tiles) {
-          const tt = state.grid.tiles[t.ix + t.iz * state.grid.width];
-          if (!blacklist.isBlacklisted(worker.id, t.ix, t.iz, tt, nowSec)) {
-            anyUsable = true;
-            break;
-          }
-        }
-        if (!anyUsable) return false;
+    const reservation = state?._jobReservation;
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    let anyEligible = false;
+    for (const t of tiles) {
+      const tt = state.grid.tiles[t.ix + t.iz * state.grid.width];
+      if (blacklist?.isBlacklisted
+          && blacklist.isBlacklisted(worker.id, t.ix, t.iz, tt, nowSec)) continue;
+      // 1:1 binding: skip tiles reserved by a *different* worker. Tiles
+      // reserved by this same worker remain eligible (sticky targeting).
+      if (reservation?.getOccupant) {
+        const occ = reservation.getOccupant(t.ix, t.iz);
+        if (occ && occ !== worker.id) continue;
       }
+      // Yield-pool gate (FOREST/HERB regen; STONE finite). FARM is gated
+      // separately because it has its own fertility/fallow rules — keep
+      // FARM eligible whenever the building exists so the existing
+      // fallow-recovery / fertility logic stays in charge there.
+      if (ctor.targetTileTypes[0] !== undefined && state.grid.tileState) {
+        const ts = state.grid.tileState.get(t.ix + t.iz * state.grid.width);
+        const tileType = ctor.targetTileTypes[0];
+        // FARM tiles use TileStateSystem._updateSoil to refill yieldPool;
+        // a fallow farm is briefly empty but auto-recovers, so we treat
+        // any FARM as eligible regardless of pool depth. Other production
+        // tiles must have a positive yieldPool to be productive.
+        if (tileType !== TILE.FARM) {
+          const pool = Number(ts?.yieldPool ?? 0);
+          if (pool <= 0) continue;
+        }
+      }
+      anyEligible = true;
+      break;
     }
-    return true;
+    return anyEligible;
   }
 
   findTarget(worker, state, services) {
     const ctor = this.constructor;
     const blacklist = services?.pathFailBlacklist;
+    const reservation = state?._jobReservation;
     const nowSec = Number(state?.metrics?.timeSec ?? 0);
     // v0.9.0-d — sticky targeting within the Job. If the worker already has
-    // a valid harvest target (matching tile-type, not blacklisted), reuse it
-    // so we don't re-pick a different tile every tick. This mirrors the
-    // legacy maybeRetarget behaviour and keeps a worker committed to the
-    // tile they're already standing on / walking toward.
+    // a valid harvest target (matching tile-type, not blacklisted, and not
+    // reserved-by-someone-else thanks to v0.9.3), reuse it.
     const existing = worker.currentJob?.target ?? worker.targetTile ?? null;
     if (existing && state?.grid) {
       const tileAt = state.grid.tiles[existing.ix + existing.iz * state.grid.width];
@@ -91,7 +157,12 @@ export class JobHarvestBase extends Job {
         const blacklisted = blacklist?.isBlacklisted
           ? blacklist.isBlacklisted(worker.id, existing.ix, existing.iz, tileAt, nowSec)
           : false;
-        if (!blacklisted) return { ix: existing.ix, iz: existing.iz };
+        const reservedByOther = reservation?.getOccupant
+          && reservation.getOccupant(existing.ix, existing.iz)
+          && reservation.getOccupant(existing.ix, existing.iz) !== worker.id;
+        if (!blacklisted && !reservedByOther) {
+          return { ix: existing.ix, iz: existing.iz };
+        }
       }
     }
     const target = chooseWorkerTarget(
@@ -100,14 +171,26 @@ export class JobHarvestBase extends Job {
     );
     // v0.9.0-d (audit F12 structural fix) — chooseWorkerTarget may return a
     // blacklisted tile as its "best fallback" when every candidate is
-    // blacklisted (the harvest semantic of "keep trying the only farm"). For
-    // the Job-layer eligibility model, treat that as no target so the
-    // scheduler picks JobWander rather than retrying a known-unreachable
-    // tile each tick. Mirrors JobDeliverWarehouse's blacklist guard.
+    // blacklisted. Treat that as no target so the scheduler picks
+    // JobWander rather than retrying a known-unreachable tile each tick.
     if (target && blacklist?.isBlacklisted) {
       const tt = state.grid.tiles[target.ix + target.iz * state.grid.width];
       if (blacklist.isBlacklisted(worker.id, target.ix, target.iz, tt, nowSec)) {
         return null;
+      }
+    }
+    // v0.9.3-balance — if chooseWorkerTarget's best pick is reserved by
+    // another worker, walk the candidate list and pick the highest-score
+    // non-reserved tile of the same type. The score-time -2.0 reservation
+    // penalty means an unreserved tile beats any reserved one even if
+    // distance is unfavourable, so a single linear scan is enough.
+    if (target && reservation?.getOccupant) {
+      const occ = reservation.getOccupant(target.ix, target.iz);
+      if (occ && occ !== worker.id) {
+        const fallback = pickUnreservedFallback(
+          worker, state, ctor.targetTileTypes, services,
+        );
+        return fallback;
       }
     }
     return target;
@@ -155,6 +238,22 @@ export class JobHarvestBase extends Job {
       tryAcquirePath(worker, target, state, services);
       executeMovement(worker, state, dt);
       return;
+    }
+    // v0.9.3-balance — atomic 1:1 claim on arrival. If another worker
+    // sneaked in (raced this tile and arrived first), abandon this Job;
+    // the scheduler will re-pick next tick (most likely JobWander, then
+    // a different harvest tile when one frees up).
+    const reservation = state._jobReservation;
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    if (reservation?.tryReserve) {
+      const ok = reservation.tryReserve(worker.id, target.ix, target.iz, ctor.intentLabel, nowSec);
+      if (!ok) {
+        // Lost the race — drop this target and let JobScheduler re-pick.
+        worker.currentJob = null;
+        worker.targetTile = null;
+        worker.stateLabel = ctor.seekLabel;
+        return;
+      }
     }
     worker.blackboard.intent = ctor.intentLabel;
     worker.stateLabel = ctor.stateLabel;

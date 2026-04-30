@@ -1,5 +1,67 @@
 # Changelog
 
+## [Unreleased] - v0.9.3-balance — bridge AI, 1:1 worker-building binding, production-time rebalance
+
+**Symptoms reported (translated):**
+
+1. "AI目前还不会造桥，修复这个问题" — AI doesn't build bridges. The user explicitly listed this as a bug.
+2. "目前还是经常出现很多WORKER聚集在一个工作地块的情况，我理解应该把生产建筑做成动态绑定制的，一个建筑最多对应1个worker，这样才能避免争抢与刷资源" — workers cluster on one tile; production buildings should be dynamically bound 1:1 (one building, max one worker) to avoid contention.
+3. "目前所有建筑的材料与产出还是不太合理...采石场因为没有石头就一直没起，并且1个伐木场供应了几百个木头" — quarry without stone never produces; one lumber yard supplies hundreds of wood.
+
+User's thesis: "现在的问题是worker的逻辑很混乱，有效行为率很低，但是生产建筑似乎存在无限量且极快产出的能力，导致掩盖了游戏的底层问题。思考一下，平衡生产建筑的产出（如生产时间、一对一绑定等等），这样才能为worker逻辑优化腾出空间" — production buildings have effectively unlimited fast output that masks worker AI problems. Balance production (production time, 1:1 binding) so worker logic optimization has room.
+
+### Phase-1 research summary
+
+- **Bridge AI**: `assessColonyNeeds` did propose `bridge@priority=60`, but `selectNextBuilds` was dominated by 6+ higher-priority needs (warehouse@92, farm@80, lumber@78, etc.). Bridge essentially never surfaced. There was also no reachability-driven bridge proposal — workers stranded by water never triggered one.
+- **1:1 binding**: `JobReservation.reserve` was non-atomic (overwrites without checking). `chooseWorkerTarget` applied only a soft -2.0 score penalty for reserved tiles, not a hard exclusion. The new Job-layer (USE_JOB_LAYER=true) bypassed `reserve()` entirely — only the legacy `maybeRetarget` path called it. Net effect: 12 workers all routinely cluster on the same FARM/LUMBER.
+- **Production gates / rates**: LUMBER/QUARRY/HERB harvest reads/writes the tile's *own* yieldPool. There is no per-tile rate limit — 5 workers stacked on one FARM all produce in parallel (5× output). The harvest cooldown (`workerHarvestDurationSec=1.7`) is per-worker. A 12-worker colony on 1 FARM produced ~420 food/min — exactly the "infinite fast output" the user identified.
+
+### Bridge AI fix
+
+- New `proposeBridgesForReachability` in `ColonyDirectorSystem.js`. Runs once per ColonyDirector tick *outside* the priority queue (which loses the bridge to expansion@70+ needs every cycle). Scans WATER tiles for "narrow crossings" — water with land on both N+S or both E+W neighbours — sorts by distance to nearest warehouse, and places a bridge blueprint on the most useful one. Throttled to ≤1 bridge / 30 sim-seconds via `director.lastBridgeProposalSec`. Affordability gate (3w + 1s).
+- `findPlacementTile` now does node-flag-priority placement for `lumber` / `quarry` / `herb_garden`: enumerates all tiles bearing the matching nodeFlag (FOREST/STONE/HERB), sorts by distance to nearest warehouse, and tries those first before falling back to the legacy anchor-radius scan. This is what fixes "采石场没有石头" — AI now seeks out stone deposits wherever they are, not just where existing roads happen to reach.
+
+### 1:1 worker → building binding
+
+- `JobReservation` gains two new APIs: `tryReserve(workerId, ix, iz, intentKey, nowSec) → bool` (atomic; refuses if another worker holds it) and `getOccupant(ix, iz) → workerId | null`.
+- `JobHarvestBase` rewritten:
+  - `canTake` now requires at least one tile of the matching type to be (a) yieldPool > 0 (FOREST/HERB/STONE; FARM bypasses since fallow recovers automatically), (b) not reserved by *another* worker, (c) not blacklisted. Empty grid (minimal-state unit tests) trusts the building count for backward compat.
+  - `findTarget` checks the reservation registry on the existing/sticky target and on the chooseWorkerTarget pick; if reserved by someone else, falls back to a Manhattan-distance scan that filters out reserved/blacklisted/empty-pool tiles.
+  - `tick` calls `tryReserve` atomically on arrival. Loss → drop the job (`worker.currentJob = null`), scheduler re-picks next tick.
+- All existing `releaseAll` paths (death, role change, completion, sabotage/wildfire `releaseTile`) preserved unchanged. JobBuildSite and JobDeliverWarehouse semantics unchanged (warehouses stay multi-worker; build sites are already 1:1 via builder reservation).
+
+### Production rate rebalance
+
+| BALANCE.* constant | Old | New | Reason |
+|---|---|---|---|
+| `workerHarvestDurationSec` | 1.7 | 2.4 | ~25 cycles/min not ~35; pairs with 1:1 binding so single-worker output is the cap |
+| `farmYieldPoolInitial` | 100 | 90 | depletion bites within ~3 sim-min, fallow trigger relevant |
+| `farmYieldPoolRegenPerTick` | 0.08 | 0.06 | depletion outpaces regen for sustained harvest |
+| `nodeYieldPoolForest` | 150 | 110 | one worker exhausts ~5 min, encourages migration |
+| `nodeYieldPoolHerb` | 100 | 80 | matching pacing |
+| `nodeRegenPerTickForest` | 0.10 | 0.06 | net drain per harvest, eventually goes idle |
+| `nodeRegenPerTickHerb` | 0.06 | 0.04 | matching pacing |
+| `nodeYieldPoolStone` | 200 | 200 (unchanged) | finite by design (mineral deposits don't regrow) |
+
+Math (post-1:1 binding):
+- 1 worker × 1 farm: ~25 food/min (vs. ~420/min stacked at the old rates).
+- 12 workers × 12 buildings (4 farm + 4 lumber + 2 quarry + 2 herb): demand-bounded, scales with player's building investment.
+- 12 workers × 1 farm: still ~25 food/min — production now reflects building count, not worker count.
+
+### Files changed
+
+- `src/simulation/npc/JobReservation.js` — `tryReserve`, `getOccupant`. ~+50 LOC.
+- `src/simulation/npc/jobs/JobHarvestBase.js` — node-yield gate in `canTake`, reserved-tile filter in `findTarget`, atomic claim in `tick`, `pickUnreservedFallback` helper. ~+95 LOC.
+- `src/simulation/meta/ColonyDirectorSystem.js` — `proposeBridgesForReachability`, `findNodeFlagTiles`, node-priority block in `findPlacementTile`, hookup in `update()`. ~+115 LOC.
+- `src/config/balance.js` — 7 constants retuned. ~+15 / -5 LOC.
+- `test/v0.9.3-balance.test.js` — new file, 11 tests covering 1:1 primitives, harvest binding, bridge AI proposer, BALANCE bounds. ~+220 LOC.
+- `CHANGELOG.md` — this entry.
+
+### Test suite delta
+
+- Pre-v0.9.3 baseline: 1654 tests / 1651 pass / 0 fail / 3 skip. After v0.9.3: **1665 tests / 1662 pass / 0 fail / 3 skip**. Net delta: +11 tests (the new v0.9.3-balance suite), 0 regressions.
+- `phase1-resource-chains` (test 797 STONE / 798 HERBS canTake) initially failed when first runs of the v0.9.3 canTake required at least one matching tile in the grid; the minimal-state tests pass `state.buildings = { quarries: 1 }` without an actual grid. Fix: when `state.grid` is missing, trust the building count (matches pre-v0.9.3 semantics for unit-test compat). All 38 phase1-resource-chains tests pass after the fix.
+
 ## [Unreleased] - v0.9.2-ui — UI breathing room: kill truncation, surface tile data, drop forced shrinkage
 
 **Symptom reported (translated):** "目前的UI还可以有很大优化空间，很多地方都文本都显示不全，或者显示很少。你要参考优秀的设计，思考如何让美的各方的文本都显示全面，不要因为分辨率而被迫收缩" — text gets clipped at every chip, the EntityFocus + Inspector show too little, and the UI-Scale slider used CSS `zoom` so shrinking the UI made letters smaller without re-flowing the layout (the literal "被迫收缩" pain).

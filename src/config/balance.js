@@ -525,7 +525,13 @@ export const BALANCE = Object.freeze({
   // v0.8.5.1 hotfix: 2.0 was 33% slower than v0.8.4 (1.5) and the biggest
   // single contributor to the Day-30 DevIndex regression. 1.7 = 13%
   // slower vs v0.8.4 instead of 33%.
-  workerHarvestDurationSec: 1.7,
+  // v0.9.3-balance: 1.7 → 2.4. Slower visible per-cycle cadence pairs with
+  // 1:1 worker→building binding so a single worker on a single tile yields
+  // ~25 cycles/min rather than ~35. The throughput cap moves from "workers
+  // available" (was effectively unbounded with stacking) to "buildings
+  // available × 1 worker per building" (now bounded). This is the central
+  // production-rebalance knob the user requested ("生产时间").
+  workerHarvestDurationSec: 2.4,
   workerProcessDurationSec: 3.0,
   // --- Living World v0.8.0 — Phase 1 (M3 + M4), values per spec § 14.1 ---
   // M3 carry fatigue: rest decay multiplier while carrying anything (>0 carry.total).
@@ -617,8 +623,13 @@ export const BALANCE = Object.freeze({
   // Half-rollback: 100 (depletion still bites earlier than v0.8.4's 120,
   // but not as hard); 0.08 (still tighter than v0.8.4's 0.10 but
   // softens the long-term throughput throttling).
-  farmYieldPoolInitial: 100,
-  farmYieldPoolRegenPerTick: 0.08,
+  // v0.9.3-balance: initial 100 → 90, regen 0.08 → 0.06. With 1:1 binding
+  // a single worker drains a farm noticeably within ~3 sim-min and the
+  // fallow trigger then matters; combined with the slower harvest cycle
+  // the player feels yieldPool depletion as a real constraint instead of
+  // the "infinite farm" the user reported.
+  farmYieldPoolInitial: 90,
+  farmYieldPoolRegenPerTick: 0.06,
   farmYieldPoolMax: 180,
   // --- Living World v0.8.0 — Phase 3 (M1c demolition recycling), spec § 3 M1c + § 14.1 ---
   // Per-resource recovery fractions applied on demolish ("erase" tool) to the
@@ -658,14 +669,23 @@ export const BALANCE = Object.freeze({
   // v0.8.5 Tier 3: bigger node pools restore the spec's intended depletion
   // arc (current depletion in ~10 min was 60-70% below spec). Stone is
   // permanent; bigger pool is the lubricant for stone supply.
-  nodeYieldPoolForest: 150,
+  // v0.9.3-balance: forest 150 → 110, herb 100 → 80. Stone unchanged
+  // (finite by design). With 1:1 binding and the slower harvest cycle a
+  // single worker drains a 110-pool LUMBER in ~5 min — encouraging the
+  // player to spread out and migrate rather than pinning workers on a
+  // single yard. User reported "1 lumberyard supplies hundreds of wood"
+  // because workers stacked on it; both 1:1 binding and tighter pools
+  // are needed to actually solve that.
+  nodeYieldPoolForest: 110,
   nodeYieldPoolStone: 200,
-  nodeYieldPoolHerb: 100,
-  // Regen rates lowered slightly because the bigger pools mean less regen
-  // is needed to feel "infinite-but-throttled".
-  nodeRegenPerTickForest: 0.10,
+  nodeYieldPoolHerb: 80,
+  // v0.9.3-balance: regen forest 0.10 → 0.06, herb 0.06 → 0.04. Slower
+  // regen ensures depletion outpaces regrowth under continuous harvest,
+  // so the lumberyard / herb garden does eventually go idle and the
+  // player has to expand. Stone still 0 (mineral deposits are finite).
+  nodeRegenPerTickForest: 0.06,
   nodeRegenPerTickStone: 0.0,
-  nodeRegenPerTickHerb: 0.06,
+  nodeRegenPerTickHerb: 0.04,
   // --- Living World v0.8.0 — Phase 4 (Survival Mode), spec §§ 5.1-5.6 ---
   // Endless survival mode replaces the 3-objective win path. ProgressionSystem
   // accrues a running score at `state.metrics.survivalScore` that rewards
