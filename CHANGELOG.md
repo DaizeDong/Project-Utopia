@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.10.1-g — faction-aware reachability components (P3) (2026-04-30)
+
+`ReachabilityCache.probeAndCache` now consults a colony-faction
+connected-components label map before running A*. Cross-component
+queries (worker on island #2 querying nearest LUMBER on island #1)
+short-circuit to `{reachable: false}` in O(1), conserving the per-tick
+probe budget for genuinely-uncertain probes. Components are computed
+lazily on grid.version change via union-find over passable tiles
+(~6912 tiles → ~30 µs build). Hostile factions still hit full A* for
+gate-ownership / wall-vs-faction nuance.
+
+- Added `_buildColonyComponents` + `_componentAt` helpers (exported as
+  `_test*` for unit tests).
+- New `componentSkips` counter in `getStats()` so trace tests can
+  verify the pre-filter is actually saving probes.
+- 3 new unit tests in `test/v0.10.1-g-faction-reachability-components.test.js`
+  covering: 2-island wall partition (component count + label values),
+  cross-component LUMBER short-circuit (probes=0 + budget untouched),
+  same-component LUMBER (probes=1 + reachable=true).
+- 2 existing reachability tests updated to use `worldToTile(worker.x,
+  worker.z)` instead of "first GRASS scan" — the scan tile may sit
+  in a different colony component than the warehouse, which the new
+  pre-filter correctly reports as unreachable.
+
+Tests: 1651 / 0 / 2 (was 1648 / 0 / 2; +3 for the new component test).
+
+## v0.10.1-f — retire legacy display planner for workers (P1b) (2026-04-30)
+
+Stops calling the legacy `planEntityDesiredState` /
+`transitionEntityState` pipeline for workers. The Priority-FSM is now
+the *only* worker decision pipeline; `worker.blackboard.fsm.*` is no
+longer populated for workers (visitors + animals still tick the legacy
+planner via their own AI systems).
+
+- Removed `import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js"`
+  and `import { planEntityDesiredState }` from WorkerAISystem.js.
+- Removed the pre-FSM-tick `plan = planEntityDesiredState(...)` +
+  `stateNode = transitionEntityState(...)` block.
+- WORKER_RESTING event now fires on FSM RESTING transition (compares
+  `worker.fsm.state` against `prevFsmState` cached from last tick).
+- `worker.debug.lastStateNode` mirrors `worker.fsm.state.toLowerCase()`
+  so EntityFocusPanel's fallback chain still resolves.
+- `updateIdleWithoutReasonMetric` switched from
+  `worker.blackboard.fsm.reason` (no longer populated) to a path-based
+  signal: idle/wander state with no active path is the equivalent
+  "stuck for telemetry" predicate.
+
+Tests: 1648 / 0 / 2 preserved.
+
 ## v0.10.1-e — worker focus prose trim + restart repro (2026-04-30)
 
 User reported: the worker focus panel still autoexpands as content

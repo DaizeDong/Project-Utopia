@@ -14,8 +14,90 @@
 import { aStar } from "../navigation/AStar.js";
 import { listTilesByType, worldToTile } from "../../world/grid/Grid.js";
 import { getEntityFaction } from "../navigation/Faction.js";
+import { TILE_INFO } from "../../config/constants.js";
 
 const DEFAULT_PROBE_BUDGET_PER_TICK = 8;
+
+// v0.10.1-g (P3) — Connected-components pre-filter for the colony faction.
+//
+// Without this, a stranded worker on island #2 burns A* probes against
+// every LUMBER tile on island #1 (one per tick, until the probe budget
+// drains) before falling through to the carry-eat fallback. With the
+// pre-filter the cache short-circuits cross-component queries to
+// `{reachable: false}` in O(1), and the per-tick budget is preserved
+// for genuinely-uncertain probes.
+//
+// Components are union-find labels over passable tiles for the colony
+// faction (TILE_INFO.passable === true; walls and water separate
+// islands). Hostile factions still go through full A* — gate ownership
+// and wall-vs-faction nuance is checked there. Refreshed once per
+// grid.version change; ~6912 tiles → ~30µs build time on the bench
+// preset.
+function _buildColonyComponents(grid) {
+  const w = grid.width | 0;
+  const h = grid.height | 0;
+  const n = w * h;
+  const tiles = grid.tiles;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i += 1) parent[i] = i;
+
+  const find = (x) => {
+    let root = x;
+    while (parent[root] !== root) root = parent[root];
+    while (parent[x] !== root) { const nxt = parent[x]; parent[x] = root; x = nxt; }
+    return root;
+  };
+  const union = (a, b) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  const isPassable = (idx) => {
+    const info = TILE_INFO[tiles[idx]];
+    return Boolean(info?.passable);
+  };
+
+  // 4-neighbour union pass — A* uses the same connectivity (no diagonals).
+  for (let z = 0; z < h; z += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const idx = x + z * w;
+      if (!isPassable(idx)) continue;
+      if (x + 1 < w && isPassable(idx + 1)) union(idx, idx + 1);
+      if (z + 1 < h && isPassable(idx + w)) union(idx, idx + w);
+    }
+  }
+
+  // Compact: representative root → 0..K-1 component label so callers can
+  // compare with a single Int32Array lookup.
+  const label = new Int32Array(n);
+  for (let i = 0; i < n; i += 1) label[i] = -1;
+  const labels = new Int32Array(n);
+  let next = 0;
+  for (let i = 0; i < n; i += 1) {
+    if (!isPassable(i)) continue;
+    const root = find(i);
+    let comp = label[root];
+    if (comp < 0) {
+      comp = next;
+      label[root] = comp;
+      next += 1;
+    }
+    labels[i] = comp;
+  }
+  // Impassable tiles get label -1 so any cross-tile lookup against them
+  // mismatches every passable component. Initialised to 0 above; rewrite.
+  for (let i = 0; i < n; i += 1) {
+    if (!isPassable(i)) labels[i] = -1;
+  }
+  return { width: w, height: h, labels, count: next };
+}
+
+function _componentAt(components, ix, iz) {
+  if (!components) return -2;
+  if (ix < 0 || iz < 0 || ix >= components.width || iz >= components.height) return -2;
+  return components.labels[ix + iz * components.width];
+}
 
 function tileTypesKey(targetTileTypes) {
   // Stable key independent of caller order. Numeric tile-type IDs sort
@@ -46,12 +128,18 @@ export class ReachabilityCache {
   constructor() {
     this._cache = new Map();
     this._lastGridVersion = -1;
+    // v0.10.1-g (P3) — colony-faction connected-components label map,
+    // rebuilt lazily on grid.version change. See _buildColonyComponents.
+    this._components = null;
     this._stats = {
       hits: 0,
       misses: 0,
       probes: 0,
       gridInvalidations: 0,
       budgetSkips: 0,
+      // v0.10.1-g (P3) — count cross-component short-circuits so we can
+      // verify the pre-filter is actually saving probes in tests / bench.
+      componentSkips: 0,
     };
   }
 
@@ -66,8 +154,24 @@ export class ReachabilityCache {
         this._stats.gridInvalidations += 1;
       }
       this._cache.clear();
+      // Drop the components label map too — it tracks the same grid
+      // version. Lazily rebuilt on the next probe.
+      this._components = null;
       this._lastGridVersion = version;
     }
+  }
+
+  /**
+   * Lazy connected-components for the current grid.version. Built on
+   * first request after a grid invalidation. Returns the stored object
+   * `{ width, height, labels: Int32Array, count }` so callers can
+   * inspect component IDs at tile indices.
+   */
+  _ensureComponents(grid) {
+    if (this._components) return this._components;
+    if (!grid) return null;
+    this._components = _buildColonyComponents(grid);
+    return this._components;
   }
 
   /**
@@ -149,6 +253,35 @@ export class ReachabilityCache {
       return { reachable: true, sourceTile: target };
     }
 
+    // v0.10.1-g (P3) — connected-components pre-filter for the colony
+    // faction. If worker and target are in different components, no path
+    // exists; cache `{reachable: false}` without burning a probe budget
+    // slot. The colony components account for walls + water (impassable)
+    // but treat gates as passable, matching A*'s default behaviour for
+    // the colony faction.
+    //
+    // Hostile factions still hit the full A* probe (gates may close to
+    // them and need the faction-aware path search).
+    const factionEarly = entity ? getEntityFaction(entity) : "colony";
+    if (factionEarly === "colony") {
+      const comps = this._ensureComponents(state.grid);
+      if (comps) {
+        const srcComp = _componentAt(comps, workerTile.ix, workerTile.iz);
+        const dstComp = _componentAt(comps, target.ix, target.iz);
+        if (srcComp >= 0 && dstComp >= 0 && srcComp !== dstComp) {
+          this._stats.componentSkips += 1;
+          const entry = {
+            reachable: false,
+            sourceTile: null,
+            gridVersion: this._lastGridVersion,
+            computedAtTick: Number(state.metrics?.tick ?? 0),
+          };
+          this._cache.set(makeKey(workerTile, targetTileTypes), entry);
+          return { reachable: false, sourceTile: null };
+        }
+      }
+    }
+
     state._reachabilityProbeBudget -= 1;
     this._stats.probes += 1;
 
@@ -183,10 +316,16 @@ export class ReachabilityCache {
       probes: this._stats.probes,
       gridInvalidations: this._stats.gridInvalidations,
       budgetSkips: this._stats.budgetSkips,
+      componentSkips: this._stats.componentSkips,
       size: this._cache.size,
     };
   }
 }
+
+// v0.10.1-g (P3) — exported for tests so they can directly assert on
+// component labelling without going through the cache's public surface.
+export const _testBuildColonyComponents = _buildColonyComponents;
+export const _testComponentAt = _componentAt;
 
 /**
  * Convenience helper used by callers that don't want to write the
