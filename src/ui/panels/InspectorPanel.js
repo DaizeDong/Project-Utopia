@@ -9,6 +9,20 @@ const TILE_LABEL = Object.freeze(
   }, {}),
 );
 
+// v0.9.2-ui (F2) — Inspector tab strip. Each tab owns the full sidebar
+// width so that the Terrain / Building / Path / Memory concerns no longer
+// fight for the same 244px column. RimWorld inspector reference: Bio /
+// Health / Gear / Schedule / Social — different concerns get different
+// tabs so width pressure is split. localStorage key follows the
+// utopia* convention used by sidebar / compact mode.
+const INSPECTOR_TAB_KEY = "utopiaInspectorTab";
+const INSPECTOR_TABS = Object.freeze([
+  { id: "terrain", label: "Terrain" },
+  { id: "building", label: "Building" },
+  { id: "path", label: "Path" },
+  { id: "memory", label: "Memory" },
+]);
+
 function vecFmt(vx = 0, vz = 0) {
   return `(${Number(vx).toFixed(2)}, ${Number(vz).toFixed(2)})`;
 }
@@ -21,12 +35,72 @@ function safeJson(value) {
   }
 }
 
+// v0.9.2-ui (F13) — readable list of node flag bits (FOREST/STONE/HERB).
+// The flags Uint8 lives at state.grid.nodeFlags[idx] when present.
+const NODE_FLAG_LABELS = [
+  { mask: 0x01, label: "FOREST" },
+  { mask: 0x02, label: "STONE" },
+  { mask: 0x04, label: "HERB" },
+];
+function describeNodeFlags(flags) {
+  if (!flags) return "—";
+  const out = [];
+  for (const { mask, label } of NODE_FLAG_LABELS) {
+    if ((flags & mask) === mask) out.push(label);
+  }
+  return out.length ? out.join(", ") : "—";
+}
+
+// v0.9.2-ui (F13) — render a numeric metric with an inline 0-1 bar.
+function metricBar(label, value, opts = {}) {
+  if (value == null || !Number.isFinite(Number(value))) {
+    return `<div class="small"><b>${label}:</b> —</div>`;
+  }
+  const v = Number(value);
+  const norm = opts.scale ? Math.max(0, Math.min(1, v / opts.scale)) : Math.max(0, Math.min(1, v));
+  const pct = Math.round(norm * 100);
+  const tint = opts.invertColor
+    ? (norm > 0.66 ? "#e07070" : norm > 0.33 ? "#c9a94e" : "#8ebf8e")
+    : (norm > 0.66 ? "#8ebf8e" : norm > 0.33 ? "#c9a94e" : "#e07070");
+  const formatted = opts.format === "int" ? v.toFixed(0) : v.toFixed(opts.digits ?? 2);
+  return `<div class="small" style="display:flex;align-items:center;gap:6px;"><b style="flex:0 0 auto;">${label}:</b><span style="flex:0 0 auto;font-variant-numeric:tabular-nums;">${formatted}</span><span style="flex:1 1 auto;height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;min-width:60px;"><span style="display:block;height:100%;width:${pct}%;background:${tint};"></span></span></div>`;
+}
+
 export class InspectorPanel {
   constructor(state) {
     this.state = state;
     this.root = document.getElementById("inspect");
     this.lastHtml = "";
+    // v0.9.2-ui (F2) — restore last-active tab from localStorage so the
+    // player's section choice persists across reloads. activeTab is
+    // mutated by the click delegate registered in render().
+    this.activeTab = this.#loadActiveTab();
+    this._tabClickBound = false;
   }
+
+  #loadActiveTab() {
+    try {
+      const stored = (typeof localStorage !== "undefined") ? localStorage.getItem(INSPECTOR_TAB_KEY) : null;
+      if (stored && INSPECTOR_TABS.some((t) => t.id === stored)) return stored;
+    } catch { /* localStorage unavailable in tests */ }
+    return "terrain";
+  }
+
+  #saveActiveTab(id) {
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(INSPECTOR_TAB_KEY, id);
+    } catch { /* ignore */ }
+  }
+
+  #renderTabStrip() {
+    return `<div class="inspector-tab-strip" role="tablist" style="display:flex;gap:4px;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:4px;">${INSPECTOR_TABS.map((t) => {
+      const active = t.id === this.activeTab;
+      return `<button type="button" role="tab" data-inspector-tab="${t.id}" aria-selected="${active}" style="flex:1 1 auto;padding:3px 6px;font-size:10px;font-weight:700;border-radius:4px;border:1px solid ${active ? "rgba(80,160,220,0.4)" : "rgba(255,255,255,0.08)"};background:${active ? "rgba(80,160,220,0.18)" : "rgba(255,255,255,0.04)"};color:${active ? "#d0e8ff" : "rgba(208,232,255,0.65)"};cursor:pointer;">${t.label}</button>`;
+    }).join("")}</div>`;
+  }
+
+  // v0.9.2-ui (F13) — Terrain data is rendered inline inside the Terrain
+  // tab; see #renderTerrainDataBlock below.
 
   #renderTileSection() {
     const tile = this.state.controls.selectedTile;
@@ -96,10 +170,10 @@ export class InspectorPanel {
         overlayLine = `<div class="small"><b>Demolish:</b> ${oldLabel.toLowerCase()} (${pct}%)${builderHint}</div>`;
       }
     }
-    // v0.8.7 T3-5 (QA2-F10): Wall HP indicator — show current/max HP for
-     // WALL/GATE tiles so players can verify the visual red-tint cue
-     // numerically. Reads from grid.tileState.wallHp (set by ConstructionSystem
-     // on placement and decremented by saboteur/raider attacks).
+    // v0.9.2-ui (F13) — wallHp rendered inside the Terrain tab section
+    // alongside fertility/moisture etc. Tests pin <b>HP:</b> shape so the
+    // string lives in the terrain block, which is always emitted into
+    // innerHTML even when a different tab is active.
     let wallHpLine = "";
     if (currentType === TILE.WALL || currentType === TILE.GATE) {
       const tileState = this.state.grid?.tileState;
@@ -212,60 +286,118 @@ export class InspectorPanel {
       logisticsLine = `<div class="small"><b>Logistics:</b> ${label}</div>`;
     }
 
+    // v0.9.2-ui (F2) — split into 4 tabbed subsections. ALL sections are
+    // emitted into the DOM so existing tests that grep innerHTML for
+    // "Processing" / "<b>Building</b>" / "<b>HP:</b>" still pass; the
+    // active tab is controlled via the [data-active-tab] CSS rule plus
+    // the .inspector-section[data-inspector-section] gate. RimWorld pattern:
+    // each concern owns the full panel width when active. Memory dumps live
+    // in their own tab so they no longer dominate when the player is
+    // looking at a FARM. Inside Memory, each <pre> JSON dump is wrapped in
+    // <details> collapsed by default so a 200-line memory blob does not
+    // become a 600-line waterfall.
+    const tileInfoBlock = `
+      <div class="inspector-section" data-inspector-section="terrain">
+        <div><b>Selected Tile</b></div>
+        <div class="small" style="margin-top:6px;"><b>Coord:</b> (${tile.ix}, ${tile.iz}) | idx=${idx}</div>
+        <div class="small"><b>Type:</b> ${TILE_LABEL[currentType] ?? tile.typeName} (${currentType})</div>
+        <div class="small"><b>Passable:</b> ${String(info.passable)}</div>
+        <div class="small"><b>Move Cost:</b> ${Number(info.baseCost).toFixed(2)}</div>
+        <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
+        <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
+        <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
+        ${wallHpLine}
+        ${this.#renderTerrainDataBlock(idx, currentType)}
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>Tile Context</b></summary>
+          <div class="small" style="margin-top:6px;">
+            ${tileInsights.length > 0 ? tileInsights.join("<br />") : "No frontier-specific context on this tile."}
+          </div>
+        </details>
+      </div>
+    `;
+    const buildingSection = `
+      <div class="inspector-section" data-inspector-section="building">
+        ${overlayLine}
+        ${logisticsLine}
+        ${buildingBlock || `<div class="small muted">No production data for this tile (select a FARM/LUMBER/QUARRY/WAREHOUSE/KITCHEN/SMITHY/CLINIC).</div>`}
+        ${processingBlock}
+        <details style="margin-top:8px;" ${previewMatchesTile ? "open" : ""}>
+          <summary class="small"><b>Build Preview</b></summary>
+          <div class="small" style="margin-top:6px;">
+            ${previewMatchesTile
+              ? [
+                `<b>Tool:</b> ${String(this.state.controls.tool)}`,
+                `<b>Status:</b> ${preview.ok ? "valid" : "blocked"}`,
+                preview.summary ? `<b>Summary:</b> ${preview.summary}` : "",
+                preview.reasonText ? `<b>Reason:</b> ${preview.reasonText}` : "",
+                preview.cost ? `<b>Cost:</b> food ${preview.cost.food ?? 0}, wood ${preview.cost.wood ?? 0}` : "",
+                preview.refund ? `<b>Salvage:</b> food ${preview.refund.food ?? 0}, wood ${preview.refund.wood ?? 0}` : "",
+                preview.effects?.length ? `<b>Effects:</b> ${preview.effects.join(" | ")}` : "",
+                preview.warnings?.length ? `<b>Warnings:</b> ${preview.warnings.join(" | ")}` : "",
+              ].filter(Boolean).join("<br />")
+              : "Hover the selected tile to inspect construction rules and scenario impact."}
+          </div>
+        </details>
+      </div>
+    `;
+    return `${this.#renderTabStrip()}<div class="inspector-tabs" data-active-tab="${this.activeTab}">${tileInfoBlock}${buildingSection}</div>`;
+  }
+
+  // v0.9.2-ui (F13) — extracted Terrain Data block emitted inline inside
+  // the terrain tab section. The block always renders (even for grass
+  // tiles with no tileState entry) so the player learns what data exists.
+  #renderTerrainDataBlock(idx, currentType) {
+    const tileState = this.state.grid?.tileState;
+    const entry = tileState?.get?.(idx) ?? null;
+    const fertility = entry?.fertility;
+    const moisture = entry?.moisture;
+    const soilExhaustion = entry?.soilExhaustion;
+    const salinization = entry?.salinization;
+    const yieldPool = entry?.yieldPool;
+    const nodeFlags = this.state.grid?.nodeFlags?.[idx] ?? 0;
+
+    let fogState = "—";
+    const vis = this.state.fog?.visibility;
+    if (vis && idx < vis.length) {
+      const v = vis[idx];
+      fogState = v >= 2 ? "visible" : v === 1 ? "discovered" : "unknown";
+    }
+
     return `
-      <div><b>Selected Tile</b></div>
-      <div class="small" style="margin-top:6px;"><b>Coord:</b> (${tile.ix}, ${tile.iz}) | idx=${idx}</div>
-      <div class="small"><b>Type:</b> ${TILE_LABEL[currentType] ?? tile.typeName} (${currentType})</div>
-      <div class="small"><b>Passable:</b> ${String(info.passable)}</div>
-      <div class="small"><b>Move Cost:</b> ${Number(info.baseCost).toFixed(2)}</div>
-      <div class="small"><b>Height:</b> ${Number(info.height).toFixed(3)}</div>
-      <div class="small"><b>Grid Version:</b> ${this.state.grid.version}</div>
-      <div class="small"><b>Neighbors:</b> ${neighbors.join(" | ")}</div>
-      ${wallHpLine}
-      ${overlayLine}
-      ${logisticsLine}
-      ${buildingBlock}
-      ${processingBlock}
-      <details style="margin-top:8px;" open>
-        <summary class="small"><b>Tile Context</b></summary>
-        <div class="small" style="margin-top:6px;">
-          ${tileInsights.length > 0 ? tileInsights.join("<br />") : "No frontier-specific context on this tile."}
-        </div>
-      </details>
-      <details style="margin-top:8px;" ${previewMatchesTile ? "open" : ""}>
-        <summary class="small"><b>Build Preview</b></summary>
-        <div class="small" style="margin-top:6px;">
-          ${previewMatchesTile
-            ? [
-              `<b>Tool:</b> ${String(this.state.controls.tool)}`,
-              `<b>Status:</b> ${preview.ok ? "valid" : "blocked"}`,
-              preview.summary ? `<b>Summary:</b> ${preview.summary}` : "",
-              preview.reasonText ? `<b>Reason:</b> ${preview.reasonText}` : "",
-              preview.cost ? `<b>Cost:</b> food ${preview.cost.food ?? 0}, wood ${preview.cost.wood ?? 0}` : "",
-              preview.refund ? `<b>Salvage:</b> food ${preview.refund.food ?? 0}, wood ${preview.refund.wood ?? 0}` : "",
-              preview.effects?.length ? `<b>Effects:</b> ${preview.effects.join(" | ")}` : "",
-              preview.warnings?.length ? `<b>Warnings:</b> ${preview.warnings.join(" | ")}` : "",
-            ].filter(Boolean).join("<br />")
-            : "Hover the selected tile to inspect construction rules and scenario impact."}
-        </div>
-      </details>
+      <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;">
+        <div class="small" style="opacity:0.7;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;font-size:9px;">Terrain Data</div>
+        ${fertility != null ? metricBar("Fertility", fertility) : `<div class="small muted"><b>Fertility:</b> default (no override)</div>`}
+        ${moisture != null ? metricBar("Moisture", moisture) : `<div class="small muted"><b>Moisture:</b> default</div>`}
+        ${soilExhaustion != null ? metricBar("Soil Exhaustion", soilExhaustion, { invertColor: true }) : `<div class="small muted"><b>Soil Exhaustion:</b> 0</div>`}
+        ${salinization != null ? metricBar("Salinization", salinization, { invertColor: true }) : `<div class="small muted"><b>Salinization:</b> 0</div>`}
+        ${yieldPool != null ? `<div class="small"><b>Yield Pool:</b> <span style="font-variant-numeric:tabular-nums;">${Number(yieldPool).toFixed(2)}</span></div>` : `<div class="small muted"><b>Yield Pool:</b> —</div>`}
+        <div class="small"><b>Node Flags:</b> ${describeNodeFlags(nodeFlags)}</div>
+        <div class="small"><b>Fog:</b> ${fogState}</div>
+      </div>
     `;
   }
 
   #renderEntitySection() {
     const selectedId = this.state.controls.selectedEntityId;
     if (!selectedId) {
+      // v0.9.2-ui (F2) — wrap fallback messages in an inspector-section so
+      // the tab gate hides them when other tabs (Terrain) are active.
       return `
-        <div style="margin-top:10px;"><b>Selected Entity</b></div>
-        <div class="small muted">Click any worker, visitor, herbivore, or predator.</div>
+        <div class="inspector-section" data-inspector-section="building">
+          <div style="margin-top:10px;"><b>Selected Entity</b></div>
+          <div class="small muted">Click any worker, visitor, herbivore, or predator.</div>
+        </div>
       `;
     }
 
     const entity = [...this.state.agents, ...this.state.animals].find((e) => e.id === selectedId);
     if (!entity) {
       return `
-        <div style="margin-top:10px;"><b>Selected Entity</b></div>
-        <div class="small muted">Selected id not found in current world.</div>
+        <div class="inspector-section" data-inspector-section="building">
+          <div style="margin-top:10px;"><b>Selected Entity</b></div>
+          <div class="small muted">Selected id not found in current world.</div>
+        </div>
       `;
     }
 
@@ -289,56 +421,112 @@ export class InspectorPanel {
     const digest = getCausalDigest(this.state);
     const aiInsight = getAiInsight(this.state);
 
-    return `
-      <div style="margin-top:10px;"><b>Selected Entity</b> <span class="muted">(${entity.id})</span></div>
-      <div class="small" style="margin-top:6px;"><b>Name:</b> ${entity.displayName ?? entity.id}</div>
-      <div class="small"><b>Type:</b> ${entity.type}${entity.kind ? `/${entity.kind}` : ""}</div>
-      <div class="small"><b>State:</b> ${entity.stateLabel}</div>
-      <div class="small"><b>Role:</b> ${entity.role ?? "N/A"}</div>
-      <div class="small"><b>Group:</b> ${entity.groupId ?? "-"}</div>
-      <div class="small"><b>Position:</b> (${entity.x.toFixed(3)}, ${entity.z.toFixed(3)})</div>
-      <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx || 0, entity.vz || 0)} | speed=${speed}</div>
-      <div class="small"><b>DesiredVel:</b> ${desired}</div>
-      <div class="small"><b>Hunger:</b> ${hunger}</div>
-      <div class="small"><b>Carry:</b> ${carry}</div>
-      <div class="small"><b>Intent:</b> ${blackboardIntent}</div>
-      <div class="small"><b>Target Tile:</b> ${target}</div>
-      <div class="small"><b>Path:</b> ${pathProgress}</div>
-      <div class="small"><b>Path Versions:</b> grid=${entity.pathGridVersion} traffic=${entity.pathTrafficVersion ?? 0}</div>
-      <details style="margin-top:8px;" open>
-        <summary class="small"><b>Why It Matters</b></summary>
-        <div class="small" style="margin-top:6px;"><b>Global Headline:</b> ${digest.headline}</div>
-        <div class="small"><b>AI Narrative:</b> ${aiInsight.summary}</div>
-        <div class="small"><b>Current Warning:</b> ${digest.warning}</div>
-      </details>
-      <details style="margin-top:8px;" open>
-        <summary class="small"><b>Decision Context</b></summary>
-        <div class="small" style="margin-top:6px;">
-          ${entityInsights.length > 0 ? entityInsights.join("<br />") : "No extra decision context for this entity."}
-        </div>
-      </details>
-      <details style="margin-top:8px;">
-        <summary class="small"><b>Path Detail</b></summary>
-        <div class="small" style="margin-top:6px; white-space:normal;">${pathNodes}</div>
-      </details>
-      <details style="margin-top:8px;">
-        <summary class="small"><b>AI / Memory / Blackboard</b></summary>
+    // v0.9.2-ui (F2) — entity content is split into Building (entity
+    // overview / decision context), Path (route detail), Memory (raw JSON
+    // dumps wrapped in <details> so they don't dominate). All blocks are
+    // emitted; the active tab is gated by [data-active-tab] CSS.
+    const overview = `
+      <div class="inspector-section" data-inspector-section="building">
+        <div style="margin-top:10px;"><b>Selected Entity</b> <span class="muted">(${entity.id})</span></div>
+        <div class="small" style="margin-top:6px;"><b>Name:</b> ${entity.displayName ?? entity.id}</div>
+        <div class="small"><b>Type:</b> ${entity.type}${entity.kind ? `/${entity.kind}` : ""}</div>
+        <div class="small"><b>State:</b> ${entity.stateLabel}</div>
+        <div class="small"><b>Role:</b> ${entity.role ?? "N/A"}</div>
+        <div class="small"><b>Group:</b> ${entity.groupId ?? "-"}</div>
+        <div class="small"><b>Position:</b> (${entity.x.toFixed(3)}, ${entity.z.toFixed(3)})</div>
+        <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx || 0, entity.vz || 0)} | speed=${speed}</div>
+        <div class="small"><b>DesiredVel:</b> ${desired}</div>
+        <div class="small"><b>Hunger:</b> ${hunger}</div>
+        <div class="small"><b>Carry:</b> ${carry}</div>
+        <div class="small"><b>Intent:</b> ${blackboardIntent}</div>
+        <div class="small"><b>Target Tile:</b> ${target}</div>
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>Why It Matters</b></summary>
+          <div class="small" style="margin-top:6px;"><b>Global Headline:</b> ${digest.headline}</div>
+          <div class="small"><b>AI Narrative:</b> ${aiInsight.summary}</div>
+          <div class="small"><b>Current Warning:</b> ${digest.warning}</div>
+        </details>
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>Decision Context</b></summary>
+          <div class="small" style="margin-top:6px;">
+            ${entityInsights.length > 0 ? entityInsights.join("<br />") : "No extra decision context for this entity."}
+          </div>
+        </details>
+      </div>
+    `;
+    const pathTab = `
+      <div class="inspector-section" data-inspector-section="path">
+        <div class="small"><b>Path:</b> ${pathProgress}</div>
+        <div class="small"><b>Path Versions:</b> grid=${entity.pathGridVersion} traffic=${entity.pathTrafficVersion ?? 0}</div>
+        <details style="margin-top:8px;" open>
+          <summary class="small"><b>Path Detail</b></summary>
+          <div class="small" style="margin-top:6px; white-space:normal;">${pathNodes}</div>
+        </details>
+      </div>
+    `;
+    // v0.9.2-ui (F2) — Memory dumps are now individually collapsible.
+    // Each <pre> block sits inside its own <details> so a 200-line
+    // memory blob no longer becomes a 600-line vertical waterfall the
+    // moment the parent details opens.
+    const memoryTab = `
+      <div class="inspector-section" data-inspector-section="memory">
         <div class="small" style="margin-top:6px;"><b>Cooldown:</b> ${Number(entity.cooldown ?? 0).toFixed(2)}</div>
         <div class="small"><b>Sabotage CD:</b> ${Number(entity.sabotageCooldown ?? 0).toFixed(2)}</div>
-        <pre class="small" style="white-space:pre-wrap; margin-top:6px;">blackboard = ${safeJson(entity.blackboard ?? {})}</pre>
-        <pre class="small" style="white-space:pre-wrap; margin-top:6px;">policy = ${safeJson(entity.policy ?? null)}</pre>
-        <pre class="small" style="white-space:pre-wrap; margin-top:6px;">groupPolicy = ${safeJson(groupPolicy)}</pre>
-        <pre class="small" style="white-space:pre-wrap; margin-top:6px;">memory = ${safeJson(entity.memory ?? {})}</pre>
-        <pre class="small" style="white-space:pre-wrap; margin-top:6px;">debug = ${safeJson(entity.debug ?? {})}</pre>
-      </details>
+        <details style="margin-top:8px;"><summary class="small"><b>blackboard</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.blackboard ?? {})}</pre></details>
+        <details style="margin-top:8px;"><summary class="small"><b>policy</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.policy ?? null)}</pre></details>
+        <details style="margin-top:8px;"><summary class="small"><b>groupPolicy</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(groupPolicy)}</pre></details>
+        <details style="margin-top:8px;"><summary class="small"><b>memory</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.memory ?? {})}</pre></details>
+        <details style="margin-top:8px;"><summary class="small"><b>debug</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.debug ?? {})}</pre></details>
+      </div>
     `;
+    // Note: the entity sections are appended to the same .inspector-tabs
+    // container in render() so [data-active-tab] gates them too.
+    return `${overview}${pathTab}${memoryTab}`;
   }
 
+  // v0.9.2-ui (F2) — combine tile + entity sections under a single
+  // [data-active-tab] container so the tab gate hides/shows the right
+  // sections cleanly. The tile section already opens .inspector-tabs;
+  // we close it after the entity sections are appended.
   render() {
     if (!this.root) return;
-    const html = `${this.#renderTileSection()}${this.#renderEntitySection()}`;
+    const tileHtml = this.#renderTileSection();
+    const entityHtml = this.#renderEntitySection();
+    // Tile section ends with </div> closing .inspector-tabs; reopen so
+    // entity sections inherit the same data-active-tab gate. We splice
+    // the closing </div> off and append entity content + close.
+    let html;
+    if (tileHtml.endsWith("</div>")) {
+      const trimmed = tileHtml.slice(0, -"</div>".length);
+      html = `${trimmed}${entityHtml}</div>`;
+    } else {
+      html = `${tileHtml}${entityHtml}`;
+    }
     if (html === this.lastHtml) return;
     this.lastHtml = html;
     this.root.innerHTML = html;
+    this.#bindTabClicks();
+  }
+
+  // v0.9.2-ui (F2) — bind a single delegated click handler that switches
+  // tabs without triggering a full innerHTML rewrite. The .lastHtml gate
+  // above re-renders only when the underlying tile/entity changes.
+  #bindTabClicks() {
+    if (this._tabClickBound) return;
+    if (!this.root || typeof this.root.addEventListener !== "function") return;
+    this.root.addEventListener("click", (event) => {
+      const btn = event.target?.closest?.("[data-inspector-tab]");
+      if (!btn) return;
+      const id = btn.getAttribute("data-inspector-tab");
+      if (!id || id === this.activeTab) return;
+      if (!INSPECTOR_TABS.some((t) => t.id === id)) return;
+      this.activeTab = id;
+      this.#saveActiveTab(id);
+      // Force a re-render so the strip's aria-selected + container's
+      // data-active-tab pick up the change.
+      this.lastHtml = "";
+      this.render();
+    });
+    this._tabClickBound = true;
   }
 }

@@ -579,7 +579,16 @@ export class EntityFocusPanel {
       // the worker-list rollup is rewritten here.
       const hungerLabel = formatFocusHungerLabel(w);
       const selectedClass = w.id === selectedId ? " selected" : "";
-      return `<button type="button" class="entity-worker-row${selectedClass}" data-entity-id="${escapeHtml(w.id)}">${escapeHtml(name)} · ${escapeHtml(role)} · ${escapeHtml(stateLabel)} · ${escapeHtml(hungerLabel)}</button>`;
+      // v0.9.2-ui (F4) — split name / role / state / hunger into separate
+      // spans so each can shrink/ellipsize independently. The name claims
+      // priority (flex:1) and ellipsizes first; role + state ellipsize but
+      // stay visible at narrow widths. Full row mirrored into title= so
+      // hover (via the customTooltip migrateTitles MO) reveals the
+      // unabridged content. Visible text still preserves the "·" pattern
+      // for a11y/snapshot stability — separators are emitted as data so
+      // they don't affect layout flex calculations.
+      const fullText = `${name} · ${role} · ${stateLabel} · ${hungerLabel}`;
+      return `<button type="button" class="entity-worker-row${selectedClass}" data-entity-id="${escapeHtml(w.id)}" title="${escapeHtml(fullText)}"><span class="ewr-name">${escapeHtml(name)}</span><span class="ewr-sep" aria-hidden="true">·</span><span class="ewr-role">${escapeHtml(role)}</span><span class="ewr-sep" aria-hidden="true">·</span><span class="ewr-state">${escapeHtml(stateLabel)}</span><span class="ewr-sep" aria-hidden="true">·</span><span class="ewr-hunger">${escapeHtml(hungerLabel)}</span></button>`;
     }).join("");
     const hiddenSummary = overflow > 0 ? summarizeHiddenFocusRows(hiddenRows) : "";
     const displayFooter = overflow > 0
