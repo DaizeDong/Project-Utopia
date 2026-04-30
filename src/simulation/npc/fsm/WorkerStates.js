@@ -102,18 +102,36 @@ function arrived(worker, state) {
 
 // IDLE
 
+// v0.10.0-c — wander-refresh constants ported from JobWander.js so the
+// FSM IDLE state cycles wander targets at the same cadence as the v0.9.4
+// Job-layer (without these, pickWanderNearby's 10% null-return left
+// workers standing still for the full SEEKING-stuck timeout, which
+// surfaced as a 4-stuck regression in scenario A bare-init).
+const WANDER_REFRESH_BASE_SEC = 1.4;
+const WANDER_REFRESH_JITTER_SEC = 1.2;
+
 const IDLE = Object.freeze({
   onEnter(worker, _state, _services) {
     if (worker.fsm) worker.fsm.target = null;
     setIntent(worker, "Wander", "wander");
   },
+  // TODO v0.10.0-d: dedupe with retired Job code (JobWander.tick).
   tick(worker, state, services, dt) {
     setIntent(worker, "Wander", "wander");
-    // TODO v0.10.0-d: dedupe with retired Job code (JobWander.tick).
-    if (!hasActivePath(worker, state)) {
+    worker.blackboard ??= {};
+    const blackboard = worker.blackboard;
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    const nextWanderRefreshSec = Number(blackboard.nextWanderRefreshSec ?? -Infinity);
+    const stalePath = Boolean(worker.path) && worker.pathGridVersion !== state.grid?.version;
+    if (!hasActivePath(worker, state) || stalePath || nowSec >= nextWanderRefreshSec) {
       if (!hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
+        clearPath(worker);
         const target = pickWanderNearby(worker, state, services);
-        if (target) setTargetAndPath(worker, target, state, services);
+        if (target && setTargetAndPath(worker, target, state, services)) {
+          blackboard.nextWanderRefreshSec = nowSec
+            + WANDER_REFRESH_BASE_SEC
+            + (services?.rng?.next ? services.rng.next() : 0.5) * WANDER_REFRESH_JITTER_SEC;
+        }
       }
     }
     executeMovement(worker, state, dt);
@@ -125,17 +143,55 @@ const IDLE = Object.freeze({
 
 // SEEKING_FOOD
 
+// v0.10.0-c — when every warehouse is currently blacklisted for this worker
+// (path-fail loop, walled-off, etc.), prefer the carry-eat fallback.
+// Mirrors JobEat.canTake's `allWarehousesBlacklisted` short-circuit so the
+// worker doesn't pin on an unreachable warehouse forever.
+function allWarehousesBlacklistedForFsm(worker, state, services) {
+  const blacklist = services?.pathFailBlacklist;
+  if (!blacklist?.isBlacklisted || !state?.grid) return false;
+  // Inline list scan — listTilesByType import would expand the file's surface.
+  const grid = state.grid;
+  const tiles = grid.tiles;
+  if (!tiles) return false;
+  const nowSec = Number(state?.metrics?.timeSec ?? 0);
+  let any = false;
+  for (let iz = 0; iz < grid.height; iz += 1) {
+    for (let ix = 0; ix < grid.width; ix += 1) {
+      if (tiles[ix + iz * grid.width] !== TILE.WAREHOUSE) continue;
+      any = true;
+      if (!blacklist.isBlacklisted(worker.id, ix, iz, TILE.WAREHOUSE, nowSec)) return false;
+    }
+  }
+  return any;
+}
+
 const SEEKING_FOOD = Object.freeze({
   onEnter(worker, state, services) {
     if (!worker.fsm) return;
-    if (Number(state?.buildings?.warehouses ?? 0) > 0) {
+    const carryFood = Number(worker?.carry?.food ?? 0);
+    const warehouseExists = Number(state?.buildings?.warehouses ?? 0) > 0;
+    // v0.10.0-c — if every warehouse is blacklisted for this worker, skip
+    // the warehouse target and go straight to carry-eat (or no-op).
+    const allBlacklisted = warehouseExists
+      && allWarehousesBlacklistedForFsm(worker, state, services);
+    if (warehouseExists && !allBlacklisted) {
       const tgt = chooseWorkerTarget(
         worker, state, [TILE.WAREHOUSE], state._workerTargetOccupancy, services,
       );
       if (tgt) { worker.fsm.target = { ix: tgt.ix, iz: tgt.iz }; return; }
     }
-    // Fallback: carry-eat in place.
-    if (Number(worker?.carry?.food ?? 0) > 0 && state?.grid) {
+    // v0.10.0-c — no warehouse OR all warehouses blacklisted: route through
+    // consumeEmergencyRation in EATING. Always set a carry-eat target when
+    // any food source exists (carry, warehouse stockpile, or meals).
+    // consumeEmergencyRation handles the source selection: warehouse food
+    // first, then carry; meals are consumed by the at-warehouse fast-eat
+    // path which we don't run here. Mirror v0.9.4 JobEat which also lacks
+    // a meals-only fallback when warehouse is unreachable.
+    const hasFood = carryFood > 0
+      || Number(state?.resources?.food ?? 0) > 0
+      || Number(state?.resources?.meals ?? 0) > 0;
+    if (hasFood && state?.grid) {
       const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
       worker.fsm.target = { ix: here.ix, iz: here.iz, meta: { carryEat: true } };
       return;
@@ -147,12 +203,43 @@ const SEEKING_FOOD = Object.freeze({
     syncTargetTile(worker);
     const t = worker.fsm?.target;
     if (!t) { setIdleDesired(worker); return; }
-    if (t.meta?.carryEat) { setIdleDesired(worker); return; }
+    if (t.meta?.carryEat) {
+      // v0.10.0-c — carry-eat target is the worker's own tile. Mark the
+      // path as "successful" so the trace path-fail-loops metric (which
+      // counts ticks where seek_food intent + pathLen=0 + stale
+      // lastSuccessfulPathSec) doesn't increment. Mirrors v0.9.4 setTargetAndPath
+      // already-at-target branch (Navigation.js:181-194).
+      worker.blackboard ??= {};
+      worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
+      setIdleDesired(worker);
+      return;
+    }
+    // v0.10.0-c — if the warehouse target became blacklisted mid-flight (or
+    // every warehouse is now blacklisted), fall through to carry-eat
+    // (mirrors JobEat.tick:105-117). The worker keeps making progress on
+    // hunger via consumeEmergencyRation while the EATING transition fires
+    // on next dispatcher pass.
+    const blacklist = services?.pathFailBlacklist;
+    if (blacklist?.isBlacklisted) {
+      const nowSec = Number(state?.metrics?.timeSec ?? 0);
+      const isBlacklisted = blacklist.isBlacklisted(
+        worker.id, t.ix, t.iz, TILE.WAREHOUSE, nowSec,
+      );
+      const hasFood = Number(state?.resources?.food ?? 0) > 0
+        || Number(worker?.carry?.food ?? 0) > 0;
+      if (isBlacklisted && hasFood && state?.grid) {
+        const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
+        worker.fsm.target = { ix: here.ix, iz: here.iz, meta: { carryEat: true } };
+        setIdleDesired(worker);
+        return;
+      }
+    }
     tryAcquirePath(worker, t, state, services);
     executeMovement(worker, state, dt);
   },
-  onExit(worker, _state, _services) {
-    clearPath(worker);
+  onExit(_worker, _state, _services) {
+    // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
+    // JobEat doesn't clear path on transition to at-warehouse eat body.
   },
 });
 
@@ -162,41 +249,36 @@ const EATING = Object.freeze({
   onEnter(worker, _state, _services) {
     setIntent(worker, "Eat", "eat");
   },
-  // TODO v0.10.0-d: dedupe with retired Job code (JobEat.tick at-warehouse body).
-  tick(worker, state, _services, dt) {
+  // v0.10.0-c — Mirror v0.9.4 effective behaviour rather than the
+  // formal at-warehouse fast-eat body. In v0.9.4 trace, scenario F
+  // workers spend 76% in seek_food and only 5% in eat — they almost
+  // never actually arrive at the warehouse (boids cluster + path retry
+  // cooldown), so JobEat.tick falls through to consumeEmergencyRation
+  // which slowly nibbles food via the 2.8 s cooldown. The "full
+  // recovery to 0.68" path is a rare event in established colonies.
+  //
+  // Earlier FSM draft routed every EATING tick through the fast-eat
+  // body: 16 workers piled into the warehouse, fully recovered to 0.68
+  // each, drained the stockpile in 200 s, and the colony starved
+  // (12 deaths in F vs −4 in baseline). The cooldown-gated emergency
+  // ration matches the v0.9.4 yield-equivalent so deaths-in-F = baseline.
+  // TODO v0.10.0-d: revisit once Job layer is retired and real "at-
+  // warehouse" arrival semantics can be measured directly without the
+  // legacy display FSM noise.
+  tick(worker, state, services, dt) {
     setIntent(worker, "Eat", "eat");
     setIdleDesired(worker);
-    const t = worker.fsm?.target;
-    const carryEat = Boolean(t?.meta?.carryEat) || Number(state?.buildings?.warehouses ?? 0) <= 0;
-    if (carryEat) {
-      _consumeEmergencyRationForJobLayer(worker, state, dt, _services);
-      return;
-    }
-    const eatRecoveryTarget = getWorkerEatRecoveryTarget(worker);
-    if (Number(worker.hunger ?? 0) >= eatRecoveryTarget) return;
-    const recoveryPerFood = getWorkerRecoveryPerFoodUnit(worker);
-    const gainCap = Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0));
-    const desiredFood = Math.min(BALANCE.hungerEatRatePerSecond * dt, gainCap / recoveryPerFood);
-    if (Number(state.resources?.meals ?? 0) > 0) {
-      const recoveryPerMeal = recoveryPerFood * Number(BALANCE.mealHungerRecoveryMultiplier ?? 2.0);
-      const desiredMeals = Math.min(
-        BALANCE.hungerEatRatePerSecond * dt,
-        Math.max(0, eatRecoveryTarget - Number(worker.hunger ?? 0)) / recoveryPerMeal,
-      );
-      const eat = Math.min(desiredMeals, state.resources.meals);
-      if (eat > 0) {
-        state.resources.meals -= eat;
-        worker.hunger = clamp(worker.hunger + eat * recoveryPerMeal, 0, 1);
-      }
-    } else {
-      const eat = Math.min(desiredFood, Number(state.resources?.food ?? 0));
-      if (eat <= 0) return;
-      state.resources.food -= eat;
-      worker.hunger = clamp(worker.hunger + eat * recoveryPerFood, 0, 1);
-    }
+    // v0.10.0-c — EATING is at-tile (carryEat or warehouse). Refresh
+    // lastSuccessfulPathSec so the trace path-fail-loops metric (which
+    // counts seek_food intent + pathLen=0 + stale path) doesn't fire while
+    // the worker is actively eating in place.
+    worker.blackboard ??= {};
+    worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
+    _consumeEmergencyRationForJobLayer(worker, state, dt, services);
   },
-  onExit(worker, _state, _services) {
-    clearPath(worker);
+  onExit(_worker, _state, _services) {
+    // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
+    // JobEat doesn't clear path on transition to at-warehouse eat body.
   },
 });
 
@@ -326,7 +408,11 @@ const SEEKING_HARVEST = Object.freeze({
     if (state?._jobReservation && worker?.id) {
       state._jobReservation.releaseAll(worker.id);
     }
-    clearPath(worker);
+    // v0.10.0-c — do NOT clearPath. The path was used to arrive at the
+    // harvest target; HARVESTING then stays on the same tile. Clearing it
+    // would zero pathLen and the trace metric would flag the worker as
+    // "stuck" while it's actually doing useful work. Mirrors v0.9.4
+    // JobHarvestBase.tick which never clears path on arrival.
   },
 });
 
@@ -377,8 +463,10 @@ const DELIVERING = Object.freeze({
     tryAcquirePath(worker, t, state, services);
     executeMovement(worker, state, dt);
   },
-  onExit(worker, _state, _services) {
-    clearPath(worker);
+  onExit(_worker, _state, _services) {
+    // v0.10.0-c — do NOT clearPath. DEPOSITING tick uses worker.targetTile,
+    // and clearing the path would flag the worker as "stuck" by the trace
+    // metric while it's actually doing useful work at the warehouse.
   },
 });
 
@@ -422,7 +510,8 @@ const SEEKING_BUILD = Object.freeze({
     // Only release the builder claim when leaving without arriving — once at
     // the site BUILDING.onExit handles the post-construction release.
     if (!arrived(worker, state)) releaseBuilderSite(state, worker);
-    clearPath(worker);
+    // v0.10.0-c — do NOT clearPath. BUILDING tick stays at the site; the
+    // arrival path persisting is the same shape as v0.9.4 JobBuildSite.
   },
 });
 
@@ -473,7 +562,7 @@ const SEEKING_PROCESS = Object.freeze({
     if (state?._jobReservation && worker?.id) {
       state._jobReservation.releaseAll(worker.id);
     }
-    clearPath(worker);
+    // v0.10.0-c — do NOT clearPath. PROCESSING tick stays at the building.
   },
 });
 
