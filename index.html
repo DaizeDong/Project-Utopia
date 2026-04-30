@@ -80,16 +80,26 @@
     #statusBar {
       position: absolute; top: 0; left: 0; right: 36px; z-index: 15;
       display: flex; align-items: center; gap: 3px;
-      min-height: var(--hud-height, 32px);
+      /* v0.10.1-c — clamp the bar to a single 32 px line. flex-wrap: wrap
+         + line-clamped scenario summary previously let the bar grow to
+         60-90 px on first-run when the briefing was long; the bar now
+         enforces nowrap and a hard height so children must shrink/elide
+         instead of forcing a second row. */
+      height: 32px;
       padding: 2px 8px;
       background: linear-gradient(180deg, rgba(12, 22, 35, 0.97), rgba(8, 16, 28, 0.93));
       border-bottom: 1px solid var(--panel-border);
       font-size: 11px; font-weight: 700; color: #d0e8ff;
       pointer-events: none;
       box-shadow: 0 2px 12px rgba(0,0,0,0.4);
-      flex-wrap: wrap;
-      row-gap: 2px;
+      flex-wrap: nowrap;
+      overflow: hidden;
     }
+    /* v0.10.1-c — scenario briefing ("Broken Frontier — Your colony just
+       landed. The west forest is overgrown ...") was occupying half the
+       top bar with no actionable signal. Hidden from the bar; full text
+       still available in the Colony panel briefing card. */
+    #statusBar #statusScenarioHeadline { display: none !important; }
     /* Keep right edge clear for sidebar tab strip.
        v0.9.2-ui (F1) — pulls the sidebar width from the same custom property
        so the status bar tracks the (now responsive) sidebar geometry. */
@@ -1383,7 +1393,14 @@
     #entityFocusOverlay {
       position: absolute; bottom: 50px; left: 8px;
       width: clamp(300px, 28vw, 540px);
-      max-height: min(70vh, 720px);
+      /* v0.10.1-c — height capped relative to the actual viewport
+         (`100vh - bottom 50 - top 50 reserve = 100vh - 100`) so the
+         panel always fits between the top status bar (~32-50 px) and
+         the bottom dock without spilling off-screen on shorter
+         viewports (1366×768 laptops in particular were cutting off the
+         lower half of the worker briefing). The 720 px hard cap stays
+         as a sanity bound on tall monitors. */
+      max-height: min(720px, calc(100vh - 100px));
       z-index: 12;
       border: 1px solid var(--panel-border);
       border-radius: 10px;
