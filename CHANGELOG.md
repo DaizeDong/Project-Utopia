@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.10.1-d — top bar slim + worker focus viewport-fit (2026-04-30)
+
+User-reported follow-ups to v0.10.1-c:
+
+### Top status bar — single 32 px line
+The bar previously had `flex-wrap: wrap; row-gap: 2px;` and an explicit
+multi-line `.hud-scenario` summary, so on first-run with a long
+scenario briefing ("Broken Frontier — Your colony just landed. The
+west forest is overgrown — clear a path back, then rebuild the east
+warehouse.") the bar would grow to 60-90 px tall, eating canvas space
+without giving the player any actionable signal.
+
+- `#statusBar` now has `flex-wrap: nowrap; height: 32px; overflow: hidden;`
+  forcing a single fixed-height line. Children must elide / shrink
+  rather than push a second row.
+- `#statusScenarioHeadline` is hidden in the bar via
+  `#statusBar #statusScenarioHeadline { display: none !important; }`.
+  The full briefing remains accessible from the Colony panel briefing
+  card.
+
+### EntityFocus overlay — viewport-fit cap
+On shorter viewports (e.g. 1366×768 laptops) the panel's
+`max-height: min(70vh, 720px)` left only ~−2 px between the panel top
+and screen top, which clipped the lower portion of the worker
+briefing off-screen. Replaced with
+`max-height: min(720px, calc(100vh - 100px))` so the panel always
+fits between the top status bar (~32 px) and the bottom dock with a
+generous 18 px breathing-room above.
+
+Tests: 1646 / 0 / 2 preserved.
+
 ## v0.10.1-c — EntityFocus overlap + text-overflow fixes (2026-04-30)
 
 User-reported layout regression: bottom-left worker focus panel was
