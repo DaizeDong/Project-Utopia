@@ -20,8 +20,8 @@ const PREDATOR_HUNT_REFRESH_SEC = 1.15;
 const HERBIVORE_FLEE_REFRESH_SEC = 0.9;
 const WANDER_REFRESH_BASE_SEC = 2.2;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
-const HERBIVORE_FLEE_ENTER_DIST = 3.4;
-const HERBIVORE_FLEE_EXIT_DIST = 4.8;
+const HERBIVORE_FLEE_ENTER_DIST = 6.8;
+const HERBIVORE_FLEE_EXIT_DIST = 9.6;
 const PREDATOR_TARGET_SWITCH_MIN_SEC = 1.0;
 const FLEE_EXCLUDED_SPREAD_STATES = new Set(["flee"]);
 
@@ -892,7 +892,7 @@ function predatorTick(animal, herbivores, predators, state, dt, services, stateN
   // predator's prey moves past this distance, drop the prey lock and fall
   // through to the patrol path (rather than infinitely sprinting after a
   // fleeing herbivore across the map).
-  const chaseRangeBaseTiles = 6;
+  const chaseRangeBaseTiles = 6 * Number(state.grid?.tileSize ?? 1);
   const maxChaseTiles = chaseRangeBaseTiles * Number(profile.chaseDistanceMult ?? 1);
   if (prey && distance > maxChaseTiles) {
     prey = null;

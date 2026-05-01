@@ -28,31 +28,24 @@ import {
 import { worldToTile } from "../../../world/grid/Grid.js";
 // v0.10.0-d — Job layer retired. WorkerAISystem helpers imported directly;
 // composite movement + reservation helpers (executeMovement, tryAcquirePath)
-// live in WorkerHelpers.js (sibling). v0.10.1-h adds warehouseFastEat.
+// live in WorkerHelpers.js (sibling).
 import { executeMovement, tryAcquirePath } from "./WorkerHelpers.js";
 import {
   applyHarvestStep,
-  carryEatStep,
   chooseWorkerTarget,
-  consumeEmergencyRation,
-  getWorkerEatRecoveryTarget,
-  getWorkerRecoveryPerFoodUnit,
   handleDeliver,
   pickWanderNearby,
   setIdleDesired,
-  warehouseFastEat,
 } from "../WorkerAISystem.js";
 import { findNearestHostile, getRoleHarvestTiles, getRoleProcessConfig } from "./WorkerConditions.js";
 
 /**
- * Frozen 14-entry STATE enum (§3.1). Do not extend without updating the plan
+ * Frozen 12-entry STATE enum (§3.1). Do not extend without updating the plan
  * + STATE_BEHAVIOR + STATE_TRANSITIONS.
- * @typedef {("IDLE"|"SEEKING_FOOD"|"EATING"|"SEEKING_REST"|"RESTING"|"FIGHTING"|"SEEKING_HARVEST"|"HARVESTING"|"DELIVERING"|"DEPOSITING"|"SEEKING_BUILD"|"BUILDING"|"SEEKING_PROCESS"|"PROCESSING")} WorkerStateName
+ * @typedef {("IDLE"|"SEEKING_REST"|"RESTING"|"FIGHTING"|"SEEKING_HARVEST"|"HARVESTING"|"DELIVERING"|"DEPOSITING"|"SEEKING_BUILD"|"BUILDING"|"SEEKING_PROCESS"|"PROCESSING")} WorkerStateName
  */
 export const STATE = Object.freeze({
   IDLE: "IDLE",
-  SEEKING_FOOD: "SEEKING_FOOD",
-  EATING: "EATING",
   SEEKING_REST: "SEEKING_REST",
   RESTING: "RESTING",
   FIGHTING: "FIGHTING",
@@ -107,8 +100,6 @@ function setIntent(worker, _label, intent) {
  */
 export const DISPLAY_LABEL = Object.freeze({
   IDLE: "Wander",
-  SEEKING_FOOD: "Seek Food",
-  EATING: "Eat",
   SEEKING_REST: "Seek Rest",
   RESTING: "Rest",
   FIGHTING: "Engage",
@@ -176,144 +167,6 @@ const IDLE = Object.freeze({
   },
   onExit(worker, _state, _services) {
     clearPath(worker);
-  },
-});
-
-// SEEKING_FOOD
-
-// v0.10.0-c — when every warehouse is currently blacklisted for this worker
-// (path-fail loop, walled-off, etc.), prefer the carry-eat fallback.
-// Mirrors JobEat.canTake's `allWarehousesBlacklisted` short-circuit so the
-// worker doesn't pin on an unreachable warehouse forever.
-function allWarehousesBlacklistedForFsm(worker, state, services) {
-  const blacklist = services?.pathFailBlacklist;
-  if (!blacklist?.isBlacklisted || !state?.grid) return false;
-  // Inline list scan — listTilesByType import would expand the file's surface.
-  const grid = state.grid;
-  const tiles = grid.tiles;
-  if (!tiles) return false;
-  const nowSec = Number(state?.metrics?.timeSec ?? 0);
-  let any = false;
-  for (let iz = 0; iz < grid.height; iz += 1) {
-    for (let ix = 0; ix < grid.width; ix += 1) {
-      if (tiles[ix + iz * grid.width] !== TILE.WAREHOUSE) continue;
-      any = true;
-      if (!blacklist.isBlacklisted(worker.id, ix, iz, TILE.WAREHOUSE, nowSec)) return false;
-    }
-  }
-  return any;
-}
-
-const SEEKING_FOOD = Object.freeze({
-  onEnter(worker, state, services) {
-    if (!worker.fsm) return;
-    const carryFood = Number(worker?.carry?.food ?? 0);
-    const warehouseExists = Number(state?.buildings?.warehouses ?? 0) > 0;
-    // v0.10.0-c — if every warehouse is blacklisted for this worker, skip
-    // the warehouse target and go straight to carry-eat (or no-op).
-    const allBlacklisted = warehouseExists
-      && allWarehousesBlacklistedForFsm(worker, state, services);
-    if (warehouseExists && !allBlacklisted) {
-      const tgt = chooseWorkerTarget(
-        worker, state, [TILE.WAREHOUSE], state._workerTargetOccupancy, services,
-      );
-      if (tgt) { worker.fsm.target = { ix: tgt.ix, iz: tgt.iz }; return; }
-    }
-    // v0.10.0-c — no warehouse OR all warehouses blacklisted: route through
-    // consumeEmergencyRation in EATING. Always set a carry-eat target when
-    // any food source exists (carry, warehouse stockpile, or meals).
-    // consumeEmergencyRation handles the source selection: warehouse food
-    // first, then carry; meals are consumed by the at-warehouse fast-eat
-    // path which we don't run here. Mirror v0.9.4 JobEat which also lacks
-    // a meals-only fallback when warehouse is unreachable.
-    const hasFood = carryFood > 0
-      || Number(state?.resources?.food ?? 0) > 0
-      || Number(state?.resources?.meals ?? 0) > 0;
-    if (hasFood && state?.grid) {
-      const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
-      worker.fsm.target = { ix: here.ix, iz: here.iz, meta: { carryEat: true } };
-      return;
-    }
-    worker.fsm.target = null;
-  },
-  tick(worker, state, services, dt) {
-    setIntent(worker, "Seek Food", "seek_food");
-    syncTargetTile(worker);
-    const t = worker.fsm?.target;
-    if (!t) { setIdleDesired(worker); return; }
-    if (t.meta?.carryEat) {
-      // v0.10.0-c — carry-eat target is the worker's own tile. Mark the
-      // path as "successful" so the trace path-fail-loops metric (which
-      // counts ticks where seek_food intent + pathLen=0 + stale
-      // lastSuccessfulPathSec) doesn't increment. Mirrors v0.9.4 setTargetAndPath
-      // already-at-target branch (Navigation.js:181-194).
-      worker.blackboard ??= {};
-      worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
-      setIdleDesired(worker);
-      return;
-    }
-    // v0.10.0-c — if the warehouse target became blacklisted mid-flight (or
-    // every warehouse is now blacklisted), fall through to carry-eat
-    // (mirrors JobEat.tick:105-117). The worker keeps making progress on
-    // hunger via consumeEmergencyRation while the EATING transition fires
-    // on next dispatcher pass.
-    const blacklist = services?.pathFailBlacklist;
-    if (blacklist?.isBlacklisted) {
-      const nowSec = Number(state?.metrics?.timeSec ?? 0);
-      const isBlacklisted = blacklist.isBlacklisted(
-        worker.id, t.ix, t.iz, TILE.WAREHOUSE, nowSec,
-      );
-      const hasFood = Number(state?.resources?.food ?? 0) > 0
-        || Number(worker?.carry?.food ?? 0) > 0;
-      if (isBlacklisted && hasFood && state?.grid) {
-        const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
-        worker.fsm.target = { ix: here.ix, iz: here.iz, meta: { carryEat: true } };
-        setIdleDesired(worker);
-        return;
-      }
-    }
-    tryAcquirePath(worker, t, state, services);
-    executeMovement(worker, state, dt);
-  },
-  onExit(_worker, _state, _services) {
-    // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
-    // JobEat doesn't clear path on transition to at-warehouse eat body.
-  },
-});
-
-// EATING
-
-const EATING = Object.freeze({
-  onEnter(worker, _state, _services) {
-    setIntent(worker, "Eat", "eat");
-  },
-  // v0.10.1-h (P4) — at-warehouse fast-eat with global flow cap.
-  // Workers who arrive at the warehouse (non-carryEat target) call
-  // warehouseFastEat which honours the per-tick global budget in
-  // state._warehouseEatBudgetThisTick (reset by WorkerAISystem.update).
-  // Workers with a carryEat target (warehouse unreachable / blacklisted)
-  // or when the warehouse food is exhausted fall through to the slow
-  // consumeEmergencyRation path so they still make trickle progress.
-  //
-  // v0.10.0-c note preserved for history: the earlier FSM draft routed
-  // ALL EATING ticks through fast-eat without a cap, draining the scenario
-  // F stockpile in 200 s (12 deaths). The flow cap (4 food/s colony-wide)
-  // prevents that stampede while still recovering workers in ~16 s.
-  tick(worker, state, services, dt) {
-    setIntent(worker, "Eat", "eat");
-    setIdleDesired(worker);
-    worker.blackboard ??= {};
-    worker.blackboard.lastSuccessfulPathSec = Number(state?.metrics?.timeSec ?? 0);
-    const atWarehouse = worker.fsm?.target && !worker.fsm?.target?.meta?.carryEat;
-    if (atWarehouse) {
-      warehouseFastEat(worker, state, dt, services);
-    } else {
-      carryEatStep(worker, state, dt);
-    }
-  },
-  onExit(_worker, _state, _services) {
-    // v0.10.0-c — do NOT clearPath. EATING uses arrived target; baseline
-    // JobEat doesn't clear path on transition to at-warehouse eat body.
   },
 });
 
@@ -645,8 +498,6 @@ const PROCESSING = Object.freeze({
  */
 export const STATE_BEHAVIOR = Object.freeze({
   [STATE.IDLE]: IDLE,
-  [STATE.SEEKING_FOOD]: SEEKING_FOOD,
-  [STATE.EATING]: EATING,
   [STATE.SEEKING_REST]: SEEKING_REST,
   [STATE.RESTING]: RESTING,
   [STATE.FIGHTING]: FIGHTING,

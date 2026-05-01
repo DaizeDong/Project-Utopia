@@ -114,7 +114,7 @@ export const FOG_STATE = Object.freeze({
 export const DEFAULT_GRID = Object.freeze({
   width: 96,
   height: 72,
-  tileSize: 1,
+  tileSize: 2,
 });
 
 export const TILE_INFO = Object.freeze({

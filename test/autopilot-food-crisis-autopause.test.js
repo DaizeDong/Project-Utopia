@@ -108,5 +108,6 @@ test("food-precrisis: low runway emits before any starvation death", () => {
   const crisis = state.events.log.find((e) => e.type === EVENT_TYPES.FOOD_CRISIS_DETECTED);
   assert.ok(pre, "FOOD_PRECRISIS_DETECTED should warn on unsafe runway");
   assert.ok(!crisis, "pre-crisis must not require or imply starvation deaths");
-  assert.equal(pre.detail.foodStock, 4);
+  // Use tolerance: warehouse spoilage may reduce food by a tiny amount within a single tick
+  assert.ok(Math.abs(pre.detail.foodStock - 4) < 0.05, `foodStock should be ~4, got ${pre.detail.foodStock}`);
 });

@@ -379,6 +379,34 @@ export class ResourceSystem {
     state.resources.medicine = Number.isFinite(state.resources.medicine) ? Math.max(0, state.resources.medicine) : 0;
     state.resources.tools = Number.isFinite(state.resources.tools) ? Math.max(0, state.resources.tools) : 0;
     const stepSec = Math.max(0, Number(dt) || 0);
+
+    // v0.10.1-j: warehouse food spoilage — proportional decay to prevent
+    // indefinite stockpile growth without player intervention.
+    const spoilageRate = Number(BALANCE.warehouseFoodSpoilageRatePerSec ?? 0);
+    if (spoilageRate > 0 && state.resources.food > 0) {
+      const spoiled = state.resources.food * spoilageRate * stepSec;
+      state.resources.food = Math.max(0, state.resources.food - spoiled);
+      if (spoiled > 0) {
+        recordResourceFlow(state, "food", "spoiled", spoiled);
+      }
+    }
+
+    // v0.10.1-l: fixed per-worker food drain replacing hunger FSM
+    const foodConsumeRate = Number(BALANCE.workerFoodConsumptionPerSecond ?? 0.030);
+    if (foodConsumeRate > 0 && state.resources.food > 0) {
+      const aliveWorkers = Array.isArray(state.agents)
+        ? state.agents.filter(a => a?.type === "WORKER" && a?.alive !== false).length
+        : 0;
+      if (aliveWorkers > 0) {
+        const consumed = aliveWorkers * foodConsumeRate * stepSec;
+        const actualConsumed = Math.min(consumed, state.resources.food);
+        state.resources.food = Math.max(0, state.resources.food - actualConsumed);
+        if (actualConsumed > 0) {
+          recordResourceFlow(state, "food", "consumed", actualConsumed);
+        }
+      }
+    }
+
     state.metrics.resourceEmptySec ??= { food: 0, wood: 0 };
     state.metrics.resourceEmptySec.food = state.resources.food <= 0
       ? Number(state.metrics.resourceEmptySec.food ?? 0) + stepSec

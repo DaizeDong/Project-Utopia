@@ -116,10 +116,11 @@ test("INITIAL_RESOURCES.food is >= 60 for viable early game", () => {
   );
 });
 
-test("INITIAL_RESOURCES.wood is >= 50 for viable early game", () => {
+test("INITIAL_RESOURCES.wood is >= 30 for viable early game", () => {
+  // v0.10.1-m: reduced from 80→35 to create tighter early resource pressure
   assert.ok(
-    INITIAL_RESOURCES.wood >= 50,
-    `INITIAL_RESOURCES.wood is ${INITIAL_RESOURCES.wood}, expected >= 50`,
+    INITIAL_RESOURCES.wood >= 30,
+    `INITIAL_RESOURCES.wood is ${INITIAL_RESOURCES.wood}, expected >= 30`,
   );
 });
 

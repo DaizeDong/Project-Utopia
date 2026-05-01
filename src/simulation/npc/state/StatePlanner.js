@@ -387,11 +387,11 @@ function deriveHerbivoreDesiredState(animal, context) {
   const { predators = [], herbivores = [] } = context ?? {};
   const { predator, distance } = nearestPredator(animal, predators);
   const fleeLatch = Boolean(animal.blackboard?.fleeLatch);
-  if (predator && (distance < 3.4 || (fleeLatch && distance < 4.8))) {
+  if (predator && (distance < 6.8 || (fleeLatch && distance < 9.6))) {
     return { desiredState: "flee", reason: "rule:predator-near" };
   }
   if ((animal.hunger ?? 1) < 0.55) return { desiredState: "graze", reason: "rule:hunger" };
-  if (countNearbyKind(animal, herbivores, 3.4) >= 2) return { desiredState: "regroup", reason: "rule:herd" };
+  if (countNearbyKind(animal, herbivores, 6.8) >= 2) return { desiredState: "regroup", reason: "rule:herd" };
   return { desiredState: "wander", reason: "rule:wander" };
 }
 
@@ -406,7 +406,7 @@ function derivePredatorDesiredState(animal, context) {
   if (distance < Number(BALANCE.predatorAttackDistance ?? 0.9) * 1.1) {
     return { desiredState: "feed", reason: "rule:attack-range" };
   }
-  if (distance < 5.2) return { desiredState: "hunt", reason: "rule:hunt" };
+  if (distance < 10.4) return { desiredState: "hunt", reason: "rule:hunt" };
   return { desiredState: "stalk", reason: "rule:stalk" };
 }
 

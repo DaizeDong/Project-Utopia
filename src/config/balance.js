@@ -56,11 +56,11 @@ export const BUILD_COST = Object.freeze({
 // farm softTarget 4 → 5; lumber softTarget 2 → 3. Depletion still
 // tightens vs v0.8.4 but early growth has more headroom.
 export const BUILD_COST_ESCALATOR = Object.freeze({
-  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.3, cap: 2.5, perExtraBeyondCap: 0.25, hardCap: 15 }),
-  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0, perExtraBeyondCap: 0.18, hardCap: 40 }),
-  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.25, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
-  smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
-  clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2, hardCap: 6 }),
+  warehouse: Object.freeze({ softTarget: 2, perExtra: 0.3, cap: 2.5, perExtraBeyondCap: 0.25 }),
+  wall: Object.freeze({ softTarget: 8, perExtra: 0.1, cap: 2.0, perExtraBeyondCap: 0.18 }),
+  kitchen: Object.freeze({ softTarget: 1, perExtra: 0.25, cap: 3.0, perExtraBeyondCap: 0.2 }),
+  smithy: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2 }),
+  clinic: Object.freeze({ softTarget: 1, perExtra: 0.35, cap: 3.0, perExtraBeyondCap: 0.2 }),
   farm: Object.freeze({ softTarget: 5, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
   lumber: Object.freeze({ softTarget: 3, perExtra: 0.1, cap: 1.8, perExtraBeyondCap: 0.05 }),
   quarry: Object.freeze({ softTarget: 3, perExtra: 0.15, cap: 1.8, perExtraBeyondCap: 0.05 }),
@@ -68,7 +68,7 @@ export const BUILD_COST_ESCALATOR = Object.freeze({
   // v0.8.4 strategic walls + GATE (Agent C). Soft-cost mirrors wall but with
   // a tighter softTarget (4) so the price escalates after the first quartet
   // — players placing a 5th gate are likely creating a leaky wall line.
-  gate: Object.freeze({ softTarget: 4, perExtra: 0.15, cap: 2.0, perExtraBeyondCap: 0.05, hardCap: 24 }),
+  gate: Object.freeze({ softTarget: 4, perExtra: 0.15, cap: 2.0, perExtraBeyondCap: 0.05 }),
 });
 
 /**
@@ -158,8 +158,8 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
 });
 
 export const INITIAL_RESOURCES = Object.freeze({
-  food: 400,
-  wood: 80,
+  food: 200,
+  wood: 35,
   stone: 15,
   herbs: 8,
 });
@@ -201,6 +201,11 @@ export const BALANCE = Object.freeze({
   // 9 s eat + 94.5 s work = ~91% productive (from ~83% at 0.30/s).
   warehouseEatRatePerWorkerPerSecond: 0.60,
   warehouseEatCapPerSecond: 4.0,
+  workerFoodConsumptionPerSecond: 0.050, // v0.10.1-l: fixed global drain replacing hunger FSM
+  // v0.10.1-j: warehouse food spoilage — slow passive decay to cap indefinite
+  // stockpile growth. At 0.00011/s a 1000-food stockpile loses ~9.5/day,
+  // roughly offsetting surplus production so 90-day food stays ~3× initial.
+  warehouseFoodSpoilageRatePerSec: 0.0003,
   resourceCollapseCarryGrace: 0.5,
   visitorHungerDecayPerSecond: 0.0085,
   visitorHungerRecoveryPerSecond: 0.16,
@@ -217,19 +222,19 @@ export const BALANCE = Object.freeze({
   predatorHungerDecayPerSecond: 0.012,
   predatorHungerRecoveryOnHit: 0.24,
   predatorAttackDamage: 26,
-  predatorAttackDistance: 0.9,
+  predatorAttackDistance: 1.8,
   predatorAttackCooldownSec: 1.4,
   predatorPatrolRefreshSec: 1.6,
   predatorFarmPressureAttraction: 1.05,
   predatorHomeZoneBias: 0.72,
-  workerSpeed: 2.2,
+  workerSpeed: 4.4,
   roadSpeedMultiplier: 1.35,
   roadLogisticsBonus: 1.15,
-  visitorSpeed: 1.95,
-  herbivoreSpeed: 1.85,
-  predatorSpeed: 2.25,
-  boidsNeighborRadius: 1.9,
-  boidsSeparationRadius: 0.9,
+  visitorSpeed: 3.9,
+  herbivoreSpeed: 3.7,
+  predatorSpeed: 4.5,
+  boidsNeighborRadius: 3.8,
+  boidsSeparationRadius: 1.8,
   boidsWeights: {
     separation: 1.4,
     alignment: 0.52,
@@ -238,28 +243,28 @@ export const BALANCE = Object.freeze({
   },
   boidsGroupProfiles: {
     workers: {
-      neighborRadius: 2.2,
-      separationRadius: 1.4,
+      neighborRadius: 4.4,
+      separationRadius: 2.8,
       weights: { separation: 2.6, alignment: 0.12, cohesion: 0.04, seek: 1.22 },
     },
     traders: {
-      neighborRadius: 1.55,
-      separationRadius: 1.12,
+      neighborRadius: 3.1,
+      separationRadius: 2.24,
       weights: { separation: 2.0, alignment: 0.16, cohesion: 0.06, seek: 1.35 },
     },
     saboteurs: {
-      neighborRadius: 1.6,
-      separationRadius: 1.1,
+      neighborRadius: 3.2,
+      separationRadius: 2.2,
       weights: { separation: 2.08, alignment: 0.2, cohesion: 0.06, seek: 1.3 },
     },
     herbivores: {
-      neighborRadius: 2.35,
-      separationRadius: 0.9,
+      neighborRadius: 4.7,
+      separationRadius: 1.8,
       weights: { separation: 1.25, alignment: 0.8, cohesion: 0.62, seek: 1.08 },
     },
     predators: {
-      neighborRadius: 2.1,
-      separationRadius: 0.86,
+      neighborRadius: 4.2,
+      separationRadius: 1.72,
       weights: { separation: 1.35, alignment: 0.68, cohesion: 0.54, seek: 1.18 },
     },
   },
@@ -268,8 +273,8 @@ export const BALANCE = Object.freeze({
   // reducing AI panic flips when food momentarily dips.
   foodEmergencyThreshold: 18,
   productionCooldownSec: 0.9,
-  workerDeliverThreshold: 1.6,
-  workerDeliverLowThreshold: 0.85,
+  workerDeliverThreshold: 2.5,
+  workerDeliverLowThreshold: 1.2,
   // Phase 7.A § 14.2: 1.5 → 2.2. Damps worker intent flapping so food gathers
   // and deliveries are less likely to be interrupted by shallow priority noise.
   workerIntentCooldownSec: 2.2,
@@ -344,7 +349,7 @@ export const BALANCE = Object.freeze({
     haulPerWorker: 1 / 6,
     herbalistPerWorker: 1 / 12,
     smithPerWorker: 1 / 10,
-    stonePerWorker: 1 / 8,
+    stonePerWorker: 1 / 5,
     herbsPerWorker: 1 / 10,
     // v0.8.5 Tier 1 B4: 8 → 6. Fixes a doc/code drift where bandTable allowed
     // haul=1 for pop 6-7, but RoleAssignmentSystem gated haul on n >= 8 and
@@ -611,7 +616,9 @@ export const BALANCE = Object.freeze({
   // Per-harvest accumulator increment on tileState.salinized for FARM harvests.
   // v0.8.0 Phase 7.A tuning: 0.02 → 0.012. ~67 harvests before fallow (was 40)
   // gives small colonies runway before soil exhaustion forces farm rotation.
-  soilSalinizationPerHarvest: 0.012,
+  // v0.10.1-j: 0.012 → 0.020. Fallow every ~40 harvests; reduces sustained
+  // farm throughput ~15% to slow food accumulation.
+  soilSalinizationPerHarvest: 0.020,
   // At/above this salinized level the farm tile enters fallow (fertility→0)
   // until fallowUntil elapses.
   soilSalinizationThreshold: 0.8,
@@ -637,8 +644,10 @@ export const BALANCE = Object.freeze({
   // fallow trigger then matters; combined with the slower harvest cycle
   // the player feels yieldPool depletion as a real constraint instead of
   // the "infinite farm" the user reported.
+  // v0.10.1-j: regen 0.06 → 0.02. Pool regen now < drain rate under
+  // continuous harvest, so yieldPool depletion is a meaningful throttle.
   farmYieldPoolInitial: 90,
-  farmYieldPoolRegenPerTick: 0.06,
+  farmYieldPoolRegenPerTick: 0.02,
   farmYieldPoolMax: 180,
   // --- Living World v0.8.0 — Phase 3 (M1c demolition recycling), spec § 3 M1c + § 14.1 ---
   // Per-resource recovery fractions applied on demolish ("erase" tool) to the
@@ -692,7 +701,9 @@ export const BALANCE = Object.freeze({
   // regen ensures depletion outpaces regrowth under continuous harvest,
   // so the lumberyard / herb garden does eventually go idle and the
   // player has to expand. Stone still 0 (mineral deposits are finite).
-  nodeRegenPerTickForest: 0.06,
+  // v0.10.1-j: forest regen 0.06 → 0.03. Continuous harvest depletes node
+  // faster, encouraging node spreading and capping wood accumulation.
+  nodeRegenPerTickForest: 0.005,
   nodeRegenPerTickStone: 0.0,
   nodeRegenPerTickHerb: 0.04,
   // --- Living World v0.8.0 — Phase 4 (Survival Mode), spec §§ 5.1-5.6 ---
@@ -754,12 +765,12 @@ export const BALANCE = Object.freeze({
   //   DI 60 → tier  4, 2400 ticks, 2.2×
   //   DI 75 → tier  5, 2100 ticks, 2.5×
   //   DI 100 → tier 6, 1800 ticks, 2.8× (capped at raidTierMax = 10)
-  devIndexPerRaidTier: 15,
+  devIndexPerRaidTier: 8,
   raidTierMax: 10,
   raidIntervalBaseTicks: 3600,
   raidIntervalMinTicks: 600,
   raidIntervalReductionPerTier: 300,
-  raidIntensityPerTier: 0.3,
+  raidIntensityPerTier: 0.5,
   // Round 2 01d: Heat Lens should warn before a processor is completely empty.
   heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
   // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 6) — Raid fallback
@@ -778,16 +789,16 @@ export const BALANCE = Object.freeze({
   // defendable) + EventDirector interval 240 -> 360 (~50% slower proactive
   // pressure). 01b raid params untouched (already tightened in 8604240).
   raidFallbackScheduler: Object.freeze({
-    graceSec: 480,        // boot grace (~8 game-min) before the first auto-raid
-    popFloor: 24,         // skip if colony hasn't grown to a defendable size
+    graceSec: 180,        // boot grace (~3 game-min) before the first auto-raid
+    popFloor: 10,         // skip if colony hasn't grown to a defendable size
     foodFloor: 60,        // skip if starvation imminent
     durationSec: 18,      // matches the default WorldEventSystem raid window
   }),
   // Flat aliases so callers can read BALANCE.raidFallback* directly without
   // dereferencing the frozen sub-block (matches the `raidIntervalBaseTicks`
   // flat-field convention this file already uses).
-  raidFallbackGraceSec: 480,
-  raidFallbackPopFloor: 24,
+  raidFallbackGraceSec: 180,
+  raidFallbackPopFloor: 10,
   raidFallbackFoodFloor: 60,
   raidFallbackDurationSec: 18,
   // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — soft cap on the
@@ -893,12 +904,12 @@ export const BALANCE = Object.freeze({
   // gives the GUARD time to intercept while still respecting the "patrol
   // near home" boundary; further widening would have GUARDs abandon the
   // colony chasing wolves on the map edge.
-  guardAggroRadius: 6,
+  guardAggroRadius: 12,
   // v0.8.3 worker-vs-raider combat — Iteration tuning. 1.0 left GUARDs in
   // a stand-off at d≈1.2 tiles (the predator's preferred preyChase distance
   // sat just outside the melee threshold). 1.3 closes the gap so a GUARD
   // tracking a raider into melee range will land hits without overshooting.
-  meleeReachTiles: 1.3,
+  meleeReachTiles: 2.6,
   workerAttackCooldownSec: 1.6,
   // raider_beast stat-randomisation envelope. Same seed must reproduce the
   // same draw — see EntityFactory.createAnimal raider branch. Wolf/bear
@@ -1025,7 +1036,7 @@ export const BALANCE = Object.freeze({
   // v0.8.5 Tier 3: 80 → 50. 80 blocked recruit during food-deficit phase,
   // causing seed-7 collapse; 50 still safe (cooldown × cost = 25/12 ≈ 2.1/s
   // drain).
-  recruitMinFoodBuffer: 50,        // skip auto-recruit below this food stock
+  recruitMinFoodBuffer: 20,        // skip auto-recruit below this food stock
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.

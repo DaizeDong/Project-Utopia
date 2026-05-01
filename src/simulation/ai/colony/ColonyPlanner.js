@@ -15,7 +15,7 @@ import {
   computeEscalatedBuildCost,
   pluralBuildingKey,
 } from "../../../config/balance.js";
-import { TILE, MOVE_DIRECTIONS_4 } from "../../../config/constants.js";
+import { TILE, MOVE_DIRECTIONS_4, ROLE } from "../../../config/constants.js";
 import { inBounds, toIndex, getTileState, listTilesByType } from "../../../world/grid/Grid.js";
 import {
   SKILL_LIBRARY,
@@ -273,6 +273,7 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - Follow the strategy priority and constraints from the Strategic Advisor
 - If "Last Plan Evaluation" is provided, address its issues — avoid repeating the same mistakes
 - If "Recurring Patterns" are listed, BREAK THE LOOP by choosing a different approach
+- When stone < 20: prioritize building quarry (if none exists) or assigning STONE workers (if quarry exists) before other expansions.
 - Demolish RUINS that have been salvaged or that block road expansion. Prefer
   demolishing depleted producers (yieldPool < 60, fallow > 2 cycles) over
   building yet another producer on top of a saturated warehouse.
@@ -376,6 +377,42 @@ export function buildPlannerPrompt(observation, memoryText, state, learnedSkills
 
   // Observation
   sections.push("## Current Observation\n" + formatObservationForLLM(obs));
+
+  // Task 1A — Role distribution summary so the LLM sees current workforce
+  // allocation and can make informed decisions about role reassignment.
+  if (Array.isArray(state.agents)) {
+    const liveAgents = state.agents.filter((a) => a && a.alive !== false && a.type === "WORKER");
+    const roleDist = {
+      FARM: liveAgents.filter((a) => a.role === ROLE.FARM).length,
+      WOOD: liveAgents.filter((a) => a.role === ROLE.WOOD).length,
+      STONE: liveAgents.filter((a) => a.role === ROLE.STONE).length,
+      BUILD: liveAgents.filter((a) => a.role === ROLE.BUILDER).length,
+      IDLE: liveAgents.filter((a) => !a.role || (a.role !== ROLE.FARM && a.role !== ROLE.WOOD && a.role !== ROLE.STONE && a.role !== ROLE.BUILDER && a.role !== ROLE.COOK && a.role !== ROLE.SMITH && a.role !== ROLE.HERBALIST && a.role !== ROLE.HAUL && a.role !== ROLE.HERBS && a.role !== ROLE.GUARD)).length,
+    };
+    const roleDistLine = `Role distribution: FARM=${roleDist.FARM} WOOD=${roleDist.WOOD} STONE=${roleDist.STONE} BUILD=${roleDist.BUILD} IDLE=${roleDist.IDLE} (total=${liveAgents.length})`;
+    sections.push("\n## Workforce Status\n" + roleDistLine);
+  }
+
+  // Task 1B — Resource shortage warnings to help the LLM prioritise correctly.
+  const _stoneStock = state.resources?.stone ?? 999;
+  const _woodStock = state.resources?.wood ?? 999;
+  const _foodStock = state.resources?.food ?? 999;
+  const _quarryCount = Number(state.buildings?.quarries ?? 0);
+  const resourceWarnings = [];
+  if (_stoneStock < 20 && _quarryCount === 0) {
+    resourceWarnings.push("⚠ CRITICAL: stone depleted, no quarry exists — build quarry immediately");
+  } else if (_stoneStock < 20 && _quarryCount > 0) {
+    resourceWarnings.push("⚠ WARNING: stone low — assign more STONE workers");
+  }
+  if (_woodStock < 20) {
+    resourceWarnings.push("⚠ WARNING: wood low");
+  }
+  if (_foodStock < 30) {
+    resourceWarnings.push("⚠ WARNING: food critical");
+  }
+  if (resourceWarnings.length > 0) {
+    sections.push("\n## Resource Alerts\n" + resourceWarnings.join("\n"));
+  }
 
   // Round-2 analytics layer: surface pre-scored building candidates,
   // resource projections, chain opportunities, and richness hotspots so the
@@ -1215,6 +1252,16 @@ export function generateFallbackPlan(observation, state) {
       depends_on: [],
       status: "pending",
     });
+  }
+
+  // Task 3: Stone-critical quarry fast-track. When stone < 15 and no quarry
+  // exists the standard Priority 4 gate (farms >= 3) may never trigger; fire a
+  // "high" priority quarry step as early as wood allows so the colony isn't
+  // stuck without stone for kitchen/smithy/bridge builds.
+  if ((buildings.quarries ?? 0) === 0 && stone < 15 && wood >= 6) {
+    steps.push(_step(nextId++, "quarry", "near_cluster:c0", "high",
+      "Stone critically low and no quarry — build quarry immediately to restore stone production",
+      { stone_rate: "+0.3/s" }));
   }
 
   // Priority 4: Processing chain - quarry + smithy if not started

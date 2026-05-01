@@ -60,15 +60,17 @@ test("build-spam: per-copy wood cost is monotonically non-decreasing across ware
   }
 });
 
-test("build-spam: warehouse spam is bounded by hardCap while beyond-cap costs keep rising", () => {
+test("build-spam: warehouse beyond-cap costs keep rising (hardCap removed in v0.10.1-m)", () => {
+  // v0.10.1-m: hardCap removed — placement is no longer capped, but costs keep
+  // rising indefinitely via perExtraBeyondCap so there is still a natural soft ceiling.
   const atCap = Number(computeEscalatedBuildCost("warehouse", 9).wood ?? 0);
   const beyondCap = Number(computeEscalatedBuildCost("warehouse", 20).wood ?? 0);
   assert.ok(beyondCap > atCap,
     `warehouse beyond-cap cost should keep rising to discourage plateau cheese (${beyondCap} <= ${atCap})`);
   for (const count of [30, 60, 120]) {
     const capState = isBuildKindHardCapped("warehouse", count);
-    assert.equal(capState.capped, true, `warehouse count=${count} should be placement-capped`);
-    assert.equal(capState.hardCap, BUILD_COST_ESCALATOR.warehouse.hardCap);
+    assert.equal(capState.capped, false, `warehouse count=${count} should NOT be placement-capped (hardCap removed)`);
+    assert.equal(capState.hardCap, null);
   }
 });
 

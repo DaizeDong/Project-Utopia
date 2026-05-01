@@ -64,7 +64,7 @@ test("alpha scenario starts with sparse infrastructure and a build-first objecti
   assert.ok(state.buildings.lumbers >= 2, `expected >= 2 lumbers, got ${state.buildings.lumbers}`);
   assert.ok((state.debug.roadCount ?? 0) < 20);
   assert.ok(state.resources.food >= 60, `expected food >= 60, got ${state.resources.food}`);
-  assert.ok(state.resources.wood >= 50, `expected wood >= 50, got ${state.resources.wood}`);
+  assert.ok(state.resources.wood >= 30, `expected wood >= 30, got ${state.resources.wood}`);
   assert.equal(
     hasConnection(state.grid, scenario.anchors.coreWarehouse, scenario.anchors.westLumberOutpost),
     false,

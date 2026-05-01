@@ -164,14 +164,14 @@ test("v0.10.0-a #4: manual transition fires onExit (old) → onEnter (new) lifec
   assert.equal(fsm.getStats().transitionCount, 2, "two transitions recorded total");
 });
 
-test("v0.10.0-a #5: STATE enum has exactly 14 entries matching the plan", () => {
+test("v0.10.0-a #5: STATE enum has exactly 12 entries matching the plan", () => {
   const expected = [
-    "IDLE", "SEEKING_FOOD", "EATING", "SEEKING_REST", "RESTING", "FIGHTING",
+    "IDLE", "SEEKING_REST", "RESTING", "FIGHTING",
     "SEEKING_HARVEST", "HARVESTING", "DELIVERING", "DEPOSITING",
     "SEEKING_BUILD", "BUILDING", "SEEKING_PROCESS", "PROCESSING",
   ];
   const actual = Object.keys(STATE);
-  assert.equal(actual.length, 14, "STATE enum must have exactly 14 entries");
+  assert.equal(actual.length, 12, "STATE enum must have exactly 12 entries (SEEKING_FOOD and EATING removed in v0.10.1-l)");
   assert.deepEqual(actual.sort(), expected.slice().sort(), "STATE keys match the plan §3.1 list");
   for (const name of expected) {
     assert.equal(STATE[name], name, `STATE.${name} stringifies to "${name}"`);
