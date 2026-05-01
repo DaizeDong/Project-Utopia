@@ -246,6 +246,13 @@ if (canvas) {
       loadSnapshot: (slotId) =>
         app?.loadSnapshot?.(slotId) ??
         { ok: false, reason: "notReady", reasonText: "GameApp not initialised." },
+      // v0.10.1 HW7 Final-Polish-Loop Round 0 (B1 action-items-auditor) —
+      // dev-only stress hook so a perf reviewer can fast-fill workers up to
+      // `target` and reproduce the 75-100 worker stutter scenario in a
+      // Playwright session. See `GameApp.devStressSpawn` for contract.
+      devStressSpawn: (target, options) =>
+        app?.devStressSpawn?.(target, options) ??
+        { ok: false, reason: "no_session" },
     };
     if (!devOn) {
       window.__utopia = undefined;

@@ -18,7 +18,7 @@ import { BuildSystem } from "../simulation/construction/BuildSystem.js";
 import { SimulationClock } from "./SimulationClock.js";
 import { VisibilitySystem } from "../simulation/world/VisibilitySystem.js";
 import { RoleAssignmentSystem } from "../simulation/population/RoleAssignmentSystem.js";
-import { PopulationGrowthSystem } from "../simulation/population/PopulationGrowthSystem.js";
+import { PopulationGrowthSystem, __devForceSpawnWorkers } from "../simulation/population/PopulationGrowthSystem.js";
 import { MemoryStore } from "../simulation/ai/memory/MemoryStore.js";
 import { MemoryObserver } from "../simulation/ai/memory/MemoryObserver.js";
 import { StrategicDirector } from "../simulation/ai/strategic/StrategicDirector.js";
@@ -1525,6 +1525,52 @@ export class GameApp {
     // A1-stability-hunter P2: success-shape mirrors `placeToolAt`'s
     // `{ok:true, ...}` contract; UI caller in `onLoadSnapshot` ignores.
     return { ok: true, slotId, phase: this.state.session.phase };
+  }
+
+  /**
+   * v0.10.1 HW7 Final-Polish-Loop Round 0 (B1 action-items-auditor).
+   *
+   * Dev-only: fast-fill the colony's worker count to `target` so a perf
+   * reviewer can reproduce the 75-100 worker stutter scenario directly in
+   * an in-browser Playwright session, without invoking the Node-side
+   * `scripts/long-run-support.mjs` validator. Called via the always-on
+   * `__utopiaLongRun.devStressSpawn(target)` shim.
+   *
+   * Result shape:
+   *   { ok: true, spawned: <int>, total: <int>, fallbackTilesUsed: <int> }
+   *   { ok: false, reason: 'invalid_target' | 'no_session' }
+   *
+   * Notes:
+   *   - `target` is silently clamped to [0, 500].
+   *   - Returns `{ ok: false, reason: 'no_session' }` when no session is
+   *     active (phase !== 'active').
+   *   - Honours the infrastructure cap (`populationInfraCap`) — does NOT
+   *     bypass the documented balance invariant.
+   *
+   * @param {number} target               Desired total worker count (0..500).
+   * @param {object} [_options]           Reserved for future tuning.
+   * @returns {{ok:true, spawned:number, total:number, fallbackTilesUsed:number} |
+   *           {ok:false, reason:'invalid_target'|'no_session'}}
+   */
+  devStressSpawn(target, _options = {}) {
+    if (!Number.isFinite(Number(target))) {
+      return { ok: false, reason: "invalid_target" };
+    }
+    if (!this.state || this.state?.session?.phase !== "active") {
+      return { ok: false, reason: "no_session" };
+    }
+    const result = __devForceSpawnWorkers(
+      this.state,
+      Number(target),
+      () => this.services.rng.next(),
+    );
+    this.#recomputePopulationBreakdown();
+    return {
+      ok: true,
+      spawned: result.spawned,
+      total: result.total,
+      fallbackTilesUsed: result.fallbackTilesUsed,
+    };
   }
 
   exportReplay() {

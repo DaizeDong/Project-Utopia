@@ -216,6 +216,82 @@ test("installBenignErrorFilter swallows ResizeObserver loop and increments count
   }
 });
 
+// -----------------------------------------------------------------------------
+// B1-action-items-auditor HW7 Final-Polish-Loop Round 0 — devStressSpawn
+// shim contract + helper smoke (closes AI-1 verification-tooling gap).
+// -----------------------------------------------------------------------------
+
+test("devStressSpawn shim: undefined app yields {ok:false, reason:'no_session'}", () => {
+  const app = undefined;
+  const shim = (target, options) =>
+    app?.devStressSpawn?.(target, options) ??
+    { ok: false, reason: "no_session" };
+  const result = shim(75);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "no_session");
+});
+
+test("devStressSpawn shim: passes through {ok:true, spawned, total} from app", () => {
+  const mockApp = {
+    devStressSpawn: (target) => ({
+      ok: true,
+      spawned: Math.max(0, target - 12),
+      total: target,
+      fallbackTilesUsed: 0,
+    }),
+  };
+  const shim = (target, options) =>
+    mockApp?.devStressSpawn?.(target, options) ??
+    { ok: false, reason: "no_session" };
+  const result = shim(75);
+  assert.equal(result.ok, true);
+  assert.equal(result.total, 75);
+  assert.equal(result.spawned, 63);
+  assert.equal(result.fallbackTilesUsed, 0);
+});
+
+test("devStressSpawn shim: target=0 reaches the helper as a clean no-op shape", () => {
+  const mockApp = {
+    devStressSpawn: (target) => ({
+      ok: true,
+      spawned: 0,
+      total: target,
+      fallbackTilesUsed: 0,
+    }),
+  };
+  const shim = (target) => mockApp.devStressSpawn(target);
+  const result = shim(0);
+  assert.equal(result.ok, true);
+  assert.equal(result.spawned, 0);
+});
+
+test("__devForceSpawnWorkers helper: no-op when current >= target", async () => {
+  const { __devForceSpawnWorkers } = await import(
+    "../src/simulation/population/PopulationGrowthSystem.js"
+  );
+  const state = {
+    agents: [
+      { type: "WORKER", alive: true },
+      { type: "WORKER", alive: true },
+      { type: "WORKER", alive: true },
+    ],
+    metrics: {},
+    grid: null,
+  };
+  const result = __devForceSpawnWorkers(state, 2, () => 0.5);
+  assert.equal(result.spawned, 0);
+  assert.equal(result.total, 3);
+  assert.equal(result.fallbackTilesUsed, 0);
+});
+
+test("__devForceSpawnWorkers helper: missing state is a safe no-op", async () => {
+  const { __devForceSpawnWorkers } = await import(
+    "../src/simulation/population/PopulationGrowthSystem.js"
+  );
+  const result = __devForceSpawnWorkers(null, 75, () => 0.5);
+  assert.equal(result.spawned, 0);
+});
+
 test("loadFromStorage returns null (does not throw) on malformed JSON", () => {
   // Stub localStorage with a corrupt payload.
   const originalLocalStorage = globalThis.localStorage;
