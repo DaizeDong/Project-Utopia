@@ -2,6 +2,45 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 1
 
+### Docs (HW7 Round 0 → Round 1 — submission deliverables trajectory)
+
+- **Verdict trajectory**: B2-submission-deliverables R0 RED **7/22** → R1
+  YELLOW **17/22** (+10 sub-items closed). R0 landed all five P0 structural
+  gaps: `assignments/homework7/Post-Mortem.md` skeleton, `Demo-Video-Plan.md`
+  (7-shot table), README "Highlights — Two Pillars" + anchors, README Quick
+  Start fallback callout, README "How to Grade This Submission" walkthrough.
+- **Plan rollback anchors**: B2 R0 plan rollback anchor `3f87bf4` → R1 plan
+  rollback anchor `1f6ecc6` (this round's build commit).
+- **R1 closeout — process artifacts landed (this commit)**:
+  - `assignments/homework7/build-submission.sh` (new, ~80 lines bash) —
+    one-command build + zip with explicit excludes (`node_modules/`,
+    `.git/`, `.env*`, `output/`, `dist-submission/`, `.playwright-cli/`,
+    `*.log`); `dist/` IS included so the grader does not have to rebuild.
+  - `package.json` `scripts.submission:zip` → `bash assignments/homework7/build-submission.sh`
+    (npm-script entrypoint; collapses C5 "decide zip vs hosted" FAIL into
+    one command with author-prompt at end-of-run).
+- **R1 closeout — author-fill items locked into PROCESS-LOG as
+  AUTHOR ACTION REQUIRED gates**: 4 PENDING sub-items (pillar names &
+  summaries / Post-Mortem §1-§5 substantive content / demo video URL
+  backfill / submission-format choice) registered with grep-verifiable
+  validator sign-off gates (`<copy exact pillar name from A2>` →
+  must-be-zero hits, `AUTHOR:` placeholder → must-be-zero hits, `pending — see Demo-Video-Plan` →
+  must-be-zero hits, zip-exists OR `origin/main` reachable → must-be-true).
+- **README**: `## How to Grade This Submission` step 4 already documents the
+  `:4173` Vite-preview default; closeout pass confirms grader port note is
+  present (preview defaults to `:4173`, dev server uses `:5173` per
+  `README.md:49`).
+- **Design intent (anti-LLM-polish posture preserved)**: R0 leaving Post-Mortem
+  §1-§5 / pillar names / demo URL as `<!-- AUTHOR: ... -->` skeletons is the
+  TA HW7 §1.5 anti-LLM-polish requirement, not a defect. R1 deliberately
+  does **not** auto-fill them; instead it focuses the *process* — close the
+  FAIL on submission-format ambiguity (one command, one artifact) and
+  register the 4 PENDING items as a single validator checklist with
+  grep-gates, so the author cannot accidentally submit with placeholders.
+- **Files changed (this commit)**: `assignments/homework7/build-submission.sh`
+  (new), `package.json` (1 line, scripts), `assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md`
+  (R1 closeout entry), `CHANGELOG.md` (this entry).
+
 ### HW7 R1 Closeout — Documented Defers
 
 - **AI-6 (HW7 Final-Polish-Loop R1) — on-HUD performance overlay deferred.**
