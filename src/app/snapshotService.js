@@ -282,7 +282,16 @@ export function createSnapshotService() {
       const key = this.slotKey(slotId);
       const raw = localStorage.getItem(key);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
+      // A1-stability-hunter P2: harden against corrupted localStorage
+      // payloads. A bare `null` already means "no snapshot" downstream,
+      // so callers don't need any signature change — they just see the
+      // same `notFound` path they'd hit for an unknown slot.
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return null;
+      }
       return restoreSnapshotState(parsed);
     },
 

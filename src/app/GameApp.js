@@ -1487,14 +1487,22 @@ export class GameApp {
     this.state.controls.saveSlotId = slotId;
     this.state.controls.actionMessage = `Snapshot saved (${slotId}, ${result.bytes} bytes).`;
     this.state.controls.actionKind = "success";
+    // A1-stability-hunter P2: align return shape with the rest of the
+    // `__utopiaLongRun` shims (`{ok, ...}`); existing UI caller in
+    // `onSaveSnapshot` ignores the return so this is purely additive.
+    return { ok: true, slotId, bytes: result.bytes };
   }
 
   loadSnapshot(slotId = this.state.controls.saveSlotId ?? "default") {
     const restored = this.services.snapshotService.loadFromStorage(slotId);
     if (!restored) {
-      this.state.controls.actionMessage = `Snapshot slot '${slotId}' not found.`;
+      const reasonText = `Snapshot slot '${slotId}' not found.`;
+      this.state.controls.actionMessage = reasonText;
       this.state.controls.actionKind = "error";
-      return;
+      // A1-stability-hunter P2: structured failure result so external
+      // automation (e.g. `__utopiaLongRun.loadSnapshot`) can distinguish
+      // "no such slot" from "succeeded".
+      return { ok: false, reason: "notFound", reasonText };
     }
     deepReplaceObject(this.state, restored);
     this.#sanitizeControls(false);
@@ -1514,6 +1522,9 @@ export class GameApp {
     this.renderer?.applyViewState?.(restored.meta?.view ?? null);
     this.state.controls.actionMessage = `Snapshot loaded (${slotId}, phase ${this.state.session.phase}).`;
     this.state.controls.actionKind = "success";
+    // A1-stability-hunter P2: success-shape mirrors `placeToolAt`'s
+    // `{ok:true, ...}` contract; UI caller in `onLoadSnapshot` ignores.
+    return { ok: true, slotId, phase: this.state.session.phase };
   }
 
   exportReplay() {

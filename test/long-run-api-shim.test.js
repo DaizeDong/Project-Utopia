@@ -16,7 +16,10 @@ import assert from "node:assert/strict";
 import {
   normalizePlaceToolArgs,
   normalizeRegenerateArgs,
+  installBenignErrorFilter,
 } from "../src/main.js";
+
+import { createSnapshotService } from "../src/app/snapshotService.js";
 
 test("normalizePlaceToolArgs accepts positional args", () => {
   const result = normalizePlaceToolArgs(["kitchen", 10, 20]);
@@ -103,4 +106,135 @@ test("normalizeRegenerateArgs preserves other keys (seed, terrainTuning)", () =>
   assert.equal(result.templateId, "coastal_ocean");
   assert.equal(result.seed, 99);
   assert.equal(result.terrainTuning, terrain);
+});
+
+// -----------------------------------------------------------------------------
+// A1-stability-hunter Round 0 P2 — snapshot-shim return contract +
+// benign-error filter + loadFromStorage parse hardening.
+// -----------------------------------------------------------------------------
+
+test("snapshot shim return contract: saveSnapshot mock yields {ok:true, slotId, bytes}", () => {
+  // Pure-shape test against a hand-rolled mock — no GameApp construction
+  // needed. Confirms the documented contract returned by `app.saveSnapshot`
+  // matches the shape `__utopiaLongRun.saveSnapshot` propagates.
+  const mockApp = {
+    saveSnapshot: (slotId) => ({ ok: true, slotId, bytes: 1234 }),
+  };
+  const shim = (slotId) =>
+    mockApp?.saveSnapshot?.(slotId) ??
+    { ok: false, reason: "notReady", reasonText: "GameApp not initialised." };
+
+  const result = shim("manualtest");
+  assert.equal(result.ok, true);
+  assert.equal(result.slotId, "manualtest");
+  assert.equal(typeof result.bytes, "number");
+});
+
+test("snapshot shim return contract: loadSnapshot mock yields {ok:false, reason:'notFound'} when missing", () => {
+  const mockApp = {
+    loadSnapshot: (slotId) => ({
+      ok: false,
+      reason: "notFound",
+      reasonText: `Snapshot slot '${slotId}' not found.`,
+    }),
+  };
+  const shim = (slotId) =>
+    mockApp?.loadSnapshot?.(slotId) ??
+    { ok: false, reason: "notReady", reasonText: "GameApp not initialised." };
+
+  const result = shim("does-not-exist");
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "notFound");
+  assert.match(result.reasonText, /not found/);
+});
+
+test("snapshot shim return contract: undefined app yields {ok:false, reason:'notReady'}", () => {
+  const app = undefined;
+  const saveShim = (slotId) =>
+    app?.saveSnapshot?.(slotId) ??
+    { ok: false, reason: "notReady", reasonText: "GameApp not initialised." };
+  const loadShim = (slotId) =>
+    app?.loadSnapshot?.(slotId) ??
+    { ok: false, reason: "notReady", reasonText: "GameApp not initialised." };
+
+  const sResult = saveShim("any");
+  const lResult = loadShim("any");
+  assert.equal(sResult.ok, false);
+  assert.equal(sResult.reason, "notReady");
+  assert.equal(lResult.ok, false);
+  assert.equal(lResult.reason, "notReady");
+});
+
+test("installBenignErrorFilter swallows ResizeObserver loop and increments counter", () => {
+  // Stub a minimal `window` so the helper can register its listener.
+  // The helper exits early when `typeof window === 'undefined'`, so we
+  // briefly set it for this test only.
+  const listeners = [];
+  const fakeWindow = {
+    __utopiaBenignErrorInstalled: undefined,
+    __utopiaBenignSuppressed: undefined,
+    addEventListener(type, fn /*, opts*/) {
+      listeners.push({ type, fn });
+    },
+  };
+  const originalWindow = globalThis.window;
+  globalThis.window = fakeWindow;
+  try {
+    installBenignErrorFilter();
+    assert.equal(fakeWindow.__utopiaBenignErrorInstalled, true);
+    assert.equal(fakeWindow.__utopiaBenignSuppressed, 0);
+    assert.equal(listeners.length, 1);
+    assert.equal(listeners[0].type, "error");
+
+    // Simulate a benign event.
+    let prevented = 0;
+    let stopped = 0;
+    listeners[0].fn({
+      message: "ResizeObserver loop completed with undelivered notifications.",
+      preventDefault: () => { prevented += 1; },
+      stopImmediatePropagation: () => { stopped += 1; },
+    });
+    assert.equal(prevented, 1);
+    assert.equal(stopped, 1);
+    assert.equal(fakeWindow.__utopiaBenignSuppressed, 1);
+
+    // Non-matching error must NOT increment.
+    listeners[0].fn({
+      message: "TypeError: x is undefined",
+      preventDefault: () => { prevented += 1; },
+      stopImmediatePropagation: () => { stopped += 1; },
+    });
+    assert.equal(prevented, 1, "non-matching error should not be prevented");
+    assert.equal(stopped, 1, "non-matching error should not be stopped");
+    assert.equal(fakeWindow.__utopiaBenignSuppressed, 1, "counter must not increment for unrelated errors");
+
+    // Idempotency: calling again on the same window should NOT register a second listener.
+    installBenignErrorFilter();
+    assert.equal(listeners.length, 1, "filter must be idempotent under HMR re-runs");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("loadFromStorage returns null (does not throw) on malformed JSON", () => {
+  // Stub localStorage with a corrupt payload.
+  const originalLocalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: () => "not-json{",
+    setItem: () => {},
+  };
+  try {
+    const svc = createSnapshotService();
+    let result;
+    assert.doesNotThrow(() => {
+      result = svc.loadFromStorage("bad");
+    });
+    assert.equal(result, null);
+  } finally {
+    if (originalLocalStorage === undefined) {
+      delete globalThis.localStorage;
+    } else {
+      globalThis.localStorage = originalLocalStorage;
+    }
+  }
 });
