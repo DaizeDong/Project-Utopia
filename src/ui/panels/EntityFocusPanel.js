@@ -749,7 +749,11 @@ export class EntityFocusPanel {
     this.#captureScrollStates();
     const selectedId = this.state.controls.selectedEntityId;
     if (!selectedId) {
-      const html = `<div class="small muted">No entity selected. Click any worker/visitor/animal.</div>`;
+      // v0.10.1-A4 (V5 P2 #2) — anchor the empty-state hint with
+      // .inspector-empty-hint so at 1366×768 the prose reads as a deliberate
+      // panel widget (dashed border + centred text) rather than orphan text
+      // floating mid-canvas.
+      const html = `<div class="inspector-empty-hint">No entity selected. Click any worker, visitor, or animal on the map to inspect it here.</div>`;
       if (html !== this.lastHtml) {
         this.root.innerHTML = html;
         this.lastHtml = html;
@@ -759,7 +763,7 @@ export class EntityFocusPanel {
 
     const entity = [...this.state.agents, ...this.state.animals].find((e) => e.id === selectedId);
     if (!entity) {
-      const html = `<div class="small muted">Selected entity not found in current world.</div>`;
+      const html = `<div class="inspector-empty-hint">Selected entity not found in current world.</div>`;
       if (html !== this.lastHtml) {
         this.root.innerHTML = html;
         this.lastHtml = html;

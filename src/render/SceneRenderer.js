@@ -9,7 +9,7 @@ import { explainBuildReason, summarizeBuildPreview } from "../simulation/constru
 import { onEvent, EVENT_TYPES } from "../simulation/meta/GameEventBus.js";
 import { pushWarning } from "../app/warnings.js";
 import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../app/controlSanitizers.js";
-import { deriveAtmosphereProfile } from "./AtmosphereProfile.js";
+import { deriveAtmosphereProfile, applyDayNightModulation, getDayNightPhase, quantizeDayNightPhase, DAY_NIGHT_TINT_BINS } from "./AtmosphereProfile.js";
 import { createProceduralTileTexture, resolveTileTextureMode } from "./ProceduralTileTextures.js";
 import { buildPressureLens, buildHeatLens, heatLensSignature, classifyPlacementTiles, dedupPressureLabels, getPressureLabelRank, heatLabelBudgetForZoom } from "./PressureLens.js";
 import { deriveVisualAssetDebugState } from "./visualAssetDebug.js";
@@ -2511,13 +2511,35 @@ export class SceneRenderer {
     // ticks. A signature hit reuses the previous profile object.
     const s = this.state;
     const sig = `${s.gameplay?.scenario?.family ?? ""}|${s.weather?.current ?? ""}|${s.weather?.pressureScore ?? 0}|${s.metrics?.spatialPressure?.weatherPressure ?? 0}|${s.metrics?.spatialPressure?.eventPressure ?? 0}|${s.metrics?.ecology?.maxFarmPressure ?? 0}|${s.metrics?.traffic?.peakPenalty ?? 0}|${s.session?.phase ?? ""}|${s.session?.outcome ?? ""}`;
-    let target;
+    let baseTarget;
     if (this._lastAtmosphereSig === sig && this._lastAtmosphereProfile) {
-      target = this._lastAtmosphereProfile;
+      baseTarget = this._lastAtmosphereProfile;
     } else {
-      target = deriveAtmosphereProfile(this.state);
+      baseTarget = deriveAtmosphereProfile(this.state);
       this._lastAtmosphereSig = sig;
-      this._lastAtmosphereProfile = target;
+      this._lastAtmosphereProfile = baseTarget;
+    }
+    // v0.10.1-A4 (V1) — Day-night tint modulation off the existing
+    // SimulationClock (state.environment.dayNightPhase, period =
+    // BALANCE.dayCycleSeconds=90). Quantized to 32 bins so we only re-blend
+    // the tinted profile when the bin index changes (~once every 2.8 s on
+    // the default cycle); per-frame work stays at the base-profile cache
+    // hit + this single modulo. No new mesh/asset/shadow rig — pure
+    // ambient + directional light parameter modulation.
+    const phase = getDayNightPhase(this.state);
+    const bin = quantizeDayNightPhase(phase, DAY_NIGHT_TINT_BINS);
+    let target;
+    if (
+      this._lastDayNightBin === bin
+      && this._lastDayNightBaseTarget === baseTarget
+      && this._lastDayNightTintedTarget
+    ) {
+      target = this._lastDayNightTintedTarget;
+    } else {
+      target = applyDayNightModulation(baseTarget, phase);
+      this._lastDayNightBin = bin;
+      this._lastDayNightBaseTarget = baseTarget;
+      this._lastDayNightTintedTarget = target;
     }
     const blend = clamp(Math.max(0.08, Number(dt) * 3.1), 0.08, 0.24);
 

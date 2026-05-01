@@ -206,6 +206,110 @@ function applySessionOutcome(profile, state) {
   };
 }
 
+// v0.10.1-A4 (V1) — Day-night tint ramp keyed off the existing
+// SimulationClock cycle (BALANCE.dayCycleSeconds=90 → state.environment.
+// dayNightPhase ∈ [0, 1)). Pure parameter modulation that mutates the
+// ambient + directional light colour & intensity already present in the
+// scene; no new mesh, no shadow rig, no asset import.
+//
+// Phase ramp (4 stops, smooth-blended via mixHex over 0.25-wide quadrants):
+//   0.00  dawn   #ffd9a8
+//   0.25  day    #ffffff
+//   0.50  dusk   #ffb574
+//   0.75  night  #3a4a78
+//
+// Intensity ramps:
+//   ambientIntensityMul: 0.85 (dawn) → 1.20 (day) → 0.85 (dusk) → 0.45 (night)
+//   sunIntensityMul:     0.70 (dawn) → 1.00 (day) → 0.70 (dusk) → 0.20 (night)
+//
+// SceneRenderer quantizes the phase to 32 bins (DAY_NIGHT_TINT_BINS) so the
+// modulation only re-blends when the bin changes — at the default cycle of
+// 90 s this is one update every ~2.8 s, well below per-frame work cost.
+const DAY_NIGHT_STOPS = Object.freeze([
+  Object.freeze({ phase: 0.00, color: 0xffd9a8, ambient: 0.85, sun: 0.70 }), // dawn
+  Object.freeze({ phase: 0.25, color: 0xffffff, ambient: 1.20, sun: 1.00 }), // day
+  Object.freeze({ phase: 0.50, color: 0xffb574, ambient: 0.85, sun: 0.70 }), // dusk
+  Object.freeze({ phase: 0.75, color: 0x3a4a78, ambient: 0.45, sun: 0.20 }), // night
+]);
+export const DAY_NIGHT_TINT_BINS = 32;
+
+export function getDayNightPhase(state) {
+  // Prefer the SimulationClock-emitted phase; if missing (test rig that runs
+  // SceneRenderer without ticking the clock), fall back to wall-clock-second
+  // modulo 90 s (matches DAY_CYCLE_PERIOD_SEC in SimulationClock.js).
+  const fromState = Number(state?.environment?.dayNightPhase);
+  if (Number.isFinite(fromState)) {
+    return ((fromState % 1) + 1) % 1;
+  }
+  const elapsed = Number(state?.metrics?.timeSec ?? 0);
+  const period = 90;
+  return ((elapsed % period) / period + 1) % 1;
+}
+
+export function computeDayNightTint(phase) {
+  const p = ((Number(phase) % 1) + 1) % 1;
+  // Find the stop bracket; phases are at 0.00, 0.25, 0.50, 0.75. Stop K covers
+  // [stops[K].phase, stops[(K+1) % 4].phase) wrapping at 1.0.
+  let from = DAY_NIGHT_STOPS[0];
+  let to = DAY_NIGHT_STOPS[1];
+  for (let i = 0; i < DAY_NIGHT_STOPS.length; i += 1) {
+    const a = DAY_NIGHT_STOPS[i];
+    const b = DAY_NIGHT_STOPS[(i + 1) % DAY_NIGHT_STOPS.length];
+    const aPhase = a.phase;
+    const bPhase = b.phase <= aPhase ? b.phase + 1 : b.phase;
+    const probe = p < aPhase ? p + 1 : p;
+    if (probe >= aPhase && probe < bPhase) {
+      from = a;
+      to = b;
+      break;
+    }
+  }
+  const fromPhase = from.phase;
+  const toPhase = to.phase <= fromPhase ? to.phase + 1 : to.phase;
+  const probe = p < fromPhase ? p + 1 : p;
+  const span = Math.max(1e-6, toPhase - fromPhase);
+  const t = clamp((probe - fromPhase) / span, 0, 1);
+  return {
+    color: mixHex(from.color, to.color, t),
+    ambientMul: from.ambient + (to.ambient - from.ambient) * t,
+    sunMul: from.sun + (to.sun - from.sun) * t,
+  };
+}
+
+export function quantizeDayNightPhase(phase, bins = DAY_NIGHT_TINT_BINS) {
+  const p = ((Number(phase) % 1) + 1) % 1;
+  const b = Math.max(2, Math.floor(Number(bins) || DAY_NIGHT_TINT_BINS));
+  return Math.min(b - 1, Math.floor(p * b));
+}
+
+/**
+ * Modulate an existing atmosphere profile by the day-night tint. Returns a
+ * new profile object with `ambientColor`/`sunColor`/`hemiSkyColor` blended
+ * toward the phase tint and `ambientIntensity`/`sunIntensity`/`hemiIntensity`
+ * scaled by the ramp multipliers. The base profile is left untouched (no
+ * mutation) so AtmosphereProfile.test.js's pure-function contract still holds.
+ *
+ * The tint is mixed at 35 % strength against the scenario/weather-derived
+ * base colour: at noon (phase 0.25) the multiplier is white at full strength
+ * → near-zero net change; at night (phase 0.75) the multiplier is deep blue
+ * → noticeable cool tint without crushing the scenario family identity.
+ */
+export function applyDayNightModulation(profile, phase) {
+  const tint = computeDayNightTint(phase);
+  const colorBlend = 0.35;
+  return {
+    ...profile,
+    ambientColor: mixHex(profile.ambientColor, tint.color, colorBlend),
+    sunColor: mixHex(profile.sunColor, tint.color, colorBlend),
+    hemiSkyColor: mixHex(profile.hemiSkyColor, tint.color, colorBlend * 0.6),
+    ambientIntensity: clamp(profile.ambientIntensity * tint.ambientMul, 0.18, 1.6),
+    sunIntensity: clamp(profile.sunIntensity * tint.sunMul, 0.08, 1.5),
+    hemiIntensity: clamp(profile.hemiIntensity * (0.6 + tint.ambientMul * 0.4), 0.16, 0.78),
+    dayNightPhase: ((Number(phase) % 1) + 1) % 1,
+    dayNightTintColor: tint.color,
+  };
+}
+
 export function deriveAtmosphereProfile(state) {
   const family = String(state.gameplay?.scenario?.family ?? "frontier_repair");
   const base = SCENARIO_BASES[family] ?? SCENARIO_BASES.frontier_repair;
