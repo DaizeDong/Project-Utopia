@@ -2211,6 +2211,30 @@ export class GameApp {
     }
     const btn = document.getElementById("terrainLensBtn");
     if (btn) btn.classList.toggle("active", mode !== null);
+    // v0.10.1-A3 R2 (F5) — pulse the terrainLensLabel briefly when an
+    // overlay flips ON so the player notices the lens auto-switched in
+    // response to a tool selection (Farm → Fertility, Quarry → Node
+    // Health, etc.). The CSS rule `body.overlay-just-toggled
+    // #terrainLensLabel:not([hidden])` runs a 1.4s keyframe; we strip
+    // the class after the animation so subsequent renders don't restart
+    // it. Only triggers on mode-on transitions (mode != null) — turning
+    // an overlay OFF is a quiet action.
+    if (mode && typeof document !== "undefined" && document.body && typeof document.body.classList !== "undefined") {
+      try {
+        document.body.classList.remove("overlay-just-toggled");
+        // Force a reflow so re-adding the class restarts the keyframe.
+        // eslint-disable-next-line no-unused-expressions
+        void document.body.offsetWidth;
+        document.body.classList.add("overlay-just-toggled");
+        if (typeof setTimeout === "function") {
+          setTimeout(() => {
+            try { document.body.classList.remove("overlay-just-toggled"); } catch { /* DOM gone — safe no-op */ }
+          }, 1400);
+        }
+      } catch {
+        // headless DOM / forbidden contexts — pulse is UI sugar.
+      }
+    }
   }
 
   // Automatically activate the most relevant terrain overlay for the given

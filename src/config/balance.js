@@ -415,7 +415,14 @@ export const BALANCE = Object.freeze({
   // 1440p/1920p. Constants surfaced via balance so uiProfile can diverge.
   renderHitboxPixels: Object.freeze({
     entityPickFallback: 24,
-    entityPickGuard: 36,
+    // v0.10.1-A3 R2 (F1) — was 36; lowered to 14 px so the build-tool guard
+    // matches the worker sprite's *visual hitbox* (~12 px at default zoom)
+    // plus 2 px slop, instead of treating "near a worker" as "on a worker".
+    // The 36 px buffer was a perception-radius mistake: it caused a click
+    // on grass within ~3 tiles of any wandering animal to silently emit
+    // "Selecting nearby unit (release the build tool to place)" instead of
+    // placing the road, which the first-impression reviewer flagged as P0.
+    entityPickGuard: 14,
     rpgProfileBonusPx: 6,
   }),
   // v0.8.2 Round-5b (02a Step 3) — scenario objective regression event window.

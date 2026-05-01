@@ -57,8 +57,13 @@ describe("renderHitboxPixels balance config", () => {
     assert.strictEqual(Number(BALANCE.renderHitboxPixels?.entityPickFallback), 24);
   });
 
-  it("entityPickGuard = 36", () => {
-    assert.strictEqual(Number(BALANCE.renderHitboxPixels?.entityPickGuard), 36);
+  // v0.10.1-A3 R2 (F1) — guard radius 36 → 14 px so the threshold matches
+  // the worker sprite's ~12 px visual hitbox + 2 px slop instead of acting
+  // as a perception buffer. Without this fix, almost any click on grass
+  // near a wandering animal silently became an entity selection (P0
+  // first-impression reviewer report).
+  it("entityPickGuard = 14", () => {
+    assert.strictEqual(Number(BALANCE.renderHitboxPixels?.entityPickGuard), 14);
   });
 
   it("rpgProfileBonusPx = 6", () => {
