@@ -219,7 +219,15 @@ const MILESTONE_RULES = Object.freeze([
     current: (state) => {
       const tier = Number(state.gameplay?.raidEscalation?.tier ?? 0);
       const repelled = Number(state.metrics?.raidsRepelled ?? 0);
-      return tier >= 5 && repelled >= 1 ? 1 : 0;
+      // v0.10.1-r2-A5 P0: gate "defended" on real defensive infrastructure
+      // (≥4 walls or ≥1 GUARD-role worker). Pre-r2, surviving the active
+      // window with zero defenses still flipped this milestone — A5 R2 saw
+      // "Tier-5 raid defended" light up on a 0-wall, 0-guard run because
+      // raidsRepelled was incremented purely on event-status transition.
+      const walls = Number(state.buildings?.walls ?? 0);
+      const guards = Number(state.combat?.guardCount ?? 0);
+      const hasDefense = guards >= 1 || walls >= 4;
+      return tier >= 5 && repelled >= 1 && hasDefense ? 1 : 0;
     },
   },
   {
@@ -487,7 +495,15 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
     );
   // Network readiness is only required when resources aren't severely depleted
   const desperateResources = Number(state.resources.food ?? 0) <= 3 || Number(state.resources.wood ?? 0) <= 3;
-  if ((!networkReady && !desperateResources) || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0) {
+  // v0.10.1-r2-A5 P0: hard-gate emergency relief charges on actual collapse
+  // signals (a death has occurred or severe pressure). Pre-r2 the trickle
+  // path triggered as soon as food ≤ 12 — but with food=12 there's no real
+  // crisis, so the AFK food pool kept getting topped up indefinitely while
+  // workers were still healthy. Requiring "someone died OR severePressure"
+  // means relief is reserved for genuine emergencies, not soft dips.
+  const meaningfulCollapse = Number(state.metrics?.deathsTotal ?? 0) > 0 || severePressure;
+  if ((!networkReady && !desperateResources) || recovery.charges <= 0 || (!criticalResources && !severePressure) || getWorkerCount(state) <= 0
+    || !meaningfulCollapse) {
     return recovery;
   }
   if (nowSec - recovery.lastTriggerSec < BALANCE.recoveryCooldownSec) {

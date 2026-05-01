@@ -1,12 +1,19 @@
 // v0.10.1-r1-A5 — fail-state restoration + score divergence + wood spoilage.
+// v0.10.1-r2-A5 update: BALANCE key renamed `workerHungerDecayWhenFoodZero`
+// → `workerHungerDecayWhenFoodLow`; trigger threshold widened from food==0
+// to `food < workerHungerDecayLowFoodThreshold` (default 8) so passive
+// trickle income (TRADE_CARAVAN, recovery charges) can no longer asymptote
+// food just-above-zero and dodge the decay.
 //
 // Plan: assignments/homework7/Final-Polish-Loop/Round1/Plans/A5-balance-critic.md
+//       assignments/homework7/Final-Polish-Loop/Round2/Plans/A5-balance-critic.md
 //
 // Locks three invariants that close the v0.10.1-l "do-nothing-wins" hole:
 //
-//   1. fail-state lock: when state.resources.food == 0, ResourceSystem now
-//      decays each worker's entity.hunger by BALANCE.workerHungerDecayWhenFoodZero
-//      so MortalitySystem's existing starvation chain (hunger ≤ 0.045 +
+//   1. fail-state lock: when state.resources.food drops below
+//      `workerHungerDecayLowFoodThreshold`, ResourceSystem now decays each
+//      worker's entity.hunger by BALANCE.workerHungerDecayWhenFoodLow so
+//      MortalitySystem's existing starvation chain (hunger ≤ 0.045 +
 //      holdSec=34) can fire. Pre-r1 the global drain bypassed entity.hunger,
 //      so workers never died and a no-op run was unkillable.
 //
@@ -79,13 +86,17 @@ function makeMinimalState({ workers = 5, food = 0, wood = 0, hunger = 1.0 } = {}
 // 1. fail-state lock — workers MUST cross the starvation threshold (≤0.045)
 // -----------------------------------------------------------------------------
 test("fail-state: food=0 + alive workers → entity.hunger crosses death threshold", () => {
-  // Skip the assertion if the BALANCE knob is missing — guards against a
-  // future refactor that renames the key. The plan's invariant is "the wire
-  // is connected", not "the constant is named exactly this".
-  const decayRate = Number(BALANCE.workerHungerDecayWhenFoodZero ?? 0);
+  // r2-A5 rename: read the new key, fall back to the old name for any
+  // intermediate-state checkout. The plan's invariant is "the wire is
+  // connected" — exact constant name is a free variable.
+  const decayRate = Number(
+    BALANCE.workerHungerDecayWhenFoodLow
+      ?? BALANCE.workerHungerDecayWhenFoodZero
+      ?? 0,
+  );
   assert.ok(
     decayRate > 0,
-    `workerHungerDecayWhenFoodZero must be > 0 to keep fail-state alive (got ${decayRate})`,
+    `workerHungerDecayWhenFoodLow must be > 0 to keep fail-state alive (got ${decayRate})`,
   );
 
   const state = makeMinimalState({ workers: 5, food: 0, hunger: 1.0 });

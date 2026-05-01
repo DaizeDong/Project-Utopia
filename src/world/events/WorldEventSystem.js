@@ -764,8 +764,15 @@ function applyActiveEvent(event, dt, state, ctx = null) {
   if (event.type === EVENT_TYPE.TRADE_CARAVAN) {
     ensureSpatialPayload(event, state, ctx);
     const yieldMultiplier = Math.max(0.72, Number(event.payload?.rewardMultiplier ?? 1));
-    state.resources.food += dt * 0.5 * event.intensity * yieldMultiplier;
-    state.resources.wood += dt * 0.34 * event.intensity * yieldMultiplier;
+    // v0.10.1-r2-A5 P0: TRADE_CARAVAN food/wood rates halved (0.5→0.22,
+    // 0.34→0.18) — A5 R2 root cause: a 20s caravan at intensity=1 was
+    // injecting ~10 food, and the EventDirector's tradeCaravan weight=1
+    // re-fired one every few minutes, lifting AFK food 18→313 over a
+    // 30-min run. Reducing the per-tick yield by ~56% means caravans are
+    // still meaningful relief for active colonies but cannot single-handedly
+    // sustain a no-op run with zero farms.
+    state.resources.food += dt * 0.22 * event.intensity * yieldMultiplier;
+    state.resources.wood += dt * 0.18 * event.intensity * yieldMultiplier;
   }
 
   if (event.type === EVENT_TYPE.ANIMAL_MIGRATION) {
@@ -1144,9 +1151,19 @@ export class WorldEventSystem {
       // `resolve` has exhausted its active window with the colony still running,
       // so we credit one repel. Long-horizon-helpers reads this instead of the
       // legacy ring-buffer scan that looked for never-emitted event types.
+      // v0.10.1-r2-A5 P0: gate the increment on actual defense — surviving
+      // the active window with no walls + no engagement isn't "repelled",
+      // it's just "the raid happened to pick a target you weren't using".
+      // Require either a non-trivial defense score (HP-weighted wall
+      // coverage ≥ 1 ≈ 1+ wall on path) or the explicit `blockedByWalls`
+      // flag set by applyBanditRaidImpact when shielding occurs.
       if (changed && prevStatus === "active" && event.status === "resolve"
         && event.type === EVENT_TYPE.BANDIT_RAID) {
-        state.metrics.raidsRepelled = Number(state.metrics.raidsRepelled ?? 0) + 1;
+        const defenseScore = Number(event.payload?.defenseScore ?? 0);
+        const blockedByWalls = event.payload?.blockedByWalls === true;
+        if (defenseScore >= 1 || blockedByWalls) {
+          state.metrics.raidsRepelled = Number(state.metrics.raidsRepelled ?? 0) + 1;
+        }
       }
       if (changed && state.debug?.eventTrace) {
         const impact = event.payload?.impactTile
