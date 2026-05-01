@@ -206,15 +206,26 @@ export const BALANCE = Object.freeze({
   // (was 0.60 food/s), pairs with INITIAL_RESOURCES.food=320 to stretch
   // pure-burn runway 333 s → 702 s (~11:42), realistic crash-to-recovery ~6:30.
   workerFoodConsumptionPerSecond: 0.038, // v0.10.1-l: fixed global drain replacing hunger FSM
-  // v0.10.1-r1-A5 P0-1: when state.resources.food == 0, decay each worker's
-  // entity.hunger at this rate so MortalitySystem's existing starvation chain
-  // (hunger<=0.045 + holdSec=34) can fire. Pre-r1 the global drain
-  // replaced hunger-FSM but never wired through to per-entity hunger,
-  // so workers never starved (do-nothing-wins root cause). 0.020/s = ~50s
-  // from hunger=1.0 → 0.045, total time-to-first-death = 50s decay + 34s
-  // holdSec ≈ 84s after food hits zero — gives the player a clear
-  // "act or die" window without instant collapse.
-  workerHungerDecayWhenFoodZero: 0.020,
+  // v0.10.1-r1-A5 P0-1 (r2-A5 update): when state.resources.food drops below
+  // `workerHungerDecayLowFoodThreshold`, decay each worker's entity.hunger at
+  // this rate so MortalitySystem's existing starvation chain (hunger<=0.045 +
+  // holdSec=34) can fire. Pre-r1 the global drain replaced hunger-FSM but
+  // never wired through to per-entity hunger, so workers never starved
+  // (do-nothing-wins root cause). r1 fixed the wire but only at strict
+  // food==0 — TRADE_CARAVAN (+0.5/s) + ProgressionSystem emergency relief
+  // (+12 charges) kept food asymptotically above 0, so AFK still won.
+  // r2 changes the trigger from food==0 to food<8 (low-food band) so
+  // passive trickle income can no longer fully offset the 0.020/s decay.
+  // 0.020/s = ~50s from hunger=1.0 → 0.045, total time-to-first-death =
+  // 50s decay + 34s holdSec ≈ 84s after food enters the low band — still
+  // gives the player a clear "act or die" window without instant collapse.
+  workerHungerDecayWhenFoodLow: 0.020,
+  // v0.10.1-r2-A5 P0-1: low-food threshold below which entity.hunger decays
+  // even though state.resources.food is still > 0. Set to 8 so it sits below
+  // `recoveryCriticalResourceThreshold` (12) — recovery charges still trigger
+  // first when available; only when both pools are exhausted does the
+  // hunger decay kick in.
+  workerHungerDecayLowFoodThreshold: 8,
   // v0.10.1-j: warehouse food spoilage — slow passive decay to cap indefinite
   // stockpile growth. At 0.00011/s a 1000-food stockpile loses ~9.5/day,
   // roughly offsetting surplus production so 90-day food stays ~3× initial.

@@ -420,15 +420,18 @@ export class ResourceSystem {
       }
     }
 
-    // v0.10.1-r1-A5 P0-1: when food fully depleted, decay per-worker
-    // hunger so MortalitySystem's existing starvation chain (hunger ≤ 0.045
-    // + holdSec=34) can fire. Pre-r1 the global drain (above) replaced the
-    // hunger FSM but never wired through to per-entity hunger, so workers
-    // never starved → no-op runs were unkillable. Caps: this branch is
-    // paused entirely while food > 0 (the consume branch above already
-    // prevents that path from being reached).
-    if (state.resources.food <= 0 && Array.isArray(state.agents)) {
-      const hungerDecayRate = Number(BALANCE.workerHungerDecayWhenFoodZero ?? 0);
+    // v0.10.1-r1-A5 P0-1 (r2-A5 update): when food drops into the low-food
+    // band, decay per-worker hunger so MortalitySystem's existing starvation
+    // chain (hunger ≤ 0.045 + holdSec=34) can fire. Pre-r1 the global drain
+    // bypassed entity.hunger entirely; r1 wired it back at strict food==0.
+    // R2 finding: TRADE_CARAVAN (+0.5/s) + ProgressionSystem emergency
+    // relief (+12) kept the food pool asymptotically > 0, so a no-op run
+    // never crossed the trigger. Switching to `food < threshold` (default 8)
+    // means trickle income can no longer fully offset the 0.020/s entity
+    // hunger decay — AFK runs eventually starve once recovery charges drain.
+    const lowFoodThreshold = Number(BALANCE.workerHungerDecayLowFoodThreshold ?? 8);
+    if (state.resources.food < lowFoodThreshold && Array.isArray(state.agents)) {
+      const hungerDecayRate = Number(BALANCE.workerHungerDecayWhenFoodLow ?? 0);
       if (hungerDecayRate > 0) {
         const hungerDecay = hungerDecayRate * stepSec;
         for (const a of state.agents) {
