@@ -130,6 +130,31 @@
   overhaul keeping natural pop count an order of magnitude below the
   HW6 stress envelope.
 
+### Docs (HW7 Round 1 → Round 2 — submission deliverables trajectory)
+
+- **B2 submission-deliverables R2 verdict**: YELLOW **18/22**
+  (R0 RED **7/22** → R1 YELLOW **17/22** → R2 YELLOW **18/22**,
+  cumulative **+11** sub-items closed across two rounds). Build commit
+  at R2: `d242719`; reviewer feedback at
+  `assignments/homework7/Final-Polish-Loop/Round2/Feedbacks/B2-submission-deliverables.md`.
+- **C5 submission-format upgraded R1 FAIL → R2 PASS** via
+  `assignments/homework7/build-submission.sh` (~119 LOC bash, includes
+  three heredoc grep gates) plus the `npm run submission:zip` entry in
+  `package.json` `scripts` — both verified intact in R2 with no
+  regression versus R1.
+- **4 PENDING items remaining are author-fill** (pillar names /
+  Post-Mortem §1-§5 substantive content / demo video URL /
+  submission-format choice); all four are TA HW7 §1.5 anti-LLM-polish
+  gated and intentionally **not** auto-filled by the polish loop —
+  see PROCESS-LOG R2 closeout (`assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md`
+  § "Round 2 (2026-05-01) — Submission Closeout Gates") for the four
+  grep-verifiable AUTHOR-FILL GATEs.
+- **Distance to GREEN = 4 author-fill items** (≈ 30 min admin work
+  plus 1 demo-video recording session); R1's 5 engineering fixes
+  (`build-submission.sh` / `npm run submission:zip` script entry /
+  PROCESS-LOG R1 closeout entry / CHANGELOG R0→R1 trajectory entry /
+  README grader-port comment) all present in R2 with no regression.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 0
 
 ### Polish (HW7 Round 0 — A4-polish-aesthetic wave-0)
