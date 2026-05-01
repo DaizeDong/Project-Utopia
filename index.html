@@ -608,8 +608,14 @@
     }
     /* v0.8.2 Round-6 Wave-1 (01c-ui Step 6) — anchor triangle pointing at
        the underlying tile/marker. Inherits the label border colour for
-       visual cohesion across heat / route / depot kinds. */
-    .pressure-label::after {
+       visual cohesion across heat / route / depot kinds.
+       v0.10.1 A7-rationality-audit R2 (P0 #2) — gate the chevron on
+       :not(:empty) so visible-but-empty pressure-label slots don't paint
+       a stray `▾` glyph. SceneRenderer already hides truly empty labels
+       via `display:none`; this CSS-only fallback covers the case where a
+       label is on-screen with empty textContent (e.g. resolved to "" but
+       data-kind still present). */
+    .pressure-label:not(:empty)::after {
       content: '\25BE';
       position: absolute;
       bottom: -10px; left: 50%;
@@ -631,9 +637,9 @@
     .pressure-label[data-anchor="right-top"]::after {
       left: auto; right: 12px; transform: none;
     }
-    .pressure-label[data-anchor="top"]::after,
-    .pressure-label[data-anchor="left-top"]::after,
-    .pressure-label[data-anchor="right-top"]::after {
+    .pressure-label:not(:empty)[data-anchor="top"]::after,
+    .pressure-label:not(:empty)[data-anchor="left-top"]::after,
+    .pressure-label:not(:empty)[data-anchor="right-top"]::after {
       bottom: auto; top: -10px;
       content: '\25B4'; /* upward triangle when label is below the marker */
     }

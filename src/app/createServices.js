@@ -8,6 +8,7 @@ import { SeededRng, deriveRngSeed } from "./rng.js";
 import { createSnapshotService } from "./snapshotService.js";
 import { createReplayService } from "./replayService.js";
 import { createLeaderboardService } from "./leaderboardService.js";
+import { pickBootSeed } from "../world/grid/Grid.js";
 
 function createOfflineFallbackClient(baseClient) {
   return {
@@ -142,4 +143,39 @@ export function createServices(seed = 1337, options = {}) {
       pathWorkerPool?.dispose?.();
     },
   };
+}
+
+/**
+ * v0.10.1 A7-rationality-audit R2 (P0 #7) — fresh-boot services factory.
+ *
+ * Wraps `createServices` so the **default** seed for a fresh page load is
+ * resolved via `pickBootSeed()` (URL `?seed=` → `localStorage` →
+ * `Math.random()`-derived 31-bit int) instead of the hard-coded
+ * `DEFAULT_MAP_SEED = 1337`. Every test / benchmark / scenario that pins
+ * a seed explicitly continues calling `createServices(seed, options)`
+ * directly — nothing in the test path is affected.
+ *
+ * Returned object has an extra `bootSeed` field exposing the resolved
+ * value so the caller can stash it on `state.world.mapSeed` (GameApp does
+ * this via the `regenerateWorld` flow on first construct).
+ *
+ * @param {object} [options] forwarded to createServices
+ * @param {URLSearchParams} [options.urlParams] override for tests
+ * @param {Storage|null}    [options.storage]   override for tests
+ * @returns {object} services bundle + `bootSeed`
+ */
+export function createServicesForFreshBoot(options = {}) {
+  const urlParams = options.urlParams
+    ?? (typeof globalThis !== "undefined" && globalThis.location?.search != null
+      ? new URLSearchParams(globalThis.location.search)
+      : new URLSearchParams(""));
+  const storage = options.storage !== undefined
+    ? options.storage
+    : (typeof localStorage !== "undefined" ? localStorage : null);
+  const bootSeed = pickBootSeed({ urlParams, storage });
+  // Strip our own knobs before forwarding so createServices doesn't see them.
+  const { urlParams: _u, storage: _s, ...forwardOpts } = options;
+  const services = createServices(bootSeed, forwardOpts);
+  services.bootSeed = bootSeed;
+  return services;
 }

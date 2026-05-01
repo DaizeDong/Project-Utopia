@@ -42,6 +42,61 @@ export const MAP_TEMPLATES = Object.freeze([
 
 export const DEFAULT_MAP_TEMPLATE_ID = MAP_TEMPLATES[0].id;
 const DEFAULT_MAP_SEED = 1337;
+export { DEFAULT_MAP_SEED };
+
+/**
+ * v0.10.1 A7-rationality-audit R2 (P0 #7) — boot-seed picker.
+ *
+ * Resolves the initial map seed for a fresh page load. Order of precedence:
+ *   1. URL query `?seed=<n>` (explicit player choice; reproducible link)
+ *   2. `localStorage.utopia:bootSeed` (pinned seed for repeat runs)
+ *   3. random 31-bit integer (every fresh boot gets a unique world)
+ *
+ * Returning a randomized seed by default fixes finding #7 (the leaderboard
+ * was recording every loss as `seed 1337 · loss` because every fresh boot
+ * funnelled through `DEFAULT_MAP_SEED`). Tests / benchmarks that need
+ * determinism still call `createServices(1337, ...)` / `createInitialGrid({
+ * seed: 1337 })` explicitly — this helper is only invoked from the GameApp
+ * boot path via `createServicesForFreshBoot`.
+ *
+ * Pure function — both `urlParams` and `storage` are injectable so the
+ * helper is unit-testable without a live window/localStorage.
+ *
+ * @param {object} [opts]
+ * @param {URLSearchParams} [opts.urlParams]
+ * @param {Storage|null}    [opts.storage]
+ * @param {() => number}    [opts.random]   defaults to Math.random
+ * @returns {number} 31-bit unsigned integer
+ */
+export function pickBootSeed({ urlParams, storage, random = Math.random } = {}) {
+  if (urlParams) {
+    try {
+      const raw = urlParams.get("seed");
+      if (raw != null) {
+        const n = Number(raw);
+        if (Number.isFinite(n)) return (n >>> 0) || DEFAULT_MAP_SEED;
+      }
+    } catch {
+      /* malformed URLSearchParams — fall through */
+    }
+  }
+  if (storage) {
+    try {
+      const raw = storage.getItem("utopia:bootSeed");
+      if (raw != null) {
+        const n = Number(raw);
+        if (Number.isFinite(n)) return (n >>> 0) || DEFAULT_MAP_SEED;
+      }
+    } catch {
+      /* storage may throw in privacy mode — fall through */
+    }
+  }
+  // Math.random() returns a float in [0, 1); scale to 31-bit unsigned int
+  // and OR with 1 to guarantee non-zero (zero would feed back through
+  // resolveSeed → DEFAULT_MAP_SEED, defeating the randomization).
+  const r = Math.floor((Number(random()) || 0) * 0x7fffffff) | 1;
+  return r >>> 0;
+}
 const TILE_LIST_CACHE = new WeakMap();
 const NEIGHBORS_4 = Object.freeze([
   { x: 1, z: 0 },
