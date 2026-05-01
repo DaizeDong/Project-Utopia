@@ -516,7 +516,14 @@ export class RoleAssignmentSystem {
     herbalistSlots = (clinicCount > 0) ? Math.min(applyEmergency(q("herbalist")), specialistBudget) : 0;
     specialistBudget -= herbalistSlots;
 
-    const stoneSlots = (quarryCount > 0) ? Math.min(q("stone"), specialistBudget) : 0;
+    // Task 2: When stone < 20 and a quarry exists, force at least 2 STONE
+    // workers so the mine is never left unstaffed during a shortage.
+    let stoneSlots = 0;
+    if (quarryCount > 0) {
+      const baseStone = q("stone");
+      const urgentStone = (state.resources?.stone ?? 999) < 20 ? Math.max(baseStone, 2) : baseStone;
+      stoneSlots = Math.min(urgentStone, specialistBudget);
+    }
     specialistBudget -= stoneSlots;
 
     const herbsSlots = (herbGardenCount > 0) ? Math.min(q("herbs"), specialistBudget) : 0;

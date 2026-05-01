@@ -2,15 +2,13 @@
 // 5 in the Priority-FSM rewrite per
 // docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
 //
-// 20 cases — covering:
-//   1-14. Each STATE has non-stub onEnter/tick/onExit (smoke).
-//   15. Transition table: each non-FIGHTING state has COMBAT_PREEMPT at
+// 16 cases — covering (v0.10.1-l: removed #16 SURVIVAL_FOOD and #18 EATING tests):
+//   1-12. Each STATE has non-stub onEnter/tick/onExit (smoke).
+//   13. Transition table: each non-FIGHTING state has COMBAT_PREEMPT at
 //       index 0 (the §3.5 priority-0 row).
-//   16. SURVIVAL_FOOD fires from HARVESTING when hunger drops + food avail.
-//   17. SEEKING_HARVEST.onEnter calls tryReserve; onExit releases.
-//   18. EATING.tick reduces state.resources.food + raises worker.hunger.
-//   19. IDLE → SEEKING_HARVEST when role=FARM and farms exist.
-//   20. Determinism: same seed produces identical state-transition
+//   14. SEEKING_HARVEST.onEnter calls tryReserve; onExit releases.
+//   15. IDLE → SEEKING_HARVEST when role=FARM and farms exist.
+//   16. Determinism: same seed produces identical state-transition
 //       sequence for one worker over 60 ticks.
 //
 // Test conventions follow test/job-layer-foundation.test.js and
@@ -28,9 +26,9 @@ import { JobReservation } from "../src/simulation/npc/JobReservation.js";
 import { ROLE, TILE } from "../src/config/constants.js";
 import { setTile } from "../src/world/grid/Grid.js";
 
-// All 14 expected state names per §3.1.
+// All 12 expected state names per §3.1 (SEEKING_FOOD and EATING removed in v0.10.1-l).
 const ALL_STATES = [
-  "IDLE", "SEEKING_FOOD", "EATING", "SEEKING_REST", "RESTING", "FIGHTING",
+  "IDLE", "SEEKING_REST", "RESTING", "FIGHTING",
   "SEEKING_HARVEST", "HARVESTING", "DELIVERING", "DEPOSITING",
   "SEEKING_BUILD", "BUILDING", "SEEKING_PROCESS", "PROCESSING",
 ];
@@ -84,32 +82,6 @@ test("v0.10.0-b #15: each state's priority-0 entry is COMBAT_PREEMPT (where appl
 });
 
 // -----------------------------------------------------------------------------
-// 16. SURVIVAL_FOOD fires from HARVESTING when hunger drops below seek
-//     threshold AND food is available in the warehouse.
-// -----------------------------------------------------------------------------
-
-test("v0.10.0-b #16: HARVESTING → SEEKING_FOOD when hunger drops and food available", () => {
-  const state = createInitialGameState({ seed: 1337, bareInitial: true });
-  state.session.phase = "active";
-  state.metrics.timeSec = 10;
-  state.resources.food = 50; // food available
-  state.buildings.warehouses = 1;
-  const services = createServices(state.world.mapSeed);
-  const fsm = new WorkerFSM();
-  const worker = aliveWorkers(state)[0];
-  worker.role = ROLE.FARM;
-  worker.hunger = 0.10; // below workerHungerSeekThreshold (0.18)
-
-  // Force the worker into HARVESTING.
-  worker.fsm = { state: STATE.HARVESTING, enteredAtSec: 10, target: null, payload: undefined };
-
-  fsm.tickWorker(worker, state, services, 1 / 30);
-
-  assert.equal(worker.fsm.state, STATE.SEEKING_FOOD,
-    "hungry harvester preempts to SEEKING_FOOD");
-});
-
-// -----------------------------------------------------------------------------
 // 17. SEEKING_HARVEST.onEnter calls tryReserve (mock); onExit releases.
 // -----------------------------------------------------------------------------
 
@@ -157,37 +129,6 @@ test("v0.10.0-b #17: SEEKING_HARVEST.onEnter calls tryReserve, onExit calls rele
   STATE_BEHAVIOR[STATE.SEEKING_HARVEST].onExit(worker, state, services);
   assert.ok(releaseCalls.length >= 1, "releaseAll called by onExit");
   assert.equal(releaseCalls[0].workerId, worker.id, "releaseAll called for this worker");
-});
-
-// -----------------------------------------------------------------------------
-// 18. EATING.tick reduces state.resources.food + raises worker.hunger.
-// -----------------------------------------------------------------------------
-
-test("v0.10.0-b #18: EATING.tick consumes food and raises hunger", () => {
-  const state = createInitialGameState({ seed: 1337, bareInitial: true });
-  state.session.phase = "active";
-  state.metrics.timeSec = 10;
-  state.resources.food = 100;
-  state.resources.meals = 0;
-  state.buildings.warehouses = 1;
-  const services = createServices(state.world.mapSeed);
-  const worker = aliveWorkers(state)[0];
-  worker.hunger = 0.10;
-  worker.role = ROLE.FARM;
-  worker.fsm = {
-    state: STATE.EATING,
-    enteredAtSec: 10,
-    target: { ix: 48, iz: 36 },
-    payload: undefined,
-  };
-
-  const foodBefore = state.resources.food;
-  const hungerBefore = worker.hunger;
-
-  STATE_BEHAVIOR[STATE.EATING].tick(worker, state, services, 1.0);
-
-  assert.ok(state.resources.food < foodBefore, "food stockpile decreased");
-  assert.ok(worker.hunger > hungerBefore, "worker.hunger increased");
 });
 
 // -----------------------------------------------------------------------------

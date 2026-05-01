@@ -1,5 +1,205 @@
 # Changelog
 
+## v0.10.1-m — balance overhaul + AI decision improvements (2026-05-01)
+
+Comprehensive balance pass addressing wood overproduction, low difficulty, broken
+AI actions (bridge/explore), AI recruitment deadlock, and poor stone role allocation.
+All hardcap limits removed; LLM context enriched with role distribution and resource alerts.
+
+### Balance changes (balance.js)
+
+- **Wood overproduction fix**: `nodeRegenPerTickForest` 0.03 → 0.005; forest regenerates
+  at 0.3 wood/s (was 1.8/s), one WOOD worker can sustain a single tree, two will deplete it.
+- **Resource pressure**: `INITIAL_RESOURCES.food` 400 → 200; `wood` 80 → 35.
+  Tighter early-game forces players to build farms/lumbers faster.
+- **Food drain**: `workerFoodConsumptionPerSecond` 0.030 → 0.050; `warehouseFoodSpoilageRatePerSec`
+  0.00011 → 0.0003. Combined ~4× increase in food sink pressure.
+- **Raid difficulty**: `raidFallbackGraceSec` 480 → 180 (first raid at 3 min not 8);
+  `raidFallbackPopFloor` 24 → 10 (small colonies also attacked);
+  `devIndexPerRaidTier` 15 → 8 (tiers progress faster);
+  `raidIntensityPerTier` 0.3 → 0.5 (each tier is 67% more dangerous).
+- **Stone allocation**: `stonePerWorker` 1/8 → 1/5 (more stone workers at scale).
+- **Recruitment gate**: `recruitMinFoodBuffer` 50 → 20 (colony can grow with 20+ food).
+- **No building caps**: Removed all `hardCap` properties from `BUILD_COST_ESCALATOR`
+  (warehouse, wall, kitchen, smithy, clinic, gate). Costs still escalate via
+  `perExtraBeyondCap`; no hard placement ceiling.
+
+### AI bug fixes
+
+- **Bridge/explore/recycle/relocate broken**: `PlanExecutor.resolveLocationHint()` now
+  handles `"coords:X,Y"` prefix (ColonyPlanner format) before the bare `"X,Y"` regex.
+  All coordinate-based AI actions now reach their actual target tiles.
+- **Recruitment deadlock**: `PopulationGrowthSystem` infraCap base 8 → 12.
+  Starting colony (1wh + 2farm + 1lumb) now has infraCap ≈ 16 (was ≈ 12 = workers),
+  leaving 4 open recruit slots immediately.
+
+### Role allocation improvements (RoleAssignmentSystem.js)
+
+- **Urgent stone workers**: When `state.resources.stone < 20` and a quarry exists,
+  `stoneSlots` is at least 2 regardless of population-scaled quota.
+
+### LLM decision enrichment (ColonyPlanner.js)
+
+- **Workforce status**: Prompt now includes real-time role distribution
+  (`FARM=X WOOD=X STONE=X BUILD=X IDLE=X total=N`).
+- **Resource alerts**: Prompt warns on stone < 20 (CRITICAL/WARNING), wood < 20,
+  food < 30. Critical stone alert explicitly instructs building a quarry.
+- **Hard rule added**: "When stone < 20: prioritize quarry (if none) or STONE workers
+  (if quarry exists) before other expansions."
+- **Stone-crisis fast-track**: `generateFallbackPlan` now has a high-priority quarry
+  build path that fires when `stone < 15 && quarries === 0 && wood >= 6`, bypassing
+  the `farms >= 3` gate from the original priority-4 rule.
+
+### Test changes
+
+- `test/alpha-scenario.test.js`: updated `wood >= 50` → `wood >= 30`.
+- `test/balance-playability.test.js`: updated `INITIAL_RESOURCES.wood >= 50` → `>= 30`.
+- `test/buildCostEscalatorHardCap.test.js`: rewritten to reflect no-hardCap contract
+  (warehouse/kitchen no longer placement-capped).
+- `test/buildSpamRegression.test.js`: updated hardCap-bounded test to verify
+  `capped === false` and costs-keep-rising semantics.
+
+---
+
+## v0.10.1-l — hunger system removal + work chain improvement (2026-05-01)
+
+Removes the per-worker hunger FSM (SEEKING_FOOD → EATING states) that caused
+workers to spend 26–36% of their time in eating loops even with ample food.
+Replaces with a fixed global food drain. Workers now spend 100% of time on
+productive tasks.
+
+### Hunger system changes
+
+- **WorkerTransitions.js**: Removed `SURVIVAL_FOOD` transition row; removed
+  `SEEKING_FOOD_TRANSITIONS` and `EATING_TRANSITIONS` from all states.
+- **WorkerStates.js**: Removed `SEEKING_FOOD` and `EATING` state bodies. FSM
+  now has 12 states (down from 14).
+- **WorkerAISystem.js**: Removed hunger decay per-worker tick, removed
+  `_warehouseEatBudgetThisTick` reset, removed `consumeEmergencyRation` calls.
+- **ResourceSystem.js**: Added global food drain: `aliveWorkers × 0.030
+  food/s`. Recorded via `recordResourceFlow(state, "food", "consumed", ...)` so
+  HUD breakdown reflects it.
+- **balance.js**: Added `workerFoodConsumptionPerSecond: 0.030`.
+
+### Work chain improvements
+
+- `workerDeliverThreshold`: 1.6 → 2.5. Workers carry more before depositing,
+  reducing warehouse round-trip frequency.
+- `workerDeliverLowThreshold`: 0.85 → 1.2. Hysteresis band raised to match
+  the new entry threshold.
+
+### Camera / tile fix
+
+- **SceneRenderer.js**: Reverted `orthoSize` to `max(w,h) × 0.65` (removed
+  the erroneous `× tileSize` factor added in v0.10.1-k). Tiles now appear
+  visually 2× larger relative to entities as intended.
+
+### Test changes
+
+- Deleted `test/v0.10.1-h-warehouse-fast-eat.test.js` (tests removed code).
+- Skipped `v0.8.12 F3+F4` test (emergency-ration logic removed).
+- Updated `test/worker-intent-stability.test.js`: thresholds updated to 1.2/2.5.
+- Updated `test/autopilot-food-crisis-autopause.test.js`: food tolerance 0.01→0.05.
+- Updated FSM state tests: `SEEKING_FOOD`/`EATING` removed from expected states.
+
+### Test baseline
+
+1643 pass / 1 fail (pre-existing flaky bare-init timing) / 4 skip
+
+---
+
+## v0.10.1-k — tile size 2× scale (2026-05-01)
+
+Enlarges tiles by 2× relative to entities to make pathfinding more valuable and
+prevent entity stacking. `DEFAULT_GRID.tileSize` changed from 1 to 2; all
+world-space distances scaled accordingly so gameplay balance is preserved.
+
+### Changes
+
+- `src/config/constants.js` — `DEFAULT_GRID.tileSize`: 1 → 2. All
+  `tileToWorld`/`worldToTile` calls already use `grid.tileSize`, so tile
+  geometry, coordinate conversion, and world bounds auto-scale.
+- `src/render/SceneRenderer.js` — `orthoSize` now multiplied by
+  `(state.grid.tileSize ?? 1)`, keeping the full map visible at any tile size.
+- `src/config/balance.js` — all world-space distances doubled to maintain
+  tile-relative proportions:
+  - Movement speeds: `workerSpeed` 2.2→4.4, `visitorSpeed` 1.95→3.9,
+    `herbivoreSpeed` 1.85→3.7, `predatorSpeed` 2.25→4.5.
+  - Boids: `boidsNeighborRadius` 1.9→3.8, `boidsSeparationRadius` 0.9→1.8;
+    all group profile radii doubled.
+  - Combat: `predatorAttackDistance` 0.9→1.8, `meleeReachTiles` 1.3→2.6,
+    `guardAggroRadius` 6→12.
+- `src/simulation/npc/AnimalAISystem.js` — `chaseRangeBaseTiles` scaled by
+  `state.grid.tileSize`; `HERBIVORE_FLEE_ENTER_DIST` 3.4→6.8,
+  `HERBIVORE_FLEE_EXIT_DIST` 4.8→9.6.
+- `src/simulation/npc/state/StatePlanner.js` — herbivore flee thresholds
+  3.4→6.8/4.8→9.6; predator hunt threshold 5.2→10.4; herd regroup radius
+  3.4→6.8.
+
+Note: tile-space constants (e.g., `workerFarDepotDistance`, `guardAggroRadius`
+on worksites, `wildlifeZoneLeashRadius`, tile arrival checking via tile indices)
+are unchanged — they operate in tile coordinates, not world coordinates.
+
+### Test baseline
+
+1663 pass / 1 fail (pre-existing flaky bare-init timing) / 3 skip — unchanged
+from v0.10.1-j.
+
+---
+
+## v0.10.1-j — resource production rate limits + warehouse food spoilage (2026-05-01)
+
+Addresses indefinite resource accumulation: food was growing ~10× over 90 days
+with no natural ceiling. Four changes limit output rates and add proportional
+stockpile decay.
+
+### Balance changes (balance.js)
+
+- `soilSalinizationPerHarvest`: 0.012 → 0.020. Fallow triggers after ~40
+  harvests instead of ~67, reducing per-tile farm uptime from ~80% to ~71%.
+- `farmYieldPoolRegenPerTick`: 0.06 → 0.02. Pool now depletes under continuous
+  harvest (2 workers on 1 tile), creating a tangible throughput ceiling.
+- `nodeRegenPerTickForest`: 0.06 → 0.03. Forest node regrowth halved; continuous
+  lumber harvest depletes a node faster, encouraging lateral node expansion.
+- `warehouseFoodSpoilageRatePerSec`: 0.00011 (new). Warehouse food decays
+  proportionally — a 1 000-food stockpile loses ~9.5/game-day. Equilibrium
+  stockpile ≈ net_production / 0.0099 ≈ 2 700 instead of growing without bound.
+
+### ResourceSystem warehouse spoilage
+
+`ResourceSystem.update()` now applies proportional food spoilage each tick and
+records the loss via `recordResourceFlow(state, "food", "spoiled", amount)` so
+HUDController's "(prod +X / cons -Y / spoil -Z)" breakdown reflects it.
+
+### Test fixes
+
+Three unit tests expected exact food values or zero spoiledPerMin; updated to
+use tolerance checks (`Math.abs(... - expected) < 0.01` / `< 2`) consistent
+with the new per-tick spoilage.
+
+### Benchmark results (30-day, 6 scenarios, no player AI)
+
+| Scenario | avgFood (v0.10.1-i) | avgFood (v0.10.1-j) | Δ |
+|----------|---------------------|---------------------|---|
+| temperate | 1595 | 1307 | -18% |
+| highlands | 1665 | 1402 | -16% |
+| archipelago | 1532 | 1213 | -21% |
+| riverlands | 1893 | 1637 | -14% |
+| coastal | 1626 | 1264 | -22% |
+| fortified | 1414 | 1259 | -11% |
+
+All scenarios: alive=16, minFood>100, prod%>60%. Average food accumulation
+reduced ~17% vs baseline. Deaths remain predation-based (not starvation).
+
+### Files changed
+
+- `src/config/balance.js` — 4 balance constants updated (see above).
+- `src/simulation/economy/ResourceSystem.js` — warehouse spoilage in `update()`.
+- `test/autopilot-food-crisis-autopause.test.js` — tolerance fix for foodStock.
+- `test/food-rate-breakdown.test.js` — tolerance fix for foodSpoiledPerMin.
+
+Tests: 1663 pass / 1 fail (pre-existing flaky bare-init timing) / 3 skip.
+
 ## v0.10.1-i — island spawn bias + harbor farm + eat rate 0.60 (2026-04-30)
 
 Fixes two scenarios (archipelago_isles, coastal_ocean) that produced only

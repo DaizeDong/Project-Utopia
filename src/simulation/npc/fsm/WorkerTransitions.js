@@ -10,12 +10,12 @@
 //
 // Phase b populates per the §3.5 state-transition diagram. To avoid the §9
 // "transition group bloat" risk, four reusable rows
-// (COMBAT_PREEMPT / SURVIVAL_FOOD / SURVIVAL_REST / PATH_FAIL_FALLBACK)
+// (COMBAT_PREEMPT / SURVIVAL_REST / PATH_FAIL_FALLBACK)
 // are defined once here and spread into per-state lists. Per-state-specific
 // transitions (e.g. HARVESTING → DELIVERING when carry full) are inlined.
 //
-// Net layout: ~14 states × avg 5 transitions ≈ 70 entries; helper rows
-// mean ~30 unique conditions across all of them.
+// Net layout: ~12 states × avg 4 transitions ≈ 48 entries; helper rows
+// mean ~25 unique conditions across all of them.
 
 import {
   arrivedAtFsmTarget,
@@ -26,9 +26,6 @@ import {
   fsmTargetNull,
   harvestAvailableForRole,
   hostileInAggroRadiusForGuard,
-  hungerRecovered,
-  hungryAndFoodAvailable,
-  noFoodAvailable,
   noHostileInRange,
   pathFailedRecently,
   processAvailableForRole,
@@ -54,9 +51,6 @@ import { STATE } from "./WorkerStates.js";
 const COMBAT_PREEMPT = Object.freeze({
   priority: 0, to: STATE.FIGHTING, when: hostileInAggroRadiusForGuard,
 });
-const SURVIVAL_FOOD = Object.freeze({
-  priority: 1, to: STATE.SEEKING_FOOD, when: hungryAndFoodAvailable,
-});
 const SURVIVAL_REST = Object.freeze({
   priority: 2, to: STATE.SEEKING_REST, when: tooTired,
 });
@@ -66,14 +60,13 @@ const PATH_FAIL_FALLBACK = Object.freeze({
 
 // Exported so tests can assert priority-0 entries.
 export const _TRANSITION_ROWS = Object.freeze({
-  COMBAT_PREEMPT, SURVIVAL_FOOD, SURVIVAL_REST, PATH_FAIL_FALLBACK,
+  COMBAT_PREEMPT, SURVIVAL_REST, PATH_FAIL_FALLBACK,
 });
 
 // Per-state transitions
 
 const IDLE_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   SURVIVAL_REST,
   // Carry haul: if we have stuff to deliver, do that first.
   { priority: 3, to: STATE.DELIVERING, when: shouldDeliverCarry },
@@ -85,40 +78,13 @@ const IDLE_TRANSITIONS = Object.freeze([
   { priority: 6, to: STATE.SEEKING_HARVEST, when: harvestAvailableForRole },
 ]);
 
-const SEEKING_FOOD_TRANSITIONS = Object.freeze([
-  COMBAT_PREEMPT,
-  { priority: 1, to: STATE.EATING, when: arrivedAtFsmTarget },
-  // v0.10.0-c — onEnter may set target=null (no warehouse + no carry food in
-  // bare-init scenarios). Drop back to IDLE rather than orbit forever.
-  { priority: 8, to: STATE.IDLE, when: fsmTargetNull },
-  // Path failed without carry food → fall back to IDLE so the wander layer
-  // can try a different approach (or trigger reachability re-probe).
-  { priority: 9, to: STATE.IDLE, when: (worker, state, services) => {
-    if (Number(worker?.carry?.food ?? 0) > 0) return false;
-    return pathFailedRecently(worker, state, services);
-  } },
-]);
-
-const EATING_TRANSITIONS = Object.freeze([
-  COMBAT_PREEMPT,
-  { priority: 1, to: STATE.IDLE, when: hungerRecovered },
-  // v0.10.0-c — bail out of EATING when the colony has nothing to eat (no
-  // warehouse food, no meals, no carry). Without this transition workers
-  // latch into EATING when the stockpile drains mid-meal and never harvest
-  // more food → total famine in scenario F (long-horizon 600s).
-  { priority: 2, to: STATE.IDLE, when: noFoodAvailable },
-]);
-
 const SEEKING_REST_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  // Food more urgent than rest (mirrors v0.9.4 priority ordering: eat<rest).
-  SURVIVAL_FOOD,
   { priority: 3, to: STATE.RESTING, when: arrivedAtFsmTarget },
 ]);
 
 const RESTING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   { priority: 2, to: STATE.IDLE, when: restRecovered },
 ]);
 
@@ -129,7 +95,6 @@ const FIGHTING_TRANSITIONS = Object.freeze([
 
 const SEEKING_HARVEST_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.HARVESTING, when: arrivedAtFsmTarget },
   // v0.10.0-c — onEnter may set target=null when chooseWorkerTarget can't
@@ -141,7 +106,6 @@ const SEEKING_HARVEST_TRANSITIONS = Object.freeze([
 
 const HARVESTING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 5, to: STATE.DELIVERING, when: carryFull },
   // Yield-pool dried up + carry empty → reset to IDLE.
@@ -153,7 +117,6 @@ const HARVESTING_TRANSITIONS = Object.freeze([
 
 const DELIVERING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   { priority: 3, to: STATE.DEPOSITING, when: arrivedAtFsmTarget },
   // v0.10.0-c — onEnter may set target=null (no warehouse). Bail to IDLE.
   { priority: 7, to: STATE.IDLE, when: fsmTargetNull },
@@ -167,7 +130,6 @@ const DEPOSITING_TRANSITIONS = Object.freeze([
 
 const SEEKING_BUILD_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.BUILDING, when: arrivedAtFsmTarget },
   // v0.10.0-c — onEnter may set target=null (no eligible site). Bail to IDLE.
@@ -178,14 +140,12 @@ const SEEKING_BUILD_TRANSITIONS = Object.freeze([
 
 const BUILDING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   // Construction site finished or removed.
   { priority: 5, to: STATE.IDLE, when: fsmTargetGone },
 ]);
 
 const SEEKING_PROCESS_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   SURVIVAL_REST,
   { priority: 3, to: STATE.PROCESSING, when: arrivedAtFsmTarget },
   // v0.10.0-c — onEnter may set target=null (no eligible processing tile).
@@ -195,7 +155,6 @@ const SEEKING_PROCESS_TRANSITIONS = Object.freeze([
 
 const PROCESSING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
-  SURVIVAL_FOOD,
   // Raw inputs depleted → ProcessingSystem can't run. Fall back to IDLE.
   { priority: 5, to: STATE.IDLE, when: processInputDepleted },
 ]);
@@ -211,8 +170,6 @@ const PROCESSING_TRANSITIONS = Object.freeze([
  */
 export const STATE_TRANSITIONS = Object.freeze({
   [STATE.IDLE]: IDLE_TRANSITIONS,
-  [STATE.SEEKING_FOOD]: SEEKING_FOOD_TRANSITIONS,
-  [STATE.EATING]: EATING_TRANSITIONS,
   [STATE.SEEKING_REST]: SEEKING_REST_TRANSITIONS,
   [STATE.RESTING]: RESTING_TRANSITIONS,
   [STATE.FIGHTING]: FIGHTING_TRANSITIONS,

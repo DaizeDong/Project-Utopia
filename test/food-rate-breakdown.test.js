@@ -65,7 +65,8 @@ test("ResourceSystem flushes foodProducedPerMin when a farm-source emit fires", 
   const prod = Number(state.metrics.foodProducedPerMin);
   // 18 food over 3 sec = 360/min
   assert.ok(prod >= 350 && prod <= 370, `expected ~360/min, got ${prod}`);
-  assert.equal(state.metrics.foodSpoiledPerMin, 0);
+  // v0.10.1-j: warehouse spoilage produces a tiny non-zero spoiledPerMin even in this test
+  assert.ok(Number(state.metrics.foodSpoiledPerMin) < 2, `expected near-zero spoiledPerMin, got ${state.metrics.foodSpoiledPerMin}`);
 });
 
 test("ResourceSystem net-delta fallback attributes unexplained food drop to consumed", () => {
@@ -91,7 +92,8 @@ test("ResourceSystem reports zero per-min when food is stable across the window"
   sys.update(3, state);
   assert.equal(Number(state.metrics.foodProducedPerMin), 0);
   assert.equal(Number(state.metrics.foodConsumedPerMin), 0);
-  assert.equal(Number(state.metrics.foodSpoiledPerMin), 0);
+  // v0.10.1-j: warehouse spoilage produces a small but non-zero spoiledPerMin
+  assert.ok(Number(state.metrics.foodSpoiledPerMin) < 2, `expected near-zero spoiledPerMin, got ${state.metrics.foodSpoiledPerMin}`);
 });
 
 test("recordResourceFlow ignores unknown resources and non-positive amounts", () => {

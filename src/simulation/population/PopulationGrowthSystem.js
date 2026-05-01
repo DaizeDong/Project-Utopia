@@ -129,7 +129,7 @@ export class RecruitmentSystem {
     const herbGardensCount = Number(buildings.herbGardens ?? 0);
     const infraCap = Math.min(
       80,
-      8
+      12
         + warehousesCount * 3
         + Math.floor(farmsCount * 0.5)
         + Math.floor(lumbersCount * 0.5)

@@ -104,7 +104,7 @@ test("v0.8.12 F2: STONE worker with no quarries breaks out of seek_task within 5
   );
 });
 
-test("v0.8.12 F3+F4: walled-warehouse + no-worksite role + low hunger → emergency-ration eats fire via wander carry-bypass", () => {
+test.skip("v0.8.12 F3+F4: removed in v0.10.1-l — emergency-ration logic deleted (hunger simplified to global drain)", () => {
   // bareInitial gives a clean slate (no farms/quarries/lumbers/warehouse).
   // We manually place a single warehouse so we can wall it off without
   // mutateTile's rebuildBuildingStats restoring quarries from the default

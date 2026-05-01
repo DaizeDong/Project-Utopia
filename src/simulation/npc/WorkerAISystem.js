@@ -31,7 +31,6 @@ const TARGET_REFRESH_JITTER_SEC = 0.5;
 // v0.10.0-d — WANDER_REFRESH_* constants live in fsm/WorkerStates.js
 // alongside the IDLE state's wander loop; WorkerAISystem no longer drives
 // a wander cadence directly.
-const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
 // v0.10.0-d — Job-utility scheduler retired. The Priority-FSM
 // (fsm/WorkerFSM.js) is the only worker dispatcher; v0.9.x's
 // TASK_LOCK_STATES + JobScheduler sticky-bonus hysteresis are subsumed by
@@ -1321,10 +1320,6 @@ export class WorkerAISystem {
     // v0.8.13 A2 — reset the per-tick reachability probe budget. Default 8;
     // ReachabilityCache.probeAndCache decrements this and skips when ≤ 0.
     state._reachabilityProbeBudget = 8;
-    // v0.10.1-h (P4) — reset per-tick warehouse fast-eat budget.
-    // warehouseFastEat() decrements this; workers that exceed the cap fall
-    // back to the emergency-ration slow path for that tick.
-    state._warehouseEatBudgetThisTick = Number(BALANCE.warehouseEatCapPerSecond ?? 4) * dt;
 
     state._roadNetwork ??= new RoadNetwork();
     state._roadNetwork.rebuild(state.grid);
@@ -1413,7 +1408,6 @@ export class WorkerAISystem {
         // aggro range, GUARDs flow through SEEKING_HARVEST / IDLE /
         // wander naturally via role-based transitions.
 
-      worker.hunger = clamp(worker.hunger - getWorkerHungerDecayPerSecond(worker) * dt, 0, 1);
       // v0.8.3 worker-vs-raider combat — tick worker attack cooldown so the
       // counter-attack site in AnimalAISystem can fire repeatedly. Non-guard
       // workers never reset this themselves (only the predator-hit branch

@@ -70,6 +70,15 @@ export function resolveLocationHint(hint, state, groundedSteps = new Map()) {
 
   const grid = state.grid;
 
+  // Explicit coordinate with "coords:" prefix: "coords:42,31" (ColonyPlanner format)
+  const coordPrefixMatch = hint.match(/^coords:(-?\d+),(-?\d+)$/);
+  if (coordPrefixMatch) {
+    const ix = parseInt(coordPrefixMatch[1], 10);
+    const iz = parseInt(coordPrefixMatch[2], 10);
+    if (ix >= 0 && iz >= 0 && ix < grid.width && iz < grid.height) return [{ ix, iz }];
+    return [];
+  }
+
   // Explicit coordinate: "42,31"
   const coordMatch = hint.match(/^(\d+),(\d+)$/);
   if (coordMatch) {
