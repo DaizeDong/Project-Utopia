@@ -1863,6 +1863,11 @@
     .hud-warn-badge[hidden] { display: none !important; }
     /* Responsive status bar + sidebar at 1024px */
     @media (max-width: 1024px) {
+      /* v0.10.1-A6 R2 (Wave-1, plan 2/3, Step 3) — 1024 statusBar with
+         flex-wrap:wrap can swell to 2-3 rows; give --hud-height enough
+         headroom so #alertStack and #sidebarPanelArea (which both consume
+         the var) clear the wrapped chip rows without overlapping. */
+      :root { --hud-height: 64px; }
       #statusBar {
         height: auto; max-height: none; flex-wrap: wrap;
         overflow: hidden;
@@ -1894,9 +1899,14 @@
       /* v0.10.1-A6 (R1 P0 #2) — alertStack must sit above the sidebar
          (z:14) and topbar (z:15) so toasts are never occluded by the
          bottom sidebar bar at 1024. Explicit z:16 for the layering
-         contract; previous block left z-index implicit (auto). */
+         contract; previous block left z-index implicit (auto).
+         v0.10.1-A6 R2 (Wave-1, plan 2/3, Step 2) — replace hard-coded
+         `top: 38px` with `calc(var(--hud-height) + 8px)` so 1024 walks
+         the same CSS-var contract the 1366 band uses. With --hud-height
+         pinned to 64px in this block, top resolves to 72px (matches the
+         2-3 row wrapped statusBar). */
       #alertStack {
-        top: 38px; right: 44px;
+        top: calc(var(--hud-height) + 8px); right: 44px;
         max-width: min(280px, calc(100vw - 52px));
         z-index: 16;
       }
@@ -1951,6 +1961,34 @@
       }
       .hotkey-grid .hk-desc {
         font-size: 8.5px;
+      }
+    }
+    /* v0.10.1-A6 R2 (Wave-1, plan 2/3) — dedicated 1366×768 band closes the
+       P0 gap that R1 left open: KPI/goal chips were getting clipped or
+       toast-stacked because no media query owned the 1025-1366 range and
+       #alertStack hard-coded `top:36px`. We:
+         (a) bump --hud-height to 56px so #statusBar can wrap to 2 rows
+             without the chip text being cropped;
+         (b) re-anchor #alertStack via `top: calc(var(--hud-height) + 8px)`
+             so toasts always sit below the actual statusBar height (no
+             more "Last: Deer-X died" overlapping `walls 0/8`);
+         (c) push alertStack `right` past the sidebar gutter so it never
+             slides under #sidebar at the 1366 break;
+         (d) let .hud-goal-list wrap so all 6 chips remain visible.
+       z:16 keeps it above #statusBar (15) and below helpModal (1500). */
+    @media (max-width: 1366px) and (min-width: 1025px) {
+      :root { --hud-height: 56px; }
+      #statusBar {
+        min-height: 56px;
+      }
+      .hud-goal-list {
+        max-width: none;
+        flex-wrap: wrap;
+      }
+      #alertStack {
+        top: calc(var(--hud-height) + 8px);
+        right: calc(clamp(280px, 22vw, 460px) + 16px);
+        z-index: 16;
       }
     }
     @media (min-width: 1025px) and (max-width: 1200px) {

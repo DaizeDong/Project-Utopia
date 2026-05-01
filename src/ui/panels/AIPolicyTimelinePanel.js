@@ -25,7 +25,50 @@ function formatAgo(nowSec, atSec) {
   return `${mins}m ${Math.floor(delta % 60)}s ago`;
 }
 
-function formatRow(entry, nowSec) {
+// v0.10.1-A6 R2 (Wave-1, plan 2/3, Steps 4-5) — render-time adjacent-group
+// dedupe. NPCBrainSystem.update can push the same (badgeState + focus +
+// errorKind) repeatedly during fallback-healthy reconnect storms; before
+// dedupe the panel showed "9× fallback-healthy rebuild the broken supply
+// lane" stacked, drowning the timeline. We collapse runs of equal entries
+// (within an 80s window) into a single row tagged `×N last <span>s` while
+// keeping non-adjacent or out-of-window repeats as their own group.
+const DEDUPE_WINDOW_SEC = 80;
+
+function groupKey(entry) {
+  const badge = String(entry.badgeState ?? entry.source ?? "unknown");
+  const focus = String(entry.focus ?? "");
+  const err = String(entry.errorKind ?? "none");
+  return `${badge}|${focus}|${err}`;
+}
+
+function dedupeAdjacent(history, limit) {
+  // history is reverse-chronological (newest first). We walk left→right
+  // accumulating runs whose head atSec − tail atSec ≤ window. When the next
+  // entry breaks the key or falls outside the window, we close the current
+  // group and start a new one. NaN/undefined atSec falls back to "no fold"
+  // so malformed history never crashes the timeline.
+  const groups = [];
+  for (let i = 0; i < history.length && groups.length < limit; i += 1) {
+    const entry = history[i];
+    const key = groupKey(entry);
+    const head = groups[groups.length - 1];
+    const headAt = head ? Number(head.head.atSec) : NaN;
+    const entryAt = Number(entry.atSec);
+    const sameKey = head && head.key === key;
+    const inWindow = Number.isFinite(headAt)
+      && Number.isFinite(entryAt)
+      && (headAt - entryAt) <= DEDUPE_WINDOW_SEC;
+    if (sameKey && inWindow) {
+      head.count += 1;
+      head.spanSec = headAt - entryAt;
+    } else {
+      groups.push({ head: entry, key, count: 1, spanSec: 0 });
+    }
+  }
+  return groups;
+}
+
+function formatRow(entry, nowSec, count = 1, spanSec = 0) {
   const ago = formatAgo(nowSec, entry.atSec);
   const badge = escapeHtml(entry.badgeState ?? entry.source ?? "unknown");
   const focus = escapeHtml(entry.focus ?? "");
@@ -33,7 +76,10 @@ function formatRow(entry, nowSec) {
     ? ` <span class="muted">(${escapeHtml(entry.errorKind)})</span>`
     : "";
   const modelSuffix = entry.model ? ` <span class="muted">${escapeHtml(entry.model)}</span>` : "";
-  return `<li class="small">[${ago}] <b>${badge}</b> ${focus}${modelSuffix}${errSuffix}</li>`;
+  const dedupeSuffix = count > 1
+    ? ` <span class="muted">×${count} last ${Math.round(spanSec)}s</span>`
+    : "";
+  return `<li class="small">[${ago}] <b>${badge}</b> ${focus}${modelSuffix}${errSuffix}${dedupeSuffix}</li>`;
 }
 
 export class AIPolicyTimelinePanel {
@@ -58,7 +104,10 @@ export class AIPolicyTimelinePanel {
       this.root.innerHTML = html;
       return;
     }
-    const rows = history.slice(0, 12).map((e) => formatRow(e, nowSec)).join("\n");
+    const groups = dedupeAdjacent(history, 12);
+    const rows = groups
+      .map((g) => formatRow(g.head, nowSec, g.count, g.spanSec))
+      .join("\n");
     const html = `<ul style="list-style:none;padding:0;margin:0;">${rows}</ul>`;
     if (html === this.lastHtml) return;
     this.lastHtml = html;
