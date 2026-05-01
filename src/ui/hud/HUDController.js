@@ -1585,7 +1585,13 @@ export class HUDController {
       const scoreTitle = buildSurvivalScoreTooltip(state, casualMode);
       const devTitle = buildDevIndexTooltip(state, casualMode);
       if (this.statusObjectiveTime && this.statusObjectiveScore && this.statusObjectiveDev) {
-        this.statusObjectiveTime.textContent = `Survived ${timeText}`;
+        // v0.10.1-n (A7-rationality-audit R1) — chip text "Survived HH:MM:SS"
+        // → "Run HH:MM:SS" so the player can distinguish it from the day-cycle
+        // clock (e.g. "6:00 Day 1") elsewhere on screen. Hover title still
+        // says "Survival time and running score" (index.html:2336). The
+        // legacy combined `statusObjective` fallback (line ~1647) keeps the
+        // "Survived ..." literal for backwards-compat tests.
+        this.statusObjectiveTime.textContent = `Run ${timeText}`;
         // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 4) — append " · final"
         // suffix on the Score chip when the run has ended so reviewers see
         // their final number instead of an em-dash.

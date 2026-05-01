@@ -70,6 +70,32 @@ function formatFoodReject(reject) {
 }
 
 export function buildFoodDiagnosis(entity, state = {}) {
+  // v0.10.1-n (A7-rationality-audit R1) — non-WORKER entities should not be
+  // diagnosed against the colony food infrastructure. Predators/herbivores
+  // (ANIMAL) graze independent of warehouses; visitors (saboteur/trader)
+  // are not colonists at all. Without this gate, Bear-20 / Ash-16 fell
+  // through to "Build or reconnect a warehouse" — false causality.
+  const entityType = String(entity?.type ?? "").toUpperCase();
+  if (entityType === "ANIMAL") {
+    const kindLabel = entity?.kind ? String(entity.kind) : "—";
+    return {
+      severity: "ok",
+      cause: "Wildlife (does not use colony food infrastructure).",
+      next: "—",
+      facts: `type=ANIMAL, kind=${kindLabel}`,
+      reject: "",
+    };
+  }
+  if (entityType === "VISITOR") {
+    const kindLabel = entity?.kind ? String(entity.kind) : "—";
+    return {
+      severity: "ok",
+      cause: `Visitor (${kindLabel}); not a colonist.`,
+      next: "—",
+      facts: `type=VISITOR, kind=${kindLabel}`,
+      reject: "",
+    };
+  }
   const deathContext = entity?.deathContext && typeof entity.deathContext === "object"
     ? entity.deathContext
     : null;
@@ -595,7 +621,22 @@ export class EntityFocusPanel {
     const rows = shown.map((row) => {
       const w = row.entity;
       const name = String(w.displayName ?? w.id);
-      const role = `${entityFocusGroupMeta(row.groupId).shortLabel} / ${String(w.role ?? "-")}`;
+      // v0.10.1-n (A7-rationality-audit R1) — when a non-WORKER entity (visitor
+      // or wildlife) shows up in the focus list with no role, surface its
+      // kind (saboteur/trader/predator/herbivore) instead of a bare "-" so
+      // the player learns hostile/visitor identity before the death toast.
+      const rawRole = w.role;
+      const hasRole = rawRole !== undefined && rawRole !== null && rawRole !== "" && rawRole !== "-";
+      const wType = String(w.type ?? "").toUpperCase();
+      let roleSuffix = String(rawRole ?? "-");
+      if (!hasRole && wType === "VISITOR") {
+        const kind = String(w.kind ?? "VISITOR").toLowerCase();
+        roleSuffix = `(${kind})`;
+      } else if (!hasRole && wType === "ANIMAL") {
+        const kind = String(w.kind ?? "ANIMAL").toLowerCase();
+        roleSuffix = `(${kind})`;
+      }
+      const role = `${entityFocusGroupMeta(row.groupId).shortLabel} / ${roleSuffix}`;
       const stateLabel = String(row.stateText ?? "-");
       // v0.8.2 Round-6 Wave-1 02b-casual (Step 10) — swap the worker-list
       // mood label "peckish" for the casual-friendly "a bit hungry".
