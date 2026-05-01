@@ -46,6 +46,15 @@ const LLM_RETRY_DELAY_SEC = 60;
 // tool/medicine pipelines real headroom to land.
 const PLAN_STALL_GRACE_SEC = 18;
 
+/** v0.10.1-r2-A2 P0: sim-time gate for AgentDirector heavy work
+ *  (perceiver.observe, snapshotState pre/post, executeNextSteps,
+ *  shouldReplan, planner.requestPlan branch). Fast-path (mode select,
+ *  agentState.activePlan mirror, algorithmic-mode fallback, fallback
+ *  throttle counter) still runs every tick. At 8x×12 steps/frame this
+ *  collapses 12 perceiver scans/frame down to 1-2 logical ticks.
+ *  Exported so tests can reference / override the cadence. */
+export const AGENT_DIRECTOR_HEAVY_TICK_INTERVAL_SEC = 0.5;
+
 // ── State Initialization ────────────────────────────────────────────
 
 function ensureAgentDirectorState(state) {
@@ -149,6 +158,16 @@ export class AgentDirectorSystem {
     this._stepEvals = [];
     this._lastEvalText = ""; // P4: formatted evaluation from last completed plan
     this._planStalledSinceSec = null; // first sim sec the active plan was observed blocked
+
+    // v0.10.1-r2-A2 P0: sim-time cadence gate for heavy decision work.
+    // `_lastHeavyTickSec` tracks the last sim-second the perceiver/snapshot/
+    // executeNextSteps/shouldReplan path ran; heavy work re-fires when
+    // (nowSec - _lastHeavyTickSec) >= _heavyTickIntervalSec. Fast-path
+    // (mode select, activePlan mirror, fallback throttle) still runs every
+    // sim step regardless. Override `_heavyTickIntervalSec` from tests to
+    // exercise cadence behaviour.
+    this._lastHeavyTickSec = -Infinity;
+    this._heavyTickIntervalSec = AGENT_DIRECTOR_HEAVY_TICK_INTERVAL_SEC;
   }
 
   /**
@@ -185,126 +204,137 @@ export class AgentDirectorSystem {
     // Ensure fallback's build system is ready (for scenario requirements)
     this._fallback._buildSystem = this._fallback._buildSystem ?? new BuildSystem();
 
-    // ── Step 1: Execute current plan steps ──
-    if (this._activePlan && this._activePlan.steps.length > 0) {
-      const preSnap = snapshotState(state);
-      const executed = executeNextSteps(this._activePlan, state, this._buildSystem, services);
-      const postSnap = snapshotState(state);
+    // v0.10.1-r2-A2 P0: heavy-path cadence gate. At 4x/8x speed, the sim-step
+    // loop in GameApp.update can fire SYSTEM_ORDER 4-12× per render frame.
+    // perceiver.observe + snapshotState pre/post + executeNextSteps +
+    // shouldReplan + planner.requestPlan are sim-second-granularity work; we
+    // gate them behind `heavyDue`. Fast-path (mode select above, activePlan
+    // mirror above, fallback throttle below) still runs every sim step.
+    const heavyDue = nowSec - this._lastHeavyTickSec >= this._heavyTickIntervalSec;
+    if (heavyDue) {
+      // ── Step 1: Execute current plan steps ──
+      if (this._activePlan && this._activePlan.steps.length > 0) {
+        const preSnap = snapshotState(state);
+        const executed = executeNextSteps(this._activePlan, state, this._buildSystem, services);
+        const postSnap = snapshotState(state);
 
-      // Evaluate each executed step
-      const planSource = this._activePlan?.source ?? "fallback";
-      for (const step of executed) {
-        const evaluation = this._evaluator.evaluateStep(step, preSnap, postSnap, state);
-        this._stepEvals.push(evaluation);
+        // Evaluate each executed step
+        const planSource = this._activePlan?.source ?? "fallback";
+        for (const step of executed) {
+          const evaluation = this._evaluator.evaluateStep(step, preSnap, postSnap, state);
+          this._stepEvals.push(evaluation);
 
-        if (step.status === "completed") {
-          agentState.stats.totalBuildingsPlaced++;
-          // Phase B: attribute the placement to its plan source so panels can
-          // distinguish "llm" vs "fallback" placements without an event bus.
-          if (!state.ai.colonyDirector) state.ai.colonyDirector = {};
-          state.ai.colonyDirector.lastBuildSource = planSource;
-          state.ai.colonyDirector.lastBuildTimeSec = nowSec;
+          if (step.status === "completed") {
+            agentState.stats.totalBuildingsPlaced++;
+            // Phase B: attribute the placement to its plan source so panels can
+            // distinguish "llm" vs "fallback" placements without an event bus.
+            if (!state.ai.colonyDirector) state.ai.colonyDirector = {};
+            state.ai.colonyDirector.lastBuildSource = planSource;
+            state.ai.colonyDirector.lastBuildTimeSec = nowSec;
+          }
+        }
+
+        // Any progress this tick resets the stall clock.
+        if (executed.length > 0) {
+          this._planStalledSinceSec = null;
+        }
+
+        // Check plan completion
+        if (isPlanComplete(this._activePlan)) {
+          this._completePlan(agentState, state, nowSec);
+        } else if (isPlanBlocked(this._activePlan, state)) {
+          // Grace period: a plan that's blocked because every remaining step is
+          // `waiting_resources` should get PLAN_STALL_GRACE_SEC of sim time to
+          // accumulate resources before we kill it. Plans whose steps lack a
+          // groundedTile or fail dependencies will stay stalled and be culled
+          // on the same schedule.
+          if (this._planStalledSinceSec === null) this._planStalledSinceSec = nowSec;
+          if (nowSec - this._planStalledSinceSec >= PLAN_STALL_GRACE_SEC) {
+            this._failPlan(agentState, state, nowSec, "blocked");
+          }
+        } else {
+          this._planStalledSinceSec = null;
         }
       }
 
-      // Any progress this tick resets the stall clock.
-      if (executed.length > 0) {
-        this._planStalledSinceSec = null;
-      }
+      // ── Step 2: Generate new plan if needed ──
+      // v0.8.6 Tier 1 AI-S15: pass `hasActivePlan` correctly so the crisis
+      // branches (food_crisis / resource_opportunity) inside shouldReplan are
+      // reachable. Pre-fix this call always passed `false`, collapsing every
+      // replan to "no_active_plan" and skipping the crisis logic. With this
+      // guard, an EXISTING valid plan can still abort + replan when
+      // shouldReplan flags a true crisis (food crashing or resource windfall).
+      const hasActivePlan = Boolean(
+        this._activePlan
+        && Array.isArray(this._activePlan.steps)
+        && this._activePlan.steps.length > 0
+        && !isPlanComplete(this._activePlan),
+      );
+      if (!this._pendingLLM) {
+        const observation = this._perceiver.observe(state);
+        const trigger = shouldReplan(nowSec, this._lastPlanSec, observation, hasActivePlan);
+        // Only act when there's no active plan OR a crisis explicitly requested
+        // a mid-flight replan. Heartbeat / cooldown without a crisis is a
+        // no-op while a plan is already executing.
+        const isCrisis = trigger.reason === "food_crisis" || trigger.reason === "resource_opportunity";
+        const allowReplan = !this._activePlan || isCrisis;
+        if (!allowReplan) trigger.should = false;
 
-      // Check plan completion
-      if (isPlanComplete(this._activePlan)) {
-        this._completePlan(agentState, state, nowSec);
-      } else if (isPlanBlocked(this._activePlan, state)) {
-        // Grace period: a plan that's blocked because every remaining step is
-        // `waiting_resources` should get PLAN_STALL_GRACE_SEC of sim time to
-        // accumulate resources before we kill it. Plans whose steps lack a
-        // groundedTile or fail dependencies will stay stalled and be culled
-        // on the same schedule.
-        if (this._planStalledSinceSec === null) this._planStalledSinceSec = nowSec;
-        if (nowSec - this._planStalledSinceSec >= PLAN_STALL_GRACE_SEC) {
-          this._failPlan(agentState, state, nowSec, "blocked");
-        }
-      } else {
-        this._planStalledSinceSec = null;
-      }
-    }
+        if (trigger.should && nowSec - this._lastPlanSec >= PLAN_INTERVAL_SEC) {
+          this._lastPlanSec = nowSec;
 
-    // ── Step 2: Generate new plan if needed ──
-    // v0.8.6 Tier 1 AI-S15: pass `hasActivePlan` correctly so the crisis
-    // branches (food_crisis / resource_opportunity) inside shouldReplan are
-    // reachable. Pre-fix this call always passed `false`, collapsing every
-    // replan to "no_active_plan" and skipping the crisis logic. With this
-    // guard, an EXISTING valid plan can still abort + replan when
-    // shouldReplan flags a true crisis (food crashing or resource windfall).
-    const hasActivePlan = Boolean(
-      this._activePlan
-      && Array.isArray(this._activePlan.steps)
-      && this._activePlan.steps.length > 0
-      && !isPlanComplete(this._activePlan),
-    );
-    if (!this._pendingLLM) {
-      const observation = this._perceiver.observe(state);
-      const trigger = shouldReplan(nowSec, this._lastPlanSec, observation, hasActivePlan);
-      // Only act when there's no active plan OR a crisis explicitly requested
-      // a mid-flight replan. Heartbeat / cooldown without a crisis is a
-      // no-op while a plan is already executing.
-      const isCrisis = trigger.reason === "food_crisis" || trigger.reason === "resource_opportunity";
-      const allowReplan = !this._activePlan || isCrisis;
-      if (!allowReplan) trigger.should = false;
+          if (mode === "agent") {
+            // Async LLM call — fallback operates while waiting
+            this._pendingLLM = true;
+            const memText = this._memoryStore
+              ? this._memoryStore.formatForPrompt("construction planning building", nowSec, 5)
+              : "";
+            const learnedText = this._learnedSkills.formatForPrompt(state.resources ?? {});
+            const evalText = this._lastEvalText;
 
-      if (trigger.should && nowSec - this._lastPlanSec >= PLAN_INTERVAL_SEC) {
-        this._lastPlanSec = nowSec;
-
-        if (mode === "agent") {
-          // Async LLM call — fallback operates while waiting
-          this._pendingLLM = true;
-          const memText = this._memoryStore
-            ? this._memoryStore.formatForPrompt("construction planning building", nowSec, 5)
-            : "";
-          const learnedText = this._learnedSkills.formatForPrompt(state.resources ?? {});
-          const evalText = this._lastEvalText;
-
-          this._lastEvalText = ""; // consume once
-          // Phase A: pass the proxy-routed llmClient when available so the
-          // browser path never holds an apiKey. ColonyPlanner falls back to
-          // its direct callLLM path only when no llmClient is provided.
-          this._planner.requestPlan(observation, memText, state, learnedText, evalText, {
-            memoryStore: this._memoryStore,
-            llmClient: services?.llmClient ?? null,
-          })
-            .then(({ plan, source, error }) => {
-              this._pendingLLM = false;
-              if (plan && plan.steps.length > 0) {
-                const grounded = groundPlan(plan, state, this._buildSystem, services);
-                const feasible = grounded.steps.filter(s => s.feasible).length;
-                if (feasible > 0) {
-                  this._activePlan = grounded;
-                  this._planStartSnap = snapshotState(state);
-                  this._stepEvals = [];
-                  agentState.stats.plansGenerated++;
-                  agentState.activePlan = { goal: plan.goal, steps: plan.steps.length, source };
+            this._lastEvalText = ""; // consume once
+            // Phase A: pass the proxy-routed llmClient when available so the
+            // browser path never holds an apiKey. ColonyPlanner falls back to
+            // its direct callLLM path only when no llmClient is provided.
+            this._planner.requestPlan(observation, memText, state, learnedText, evalText, {
+              memoryStore: this._memoryStore,
+              llmClient: services?.llmClient ?? null,
+            })
+              .then(({ plan, source, error }) => {
+                this._pendingLLM = false;
+                if (plan && plan.steps.length > 0) {
+                  const grounded = groundPlan(plan, state, this._buildSystem, services);
+                  const feasible = grounded.steps.filter(s => s.feasible).length;
+                  if (feasible > 0) {
+                    this._activePlan = grounded;
+                    this._planStartSnap = snapshotState(state);
+                    this._stepEvals = [];
+                    agentState.stats.plansGenerated++;
+                    agentState.activePlan = { goal: plan.goal, steps: plan.steps.length, source };
+                  } else {
+                    // No feasible steps — use fallback plan inline
+                    this._adoptFallbackPlan(observation, state, agentState, services);
+                  }
                 } else {
-                  // No feasible steps — use fallback plan inline
+                  // LLM failed — track failure and use fallback
+                  agentState.stats.llmFailures++;
+                  agentState.stats.lastLlmFailureSec = nowSec;
                   this._adoptFallbackPlan(observation, state, agentState, services);
                 }
-              } else {
-                // LLM failed — track failure and use fallback
+              })
+              .catch(() => {
+                this._pendingLLM = false;
                 agentState.stats.llmFailures++;
                 agentState.stats.lastLlmFailureSec = nowSec;
-                this._adoptFallbackPlan(observation, state, agentState, services);
-              }
-            })
-            .catch(() => {
-              this._pendingLLM = false;
-              agentState.stats.llmFailures++;
-              agentState.stats.lastLlmFailureSec = nowSec;
-            });
-        } else {
-          // Hybrid mode — use algorithmic fallback with memory-enriched planning
-          this._adoptFallbackPlan(observation, state, agentState, services);
+              });
+          } else {
+            // Hybrid mode — use algorithmic fallback with memory-enriched planning
+            this._adoptFallbackPlan(observation, state, agentState, services);
+          }
         }
       }
+
+      this._lastHeavyTickSec = nowSec;
     }
 
     // ── Step 3: Hybrid fallback — keep the rule-based ColonyDirector ticking
