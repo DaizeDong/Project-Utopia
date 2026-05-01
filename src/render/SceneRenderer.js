@@ -369,8 +369,42 @@ const RENDER_ORDER = Object.freeze({
 const DEFAULT_CAMERA_VIEW = Object.freeze({
   targetX: 0,
   targetZ: 0,
-  zoom: 1.12,
+  // v0.10.1-n A3 — was 1.12; framing the full grid on first paint requires
+  // zoom 1.0 so applyViewState(DEFAULT_CAMERA_VIEW) does not snap back to a
+  // tighter view than the constructor-set frustum (P0 first-impression bug).
+  zoom: 1.0,
 });
+
+/**
+ * v0.10.1-n A3 — pure pointer-priority decision helper extracted from
+ * #onPointerDown so the (tool-vs-entity) priority logic can be unit-tested
+ * without instantiating a WebGL renderer. Mirrors the order #onPointerDown
+ * implements: a placement tool tries the tile first; an entity-pick is the
+ * fallback when (a) the user is in the 24 px guard annulus around a worker
+ * or (b) placement was rejected because the tile is occupied by an entity.
+ *
+ * @param {object} ctx
+ * @param {string|null} ctx.activeTool - state.controls.tool ("road","select",…)
+ * @param {boolean} ctx.entityNearby - within ENTITY_PICK_GUARD_PX
+ * @param {boolean} ctx.tilePlaceable - placeToolAt would return ok:true
+ * @param {boolean} ctx.tileOccupiedByEntity - placeToolAt would return reason:"occupiedTile"
+ * @returns {"place" | "select"}
+ */
+export function decidePointerTarget({ activeTool, entityNearby, tilePlaceable, tileOccupiedByEntity }) {
+  const isPlacementTool = activeTool && activeTool !== "select" && activeTool !== "inspect";
+  if (!isPlacementTool) {
+    // Pure select / inspect: entity always wins when one is nearby.
+    return entityNearby ? "select" : "select";
+  }
+  // Placement tool active. Tile-first priority unless the user is clearly
+  // aiming at a worker, OR the placement collides with an entity-on-tile.
+  if (entityNearby) return "select";
+  if (tilePlaceable) return "place";
+  if (tileOccupiedByEntity) return "select";
+  // Other placement failures (water, hardCap, no resource, …) — surface
+  // the rejection, NOT a silent entity selection.
+  return "place";
+}
 export const PRESSURE_MARKER_STYLE = Object.freeze({
   route: Object.freeze({ ring: 0xffa75a, fill: 0xffe0b8, ringOpacity: 0.58, fillOpacity: 0.16 }),
   depot: Object.freeze({ ring: 0x71d9ff, fill: 0xc8f4ff, ringOpacity: 0.54, fillOpacity: 0.14 }),
@@ -521,13 +555,18 @@ export class SceneRenderer {
     this.entitySpriteInstances = new Map();
     this.state.debug.tileTexturesLoaded = false;
 
-    this.orthoSize = Math.max(state.grid.width, state.grid.height) * 0.65;
+    // v0.10.1-n A3 — was 0.65 (=62.4 frustum height vs 96-wide grid → only
+    // ~58% of map visible at zoom 1.12). 1.05 expands the orthographic
+    // frustum to span the full 96×72 grid plus a small margin on first
+    // paint so the player sees both lumber-route and ruined-depot markers
+    // before the camera ever re-frames.
+    this.orthoSize = Math.max(state.grid.width, state.grid.height) * 1.05;
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
     this.camera.position.set(0, 120, 0);
     this.camera.up.set(0, 0, -1);
     this.camera.lookAt(0, 0, 0);
     this.#updateOrthoProjection();
-    this.camera.zoom = 1.12;
+    this.camera.zoom = 1.0;
     this.camera.updateProjectionMatrix();
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -3571,6 +3610,71 @@ export class SceneRenderer {
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.mouse.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
 
+    // v0.10.1-n A3 — F2 fix: when a placement tool is active, the click
+    // should TRY the tile first; entity-pick is only a fallback when the
+    // placement is illegal because the tile is occupied by a unit. Without
+    // this priority, a click on grass near a wandering bear silently
+    // becomes "Selected Bear-20" and the road never appears, which the
+    // first-impression reviewer logged as P0.
+    const activeTool = this.state.controls?.tool;
+    const isPlacementTool = activeTool && activeTool !== "select" && activeTool !== "inspect";
+    if (isPlacementTool) {
+      // 24 px guard (was the closing-net for the entity branch): if the
+      // user was clearly aiming at a worker (within ENTITY_PICK_GUARD_PX
+      // but outside ENTITY_PICK_FALLBACK_PX), interpret the click as
+      // "wanted to select that entity, not place" — fall through to the
+      // entity branch below instead of the tile branch.
+      const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
+      if (!nearWorker) {
+        const picked = this.#pickTile(this.mouse);
+        if (picked) {
+          const { tile } = picked;
+          this.state.controls.selectedEntityId = null;
+          this.#updateSelectedTile(tile.ix, tile.iz);
+          const inspectOnly = event.altKey;
+          if (inspectOnly) {
+            this.state.controls.actionMessage = `Selected tile (${tile.ix}, ${tile.iz})`;
+            this.state.controls.actionKind = "info";
+            return;
+          }
+          const buildResult = this.buildSystem.placeToolAt(this.state, activeTool, tile.ix, tile.iz);
+          this.state.controls.buildPreview = buildResult;
+          if (buildResult.ok) {
+            this.#updateSelectedTile(tile.ix, tile.iz);
+            this.state.controls.actionMessage = buildResult.message ?? `Built ${activeTool} at (${tile.ix}, ${tile.iz})`;
+            this.state.controls.actionKind = "success";
+            const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+            this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
+            return;
+          }
+          // Placement failed. Only fall through to entity-pick when the
+          // failure was caused by an entity-on-tile collision; for any
+          // other failure (waterBlocked, insufficientResource, hardCap,
+          // missing_resource_node, etc.) the player needs the rejection
+          // reason as dominant feedback, NOT a silent entity selection.
+          const isEntityCollision = buildResult.reason === "occupiedTile";
+          if (!isEntityCollision) {
+            this.state.controls.actionMessage = summarizeBuildPreview(buildResult)
+              || buildResult.reasonText
+              || explainBuildReason(buildResult.reason, buildResult);
+            this.state.controls.actionKind = "error";
+            const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+            const text = formatToastText(buildResult, this.state.resources);
+            this.#spawnFloatingToast(worldPos.x, worldPos.z, text, "error", tile.ix, tile.iz);
+            return;
+          }
+          // entity-collision → fall through to #pickEntity below so the
+          // user sees the unit on the tile instead of an opaque "tile
+          // occupied" toast.
+        }
+      } else {
+        // Inside the 24 px annulus — user wanted the worker, not a
+        // placement; explicit message, then fall through to entity-pick.
+        this.state.controls.actionMessage = "Selecting nearby unit (release the build tool to place)";
+        this.state.controls.actionKind = "info";
+      }
+    }
+
     const selected = this.#pickEntity(this.mouse);
     if (selected) {
       this.state.controls.selectedEntityId = selected.id;
@@ -3604,51 +3708,21 @@ export class SceneRenderer {
       return;
     }
 
-    // Build-tool 24 px guard: if the user was clearly aiming at a worker
-    // (within ENTITY_PICK_GUARD_PX but outside ENTITY_PICK_FALLBACK_PX)
-    // and a build tool is active, suppress the placement to avoid
-    // surprising the user with a building appearing "next to the worker
-    // they thought they clicked". The 16 px inner radius already handles
-    // the "close enough" case; this catches the 16–24 px annulus.
-    const activeTool = this.state.controls?.tool;
-    if (activeTool && activeTool !== "select" && activeTool !== "inspect") {
-      const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
-      if (nearWorker) {
-        this.state.controls.actionMessage = "Click a bit closer to the worker (hitbox is small)";
-        this.state.controls.actionKind = "info";
-        return;
-      }
-    }
+    // No entity hit and no placement-tool branch executed (or the
+    // placement branch fell through with no entity nearby): handle as a
+    // pure tile-select for "select"/"inspect" tools.
+    if (!isPlacementTool) {
+      const picked = this.#pickTile(this.mouse);
+      if (!picked) return;
 
-    const picked = this.#pickTile(this.mouse);
-    if (!picked) return;
-
-    const { tile } = picked;
-    this.state.controls.selectedEntityId = null;
-    this.#updateSelectedTile(tile.ix, tile.iz);
-    const inspectOnly = event.altKey;
-    if (inspectOnly) {
-      this.state.controls.actionMessage = `Selected tile (${tile.ix}, ${tile.iz})`;
-      this.state.controls.actionKind = "info";
-      return;
-    }
-
-    const buildResult = this.buildSystem.placeToolAt(this.state, this.state.controls.tool, tile.ix, tile.iz);
-    this.state.controls.buildPreview = buildResult;
-    if (buildResult.ok) {
+      const { tile } = picked;
+      this.state.controls.selectedEntityId = null;
       this.#updateSelectedTile(tile.ix, tile.iz);
-      this.state.controls.actionMessage = buildResult.message ?? `Built ${this.state.controls.tool} at (${tile.ix}, ${tile.iz})`;
-      this.state.controls.actionKind = "success";
-      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
-      this.#spawnFloatingToast(worldPos.x, worldPos.z, formatToastText(buildResult), "success", tile.ix, tile.iz);
-    } else {
-      this.state.controls.actionMessage = summarizeBuildPreview(buildResult)
-        || buildResult.reasonText
-        || explainBuildReason(buildResult.reason, buildResult);
-      this.state.controls.actionKind = "error";
-      const worldPos = tileToWorld(tile.ix, tile.iz, this.state.grid);
-      const text = formatToastText(buildResult, this.state.resources);
-      this.#spawnFloatingToast(worldPos.x, worldPos.z, text, "error", tile.ix, tile.iz);
+      const inspectOnly = event.altKey;
+      if (inspectOnly) {
+        this.state.controls.actionMessage = `Selected tile (${tile.ix}, ${tile.iz})`;
+        this.state.controls.actionKind = "info";
+      }
     }
   }
 
@@ -4023,7 +4097,8 @@ export class SceneRenderer {
   }
 
   resetView() {
-    this.orthoSize = Math.max(this.state.grid.width, this.state.grid.height) * 0.65;
+    // v0.10.1-n A3 — mirror constructor: full-grid framing factor 1.05 (was 0.65).
+    this.orthoSize = Math.max(this.state.grid.width, this.state.grid.height) * 1.05;
     this.lastGridVersion = -1;
     // Rebuild instanced meshes if grid dimensions changed (capacity may differ)
     const newCount = this.state.grid.width * this.state.grid.height;
