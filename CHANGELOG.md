@@ -1,5 +1,102 @@
 # Changelog
 
+## [Unreleased] — HW7 Final Polish Loop Round 0
+
+### Polish (HW7 Round 0 — A4-polish-aesthetic wave-0)
+
+- fix: status bar overflow at 1920×1080 — `#aiAutopilotChip` clamp widened to
+  `clamp(180px, calc(100vw - 720px), 460px)` and `white-space: nowrap` so the
+  long autopilot string ("Autopilot ON · fallback/llm | Recovery: food runway
+  · expansion paused | Autopilot struggling…") ellipsizes onto a single line
+  instead of wrapping and clipping against the 32 px `#statusBar` height. Full
+  text remains accessible via `title=` tooltip (HUDController writes
+  `status.title`).
+- fix: duplicate map-preview labels — `buildRouteMarkers` (PressureLens.js)
+  now emits a single marker per route at the centroid of its gap tiles
+  rather than one per gap-tile. The historical per-tile emission produced
+  3-6 "west lumber route" labels for one broken route; on the canvas the
+  same-label dedup in `dedupPressureLabels` only collapses markers within
+  `nearPx=24`, so a long gap segment rendered the same label twice with a
+  clipped fragment overlapping the full label. Source-side dedup avoids
+  the screen-space ambiguity entirely while preserving the kept-when-far-
+  apart contract for distinct routes (`pressure-lens-label-dedup` test
+  contracts unchanged).
+- fix: "Lumber Mill" ↔ "Lumber" terminology drift collapsed onto a single
+  canonical name "Lumber Camp" across `index.html` (Help modal × 2, build
+  toolbar tooltip, Resources panel tooltips × 2, Population panel tooltip,
+  Resource hud-resource title, overlay menu lead, and the
+  `routes/depots/warehouses/farms/lumber/walls` chip prose). Aligns with
+  the existing `ProgressionSystem.js` milestone copy "First Lumber camp
+  raised" and the `BuildAdvisor.js` toolbar label "Lumber".
+- fix: inspector empty-state hint anchoring at 1366×768 — `#entityFocusBody`
+  empty state wrapped in a `.inspector-empty-hint` card (dashed border,
+  centred prose, downward-arrow glyph) so the hint reads as a deliberate
+  panel widget rather than orphan text floating mid-canvas. Both the
+  static initial paint and the EntityFocusPanel.js dynamic re-render
+  (`No entity selected. Click any worker, visitor, or animal…` /
+  `Selected entity not found in current world.`) use the new class.
+- polish: ambient + directional light tint follows the existing
+  `BALANCE.dayCycleSeconds=90` (read via `state.environment.dayNightPhase`
+  set by `SimulationClock.update`). Pure parameter modulation in
+  `applyDayNightModulation(profile, phase)` (new export from
+  `AtmosphereProfile.js`) — 4-stop ramp dawn `#ffd9a8` → day `#ffffff` →
+  dusk `#ffb574` → night `#3a4a78`, ambient intensity 0.85→1.20→0.85→0.45,
+  sun intensity 0.70→1.00→0.70→0.20, mixed at 35% strength against the
+  scenario/weather-derived base. Quantized to 32 bins
+  (`DAY_NIGHT_TINT_BINS = 32`) so the modulation only re-blends when the
+  bin index changes (~once every 2.8 s on the default cycle); per-frame
+  cost is the existing base-profile cache hit + one modulo. **No new
+  mesh, no new shadow rig, no new asset import** — only the existing
+  `THREE.AmbientLight` + `THREE.DirectionalLight` colour & intensity
+  parameters move on the existing day-cycle clock.
+
+### Deferred under HW7 hard freeze (queued for wave-1+)
+
+- **V3 audio**: zero audio assets ship; adding even 1 SFX would qualify as
+  a new asset import under HW7's hard freeze. Documented as a design
+  tradeoff. Master / Music / SFX volume sliders should land alongside the
+  first audio asset (post-freeze).
+- **V2 tile checkerboard seams**: fixing requires either material rework
+  (new shader / texture asset = freeze risk) or a heavy per-tile colour-
+  noise reduction pass (touches `src/render/*` heavily). Deferred to a
+  dedicated renderer pass.
+- **V4 worker teleport-step → walk cycle**: linear position interpolation
+  between FSM ticks deferred; a skeletal rig is forbidden under the
+  freeze.
+- **V1 fog-of-war hard edges, building 3D silhouette diversity, weather
+  particles, post-FX (vignette / LUT)**: wave-1+ renderer pass.
+
+### Files changed
+
+- `index.html` — autopilot chip CSS clamp + nowrap; inspector-empty-hint
+  CSS rule + DOM wrapping; "Lumber Mill" → "Lumber Camp" terminology
+  rollup (build toolbar tooltip, Help modal, hud-resource titles,
+  population panel, overlay lead, chip prose).
+- `src/render/AtmosphereProfile.js` — new exports `applyDayNightModulation`,
+  `getDayNightPhase`, `computeDayNightTint`, `quantizeDayNightPhase`,
+  `DAY_NIGHT_TINT_BINS`; `deriveAtmosphereProfile` left untouched (pure-
+  function contract preserved for existing `atmosphere-profile.test.js`).
+- `src/render/PressureLens.js` — `buildRouteMarkers` collapsed from per-
+  gap-tile emission to per-route centroid emission.
+- `src/render/SceneRenderer.js` — import day-night helpers; `#applyAtmosphere`
+  computes phase + bin-quantized tinted profile, caches against
+  `(baseTarget, bin)` so the modulation only re-blends when the bin or
+  base profile changes.
+- `src/ui/panels/EntityFocusPanel.js` — empty-state and not-found render
+  paths use `.inspector-empty-hint`.
+- `test/dayNightLightingTint.test.js` — new (8 tests): canonical-stop ramp
+  values, mid-stop interpolation, phase-wrap normalisation,
+  quantize-into-[0,31] for 1000 random phases, applyDayNightModulation
+  non-mutation + clamp range, noon > night intensity ordering.
+
+### Tests
+
+`node --test test/*.test.js` → 1664 / 1672 pass (4 pre-existing failures
+unchanged: `ResourceSystem flushes foodProducedPerMin`, `RoleAssignment: 1
+quarry → 1 STONE worker`, `RaidEscalator: DI=30 yields tier 3`,
+`RaidFallbackScheduler: pop < popFloor does not trigger`; 4 pre-existing
+skips). +8 new tests over the A6 baseline of 1656.
+
 ## v0.10.1-m — balance overhaul + AI decision improvements (2026-05-01)
 
 Comprehensive balance pass addressing wood overproduction, low difficulty, broken
@@ -49,6 +146,15 @@ All hardcap limits removed; LLM context enriched with role distribution and reso
 - **Stone-crisis fast-track**: `generateFallbackPlan` now has a high-priority quarry
   build path that fires when `stone < 15 && quarries === 0 && wood >= 6`, bypassing
   the `farms >= 3` gate from the original priority-4 rule.
+
+### Startup cleanup
+
+- `package.json` / `package-lock.json`: version bumped to `0.10.1-m`.
+- `npm start` now aliases the current source launch (`dev:full`).
+- `npm run preview`, `npm run preview:full`, and `npm run start:prod` now rebuild
+  before serving `dist`, preventing stale production assets from being launched.
+- `Project Utopia.cmd` / `launch-project-utopia.ps1`: source-checkout double-click
+  launch now runs `npm run build` before opening the browser app window.
 
 ### Test changes
 

@@ -195,21 +195,38 @@ function pushUniqueMarker(markers, marker, seen) {
 }
 
 function buildRouteMarkers(runtime) {
+  // v0.10.1-A4 (V5 P0 #2) — emit a single marker per route at the centroid
+  // of its gap tiles rather than one per gap-tile. The historical per-tile
+  // emission produced 3-6 "west lumber route" labels for a single broken
+  // route; on the canvas, the same-label dedup (Pass 1 in
+  // dedupPressureLabels) only collapses markers within nearPx=24 of each
+  // other, so a long gap segment (>24 px on screen) rendered the same
+  // label twice with a clipped fragment overlapping the full label. Source-
+  // side dedup avoids the screen-space ambiguity entirely while preserving
+  // the kept-when-far-apart contract for distinct routes.
   const markers = [];
   for (const route of runtime.routes ?? []) {
     if (route.connected) continue;
-    for (const tile of route.gapTiles ?? []) {
-      markers.push({
-        id: `route:${route.id}:${tile.ix},${tile.iz}`,
-        kind: "route",
-        ix: tile.ix,
-        iz: tile.iz,
-        radius: 0.92,
-        weight: 0.98,
-        priority: 120,
-        label: route.label,
-      });
+    const tiles = Array.isArray(route.gapTiles) ? route.gapTiles : [];
+    if (tiles.length <= 0) continue;
+    let sumX = 0;
+    let sumZ = 0;
+    for (const tile of tiles) {
+      sumX += Number(tile.ix ?? 0);
+      sumZ += Number(tile.iz ?? 0);
     }
+    const centerIx = sumX / tiles.length;
+    const centerIz = sumZ / tiles.length;
+    markers.push({
+      id: `route:${route.id}`,
+      kind: "route",
+      ix: centerIx,
+      iz: centerIz,
+      radius: 0.92,
+      weight: 0.98,
+      priority: 120,
+      label: route.label,
+    });
   }
   return markers;
 }

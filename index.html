@@ -137,7 +137,7 @@
     /* Hide verbose scoreboard items in the slim status bar.
        v0.10.1-A3 (F2) — `#statusScenario` removed from this list so that
        HUDController's already-rendered goal chips
-       (routes/depots/warehouses/farms/lumber/walls — green-check / amber-circle)
+       (routes/depots/warehouses/farms/lumber camps/walls — green-check / amber-circle)
        become visible in the top scoreboard instead of being hidden by CSS. */
     #statusScoreboard #statusNextAction,
     #statusScoreboard #statusBuildHint,
@@ -160,12 +160,18 @@
        v0.9.2-ui (F8) — raise cap with clamp so "Manual control · next policy
        in 9.8s" does not become "Manual contro…". flex-shrink:0 retained so
        the chip never loses pixels to neighbours; bar wraps before the chip
-       does. */
+       does.
+       v0.10.1-A4 (V5 P0 #1) — pin to single line at 1920×1080+. The full
+       autopilot string can grow to "Autopilot ON · fallback/llm | Recovery:
+       food runway · expansion paused | Autopilot struggling…" which used
+       to wrap onto a 2nd row and clip against the 32 px #statusBar height.
+       Hard nowrap + ellipsis keeps the bar at 32 px; verbose copy stays
+       available via title= tooltip (HUDController writes status.title). */
     #aiAutopilotChip {
       flex-shrink: 0;
-      max-width: clamp(180px, 18vw, 320px);
+      max-width: clamp(180px, calc(100vw - 720px), 460px);
       overflow: hidden; text-overflow: ellipsis;
-      white-space: normal;
+      white-space: nowrap;
     }
     /* Objective — show only survival time; hide score and dev (they live in Debug panel) */
     #statusObjective {
@@ -1472,6 +1478,34 @@
       overflow-wrap: anywhere;
       max-width: 100%;
     }
+    /* v0.10.1-A4 (V5 P2 #2) — inspector empty-state hint anchored inside the
+       panel container so it visually belongs to #entityFocusOverlay. The
+       previous bare text node sat flush-left at the panel's top edge with
+       no padding/border, so at 1366×768 — where the panel is short and
+       sits closer to the canvas centre — the hint read as floating
+       unanchored prose pointing at nothing. The relative-positioned card
+       (dashed border + centred text + sized icon) makes the empty state
+       look like a deliberate panel widget rather than orphaned debug text. */
+    .inspector-empty-hint {
+      position: relative;
+      padding: 14px 12px;
+      margin: 4px 0;
+      text-align: center;
+      color: rgba(208,232,255,0.65);
+      font-size: 11px;
+      line-height: 1.5;
+      border: 1px dashed rgba(80,160,220,0.3);
+      border-radius: 6px;
+      background: rgba(255,255,255,0.025);
+    }
+    .inspector-empty-hint::before {
+      content: "↳";
+      display: block;
+      font-size: 18px;
+      line-height: 1;
+      margin-bottom: 6px;
+      color: rgba(80,160,220,0.55);
+    }
     /* Worker-list strip above the detail pane — cycles through all alive
        workers for casual players.
        v0.9.2-ui (F3) — list cap raised so a tall overlay shows more rows
@@ -2131,7 +2165,7 @@
             <div class="hud-bar"><div class="hud-bar-fill hud-bar-food" id="statusFoodBar"></div></div>
           </div>
         </div>
-        <div class="hud-resource" id="hudWood" title="Wood — harvested from lumber mills, used for building">
+        <div class="hud-resource" id="hudWood" title="Wood — harvested from Lumber Camps, used for building">
           <img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wood Log.png" alt="Wood" class="hud-icon" />
           <div class="hud-meter">
             <span class="hud-sublabel">Wood</span>
@@ -2316,7 +2350,7 @@
       <div id="gameStateOverlay" aria-live="polite">
         <section id="overlayMenuPanel" class="overlay-panel">
           <h2 id="overlayMenuTitle" class="overlay-game-title">Project Utopia</h2>
-          <p id="overlayMenuLead" class="overlay-lead">Build and manage a colony. Place farms for food, lumber mills for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
+          <p id="overlayMenuLead" class="overlay-lead">Build and manage a colony. Place farms for food, lumber camps for wood, warehouses for storage, and roads to connect them. Defend against saboteurs with walls.</p>
           <div id="overlayMenuMeta" class="overlay-scenario-badge">Quick Start Guide</div>
           <div id="overlayMenuBriefing" class="overlay-menu-briefing" aria-label="Opening briefing">
             <div id="overlayMenuPressure" class="overlay-menu-briefing-line"></div>
@@ -2393,7 +2427,7 @@
       <details id="entityFocusOverlay" open title="Click a worker, visitor, or animal on the map to inspect it here">
         <summary>Entity Focus</summary>
         <div id="entityFocusWorkerList" class="entity-worker-list"></div>
-        <div id="entityFocusBody" class="small">Click a worker, visitor, or animal to inspect.</div>
+        <div id="entityFocusBody" class="small"><div class="inspector-empty-hint">Click a worker, visitor, or animal to inspect.</div></div>
       </details>
     </div>
 
@@ -2429,9 +2463,9 @@
           <summary>Build Tools</summary>
           <div class="panel-body">
             <div class="tool-grid">
-              <button type="button" data-tool="road" data-tool-tier="primary" class="active" title="Road (1) — connect buildings, cost: 1 wood. Place between farms, lumbers, and warehouses to shorten haul trips."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
+              <button type="button" data-tool="road" data-tool-tier="primary" class="active" title="Road (1) — connect buildings, cost: 1 wood. Place between farms, lumber camps, and warehouses to shorten haul trips."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
               <button type="button" data-tool="farm" data-tool-tier="primary" title="Farm (2) — produce food, cost: 5 wood. Place near soil-rich tiles; you'll need 3 before you can afford a Kitchen."><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
-              <button type="button" data-tool="lumber" data-tool-tier="primary" title="Lumber Mill (3) — harvest wood, cost: 5 wood. Place adjacent to a forest node; each mill needs at least 1 logger."><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
+              <button type="button" data-tool="lumber" data-tool-tier="primary" title="Lumber Camp (3) — harvest wood, cost: 5 wood. Place adjacent to a forest node; each camp needs at least 1 logger."><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
               <button type="button" data-tool="warehouse" data-tool-tier="primary" title="Warehouse (4) — store &amp; distribute resources, cost: 10 wood. Place before your 3rd farm so haul distance stays short."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
               <button type="button" data-tool="wall" data-tool-tier="secondary" title="Wall (5) — block saboteurs, cost: 2 stone. Ring the colony when Threat &gt; 30 or a raid is announced."><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
               <button type="button" data-tool="bridge" data-tool-tier="secondary" title="Bridge (6) — cross water, cost: 3 wood + 1 stone. Must extend from an existing road/warehouse/bridge onto a water tile."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
@@ -2511,7 +2545,7 @@
           <div class="panel-body">
             <div class="kv" title="Raw food harvested from farms, consumed by workers"><div>Food</div><div><span id="foodVal">0</span><span id="foodRateVal" class="hud-rate">—</span><span id="foodRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="foodRunoutHint" class="runout-hint"></span></div></div>
             <div class="bar"><div id="foodBar"></div></div>
-            <div class="kv" style="margin-top:6px" title="Harvested from lumber mills, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span><span id="woodRateBreakdown" class="small muted" style="margin-left:4px;">—</span></div></div>
+            <div class="kv" style="margin-top:6px" title="Harvested from Lumber Camps, primary building material"><div>Wood</div><div><span id="woodVal">0</span><span id="woodRateVal" class="hud-rate">—</span><span id="woodRateBreakdown" class="small muted" style="margin-left:4px;">—</span></div></div>
             <div class="bar"><div id="woodBar"></div></div>
             <div class="kv" style="margin-top:6px" title="Mined from quarries, used for advanced buildings"><div>Stone</div><div><span id="stoneVal">0</span><span id="stoneRateVal" class="hud-rate">—</span><span id="stoneRateBreakdown" class="small muted" style="margin-left:4px;">—</span><span id="stoneRunoutHint" class="runout-hint"></span></div></div>
             <div class="bar"><div id="stoneBar" style="background:linear-gradient(90deg,#a0896e,#8b7d6b)"></div></div>
@@ -2537,7 +2571,7 @@
             <div class="kv" title="Dangerous animals that attack workers and livestock"><div>Predators</div><div id="predatorsVal">0</div></div>
             <div style="margin-top:6px; border-top:1px solid var(--divider); padding-top:6px">
               <div class="kv" title="Workers assigned to harvest food from farms"><div>FARM</div><div id="farmersVal">0</div></div>
-              <div class="kv" title="Workers assigned to chop wood at lumber mills"><div>WOOD</div><div id="loggersVal">0</div></div>
+              <div class="kv" title="Workers assigned to chop wood at Lumber Camps"><div>WOOD</div><div id="loggersVal">0</div></div>
               <div class="kv" title="Workers assigned to mine stone at quarries"><div>STONE</div><div id="stonersVal">0</div></div>
               <div class="kv" title="Workers assigned to gather herbs at herb gardens"><div>HERBS</div><div id="herbistsVal">0</div></div>
               <div class="kv" title="Workers assigned to cook food into meals at kitchens"><div>COOK</div><div id="cooksVal">0</div></div>
@@ -3128,7 +3162,7 @@
           <h3>Getting Started</h3>
           <ul>
             <li>Open the <b>Build</b> panel (top-left) and place a <b>Farm</b> on green grass — workers will harvest food.</li>
-            <li>Add a <b>Lumber Mill</b> near trees and a <b>Warehouse</b> to store goods.</li>
+            <li>Add a <b>Lumber Camp</b> near trees and a <b>Warehouse</b> to store goods.</li>
             <li>Connect buildings with <b>Roads</b> — they speed hauling significantly.</li>
           </ul>
         </section>
@@ -3137,7 +3171,7 @@
           <p>Raw resources become refined goods through processing buildings. Workers haul resources to warehouses; processors pull from storage.</p>
           <ul>
             <li><b>Food</b> (from <i>Farms</i>) + Kitchen &rarr; <b>Meals</b> (2&times; hunger recovery).</li>
-            <li><b>Wood</b> (from <i>Lumber Mills</i>) is the primary building material.</li>
+            <li><b>Wood</b> (from <i>Lumber Camps</i>) is the primary building material.</li>
             <li><b>Stone</b> (from <i>Quarries</i>) + Wood &rarr; <b>Tools</b> (+15% harvest speed).</li>
             <li><b>Herbs</b> (from <i>Herb Gardens</i>) + Clinic &rarr; <b>Medicine</b> (heals injuries).</li>
           </ul>
