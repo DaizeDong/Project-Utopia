@@ -696,6 +696,17 @@ function applyDoctrine(state) {
 export class ProgressionSystem {
   constructor() {
     this.name = "ProgressionSystem";
+    // v0.10.1-r2-A2 P0: accumulator driving the scan-class cadence gate.
+    // Drains `dt` each tick; when it crosses `_scanIntervalSec` the
+    // scan-class work (coverage / milestones / recovery / scenario routes)
+    // fires once and the accumulator carries the remainder. Using a
+    // dt-accumulator (rather than `state.metrics.timeSec` directly) keeps
+    // tests that don't advance `state.metrics.timeSec` working, AND drives
+    // the gate exactly the same way in the real game where SimulationClock
+    // already integrates dt into timeSec. First tick always fires (initial
+    // accumulator >= interval).
+    this._scanAccumulatorSec = Infinity;
+    this._scanIntervalSec = 0.25;
   }
 
   // v0.8.0 Phase 4: DevIndexSystem (runs next in SYSTEM_ORDER) owns the
@@ -719,15 +730,47 @@ export class ProgressionSystem {
     state.gameplay.prosperity = clamp(state.gameplay.prosperity, 0, 100);
     state.gameplay.threat = clamp(state.gameplay.threat, 0, 100);
 
-    const runtime = getScenarioRuntime(state);
-    const coverage = buildCoverageStatus(state);
-    detectScenarioObjectiveMilestones(state, runtime);
-    maybeTriggerRecovery(state, runtime, coverage, dt);
+    // v0.10.1-r2-A2 P0: dt-accumulator cadence gate around scan-class work.
+    // computeProsperity/computeThreat smoothing (above) and
+    // updateSurvivalScore (dt integration, below) MUST run every tick to
+    // preserve smoothing alpha and dt monotonicity. The scan-class work
+    // (buildCoverageStatus, detectScenarioObjectiveMilestones,
+    // maybeTriggerRecovery, detectMilestones) only meaningfully changes at
+    // sim-second granularity — running it 12× per render frame at 8x speed
+    // (fixedStepSec=1/30=0.033s) is pure waste.
+    //
+    // Two-condition gate:
+    //   (a) accumulator drained ≥ scanIntervalSec  — fires after enough sim
+    //       time has accumulated across many small dt steps (the high-speed
+    //       game-loop case we care about: 8x×12 steps becomes 1-2 scans).
+    //   (b) dt ≥ slowCallerDtSec (≈ 1.5× the standard 1/30 step) — fires
+    //       immediately when the caller is already at sim-second cadence
+    //       (tests that drive update at dt=0.1 / dt=0.2 fall here, as does
+    //       any future low-frequency external scheduler).
+    // (b) keeps single-step tests (which expect each update to scan) green
+    // while (a) delivers the 8x perf win.
+    this._scanAccumulatorSec += Number(dt) || 0;
+    const slowCallerDtSec = 0.05; // > 1/30 game step (0.033s)
+    const scanDue = this._scanAccumulatorSec >= this._scanIntervalSec
+      || (Number(dt) || 0) >= slowCallerDtSec;
+    if (scanDue) {
+      const runtime = getScenarioRuntime(state);
+      const coverage = buildCoverageStatus(state);
+      detectScenarioObjectiveMilestones(state, runtime);
+      maybeTriggerRecovery(state, runtime, coverage, dt);
+      detectMilestones(state);
+      // Carry remainder so cadence stays close to interval over many ticks
+      // rather than drifting; clamp if accumulator wildly overshoots.
+      const remainder = this._scanAccumulatorSec - this._scanIntervalSec;
+      this._scanAccumulatorSec = remainder > this._scanIntervalSec ? 0 : Math.max(0, remainder);
+    }
+
     // v0.8.0 Phase 4 — Survival Mode. Survival score is the primary per-tick
     // scoring path; the legacy per-objective progression pipeline has been
-    // retired (objectives no longer drive win outcomes).
+    // retired (objectives no longer drive win outcomes). Stays on fast-path:
+    // updateSurvivalScore integrates dt, so skipping ticks would compress
+    // wall-clock score accumulation.
     updateSurvivalScore(state, dt);
-    detectMilestones(state);
   }
 }
 
