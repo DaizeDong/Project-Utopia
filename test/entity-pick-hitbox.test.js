@@ -157,17 +157,22 @@ test("SceneRenderer source wires proximity fallback into #pickEntity and a build
   // or the guard branch, Entity Focus reverts to the broken baseline.
   const src = fs.readFileSync("src/render/SceneRenderer.js", "utf8");
   assert.match(src, /ENTITY_PICK_FALLBACK_PX\s*=\s*Number\(BALANCE\.renderHitboxPixels\?\.entityPickFallback\s*\?\?\s*24\)/, "fallback constant missing / changed");
-  assert.match(src, /ENTITY_PICK_GUARD_PX\s*=\s*Number\(BALANCE\.renderHitboxPixels\?\.entityPickGuard\s*\?\?\s*36\)/, "guard constant missing / changed");
+  // v0.10.1-A3 R2 (F1) — guard radius dropped 36 → 14 so the threshold
+  // matches the worker sprite's *visual hitbox* (~12 px) + 2 px slop instead
+  // of acting as a perception buffer that mis-treated "near a worker" as
+  // "on a worker". Without this fix, almost any click on grass near a
+  // wandering animal silently became an entity selection.
+  assert.match(src, /ENTITY_PICK_GUARD_PX\s*=\s*Number\(BALANCE\.renderHitboxPixels\?\.entityPickGuard\s*\?\?\s*14\)/, "guard constant missing / changed");
   assert.match(src, /#proximityNearestEntity\s*\(/, "proximity helper method missing");
   assert.match(
     src,
     /#proximityNearestEntity\(mouse,\s*ENTITY_PICK_FALLBACK_PX\)/,
-    "pickEntity must invoke the 16 px fallback",
+    "pickEntity must invoke the fallback radius",
   );
   assert.match(
     src,
     /#proximityNearestEntity\(this\.mouse,\s*ENTITY_PICK_GUARD_PX\)/,
-    "onPointerDown must invoke the 24 px build-guard",
+    "onPointerDown must invoke the build-guard",
   );
   // v0.10.1-n A3 — the 24 px guard semantics changed: instead of *blocking*
   // placement with a "click closer" hint, the guard now redirects the click

@@ -46,7 +46,7 @@ test("placement tool with tile occupied by entity → fall through to entity-pic
   assert.equal(decision, "select");
 });
 
-test("placement tool inside the 24 px guard annulus → entity-pick wins (user wanted the worker)", () => {
+test("placement tool inside the 14 px guard radius → entity-pick wins (user wanted the worker)", () => {
   const decision = decidePointerTarget({
     activeTool: "road",
     entityNearby: true,
@@ -54,6 +54,23 @@ test("placement tool inside the 24 px guard annulus → entity-pick wins (user w
     tileOccupiedByEntity: false,
   });
   assert.equal(decision, "select");
+});
+
+// v0.10.1-A3 R2 (F1) — defense regression: with the guard radius dropped
+// 36 → 14 px, a click 20 px from a wandering worker (outside the guard but
+// inside what the OLD 36 px buffer would have caught) MUST place. Caller
+// passes `entityNearby:false` because the screen-space proximity probe at
+// 14 px misses the worker; the helper then sees a placement tool + legal
+// tile + no nearby entity and returns "place". This is the exact case the
+// reviewer reported as P0 for road-on-grass.
+test("placement tool with entity ~20 px away (outside 14 px guard) → place", () => {
+  const decision = decidePointerTarget({
+    activeTool: "road",
+    entityNearby: false,
+    tilePlaceable: true,
+    tileOccupiedByEntity: false,
+  });
+  assert.equal(decision, "place", "20 px > 14 px guard ⇒ place wins (R2 F1)");
 });
 
 test("select tool with nearby entity → entity-pick", () => {

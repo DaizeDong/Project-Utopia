@@ -223,8 +223,10 @@
     #statusBar #storytellerStrip { display: none !important; }
     /* Resource chips in bar — allow slight shrink but keep icon+number readable */
     #statusBar .hud-resource { flex-shrink: 1; min-width: 28px; }
-    /* Sublabels always hidden in status bar */
-    #statusBar .hud-sublabel { display: none !important; }
+    /* v0.10.1-A3 R2 (F4) — sublabels visible by default in the status bar so
+       the player can read "Food / Wood / Stone / Herbs" without hovering for
+       a tooltip. The `#ui.compact .hud-sublabel { display: none; }` rule
+       below still hides them for narrow viewports. */
     #statusBar .hud-chip { font-size: 12px; }
 
     .hud-resource {
@@ -528,6 +530,23 @@
       color: #a5f2b2;
       pointer-events: none;
       white-space: nowrap;
+      /* v0.10.1-A3 R2 (F5) — pulse cue when an overlay auto-flips on tool
+         select. body.overlay-just-toggled is set for 1.4s by GameApp's
+         #syncTerrainLensLabel; the keyframes brighten + scale the pill
+         briefly so the player sees "Overlay: Connectivity" appear instead
+         of silently mutating the canvas. transition handles fade-in /
+         fade-out for [hidden] toggles too. */
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+    body.overlay-just-toggled #terrainLensLabel:not([hidden]) {
+      animation: overlayPulse 1.4s ease-out;
+      box-shadow: 0 0 0 2px rgba(165, 242, 178, 0.45);
+    }
+    @keyframes overlayPulse {
+      0%   { transform: scale(0.92); opacity: 0; }
+      18%  { transform: scale(1.08); opacity: 1; }
+      40%  { transform: scale(1.0);  opacity: 1; }
+      100% { transform: scale(1.0);  opacity: 1; box-shadow: 0 0 0 0 rgba(165, 242, 178, 0); }
     }
 
     /* === PRESSURE LENS LEGEND CARD (colony panel) === */
@@ -1033,6 +1052,29 @@
       opacity: 0.7;
       font-size: 9px;
     }
+    /* v0.10.1-A3 R2 (F3) — visible hotkey badge in the top-left of each
+       toolbar button. Sourced from `data-hotkey` so it stays in sync with
+       the button's title-tooltip without a JS hook. Position:relative on
+       the parent button is required for absolute positioning of ::before;
+       .tool-grid button is `display:flex` (line 991) which establishes a
+       containing block for absolute children only when position:relative
+       is set, so add it here. Tools without a digit hotkey (Kitchen) get
+       no badge — the omitted attribute simply skips the ::before. */
+    .tool-grid button[data-hotkey] { position: relative; }
+    .tool-grid button[data-hotkey]::before {
+      content: attr(data-hotkey);
+      position: absolute; top: 2px; left: 2px;
+      min-width: 10px; height: 12px; padding: 0 3px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--accent-dim, rgba(61,155,233,0.18));
+      color: var(--text, #d0e8ff);
+      font-size: 9px; font-weight: 800;
+      border-radius: 3px;
+      letter-spacing: 0;
+      line-height: 1;
+      pointer-events: none;
+      opacity: 0.85;
+    }
 
     /* === BUTTONS (dark theme) === */
     button {
@@ -1278,6 +1320,12 @@
 
     .overlay-panel {
       width: min(520px, calc(100% - 24px));
+      /* v0.10.1-A3 R2 (F2) — bound the panel to the viewport so its content
+         scrolls instead of overflowing past the bottom. Combined with the
+         sticky `.overlay-actions` rule, Start Colony stays glued to the
+         bottom of the visible panel area on 1049×630 / 1366×768 laptops. */
+      max-height: calc(100vh - 36px);
+      overflow-y: auto;
       border: 1px solid var(--panel-border);
       border-radius: 16px;
       background: var(--panel-bg);
@@ -1367,7 +1415,19 @@
       font-size: 10px;
     }
 
-    .overlay-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* v0.10.1-A3 R2 (F2) — pin the Start Colony / Try Again row at the
+       bottom of the overlay panel so even when the panel itself scrolls
+       (1049×630 / 1366×768 laptops with leaderboard + map selectors +
+       control hints), the primary CTA stays visible above the fold.
+       Sticky requires the parent to have `overflow-y: auto`; the
+       `.overlay-panel` rule below was extended to provide that. */
+    .overlay-actions {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      position: sticky; bottom: 0;
+      background: var(--panel-bg);
+      padding-top: 8px; margin-top: 8px;
+      z-index: 1;
+    }
     .overlay-actions button {
       padding: 8px 14px; border-radius: 10px;
       font-size: 13px; font-weight: 700;
@@ -1419,7 +1479,9 @@
       list-style: decimal inside;
       margin: 0 0 6px 0;
       padding: 0;
-      max-height: 140px;
+      /* v0.10.1-A3 R2 (F2) — capped 140 → 96 px so the Best Runs list
+         can't push Start Colony below the fold on a 1049×630 viewport. */
+      max-height: 96px;
       overflow-y: auto;
       font-variant-numeric: tabular-nums;
     }
@@ -2594,18 +2656,18 @@
           <summary>Build Tools</summary>
           <div class="panel-body">
             <div class="tool-grid">
-              <button type="button" data-tool="road" data-tool-tier="primary" class="active" title="Road (1) — connect buildings, cost: 1 wood. Place between farms, lumber camps, and warehouses to shorten haul trips."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
-              <button type="button" data-tool="farm" data-tool-tier="primary" title="Farm (2) — produce food, cost: 5 wood. Place near soil-rich tiles; you'll need 3 before you can afford a Kitchen."><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
-              <button type="button" data-tool="lumber" data-tool-tier="primary" title="Lumber Camp (3) — harvest wood, cost: 5 wood. Place adjacent to a forest node; each camp needs at least 1 logger."><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
-              <button type="button" data-tool="warehouse" data-tool-tier="primary" title="Warehouse (4) — store &amp; distribute resources, cost: 10 wood. Place before your 3rd farm so haul distance stays short."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
-              <button type="button" data-tool="wall" data-tool-tier="secondary" title="Wall (5) — block saboteurs, cost: 2 stone. Ring the colony when Threat &gt; 30 or a raid is announced."><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
-              <button type="button" data-tool="bridge" data-tool-tier="secondary" title="Bridge (6) — cross water, cost: 3 wood + 1 stone. Must extend from an existing road/warehouse/bridge onto a water tile."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
-              <button type="button" data-tool="erase" data-tool-tier="secondary" data-tool-destructive="1" title="Demolish (7) — workers will dismantle the structure over time. Returns partial salvage. Costs 1 wood to commission. Right-click a blueprint-in-progress to cancel for full refund."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Demolish</button>
-              <button type="button" data-tool="quarry" data-tool-tier="advanced" title="Quarry (8) — mine stone, cost: 6 wood. Produces stone for walls/kitchen/smithy — open after your first farm is fed."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Pickaxe.png" alt="" class="tool-icon" />Quarry</button>
-              <button type="button" data-tool="herb_garden" data-tool-tier="advanced" title="Herb Garden (9) — gather herbs, cost: 4 wood. Produces herbs for the Clinic medicine chain — low priority until Dev 40."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="" class="tool-icon" />Herbs</button>
-              <button type="button" data-tool="kitchen" data-tool-tier="advanced" title="Kitchen (10) — cook food into meals, cost: 8 wood + 3 stone. Doubles hunger recovery — unlocks after you have 6 farms feeding well."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="" class="tool-icon" />Kitchen</button>
-              <button type="button" data-tool="smithy" data-tool-tier="advanced" title="Smithy (11) — forge stone+wood into tools, cost: 6 wood + 5 stone. Produces tools for +15% worker speed — pays for itself around 8 workers."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="" class="tool-icon" />Smithy</button>
-              <button type="button" data-tool="clinic" data-tool-tier="advanced" title="Clinic (12) — refine herbs into medicine, cost: 6 wood + 2 herbs. Only worthwhile with a Herb Garden feeding it."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
+              <button type="button" data-tool="road" data-hotkey="1" data-tool-tier="primary" class="active" title="Road (1) — connect buildings, cost: 1 wood. Place between farms, lumber camps, and warehouses to shorten haul trips."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Road</button>
+              <button type="button" data-tool="farm" data-hotkey="2" data-tool-tier="primary" title="Farm (2) — produce food, cost: 5 wood. Place near soil-rich tiles; you'll need 3 before you can afford a Kitchen."><img src="/assets/worldsim/icons/flat/farm.png" alt="" class="tool-icon" />Farm</button>
+              <button type="button" data-tool="lumber" data-hotkey="3" data-tool-tier="primary" title="Lumber Camp (3) — harvest wood, cost: 5 wood. Place adjacent to a forest node; each camp needs at least 1 logger."><img src="/assets/worldsim/icons/flat/lumber.png" alt="" class="tool-icon" />Lumber</button>
+              <button type="button" data-tool="warehouse" data-hotkey="4" data-tool-tier="primary" title="Warehouse (4) — store &amp; distribute resources, cost: 10 wood. Place before your 3rd farm so haul distance stays short."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Material/Wooden Plank.png" alt="" class="tool-icon" />Warehouse</button>
+              <button type="button" data-tool="wall" data-hotkey="5" data-tool-tier="secondary" title="Wall (5) — block saboteurs, cost: 2 stone. Ring the colony when Threat &gt; 30 or a raid is announced."><img src="/assets/worldsim/icons/flat/wall.png" alt="" class="tool-icon" />Wall</button>
+              <button type="button" data-tool="bridge" data-hotkey="6" data-tool-tier="secondary" title="Bridge (6) — cross water, cost: 3 wood + 1 stone. Must extend from an existing road/warehouse/bridge onto a water tile."><img src="/assets/worldsim/icons/flat/road.png" alt="" class="tool-icon" />Bridge</button>
+              <button type="button" data-tool="erase" data-hotkey="7" data-tool-tier="secondary" data-tool-destructive="1" title="Demolish (7) — workers will dismantle the structure over time. Returns partial salvage. Costs 1 wood to commission. Right-click a blueprint-in-progress to cancel for full refund."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Hammer.png" alt="" class="tool-icon" />Demolish</button>
+              <button type="button" data-tool="quarry" data-hotkey="8" data-tool-tier="advanced" title="Quarry (8) — mine stone, cost: 6 wood. Produces stone for walls/kitchen/smithy — open after your first farm is fed."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Pickaxe.png" alt="" class="tool-icon" />Quarry</button>
+              <button type="button" data-tool="herb_garden" data-hotkey="9" data-tool-tier="advanced" title="Herb Garden (9) — gather herbs, cost: 4 wood. Produces herbs for the Clinic medicine chain — low priority until Dev 40."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Mushroom.png" alt="" class="tool-icon" />Herbs</button>
+              <button type="button" data-tool="kitchen" data-tool-tier="advanced" title="Kitchen — cook food into meals, cost: 8 wood + 3 stone. Doubles hunger recovery — unlocks after you have 6 farms feeding well. (Toolbar button only — no digit hotkey; 0 reserved for select.)"><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Food/Bread.png" alt="" class="tool-icon" />Kitchen</button>
+              <button type="button" data-tool="smithy" data-hotkey="-" data-tool-tier="advanced" title="Smithy (-) — forge stone+wood into tools, cost: 6 wood + 5 stone. Produces tools for +15% worker speed — pays for itself around 8 workers."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Weapon &amp; Tool/Axe.png" alt="" class="tool-icon" />Smithy</button>
+              <button type="button" data-tool="clinic" data-hotkey="=" data-tool-tier="advanced" title="Clinic (=) — refine herbs into medicine, cost: 6 wood + 2 herbs. Only worthwhile with a Herb Garden feeding it."><img src="/assets/worldsim/icons/pixel-art-icon-pack-rpg/Potion/Green Potion.png" alt="" class="tool-icon" />Clinic</button>
             </div>
             <div class="hint" style="font-size:10px; line-height:1.6; color:var(--text-muted);">
               <span>0: select</span> · <span>1–9/-/=: tools</span> · <span>Space: pause</span> · <span>Esc: cancel</span><br>

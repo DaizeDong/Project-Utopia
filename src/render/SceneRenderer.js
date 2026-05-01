@@ -109,17 +109,24 @@ const TERRAIN_OVERLAY_RESOURCE_TILES = Object.freeze(new Set([TILE.FARM, TILE.LU
 // the Entity Focus panel stuck on "No entity selected". These two constants
 // define the screen-space fallback radius used by
 // `findProximityEntity` / `#proximityNearestEntity`:
-//   - ENTITY_PICK_FALLBACK_PX (16): select the nearest entity when exact
-//     raycast returns no hit. 16 px ≈ 1 tile at default zoom, low enough
-//     to avoid mis-selecting neighbours.
-//   - ENTITY_PICK_GUARD_PX (24): when a build tool is active, suppress the
-//     build placement if the click landed within this radius of a worker
-//     but outside the fallback radius, so the user isn't surprised by a
-//     Farm appearing "next to the worker they thought they clicked".
+//   - ENTITY_PICK_FALLBACK_PX (24): select the nearest entity when exact
+//     raycast returns no hit. ≈ 1 tile at default zoom, low enough to
+//     avoid mis-selecting neighbours.
+//   - ENTITY_PICK_GUARD_PX (14): when a build tool is active, suppress the
+//     build placement and redirect the click to entity-pick if the click
+//     landed within this radius of a worker. v0.10.1-A3 R2 (F1) — was 36
+//     px, which was a *perception buffer* that mis-treated "entity-near"
+//     as "entity-on": with the 36 px guard, almost any click on grass
+//     within ~3 tiles of a wandering animal silently emitted "Selecting
+//     nearby unit (release the build tool to place)" instead of placing
+//     the road, so the first-impression reviewer's "I can't place a road"
+//     P0 reproduced every single time. The new 14 px threshold matches
+//     the worker sprite's *visual hitbox* (~12 px) + 2 px slop, so only
+//     clicks that actually overlap a worker fall through to entity-pick.
 // v0.8.2 Round-5b (02a-rimworld-veteran Step 5) — hitbox sourced from BALANCE
 // so uiProfile can enlarge picks for non-casual (RimWorld veteran) players.
 const ENTITY_PICK_FALLBACK_PX = Number(BALANCE.renderHitboxPixels?.entityPickFallback ?? 24);
-const ENTITY_PICK_GUARD_PX = Number(BALANCE.renderHitboxPixels?.entityPickGuard ?? 36);
+const ENTITY_PICK_GUARD_PX = Number(BALANCE.renderHitboxPixels?.entityPickGuard ?? 14);
 
 // Pure helper for screen-space proximity pick. Extracted from
 // SceneRenderer.#pickEntity so it can be unit-tested without standing up
@@ -404,8 +411,10 @@ const DEFAULT_CAMERA_VIEW = Object.freeze({
  * #onPointerDown so the (tool-vs-entity) priority logic can be unit-tested
  * without instantiating a WebGL renderer. Mirrors the order #onPointerDown
  * implements: a placement tool tries the tile first; an entity-pick is the
- * fallback when (a) the user is in the 24 px guard annulus around a worker
- * or (b) placement was rejected because the tile is occupied by an entity.
+ * fallback when (a) the user is inside the 14 px guard radius around a
+ * worker (R2 F1: tightened from 36 px so only clicks that actually overlap
+ * a worker fall through) or (b) placement was rejected because the tile is
+ * occupied by an entity.
  *
  * @param {object} ctx
  * @param {string|null} ctx.activeTool - state.controls.tool ("road","select",…)
@@ -3651,11 +3660,11 @@ export class SceneRenderer {
     const activeTool = this.state.controls?.tool;
     const isPlacementTool = activeTool && activeTool !== "select" && activeTool !== "inspect";
     if (isPlacementTool) {
-      // 24 px guard (was the closing-net for the entity branch): if the
-      // user was clearly aiming at a worker (within ENTITY_PICK_GUARD_PX
-      // but outside ENTITY_PICK_FALLBACK_PX), interpret the click as
-      // "wanted to select that entity, not place" — fall through to the
-      // entity branch below instead of the tile branch.
+      // 14 px guard (R2 F1: was 36 px — see ENTITY_PICK_GUARD_PX): only
+      // when the click *actually overlaps* a worker sprite (~12 px hitbox
+      // + 2 px slop) do we fall through to entity-pick. Outside that
+      // narrow radius the placement tool wins and a road / farm gets
+      // dropped on the tile, which is what the player asked for.
       const nearWorker = this.#proximityNearestEntity(this.mouse, ENTITY_PICK_GUARD_PX);
       if (!nearWorker) {
         const picked = this.#pickTile(this.mouse);
@@ -3700,7 +3709,7 @@ export class SceneRenderer {
           // occupied" toast.
         }
       } else {
-        // Inside the 24 px annulus — user wanted the worker, not a
+        // Inside the 14 px guard — user wanted the worker, not a
         // placement; explicit message, then fall through to entity-pick.
         this.state.controls.actionMessage = "Selecting nearby unit (release the build tool to place)";
         this.state.controls.actionKind = "info";
@@ -3959,12 +3968,26 @@ export class SceneRenderer {
       this.hoverMesh.visible = true;
       this.hoverMesh.position.set(p.x, 0.17, p.z);
 
-      const preview = this.buildSystem.previewToolAt(this.state, this.state.controls.tool, this.hoverTile.ix, this.hoverTile.iz);
-      this.state.controls.buildPreview = preview;
-      this.previewMesh.visible = true;
-      this.previewMesh.position.set(p.x, 0.2, p.z);
-      const color = preview.ok ? 0x6eeb83 : 0xff6b6b;
-      this.previewMesh.material.color.setHex(color);
+      // v0.10.1-A3 R2 (F1) — ghost-preview tile follows the cursor in
+      // placement mode and tints green/red based on placeToolAt feasibility.
+      // Reuses state.controls.buildPreview so the existing BuildToolbar /
+      // InspectorPanel hint pipelines see the same payload as the click
+      // path. Gated on `tool` being a placement tool — for "select" /
+      // null tool the preview mesh stays hidden so the player gets a
+      // clean tile-info hover instead of a misleading green/red flash.
+      const tool = this.state.controls?.tool;
+      const isPlacementTool = tool && tool !== "select" && tool !== "inspect";
+      if (isPlacementTool) {
+        const preview = this.buildSystem.previewToolAt(this.state, tool, this.hoverTile.ix, this.hoverTile.iz);
+        this.state.controls.buildPreview = preview;
+        this.previewMesh.visible = true;
+        this.previewMesh.position.set(p.x, 0.2, p.z);
+        const color = preview.ok ? 0x6eeb83 : 0xff6b6b;
+        this.previewMesh.material.color.setHex(color);
+      } else {
+        this.previewMesh.visible = false;
+        this.state.controls.buildPreview = null;
+      }
     }
 
     // In casual profile, scale the preview mesh slightly so the legal/illegal
