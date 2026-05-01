@@ -206,10 +206,25 @@ export const BALANCE = Object.freeze({
   // (was 0.60 food/s), pairs with INITIAL_RESOURCES.food=320 to stretch
   // pure-burn runway 333 s → 702 s (~11:42), realistic crash-to-recovery ~6:30.
   workerFoodConsumptionPerSecond: 0.038, // v0.10.1-l: fixed global drain replacing hunger FSM
+  // v0.10.1-r1-A5 P0-1: when state.resources.food == 0, decay each worker's
+  // entity.hunger at this rate so MortalitySystem's existing starvation chain
+  // (hunger<=0.045 + holdSec=34) can fire. Pre-r1 the global drain
+  // replaced hunger-FSM but never wired through to per-entity hunger,
+  // so workers never starved (do-nothing-wins root cause). 0.020/s = ~50s
+  // from hunger=1.0 → 0.045, total time-to-first-death = 50s decay + 34s
+  // holdSec ≈ 84s after food hits zero — gives the player a clear
+  // "act or die" window without instant collapse.
+  workerHungerDecayWhenFoodZero: 0.020,
   // v0.10.1-j: warehouse food spoilage — slow passive decay to cap indefinite
   // stockpile growth. At 0.00011/s a 1000-food stockpile loses ~9.5/day,
   // roughly offsetting surplus production so 90-day food stays ~3× initial.
   warehouseFoodSpoilageRatePerSec: 0.0003,
+  // v0.10.1-r1-A5 P0-3: wood overflow cap — same proportional spoilage
+  // pattern as food but tuned half as aggressive so normal construction-
+  // cycle wood (35-60) barely loses anything, while no-op 235+ stockpiles
+  // slowly decay back toward equilibrium. Keeps wood meaningful as a
+  // resource without breaking active construction loops.
+  warehouseWoodSpoilageRatePerSec: 0.00015,
   // v0.10.1-r0-A5: 0.5 → 1.5 — widen carry-in-transit grace so first-warehouse
   // construction window doesn't trip the loss-state while workers are mid-haul.
   resourceCollapseCarryGrace: 1.5,
@@ -722,6 +737,22 @@ export const BALANCE = Object.freeze({
   // not net-negative; recruit churn no longer drags the score down.
   survivalScorePerBirth: 10,
   survivalScorePenaltyPerDeath: 10,
+  // v0.10.1-r1-A5 P0-2: per-second bonus per productive building so a
+  // "do nothing" run accrues only the time floor (perSec=1), while a
+  // built-up colony scores 2-3x faster. NO new score system — same
+  // survivalScore metric, just an extra summand sourced from observable
+  // game state (farms + lumbers + quarries + herbGardens + kitchens +
+  // smithies + clinics). 0.08 keeps a starter scenario (~6 productive
+  // buildings) at +0.48/s ≈ 1.5× the time floor; a developed colony at
+  // 30+ productive buildings hits +2.4/s ≈ 3.4× the time floor.
+  survivalScorePerProductiveBuildingSec: 0.08,
+  // v0.10.1-r1-A5 P0-4: autopilot processing-chain unblock. ColonyDirector
+  // currently bumps quarry to priority 77 only when hasAccessibleWorksite
+  // returns false; on Archipelago/Temperate the STONE node spawns far
+  // enough that ColonyPlanner's wood-gate (wood >= 6) loses to farm-spam
+  // priority 80. This knob raises the early-game (t<300s) quarry/herb
+  // priority so ColonyDirector promotes processing above farm in bootstrap.
+  autopilotQuarryEarlyBoost: 12,
   // --- Living World v0.8.0 — Phase 4 (DevIndex), spec § 5.6 ---
   // DevIndexSystem ring-buffer window size (sim ticks). The smoothed score
   // published at state.gameplay.devIndexSmoothed is the arithmetic mean of

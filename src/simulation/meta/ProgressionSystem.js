@@ -544,6 +544,29 @@ export function updateSurvivalScore(state, dt) {
   const ticks = Math.max(0, Number(dt) || 0);
   metrics.survivalScore += perSec * ticks;
 
+  // v0.10.1-r1-A5 P0-2: score must reflect outcomes, not just time.
+  // Add a per-second bonus proportional to productive-building count so a
+  // "do nothing" run accrues only the time floor while a built-up colony
+  // scores 2-3x faster. NO new score system — same survivalScore metric,
+  // just an extra summand sourced from observable game state. Defaults to
+  // 0 if the BALANCE key is absent, so callers passing a metrics-only
+  // state (no state.buildings) are unaffected.
+  const perBuilding = Number(BALANCE.survivalScorePerProductiveBuildingSec ?? 0);
+  if (perBuilding > 0 && ticks > 0) {
+    const b = state.buildings ?? {};
+    const productive =
+        Number(b.farms ?? 0)
+      + Number(b.lumbers ?? 0)
+      + Number(b.quarries ?? 0)
+      + Number(b.herbGardens ?? 0)
+      + Number(b.kitchens ?? 0)
+      + Number(b.smithies ?? 0)
+      + Number(b.clinics ?? 0);
+    if (productive > 0) {
+      metrics.survivalScore += perBuilding * productive * ticks;
+    }
+  }
+
   // Birth detection: PopulationGrowthSystem increments metrics.birthsTotal on
   // each spawn. Diff against a cached cursor so every birth scores exactly
   // once, even when multiple births land inside the same integer `timeSec`

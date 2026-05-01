@@ -391,6 +391,19 @@ export class ResourceSystem {
       }
     }
 
+    // v0.10.1-r1-A5 P0-3: wood overflow cap — same proportional spoilage
+    // pattern as food (v0.10.1-j), tuned half as aggressive so normal
+    // construction-cycle wood (35-60) barely loses anything but no-op
+    // 235+ stockpiles slowly decay back toward equilibrium.
+    const woodSpoilageRate = Number(BALANCE.warehouseWoodSpoilageRatePerSec ?? 0);
+    if (woodSpoilageRate > 0 && state.resources.wood > 0) {
+      const woodSpoiled = state.resources.wood * woodSpoilageRate * stepSec;
+      state.resources.wood = Math.max(0, state.resources.wood - woodSpoiled);
+      if (woodSpoiled > 0) {
+        recordResourceFlow(state, "wood", "spoiled", woodSpoiled);
+      }
+    }
+
     // v0.10.1-l: fixed per-worker food drain replacing hunger FSM
     const foodConsumeRate = Number(BALANCE.workerFoodConsumptionPerSecond ?? 0.030);
     if (foodConsumeRate > 0 && state.resources.food > 0) {
@@ -403,6 +416,27 @@ export class ResourceSystem {
         state.resources.food = Math.max(0, state.resources.food - actualConsumed);
         if (actualConsumed > 0) {
           recordResourceFlow(state, "food", "consumed", actualConsumed);
+        }
+      }
+    }
+
+    // v0.10.1-r1-A5 P0-1: when food fully depleted, decay per-worker
+    // hunger so MortalitySystem's existing starvation chain (hunger ≤ 0.045
+    // + holdSec=34) can fire. Pre-r1 the global drain (above) replaced the
+    // hunger FSM but never wired through to per-entity hunger, so workers
+    // never starved → no-op runs were unkillable. Caps: this branch is
+    // paused entirely while food > 0 (the consume branch above already
+    // prevents that path from being reached).
+    if (state.resources.food <= 0 && Array.isArray(state.agents)) {
+      const hungerDecayRate = Number(BALANCE.workerHungerDecayWhenFoodZero ?? 0);
+      if (hungerDecayRate > 0) {
+        const hungerDecay = hungerDecayRate * stepSec;
+        for (const a of state.agents) {
+          if (!a || a.type !== "WORKER" || a.alive === false) continue;
+          // Honor metabolism multiplier, same clamp as existing hunger paths.
+          const mul = Math.max(0.5, Math.min(1.5,
+            Number(a.metabolism?.hungerDecayMultiplier ?? 1)));
+          a.hunger = Math.max(0, Number(a.hunger ?? 1) - hungerDecay * mul);
         }
       }
     }
