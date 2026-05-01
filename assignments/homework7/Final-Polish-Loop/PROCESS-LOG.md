@@ -164,3 +164,88 @@
 - **Implementer**: B1-action-items-auditor wave-0 plan 2/5 (docs track,
   pure markdown additions to `CHANGELOG.md` + this file).
 
+## 2026-05-01 — Round 1 closeout (B2-submission-deliverables enhancer plan)
+
+R0 baseline RED 7/22 → R1 enhancer YELLOW 17/22 (+10 PASS). Of the remaining
+5 sub-items, **4 are author-fill (PENDING)** that the LLM is forbidden from
+writing per TA HW7 §1.5 anti-LLM-polish, and **1 is a process gap (FAIL)**
+that R1 closes here by adding `assignments/homework7/build-submission.sh`
++ `npm run submission:zip` (decision-collapser: zip vs hosted URL → one
+command, one artifact). Trajectory ref: build commit `1f6ecc6`.
+
+### AUTHOR ACTION REQUIRED — 4 items (must complete before final submit)
+
+1. **Pillar names + summaries** — `README.md` "Highlights — Two Pillars"
+   lines ~5-23 + `assignments/homework7/Post-Mortem.md` §1.
+   - Prompt: open `assignments/homework2/a2.md`, copy the EXACT pillar titles
+     verbatim (do not LLM-rename or paraphrase). For each pillar write a 2-3
+     sentence technical summary in your own words, citing ≥1 `src/` path.
+   - Grep gate: `grep -c "<copy exact pillar name from A2>" README.md
+     assignments/homework7/Post-Mortem.md` → must return **0**.
+
+2. **Post-Mortem §1-§5 substantive content** — author prose, all sections.
+   - §1 (Project Overview): 4-8 sentences first-person, cite ≥1 `src/` path
+     + 2-3 commit SHAs.
+   - §2 (HW6 Findings): pull real findings from this PROCESS-LOG + HW6
+     user-study; each entry has Action / Evidence / Status (DONE / PARTIAL
+     / WON'T FIX / DEFERRED).
+   - §3 (Pillar Deep-Dive): narrative + 1 evidence line per sub-section.
+     §3.1 worker AI three-time rewrite story is right there in CLAUDE.md
+     (the −2530 LOC v0.10.0 FSM rewrite vs the v0.9.0 utility-scoring layer
+     it deleted — natural material).
+   - §4 (HW7 Plan vs Actual): answer all 3 questions as "I planned X /
+     shipped Y / cut Z".
+   - §5 (AI Tool Evaluation): **MOST DANGEROUS** — TA HW7 §1.5 explicitly
+     bans LLM-polish here. Hand-write this section yourself; include at
+     least one concrete LLM failure story (the v0.9.0 → v0.10.0 −2530 LOC
+     deletion is honest material; so is any spec-drift / phantom-feature
+     incident from PROCESS-LOG).
+   - Grep gate: `grep -c "AUTHOR:" assignments/homework7/Post-Mortem.md`
+     → must return **0**.
+
+3. **Demo video URL backfill** — record + upload + sync 3 places.
+   - Record 3-minute video per `assignments/homework7/Demo-Video-Plan.md`
+     §1-§4 (the 7-shot table is already written).
+   - Upload to YouTube or Vimeo. **Do not** use unlisted-private — the TA
+     must be able to view it. Public unlisted is acceptable.
+   - Sync the real URL to:
+     - `README.md` (~line 92, `## Demo Video & Post-Mortem` section)
+     - `assignments/homework7/Post-Mortem.md` ("Demo Video" header at top)
+     - `CHANGELOG.md` `[Unreleased]` block
+   - Grep gate: `grep -c "pending — see Demo-Video-Plan" README.md` →
+     must return **0**.
+
+4. **Decide submission format** — zip OR GitHub URL (pick one, not both).
+   - **Option A (zip)**: run `npm run submission:zip` → produces
+     `dist-submission/project-utopia-hw7-<stamp>.zip` → upload to Canvas.
+   - **Option B (hosted)**: push `main` to GitHub origin → submit the repo
+     URL with the commit sha as anchor (`...?at=<sha>` or include the sha
+     in the Canvas comment).
+   - Submit **exactly one** of the two — do not submit both, since the
+     grader will not know which copy is authoritative.
+   - Grep gate (option B): `git rev-parse origin/main` returns the sha
+     that matches `git rev-parse HEAD`.
+
+### VALIDATOR SIGN-OFF GATE — run before final submit, all must pass
+
+```bash
+# All four lines must be clean (rows 1-3 = empty output; row 4 = at least one branch true)
+grep -rn "<copy exact pillar name from A2>" README.md assignments/homework7/
+grep -rn "AUTHOR:" assignments/homework7/Post-Mortem.md
+grep -n "pending — see Demo-Video-Plan" README.md
+test -f dist-submission/project-utopia-hw7-*.zip || git rev-parse origin/main
+```
+
+Any non-empty match in rows 1-3, or both branches of row 4 failing → **NOT
+READY**. Do not submit. The build script `assignments/homework7/build-submission.sh`
+prints this same reminder block at end-of-run so the author cannot miss it.
+
+- **Design intent**: R0 deliberately left author-fill skeletons (TA HW7 §1.5
+  anti-LLM-polish posture); R1 does **not** auto-fill them. R1's role is
+  to focus the process / decision boundaries — close the FAIL on
+  submission-format ambiguity, lock the 4 PENDING items into a checklist
+  with grep-verifiable gates, and ensure the author cannot accidentally
+  submit with placeholders still in tree.
+- **Implementer**: B2-submission-deliverables wave-0 plan 5/5 (docs track,
+  bash + json + markdown only; no `src/` or `test/`).
+

@@ -37,7 +37,8 @@
     "desktop:dev": "npm run build && electron .",
     "desktop:pack": "npm run build && electron-builder --win dir",
     "desktop:zip": "node scripts/zip-desktop.mjs",
-    "desktop:dist": "npm run build && node scripts/package-browser-app.mjs"
+    "desktop:dist": "npm run build && node scripts/package-browser-app.mjs",
+    "submission:zip": "bash assignments/homework7/build-submission.sh"
   },
   "dependencies": {
     "three": "^0.182.0"

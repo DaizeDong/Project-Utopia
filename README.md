@@ -167,7 +167,7 @@ or a zip of the repo root. Either way, the steps are the same:
 1. `git clone <repo-url>` (or unzip the submitted archive into a clean directory)
 2. `npm ci`
 3. `npm run build`
-4. `npx vite preview` and open the URL it prints (defaults to <http://localhost:4173>)
+4. `npx vite preview` and open the URL it prints — Vite **preview** defaults to <http://localhost:4173>; the Vite **dev server** (`npx vite` / `npm start`) instead uses <http://localhost:5173>. For grading, `vite preview` (`:4173`) serves the production build from `dist/`
 5. Click _Start Colony_ and let one in-game day cycle elapse — that exercises both pillars (live map editing & reroute, plus AI-driven decisions visible in the Developer Telemetry panel)
 6. For the deeper retrospective, read `assignments/homework7/Post-Mortem.md` (linked above)
 
