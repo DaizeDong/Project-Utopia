@@ -1,5 +1,5 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, TILE, VISITOR_KIND } from "../../config/constants.js";
+import { EVENT_TYPE, FEATURE_FLAGS, TILE, VISITOR_KIND } from "../../config/constants.js";
 import { getLongRunEventTuning, getLongRunVisitorTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
@@ -9,6 +9,7 @@ import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGrap
 import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { mutateTile } from "../lifecycle/TileMutationHooks.js";
+import { VisitorFSM } from "./fsm/VisitorFSM.js";
 
 const WANDER_REFRESH_BASE_SEC = 2.1;
 const WANDER_REFRESH_JITTER_SEC = 1.4;
@@ -617,6 +618,10 @@ function updateIdleWithoutReasonMetric(visitor, stateNode, dt, state) {
 export class VisitorAISystem {
   constructor() {
     this.name = "VisitorAISystem";
+    // v0.10.1 R2 wave-3 — lazy-init Priority-FSM dispatcher used when
+    // `FEATURE_FLAGS.USE_VISITOR_FSM` is true. flag=false (default)
+    // never constructs this; the legacy StatePlanner path runs unchanged.
+    this._fsm = null;
   }
 
   update(dt, state, services) {
@@ -654,6 +659,17 @@ export class VisitorAISystem {
       const logicDt = Math.min(0.75, Number(visitor._visitorAiAccumDt ?? 0) + dt);
       visitor._visitorAiAccumDt = 0;
       processed += 1;
+
+      // v0.10.1 R2 wave-3 (C1-code-architect) — flag-gated Priority-FSM
+      // path. Default OFF: production routes through the legacy
+      // StatePlanner / StateGraph branch below (byte-for-byte identical
+      // to d242719). Round-3 wave-3.5 will fill in the per-state
+      // behaviour bodies + flip this flag's default to true.
+      if (FEATURE_FLAGS.USE_VISITOR_FSM) {
+        if (!this._fsm) this._fsm = new VisitorFSM();
+        this._fsm.tickVisitor(visitor, state, services, logicDt);
+        continue;
+      }
 
       const groupId = visitor.kind === VISITOR_KIND.TRADER ? "traders" : "saboteurs";
       const plan = planEntityDesiredState(visitor, state);
