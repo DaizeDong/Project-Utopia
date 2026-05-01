@@ -169,9 +169,13 @@ test("SceneRenderer source wires proximity fallback into #pickEntity and a build
     /#proximityNearestEntity\(this\.mouse,\s*ENTITY_PICK_GUARD_PX\)/,
     "onPointerDown must invoke the 24 px build-guard",
   );
+  // v0.10.1-n A3 — the 24 px guard semantics changed: instead of *blocking*
+  // placement with a "click closer" hint, the guard now redirects the click
+  // to entity-pick (the user clearly wanted the worker, not a tile). The
+  // regression-defense text moves with it.
   assert.match(
     src,
-    /Click a bit closer to the worker \(hitbox is small\)/,
-    "build-guard hint text must be present",
+    /Selecting nearby unit \(release the build tool to place\)/,
+    "build-guard hint text (entity-pick redirect) must be present",
   );
 });

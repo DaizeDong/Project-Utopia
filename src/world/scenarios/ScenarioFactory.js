@@ -1179,6 +1179,32 @@ export function isInfrastructureNetworkTile(tileType) {
   return tileType === TILE.ROAD || tileType === TILE.WAREHOUSE || tileType === TILE.LUMBER || tileType === TILE.BRIDGE;
 }
 
+/**
+ * v0.10.1-n A3 — route-endpoint diagnostic for honest road-toast copy.
+ * Returns whether each route anchor sits on the infrastructure network and
+ * whether the BFS connects them. Read-only diagnostic — no mechanic shift.
+ *
+ * @param {object} grid
+ * @param {{ix:number, iz:number}|null|undefined} anchorFrom
+ * @param {{ix:number, iz:number}|null|undefined} anchorTo
+ * @returns {{ fromOnNetwork: boolean, toOnNetwork: boolean, connected: boolean }}
+ */
+export function getRouteEndpointStatus(grid, anchorFrom, anchorTo) {
+  const width = Number(grid?.width ?? 0);
+  const tiles = grid?.tiles ?? [];
+  const onNetwork = (anchor) => {
+    if (!anchor) return false;
+    const idx = anchor.ix + anchor.iz * width;
+    return isInfrastructureNetworkTile(tiles[idx]);
+  };
+  const fromOnNetwork = onNetwork(anchorFrom);
+  const toOnNetwork = onNetwork(anchorTo);
+  const connected = (fromOnNetwork && toOnNetwork)
+    ? hasInfrastructureConnection(grid, anchorFrom, anchorTo)
+    : false;
+  return { fromOnNetwork, toOnNetwork, connected };
+}
+
 export function hasInfrastructureConnection(grid, start, goal) {
   if (!start || !goal) return false;
   const width = Number(grid.width ?? 0);

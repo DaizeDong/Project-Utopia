@@ -14,6 +14,11 @@ import {
 import { FOG_STATE, NODE_FLAGS, TILE } from "../../config/constants.js";
 import { getTile, getTileState, inBounds, listTilesByType, toIndex } from "../../world/grid/Grid.js";
 import { toolToTile } from "../../world/grid/TileTypes.js";
+// v0.10.1-n A3 — honest road toast: count how many scenario route anchors
+// currently sit on the infrastructure network so the toast agrees with the
+// HUD `routes 0/N` chip rather than printing the misleading "extends the
+// first network line".
+import { getRouteEndpointStatus } from "../../world/scenarios/ScenarioFactory.js";
 
 // v0.8.0 Phase 3 M1a: node-gated tools. Tool must match a node flag on the
 // target tileState to be placeable.
@@ -620,12 +625,31 @@ export function evaluateBuildPreview(state, tool, ix, iz, services = null) {
   } else if (tool === "warehouse") {
     summary = `Warehouse at ${tilePoint} creates the first delivery anchor for the colony.`;
   } else if (tool === "road") {
+    // v0.10.1-n A3 — honest road toast (P0 first-impression). Surface the
+    // *connectivity progress* counter so the toast agrees with the HUD
+    // `routes 0/N` chip. Without this, a mid-map road that touches no
+    // anchor still prints "extends the first network line" while the chip
+    // stays 0/N — the player can't tell whether the toast is lying or
+    // the chip lags.
+    const scenario = state.gameplay?.scenario ?? {};
+    const anchors = scenario.anchors ?? {};
+    const scenarioRoutes = Array.isArray(scenario.routeLinks) ? scenario.routeLinks : [];
+    let endpointTotal = 0;
+    let endpointLinked = 0;
+    for (const route of scenarioRoutes) {
+      const status = getRouteEndpointStatus(state.grid, anchors[route.from], anchors[route.to]);
+      endpointTotal += 2;
+      if (status.fromOnNetwork) endpointLinked += 1;
+      if (status.toOnNetwork) endpointLinked += 1;
+    }
     if (hasRoadTouch) {
       summary = `Road at ${tilePoint} connects directly into the current network.`;
+    } else if (endpointTotal > 0) {
+      summary = `Road at ${tilePoint}: 1 segment placed, ${endpointLinked}/${endpointTotal} route anchors linked.`;
     } else if (hasWarehouse) {
-      summary = `Road at ${tilePoint} starts a connector toward the nearest warehouse (${formatTileDistance(warehouseDistance)}).`;
+      summary = `Road at ${tilePoint}: 1 segment placed, no anchor linked yet (warehouse ${formatTileDistance(warehouseDistance)} away).`;
     } else {
-      summary = `Road at ${tilePoint} extends the first network line.`;
+      summary = `Road at ${tilePoint}: 1 segment placed, 0/0 route anchors linked.`;
     }
   } else {
     summary = `Build ${info.label.toLowerCase()} at ${tilePoint}. ${effects[0] ?? info.summary}`;
