@@ -134,12 +134,26 @@
       max-width: clamp(280px, 32vw, 560px);
       overflow: hidden;
     }
-    /* Hide verbose scoreboard items in the slim status bar */
+    /* Hide verbose scoreboard items in the slim status bar.
+       v0.10.1-A3 (F2) — `#statusScenario` removed from this list so that
+       HUDController's already-rendered goal chips
+       (routes/depots/warehouses/farms/lumber/walls — green-check / amber-circle)
+       become visible in the top scoreboard instead of being hidden by CSS. */
     #statusScoreboard #statusNextAction,
-    #statusScoreboard #statusScenario,
     #statusScoreboard #statusBuildHint,
     #statusScoreboard #latestDeathRow,
     #statusScoreboard #statusScoreBreak { display: none !important; }
+    /* v0.10.1-A3 (F2) — narrow-viewport clamp so 6 goal chips do not crush
+       #aiAutopilotChip on 1100px-wide windows. .hud-goal-list already has
+       flex-wrap as a fallback; this overflow:hidden + ellipsis caps a single
+       row at 240px so the chip strip never pushes the autopilot label off. */
+    @media (max-width: 1100px) {
+      #statusScoreboard #statusScenario {
+        max-width: 240px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
     /* Crisis alert — keep visible but constrained */
     #statusAutopilotCrisis { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     /* Autopilot chip — never shrink below legibility; priority over middle content.
@@ -2318,7 +2332,7 @@
           </div>
           <div class="overlay-actions">
             <button id="overlayStartBtn" class="primary" type="button" title="Start the colony with the visible template and size.">Start Colony</button>
-            <button id="overlayHelpBtn" type="button" title="Open the menu briefing on demand - template differences, size consequences, first failure path.">How to Play</button>
+            <button id="overlayHelpBtn" type="button" title="Open the menu briefing on demand - template differences, size consequences, first failure path. (opens automatically on first launch)">How to Play</button>
             <button id="overlayResetFromMenuBtn" type="button" title="Reroll the visible template and size into a fresh map seed.">New Map</button>
           </div>
         </section>
@@ -3194,6 +3208,25 @@
       // Header button (top status bar) and overlay menu button both open Help.
       document.getElementById('helpBtn')?.addEventListener('click', openHelp);
       document.getElementById('overlayHelpBtn')?.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); openHelp(); });
+
+      // v0.10.1-A3 (F1) — first-launch onboarding gate.
+      // Reviewer A3 reported clicking Start Colony and being dropped straight
+      // into a 13-tool / 5-resource / 7-tab UI with no orientation. The
+      // utopia:helpSeen storage key already gates re-opens; we now consume it
+      // on the Start Colony click path so the briefing pops once on first run
+      // and never again. The modal opens AFTER menu→active transition (not on
+      // page load) so Start Colony stays clickable on a cold visit.
+      const startBtnForGate = document.getElementById('overlayStartBtn');
+      const helpSeenAtBoot = (() => {
+        try { return localStorage.getItem('utopia:helpSeen'); } catch { return '1'; }
+      })();
+      if (startBtnForGate && !helpSeenAtBoot) {
+        startBtnForGate.addEventListener('click', () => {
+          // Defer one frame so menu→active phase swap completes first; the
+          // map paints behind the modal instead of being hidden by it.
+          requestAnimationFrame(() => { openHelp('controls'); });
+        }, { once: true });
+      }
 
       // Keyboard: F1 / ? open; ESC closes when open.
       // We install this as capture=true so ESC reliably beats other handlers
