@@ -573,6 +573,17 @@ export class SceneRenderer {
     // v0.8.2 — Pressure lens HTML label pool (populated lazily from #pressureLabelLayer).
     this.pressureLabelPool = [];
     this.pressureLabelLayerEl = null;
+    // v0.10.1 R1 (A2 perf) — instance-scope scratch buffers for the
+    // pressure-label projection / dedup / visibility loops. Reused every
+    // frame via `arr.length = 0` and `map.clear()` so the per-frame work
+    // does not allocate a new array/Map. Must be `this._*` (per-instance)
+    // not module-scope so multiple SceneRenderer instances (Playwright /
+    // hot-reload) cannot cross-contaminate.
+    this._labelProjectedScratch = [];
+    this._labelEntriesScratch = [];
+    this._labelEntryToPoolIdxScratch = [];
+    this._labelVisibleCandidatesScratch = [];
+    this._labelVisibleScratchMap = new Map();
 
     this.ambientLight = new THREE.AmbientLight(initialAtmosphere.ambientColor, initialAtmosphere.ambientIntensity);
     this.hemiLight = new THREE.HemisphereLight(
@@ -2253,7 +2264,11 @@ export class SceneRenderer {
     // and bucket-overlapping primaries. Pass 3 writes display state to the
     // pool elements. This eliminates the "supply surplus / supply surplus /
     // supply surplus" stack reviewers reported (feedback #4).
-    const projected = [];
+    // v0.10.1 R1 (A2 perf) — reuse instance scratch buffers instead of
+    // allocating fresh arrays each frame. `length = 0` empties without
+    // dropping the underlying capacity (V8 keeps the backing store).
+    const projected = this._labelProjectedScratch;
+    projected.length = 0;
     for (let i = 0; i < this.pressureLabelPool.length; i += 1) {
       const marker = markers[i];
       if (!marker || vpW <= 0 || vpH <= 0) {
@@ -2295,8 +2310,11 @@ export class SceneRenderer {
     }
 
     // Pass 2: dedup. Build entries array (skip nulls) and remember mapping.
-    const entries = [];
-    const entryToPoolIdx = [];
+    // v0.10.1 R1 (A2 perf) — reuse instance scratch arrays.
+    const entries = this._labelEntriesScratch;
+    entries.length = 0;
+    const entryToPoolIdx = this._labelEntryToPoolIdxScratch;
+    entryToPoolIdx.length = 0;
     for (let i = 0; i < projected.length; i += 1) {
       const p = projected[i];
       if (!p) continue;
@@ -2306,7 +2324,9 @@ export class SceneRenderer {
     const decisions = dedupPressureLabels(entries, { nearPx: 24, bucketPx: 32 });
 
     // Pass 3: write display state.
-    const visibleCandidates = [];
+    // v0.10.1 R1 (A2 perf) — scratch reuse for visibleCandidates + visible map.
+    const visibleCandidates = this._labelVisibleCandidatesScratch;
+    visibleCandidates.length = 0;
     for (let j = 0; j < decisions.length; j += 1) {
       const d = decisions[j];
       const poolIdx = entryToPoolIdx[j];
@@ -2324,7 +2344,8 @@ export class SceneRenderer {
       if (countDelta !== 0) return countDelta;
       return String(a.entry?.label ?? "").localeCompare(String(b.entry?.label ?? ""));
     });
-    const visible = new Map(); // poolIdx -> { decision, entry }
+    const visible = this._labelVisibleScratchMap;
+    visible.clear();
     for (const item of visibleCandidates.slice(0, labelBudget)) {
       visible.set(item.poolIdx, { decision: item.decision, entry: item.entry });
     }
@@ -2566,24 +2587,72 @@ export class SceneRenderer {
   }
 
   #pressureLensSignature() {
-    const events = (this.state.events?.active ?? [])
+    // v0.10.1 R1 (A2 perf) — coarse pre-filter on cheap-to-read inputs
+    // (lengths + monotonic versions + scalar IDs). When none has changed
+    // we return the previously cached string by *identity*, skipping two
+    // .map().join() passes plus the outer .join("||"). The prefilter is
+    // intentionally a superset of the keys that drive the full signature
+    // — any miss still falls through to the full string build, so a
+    // missed bump only spends one extra frame's work, never produces a
+    // stuck cache. Identity reuse is verified by perf-allocation-budget
+    // test (see Round1 A2 plan §5).
+    const eventsArr = this.state.events?.active ?? null;
+    const hotspotsArr = this.state.metrics?.ecology?.hotspotFarms ?? null;
+    const eventsLen = eventsArr ? eventsArr.length : 0;
+    const hotspotsLen = hotspotsArr ? hotspotsArr.length : 0;
+    const gridVer = this.state.grid?.version ?? 0;
+    const trafficVer = this.state.metrics?.traffic?.version ?? 0;
+    const trafficHotspots = this.state.metrics?.traffic?.hotspotCount ?? 0;
+    const objectiveIdx = this.state.gameplay?.objectiveIndex ?? 0;
+    const weatherCurrent = this.state.weather?.current ?? "clear";
+    const weatherHazard = this.state.weather?.hazardFocusSummary ?? "";
+    const weatherScore = this.state.weather?.pressureScore ?? 0;
+    const spatialSummary = this.state.metrics?.spatialPressure?.summary ?? "";
+    if (
+      this._cachedLensSignature !== undefined
+      && this._lastEventsLen === eventsLen
+      && this._lastHotspotsLen === hotspotsLen
+      && this._lastGridVerForLensSig === gridVer
+      && this._lastTrafficVerForLensSig === trafficVer
+      && this._lastTrafficHotspotsForLensSig === trafficHotspots
+      && this._lastObjectiveIdxForLensSig === objectiveIdx
+      && this._lastWeatherCurrentForLensSig === weatherCurrent
+      && this._lastWeatherHazardForLensSig === weatherHazard
+      && this._lastWeatherScoreForLensSig === weatherScore
+      && this._lastSpatialSummaryForLensSig === spatialSummary
+    ) {
+      return this._cachedLensSignature;
+    }
+    const events = (eventsArr ?? [])
       .map((event) => `${event.type}:${event.status}:${event.payload?.targetLabel ?? "-"}:${Number(event.payload?.pressure ?? 0).toFixed(2)}`)
       .join("|");
-    const ecology = (this.state.metrics?.ecology?.hotspotFarms ?? [])
+    const ecology = (hotspotsArr ?? [])
       .map((entry) => `${entry.ix},${entry.iz}:${Number(entry.pressure ?? 0).toFixed(2)}`)
       .join("|");
-    return [
-      this.state.grid.version,
-      this.state.gameplay?.objectiveIndex ?? 0,
-      this.state.weather?.current ?? "clear",
-      this.state.weather?.hazardFocusSummary ?? "",
-      this.state.weather?.pressureScore ?? 0,
-      this.state.metrics?.traffic?.version ?? 0,
-      this.state.metrics?.traffic?.hotspotCount ?? 0,
-      this.state.metrics?.spatialPressure?.summary ?? "",
+    const sig = [
+      gridVer,
+      objectiveIdx,
+      weatherCurrent,
+      weatherHazard,
+      weatherScore,
+      trafficVer,
+      trafficHotspots,
+      spatialSummary,
       events,
       ecology,
     ].join("||");
+    this._cachedLensSignature = sig;
+    this._lastEventsLen = eventsLen;
+    this._lastHotspotsLen = hotspotsLen;
+    this._lastGridVerForLensSig = gridVer;
+    this._lastTrafficVerForLensSig = trafficVer;
+    this._lastTrafficHotspotsForLensSig = trafficHotspots;
+    this._lastObjectiveIdxForLensSig = objectiveIdx;
+    this._lastWeatherCurrentForLensSig = weatherCurrent;
+    this._lastWeatherHazardForLensSig = weatherHazard;
+    this._lastWeatherScoreForLensSig = weatherScore;
+    this._lastSpatialSummaryForLensSig = spatialSummary;
+    return sig;
   }
 
   #updatePressureLens() {
@@ -3148,7 +3217,17 @@ export class SceneRenderer {
     if (totalEntities >= 700 && requestedScale >= 7) return 1 / 10;
     if (totalEntities >= 700) return 1 / 15;
     if (totalEntities >= 350) return 1 / 24;
-    return 0;
+    // v0.10.1 R1 (A2 perf) — at small entity counts (the default casual
+    // / Round-1 P3/P4 measurement profile, pop=21) the previous policy
+    // was 0 = "update every RAF". A2 R1 measured ~18 ms steady-state
+    // frame (~55 fps) and identified per-frame InstancedMesh writes as
+    // a contributor. Throttling to 1/30s aligns with the sim fixed step
+    // (entity positions advance at 30 Hz regardless), so visual smoothness
+    // is preserved while halving InstancedMesh.needsUpdate work at 60 Hz.
+    // When the user has a selected entity (hover / click), we still
+    // return 0 so the selection ring follows the unit at full RAF cadence.
+    if (this.state.controls?.selectedEntityId != null) return 0;
+    return 1 / 30;
   }
 
   #updateEntityMeshes() {
@@ -3297,12 +3376,15 @@ export class SceneRenderer {
     }
     this.predatorMesh.instanceMatrix.needsUpdate = true;
 
-    this.renderEntityLookup = {
-      workers: this.workerEntities,
-      visitors: this.visitorEntities,
-      herbivores: this.herbivoreEntities,
-      predators: this.predatorEntities,
-    };
+    // v0.10.1 R1 (A2 perf) — reuse the lookup object (allocated in the
+    // constructor) instead of building a fresh object literal each frame.
+    // Field-by-field assignment keeps existing aliasing semantics (the
+    // lookup just points at the bucket arrays) without producing a
+    // short-lived 4-key object that the GC has to collect every RAF tick.
+    this.renderEntityLookup.workers = this.workerEntities;
+    this.renderEntityLookup.visitors = this.visitorEntities;
+    this.renderEntityLookup.herbivores = this.herbivoreEntities;
+    this.renderEntityLookup.predators = this.predatorEntities;
 
     if (this.state.debug) {
       this.state.debug.renderMode = this.useEntityModels ? "detailed" : "fast";
