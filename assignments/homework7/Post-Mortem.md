@@ -140,6 +140,34 @@ Questions to answer in your own voice:
 Be honest. "I planned X, started X, hit Y problem, cut X, shipped Z instead"
 is the structure of a real post-mortem.
 
+### §4.5 Hard-Freeze Deferrals — Audio & Worker Walk Cycle
+
+HW7 ran under a hard freeze (no new tile / role / building / mechanic /
+audio asset / UI panel). Two reviewer-flagged polish gaps fall outside
+what the freeze allows; both are deferred to post-HW7 work, not silently
+skipped:
+
+- **Audio bus + SFX (V3 = 0/10).** A4 (Final-Polish-Loop Round 0/1)
+  correctly observes that no `<audio>` elements, no Web Audio nodes, and
+  no audio assets ship in v0.10.1. Adding even one ambient loop or one
+  UI stinger would require a new asset import (`assets/audio/*`) which
+  HW7 §"七条硬约束 §5" forbids. Future-cut item: introduce
+  `src/audio/AudioBus.js` with master/music/sfx volume sliders alongside
+  the first audio asset; budget ≈ 4 hours including freesound asset
+  licensing review.
+- **Worker walk cycle (V4 = 3/10).** Workers currently translate via
+  a continuous lerp on `entity.x` / `entity.z` with no sprite / skeletal
+  animation between FSM ticks. A genuine walk cycle requires a new
+  rigged mesh asset or a 2-frame sprite atlas — both are new asset
+  imports. The R1 plan ships a deterministic per-entity stack offset
+  (Step 5 of `Round1/Plans/A4-polish-aesthetic.md`) that breaks the
+  "stack of tiny goblins" silhouette but does NOT animate motion.
+  Future-cut item: ship a 4-frame walk sprite + a phase-locked
+  ground-bob (sin(t) on y) when entity speed > 0.
+
+Both items are paid down here in writing so future polish loops do not
+treat them as oversight: they are scoped, sized, and parked.
+
 ---
 
 ## §5 AI Tool Evaluation
