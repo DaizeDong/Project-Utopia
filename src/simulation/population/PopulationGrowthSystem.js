@@ -29,7 +29,7 @@
 import { BALANCE } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { createWorker } from "../../entities/EntityFactory.js";
-import { listTilesByType, tileToWorld } from "../../world/grid/Grid.js";
+import { listTilesByType, randomPassableTile, tileToWorld } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 
 const CHECK_INTERVAL_SEC = 1.0;
