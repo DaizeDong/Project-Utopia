@@ -2,6 +2,26 @@
 
 A real-time interactive crowd simulation built with Three.js. Users edit a tile-based map (roads, walls, buildings) and observe how NPCs reroute, redistribute resources, and adapt to the new environment. An LLM-based AI layer drives high-level NPC role decisions and world events on top of deterministic A* pathfinding and Boids steering.
 
+## Highlights — Two Pillars
+
+<!-- AUTHOR: Pillar names below MUST match the wording committed in
+     assignments/homework2/a2.md and assignments/homework2/Assignment 2_ Project Approval & Specs.md.
+     Do not let an LLM rename them. The two-three-sentence summaries below are
+     placeholders — rewrite each in your own voice before submitting. -->
+
+### Pillar A — _\<copy exact pillar name from A2\>_
+
+Two-to-three sentence technical summary: what the pillar is, the system(s)
+under `src/` that implement it, and the one-line "you can see this in 30
+seconds of play" pitch. (Long form: see [Post-Mortem](assignments/homework7/Post-Mortem.md) §1 Pillar A.)
+
+### Pillar B — _\<copy exact pillar name from A2\>_
+
+Same shape — two-to-three sentence summary anchored to a real subsystem and a
+visible runtime artefact. (Long form: see [Post-Mortem](assignments/homework7/Post-Mortem.md) §1 Pillar B.)
+
+> See [Post-Mortem](assignments/homework7/Post-Mortem.md) for the full technical retrospective, playtest resolution, pivots from the A2 MVP, and AI tool evaluation.
+
 ## Tech Stack
 
 - Renderer: Three.js + Vite
@@ -10,15 +30,29 @@ A real-time interactive crowd simulation built with Three.js. Users edit a tile-
 
 ## Quick Start
 
+> **For graders / first-time runners**: This project runs fully without an LLM API key — the AI fallback policy provides complete gameplay. Set `OPENAI_API_KEY` only to enable live LLM-driven decisions (optional enhancement).
+
 ```bash
 npm ci
 cp .env.example .env
 # set OPENAI_API_KEY and optional OPENAI_MODEL / OPENAI_REQUEST_TIMEOUT_MS / AI_PROXY_PORT
 ```
 
+Supported launch paths:
+
 ```bash
-npm run dev:full      # recommended: Vite + ai-proxy
-npm run start:prod    # build + preview + ai-proxy
+npm start             # same as dev:full; latest source + ai-proxy
+npm run dev:full      # Vite source server + ai-proxy
+npm run start:prod    # rebuild dist, then preview + ai-proxy
+```
+
+Then open <http://localhost:5173> in your browser (Vite auto-launches in most setups).
+
+On Windows, double-click `Project Utopia.cmd` to rebuild `dist` from the source checkout and open the current app in Edge/Chrome app mode.
+
+Validation and release commands:
+
+```bash
 npm run test
 npm run build
 npm run verify:full
@@ -31,7 +65,8 @@ npm run submit:strict
 
 Notes:
 
-- `dev:full`, `preview:full`, and `ai-proxy` now auto-load root `.env`.
+- `dev:full`, `preview:full`, `start:prod`, and `ai-proxy` now auto-load root `.env`.
+- `preview`, `preview:full`, `start:prod`, and the Windows launcher rebuild before serving `dist`, so they do not open stale generated assets.
 - Existing shell env variables still override `.env` values.
 
 ## Long-Run Validation
@@ -52,9 +87,14 @@ Notes:
 - Long-run metrics are written to `docs/assignment4/metrics/`.
 - Browser screenshots and failure captures are written to `output/playwright/`.
 
+## Demo Video & Post-Mortem
+
+- **Demo Video**: pending — see [Demo-Video-Plan.md](assignments/homework7/Demo-Video-Plan.md) for the recording plan, shot list, and post-upload checklist. The video URL will replace this line once the recording is published.
+- **Post-Mortem**: [assignments/homework7/Post-Mortem.md](assignments/homework7/Post-Mortem.md) — pillars overview (anchored to the A2 spec), playtest resolution table, technical post-mortem on architectural challenges and pivots from the A2 MVP, and an AI tool evaluation in the author's own voice.
+
 ## Submission / Release Flow
 
-The authoritative submission artifact is the local production build, not an unverified hosted URL.
+The authoritative submission artifact is the local production build, *for daily verification gates during development*. For HW7 final submission, see § "How to Grade This Submission" below.
 
 Use this command for the full local submission gate:
 
@@ -118,6 +158,24 @@ The repo also ignores common local-only files such as `.env` and `.idea/` so rel
 - the stored HW03 proof files
 - the generated local metrics and optional screenshot evidence
 - the current non-ignored git worktree status at release-check time
+
+### How to Grade This Submission
+
+The HW7 submission can be graded against either a fresh `git clone` of the repo
+or a zip of the repo root. Either way, the steps are the same:
+
+1. `git clone <repo-url>` (or unzip the submitted archive into a clean directory)
+2. `npm ci`
+3. `npm run build`
+4. `npx vite preview` and open the URL it prints (defaults to <http://localhost:4173>)
+5. Click _Start Colony_ and let one in-game day cycle elapse — that exercises both pillars (live map editing & reroute, plus AI-driven decisions visible in the Developer Telemetry panel)
+6. For the deeper retrospective, read `assignments/homework7/Post-Mortem.md` (linked above)
+
+No `OPENAI_API_KEY` is required — the deterministic fallback policy keeps the
+simulation fully playable. Setting a key only enables live LLM decisions as an
+optional enhancement.
+
+> If submitting as zip: run `npm run build` first, then zip the repo root **excluding** `node_modules/`, `.env`, `output/`, and `dist/` is optional (a fresh `npm run build` will regenerate it). Reviewer runs `npm ci && npx vite preview` from the unzipped root.
 
 ## Optional Live-AI Proof Refresh
 
