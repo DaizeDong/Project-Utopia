@@ -251,6 +251,81 @@ prints this same reminder block at end-of-run so the author cannot miss it.
 
 ---
 
+## Round 1 — 2026-05-01 (orchestrator closeout)
+
+**HEAD**: `1f6ecc6` → `d242719`（Stage C 9 commits + 1 no-op = 10 plans accepted）
+**触发**: 自动 / "继续 Round 1+2"
+**Verdict**: YELLOW
+
+### Reviewer 输出概览
+
+- A1 stability: GREEN 8/10；0 P0 / 0 P1 / 0 P2，5 sessions ~30 min；**连续第 2 轮 0 P0 → 触发停止条件 1 ✅**
+- A2 performance: YELLOW 4/10；R0 加的 `__fps_observed` 让 FPS 可测；P3 mid p50=54.6 / p5=43.5，P4 stress p50=55.2 / p5=43.1；P5 ≥ 30 全 PASS；P50 ~95% target
+- A3 first-impression: RED 3/10；R0 修的 3 P0 已解，新 3 P0（viewport 框窄 / 放置无反馈 / 首次 LMB 选 bear）→ R1 plan 已修
+- A4 polish-aesthetic: RED 3/10；三大结构性缺口未变；R0 lighting tint 实施 vs 感知差距 → R1 振幅放大 colorBlend 0.35→0.62
+- A5 balance-critic: RED 3/10；R0 食物修复反向 → "do nothing wins"；**R1 找到 root cause = v0.10.1-l food drain 没接到 entity.hunger**
+- A6 ui-design: YELLOW 5.5/10（R0 5→5.5）；新 P0 层 → R1 plan 已修
+- A7 rationality-audit: RED 4/10；R0 4 P0 部分修，新 5 P0；R1 plan 修 4/5
+- B1 action-items: GREEN 9/10 closed + AI-6 documented-defer → **effective 10/10 → 触发停止条件 4 ✅**
+- B2 submission-deliverables: YELLOW 7/10（R0 3 → R1 7）；17/22 PASS；4 PENDING 是作者填空 + 1 FAIL = submission format
+- C1 code-architect: YELLOW 6/10；25 系统 4A/11B/8C/2D 不变；debt 27→28（+1 R0 dev placement 错；解 -4 docs drift）；R1 wave-2 完成 PriorityFSM 抽取
+
+### 本轮通过的 plan
+
+| reviewer_id | track | scope | commit |
+|---|---|---|---|
+| A1-stability-hunter | docs (no-op) | GREEN streak documented | (no commit) |
+| B1-action-items-auditor | docs | AI-6 documented-defer + PROCESS-LOG | 1d5ff80 |
+| A5-balance-critic | code | **关键根因修复** entity.hunger 重连 + 4 BALANCE keys + score derive | f385318 |
+| C1-code-architect | code (refactor) | wave-2/4 PriorityFSM 抽取 + WorkerFSM facade + debt-pop-2 修 | 439b120 |
+| B2-submission-deliverables | docs | build-submission.sh + npm script + PROCESS-LOG 4 AUTHOR ACTION | 9b77339 |
+| A2-performance-auditor | code | SceneRenderer perf shave + 8 budget tests | 99bef3b |
+| A3-first-impression | code | orthoSize/zoom + #onPointerDown + honest road toast + getRouteEndpointStatus | 5d0bc5f |
+| A6-ui-design | code | statusBar wrap + 1024 z-index + hover library + BuildToolbar.sync() disabled | 34da583 |
+| A7-rationality-audit | code | legend 颜色 + buildFoodDiagnosis + worker list (kind) + Survived→Run | 2b96618 |
+| A4-polish-aesthetic | both | lighting amplify + texture halving + entityStackJitter + 1024/1366 + Post-Mortem §4.5 + CHANGELOG | d242719 |
+
+### Validator gate
+
+- node --test: **1701/1708 pass**（4 pre-existing failures unchanged，3 skip）— PASS
+- prod build: 4.6s 0 errors → PASS
+- preview smoke (10 min): 0 console errors / 0 5xx → PASS
+- FPS gate: YELLOW（idle 55.7 / mid 56.4 / stress 54.9 p50 ~95% of 60 target；p5 PASS 44.6-55.2 vs 30）
+- freeze-diff: PASS（17 src files；2 new = expected PriorityFSM+forceSpawn；4 new BALANCE = expected A5 tunables；0 新 TILE/role/audio/panel）
+- bundle: WARN（3 chunks 500KB-1MB；同 R0 pattern；无 chunk >1MB）
+
+### Bench
+
+- DevIndex day-90 = **53.53**（R0 46.66 Δ +14.7%；HW6 baseline 37.77 Δ **+41.7%**）→ PASS
+- Deaths day-90 = **77**（R0 43 Δ +79%）— **intentional**：A5 entity.hunger 重连让 fail-state 重新可达；零死亡 bug 未回归
+- A5 修复让 game **重新有 fail state** 且 score derivation 让 do-nothing 不再得分
+
+### 停止条件离触达
+
+| 条件 | 状态 |
+|---|---|
+| A1 stability 连续 2 轮 0 P0 | ✅ **MET** (R0+R1) |
+| A2 performance 连续 2 轮 P50/P5 达标 | ⚠️ R1 P5 ✅ but P50 ~95%；R2 待测 |
+| A3-A7 共识问题单调下降 | ⚠️ R1 vs R0 持平或微增；R2 是 trend 判断关键 |
+| B1 全 closed/documented-defer | ✅ **MET** (effective 10/10) |
+| B2 全 green | ❌ R1=17/22+4 PENDING+1 FAIL；需作者介入 |
+| C1 架构债非递增 + 0 D 级 | ❌ debt 27→28；2 D 级仍存；R2/R3 wave-3/4 |
+| Validator 连续 2 轮 GREEN | ⚠️ R0+R1 都 YELLOW；需 R2+R3 GREEN |
+
+**结论：7 条停止条件中 2 条达成（A1 + B1）；继续 Round 2。**
+
+### 下一轮重点
+
+1. A5 entity.hunger 重连后 fail state 是否真到（A5 R2 reviewer 实测 30 分钟）
+2. A2 perf shave 实测 P50 是否上到 60
+3. A3 onboarding 三件 R2 验证
+4. A6 disabled state 验证 + hover library 6 panel
+5. A7 legend colors + visitor identity 验证
+6. C1 wave-3 启动 VisitorAI → PriorityFSM 迁移
+7. B2 PENDING 4 项作者必须介入填（pillar names / Post-Mortem 内容 / demo URL / submission format）
+
+---
+
 ## Round 2 (2026-05-01) — B1 action-items audit closeout
 
 - **Summary**: B1 R2 audit verdict = GREEN — 8 closed + 1 documented-defer
@@ -282,3 +357,65 @@ prints this same reminder block at end-of-run so the author cannot miss it.
 - **Implementer**: B1-action-items-auditor wave-0 plan 2/7 (docs track,
   pure markdown additions to `CHANGELOG.md` + this file; no `src/` or
   `test/` touched).
+
+---
+
+## Round 2 (2026-05-01) — Submission Closeout Gates
+
+These 4 gates are the residual PENDING items from B2 R2 (verdict:
+**YELLOW 18/22**, distance to GREEN = 4 author-fills). All four are
+TA HW7 §1.5 anti-LLM-polish protected — must be filled by author hand,
+not LLM. Trajectory: R0 RED 7/22 → R1 YELLOW 17/22 → R2 YELLOW 18/22
+(cumulative +11). Build commit at R2: `d242719`. Reviewer feedback:
+`assignments/homework7/Final-Polish-Loop/Round2/Feedbacks/B2-submission-deliverables.md`.
+
+```
+AUTHOR-FILL GATE 1: README pillar names
+  grep -c "<copy exact pillar name from A2>" README.md   # must be 0
+  Source for fill: assignments/homework2/a2.md
+  Note: live README has the placeholder as backslash-escaped
+  `\<copy exact pillar name from A2\>` on lines 12 and 18; both
+  occurrences must be replaced with the canonical A2 wording.
+
+AUTHOR-FILL GATE 2: Post-Mortem §1-§5 substantive content
+  grep -c "AUTHOR:" assignments/homework7/Post-Mortem.md  # must be 0
+  Sections owned by author: §1 / §2 / §3 / §4 / §5 (§4.5 already complete in R1)
+  Note: 4 `AUTHOR:` HTML-comment guard blocks remain (§1 pillar names,
+  §2 playtest table source, §3 commit-link evidence, §5 AI evaluation
+  voice). Each comment marks an author-voice section that must be
+  written in the first person — not auto-filled.
+
+AUTHOR-FILL GATE 3: Demo video URL
+  grep -c "pending — see \[Demo-Video-Plan" README.md     # must be 0
+  Sync targets: README line 92 + Post-Mortem "Demo Video" + CHANGELOG [Unreleased]
+  Note: README currently uses the markdown-link form
+  `pending — see [Demo-Video-Plan.md](...)`; the bare-text form
+  `pending — see Demo-Video-Plan` returns 0 hits today, but the
+  link-form gate above is the authoritative one and currently hits 1.
+
+AUTHOR-FILL GATE 4: Submission format (choose ONE)
+  Option A: npm run submission:zip → upload Canvas zip
+  Option B: push main + submit GitHub URL with commit-sha anchor
+  Record choice in this PROCESS-LOG entry as: "submission_format: zip"
+  OR "submission_format: github"
+```
+
+Cross-reference: `assignments/homework7/build-submission.sh` heredoc
+already runs the same grep gates at zip-time so the author sees
+identical pass/fail signal at both log-review time (here) and at
+build-zip time (when invoking `npm run submission:zip`). Wording
+for gates 1 / 3 mirrors the R1 closeout entry above; gate 2 collapses
+to the single-pattern `AUTHOR:` grep that catches every remaining
+HTML-comment author guard in `Post-Mortem.md`.
+
+- **R2 build observation**: B2 R2 reviewer reproduced all 22 checklist
+  items against the live build at `127.0.0.1:5173/` with
+  `screenshots/B2/01-initial-load.png` and `02-game-loop.png` as
+  evidence. The 4 PENDING items are observable as literal placeholder
+  strings in the repo (verified by grep counts above), not flaky
+  reproduction failures.
+- **Implementer**: B2-submission-deliverables wave-0 plan 4/7 (docs
+  track, pure markdown additions to `CHANGELOG.md` + this file; no
+  `src/` or `test/` touched). Plan explicitly forbids auto-filling any
+  of the 4 author-fill items per TA HW7 §1.5; implementer wrote the
+  gates only.
