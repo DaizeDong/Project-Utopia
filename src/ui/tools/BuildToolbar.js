@@ -10,7 +10,44 @@ import { getBuildToolPanelState } from "../../simulation/construction/BuildAdvis
 import { explainTerm } from "../hud/glossary.js";
 import { getResourceChainStall } from "../../simulation/ai/colony/ColonyPerceiver.js";
 import { DEFAULT_DISPLAY_SETTINGS, sanitizeDisplaySettings } from "../../app/controlSanitizers.js";
-import { BALANCE } from "../../config/balance.js";
+import { BALANCE, BUILD_COST } from "../../config/balance.js";
+
+// v0.10.1-A6 (R1 P0 #3 / D4) — Tools that should NEVER be disabled by
+// stockpile, regardless of resource state. `select` is a neutral
+// inspector; `erase` (Demolish) is its own gating path (commission
+// fee + worker dispatch in BuildAdvisor) and disabling it on a wood-
+// shortage would lock players out of recovery / unbuild.
+const ALWAYS_ENABLED_TOOLS = new Set(["select", "erase"]);
+
+/**
+ * Pure helper: given a tool key and the current state.resources object,
+ * decide whether the build button should be flagged as cost-blocked.
+ *
+ * Uses the BASE BUILD_COST (not escalator-adjusted, not elevation-
+ * adjusted) so the disabled state represents an "optimistic floor":
+ * if the base cost can't be paid, the player can't possibly afford
+ * the real (potentially escalated) cost either, so the button is a
+ * dead click. Once base cost is met, the button is interactive and
+ * the build-preview tooltip in BuildAdvisor surfaces the precise
+ * escalator/terrain deficits.
+ *
+ * @param {string} toolKey — value of `button[data-tool]`
+ * @param {object|null} resources — { food, wood, stone, herbs }
+ * @returns {boolean} — true if the button should render as disabled
+ */
+export function isBuildToolCostBlocked(toolKey, resources) {
+  if (!toolKey || ALWAYS_ENABLED_TOOLS.has(toolKey)) return false;
+  const cost = BUILD_COST[toolKey];
+  if (!cost || typeof cost !== "object") return false;
+  const r = resources ?? {};
+  for (const axis of ["wood", "stone", "herbs", "food"]) {
+    const need = Number(cost[axis] ?? 0);
+    if (need <= 0) continue;
+    const have = Number(r[axis] ?? 0);
+    if (have < need) return true;
+  }
+  return false;
+}
 
 // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when a build preview reports
 // "insufficientResource", pick the first limiting raw resource that still
@@ -1131,6 +1168,33 @@ export class BuildToolbar {
     const effectiveTool = knownTools.has(currentTool) ? currentTool : "select";
     this.toolButtons.forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tool === effectiveTool);
+    });
+
+    // v0.10.1-A6 (R1 P0 #3 / D4) — derive button.disabled from base
+    // BUILD_COST vs the colony's current stockpile so resource-zero
+    // tools render greyed out + show the warning glyph (CSS rule:
+    // `.tool-grid button[data-cost-blocked="1"]::after`). Players no
+    // longer click "Farm" with 0 wood and wonder why nothing happens.
+    // This intentionally uses the base cost (not escalator-adjusted)
+    // — see isBuildToolCostBlocked() comment for rationale.
+    const resources = this.state?.resources ?? null;
+    this.toolButtons.forEach((btn) => {
+      const tool = btn.dataset?.tool ?? null;
+      if (!tool) return;
+      const blocked = isBuildToolCostBlocked(tool, resources);
+      // Don't clobber other disable paths (e.g. tier-gate logic in
+      // #refreshToolTier already sets disabled when the tier is
+      // locked). Only flip the flag we own. Track ownership through
+      // `data-cost-blocked` so tier-gate's reads are not confused.
+      if (blocked) {
+        btn.disabled = true;
+        btn.setAttribute("data-cost-blocked", "1");
+      } else {
+        if (btn.getAttribute?.("data-cost-blocked") === "1") {
+          btn.disabled = false;
+          btn.removeAttribute("data-cost-blocked");
+        }
+      }
     });
 
     // Update canvas cursor: default arrow in select mode, crosshair for build tools.
