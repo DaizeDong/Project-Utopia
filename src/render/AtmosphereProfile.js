@@ -212,24 +212,27 @@ function applySessionOutcome(profile, state) {
 // ambient + directional light colour & intensity already present in the
 // scene; no new mesh, no shadow rig, no asset import.
 //
-// Phase ramp (4 stops, smooth-blended via mixHex over 0.25-wide quadrants):
-//   0.00  dawn   #ffd9a8
-//   0.25  day    #ffffff
-//   0.50  dusk   #ffb574
-//   0.75  night  #3a4a78
+// Phase ramp (4 stops, smooth-blended via mixHex over 0.25-wide quadrants).
+// v0.10.1-A4 R1 (HW7 Final-Polish-Loop wave-1): R0 stops were chromatically
+// correct but visually imperceptible (A4 reviewer sat 6 minutes at 2× speed
+// and saw no warm/cool shift). Stops deepened so that:
+//   0.00  dawn   #ffb070  (deeper amber — recognisably warm-orange)
+//   0.25  day    #ffffff  (neutral noon anchor — unchanged)
+//   0.50  dusk   #ff7a3a  (stronger sunset cast)
+//   0.75  night  #1c2850  (deeper blue — reads as night, not "dim day")
 //
-// Intensity ramps:
-//   ambientIntensityMul: 0.85 (dawn) → 1.20 (day) → 0.85 (dusk) → 0.45 (night)
-//   sunIntensityMul:     0.70 (dawn) → 1.00 (day) → 0.70 (dusk) → 0.20 (night)
+// Intensity ramps widened so dawn/dusk/night carry visible delta:
+//   ambientIntensityMul: 0.78 (dawn) → 1.25 (day) → 0.72 (dusk) → 0.32 (night)
+//   sunIntensityMul:     0.55 (dawn) → 1.10 (day) → 0.55 (dusk) → 0.08 (night)
 //
 // SceneRenderer quantizes the phase to 32 bins (DAY_NIGHT_TINT_BINS) so the
 // modulation only re-blends when the bin changes — at the default cycle of
 // 90 s this is one update every ~2.8 s, well below per-frame work cost.
 const DAY_NIGHT_STOPS = Object.freeze([
-  Object.freeze({ phase: 0.00, color: 0xffd9a8, ambient: 0.85, sun: 0.70 }), // dawn
-  Object.freeze({ phase: 0.25, color: 0xffffff, ambient: 1.20, sun: 1.00 }), // day
-  Object.freeze({ phase: 0.50, color: 0xffb574, ambient: 0.85, sun: 0.70 }), // dusk
-  Object.freeze({ phase: 0.75, color: 0x3a4a78, ambient: 0.45, sun: 0.20 }), // night
+  Object.freeze({ phase: 0.00, color: 0xffb070, ambient: 0.78, sun: 0.55 }), // dawn
+  Object.freeze({ phase: 0.25, color: 0xffffff, ambient: 1.25, sun: 1.10 }), // day
+  Object.freeze({ phase: 0.50, color: 0xff7a3a, ambient: 0.72, sun: 0.55 }), // dusk
+  Object.freeze({ phase: 0.75, color: 0x1c2850, ambient: 0.32, sun: 0.08 }), // night
 ]);
 export const DAY_NIGHT_TINT_BINS = 32;
 
@@ -289,22 +292,24 @@ export function quantizeDayNightPhase(phase, bins = DAY_NIGHT_TINT_BINS) {
  * scaled by the ramp multipliers. The base profile is left untouched (no
  * mutation) so AtmosphereProfile.test.js's pure-function contract still holds.
  *
- * The tint is mixed at 35 % strength against the scenario/weather-derived
- * base colour: at noon (phase 0.25) the multiplier is white at full strength
- * → near-zero net change; at night (phase 0.75) the multiplier is deep blue
- * → noticeable cool tint without crushing the scenario family identity.
+ * v0.10.1-A4 R1 (HW7 Final-Polish-Loop wave-1) — colorBlend amplified
+ * 0.35 → 0.62 so the dawn/dusk/night tint reads through weather + scenario
+ * + pressure overlays instead of being washed out. Hemi colour blend bumped
+ * 0.6× → 0.7× of the main blend (43 % vs 21 % of full tint). Clamp lower
+ * bounds tightened (ambient 0.18 → 0.22, sun 0.08 → 0.12, hemi 0.16 → 0.20)
+ * so weather × night double-multiply does not crush the scene to black.
  */
 export function applyDayNightModulation(profile, phase) {
   const tint = computeDayNightTint(phase);
-  const colorBlend = 0.35;
+  const colorBlend = 0.62;
   return {
     ...profile,
     ambientColor: mixHex(profile.ambientColor, tint.color, colorBlend),
     sunColor: mixHex(profile.sunColor, tint.color, colorBlend),
-    hemiSkyColor: mixHex(profile.hemiSkyColor, tint.color, colorBlend * 0.6),
-    ambientIntensity: clamp(profile.ambientIntensity * tint.ambientMul, 0.18, 1.6),
-    sunIntensity: clamp(profile.sunIntensity * tint.sunMul, 0.08, 1.5),
-    hemiIntensity: clamp(profile.hemiIntensity * (0.6 + tint.ambientMul * 0.4), 0.16, 0.78),
+    hemiSkyColor: mixHex(profile.hemiSkyColor, tint.color, colorBlend * 0.7),
+    ambientIntensity: clamp(profile.ambientIntensity * tint.ambientMul, 0.22, 1.6),
+    sunIntensity: clamp(profile.sunIntensity * tint.sunMul, 0.12, 1.5),
+    hemiIntensity: clamp(profile.hemiIntensity * (0.6 + tint.ambientMul * 0.4), 0.20, 0.78),
     dayNightPhase: ((Number(phase) % 1) + 1) % 1,
     dayNightTintColor: tint.color,
   };

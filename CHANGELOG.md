@@ -2,6 +2,48 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 1
 
+### Polish (HW7 Round 1 — A4 wave-1)
+
+- **polish**: amplify day-night lighting tint amplitude (`src/render/AtmosphereProfile.js`)
+  - `colorBlend` 0.35 → 0.62 so the tint reads through weather + scenario + pressure overlays
+  - dawn 0xffd9a8 → 0xffb070 (deeper amber), dusk 0xffb574 → 0xff7a3a (stronger sunset),
+    night 0x3a4a78 → 0x1c2850 (deeper blue), day 0xffffff unchanged (neutral noon anchor)
+  - ambient ramp 0.85/1.20/0.85/0.45 → 0.78/1.25/0.72/0.32; sun ramp 0.70/1.00/0.70/0.20 → 0.55/1.10/0.55/0.08
+  - hemi blend 0.6× → 0.7×; clamp lower bounds tightened (ambient 0.18→0.22, sun 0.08→0.12, hemi 0.16→0.20)
+  - reviewer A4 reported R0 tint was implementation-correct but visually imperceptible at 2× speed over 6 minutes
+- **fix**: HUD clipping at 1024×768 (`index.html`) — `#statusBar` padding/gap/font-size step-down inside the
+  1024 media query; resource cells claw back ~6 px each (min-width 30px, padding 0 2px). Additive on top of
+  A6's `right: 0 !important` (1024 sidebar moves to bottom).
+- **fix**: shortcut legend vertical word-stack at 1366×768 (`index.html`) —
+  `.hk-desc { word-break: break-word }` → `word-break: normal; overflow-wrap: anywhere` so words break only at
+  natural boundaries; `.hk-row { flex-wrap: nowrap; min-width: 0 }`; `.hk-key` padding 1px 5px → 1px 4px;
+  1366 media query adds `font-size: 9.5px` (grid) / `8.5px` (desc) so "supply-chain heat lens" fits one line.
+- **fix**: mountain-biome checker pattern (`src/render/SceneRenderer.js TILE_TEXTURE_BINDINGS`) —
+  `WALL` repeatX/repeatY 8→4 (and roughness 0.88→0.82 so directional light catches larger cells);
+  `RUINS` 8→5; `QUARRY` 9→5; `GATE` 6→3. Eliminates the 8×8 developer-placeholder grid that read as a checker
+  pattern at the top of the frame.
+- **fix**: worker / visitor / herbivore / predator stacking z-fight (`src/render/SceneRenderer.js`) —
+  added `entityStackJitter(id)` helper (Knuth multiplicative hash → unit interval → ±0.16 horizontal /
+  0..0.06 vertical world units); applied at all 4 InstancedMesh matrix-write sites. Deterministic, no new
+  entity field. Horizontal spread is ~⅓ tile so entities never visually cross to the neighbour; vertical
+  delta is below shadow-bias range so cast shadows do not pop.
+
+### Hard-freeze deferrals (Post-Mortem §4.5)
+
+- V3 audio bus + SFX — first audio asset blocked by HW7 freeze; documented as cut item in
+  `assignments/homework7/Post-Mortem.md §4.5` with scope/budget.
+- V4 worker walk cycle — sprite atlas / rig blocked by HW7 freeze; documented as cut item with scope.
+  Step 5 stack-jitter breaks the "stack of tiny goblins" silhouette but does not animate motion.
+
+### Tests (HW7 Round 1 — A4 wave-1)
+
+- `test/dayNightLightingTint.test.js` amended to the R1 amplified ramp:
+  - colour expectations updated (dawn 0xffb070, dusk 0xff7a3a, night 0x1c2850; day unchanged)
+  - intensity expectations updated (ambient 1.25 / 0.32, sun 1.10 / 0.08)
+  - clamp lower bounds asserted at the new floors (ambient ≥ 0.22, sun ≥ 0.12, hemi ≥ 0.20)
+  - colour tolerance widened 2 → 4 hex channels for the deeper-saturation stops; intensity tolerance
+    widened 0.02 → 0.04
+
 ### Docs (HW7 Round 0 → Round 1 — submission deliverables trajectory)
 
 - **Verdict trajectory**: B2-submission-deliverables R0 RED **7/22** → R1

@@ -176,6 +176,24 @@ function setInstancedMatrix(mesh, index, x, y, z, sx = 1, sy = 1, sz = 1) {
   mesh.setMatrixAt(index, MAT_TMP);
 }
 
+// v0.10.1-A4 R1 (V5 P2 #4) — Deterministic per-entity stack jitter to break
+// up worker / visitor / herbivore / predator z-fighting when 4+ entities pile
+// on the same tile. Pure function of the entity id (Knuth-multiplicative
+// hash → 32-bit unsigned → unit interval). Horizontal range is ±0.16 world
+// units (~⅓ tile half-width so entities never visually cross to the
+// neighbour); vertical range is 0..0.06 units which is below the shadow
+// bias threshold so cast shadows do not pop. No new entity field — the
+// hash is derived from the existing integer id at render time.
+const STACK_JITTER_HASH = 2654435761; // Knuth multiplicative
+const STACK_JITTER_INV = 1 / 0xffffffff;
+function entityStackJitter(id) {
+  const h = (((id | 0) * STACK_JITTER_HASH) >>> 0) * STACK_JITTER_INV;
+  const dx = (h - 0.5) * 0.32;
+  const dy = ((h * 7) % 1) * 0.06;
+  const dz = (((h * 13) % 1) - 0.5) * 0.32;
+  return { dx, dy, dz };
+}
+
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
@@ -340,10 +358,16 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   [TILE.FARM]: { key: "plants", tint: 0xe4cb72, repeatX: 10, repeatY: 10, roughness: 0.95, emissive: 0x4c3f19, emissiveIntensity: 0.07 },
   [TILE.LUMBER]: { key: "plants", tint: 0x9fcf7f, repeatX: 9, repeatY: 9, roughness: 0.95, emissive: 0x1f3d1f, emissiveIntensity: 0.07 },
   [TILE.WAREHOUSE]: { key: "structure", tint: 0xd59f74, repeatX: 8, repeatY: 8, roughness: 0.9, emissive: 0x4b2a1d, emissiveIntensity: 0.06 },
-  [TILE.WALL]: { key: "wall", tint: 0xb6c1cd, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x30363f, emissiveIntensity: 0.05 },
-  [TILE.RUINS]: { key: "props", tint: 0xc19b81, repeatX: 8, repeatY: 8, roughness: 0.92, emissive: 0x432f24, emissiveIntensity: 0.06 },
+  // v0.10.1-A4 R1 (V5 P2 #3) — halve repeatX/repeatY on WALL/RUINS/QUARRY/GATE
+  // so the procedural texture cells double in size, eliminating the visible
+  // 8×8 "developer placeholder grid" that read as a checker pattern when
+  // mountain/wall clusters render at the top of the frame. WALL roughness
+  // dropped 0.88 → 0.82 so the directional light catches the larger cells
+  // and breaks up flat appearance under the R1 amplified day-night tint.
+  [TILE.WALL]: { key: "wall", tint: 0xb6c1cd, repeatX: 4, repeatY: 4, roughness: 0.82, emissive: 0x30363f, emissiveIntensity: 0.05 },
+  [TILE.RUINS]: { key: "props", tint: 0xc19b81, repeatX: 5, repeatY: 5, roughness: 0.92, emissive: 0x432f24, emissiveIntensity: 0.06 },
   [TILE.WATER]: { key: "grass", tint: 0x86c8f8, repeatX: 12, repeatY: 12, roughness: 0.66, emissive: 0x1f527f, emissiveIntensity: 0.12 },
-  [TILE.QUARRY]: { key: "props", tint: 0xb8a88e, repeatX: 9, repeatY: 9, roughness: 0.93, emissive: 0x3d3028, emissiveIntensity: 0.06 },
+  [TILE.QUARRY]: { key: "props", tint: 0xb8a88e, repeatX: 5, repeatY: 5, roughness: 0.93, emissive: 0x3d3028, emissiveIntensity: 0.06 },
   [TILE.HERB_GARDEN]: { key: "plants", tint: 0x8fd47a, repeatX: 10, repeatY: 10, roughness: 0.95, emissive: 0x1f3d1a, emissiveIntensity: 0.07 },
   [TILE.KITCHEN]: { key: "structure", tint: 0xe0be74, repeatX: 8, repeatY: 8, roughness: 0.9, emissive: 0x4c3a18, emissiveIntensity: 0.06 },
   [TILE.SMITHY]: { key: "structure", tint: 0xa08e7a, repeatX: 8, repeatY: 8, roughness: 0.88, emissive: 0x2a2018, emissiveIntensity: 0.06 },
@@ -352,7 +376,7 @@ const TILE_TEXTURE_BINDINGS = Object.freeze({
   // v0.8.4 strategic walls + GATE (Agent C). Warm wood tint so gates read
   // visually distinct from the cold-grey wall texture. Reuses the wall
   // texture key (which has a brick-pattern look that's gate-adjacent).
-  [TILE.GATE]: { key: "wall", tint: 0xb38a55, repeatX: 6, repeatY: 6, roughness: 0.86, emissive: 0x4a3520, emissiveIntensity: 0.07 },
+  [TILE.GATE]: { key: "wall", tint: 0xb38a55, repeatX: 3, repeatY: 3, roughness: 0.86, emissive: 0x4a3520, emissiveIntensity: 0.07 },
 });
 
 const RENDER_ORDER = Object.freeze({
@@ -3363,12 +3387,17 @@ export class SceneRenderer {
     // v0.8.7.1 P7 — replace per-frame .slice() allocations with bounded
     // for-loops. Hot path on 700+ entities; eliminates 4 slice copies per
     // tick.
+    // v0.10.1-A4 R1 (V5 P2 #4) — apply deterministic id-hashed stack jitter
+    // so 4+ entities on the same tile no longer z-fight at the same world
+    // coordinate. ~⅓ tile horizontal spread, ≤0.06 vertical so shadow cast
+    // stays stable.
     if (workerFallbackVisible) {
       const capacity = Number(this.workerMesh.instanceMatrix?.count ?? this.workerEntities.length);
       const visibleCount = Math.min(this.workerEntities.length, capacity);
       for (let n = 0; n < visibleCount; n += 1) {
         const e = this.workerEntities[n];
-        setInstancedMatrix(this.workerMesh, n, e.x, 0.48, e.z);
+        const j = entityStackJitter(e.id ?? n);
+        setInstancedMatrix(this.workerMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
       }
       this.workerMesh.count = visibleCount;
     } else {
@@ -3381,7 +3410,8 @@ export class SceneRenderer {
       const visibleCount = Math.min(this.visitorEntities.length, capacity);
       for (let n = 0; n < visibleCount; n += 1) {
         const e = this.visitorEntities[n];
-        setInstancedMatrix(this.visitorMesh, n, e.x, 0.48, e.z);
+        const j = entityStackJitter(e.id ?? n);
+        setInstancedMatrix(this.visitorMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
       }
       this.visitorMesh.count = visibleCount;
     } else {
@@ -3394,7 +3424,8 @@ export class SceneRenderer {
       const visibleCount = Math.min(this.herbivoreEntities.length, capacity);
       for (let n = 0; n < visibleCount; n += 1) {
         const e = this.herbivoreEntities[n];
-        setInstancedMatrix(this.herbivoreMesh, n, e.x, 0.48, e.z);
+        const j = entityStackJitter(e.id ?? n);
+        setInstancedMatrix(this.herbivoreMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
       }
       this.herbivoreMesh.count = visibleCount;
     } else {
@@ -3407,7 +3438,8 @@ export class SceneRenderer {
       const visibleCount = Math.min(this.predatorEntities.length, capacity);
       for (let n = 0; n < visibleCount; n += 1) {
         const e = this.predatorEntities[n];
-        setInstancedMatrix(this.predatorMesh, n, e.x, 0.48, e.z);
+        const j = entityStackJitter(e.id ?? n);
+        setInstancedMatrix(this.predatorMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
       }
       this.predatorMesh.count = visibleCount;
     } else {
