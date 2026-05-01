@@ -2,28 +2,18 @@
 // rewrite per docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md
 // §3.2.
 //
-// Per-worker priority-ordered state-transition pipeline replacing the
-// v0.9.0–v0.9.4 JobScheduler utility-scoring layer. Behind
-// FEATURE_FLAGS.USE_FSM (default OFF in phase a; flipped ON in phase
-// 0.10.0-d once states/transitions are populated and validated).
-//
-// Contract per §3.2:
-//   1. `worker.fsm = { state, enteredAtSec, target, payload }` is the
-//      unique behaviour field. v0.10.0-e: the dispatcher also writes
-//      `worker.stateLabel` derived from DISPLAY_LABEL[fsm.state] (single
-//      source of truth for display); state bodies write `blackboard.intent`
-//      (semantic, distinct from the display label).
-//   2. Each tick: walk the current state's priority-ordered transition
-//      list. First `when()` that returns true wins; we enterState() and
-//      stop walking. Then we tick the (possibly new) current state.
-//      Finally we write `worker.stateLabel = DISPLAY_LABEL[fsm.state]`.
-//   3. enterState() fires onExit on the previous state and onEnter on
-//      the new one. The dispatcher is the only writer to worker.fsm.
-//
-// The dispatcher is intentionally tiny (~30 LOC core) so behaviour
-// lives entirely in STATE_BEHAVIOR / STATE_TRANSITIONS — adding a new
-// state is a 3-method object + a row in the transitions table.
+// v0.10.1 HW7 Final-Polish-Loop Round 1 wave-2 (C1-code-architect) —
+// the dispatcher kernel was extracted to `src/simulation/npc/PriorityFSM.js`
+// as a generic, behaviour-table-driven class so Visitor / Animal AI can
+// adopt the same machinery in subsequent waves. This file is now a thin
+// facade: it injects the worker-specific STATE_BEHAVIOR, STATE_TRANSITIONS,
+// and DISPLAY_LABEL maps, and delegates `tickWorker` / `getStats` to the
+// generic dispatcher. The class name + method signatures + `worker.fsm`
+// shape + `worker.stateLabel` single-write semantics + `getStats()`
+// returned shape are 100% preserved (locked by the existing worker-fsm-*
+// tests + the new test/priority-fsm-generic.test.js suite).
 
+import { PriorityFSM } from "../PriorityFSM.js";
 import { DISPLAY_LABEL, STATE_BEHAVIOR } from "./WorkerStates.js";
 import { STATE_TRANSITIONS } from "./WorkerTransitions.js";
 
@@ -39,86 +29,33 @@ export class WorkerFSM {
    *   inject custom tables to drive deterministic state changes.
    */
   constructor(stateBehavior = STATE_BEHAVIOR, stateTransitions = STATE_TRANSITIONS) {
-    this._behavior = stateBehavior;
-    this._transitions = stateTransitions;
-    this._stats = { transitionCount: 0, tickCount: 0 };
+    this._fsm = new PriorityFSM({
+      behavior: stateBehavior,
+      transitions: stateTransitions,
+      displayLabel: DISPLAY_LABEL,
+      defaultState: DEFAULT_STATE,
+    });
   }
 
   /**
-   * One dispatcher pass for a single worker. See class docstring for
-   * the contract. Mutates `worker.fsm` and bumps internal counters.
+   * One dispatcher pass for a single worker. Delegates to the generic
+   * `PriorityFSM.tick`. The `worker` parameter name is preserved (vs the
+   * generic `entity`) for self-documenting code at the call site.
    *
    * @param {any} worker
-   * @param {any} state — global game state; must expose `metrics.timeSec` for enteredAtSec stamping.
+   * @param {any} state
    * @param {any} services
-   * @param {number} dt — frame delta seconds.
+   * @param {number} dt
    */
   tickWorker(worker, state, services, dt) {
-    if (!worker.fsm) {
-      worker.fsm = {
-        state: DEFAULT_STATE,
-        enteredAtSec: Number(state?.metrics?.timeSec ?? 0),
-        target: null,
-        payload: undefined,
-      };
-      this._behavior[DEFAULT_STATE]?.onEnter?.(worker, state, services);
-    }
-
-    // Priority-ordered transition check. First match wins, dispatcher
-    // honours array order — callers must insert pre-sorted.
-    const transitions = this._transitions[worker.fsm.state] ?? [];
-    for (const t of transitions) {
-      if (t.when(worker, state, services)) {
-        this._enterState(worker, state, services, t.to);
-        break;
-      }
-    }
-
-    // Tick the (possibly new) current state.
-    const behavior = this._behavior[worker.fsm.state];
-    behavior?.tick?.(worker, state, services, dt);
-    this._stats.tickCount += 1;
-
-    // v0.10.0-e — single-write of `worker.stateLabel`. State bodies no
-    // longer write this field; the dispatcher derives it from
-    // `worker.fsm.state` here so the label is unambiguously sourced from
-    // the FSM. EntityFocusPanel / InspectorPanel / chronicle search logic
-    // still read `worker.stateLabel` directly. Falls back to the previous
-    // label if the state is somehow not in DISPLAY_LABEL (defensive — every
-    // STATE entry has a row).
-    const label = DISPLAY_LABEL[worker.fsm.state];
-    if (label !== undefined) worker.stateLabel = label;
+    this._fsm.tick(worker, state, services, dt);
   }
 
   /**
-   * Internal: transition `worker.fsm.state` from its current value to
-   * `newName`, firing onExit (old) → onEnter (new). Self-transitions
-   * (oldName === newName) are no-ops and do NOT bump transitionCount.
-   *
-   * v0.10.0-b — `target` is cleared on every transition; the new state's
-   * onEnter rewrites it via worker.fsm.target = ... when the state needs a
-   * target tile. The `payload` field is also reset so per-state scratch
-   * doesn't leak across states.
-   */
-  _enterState(worker, state, services, newName) {
-    const oldName = worker.fsm.state;
-    if (oldName === newName) return;
-    this._behavior[oldName]?.onExit?.(worker, state, services);
-    worker.fsm = {
-      state: newName,
-      enteredAtSec: Number(state?.metrics?.timeSec ?? 0),
-      target: null,
-      payload: undefined,
-    };
-    this._behavior[newName]?.onEnter?.(worker, state, services);
-    this._stats.transitionCount += 1;
-  }
-
-  /**
-   * Snapshot of internal counters. Returns a fresh object so callers
-   * can't mutate dispatcher state.
+   * Snapshot of internal counters. Returns a fresh `{ transitionCount,
+   * tickCount }` object — see PriorityFSM.getStats.
    */
   getStats() {
-    return { ...this._stats };
+    return this._fsm.getStats();
   }
 }
