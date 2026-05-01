@@ -140,33 +140,94 @@ Questions to answer in your own voice:
 Be honest. "I planned X, started X, hit Y problem, cut X, shipped Z instead"
 is the structure of a real post-mortem.
 
-### §4.5 Hard-Freeze Deferrals — Audio & Worker Walk Cycle
+### §4.5 Hard-Freeze Deferrals — Audio, Lighting, Motion, Resolution
 
 HW7 ran under a hard freeze (no new tile / role / building / mechanic /
-audio asset / UI panel). Two reviewer-flagged polish gaps fall outside
-what the freeze allows; both are deferred to post-HW7 work, not silently
-skipped:
+audio asset / UI panel). Four reviewer-flagged polish gaps fall outside
+what the freeze allows; all four are deferred to post-HW7 work, not
+silently skipped.
 
-- **Audio bus + SFX (V3 = 0/10).** A4 (Final-Polish-Loop Round 0/1)
+A4 R2 verdict came in at **RED 3/10** (V1 lighting 2 / V2 color 4 /
+V3 audio 1 / V4 motion 3 / V5 bugs 4); the reviewer's top-3 fix list
+totals roughly **3.3 weeks** of focused art / audio work (1w audio +
+2w lighting + 0.3w resolution, plus a separately-priced ~2w motion
+pass). The HW7 freeze plus the remaining time budget make a credible
+R2 attempt impossible without producing visibly-LLM polish — which
+would cost more in TA §1.5 polish-detection than the visual upside is
+worth. Treat the four entries below as a coherent post-MVP polish
+wave, not four disconnected punts: each entry records what was
+deferred, what was attempted in R0/R1 if anything, why R2
+amplification hits diminishing returns, a rough effort estimate, and
+what a "good v1" would look like so the deferral is visibly informed
+rather than ignored.
+
+- **Audio bus + SFX (V3 = 1/10).** A4 (Final-Polish-Loop Round 0/1/2)
   correctly observes that no `<audio>` elements, no Web Audio nodes, and
-  no audio assets ship in v0.10.1. Adding even one ambient loop or one
-  UI stinger would require a new asset import (`assets/audio/*`) which
-  HW7 §"七条硬约束 §5" forbids. Future-cut item: introduce
-  `src/audio/AudioBus.js` with master/music/sfx volume sliders alongside
-  the first audio asset; budget ≈ 4 hours including freesound asset
-  licensing review.
-- **Worker walk cycle (V4 = 3/10).** Workers currently translate via
-  a continuous lerp on `entity.x` / `entity.z` with no sprite / skeletal
-  animation between FSM ticks. A genuine walk cycle requires a new
-  rigged mesh asset or a 2-frame sprite atlas — both are new asset
-  imports. The R1 plan ships a deterministic per-entity stack offset
-  (Step 5 of `Round1/Plans/A4-polish-aesthetic.md`) that breaks the
+  no audio assets ship in v0.10.1 (verified live via
+  `document.querySelectorAll('audio').length === 0`). Adding even one
+  ambient loop or one UI stinger would require a new asset import
+  (`assets/audio/*`) which HW7 §"七条硬约束 §5" forbids. A4 R2's
+  specific ask covers five SFX categories: a ~30-second menu loop, a
+  daytime ambient bed, a nighttime ambient bed seeded with a wolf-howl
+  roughly every 45 s, a UI hover/click tick, and a raid-alarm ↔
+  raid-defended fanfare pair. Future-cut item: introduce
+  `src/audio/AudioBus.js` with master/music/sfx volume sliders
+  alongside the first asset import; budget ≈ 4 hours of engineering
+  plus a freesound.org cobbled-together set as the "good v1" target.
+  Deferred because the new audio asset itself is the freeze violation,
+  not the bus code.
+- **Lighting / day-night cycle (V1 = 2/10).** A4 R0 had no lighting
+  story; A4 R1 amplified the existing day/night tone-mapping numbers
+  inside the renderer (no new asset, no new mechanic — just stronger
+  tints on the already-shipped clock). A4 R2 reports that
+  amplification "still imperceptible" against a Steam-clean baseline
+  screenshot — empirical evidence of diminishing returns under the
+  freeze. The credible "good v1" is a fullscreen CSS gradient mask
+  (white → amber → blue → dawn) bound to the existing day-tick clock,
+  plus a building cast-shadow sprite layer and water-specular noise.
+  That stack is **render-only** by construction (no new mechanic,
+  binds to an existing simulation clock) but still requires a new
+  fullscreen overlay element which crosses into "new visual system
+  surface" — freeze territory. Estimated proper implementation: ~2
+  weeks. Deferred because R2 was correctly told NOT to amplify
+  lighting again; the next amplitude lever is structural, not numeric.
+- **Motion / animation (V4 = 3/10).** What shipped: tooltip on hover
+  and toast fade-in/out — A4 R2 explicitly credited the V4 score of
+  3/10 to *only* these two, meaning every other motion lever is
+  missing. R1 also shipped a deterministic per-entity stack offset
+  (Step 5 of `Round1/Plans/A4-polish-aesthetic.md`) which breaks the
   "stack of tiny goblins" silhouette but does NOT animate motion.
-  Future-cut item: ship a 4-frame walk sprite + a phase-locked
-  ground-bob (sin(t) on y) when entity speed > 0.
+  Deferred: a 0.3 s scale-bounce + 4-particle dust puff on building
+  completion, a 4-frame work-frame sprite (or phase-locked sin(t)
+  ground-bob when entity speed > 0) on workers, a 0.2 s panel
+  slide-in, and a 200 ms cross-fade on the menu → game transition.
+  Each of those four animations adds new visual mechanic surface
+  (new tween system, new sprite atlas, new transition layer) — freeze
+  territory. Estimated proper implementation: ~2 weeks. Spec for
+  "what good looks like" is the A4 reviewer's own ranking — no
+  guesswork needed.
+- **Resolution / DPI scaling (V5 = 4/10).** Concrete bugs from A4 R2
+  V5: `1024×768` and `1366×768` status-bar truncation (P1 ×2),
+  `2560×1440` / 4K HUD under-scaling (P2 ×1), and heat-lens /
+  terrain-overlay opacity drawing over building sprites (P2 ×1) —
+  pixel-measured against `screenshots/A4/res-1024x768.png`,
+  `res-1366x768.png`, `res-2560x1440.png`. CSS-only fix is allowed by
+  the freeze in principle (responsive media queries + DPR-aware HUD
+  scaling, ~3 days), but the user's R2 brief explicitly says **"NO
+  new code"** for A4 — and the responsive HUD partially overlaps A2 /
+  A3 reviewer ownership. Future-cut item: HUD survives 1024×768 → 4K
+  with no truncation, overlay opacity capped ≤ 50 %, and a high-pass
+  building-sprite layer drawn after the lens so terrain fog never
+  swallows construction state. Estimated proper implementation:
+  ~3 days. Legitimate first-week post-HW7 polish item.
 
-Both items are paid down here in writing so future polish loops do not
-treat them as oversight: they are scoped, sized, and parked.
+Total deferred polish wave: **~5 weeks** (1 w audio + 2 w lighting +
+2 w motion + 0.6 w resolution); HW7 budget remaining: < 1 week.
+Deliberate choice to preserve the TA §1.5 anti-LLM-polish posture
+over visual amplitude. Honest verdict: the simulation engineering is
+at v0.10.x maturity; the audiovisual polish is at MVP+0. Both states
+are recorded here so the RED A4 verdict is read as known scope, not
+blind spot.
 
 ---
 
