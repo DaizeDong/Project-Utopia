@@ -73,8 +73,9 @@ export const STATE = Object.freeze({
 // Shared helpers (private — inlined to keep state bodies ≤ ~40 LOC each).
 
 // v0.10.0-e — single-source-of-truth display label. State bodies no longer
-// write `worker.stateLabel`; the dispatcher (WorkerFSM.tickWorker) reads
-// DISPLAY_LABEL[fsm.state] post-tick and writes it once. The setIntent
+// write `worker.stateLabel`; the dispatcher (WorkerFSM.tickWorker — a thin
+// facade over PriorityFSM.tick) reads DISPLAY_LABEL[fsm.state] post-tick
+// and writes it once. The setIntent
 // helper still writes `worker.blackboard.intent` because the intent string
 // (`"seek_food"`, `"harvest"`, …) carries semantics distinct from the
 // display label (e.g. SEEKING_HARVEST → label "Seek Task" vs intent
@@ -90,8 +91,9 @@ function setIntent(worker, _label, intent) {
 
 /**
  * Display labels keyed by FSM state name. The dispatcher
- * (WorkerFSM.tickWorker) reads from this map post-tick to set
- * `worker.stateLabel`. Keep in sync with STATE_BEHAVIOR; new states added
+ * (WorkerFSM.tickWorker — thin facade over PriorityFSM.tick) reads from
+ * this map post-tick to set `worker.stateLabel`. Keep in sync with
+ * STATE_BEHAVIOR; new states added
  * to STATE must add a label here too. Labels match the per-state-body
  * strings used pre-v0.10.0-e for back-compat with EntityFocusPanel /
  * inspector / chronicle search logic.
@@ -417,8 +419,9 @@ const SEEKING_BUILD = Object.freeze({
 
 const BUILDING = Object.freeze({
   // v0.10.0-d — onEnter re-resolves the site target. The dispatcher
-  // resets fsm.target on every transition (deliberate — see WorkerFSM
-  // _enterState), but BUILDING's tick body needs a target to apply work.
+  // resets fsm.target on every transition (deliberate — see PriorityFSM
+  // _enterState, invoked through the WorkerFSM facade), but BUILDING's tick
+  // body needs a target to apply work.
   // Re-fetching via findOrReserveBuilderSite is idempotent (the site
   // already holds builderId from SEEKING_BUILD.onEnter; this returns the
   // same site).
