@@ -1,4 +1,4 @@
-import { BUILD_COST } from "../../config/balance.js";
+import { BUILD_COST, BALANCE } from "../../config/balance.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 import { TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
@@ -171,11 +171,17 @@ export function assessColonyNeeds(state) {
   const needHerbGarden = (buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens
     || !hasAccessibleWorksite(state, [TILE.HERB_GARDEN]);
 
+  // v0.10.1-r1-A5 P0-4: early-game (t<300s) processing-chain boost so
+  // quarry/herb_garden outrank the priority-80 farm spam in bootstrap.
+  // Outside the early window the legacy 77/76 priorities are preserved.
+  const earlyBoost = Number(state.metrics?.timeSec ?? 0) < 300
+    ? Number(BALANCE.autopilotQuarryEarlyBoost ?? 0)
+    : 0;
   if (needQuarry) {
-    needs.push({ type: "quarry", priority: 77, reason: "processing: need accessible quarry" });
+    needs.push({ type: "quarry", priority: 77 + earlyBoost, reason: "processing: need accessible quarry" });
   }
   if (needHerbGarden) {
-    needs.push({ type: "herb_garden", priority: 76, reason: "processing: need accessible herb garden" });
+    needs.push({ type: "herb_garden", priority: 76 + earlyBoost, reason: "processing: need accessible herb garden" });
   }
   if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
     needs.push({ type: "kitchen", priority: 72, reason: "processing: need kitchen" });

@@ -28,6 +28,17 @@ test("updateSurvivalScore adds +BALANCE.survivalScorePerSecond per in-game secon
   state.metrics.deathsTotal = 0;
   state.metrics.survivalLastDeathsSeen = 0;
 
+  // v0.10.1-r1-A5: survivalScore now has two summands per tick — the time
+  // floor (perSec) plus a productive-building bonus (perBuilding × N). To
+  // keep this test isolated to the "per-second time accrual" contract,
+  // strip the productive buildings from the state before running. The
+  // building-bonus path is covered by balance-fail-state-and-score.test.js.
+  state.buildings = {
+    ...(state.buildings ?? {}),
+    farms: 0, lumbers: 0, quarries: 0, herbGardens: 0,
+    kitchens: 0, smithies: 0, clinics: 0,
+  };
+
   const perSec = Number(BALANCE.survivalScorePerSecond ?? 1);
   updateSurvivalScore(state, 1);
   assert.ok(

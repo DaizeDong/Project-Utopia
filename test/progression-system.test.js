@@ -32,17 +32,35 @@ test("ProgressionSystem accrues survival score per in-game second", () => {
   const system = new ProgressionSystem();
   state.metrics.survivalScore = 0;
 
+  // v0.10.1-r1-A5: survivalScore now has two summands per tick — the time
+  // floor (perSec) plus a productive-building bonus (perBuilding × N). The
+  // initial scenario ships with a non-zero set of farms/lumbers/quarries/
+  // herbGardens so the post-tick value is perSec + perBuilding × productive.
+  // Lock the *combined* expected delta so the test stays a contract on
+  // monotone accrual + correct formula, not an over-specified equality.
   const perSec = Number(BALANCE.survivalScorePerSecond ?? 1);
+  const perBuilding = Number(BALANCE.survivalScorePerProductiveBuildingSec ?? 0);
+  const b = state.buildings ?? {};
+  const productive =
+      Number(b.farms ?? 0)
+    + Number(b.lumbers ?? 0)
+    + Number(b.quarries ?? 0)
+    + Number(b.herbGardens ?? 0)
+    + Number(b.kitchens ?? 0)
+    + Number(b.smithies ?? 0)
+    + Number(b.clinics ?? 0);
+  const expectedPerSec = perSec + perBuilding * productive;
+
   system.update(1, state);
   assert.ok(
-    Math.abs(state.metrics.survivalScore - perSec) < 1e-6,
-    `expected survivalScore=${perSec}, got ${state.metrics.survivalScore}`,
+    Math.abs(state.metrics.survivalScore - expectedPerSec) < 1e-6,
+    `expected survivalScore=${expectedPerSec}, got ${state.metrics.survivalScore}`,
   );
 
   system.update(2, state);
   assert.ok(
-    Math.abs(state.metrics.survivalScore - perSec * 3) < 1e-6,
-    `expected survivalScore=${perSec * 3}, got ${state.metrics.survivalScore}`,
+    Math.abs(state.metrics.survivalScore - expectedPerSec * 3) < 1e-6,
+    `expected survivalScore=${expectedPerSec * 3}, got ${state.metrics.survivalScore}`,
   );
 });
 
