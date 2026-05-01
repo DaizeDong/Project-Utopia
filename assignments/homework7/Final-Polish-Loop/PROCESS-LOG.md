@@ -249,3 +249,36 @@ prints this same reminder block at end-of-run so the author cannot miss it.
 - **Implementer**: B2-submission-deliverables wave-0 plan 5/5 (docs track,
   bash + json + markdown only; no `src/` or `test/`).
 
+---
+
+## Round 2 (2026-05-01) — B1 action-items audit closeout
+
+- **Summary**: B1 R2 audit verdict = GREEN — 8 closed + 1 documented-defer
+  (AI-8) + 0 regressed = effective 9/9 = 100% under the
+  `(closed + documented_defer) >= total * 0.8 AND 0 regressed` formula.
+  Build commit: `d242719`. Reviewer feedback:
+  `assignments/homework7/Final-Polish-Loop/Round2/Feedbacks/B1-action-items-auditor.md`.
+- **AI-8 (ultra-speed perf at 1000 entities) — documented-defer rationale**:
+  - Under v0.10.1 balance (recruit cost + tightened food economy), the
+    natural colony population ceiling is ~20; B1 R2 reproduction observed
+    12–19 entities at 200–240 FPS with p95 ≈ 4–8 ms — well inside the
+    p5 ≥ 30 / p50 ≥ 55 budgets.
+  - The HW6 R9 reviewer-b "1000 entities @ 0.9 FPS" pressure point is
+    structurally unreachable from standard play; reaching it would
+    require a debug spawn-multiplier UI control surface, which violates
+    the HW7 hard freeze (new UI panel / control surface).
+  - Re-open path is post-HW7: `?perfhud=1` query-flag toggle on the
+    existing `PerformancePanel` plus a debug spawn-multiplier knob in a
+    DevTools build, neither of which is permissible during freeze.
+- **Cross-reference — 2 documented-defer pattern**: AI-6 R1 (durable
+  per-character memory in 1k-entity stress, deferred under same
+  freeze-+-population-ceiling rationale) + AI-8 R2 (ultra-speed perf at
+  1000 entities) = 2/9 documented-defer across the B1 audit history.
+  Both root causes are post-rewrite scope reductions (v0.10.0 Worker-FSM
+  −2530 LOC rewrite for AI-6, v0.10.1 balance overhaul for AI-8), not
+  unaddressed code defects. The pattern is informational for future
+  reviewers — perf work targeting >100-entity scale is parked behind a
+  natural-population gate that v0.10.1 lowered, not a coverage gap.
+- **Implementer**: B1-action-items-auditor wave-0 plan 2/7 (docs track,
+  pure markdown additions to `CHANGELOG.md` + this file; no `src/` or
+  `test/` touched).
