@@ -158,7 +158,8 @@ export const CONSTRUCTION_BALANCE = Object.freeze({
 });
 
 export const INITIAL_RESOURCES = Object.freeze({
-  food: 200,
+  // v0.10.1-r0-A5: extend opening runway from ~3:11 to ~6:30 (A5 P0 fix)
+  food: 320,
   wood: 35,
   stone: 15,
   herbs: 8,
@@ -201,12 +202,17 @@ export const BALANCE = Object.freeze({
   // 9 s eat + 94.5 s work = ~91% productive (from ~83% at 0.30/s).
   warehouseEatRatePerWorkerPerSecond: 0.60,
   warehouseEatCapPerSecond: 4.0,
-  workerFoodConsumptionPerSecond: 0.050, // v0.10.1-l: fixed global drain replacing hunger FSM
+  // v0.10.1-r0-A5: 0.050 → 0.038 — colony drain at 12 workers ~0.456 food/s
+  // (was 0.60 food/s), pairs with INITIAL_RESOURCES.food=320 to stretch
+  // pure-burn runway 333 s → 702 s (~11:42), realistic crash-to-recovery ~6:30.
+  workerFoodConsumptionPerSecond: 0.038, // v0.10.1-l: fixed global drain replacing hunger FSM
   // v0.10.1-j: warehouse food spoilage — slow passive decay to cap indefinite
   // stockpile growth. At 0.00011/s a 1000-food stockpile loses ~9.5/day,
   // roughly offsetting surplus production so 90-day food stays ~3× initial.
   warehouseFoodSpoilageRatePerSec: 0.0003,
-  resourceCollapseCarryGrace: 0.5,
+  // v0.10.1-r0-A5: 0.5 → 1.5 — widen carry-in-transit grace so first-warehouse
+  // construction window doesn't trip the loss-state while workers are mid-haul.
+  resourceCollapseCarryGrace: 1.5,
   visitorHungerDecayPerSecond: 0.0085,
   visitorHungerRecoveryPerSecond: 0.16,
   herbivoreHungerDecayPerSecond: 0.0095,
