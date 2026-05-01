@@ -204,12 +204,24 @@ export const SYSTEM_ORDER = Object.freeze([
 // See docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md.
 let _useFsm = true;
 
+// USE_VISITOR_FSM — v0.10.1 HW7 Final-Polish-Loop Round 2 wave-3
+// (C1-code-architect). Stages a Priority-FSM migration of
+// VisitorAISystem behind a default-OFF flag. flag=false routes through
+// the legacy StatePlanner / StateGraph path (byte-for-byte identical to
+// d242719). flag=true routes through `fsm/VisitorFSM.js`. Round-3
+// wave-3.5 will fill in the per-state behaviour bodies (TRADE / SCOUT /
+// SABOTAGE / EVADE / SEEK_FOOD / EAT) that this skeleton stubs out, then
+// flip the default to true and retire the StatePlanner visitor branch.
+let _useVisitorFsm = false;
+
 export const FEATURE_FLAGS = Object.freeze({
   get USE_FSM() { return _useFsm; },
+  get USE_VISITOR_FSM() { return _useVisitorFsm; },
 });
 
 // Test-only setter. Do NOT call from production code paths.
 // Restores the flag to its default in afterEach hooks to keep tests isolated.
 export function _testSetFeatureFlag(name, value) {
   if (name === "USE_FSM") _useFsm = Boolean(value);
+  else if (name === "USE_VISITOR_FSM") _useVisitorFsm = Boolean(value);
 }
