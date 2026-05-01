@@ -84,8 +84,13 @@
          + line-clamped scenario summary previously let the bar grow to
          60-90 px on first-run when the briefing was long; the bar now
          enforces nowrap and a hard height so children must shrink/elide
-         instead of forcing a second row. */
-      height: 32px;
+         instead of forcing a second row.
+         v0.10.1-A6 (R1 P0 #1) — at <1440 widths the goal-list (6 chips)
+         was being clipped by overflow:hidden. min-height + overflow-y:
+         visible lets `.hud-goal-list { flex-wrap: wrap }` push to a
+         second row when it must, and overflow-x:hidden still clips
+         horizontal runaway. */
+      min-height: 32px;
       padding: 2px 8px;
       background: linear-gradient(180deg, rgba(12, 22, 35, 0.97), rgba(8, 16, 28, 0.93));
       border-bottom: 1px solid var(--panel-border);
@@ -93,7 +98,8 @@
       pointer-events: none;
       box-shadow: 0 2px 12px rgba(0,0,0,0.4);
       flex-wrap: nowrap;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: visible;
     }
     /* v0.10.1-c — scenario briefing ("Broken Frontier — Your colony just
        landed. The west forest is overgrown ...") was occupying half the
@@ -146,12 +152,17 @@
     /* v0.10.1-A3 (F2) — narrow-viewport clamp so 6 goal chips do not crush
        #aiAutopilotChip on 1100px-wide windows. .hud-goal-list already has
        flex-wrap as a fallback; this overflow:hidden + ellipsis caps a single
-       row at 240px so the chip strip never pushes the autopilot label off. */
-    @media (max-width: 1100px) {
-      #statusScoreboard #statusScenario {
-        max-width: 240px;
-        overflow: hidden;
-        text-overflow: ellipsis;
+       row at 240px so the chip strip never pushes the autopilot label off.
+       v0.10.1-A6 (R1 P0 #1) — at 1366 the previous 240px ellipsis on
+       #statusScenario was masking 3 of 6 goal chips. Replaced with an
+       explicit goal-list wrap path: max-width:none + flex-wrap:wrap
+       lets the list grow to a 2nd row instead of being clipped, and
+       the parent #statusBar's min-height (Step 1) absorbs the extra
+       row. */
+    @media (max-width: 1440px) {
+      #statusScoreboard .hud-goal-list {
+        max-width: none;
+        flex-wrap: wrap;
       }
     }
     /* Crisis alert — keep visible but constrained */
@@ -294,6 +305,11 @@
     .hud-goal-list {
       display: flex; flex-wrap: wrap; justify-content: flex-end;
       gap: 4px; max-width: min(480px, 34vw); line-height: 1.15;
+      /* v0.10.1-A6 (R1 P0 #1) — allow goal-list to shrink within the
+         flex parent (#statusScoreboard) instead of clipping when its
+         content exceeds available width. min-width:0 unlocks the
+         shrink path; flex-shrink:1 declares it explicitly. */
+      flex-shrink: 1; min-width: 0;
     }
     .hud-goal-chip {
       display: inline-flex; align-items: center; gap: 3px;
@@ -984,6 +1000,27 @@
       cursor: not-allowed;
       color: rgba(200, 96, 86, 0.45);
     }
+    /* v0.10.1-A6 (R1 P0 #3 / D4) — generic disabled style for any
+       tool-grid button that BuildToolbar.sync() has flagged as
+       cost-blocked (resource shortage vs base BUILD_COST). The
+       grayscale filter complements the opacity so the button reads
+       as "muted" rather than just "dimmed", matching the
+       destructive-disabled treatment. */
+    .tool-grid button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      filter: grayscale(0.4);
+    }
+    /* Warning triangle on the cost-blocked button so the player knows
+       the click is gated by stockpile, not by tier-unlock. The actual
+       deficit text lives in the build-preview tooltip; this glyph is
+       just a visual prompt to look at the tooltip. */
+    .tool-grid button[data-cost-blocked="1"]::after {
+      content: " \26A0";
+      margin-left: 3px;
+      opacity: 0.7;
+      font-size: 9px;
+    }
 
     /* === BUTTONS (dark theme) === */
     button {
@@ -1006,6 +1043,40 @@
       background: var(--btn-active);
       border-color: rgba(61,155,233,0.5);
       color: #fff;
+    }
+
+    /* v0.10.1-A6 (R1 P0 #3) — global hover state library. Six panel
+       families had no explicit :hover treatment so players perceived
+       the controls as "decorative" / "non-interactive". Each rule
+       below brightens the affordance without changing layout, and
+       :not(:disabled) is honoured everywhere so cost-blocked /
+       tier-locked buttons stay muted. The .sidebar-tab-btn:hover
+       rule already exists upstream (~line 814) and is not duplicated
+       here. */
+    .hud-chip:hover {
+      background: rgba(110,235,131,0.22);
+      border-color: rgba(110,235,131,0.5);
+      cursor: pointer;
+    }
+    .hud-goal-chip:hover {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.2);
+      cursor: help;
+    }
+    .hud-resource:hover {
+      background: rgba(255,255,255,0.09);
+      cursor: help;
+    }
+    .tool-grid button:hover:not(:disabled) {
+      filter: brightness(1.08);
+    }
+    input[type="checkbox"]:hover {
+      cursor: pointer;
+      filter: brightness(1.1);
+    }
+    [data-playback]:hover:not(:disabled) {
+      cursor: pointer;
+      filter: brightness(1.1);
     }
 
     /* === INPUTS (dark theme) === */
@@ -1721,20 +1792,45 @@
       #statusBar {
         height: auto; max-height: none; flex-wrap: wrap;
         overflow: hidden;
+        /* v0.10.1-A6 (R1 P0 #2) — at 1024 the sidebar moves to the
+           bottom; topbar should span the full width regardless of
+           sidebar-open state so the autopilot chip stays readable. */
+        right: 0 !important;
       }
       #panelToggles {
         order: -1; width: 100%; display: flex; flex-wrap: wrap; gap: 2px;
       }
       #statusScenario,
       #statusScoreBreak { display: none; }
-      #alertStack { top: 38px; right: 44px; max-width: min(280px, calc(100vw - 52px)); }
-      /* Sidebar collapses to a bottom bar so game canvas stays playable */
+      /* v0.10.1-A6 (R1 P0 #2) — alertStack must sit above the sidebar
+         (z:14) and topbar (z:15) so toasts are never occluded by the
+         bottom sidebar bar at 1024. Explicit z:16 for the layering
+         contract; previous block left z-index implicit (auto). */
+      #alertStack {
+        top: 38px; right: 44px;
+        max-width: min(280px, calc(100vw - 52px));
+        z-index: 16;
+      }
+      /* v0.10.1-A6 (R1 P0 #2) — the autopilot chip's clamp formula
+         `calc(100vw - 720px)` evaluates to ~304 px at 1024 wide and
+         ~168 px once chrome is subtracted, but with the bar wrapping
+         vertically the chip can claim more horizontal pixels safely.
+         Override the clamp at the 1024 break so the chip remains
+         readable instead of ellipsizing to "Autopilot ON · …". */
+      #aiAutopilotChip {
+        max-width: clamp(140px, 36vw, 320px);
+      }
+      /* Sidebar collapses to a bottom bar so game canvas stays playable.
+         v0.10.1-A6 (R1 P0 #2) — explicit z-index:14 (below #statusBar's
+         15) so the bottom sidebar can never overlap onto the topbar
+         when its 40vh max-height is hit on short screens. */
       #sidebar {
         position: fixed; bottom: 0; left: 0; right: 0; top: auto;
         width: 100%; height: auto; flex-direction: column;
         border-top: 1px solid rgba(61,155,233,0.3);
         transform: none !important;
         overflow: visible;
+        z-index: 14 !important;
       }
       #wrap:not(.sidebar-open) #sidebar { transform: none !important; }
       #sidebarTabStrip {
