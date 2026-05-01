@@ -1,3 +1,5 @@
+import { isDevMode } from "../../app/devModeGate.js";
+
 function escapeHtml(input) {
   return String(input ?? "")
     .replaceAll("&", "&amp;")
@@ -124,11 +126,20 @@ export class AIAutomationPanel {
       },
     ];
 
+    // v0.10.1 A7-rationality-audit R2 (P0 #6) — engineering footer
+    // (`coverage=/mode=/proxy=/model=`) is dev-mode-only. Casual players see
+    // only the human-readable `Autopilot ON/OFF (...)` line so the panel
+    // doesn't leak `model=deepseek-v4-flash` / `proxy=unknown` strings while
+    // LLM is OFF. Same gate `autopilotStatus` already uses; cf. devModeGate.js.
+    const showEngineeringFooter = isDevMode(state);
+    const engineeringFooter = showEngineeringFooter
+      ? `<span class="muted"> coverage=${escapeHtml(ai.coverageTarget ?? "fallback")} mode=${escapeHtml(ai.mode ?? "fallback")} proxy=${escapeHtml(state.metrics?.proxyHealth ?? "unknown")} model=${escapeHtml(state.metrics?.proxyModel || ai.lastPolicyModel || ai.lastEnvironmentModel || "-")}</span>`
+      : "";
     const html = `
       <div class="small" style="margin-bottom:8px;">
         <b>Autopilot ${mode}</b>
         <span class="muted">(${escapeHtml(callModeLabel)})</span>
-        <span class="muted"> coverage=${escapeHtml(ai.coverageTarget ?? "fallback")} mode=${escapeHtml(ai.mode ?? "fallback")} proxy=${escapeHtml(state.metrics?.proxyHealth ?? "unknown")} model=${escapeHtml(state.metrics?.proxyModel || ai.lastPolicyModel || ai.lastEnvironmentModel || "-")}</span>
+        ${engineeringFooter}
       </div>
       <div class="small muted" style="margin-bottom:8px;">
         ${escapeHtml(boundaryCopy)}

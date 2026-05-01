@@ -63,7 +63,7 @@ import {
   readInitialUiProfile,
   applyUiProfile,
 } from "./devModeGate.js";
-import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid } from "../world/grid/Grid.js";
+import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid, pickBootSeed } from "../world/grid/Grid.js";
 import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
@@ -160,11 +160,24 @@ function readPerftraceFlag() {
 
 export class GameApp {
   constructor(canvas) {
+    // v0.10.1 A7-rationality-audit R2 (P0 #7) — every fresh page load
+    // picks a unique boot seed. `pickBootSeed` honours `?seed=<n>` (URL),
+    // `localStorage.utopia:bootSeed` (pinned), and otherwise rolls a
+    // 31-bit random integer. Tests / benchmarks bypass GameApp entirely
+    // and call `createInitialGameState({ seed: 1337, ... })` directly so
+    // their determinism is unaffected. Without this, the leaderboard
+    // recorded every fresh-boot loss as `seed 1337 · loss`.
+    const bootSeed = pickBootSeed({
+      urlParams: typeof globalThis !== "undefined" && globalThis.location?.search != null
+        ? new URLSearchParams(globalThis.location.search)
+        : new URLSearchParams(""),
+      storage: typeof localStorage !== "undefined" ? localStorage : null,
+    });
     // v0.8.10 — game UI starts the player on a bare map (zero pre-built
     // buildings/roads/walls). Headless tests / benchmarks / scenarios that
     // need the legacy pre-stamped infrastructure call createInitialGameState
     // without bareInitial (default false).
-    this.state = createInitialGameState({ bareInitial: true });
+    this.state = createInitialGameState({ bareInitial: true, seed: bootSeed });
     this.#sanitizeControls(false);
     this.#applyDisplaySettingsToDom();
     // v0.8.2 Round0 01c-ui — Developer mode gate.
