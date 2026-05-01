@@ -144,6 +144,20 @@ function readOfflineAiFallbackFlag() {
   }
 }
 
+// v0.10.1-n (A2 perftrace) — `?perftrace=1` opts into a structured top-system
+// budget snapshot on `window.__perftrace`. Without the flag the snapshot is
+// never written so we avoid the per-frame sort + allocation A2 flagged as a
+// GC-sawtooth concern. `window.__fps_observed` is unconditional so blind
+// (headless) reviewers can read the render-loop FPS even when RAF is throttled.
+function readPerftraceFlag() {
+  try {
+    const params = new URLSearchParams(globalThis?.location?.search ?? "");
+    return params.get("perftrace") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export class GameApp {
   constructor(canvas) {
     // v0.8.10 — game UI starts the player on a bare map (zero pre-built
@@ -163,6 +177,25 @@ export class GameApp {
     // body.dev-mode (both may be set). Default = "casual" for first-timers.
     this.#initUiProfileGate();
     this.offlineAiFallback = readOfflineAiFallbackFlag();
+    // v0.10.1-n (A2 perftrace) — cached once at construct so the per-frame
+    // body can branch on a primitive without re-parsing `location.search`.
+    this.perftraceEnabled = readPerftraceFlag();
+    // Rolling FPS samples for the always-on `window.__fps_observed` surface.
+    // `_fpsSamplesMs` is a fixed-capacity ring (last 60 frame-Dt values in ms);
+    // `_fpsRingHead` advances modulo capacity, `_fpsRingFilled` tracks how
+    // many slots are valid so p5 percentile is meaningful before the ring fills.
+    // `_perftraceTopBuffer` is a pre-allocated 3-slot scratch array reused
+    // every RAF tick when the flag is on (avoids allocation per A2 risk note).
+    this._fpsSamplesMs = new Float32Array(60);
+    this._fpsRingHead = 0;
+    this._fpsRingFilled = 0;
+    this._fpsObservedSmoothed = 0;
+    this._fpsObservedSampleCount = 0;
+    this._perftraceTopBuffer = [
+      { name: "", last: 0, avg: 0, peak: 0 },
+      { name: "", last: 0, avg: 0, peak: 0 },
+      { name: "", last: 0, avg: 0, peak: 0 },
+    ];
     this.services = createServices(this.state.world.mapSeed, {
       offlineAiFallback: this.offlineAiFallback,
     });
@@ -696,6 +729,12 @@ export class GameApp {
       fixedStepSec,
     };
     this.#applyMemoryPressureGuard();
+    // v0.10.1-n (A2 perftrace) — render-loop derived observability surface.
+    // Always-on FPS so headless reviewers (whose RAF is throttled to 1 Hz)
+    // can still read the value the game *thinks* it is rendering at via
+    // `window.__fps_observed`. When `?perftrace=1` is set, additionally
+    // export a top-3 hot-system snapshot to `window.__perftrace`.
+    this.#publishPerftraceSurfaces(rawFrameDt, rawFrameMs);
     this.aiHealthMonitor.elapsedSec += frameDt;
     if (this.aiHealthMonitor.elapsedSec >= this.aiHealthMonitor.intervalSec) {
       this.aiHealthMonitor.elapsedSec = 0;
@@ -704,6 +743,92 @@ export class GameApp {
     if (this.state.debug) {
       this.state.debug.rng = this.services.rng.snapshot();
     }
+  }
+
+  // v0.10.1-n (A2 perftrace) — Step 1 + Step 2.
+  // Step 1 (always on): writes `window.__fps_observed = { fps, p5, sampleCount,
+  //   frameDtMs }` derived from the game's own render loop. EMA alpha=0.15
+  //   matches `timeScaleActual` smoothing. Headless Chromium throttles RAF to
+  //   1 Hz, but the game still ticks via the GameLoop callback — so this is
+  //   the only honest FPS the validator can read in CI.
+  // Step 2 (gated by `?perftrace=1`): writes `window.__perftrace` with the
+  //   top-3 entries of `state.debug.systemTimingsMs` sorted by `.peak` then
+  //   `.avg`, plus the simStepper signals. Reuses the pre-allocated
+  //   `_perftraceTopBuffer` so the gated path allocates nothing per frame.
+  #publishPerftraceSurfaces(rawFrameDt, rawFrameMs) {
+    if (typeof window === "undefined") return;
+
+    const dtMs = Math.max(0.0001, rawFrameMs > 0 ? rawFrameMs : rawFrameDt * 1000);
+    const instantFps = 1000 / dtMs;
+    const alpha = 0.15;
+    this._fpsObservedSmoothed = this._fpsObservedSampleCount === 0
+      ? instantFps
+      : this._fpsObservedSmoothed * (1 - alpha) + instantFps * alpha;
+    this._fpsObservedSampleCount += 1;
+    const ringCap = this._fpsSamplesMs.length;
+    this._fpsSamplesMs[this._fpsRingHead] = dtMs;
+    this._fpsRingHead = (this._fpsRingHead + 1) % ringCap;
+    if (this._fpsRingFilled < ringCap) this._fpsRingFilled += 1;
+    // p5 of FPS = 5th-percentile FPS = inverse of 95th-percentile dtMs.
+    // Sort a copy of the populated ring slice (small, 60 floats) once per
+    // tick; this allocates ~60 * 8 bytes which is small versus the GC noise
+    // already present in render. We can revisit if A2 follow-up flags it.
+    const filled = this._fpsRingFilled;
+    let p5Fps = this._fpsObservedSmoothed;
+    if (filled >= 2) {
+      const copy = new Array(filled);
+      for (let i = 0; i < filled; i += 1) copy[i] = this._fpsSamplesMs[i];
+      copy.sort((a, b) => a - b);
+      const p95Idx = Math.min(filled - 1, Math.floor(filled * 0.95));
+      const p95DtMs = Math.max(0.0001, copy[p95Idx]);
+      p5Fps = 1000 / p95DtMs;
+    }
+    window.__fps_observed = {
+      fps: Number.isFinite(this._fpsObservedSmoothed) ? this._fpsObservedSmoothed : 0,
+      p5: Number.isFinite(p5Fps) ? p5Fps : 0,
+      sampleCount: this._fpsObservedSampleCount,
+      frameDtMs: dtMs,
+    };
+
+    if (!this.perftraceEnabled) return;
+    const timings = this.state.debug?.systemTimingsMs;
+    if (!timings || typeof timings !== "object") return;
+    // Find the top-3 entries by `.peak` (then `.avg` as tiebreaker) without
+    // a full sort: we walk all entries 3 times, picking the largest each
+    // pass. systemTimingsMs is small (~22 systems) so 3*N is cheap.
+    const buf = this._perftraceTopBuffer;
+    const usedNames = new Set();
+    for (let slot = 0; slot < buf.length; slot += 1) {
+      let bestName = "";
+      let bestPeak = -1;
+      let bestAvg = -1;
+      let bestLast = 0;
+      for (const name in timings) {
+        if (usedNames.has(name)) continue;
+        const stat = timings[name];
+        if (!stat) continue;
+        const peak = Number(stat.peak ?? 0);
+        const avg = Number(stat.avg ?? 0);
+        if (peak > bestPeak || (peak === bestPeak && avg > bestAvg)) {
+          bestPeak = peak;
+          bestAvg = avg;
+          bestLast = Number(stat.last ?? 0);
+          bestName = name;
+        }
+      }
+      const cell = buf[slot];
+      cell.name = bestName;
+      cell.last = bestName ? bestLast : 0;
+      cell.avg = bestName ? bestAvg : 0;
+      cell.peak = bestName ? bestPeak : 0;
+      if (bestName) usedNames.add(bestName);
+    }
+    window.__perftrace = {
+      topSystems: buf,
+      maxStepsPerFrame: this.maxSimulationStepsPerFrame,
+      simStepsThisFrame: Number(this.state.metrics?.simStepsThisFrame ?? 0),
+      timeScaleActualWall: Number(this.state.metrics?.timeScaleActualWall ?? 0),
+    };
   }
 
   render(dt) {

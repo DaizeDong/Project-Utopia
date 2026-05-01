@@ -43,6 +43,10 @@ export class PerformancePanel {
 
     this.benchmarkStatusVal = document.getElementById("benchmarkStatusVal");
     this.performanceSummaryVal = document.getElementById("performanceSummaryVal");
+    // v0.10.1-n (A2 perftrace) — top-systems sub-section is created lazily on
+    // first render so it only exists when `?perftrace=1` populated
+    // `window.__perftrace`. Stored as `perftraceTopSystemsVal` once created.
+    this.perftraceTopSystemsVal = null;
     this.benchmarkLastRunVal = document.getElementById("benchmarkLastRunVal");
     this.simControlVal = document.getElementById("simControlVal");
     this.fpsVal = document.getElementById("fpsVal");
@@ -191,6 +195,46 @@ export class PerformancePanel {
     this.#syncBenchmarkConfigLabels();
   }
 
+  // v0.10.1-n (A2 perftrace) — append a "Top systems" sub-section under the
+  // existing PerformancePanel body when `window.__perftrace` is populated.
+  // Reuses the existing `.small.muted` styling so we do not introduce a new
+  // UI panel (freeze-policy compliant — additive content in existing panel).
+  #renderPerftraceTopSystems() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    const trace = window.__perftrace;
+    if (!trace || !Array.isArray(trace.topSystems)) {
+      if (this.perftraceTopSystemsVal && this.perftraceTopSystemsVal.style.display !== "none") {
+        this.perftraceTopSystemsVal.style.display = "none";
+      }
+      return;
+    }
+    if (!this.perftraceTopSystemsVal) {
+      const anchor = this.performanceSummaryVal;
+      if (!anchor || !anchor.parentNode) return;
+      const el = document.createElement("div");
+      el.id = "perftraceTopSystemsVal";
+      el.className = "small muted";
+      el.style.marginTop = "3px";
+      el.style.maxHeight = "5em";
+      el.style.overflowY = "auto";
+      el.title = "Top hot systems (A2 perftrace) — sorted by peak ms.";
+      anchor.parentNode.insertBefore(el, anchor.nextSibling);
+      this.perftraceTopSystemsVal = el;
+    }
+    if (this.perftraceTopSystemsVal.style.display === "none") {
+      this.perftraceTopSystemsVal.style.display = "";
+    }
+    const parts = ["Top systems:"];
+    for (const entry of trace.topSystems) {
+      if (!entry || !entry.name) continue;
+      parts.push(
+        ` ${entry.name} peak=${Number(entry.peak ?? 0).toFixed(2)}ms avg=${Number(entry.avg ?? 0).toFixed(2)}ms`,
+      );
+    }
+    if (parts.length === 1) parts.push(" (no samples yet)");
+    this.perftraceTopSystemsVal.textContent = parts.join(" |");
+  }
+
   #emitBenchmarkConfig() {
     if (!this.benchmarkStageDurationInput || !this.benchmarkSampleStartInput || !this.benchmarkScheduleInput) return;
     const stageDurationSec = Math.max(1, Math.min(30, Number(this.benchmarkStageDurationInput.value) / 10));
@@ -237,6 +281,12 @@ export class PerformancePanel {
       const breakdown = this.state.controls.populationBreakdown ?? { baseWorkers: 0, stressWorkers: 0, totalWorkers: 0 };
       this.workerBreakdownVal.textContent = `Workers: base=${breakdown.baseWorkers} stress=${breakdown.stressWorkers} total=${breakdown.totalWorkers}`;
     }
+    // v0.10.1-n (A2 perftrace) — render top-3 hot systems below the existing
+    // panel body when GameApp has populated `window.__perftrace` (i.e. the
+    // user opened with `?perftrace=1`). The container is created lazily and
+    // stays hidden / detached when the flag is off so the default casual UI
+    // is unchanged.
+    this.#renderPerftraceTopSystems();
     if (this.downloadBenchmarkBtn) this.downloadBenchmarkBtn.disabled = !this.state.metrics.benchmarkCsvReady;
     const activePhase = this.state.session?.phase === "active";
     if (this.pauseBtn) {

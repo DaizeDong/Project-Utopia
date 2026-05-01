@@ -50,6 +50,27 @@ function collectNonFiniteMetrics(sample) {
     .map(([key]) => key);
 }
 
+// v0.10.1-n (A2 perftrace) — extract the top-3 hot systems from
+// `state.debug.systemTimingsMs` for the long-run telemetry sample. Pure read
+// of the existing instrumentation — no new tap. Sorted by `.peak` desc, with
+// `.avg` as tiebreaker, mirroring `window.__perftrace.topSystems`.
+function buildTopSystemMs(state, limit = 3) {
+  const timings = state.debug?.systemTimingsMs;
+  if (!timings || typeof timings !== "object") return [];
+  const entries = [];
+  for (const [name, stat] of Object.entries(timings)) {
+    if (!stat) continue;
+    entries.push({
+      name: String(name),
+      last: round(stat.last ?? 0, 2),
+      avg: round(stat.avg ?? 0, 2),
+      peak: round(stat.peak ?? 0, 2),
+    });
+  }
+  entries.sort((a, b) => (b.peak - a.peak) || (b.avg - a.avg));
+  return entries.slice(0, limit);
+}
+
 function buildPopulationByGroup(state) {
   const agents = Array.isArray(state.agents) ? state.agents.filter((entity) => entity?.alive !== false) : [];
   const animals = Array.isArray(state.animals) ? state.animals.filter((entity) => entity?.alive !== false) : [];
@@ -234,6 +255,7 @@ export function buildLongRunTelemetry(state, viewState = null) {
       entityCount: Number(state.metrics?.populationStats?.totalEntities ?? (state.agents.length + state.animals.length)),
       renderFrameCount: Number(state.metrics?.renderFrameCount ?? 0),
       simStepsThisFrame: Number(state.metrics?.simStepsThisFrame ?? 0),
+      topSystemMs: buildTopSystemMs(state, 3),
       uiCpuMs: round(state.metrics?.uiCpuMs ?? 0, 2),
       renderCpuMs: round(state.metrics?.renderCpuMs ?? 0, 2),
     },
