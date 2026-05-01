@@ -104,6 +104,32 @@
   the GREEN-threshold formula `(closed + documented_defer) >= total *
   0.8 AND 0 regressed` is **10/10 = 100%**.
 
+### Docs (HW7 Round 1 → Round 2 — action-items audit closeout)
+
+- **B1 action-items audit Round 2 verdict**: GREEN — 8 closed / 1
+  documented-defer / 0 regressed (= 100% effective coverage under the
+  `(closed + documented_defer) >= total * 0.8 AND 0 regressed`
+  threshold). Build commit `d242719`; reviewer feedback at
+  `assignments/homework7/Final-Polish-Loop/Round2/Feedbacks/B1-action-items-auditor.md`.
+- **AI-8 (ultra-speed perf at 1000 entities) marked documented-defer**:
+  under the v0.10.1 balance overhaul, the natural population ceiling is
+  ~20 (recruit-cost gate + post-rewrite food economy); the observable
+  12–19 entity regime measured 200–240 FPS with p95 ≈ 4–8 ms in B1 R2
+  reproduction; the 1000-entity pathological pressure point flagged by
+  HW6 R9 reviewer-b at ≈0.9 FPS is structurally unreachable in standard
+  play. Building a debug spawn-multiplier UI to artificially reach that
+  scale would constitute a freeze-violating UI-panel addition under
+  HW7's hard freeze. Perf overlay / cap UI deferred to post-HW7
+  (re-open path: `?perfhud=1` query-flag toggle on the existing
+  `PerformancePanel`, same vector as the AI-6 re-open path).
+- **2nd documented-defer in B1 audit history** (1st: AI-6 durable
+  character memory, R1; 2nd: AI-8 ultra-speed perf, R2). Both root
+  causes are post-rewrite scope reductions, not unaddressed defects:
+  AI-6 was bounded by the v0.10.0 Worker-FSM −2530 LOC rewrite
+  shrinking per-character state, AI-8 is bounded by the v0.10.1 balance
+  overhaul keeping natural pop count an order of magnitude below the
+  HW6 stress envelope.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 0
 
 ### Polish (HW7 Round 0 — A4-polish-aesthetic wave-0)
