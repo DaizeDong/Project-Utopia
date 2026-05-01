@@ -2095,13 +2095,22 @@ export class GameApp {
       this._lastAutoOverlay = mode;
       this.#syncTerrainLensLabel(mode);
       if (mode) {
+        // v0.10.1-A3 (F3) — surface BOTH the tool that was selected AND the
+        // auto-overlay side-effect in one toast. Reviewer A3 pressed `2`
+        // expecting a build-tool toast and instead saw the overlay name only,
+        // making the keybinding feel like a lie. Format:
+        //   "Tool: Farm · auto-overlay: Fertility"
         const MODE_LABELS = {
-          fertility:     "Overlay: Fertility",
-          elevation:     "Overlay: Elevation",
-          connectivity:  "Overlay: Connectivity",
-          nodeDepletion: "Overlay: Node Health",
+          fertility:     "Fertility",
+          elevation:     "Elevation",
+          connectivity:  "Connectivity",
+          nodeDepletion: "Node Health",
         };
-        this.state.controls.actionMessage = `Auto-overlay: ${MODE_LABELS[mode] ?? mode}`;
+        const toolLabel = typeof tool === "string" && tool.length > 0
+          ? tool.charAt(0).toUpperCase() + tool.slice(1)
+          : String(tool);
+        this.state.controls.actionMessage =
+          `Tool: ${toolLabel} · auto-overlay: ${MODE_LABELS[mode] ?? mode}`;
         this.state.controls.actionKind = "info";
       }
     }
