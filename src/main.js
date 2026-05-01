@@ -145,6 +145,40 @@ export function normalizeRegenerateArgs(raw) {
 
 const canvas = typeof document !== "undefined" ? document.getElementById("c") : null;
 
+/**
+ * Register a single capture-phase `error` listener that swallows the
+ * well-known benign Chromium warning
+ *   "ResizeObserver loop completed with undelivered notifications."
+ *
+ * This warning is harmless (Chromium fires it whenever a ResizeObserver
+ * callback synchronously triggers another layout) but it pollutes
+ * DevTools and inflates `error` counts in any external stability
+ * harness (A1-stability-hunter P2-2). We expose a counter on
+ * `window.__utopiaBenignSuppressed` so tests / harnesses can still
+ * assert that the suppression fired N times.
+ *
+ * Idempotent: guarded against HMR re-runs by `window.__utopiaBenignErrorInstalled`.
+ * No-op in Node (`typeof window === 'undefined'`).
+ */
+export function installBenignErrorFilter() {
+  if (typeof window === "undefined") return;
+  if (window.__utopiaBenignErrorInstalled) return;
+  window.__utopiaBenignErrorInstalled = true;
+  window.__utopiaBenignSuppressed = window.__utopiaBenignSuppressed ?? 0;
+  window.addEventListener(
+    "error",
+    (event) => {
+      const message = event?.message;
+      if (typeof message === "string" && message.startsWith("ResizeObserver loop")) {
+        event.preventDefault?.();
+        event.stopImmediatePropagation?.();
+        window.__utopiaBenignSuppressed = (window.__utopiaBenignSuppressed ?? 0) + 1;
+      }
+    },
+    { capture: true },
+  );
+}
+
 function mountBootError(message) {
   const panel = document.createElement("div");
   panel.id = "bootError";
@@ -175,6 +209,7 @@ const cleanupApp = () => {
 // so the `normalize*` functions above can still be imported for unit tests.
 if (canvas) {
   try {
+    installBenignErrorFilter();
     app = new GameApp(canvas);
     app.start();
     const devOn = readInitialDevMode({
@@ -205,8 +240,12 @@ if (canvas) {
       },
       placeFirstValidBuild: (tool, centerIx, centerIz, radius) =>
         app?.placeFirstValidBuild?.(tool, centerIx, centerIz, radius) ?? null,
-      saveSnapshot: (slotId) => app?.saveSnapshot?.(slotId),
-      loadSnapshot: (slotId) => app?.loadSnapshot?.(slotId),
+      saveSnapshot: (slotId) =>
+        app?.saveSnapshot?.(slotId) ??
+        { ok: false, reason: "notReady", reasonText: "GameApp not initialised." },
+      loadSnapshot: (slotId) =>
+        app?.loadSnapshot?.(slotId) ??
+        { ok: false, reason: "notReady", reasonText: "GameApp not initialised." },
     };
     if (!devOn) {
       window.__utopia = undefined;
