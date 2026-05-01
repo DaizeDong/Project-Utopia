@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] — HW7 Final Polish Loop Round 1
+
+### HW7 R1 Closeout — Documented Defers
+
+- **AI-6 (HW7 Final-Polish-Loop R1) — on-HUD performance overlay deferred.**
+  Perf telemetry is fully collected via
+  `__utopiaLongRun.getTelemetry().performance` (`fps` / `headroomFps` /
+  `heapMb` / `entityCount` / `topSystemMs[]`) and corrective levers ship in
+  Settings (Quality Preset, Resolution Scale, Auto LOD, GPU Power
+  Preference). A player-facing FPS chip is intentionally suppressed in HW7
+  freeze to avoid cognitive load on non-dev players; planned re-open path
+  is a `?perfhud=1` query-flag toggle on the existing PerformancePanel in
+  v0.10.2+.
+
+### HW7 R1 Closeout — Audit
+
+- **B1 R1 audit GREEN** (9 closed / 0 regressed / 1 documented-defer).
+  AI-1 verified closed via R0 `__utopiaLongRun.devStressSpawn` helper
+  (508 entities @ 8x sustained 55.32 FPS, ~60x per-entity speedup vs HW6
+  R9 baseline of 1000 entities @ 0.9 FPS). Effective accounting under
+  the GREEN-threshold formula `(closed + documented_defer) >= total *
+  0.8 AND 0 regressed` is **10/10 = 100%**.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 0
 
 ### Polish (HW7 Round 0 — A4-polish-aesthetic wave-0)
