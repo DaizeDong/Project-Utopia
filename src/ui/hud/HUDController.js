@@ -370,6 +370,37 @@ export class HUDController {
     this._statusBarObserver = observer;
   }
 
+  // v0.10.1-n (A7-rationality-audit P0 #1) — Try-Again / regenerate-world hook.
+  // When the player clicks Try Again, GameApp.regenerateWorld() rebuilds
+  // state.metrics / state.gameplay from a fresh createInitialGameState(), but
+  // HUDController carries a handful of `_last*` caches across world resets:
+  //   - _lastResourceSnapshot / _lastSnapshotSimSec / _lastComputedRates
+  //     (3-sec rate window) — previous run's `t` is now in the future relative
+  //     to the new `state.metrics.timeSec=0`, so the rate flush condition
+  //     (`simSec - this._lastSnapshotSimSec >= RATE_WINDOW_SEC`) cannot fire
+  //     until the new run accumulates past the old timer, leaving the
+  //     previous-run rate string visible for ≥1 minute.
+  //   - _lastRunoutSmoothed (per-resource EWMA) — leaks the previous run's
+  //     "until empty" estimate.
+  //   - _lastDeathsSeen / _lastBuildHint / _lastScenarioHeadlineText — stale
+  //     cause/hint strings can otherwise persist past the reset.
+  //   - _lastChainStall / _lastChainStallSec — stale stall reason.
+  // Public method so GameApp can invoke it deterministically post-reset
+  // without reaching into private fields.
+  resetTransientCaches() {
+    this._lastRunoutSmoothed = {};
+    this._lastResourceSnapshot = null;
+    this._lastSnapshotSimSec = 0;
+    this._lastComputedRates = null;
+    this._lastDeathsSeen = 0;
+    this._lastBuildHint = "";
+    this._lastScenarioHeadlineText = null;
+    this._lastChainStall = null;
+    this._lastChainStallSec = null;
+    this._runoutLoggedAt = {};
+    this.lastActionMessage = "";
+  }
+
   #dismissBootSplash() {
     if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") return;
     const splash = document.getElementById("bootSplash");
@@ -792,14 +823,38 @@ export class HUDController {
     } else if (simSec - this._lastSnapshotSimSec >= RATE_WINDOW_SEC) {
       const prev = this._lastResourceSnapshot;
       const dt = Math.max(0.0001, simSec - prev.t);
+      // v0.10.1-n (A7-rationality-audit P0 #2) — headline rate is derived
+      // from the SAME per-min accumulators that feed #renderRateBreakdown
+      // (prod / cons / spoil) so the headline cannot disagree with its own
+      // parenthetical breakdown. Previously the headline used a stock-delta
+      // sample which drifted by 14× from the metrics-sourced breakdown
+      // when warehouse deliveries / scenario re-stocks crossed the window.
+      // Fall back to the legacy stock-delta when no per-min metric is
+      // available (defence: keeps tests pinning stock-delta semantics on
+      // resources without producer/consumer instrumentation alive).
+      const m = state.metrics ?? {};
+      const deriveRate = (resource, snapKey) => {
+        const prodKey = `${resource}ProducedPerMin`;
+        const consKey = `${resource}ConsumedPerMin`;
+        const spoilKey = resource === "food" ? "foodSpoiledPerMin" : null;
+        const hasProd = m[prodKey] !== undefined;
+        const hasCons = m[consKey] !== undefined;
+        if (!hasProd && !hasCons) {
+          return ((snap[snapKey] - prev[snapKey]) / dt) * 60;
+        }
+        const prod = Number(m[prodKey] ?? 0);
+        const cons = Number(m[consKey] ?? 0);
+        const spoil = spoilKey ? Number(m[spoilKey] ?? 0) : 0;
+        return prod - cons - spoil;
+      };
       this._lastComputedRates = {
-        food: ((snap.food - prev.food) / dt) * 60,
-        wood: ((snap.wood - prev.wood) / dt) * 60,
-        stone: ((snap.stone - prev.stone) / dt) * 60,
-        herbs: ((snap.herbs - prev.herbs) / dt) * 60,
-        meals: ((snap.meals - prev.meals) / dt) * 60,
-        tools: ((snap.tools - prev.tools) / dt) * 60,
-        medicine: ((snap.medicine - prev.medicine) / dt) * 60,
+        food: deriveRate("food", "food"),
+        wood: deriveRate("wood", "wood"),
+        stone: deriveRate("stone", "stone"),
+        herbs: deriveRate("herbs", "herbs"),
+        meals: deriveRate("meals", "meals"),
+        tools: deriveRate("tools", "tools"),
+        medicine: deriveRate("medicine", "medicine"),
       };
       this._lastResourceSnapshot = snap;
       this._lastSnapshotSimSec = simSec;

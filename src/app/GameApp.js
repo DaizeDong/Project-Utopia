@@ -1435,6 +1435,13 @@ export class GameApp {
     this.state.metrics.benchmarkStatus = "idle";
     this.renderer?.resetView?.();
     this.#recomputePopulationBreakdown();
+    // v0.10.1-n (A7-rationality-audit P0 #1) — clear HUD caches that survive
+    // deepReplaceObject(). The 3-sec rate window (_lastResourceSnapshot.t)
+    // and runout-smoothed EWMA otherwise leak the previous run's numbers
+    // into the new run's stat bar / rate breakdown for ≥1 minute. Guarded
+    // because the very first regenerate call (during constructor) runs
+    // before this.hud is wired.
+    this.hud?.resetTransientCaches?.();
 
     this.state.controls.actionMessage = `Regenerated map: ${this.state.world.mapTemplateName} (seed ${this.state.world.mapSeed})`;
     this.state.controls.actionKind = "success";
@@ -2024,10 +2031,14 @@ export class GameApp {
     // wording with the HUD button label ("Heat Lens (L)"). Previously the
     // button said "Heat Lens" but the toast said "Pressure lens ...", which
     // the indie-critic reviewer flagged as split-personality naming.
+    // v0.10.1-n (A7-rationality-audit P0 #3) — align "OFF" wording with the
+    // sidebar tooltip + Help dialog so reviewers reading the docs cannot
+    // mistake the toast for a different action ("Tile icons enabled" came
+    // from setTileIconsVisible — a different sidebar button — not L).
     const label = mode === "heat"
       ? "Heat lens ON — red = surplus, blue = starved."
       : mode === "off"
-        ? "Heat lens hidden."
+        ? "Heat lens OFF."
         : "Heat lens restored.";
     this.state.controls.actionMessage = label;
     this.state.controls.actionKind = "info";

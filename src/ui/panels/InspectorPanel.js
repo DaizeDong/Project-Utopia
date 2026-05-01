@@ -1,6 +1,7 @@
 import { TILE, TILE_INFO } from "../../config/constants.js";
 import { getAiInsight, getCausalDigest, getEntityInsight, getEventInsight, getFrontierStatus, getLogisticsInsight, getTileInsight, getTrafficInsight, getWeatherInsight } from "../interpretation/WorldExplain.js";
 import { getConstructionOverlay } from "../../simulation/construction/ConstructionSites.js";
+import { isDevMode } from "../../app/devModeGate.js";
 
 const TILE_LABEL = Object.freeze(
   Object.entries(TILE).reduce((acc, [name, value]) => {
@@ -468,15 +469,30 @@ export class InspectorPanel {
     // Each <pre> block sits inside its own <details> so a 200-line
     // memory blob no longer becomes a 600-line vertical waterfall the
     // moment the parent details opens.
-    const memoryTab = `
-      <div class="inspector-section" data-inspector-section="memory">
-        <div class="small" style="margin-top:6px;"><b>Cooldown:</b> ${Number(entity.cooldown ?? 0).toFixed(2)}</div>
-        <div class="small"><b>Sabotage CD:</b> ${Number(entity.sabotageCooldown ?? 0).toFixed(2)}</div>
+    //
+    // v0.10.1-n (A7-rationality-audit P0 #4) — raw JSON dumps (blackboard /
+    // policy / groupPolicy / memory / debug) are dev telemetry, not player-
+    // visible UI. Gate the entire `<pre>` ladder behind isDevMode(state) so
+    // a casual player clicking on a worker sees Cooldown / Sabotage CD only,
+    // and dev / QA users (URL `?dev=1`, `localStorage utopia:devMode=1`, or
+    // Ctrl+Shift+D) still get the full debugger view. Same isDevMode helper
+    // HUDController already uses for diagnostic strings (see autopilotStatus
+    // / whisperBlockedReasonDev gates).
+    const devOn = isDevMode(this.state);
+    const memoryDumps = devOn
+      ? `
         <details style="margin-top:8px;"><summary class="small"><b>blackboard</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.blackboard ?? {})}</pre></details>
         <details style="margin-top:8px;"><summary class="small"><b>policy</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.policy ?? null)}</pre></details>
         <details style="margin-top:8px;"><summary class="small"><b>groupPolicy</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(groupPolicy)}</pre></details>
         <details style="margin-top:8px;"><summary class="small"><b>memory</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.memory ?? {})}</pre></details>
         <details style="margin-top:8px;"><summary class="small"><b>debug</b></summary><pre class="small" style="white-space:pre-wrap; margin-top:6px;">${safeJson(entity.debug ?? {})}</pre></details>
+      `
+      : `<div class="small muted" style="margin-top:6px;">Engineering dumps (blackboard / policy / memory / debug) hidden. Press Ctrl+Shift+D or append <code>?dev=1</code> to the URL to enable.</div>`;
+    const memoryTab = `
+      <div class="inspector-section" data-inspector-section="memory">
+        <div class="small" style="margin-top:6px;"><b>Cooldown:</b> ${Number(entity.cooldown ?? 0).toFixed(2)}</div>
+        <div class="small"><b>Sabotage CD:</b> ${Number(entity.sabotageCooldown ?? 0).toFixed(2)}</div>
+        ${memoryDumps}
       </div>
     `;
     // Note: the entity sections are appended to the same .inspector-tabs
