@@ -187,10 +187,21 @@ export function collectEconomySnapshot(state) {
 export function scorePopulation(snapshot) {
   const target = Number(BALANCE.devIndexAgentTarget ?? 30);
   if (target <= 0) return 0;
-  // 80 points at target, saturating at 100 when 25% above target.
+  // v0.10.2 PD P0-1: pop dim allowed to 200 so DevIndex composite (still
+  // clamped 0-100 by computeWeightedComposite) keeps moving past the
+  // 30-worker plateau as the colony grows further. RaidEscalator's tier
+  // curve `2.5 × log2(1 + DI/15)` was structurally capped at tier 7 once
+  // population saturated at 100. With the cap raised to 200, an 80-worker
+  // colony (ratio ≈ 3.33) can push pop-dim toward ~266, allowing the
+  // composite (after weighted blend with the other 5 dims still ≤ 100)
+  // to drift higher and unlock tiers 8-10.
+  // 80 points at target, saturating at 200 when 2.5× target.
   const ratio = snapshot.agentCount / target;
   const score = ratio * 80;
-  return clamp01To100(score);
+  if (!Number.isFinite(score)) return 0;
+  if (score < 0) return 0;
+  if (score > 200) return 200;
+  return score;
 }
 
 export function scoreEconomy(snapshot) {

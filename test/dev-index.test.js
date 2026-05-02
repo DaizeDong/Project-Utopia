@@ -82,8 +82,12 @@ test("DevIndex: all 6 dimensions stay in [0, 100] across extreme inputs", () => 
     for (const key of Object.keys(dims)) {
       const v = dims[key];
       assert.ok(Number.isFinite(v), `${label}/${key} must be finite, got ${v}`);
-      assert.ok(v >= 0 && v <= 100,
-        `${label}/${key} out of [0, 100]: ${v}`);
+      // v0.10.2 PD P0-1: population dim now caps at 200 (was 100); other
+      // dims still cap at 100. Composite math (computeWeightedComposite)
+      // still clamps the blended result to 0-100.
+      const cap = key === "population" ? 200 : 100;
+      assert.ok(v >= 0 && v <= cap,
+        `${label}/${key} out of [0, ${cap}]: ${v}`);
     }
   }
 });

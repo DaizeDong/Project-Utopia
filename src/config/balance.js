@@ -835,6 +835,11 @@ export const BALANCE = Object.freeze({
   //   DI 75 → tier  5, 2100 ticks, 2.5×
   //   DI 100 → tier 6, 1800 ticks, 2.8× (capped at raidTierMax = 10)
   devIndexPerRaidTier: 8,
+  // v0.10.2 PD P0-2: tier ceiling honoured up to 10. Pop-dim 0-200 (see
+  // EconomyTelemetry.scorePopulation + DevIndexSystem.clamp0to200) lets DI
+  // composite reach the values needed for tiers 8-10 to be triggered.
+  // Verified: RaidEscalatorSystem.computeRaidEscalation:83 clamps via
+  // `Math.max(0, Number(BALANCE.raidTierMax ?? 10))` with no upstream cap.
   raidTierMax: 10,
   raidIntervalBaseTicks: 3600,
   raidIntervalMinTicks: 600,
@@ -860,7 +865,11 @@ export const BALANCE = Object.freeze({
   raidFallbackScheduler: Object.freeze({
     graceSec: 180,        // boot grace (~3 game-min) before the first auto-raid
     popFloor: 10,         // skip if colony hasn't grown to a defendable size
-    foodFloor: 60,        // skip if starvation imminent
+    // v0.10.2 PD P0-3: 60 → 30. An 80-worker colony churning meals bounces food
+    // 8-56 most of the time, so foodFloor=60 vetoed the fallback fire on a
+    // healthy colony and stretched cadence 2-4× past nominal. 30 still skips
+    // the genuinely-starving case (popFloor=10 + graceSec=180 still in place).
+    foodFloor: 30,        // skip only if starvation imminent
     durationSec: 18,      // matches the default WorldEventSystem raid window
   }),
   // Flat aliases so callers can read BALANCE.raidFallback* directly without
@@ -868,7 +877,8 @@ export const BALANCE = Object.freeze({
   // flat-field convention this file already uses).
   raidFallbackGraceSec: 180,
   raidFallbackPopFloor: 10,
-  raidFallbackFoodFloor: 60,
+  // v0.10.2 PD P0-3: 60 → 30 — see raidFallbackScheduler.foodFloor above.
+  raidFallbackFoodFloor: 30,
   raidFallbackDurationSec: 18,
   // v0.8.2 Round-6 Wave-1 01b-playability (Step 10) — soft cap on the
   // EnvironmentDirector's threat-gated saboteur spawns. Once a run accumulates
