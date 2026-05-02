@@ -229,6 +229,43 @@ at v0.10.x maturity; the audiovisual polish is at MVP+0. Both states
 are recorded here so the RED A4 verdict is read as known scope, not
 blind spot.
 
+#### R3 Progress Note (2026-05-01) — A4 verdict RED → YELLOW, deferrals reaffirmed
+
+*Documentation-only update; no code change in this round. Recorded here so
+future readers / the §5 author do not mistake this note for a commit-able
+insight.*
+
+- **Verdict trajectory**: A4 R0 RED 3/10 → A4 R1 RED 3/10 (lighting amplitude
+  pushed in `src/render/AtmosphereProfile.js`; reviewer credited the change
+  but kept RED on overall composite) → A4 R2 RED 3/10 (reviewer
+  re-screenshotted; lighting amplification "still imperceptible" against
+  Steam-clean baseline) → **A4 R3 YELLOW 4/10** (this round). The +1
+  composite came almost entirely from V1 lighting (R2 = 2 → R3 = 4)
+  validating the R1 amplitude work after a fresh capture pass; the other
+  three sub-axes are flat or noise-band.
+- **Sub-axis vs R2 baseline**: V1 lighting 2 → 4 (+2, R1 work landed),
+  V2 colour 4 → 5 (+1, noise band — no new colour work), V3 audio 1 → 1
+  (flat — no audio shipped, freeze blocks the first asset), V4 motion
+  3 → 3 (flat — only tooltip + toast still ship), V5 bugs 4 → 4 (flat —
+  one P1 truncation + three P2/P3 still open).
+- **R3 deliberately does not amplify**: the four §4.5 deferrals (audio
+  bus + SFX, directional shadow + sunset LUT, motion / animation pass,
+  DPI / resolution scaling) remain deferred as written. R1 already pushed
+  the only lever the freeze allowed without crossing into "new visual
+  surface" (numeric tone-map amplitude). R2 was correctly told NOT to
+  amplify lighting again. R3 sustaining YELLOW without a second numeric
+  push confirms R1 was load-bearing and R2's hold-still call was right.
+- **"Good v1" effort budget reaffirmed**: ~5 work-weeks (1 w audio +
+  2 w lighting + 2 w motion + 0.6 w resolution), unchanged from §4.5
+  body. HW7 R3 budget remaining: < 1 day. The arithmetic still does not
+  close; the deferrals stand.
+- **Anti-LLM-polish posture preserved**: choosing to leave V3 = 1 and
+  V4 = 3 visible in the R3 verdict — rather than papering them with a
+  freesound.org loop or a tween library import the night before
+  submission — is the explicit TA §1.5 trade. The RED → YELLOW shift
+  is real (V1 actually moved); the remaining gaps are honestly logged
+  rather than silently amplified.
+
 > [R3 perf measurement note: see PROCESS-LOG R3 Closeout — Playwright RAF 1Hz
 > throttle is environment, not product. `__perftrace.topSystems` is the
 > ground-truth perf signal under headless harness; required Chromium flags
