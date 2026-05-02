@@ -268,6 +268,13 @@ export class GameApp {
       onStepFrames: (count) => this.stepFrames(count),
       onSetTimeScale: (scale) => this.setTimeScale(scale),
       onSetBenchmarkConfig: (config) => this.setBenchmarkConfig(config),
+      // v0.10.1-hotfix-batchC (issue #5) — Dev: Entity Inject sub-panel.
+      // Wraps existing dev APIs (devStressSpawn for workers,
+      // applyPopulationTargets for animals/clearing). All gated by `?dev=1`
+      // / Ctrl+Shift+D in the DOM (the sub-panel itself uses .dev-only).
+      onDevSetWorkerCount: (target) => this.devStressSpawn(target),
+      onDevSpawnAnimals: (opts) => this.devSpawnAnimals(opts),
+      onDevClearNonWorkers: () => this.devClearNonWorkers(),
     });
     this.developerPanel = new DeveloperPanel(this.state);
     this.gameStateOverlay = new GameStateOverlay(this.state, {
@@ -1744,6 +1751,68 @@ export class GameApp {
       total: result.total,
       fallbackTilesUsed: result.fallbackTilesUsed,
     };
+  }
+
+  /**
+   * v0.10.1-hotfix-batchC (issue #5) — Dev-only: spawn N animals of a kind
+   * (herbivore | predator) at random passable tiles. Wraps the existing
+   * createAnimal factory + the same pattern applyPopulationTargets uses for
+   * resizing animal lists. Returns `{ ok, spawned, total }` so the dev UI
+   * can echo the result.
+   *
+   * Bypasses the wildlife population system's spawn cap deliberately — the
+   * caller is a dev injecting entities for stress / debug. Workers cannot
+   * use this entry point (it's gated by the .dev-only sub-panel).
+   *
+   * @param {{kind:'herbivore'|'predator', count:number}} opts
+   * @returns {{ok:true, spawned:number, total:number} | {ok:false, reason:string}}
+   */
+  devSpawnAnimals({ kind, count } = {}) {
+    if (!this.state || this.state?.session?.phase !== "active") {
+      return { ok: false, reason: "no_session" };
+    }
+    if (!this.state.grid) return { ok: false, reason: "no_grid" };
+    const n = Math.max(0, Math.min(50, Math.floor(Number(count) || 0)));
+    if (n <= 0) return { ok: false, reason: "invalid_count" };
+    const animalKind = kind === "predator" ? ANIMAL_KIND.PREDATOR : ANIMAL_KIND.HERBIVORE;
+    const rng = () => this.services.rng.next();
+    let spawned = 0;
+    for (let i = 0; i < n; i += 1) {
+      const tile = randomPassableTile(this.state.grid, rng);
+      if (!tile) break;
+      const pos = tileToWorld(tile.ix, tile.iz, this.state.grid);
+      const animal = createAnimal(pos.x, pos.z, animalKind, rng);
+      this.state.animals.push(animal);
+      spawned += 1;
+    }
+    this.#recomputePopulationBreakdown();
+    return { ok: true, spawned, total: this.state.animals.length };
+  }
+
+  /**
+   * v0.10.1-hotfix-batchC (issue #5) — Dev-only: despawn every non-worker
+   * entity (visitors / traders / saboteurs / herbivores / predators).
+   * Workers and stress-workers are preserved. Reuses the existing
+   * applyPopulationTargets path so that downstream telemetry, replay,
+   * actionMessage, and selectedEntity housekeeping all run.
+   *
+   * @returns {{ok:true, removed:number}}
+   */
+  devClearNonWorkers() {
+    if (!this.state || this.state?.session?.phase !== "active") {
+      return { ok: false, reason: "no_session" };
+    }
+    const before = (this.state.agents?.length ?? 0) + (this.state.animals?.length ?? 0);
+    const baseWorkers = this.state.agents.filter((a) => a.type === ENTITY_TYPE.WORKER && !a.isStressWorker).length;
+    this.applyPopulationTargets({
+      workers: baseWorkers,
+      traders: 0,
+      saboteurs: 0,
+      herbivores: 0,
+      predators: 0,
+    });
+    const after = (this.state.agents?.length ?? 0) + (this.state.animals?.length ?? 0);
+    return { ok: true, removed: Math.max(0, before - after) };
   }
 
   exportReplay() {

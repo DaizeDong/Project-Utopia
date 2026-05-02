@@ -41,6 +41,22 @@ export class PerformancePanel {
     this.benchmarkScheduleInput = document.getElementById("benchmarkScheduleInput");
     this.applyBenchmarkConfigBtn = document.getElementById("applyBenchmarkConfigBtn");
 
+    // v0.10.1-hotfix-batchC (issue #5) — Dev: Entity Inject sub-panel refs.
+    // The sub-panel lives inside the existing Stress Test card (no new
+    // panel file), gated by .dev-only so it only renders for users who
+    // opted into dev mode (URL `?dev=1`, localStorage, or Ctrl+Shift+D).
+    // Three handlers wired below: onDevSetWorkerCount, onDevSpawnAnimals,
+    // onDevClearNonWorkers — all are GameApp wrappers around existing dev
+    // APIs (devStressSpawn / applyPopulationTargets) so we don't introduce
+    // any new entity-removal mechanic. Status text is reflected back so
+    // the dev sees `spawned=N total=M` after each click.
+    this.devInjectWorkerTargetInput = document.getElementById("devInjectWorkerTarget");
+    this.devInjectWorkerTargetLabel = document.getElementById("devInjectWorkerTargetLabel");
+    this.devInjectApplyWorkersBtn = document.getElementById("devInjectApplyWorkersBtn");
+    this.devInjectSpawnHerbivoresBtn = document.getElementById("devInjectSpawnHerbivoresBtn");
+    this.devInjectSpawnPredatorsBtn = document.getElementById("devInjectSpawnPredatorsBtn");
+    this.devInjectClearNonWorkersBtn = document.getElementById("devInjectClearNonWorkersBtn");
+    this.devInjectStatusVal = document.getElementById("devInjectStatusVal");
     this.benchmarkStatusVal = document.getElementById("benchmarkStatusVal");
     this.performanceSummaryVal = document.getElementById("performanceSummaryVal");
     // v0.10.1-n (A2 perftrace) — top-systems sub-section is created lazily on
@@ -121,9 +137,60 @@ export class PerformancePanel {
       if (this.benchmarkSchedulePreset) this.benchmarkSchedulePreset.value = "custom";
     });
 
+    // v0.10.1-hotfix-batchC (issue #5) — Dev: Entity Inject wiring.
+    this.devInjectWorkerTargetInput?.addEventListener("input", () => {
+      this.#syncDevInjectWorkerLabel();
+    });
+
+    this.devInjectApplyWorkersBtn?.addEventListener("click", () => {
+      const target = Math.max(0, Math.min(200, Number(this.devInjectWorkerTargetInput?.value ?? 0) | 0));
+      const result = this.handlers?.onDevSetWorkerCount?.(target);
+      this.#showDevInjectStatus(this.#formatDevSpawnResult(result, `Set Workers → ${target}`));
+    });
+
+    this.devInjectSpawnHerbivoresBtn?.addEventListener("click", () => {
+      const result = this.handlers?.onDevSpawnAnimals?.({ kind: "herbivore", count: 5 });
+      this.#showDevInjectStatus(this.#formatDevSpawnResult(result, "+5 Herbivores"));
+    });
+
+    this.devInjectSpawnPredatorsBtn?.addEventListener("click", () => {
+      const result = this.handlers?.onDevSpawnAnimals?.({ kind: "predator", count: 5 });
+      this.#showDevInjectStatus(this.#formatDevSpawnResult(result, "+5 Predators"));
+    });
+
+    this.devInjectClearNonWorkersBtn?.addEventListener("click", () => {
+      const result = this.handlers?.onDevClearNonWorkers?.();
+      this.#showDevInjectStatus(this.#formatDevSpawnResult(result, "Clear Non-Workers"));
+    });
+
     this.#syncInputLabel();
     this.#syncTimeScaleLabel();
     this.#syncBenchmarkConfigSection();
+    this.#syncDevInjectWorkerLabel();
+  }
+
+  #syncDevInjectWorkerLabel() {
+    if (!this.devInjectWorkerTargetInput || !this.devInjectWorkerTargetLabel) return;
+    const v = Math.max(0, Math.min(200, Number(this.devInjectWorkerTargetInput.value) | 0));
+    this.devInjectWorkerTargetLabel.textContent = String(v);
+  }
+
+  #showDevInjectStatus(text) {
+    if (this.devInjectStatusVal) this.devInjectStatusVal.textContent = String(text ?? "");
+  }
+
+  #formatDevSpawnResult(result, label) {
+    if (!result) return `${label} → no handler`;
+    if (result.ok === false) return `${label} → blocked (${result.reason ?? "unknown"})`;
+    if (typeof result.spawned === "number" || typeof result.total === "number") {
+      const spawned = Number(result.spawned ?? 0);
+      const total = Number(result.total ?? 0);
+      return `${label} → spawned ${spawned}, total ${total}`;
+    }
+    if (typeof result.removed === "number") {
+      return `${label} → removed ${result.removed} non-worker entit${result.removed === 1 ? "y" : "ies"}`;
+    }
+    return `${label} → ok`;
   }
 
   #isElementFocused(el) {
