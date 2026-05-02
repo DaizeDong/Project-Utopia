@@ -182,6 +182,16 @@
 
 ### Docs (HW7 Round 2 → Round 3 — sustained stable)
 
+- B1 R3 action-items-auditor GREEN (9/10): all R8/R9 P0/P1 closed; AI-8
+  (trait behaviour) + AI-9 (heat-lens click-path recipe) both
+  documented-defer per hard-freeze conservatism (new UI affordance →
+  freeze-violation; equivalent info already closed in Worker Focus +
+  R3 A7 heat-lens context label flip `c4b526d`); 0 regressed. Effective
+  trail-closed 11/11 = 100% under `(closed + documented_defer) >=
+  total * 0.8 AND 0 regressed`; stop-condition #4 met for third
+  consecutive round (R1 + R2 + R3 streak). See PROCESS-LOG R3 Closeout
+  — Action Items Audit (B1) for the full 11-item R0→R3 trajectory
+  table and AI-9 reclassification rationale.
 - A2 R3 perf YELLOW: documented Playwright headless RAF 1Hz throttle as
   measurement-pipeline issue (not product); see PROCESS-LOG R3 Closeout for
   required Chromium flags (`--disable-renderer-backgrounding
