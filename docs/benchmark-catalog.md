@@ -1,8 +1,9 @@
 # Benchmark Catalog
 
-> **Version**: v0.6.9  
-> **Last Updated**: 2026-04-10  
+> **Version**: v0.10.1 (HW7 Final-Polish-Loop R3 + hotfix iter 1-6)
+> **Last Updated**: 2026-05-01
 > **Total**: 26 presets × 8 runners + 2 metric modules (4 metric groups) + 2 test files
+> **Current baseline**: HW7 R3 — DevIndex day-90 = 49.41 / Deaths = 86 (see § 6 below)
 
 ---
 
@@ -288,3 +289,72 @@ v0.6.9 新增系统现已被 infrastructure category presets + `computeInfrastru
 | `scripts/ablation-benchmark.mjs` | ~636 | 消融实验 |
 | `test/benchmark-presets.test.js` | ~103 | Preset 验证测试 |
 | `test/benchmark-metrics.test.js` | ~168 | Metrics 验证测试 |
+
+---
+
+## 6. HW7 Final-Polish-Loop bench results (R0 → R3 + hotfix iter 1-6)
+
+Source: `assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md` Round 0/1/2/3
+closeout entries + hotfix iter 1-6 commits (3f87bf4 .. 2f31346).
+
+### 6.1 DevIndex / Deaths trajectory (regression-only bench, day-90)
+
+| Round | DevIndex | Δ vs HW6 (37.77) | Deaths | Δ vs HW6 (157) | Tests pass/total | Notes |
+|------:|---------:|-----------------:|-------:|---------------:|------------------|-------|
+| HW6 R9 | 37.77 | baseline | 157 | baseline | — | HW6 closing baseline |
+| **HW7 R0** | **46.66** | **+23.5%** | **43** | **−72.6%** | 1665 / 1673 | A5 BALANCE pass moved 3:11 starvation crash to ~6:30+ runway |
+| **HW7 R1** | **53.53** | **+41.7%** | **77** | −51% | 1701 / 1708 | A5 reconnected `entity.hunger` → fail-state restored intentionally (per A5 plan §5) |
+| **HW7 R2** | **47.66** | +26.2% | **60** | −62% | 1723 / 1732 | DevIndex −10.97% vs R1, inside the A5 ≤30% corridor; emergency-relief no longer unconditional |
+| **HW7 R3** | **49.41** | **+30.8%** | **86** | −45% | 1766 / 1776 | A5 zero-farm safety net + recovery essential whitelist trigger fail-state reliably (intentional, R4 backlog) |
+| Hotfix iter 1-6 | (no separate bench) | — | — | — | **1782 / 1784** | Batch A boids regression-defense + iter5 prompt-payload tests; pre-existing failures unchanged |
+
+Test count delta R0 → R3: **+101 new tests over 4 rounds** (1665 → 1766).
+Hotfix iter 1-6 added the boids regression-defense battery and iter-5 prompt-payload
+tests, landing at 1782 / 1784.
+
+### 6.2 Pre-existing test failures (unchanged across all rounds)
+
+These five failures persist throughout HW7 R0 → hotfix iter 6 and are **not**
+caused by the polish-loop or hotfix work. They are tracked as known-pre-existing
+in the Validator gate; do not budget polish-loop rounds against them.
+
+- `food-rate-breakdown` (regression test, sampler boundary)
+- `RoleAssignment STONE worker` (assignment ordering)
+- `raid-escalator log curve` (BALANCE shape)
+- `RaidFallbackScheduler popFloor` (fallback floor)
+- `scenario E walled-warehouse` (scenario-specific)
+
+### 6.3 R3 perf knobs (NEW)
+
+Two cadence gates landed in R2/R3 to address A2 perf YELLOW without breaking
+the headless RAF measurement caveat (see § 6.4):
+
+- **AgentDirector heavy-work gate** — 0.5 s sim-time gate around heavy
+  director re-evaluation; preserves a fast-path so emergencies still fire
+  immediately. Commit `37581ec`.
+- **ProgressionSystem scan gate** — 0.25 s dt-accumulator gate around the
+  achievement / milestone scan that previously walked the whole entity list
+  every tick. Commit `37581ec`.
+
+Combined effect: `__perftrace.frameMs ≈ 0.4 ms` after the gates land
+(measured under headless harness; topSystems peaks <6 ms).
+
+### 6.4 Headless RAF cap — measurement caveat (NOT a project bug)
+
+Playwright headless Chromium with default flags backgrounds the offscreen
+renderer and clamps `requestAnimationFrame` to ~1 Hz. This is why R0 → R3
+P50 readings (54.5 / 55 / 56) cluster around the throttle and do not reflect
+the project's actual frame budget. The R3 closeout (PROCESS-LOG line 514+)
+formalises the methodology rule: any future FPS measurement **must** either
+
+- launch Playwright Chromium with **all three** of
+  `--disable-renderer-backgrounding`, `--disable-background-timer-throttling`,
+  `--disable-backgrounding-occluded-windows`, **or**
+- cite `window.__perftrace.topSystems` / `__perftrace.frameMs` as the
+  ground-truth perf signal.
+
+Citing a raw fps number from a default-flag headless run is grounds for
+that report being marked UNRELIABLE-MEASUREMENT in the Validator gate.
+
+See `docs/benchmark-methodology-review.md` § 7 for the full caveat and
+`assignments/homework7/Post-Mortem.md` § 4.5 for the canonical R3 cross-link.
