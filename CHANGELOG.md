@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r6-PG (R6 PG-bridge-and-water, P0)
+
+### PG bridge-and-water — bridges complete from shore + roadAStar interleaves bridge steps across water
+
+Implements the two coupled P0 fixes from `Round6/Plans/PG-bridge-and-water.md` (Reviewer PG-bridge-and-water, Tier A). Direction A: stand-on tile + Manhattan ≤ 1 arrival for water-blueprint construction + WATER-permitted A* with bridge step tagging. Addresses the user's two reports: "workers can't build bridges, all bridges never construct" and "AI road planning often stops at the water edge". Hard-freeze compliant (no new tiles / roles / buildings / mood / audio / UI panel; bridge tile + tool already exist).
+
+**1. P0 F1: `getBuildStandTile(grid, site)` helper (`src/simulation/construction/ConstructionSites.js`)** — New exported helper. Returns the site tile if passable (canonical land-build path); otherwise scans 4-neighbours via `MOVE_DIRECTIONS_4` and returns the first passable one (canonical bridge-on-water path: shore tile). Returns `null` only when the site is impassable AND none of its four neighbours are passable (orphan mid-ocean blueprint — preserves the OLD failure mode for that pathological case so the planner is the right place to prevent it).
+
+**2. P0 F1: `SEEKING_BUILD.onEnter` + `BUILDING.onEnter` split nav target from site target (`src/simulation/npc/fsm/WorkerStates.js`)** — Both onEnters now call `getBuildStandTile` and write `worker.fsm.target` to the stand-on tile (shore for water blueprints, site itself for land blueprints) AND populate `worker.fsm.payload = { siteIx, siteIz, adjacentArrival }`. The dispatcher (`PriorityFSM._enterState`) wipes payload on every transition, so BUILDING.onEnter rebuilds it — that's why the same code lives in both places. Pre-fix `worker.fsm.target` was the water tile itself, A* returned `null` (`isPassable(WATER) === false`), and the BUILDER cycled IDLE↔SEEKING_BUILD forever.
+
+**3. P0 F1: `arrived` (WorkerStates) + `arrivedAtFsmTarget` (WorkerConditions) accept Manhattan ≤ 1 when `payload.adjacentArrival === true`** — Both predicates now check the adjacent-arrival branch only when the payload flag is set (other states never set it, so strict-equality semantics are unchanged). The transition predicate version is critical: `SEEKING_BUILD → BUILDING` fires on `arrivedAtFsmTarget`, which previously did pure `here.ix === t.ix && here.iz === t.iz` and therefore never fired for a worker on the shore.
+
+**4. P0 F1: `fsmTargetGone` payload-aware lookup (`src/simulation/npc/fsm/WorkerConditions.js`)** — Without this fix, the SEEKING_BUILD/BUILDING transition `fsmTargetGone` predicate looked up `state.constructionSites` by the navigation target coordinate (the SHORE tile), found nothing, and immediately bounced the worker back to IDLE. The fix routes the lookup through `payload.siteIx/siteIz` when `adjacentArrival === true`.
+
+**5. P0 F1: `BUILDING.tick` arrival gate + apply-at-site-coords (`src/simulation/npc/fsm/WorkerStates.js`)** — Tick body now `if (!arrived(worker, state)) return;` before applying work, so a still-walking BUILDER doesn't silently complete a bridge from across the map. `applyConstructionWork(state, site.ix, site.iz, dt)` already addresses by site coords, so the bridge tile mutates correctly when the shore-standing BUILDER applies enough work-seconds.
+
+**6. P0 F2: `roadAStar` admits WATER neighbours at `BRIDGE_STEP_COST` (`src/simulation/ai/colony/RoadPlanner.js`)** — `ROAD_PASSABLE` is unchanged; the A* expansion now also accepts WATER as a neighbour with `stepCost = max(5.0, BUILD_COST.bridge.wood + BUILD_COST.bridge.stone)`. Floor at 5× a normal grass step ensures land paths win on ties; the punitive cost matches the bridge resource opportunity cost. `reconstructPath` now reads the `tiles` array and tags each step with `type: 'bridge'` (water) or `type: 'road'` (land); `planRoadConnections` honours the tag when building `roadSteps`; `roadPlansToSteps` and `planLogisticsRoadSteps` propagate the per-step type. Pre-fix the planner's only valid response to a water-blocked goal was `null`, and `findDisconnectedBuildings` silently dropped the FARM from the schedule.
+
+**7. P0 F2: `ColonyPlanner` consumer honours bridge step type (`src/simulation/ai/colony/ColonyPlanner.js`)** — The `planLogisticsRoadSteps` consumer at line 906 was hardcoded to emit `_step(..., "road", ...)` for every step. Now reads `rs.type` and emits `bridge` for water crossings — so the autopilot puts an actual bridge blueprint at the crossing instead of a road blueprint that BuildSystem rejects with `waterBlocked`.
+
+**Tests added:** `test/construction/bridge-completes.test.js` (2 cases: BUILDER on shore at (3,4) completes a bridge blueprint at the water tile (4,4) within 120 sim seconds — pre-fix tile stays WATER forever; `getBuildStandTile` returns own coords for land sites and a 4-neighbour shore for water sites). `test/world/pathfinding/road-astar-bridge-interleave.test.js` (2 cases: planRoadConnections returns a non-null plan across a single-tile water gap with exactly one `type: 'bridge'` step on the water tile and propagates it through `roadPlansToSteps`; A* prefers all-land detour when one exists — water cost is punitive, no false bridge emissions). All 4 new cases pass.
+
+**Test baseline:** 1895 tests / 1885 pass / 6 fail (all pre-existing on parent `351bff6`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step, HUDController score+dev tooltip) / 4 skip. Net +2 passes vs parent (1883 → 1885) from the 4 new test cases (2 of them subsume the `getBuildStandTile` shape contract). Zero new failures introduced; all 96 existing FSM / pathfinding / construction / build tests remain green.
+
+**Files changed:** 5 source (`src/simulation/construction/ConstructionSites.js`, `src/simulation/npc/fsm/WorkerStates.js`, `src/simulation/npc/fsm/WorkerConditions.js`, `src/simulation/ai/colony/RoadPlanner.js`, `src/simulation/ai/colony/ColonyPlanner.js`; +194 / -26 LOC) + 2 new tests (~140 LOC) + CHANGELOG.
+
 ## [Unreleased] — v0.10.2-r5-PF (R5 PF-milestone-tone-gate, P1)
 
 ### PF milestone-tone-gate — defer celebratory milestones during mass starvation

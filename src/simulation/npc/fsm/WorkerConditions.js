@@ -184,7 +184,24 @@ export function arrivedAtFsmTarget(worker, state, _services) {
   const t = worker?.fsm?.target;
   if (!t || !state?.grid) return false;
   const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
-  return here.ix === Number(t.ix) && here.iz === Number(t.iz);
+  if (here.ix === Number(t.ix) && here.iz === Number(t.iz)) return true;
+  // R6 PG-bridge-and-water — adjacent-arrival branch for build states whose
+  // construction site is on an impassable tile (canonical case: bridge
+  // blueprint on TILE.WATER). SEEKING_BUILD.onEnter / BUILDING.onEnter set
+  // `payload.adjacentArrival = true` and stash the actual site coords in
+  // `payload.siteIx/siteIz`; the BUILDER stands on a 4-neighbour land tile
+  // (worker.fsm.target) and we count Manhattan(here, site) ≤ 1 as arrived
+  // so SEEKING_BUILD → BUILDING fires. Other state.payload entries never
+  // set `adjacentArrival`, so existing strict-equality semantics hold.
+  const payload = worker?.fsm?.payload;
+  if (payload?.adjacentArrival === true
+      && Number.isFinite(payload.siteIx)
+      && Number.isFinite(payload.siteIz)) {
+    const dx = Math.abs(here.ix - payload.siteIx);
+    const dz = Math.abs(here.iz - payload.siteIz);
+    if (dx + dz <= 1) return true;
+  }
+  return false;
 }
 
 // Path failure / target validity
@@ -221,10 +238,21 @@ export function pathFailedRecently(worker, state, services) {
 export function fsmTargetGone(worker, state, _services) {
   const t = worker?.fsm?.target;
   if (!t || !state?.grid) return false;
+  // R6 PG-bridge-and-water — for adjacent-arrival builds (bridge on water)
+  // the navigation target is a SHORE tile and the site lives at
+  // payload.siteIx/siteIz. Look up the construction site by the payload
+  // coords when available so the SEEKING_BUILD/BUILDING transitions don't
+  // immediately fire `fsmTargetGone=true` (no site on the shore tile) and
+  // bounce back to IDLE.
+  const payload = worker?.fsm?.payload;
+  const lookupIx = (payload?.adjacentArrival === true && Number.isFinite(payload.siteIx))
+    ? payload.siteIx : t.ix;
+  const lookupIz = (payload?.adjacentArrival === true && Number.isFinite(payload.siteIz))
+    ? payload.siteIz : t.iz;
   // For build sites: if no entry in state.constructionSites, gone.
   const sites = Array.isArray(state.constructionSites) ? state.constructionSites : [];
   if (sites.length > 0) {
-    const found = sites.some((s) => s && s.ix === t.ix && s.iz === t.iz);
+    const found = sites.some((s) => s && s.ix === lookupIx && s.iz === lookupIz);
     if (!found) return true;
   }
   return false;
