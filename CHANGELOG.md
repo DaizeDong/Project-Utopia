@@ -2,6 +2,54 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
+### A5 Balance-Critic — recovery whitelist + food-rate sampler + Riverlands distinct goals (R3 P0×3)
+
+- **fix (P0-1 autopilot livelock)**: `src/simulation/meta/ProgressionSystem.js` —
+  exported `RECOVERY_ESSENTIAL_TYPES` (frozen `Set` of `farm`/`lumber`/
+  `warehouse`/`road`) and helper `isRecoveryEssential(type)` so every planner
+  layer reads the same whitelist instead of re-listing it. `maybeTriggerRecovery`
+  now sets `state.gameplay.recovery.essentialOnly` from `state.ai.foodRecoveryMode
+  || isFoodRunwayUnsafe(state)` every tick. `src/simulation/meta/ColonyDirectorSystem.js` —
+  imports `RECOVERY_ESSENTIAL_TYPES` + `isRecoveryEssential` and replaces the
+  hard-coded `new Set([…])` filter; recovery branch additionally pushes a
+  `lumber@92` need when `wood < 10` so wood-floor doesn't strand the farm
+  build queue. Added a `farm@99` zero-farm safety net (only fires when
+  `currentFarms === 0 && timeSec < 180`) so the autopilot can never start
+  a run with `warehouse@82 + warehouse@70 + lumber@66` ahead of the first
+  farm — the exact 3-map × 3-seed livelock the R3 reviewer reproduced
+  ("0 farms until t=3:08 on Plains").
+- **fix (P0-2 13× food-rate discrepancy)**: `src/app/GameApp.js` —
+  `#observeFoodRecovery` recovery toast now subtracts `state.metrics.foodSpoiledPerMin`
+  from the precrisis-event netPerMin so the toast reads the SAME formula
+  (`prod - cons - spoil`) the HUD Resource panel uses. Pre-fix the toast
+  showed `-509.5/min` while the panel showed `-39.7/min` (13× drift caused
+  by the toast omitting spoilage); the player saw a permanent false alarm.
+- **fix (P0-3 Riverlands ≠ Plains)**: `src/world/scenarios/ScenarioFactory.js` —
+  hoisted Riverlands targets + objectiveCopy out of the shared frontier_repair
+  literal into per-template tables (`FRONTIER_REPAIR_TARGETS_BY_TEMPLATE` /
+  `FRONTIER_REPAIR_OBJECTIVE_COPY_BY_TEMPLATE`). Plains keeps its canonical
+  `farms 6 / lumbers 3 / walls 8 / roads 20`. Riverlands now ships
+  `farms 8 (+33%) / lumbers 2 / walls 4 (-50%) / roads 18 / bridges 2`,
+  `stockpile 110 food / 80 wood`, `stability 6 walls / prosperity 60 / threat 42`.
+  Wetland identity finally surfaces in the goal stripe — the two maps no
+  longer read identical at game start.
+- **test**: 3 new test files / 10 new test points
+  - `test/recovery-essential-whitelist.test.js` — 5 points: whitelist set
+    membership, helper boolean contract, zero-farm safety-net priority >= 95,
+    recovery-mode needs are 100% whitelisted, recovery essentialOnly flag
+    flips with food runway.
+  - `test/food-rate-consistency.test.js` — 2 points: parsed toast `net /min`
+    value within ±10% of panel formula, sweep across spoil ∈ {0,5,12,25}.
+  - `test/scenario-riverlands-goals.test.js` — 3 points: Riverlands logistic
+    targets distinct from Plains (farms 8 vs 6, walls 4 vs 8, +bridges 2),
+    stockpile + stability targets diverge, objective copy mentions wetland
+    identity (8 farms + bridges).
+- **test baseline**: 1762 / 1753 pass / 6 fail / 3 skip (was 1752 / 1743
+  pass / 6 fail / 3 skip; +10 pass, identical fail set: escalation-lethality,
+  foodProducedPerMin flush, RoleAssignment-1-quarry, RaidEscalator DI=30,
+  RaidFallbackScheduler popFloor, FSM scenario E walled-warehouse — all
+  pre-existing per R3 baseline).
+
 ### A3 First-Impression — three P0s (click router + Help/briefing single-source + Best Runs banner)
 
 - **fix (UX P0)**: `src/ui/tools/BuildToolbar.js` — second-click on the
