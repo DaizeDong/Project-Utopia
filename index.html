@@ -3533,7 +3533,12 @@
             <li><b>DRIFT</b> — the colony is idle, between directives (menu phase, or right after load).</li>
           </ul>
           <h3>Supply-Chain Heat Lens</h3>
-          <p>Press <code>L</code> to show the first bottleneck. In <i>heat</i> mode, the map paints <span style="color:#e95c4d;">red</span> over surplus trapped behind storage and <span style="color:#4da8e9;">blue</span> over processors or routes that are starving for input.</p>
+          <ul>
+            <li><b>What it shows</b> — circles surface worker bottlenecks: clusters where multiple workers are queuing on the same warehouse for delivery (<span style="color:#e95c4d;">red</span>, surplus trapped behind storage) or starving for an input (<span style="color:#4da8e9;">blue</span>, processors and routes waiting on raw goods).</li>
+            <li><b>Severity by size</b> — circle radius scales with how many workers share that bottleneck tile, so a fat red dot is a worse jam than a thin one. Numbers in the tooltip break down workers per resource.</li>
+            <li><b>How to fix it</b> — drop a Warehouse near a hot red cluster to absorb the surplus, or extend a Road from the nearest depot toward a blue cluster so the starved processor gets its input feed sooner. Re-route stalled producers by erasing a far worksite and re-placing it adjacent to the new depot.</li>
+            <li><b>Shortcut</b> — toggle the lens with <code>L</code>; the legend in the bottom-left explains the active mode (Pressure &rarr; Heat &rarr; Off).</li>
+          </ul>
           <h3>Templates change the whole run</h3>
           <p>Each template rewrites the first minutes. Plains reward quick expansion, highlands force chokepoints, basins force gate control, islands force bridges, and riverlands force throughput. Pick the template before <b>Start Colony</b> and the opening pressure changes immediately.</p>
           <p>The briefing tells you what to fix first, what will fail if you delay, and why a bigger or smaller map changes the opening pace.</p>
