@@ -569,16 +569,34 @@ export class EntityFocusPanel {
     if (!this.workerListRoot) return;
     const focus = deriveEntityFocusGroups(this.state);
     const selectedId = this.state.controls?.selectedEntityId ?? "";
-    const requestedFilter = String(this.state.controls?.entityFocusFilter ?? "all");
-    const activeFilter = requestedFilter === "all" || Object.hasOwn(ENTITY_FOCUS_GROUP_META, requestedFilter)
+    // v0.10.1-r4-A3 (F3) — default chip changed from "all" to "workers"
+    // (My workers). A3 reviewer (10s+ scan time) could not locate "my 12
+    // workers" in the 26-entity mixed list (saboteur/trader/wolf/deer/worker
+    // jumbled). The "workers" filter is a virtual chip (not in
+    // ENTITY_FOCUS_GROUP_META) that filters by `entity.type === "WORKER"`
+    // — wildlife (ANIMAL) and visitors (VISITOR/raider/saboteur/trader)
+    // are hidden until the player explicitly clicks "All" or a status
+    // chip. The chip is still one click to swap.
+    const requestedFilter = String(this.state.controls?.entityFocusFilter ?? "workers");
+    const activeFilter = requestedFilter === "all"
+      || requestedFilter === "workers"
+      || Object.hasOwn(ENTITY_FOCUS_GROUP_META, requestedFilter)
       ? requestedFilter
-      : "all";
+      : "workers";
     if (this.state.controls && this.state.controls.entityFocusFilter !== activeFilter) {
       this.state.controls.entityFocusFilter = activeFilter;
     }
     const PAGE_SIZE = 20;
     const activeGroup = focus.groups.find((group) => group.id === activeFilter);
-    const filteredRows = activeFilter === "all" ? focus.rows : (activeGroup?.rows ?? []);
+    // v0.10.1-r4-A3 (F3) — "workers" virtual filter restricts to type==="WORKER"
+    // (mirrors `state.agents` membership without needing a Set lookup).
+    const workerRows = focus.rows.filter((row) => String(row.entity?.type ?? "").toUpperCase() === "WORKER");
+    const workerCount = workerRows.length;
+    const filteredRows = activeFilter === "all"
+      ? focus.rows
+      : activeFilter === "workers"
+        ? workerRows
+        : (activeGroup?.rows ?? []);
     let shown = filteredRows.slice(0, PAGE_SIZE);
     const selectedInFilterIndex = filteredRows.findIndex((row) => row.entity?.id === selectedId);
     if (selectedInFilterIndex >= PAGE_SIZE && PAGE_SIZE > 0) {
@@ -610,7 +628,11 @@ export class EntityFocusPanel {
 
     const chipStyle = "font:inherit;font-size:10px;line-height:1.1;padding:3px 6px;border-radius:999px;border:1px solid rgba(80,140,200,0.28);background:rgba(80,140,200,0.08);color:rgba(208,232,255,0.82);cursor:pointer;";
     const activeChipStyle = "background:rgba(120,180,220,0.25);border-color:rgba(120,180,220,0.65);color:var(--text);";
+    // v0.10.1-r4-A3 (F3) — "My workers" chip is rendered first (left of
+    // "All") so the default selection sits at the leftmost position. The
+    // count uses workerRows (type==="WORKER" only), matching the filter.
     const chips = [
+      { id: "workers", label: "My workers", count: workerCount },
       { id: "all", label: "All", count: focus.total },
       ...focus.groups.map((group) => ({ id: group.id, label: group.label, count: group.rows.length })),
     ].map((chip) => {
@@ -663,7 +685,13 @@ export class EntityFocusPanel {
     const displayFooter = overflow > 0
       ? `<div class="entity-worker-list-footer">+${overflow} more${hiddenSummary ? `: ${escapeHtml(hiddenSummary)}` : ""}</div>`
       : (filteredRows.length === 0
-        ? `<div class="entity-worker-list-footer">(no ${escapeHtml(activeFilter === "all" ? "focusable" : entityFocusGroupMeta(activeFilter).shortLabel.toLowerCase())} entities now)</div>`
+        ? `<div class="entity-worker-list-footer">(no ${escapeHtml(
+            activeFilter === "all"
+              ? "focusable"
+              : activeFilter === "workers"
+                ? "worker"
+                : entityFocusGroupMeta(activeFilter).shortLabel.toLowerCase(),
+          )} entities now)</div>`
         : "");
     this.workerListRoot.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;">${chips}</div>${rows}${displayFooter}`;
   }
