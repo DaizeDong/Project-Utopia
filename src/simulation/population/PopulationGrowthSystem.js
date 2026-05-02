@@ -41,6 +41,41 @@ const MEMORY_HISTORY_LIMIT = 24;
 // BALANCE.recruitMinFoodBuffer.
 export const MIN_FOOD_FOR_GROWTH = Number(BALANCE.recruitMinFoodBuffer ?? 80);
 
+/**
+ * v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2) — Forward-looking food
+ * runway in seconds, used by both this system and ColonyPlanner's recruit
+ * fallback to refuse recruits when the colony cannot sustain the new mouth.
+ *
+ * Model:
+ *   drainRate (food/s) = workersCount * warehouseEatRatePerWorkerPerSecond
+ *                        - foodProductionRatePerSec
+ *   foodHeadroomSec     = food / max(0.01, drainRate)
+ *
+ * `foodProductionRatePerSec` is sourced from `state.metrics.foodProducedPerMin`
+ * (the smoothed 3-second window already published by ResourceSystem) divided
+ * by 60. When that telemetry hasn't been populated yet (early ticks, scenarios
+ * that bypass ResourceSystem) we fall back to 0 — the gate is permissive in
+ * that bootstrap window because the helper returns Infinity whenever
+ * drainRate <= 0 (i.e. we are net-positive).
+ *
+ * Returns Infinity when drainRate <= 0 (net-positive food economy: gate is
+ * always satisfied). Returns the runway in seconds otherwise.
+ *
+ * @param {object} state
+ * @param {number} workersCount  Population to model (current + 1 to test a
+ *   prospective recruit).
+ * @returns {number} foodHeadroomSec — runway in seconds, or Infinity.
+ */
+export function computeFoodHeadroomSec(state, workersCount) {
+  const food = Number(state?.resources?.food ?? 0);
+  const eatPerWorker = Number(BALANCE.warehouseEatRatePerWorkerPerSecond ?? 0.6);
+  const producedPerMin = Number(state?.metrics?.foodProducedPerMin ?? 0);
+  const productionPerSec = producedPerMin / 60;
+  const drainRate = Math.max(0, workersCount) * eatPerWorker - productionPerSec;
+  if (drainRate <= 0) return Infinity;
+  return food / Math.max(0.01, drainRate);
+}
+
 function pushMemoryLine(agent, line, key, nowSec, type = "event") {
   agent.memory ??= { recentEvents: [], dangerTiles: [] };
   if (!Array.isArray(agent.memory.recentEvents)) agent.memory.recentEvents = [];
@@ -146,6 +181,13 @@ export class RecruitmentSystem {
     state.metrics.populationInfraCap = infraCap;
     state.metrics.populationEffectiveCap = effectiveCap;
 
+    // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): forward-looking
+    // food-runway gate. We project the colony's drain at workers+queue+1
+    // (i.e. "what would the runway be if THIS recruit landed") and refuse
+    // to enqueue if that runway is below the configured floor. Mirrored at
+    // the spawn branch below and in ColonyPlanner.recruitFallback.
+    const recruitMinHeadroomSec = Number(BALANCE.recruitMinFoodHeadroomSec ?? 60);
+
     // (2) Auto-recruit branch. Top up the queue toward the EFFECTIVE cap if
     // food is safely above the min buffer and we're not already at the cap.
     // Adds at most one per 1Hz tick to keep growth pacing predictable; manual
@@ -155,12 +197,23 @@ export class RecruitmentSystem {
         && totalCurrent < effectiveCap
         && food >= recruitMinBuffer
         && recruitQueue < recruitMaxQueue) {
-      // Grow the queue by 1 per second toward the cap; cap at the gap to
-      // avoid overshoot when target shrinks.
-      const gap = effectiveCap - totalCurrent;
-      const add = Math.min(1, gap);
-      recruitQueue = Math.min(recruitMaxQueue, recruitQueue + add);
-      state.controls.recruitQueue = recruitQueue;
+      // PC-1/PC-2 gate: model the runway with the prospective new mouth in
+      // the denominator. Skip the enqueue (and surface the reason) if it
+      // would drop below the configured headroom floor.
+      const projectedHeadroom = computeFoodHeadroomSec(state, workers.length + recruitQueue + 1);
+      if (projectedHeadroom < recruitMinHeadroomSec) {
+        state.metrics.populationGrowthBlockedReason =
+          `food headroom ${projectedHeadroom.toFixed(0)}s < ${recruitMinHeadroomSec}s (auto-fill skipped)`;
+        state.metrics.foodHeadroomSec = projectedHeadroom;
+      } else {
+        // Grow the queue by 1 per second toward the cap; cap at the gap to
+        // avoid overshoot when target shrinks.
+        const gap = effectiveCap - totalCurrent;
+        const add = Math.min(1, gap);
+        recruitQueue = Math.min(recruitMaxQueue, recruitQueue + add);
+        state.controls.recruitQueue = recruitQueue;
+        state.metrics.foodHeadroomSec = projectedHeadroom;
+      }
     }
 
     // (3) Spawn branch — drain one queue entry per tick when the gates open.
@@ -179,6 +232,19 @@ export class RecruitmentSystem {
       state.metrics.populationGrowthBlockedReason = "food below recruit buffer";
       return;
     }
+
+    // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): final flow-rate gate
+    // before the spawn fires. Models the colony AFTER this recruit lands
+    // (workers.length + 1) so the gate refuses recruits that would tip the
+    // runway below the configured floor.
+    const projectedHeadroomSec = computeFoodHeadroomSec(state, workers.length + 1);
+    if (projectedHeadroomSec < recruitMinHeadroomSec) {
+      state.metrics.populationGrowthBlockedReason =
+        `food headroom ${projectedHeadroomSec.toFixed(0)}s < ${recruitMinHeadroomSec}s`;
+      state.metrics.foodHeadroomSec = projectedHeadroomSec;
+      return;
+    }
+    state.metrics.foodHeadroomSec = projectedHeadroomSec;
 
     // Pick a deterministic warehouse for placement.
     const wh = warehouses[Math.floor(rngNext() * warehouses.length)];

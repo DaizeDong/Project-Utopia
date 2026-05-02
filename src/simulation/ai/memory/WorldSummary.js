@@ -6,7 +6,10 @@ import {
   listGroupTransitions,
 } from "../../npc/state/StateGraph.js";
 import { getScenarioRuntime } from "../../../world/scenarios/ScenarioFactory.js";
-import { MIN_FOOD_FOR_GROWTH } from "../../population/PopulationGrowthSystem.js";
+import {
+  MIN_FOOD_FOR_GROWTH,
+  computeFoodHeadroomSec,
+} from "../../population/PopulationGrowthSystem.js";
 import {
   sampleTerrainAggregates,
   sampleSoilAggregates,
@@ -138,7 +141,22 @@ export function buildWorldSummary(state) {
       medicine: Number(Number(state.resources?.medicine ?? 0).toFixed(2)),
       tools: Number(Number(state.resources?.tools ?? 0).toFixed(2)),
     },
-    population: { workers, visitors, herbivores, predators },
+    population: {
+      workers,
+      visitors,
+      herbivores,
+      predators,
+      // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): forward-looking
+      // food runway in seconds, modelled at workers+1 (the cost of one
+      // hypothetical new mouth). Surfaced here so pickHighlights — and
+      // therefore every LLM channel — sees the same number the gate uses.
+      // Infinity (net-positive food) is normalised to a large finite value
+      // so JSON.stringify doesn't drop the field.
+      foodHeadroomSec: (() => {
+        const h = computeFoodHeadroomSec(state, workers + 1);
+        return Number.isFinite(h) ? Number(h.toFixed(1)) : 9999;
+      })(),
+    },
     buildings: { ...state.buildings },
     scenario: {
       id: String(runtime.scenario?.id ?? ""),
