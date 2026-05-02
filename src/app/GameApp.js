@@ -1623,12 +1623,28 @@ export class GameApp {
   }
 
   saveSnapshot(slotId = this.state.controls.saveSlotId ?? "default") {
-    const result = this.services.snapshotService.saveToStorage(
-      slotId,
-      this.state,
-      this.services.rng.snapshot(),
-      { view: this.renderer?.getViewState?.() ?? null },
-    );
+    // A1-stability-hunter Round 3 P0: defence-in-depth around the
+    // `snapshotService` `stripUncloneable` fix. If a fresh listener leak
+    // sneaks past the recursive scrubber (e.g. a class instance whose
+    // toString throws, or a future `structuredClone` quirk), the catch
+    // surfaces a user-visible warning via the existing `actionMessage`
+    // channel rather than crashing the main loop on an uncaught
+    // `DataCloneError`. Save still propagates the failure to callers via
+    // `{ok:false}` so `__utopiaLongRun` automation can react.
+    let result;
+    try {
+      result = this.services.snapshotService.saveToStorage(
+        slotId,
+        this.state,
+        this.services.rng.snapshot(),
+        { view: this.renderer?.getViewState?.() ?? null },
+      );
+    } catch (e) {
+      const reasonText = `Save Snapshot failed: ${e?.message ?? String(e)}`;
+      this.state.controls.actionMessage = reasonText;
+      this.state.controls.actionKind = "error";
+      return { ok: false, reason: "saveError", reasonText };
+    }
     this.state.controls.saveSlotId = slotId;
     this.state.controls.actionMessage = `Snapshot saved (${slotId}, ${result.bytes} bytes).`;
     this.state.controls.actionKind = "success";
