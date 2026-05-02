@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-r4-A5 (R4 wave-0 Plan 6/6)
+
+### A5 balance critic — zero-lumber + Recovery gating + map differentiation
+
+Implements 3 P0 findings from the A5-balance-critic R3 audit (`Round4/Plans/A5-balance-critic.md`). All changes stay strictly inside the freeze: no new buildings / mechanics / scenario families — only safety-net mirrors, gating predicates, and per-template constants.
+
+**1. Zero-lumber safety net (`src/simulation/meta/ColonyDirectorSystem.js`)** — Mirrors the existing zero-farm@99 pattern that has shipped since v0.10.1-r3-A5. A5 R3 measured 14 sim-min autopilot runs completing with zero Lumber tiles placed because (a) the bootstrap branch only emits lumber@78 (below warehouse@82) and (b) the emergency branch requires `wood<15 AND lumbers<6` — but with zero lumbers wood never replenishes after the initial 35-pool drains. New behaviour: when `buildings.lumbers === 0` and `state.metrics.timeSec < 240`, push `{ type: "lumber", priority: 95 }`. After the 240-sec window late-game expansion (logistics @66) owns lumber pacing.
+
+**2. Recovery boost food-floor gating (`src/simulation/meta/ProgressionSystem.js`)** — A5 R3 trace caught the unique relief charge being burned at sim 0:18 (food=332, wood=8) via the severePressure path (low-prosperity + high-threat collapseRisk). New gate: when `food >= 200 AND farms >= 1`, return early before consuming the charge. Importantly placed AFTER the `meaningfulCollapse` filter so `isFoodRunwayUnsafe` and the upstream `essentialOnly` flag still propagate normally — only the relief-charge consumption is suppressed during the easy phase. `maybeTriggerRecovery` is now exported so the regression test can call it directly.
+
+**3. Per-template starting wood + early-target hint (`src/world/scenarios/ScenarioFactory.js`, `src/entities/EntityFactory.js`)** — A5 R3 measured Archipelago effective starting wood at ~2.35 vs Temperate's full 35 because the global INITIAL_RESOURCES constant was being shared across 6 maps with vastly different opening biomes. New `STARTING_WOOD_BY_TEMPLATE` table: `temperate=35` (unchanged baseline for long-horizon benchmark), riverlands=32, highlands=38, fortified=36, **archipelago=22, coastal=20** (each covers warehouse(10)+farm(5)+spare). New `EARLY_TARGET_HINTS_BY_TEMPLATE` table attaches one map-specific opening goal as `scenario.targets.earlyHint` (Temperate→2 farms, Riverlands→1 herb garden, Highlands→1 quarry, Fortified→4 walls, Archipelago→1 bridge, Coastal→2 warehouses). EntityFactory now reads `getTemplateStartingResources(grid.templateId).wood ?? ALPHA_START_RESOURCES.wood` so unknown template IDs fall back to the legacy 35.
+
+**Tests added:** `test/colony-director-zero-lumber-safety.test.js` (3 cases: fires<240s, suppresses on lumbers>=1, expires>=240s); `test/recovery-boost-food-floor.test.js` (3 cases: gated when food>=200+farms>=1, fires on genuine food crisis, fires when farms===0 even with food>=200).
+
+**Test baseline:** 1797 tests / 1788 pass / 6 fail (all pre-existing: escalation-lethality, ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, bare-init worker-stuck) / 3 skip. Production build verified (`npx vite build`).
+
+**Files changed:** 4 (`src/simulation/meta/ColonyDirectorSystem.js`, `src/simulation/meta/ProgressionSystem.js`, `src/world/scenarios/ScenarioFactory.js`, `src/entities/EntityFactory.js`) + 2 new tests + CHANGELOG.
+
 ## [Unreleased] — HW7 Final Polish Loop Hotfix iter4
 
 ### Batch F (Issue #10) — Bottom debug panel hidden for production-deploy parity

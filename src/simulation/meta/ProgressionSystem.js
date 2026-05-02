@@ -503,7 +503,7 @@ function logObjective(state, text) {
   state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
 }
 
-function maybeTriggerRecovery(state, runtime, coverage, dt) {
+export function maybeTriggerRecovery(state, runtime, coverage, dt) {
   const recovery = ensureRecoveryState(state);
   recovery.activeBoostSec = Math.max(0, recovery.activeBoostSec - dt);
   recovery.collapseRisk = computeCollapseRisk(state, runtime, coverage);
@@ -541,6 +541,23 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
     return recovery;
   }
   if (nowSec - recovery.lastTriggerSec < BALANCE.recoveryCooldownSec) {
+    return recovery;
+  }
+  // v0.10.1-r4-A5 P0-3: food-floor gating to prevent recovery boost burning
+  // its only charge during the easy phase. A5 R3 trace: sim 0:18 (food=332,
+  // wood=8) triggered boost via severePressure path (low-prosperity+
+  // high-threat collapseRisk) — the unique relief charge consumed before
+  // any real food crisis at ~5 min. When food >= 200 AND >= 1 farm exists,
+  // there is no actual food emergency; defer the charge for a true crisis.
+  // CRITICAL: this MUST NOT short-circuit isFoodRunwayUnsafe (which is the
+  // canonical "food runway truly bad" probe — that already feeds
+  // recovery.essentialOnly above and runs independently of this gate).
+  // Concretely: the gate only blocks the charge consumption; the
+  // essentialOnly flag (line ~519) is already set above on the actual
+  // runway probe and remains active.
+  const foodNow = Number(state.resources.food ?? 0);
+  const farmsNow = Number(state.buildings?.farms ?? 0);
+  if (foodNow >= 200 && farmsNow >= 1) {
     return recovery;
   }
 

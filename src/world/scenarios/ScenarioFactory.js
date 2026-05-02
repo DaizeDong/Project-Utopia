@@ -93,6 +93,70 @@ export function getScenarioVoiceForTemplate(templateId) {
   return SCENARIO_VOICE_BY_TEMPLATE[templateId] ?? DEFAULT_VOICE_FOR_FRONTIER_REPAIR;
 }
 
+// v0.10.1-r4-A5 P0-3: per-template starting-resource overrides.
+// Pre-r4 every map shared INITIAL_RESOURCES (food=320, wood=35, stone=15)
+// regardless of opening biome. The A5 R3 audit measured Archipelago opens
+// with effective wood ~2.35 (deltas after first-tick scenario stamping +
+// island geography starves the initial lumber clusters of accessible
+// neighbors) while Temperate kept the full 35. Result: 6 maps shared one
+// BALANCE constant set so the first-3-min decisions on Archipelago and
+// Coastal felt impossible while Temperate felt trivial.
+//
+// Resolution within freeze: a per-template `wood` override returned to
+// EntityFactory.createInitialGameState. Defaults to INITIAL_RESOURCES when
+// the templateId has no override entry (so legacy callers / tests are
+// unaffected). Food + stone unchanged for now — opening food drain (0.60/s)
+// is identical across maps so the 320 floor still maps to a ~6:30 runway.
+//
+// Numbers chosen to cover ALPHA_START + warehouse(10) + farm(5) + 1 spare
+// on the wood-starved water maps so the first build cycle doesn't lock.
+const STARTING_WOOD_BY_TEMPLATE = Object.freeze({
+  temperate_plains: 35,    // unchanged — long-horizon benchmark baseline
+  fertile_riverlands: 32,  // mild dip — river maps yield wood faster
+  rugged_highlands: 38,    // slight bump — stone-rich, lumber clusters scarcer
+  fortified_basin: 36,     // mild bump — wall-heavy opening
+  archipelago_isles: 22,   // big bump from effective ~2 — see audit above
+  coastal_ocean: 20,       // big bump — hardest water map
+});
+
+/**
+ * Per-template starting resource overrides. Returns the wood floor to seed
+ * `state.resources.wood` at colony creation; food and stone fall back to
+ * the global INITIAL_RESOURCES values via the caller.
+ * @param {string} templateId
+ * @returns {{ wood: number }}
+ */
+export function getTemplateStartingResources(templateId) {
+  const wood = STARTING_WOOD_BY_TEMPLATE[templateId];
+  return Object.freeze({ wood: typeof wood === "number" ? wood : null });
+}
+
+// v0.10.1-r4-A5 P0-3: per-template early-game target hints. Surfaces a
+// single distinct opening goal per map so the UI / objective layer can
+// render "build 1 bridge" on Archipelago vs "build 2 farms" on Temperate.
+// These are *additive* hints attached to scenario.targets — they do NOT
+// replace the canonical logistics/stockpile/stability target structure
+// the objective tracker counts against. A consumer (HUD / tutorial) is
+// expected to surface earlyHint when scenario.targets.earlyHint exists.
+const EARLY_TARGET_HINTS_BY_TEMPLATE = Object.freeze({
+  temperate_plains: Object.freeze({ id: "firstFarms", count: 2, label: "Build 2 farms" }),
+  fertile_riverlands: Object.freeze({ id: "firstHerbGardens", count: 1, label: "Build 1 herb garden" }),
+  rugged_highlands: Object.freeze({ id: "firstQuarries", count: 1, label: "Build 1 quarry" }),
+  fortified_basin: Object.freeze({ id: "firstWalls", count: 4, label: "Build 4 walls" }),
+  archipelago_isles: Object.freeze({ id: "firstBridges", count: 1, label: "Build 1 bridge" }),
+  coastal_ocean: Object.freeze({ id: "firstWarehouses", count: 2, label: "Build 2 warehouses" }),
+});
+
+/**
+ * Per-template early-game first-build hint. Returns null when templateId
+ * has no override (so legacy callers see no behavioural change).
+ * @param {string} templateId
+ * @returns {{ id: string, count: number, label: string } | null}
+ */
+export function getTemplateEarlyTargetHint(templateId) {
+  return EARLY_TARGET_HINTS_BY_TEMPLATE[templateId] ?? null;
+}
+
 // v0.8.2 Round-5b (02e Step 3) — intro payload for scenario switch fade.
 // GameApp.regenerateWorld writes this to state.ui.scenarioIntro after deepReplace;
 // HUDController reads it to show a 1.5s opening-pressure overlay on the strip.
@@ -319,8 +383,13 @@ const FRONTIER_REPAIR_OBJECTIVE_COPY_BY_TEMPLATE = Object.freeze({
 });
 
 function getFrontierRepairTargets(templateId) {
-  return FRONTIER_REPAIR_TARGETS_BY_TEMPLATE[templateId]
+  const base = FRONTIER_REPAIR_TARGETS_BY_TEMPLATE[templateId]
     ?? FRONTIER_REPAIR_TARGETS_BY_TEMPLATE.temperate_plains;
+  // v0.10.1-r4-A5 P0-3: attach per-template early hint so HUD/UI can
+  // surface a map-specific opening goal without changing canonical
+  // logistics/stockpile/stability counters the objective tracker reads.
+  const earlyHint = getTemplateEarlyTargetHint(templateId);
+  return earlyHint ? { ...base, earlyHint } : base;
 }
 
 function getFrontierRepairObjectiveCopy(templateId) {
@@ -601,11 +670,19 @@ function buildGateChokepointScenario(grid) {
       [EVENT_TYPE.TRADE_CARAVAN]: [{ kind: "depot", id: "south-granary" }],
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "west-wilds" }],
     },
-    targets: {
-      logistics: { warehouses: 2, farms: 3, lumbers: 2, roads: 18, walls: 10 },
-      stockpile: { food: 88, wood: 96 },
-      stability: { walls: 14, prosperity: 56, threat: 40, holdSec: 26 },
-    },
+    // v0.10.1-r4-A5 P0-3: attach per-template earlyHint (Highlands → quarry,
+    // Fortified → walls). HUD reads scenario.targets.earlyHint to surface a
+    // map-specific opening goal; objective tracker still consumes the
+    // canonical logistics/stockpile/stability triples.
+    targets: (() => {
+      const base = {
+        logistics: { warehouses: 2, farms: 3, lumbers: 2, roads: 18, walls: 10 },
+        stockpile: { food: 88, wood: 96 },
+        stability: { walls: 14, prosperity: 56, threat: 40, holdSec: 26 },
+      };
+      const earlyHint = getTemplateEarlyTargetHint(grid.templateId);
+      return earlyHint ? { ...base, earlyHint } : base;
+    })(),
     objectiveCopy: {
       logisticsTitle: "Reopen the Basin Gates",
       logisticsDescription: "Repair the north timber gate, reclaim the south granary with a warehouse, then reach 10 walls, 3 farms, 2 lumbers, and 18 roads.",
@@ -768,11 +845,18 @@ function buildIslandRelayScenario(grid) {
       [EVENT_TYPE.TRADE_CARAVAN]: [{ kind: "depot", id: "relay-depot" }],
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "north-islet" }],
     },
-    targets: {
-      logistics: { warehouses: 2, farms: 3, lumbers: 2, roads: 22, walls: 6 },
-      stockpile: { food: 90, wood: 78 },
-      stability: { walls: 8, prosperity: 54, threat: 48, holdSec: 24 },
-    },
+    // v0.10.1-r4-A5 P0-3: attach per-template earlyHint (Archipelago →
+    // bridge, Coastal → warehouse). See getTemplateEarlyTargetHint for
+    // map → goal mapping.
+    targets: (() => {
+      const base = {
+        logistics: { warehouses: 2, farms: 3, lumbers: 2, roads: 22, walls: 6 },
+        stockpile: { food: 90, wood: 78 },
+        stability: { walls: 8, prosperity: 54, threat: 48, holdSec: 24 },
+      };
+      const earlyHint = getTemplateEarlyTargetHint(grid.templateId);
+      return earlyHint ? { ...base, earlyHint } : base;
+    })(),
     objectiveCopy: {
       logisticsTitle: "Bridge the Island Relay",
       logisticsDescription: "Bridge the harbor relay and east fields causeways, build a warehouse on the relay depot, then reach 3 farms, 2 lumbers, and 22 roads.",

@@ -15,7 +15,7 @@ import {
   describeMapTemplate,
   stripInitialBuildings,
 } from "../world/grid/Grid.js";
-import { buildScenarioBundle, seedResourceNodes } from "../world/scenarios/ScenarioFactory.js";
+import { buildScenarioBundle, seedResourceNodes, getTemplateStartingResources } from "../world/scenarios/ScenarioFactory.js";
 import { createPerformanceTelemetry } from "../app/performanceTelemetry.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
@@ -808,7 +808,15 @@ export function createInitialGameState(options = {}) {
     },
     resources: {
       food: ALPHA_START_RESOURCES.food,
-      wood: ALPHA_START_RESOURCES.wood,
+      // v0.10.1-r4-A5 P0-3: per-template starting wood overrides. Pulls
+      // from STARTING_WOOD_BY_TEMPLATE in ScenarioFactory; legacy
+      // INITIAL_RESOURCES.wood (35) is the fallback when the template
+      // has no override (preserves long-horizon benchmark baseline on
+      // temperate_plains and any unknown templateId). Audit: A5 R3
+      // measured Archipelago effective wood ~2.35 vs Temperate 35;
+      // override seeds Archipelago 22 / Coastal 20 so the first
+      // warehouse(10)+farm(5) build cycle never locks on water maps.
+      wood: getTemplateStartingResources(grid.templateId).wood ?? ALPHA_START_RESOURCES.wood,
       stone: ALPHA_START_RESOURCES.stone,
       herbs: 0,
       meals: 0,
