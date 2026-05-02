@@ -392,7 +392,7 @@ function updateZonePopulation(state, runtime, bucket, tuning, rng, dt) {
   if (
     lowPressure
     && predatorCount <= 0
-    && herbivoreCount >= Math.max(4, herbivoreLimits.target)
+    && herbivoreCount >= Math.min(herbivoreLimits.target, Math.max(herbivoreLimits.min ?? Number(tuning.herbivoreLowWatermark ?? 2), herbivoreCount))
     && control.predatorAbsentSec >= Number(tuning.predatorRecoveryDelaySec ?? 90)
     && nowSec >= Number(control.nextPredatorRecoveryAtSec ?? -Infinity)
     && predatorCount < predatorLimits.max
