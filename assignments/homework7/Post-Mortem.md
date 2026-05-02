@@ -271,6 +271,41 @@ insight.*
 > ground-truth perf signal under headless harness; required Chromium flags
 > for any RAF-driven FPS gate are documented in the same closeout.]
 
+#### R4 Progress Note (2026-05-01) — A2 headless perf measurement caveat
+
+*Documentation-only update; no code change. Recorded so the R5 reviewer
+does not re-flag the same headless RAF artefact as a sim regression.*
+
+A2 (Performance Auditor) R4 verdict landed YELLOW 4/10. The numeric
+gap (`__fps_observed.fps` p50 = 48.76 in P3 mid-load, 55.01 in P4
+stress) sits entirely inside the **headless Chromium RAF cap** band
+already flagged in the R3 perf measurement note above: an in-tab
+`requestAnimationFrame` probe measures ~238 fps free-run under the
+same Playwright Chromium build, while the in-app fps observer is
+locked at 50–57 fps. Same-window `__perftrace.topSystems` reports
+every simulation system at sub-millisecond average tick time, with
+sim 4× / 8× speed multipliers stable — i.e. the gap is harness-side
+(GPU-paint or RAF scheduler), not sim-side.
+
+R5 retest protocol (required to actually lift the YELLOW):
+
+- Run the perf battery in **headed Chrome** (not headless Chromium),
+  with display vsync engaged or `--disable-gpu-vsync` toggled in a
+  controlled A/B so the GPU-paint path and the sim-tick path can be
+  distinguished as independent fps contributors.
+- Re-run P5 at the brief-spec **30 min** window. The wave-0 P5 window
+  was compressed to 5 min (heap +14.84% — healthy at that horizon)
+  but the slower-leak band (5 min → 30 min+) is therefore unverified.
+- If headed Chrome + 30 min P5 still report sub-60 fps with sim
+  sub-ms perftrace, the next step is the deferred A2 instrumentation
+  split (`renderFps` + `simTickFps` separated in `__fps_observed`)
+  — explicitly out of scope for R4 under the P2 priority + hard-
+  freeze policy. CHANGELOG `[Unreleased]` § "Performance (HW7 R4 —
+  A2 headless cap noted)" carries the full numeric set.
+
+This caveat is queued alongside the four §4.5 deferrals as a known
+measurement-methodology gap, not as a deferred product feature.
+
 ---
 
 ## §5 AI Tool Evaluation
