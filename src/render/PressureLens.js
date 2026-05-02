@@ -354,7 +354,44 @@ export function buildPressureLens(state) {
   for (const marker of buildTrafficMarkers(state)) pushUniqueMarker(markers, marker, seen);
   for (const marker of buildEcologyMarkers(state)) pushUniqueMarker(markers, marker, seen);
 
-  return markers
+  // v0.10.1-A4 (R4 V5 #2) — source-side dedup for IDENTICAL (tile, kind,
+  // label) tuples. The screen-space dedup pass in `dedupPressureLabels`
+  // (Pass 1: same-label proximity collapse, Pass 2: cross-label bucket
+  // dedup) handles overlap on the canvas, but two source-side markers
+  // carrying the EXACT same label and kind at the EXACT same tile are
+  // unambiguous duplicates and should be collapsed before the top-24
+  // slice runs (so the budget isn't wasted on a duplicate). This is
+  // intentionally narrow — markers with DIFFERENT kinds at the same
+  // tile + label (e.g., a `bandit_raid` event whose centroid coincides
+  // with a `route` gap centroid AND shares the route's label) are
+  // preserved as distinct hazards: the bandit raid IS attacking the
+  // route, but the player needs to see both signals (one is a
+  // permanent infrastructure gap, the other is a transient attack).
+  // The screen-space Pass 1 same-label dedup will still collapse them
+  // visually if they project to the same screen pixel, but their
+  // hover-tooltip payloads remain distinct in the marker list so a
+  // player who hovers near the cluster sees the most-relevant signal.
+  const sameTileLabelSeen = new Map();
+  const dedupedMarkers = [];
+  for (const marker of markers) {
+    const ix = Math.round(Number(marker.ix ?? 0));
+    const iz = Math.round(Number(marker.iz ?? 0));
+    const label = String(marker.label ?? "");
+    const kind = String(marker.kind ?? "");
+    const k = `${ix},${iz}|${kind}|${label}`;
+    const existingIdx = sameTileLabelSeen.get(k);
+    if (existingIdx === undefined) {
+      sameTileLabelSeen.set(k, dedupedMarkers.length);
+      dedupedMarkers.push(marker);
+      continue;
+    }
+    const existing = dedupedMarkers[existingIdx];
+    const existingScore = Number(existing.priority ?? 0) * 100 + Number(existing.weight ?? 0);
+    const incomingScore = Number(marker.priority ?? 0) * 100 + Number(marker.weight ?? 0);
+    if (incomingScore > existingScore) dedupedMarkers[existingIdx] = marker;
+  }
+
+  return dedupedMarkers
     .sort((a, b) => {
       const priorityDelta = Number(b.priority ?? 0) - Number(a.priority ?? 0);
       if (priorityDelta !== 0) return priorityDelta;
