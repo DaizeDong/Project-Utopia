@@ -2,6 +2,7 @@ import { BALANCE, TERRAIN_MECHANICS } from "../../config/balance.js";
 import { TILE } from "../../config/constants.js";
 import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
+import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
 
 const DOCTRINE_PRESETS = Object.freeze({
   balanced: {
@@ -271,6 +272,27 @@ function getDoctrineMastery(state) {
   return Number.isFinite(mastery) ? Math.max(1, mastery) : 1;
 }
 
+// v0.10.1-r3-A5 P0-1: recovery-essential build whitelist. When the colony is
+// in a food runway crisis, ColonyDirectorSystem already filters fallback
+// build proposals to this set so wall/depot/wildlife builds can't crowd out
+// farms. Exposed as a named export so ColonyPlanner (LLM-fallback) and any
+// future planner layer can consult the same source-of-truth set instead of
+// hardcoding the list. Read-only (frozen) Set semantics — callers MUST NOT
+// mutate. Wood production (lumber) is included because farms cost wood and a
+// recovery cycle without lumber will starve the build queue at wood=0.
+export const RECOVERY_ESSENTIAL_TYPES = Object.freeze(new Set(["farm", "lumber", "warehouse", "road"]));
+
+/**
+ * Returns true when `buildType` is in the recovery-essential whitelist.
+ * Use this from any planner / director layer that needs to honor the
+ * "expansion paused" gate without re-listing the 4 types and risking drift.
+ * @param {string} buildType
+ * @returns {boolean}
+ */
+export function isRecoveryEssential(buildType) {
+  return RECOVERY_ESSENTIAL_TYPES.has(buildType);
+}
+
 function ensureRecoveryState(state) {
   const recovery = state.gameplay.recovery ?? (state.gameplay.recovery = {
     charges: 2,
@@ -278,12 +300,14 @@ function ensureRecoveryState(state) {
     lastTriggerSec: -Infinity,
     collapseRisk: 0,
     lastReason: "",
+    essentialOnly: false,
   });
   recovery.charges = clamp(Number(recovery.charges ?? 1), 0, BALANCE.recoveryChargeCap);
   recovery.activeBoostSec = Math.max(0, Number(recovery.activeBoostSec ?? 0));
   recovery.lastTriggerSec = Number.isFinite(recovery.lastTriggerSec) ? Number(recovery.lastTriggerSec) : -Infinity;
   recovery.collapseRisk = Math.max(0, Number(recovery.collapseRisk ?? 0));
   recovery.lastReason = String(recovery.lastReason ?? "");
+  recovery.essentialOnly = Boolean(recovery.essentialOnly);
   return recovery;
 }
 
@@ -483,6 +507,16 @@ function maybeTriggerRecovery(state, runtime, coverage, dt) {
   const recovery = ensureRecoveryState(state);
   recovery.activeBoostSec = Math.max(0, recovery.activeBoostSec - dt);
   recovery.collapseRisk = computeCollapseRisk(state, runtime, coverage);
+  // v0.10.1-r3-A5 P0-1: maintain `essentialOnly` flag every tick from the
+  // canonical inputs (autopilot foodRecoveryMode + ResourceSystem food
+  // runway probe). Downstream planners (ColonyDirectorSystem fallback,
+  // ColonyPlanner LLM-fallback) read this flag and restrict build proposals
+  // to RECOVERY_ESSENTIAL_TYPES (farm/lumber/warehouse/road) so the
+  // "expansion paused" toast cannot also pause farm placement — the
+  // exact livelock the v0.10.1-r2 reviewer reproduced on 3/3 runs.
+  const aiRecoveryActive = Boolean(state.ai?.foodRecoveryMode);
+  const runwayUnsafe = isFoodRunwayUnsafe(state);
+  recovery.essentialOnly = aiRecoveryActive || runwayUnsafe;
 
   const nowSec = Number(state.metrics.timeSec ?? 0);
   const networkReady = runtime.connectedRoutes > 0 || runtime.readyDepots > 0;

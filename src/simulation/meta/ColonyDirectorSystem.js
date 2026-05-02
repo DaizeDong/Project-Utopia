@@ -6,6 +6,7 @@ import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
 import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
 import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
+import { RECOVERY_ESSENTIAL_TYPES, isRecoveryEssential } from "./ProgressionSystem.js";
 
 const EVAL_INTERVAL_SEC = 2;
 const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
@@ -96,6 +97,19 @@ export function assessColonyNeeds(state) {
   // Cap farms relative to workers — more farms than workers can operate is waste
   const maxFarmsEmergency = Math.max(5, workers);
   const currentFarms = buildings.farms ?? 0;
+
+  // v0.10.1-r3-A5 P0-1: zero-farm safety net. Without this, the autopilot's
+  // bootstrap phase emits warehouse@82 ahead of farm@80 — at t=0 wood=34
+  // affords ~2 warehouses then drains, leaving the first farm un-placed
+  // until food runway flips unsafe (~60-90s) and the recovery branch fires.
+  // Pushing farm@99 the moment we see "0 farms exist" guarantees the colony
+  // never starts a run without a single grain producer. Confined to the
+  // first 180 sim-sec so the late-game expansion logic still owns farm
+  // pacing once the bootstrap is done.
+  if (currentFarms === 0 && Number(state.metrics?.timeSec ?? 0) < 180) {
+    needs.push({ type: "farm", priority: 99, reason: "bootstrap: zero-farm safety net" });
+  }
+
   // When food is low, prioritize warehouses if farm:warehouse ratio is high
   if (food < 30 && currentFarms >= 3 && warehouseCount > 0 && currentFarms / warehouseCount > 3) {
     // Too many farms per warehouse — logistics is the bottleneck
@@ -124,14 +138,24 @@ export function assessColonyNeeds(state) {
     if (warehouseCount < Math.floor(workers / 5) + 2) {
       needs.push({ type: "warehouse", priority: 96, reason: "recovery: restore food logistics" });
     }
+    // v0.10.1-r3-A5 P0-1: also push lumber when wood is depleted, so the
+    // recovery cycle can keep building farms (which cost wood). Pre-r3 the
+    // recovery filter whitelisted lumber but the recovery branch never
+    // pushed it, so wood=0 stalled farm placement until the bootstrap
+    // branch fired again.
+    if ((state.resources?.wood ?? 0) < 10 && (buildings.lumbers ?? 0) < 4) {
+      needs.push({ type: "lumber", priority: 92, reason: "recovery: wood floor for farm builds" });
+    }
     if ((buildings.roads ?? 0) < Math.max(6, workers)) {
       needs.push({ type: "road", priority: 88, reason: "recovery: reconnect food routes" });
     }
     needs.sort((a, b) => b.priority - a.priority);
-    const recoveryAllowed = new Set(["farm", "warehouse", "road", "lumber"]);
+    // v0.10.1-r3-A5 P0-1: source the whitelist from ProgressionSystem
+    // (RECOVERY_ESSENTIAL_TYPES) so future edits live in one place. Same
+    // set membership as before — farm/lumber/warehouse/road.
     const seenRecovery = new Set();
     return needs.filter((n) => {
-      if (!recoveryAllowed.has(n.type) || seenRecovery.has(n.type)) return false;
+      if (!isRecoveryEssential(n.type) || seenRecovery.has(n.type)) return false;
       seenRecovery.add(n.type);
       return true;
     });

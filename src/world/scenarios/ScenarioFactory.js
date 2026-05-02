@@ -271,6 +271,63 @@ function inflateTiles(grid, seeds = [], radius = 1, options = {}) {
   return tiles;
 }
 
+// v0.10.1-r3-A5 P0-3: per-template targets for the frontier_repair family.
+// Pre-r3 both temperate_plains and fertile_riverlands shared one target
+// table (warehouses 2, farms 6, lumbers 3, roads 20, walls 8) which
+// erased the "wetland" identity Riverlands' name promises. The Reviewer's
+// Round-3 audit flagged 3 maps × 3 seeds = 9 runs all funneling into the
+// same goal stripe, so even Riverlands was being scored on a "go build
+// 8 walls" contract. The Riverlands override below biases mechanical
+// targets toward agriculture (+33% farms, -50% walls, +bridges) so the
+// scenario goal stripe finally reads differently between Plains and
+// Riverlands at game start.
+const FRONTIER_REPAIR_TARGETS_BY_TEMPLATE = Object.freeze({
+  temperate_plains: Object.freeze({
+    logistics: { warehouses: 2, farms: 6, lumbers: 3, roads: 20, walls: 8 },
+    stockpile: { food: 95, wood: 90 },
+    stability: { walls: 12, prosperity: 58, threat: 44, holdSec: 30 },
+  }),
+  fertile_riverlands: Object.freeze({
+    logistics: { warehouses: 2, farms: 8, lumbers: 2, roads: 18, walls: 4, bridges: 2 },
+    stockpile: { food: 110, wood: 80 },
+    stability: { walls: 6, prosperity: 60, threat: 42, holdSec: 30 },
+  }),
+});
+
+const FRONTIER_REPAIR_OBJECTIVE_COPY_BY_TEMPLATE = Object.freeze({
+  temperate_plains: Object.freeze({
+    logisticsTitle: "Reconnect the Frontier",
+    // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — drop the inventory-list
+    // "Reconnect the west lumber outpost, reclaim the east depot with a
+    // warehouse" prose for a casual goal sentence. Mechanical targets
+    // (6 farms / 3 lumbers / 8 walls / 20 roads) stay verbatim because
+    // the objective tracker counts them; only framing is rewritten.
+    logisticsDescription: "Connect the west forest to your warehouse, plant a warehouse on the east platform, then build 6 farms, 3 lumbers, 8 walls, and 20 roads.",
+    stockpileTitle: "Refill the Stockpile",
+    stockpileDescription: "Reach 95 food and 90 wood once the repaired frontier route is running.",
+    stabilityTitle: "Fortify and Stabilize",
+    stabilityDescription: "Build 12 walls, then hold prosperity >= 58 and threat <= 44 for 30 seconds.",
+  }),
+  fertile_riverlands: Object.freeze({
+    logisticsTitle: "Reclaim the Hearth",
+    logisticsDescription: "Dig the silted lumber road free, plant a warehouse on the east granary, then sow 8 farms, 2 lumbers, 4 walls, 2 bridges, and 18 roads across the wetlands.",
+    stockpileTitle: "Lay In the Harvest",
+    stockpileDescription: "Reach 110 food and 80 wood — the river-fed valley is generous, so stockpile grain ahead of the autumn floods.",
+    stabilityTitle: "Hold the Banks",
+    stabilityDescription: "Build 6 walls, then hold prosperity >= 60 and threat <= 42 for 30 seconds while the river works for you.",
+  }),
+});
+
+function getFrontierRepairTargets(templateId) {
+  return FRONTIER_REPAIR_TARGETS_BY_TEMPLATE[templateId]
+    ?? FRONTIER_REPAIR_TARGETS_BY_TEMPLATE.temperate_plains;
+}
+
+function getFrontierRepairObjectiveCopy(templateId) {
+  return FRONTIER_REPAIR_OBJECTIVE_COPY_BY_TEMPLATE[templateId]
+    ?? FRONTIER_REPAIR_OBJECTIVE_COPY_BY_TEMPLATE.temperate_plains;
+}
+
 function buildFrontierRepairScenario(grid) {
   clearInfrastructure(grid);
 
@@ -404,24 +461,8 @@ function buildFrontierRepairScenario(grid) {
       [EVENT_TYPE.TRADE_CARAVAN]: [{ kind: "depot", id: "east-depot" }],
       [EVENT_TYPE.ANIMAL_MIGRATION]: [{ kind: "wildlife", id: "west-wilds" }],
     },
-    targets: {
-      logistics: { warehouses: 2, farms: 6, lumbers: 3, roads: 20, walls: 8 },
-      stockpile: { food: 95, wood: 90 },
-      stability: { walls: 12, prosperity: 58, threat: 44, holdSec: 30 },
-    },
-    objectiveCopy: {
-      logisticsTitle: "Reconnect the Frontier",
-      // v0.8.2 Round-6 Wave-1 02b-casual (Step 7) — drop the inventory-list
-      // "Reconnect the west lumber outpost, reclaim the east depot with a
-      // warehouse" prose for a casual goal sentence. Mechanical targets
-      // (6 farms / 3 lumbers / 8 walls / 20 roads) stay verbatim because
-      // the objective tracker counts them; only framing is rewritten.
-      logisticsDescription: "Connect the west forest to your warehouse, plant a warehouse on the east platform, then build 6 farms, 3 lumbers, 8 walls, and 20 roads.",
-      stockpileTitle: "Refill the Stockpile",
-      stockpileDescription: "Reach 95 food and 90 wood once the repaired frontier route is running.",
-      stabilityTitle: "Fortify and Stabilize",
-      stabilityDescription: "Build 12 walls, then hold prosperity >= 58 and threat <= 44 for 30 seconds.",
-    },
+    targets: getFrontierRepairTargets(grid.templateId),
+    objectiveCopy: getFrontierRepairObjectiveCopy(grid.templateId),
     hintCopy: {
       initial: voice.hintInitial,
       afterLogistics: voice.hintAfterLogistics,

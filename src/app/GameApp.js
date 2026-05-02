@@ -572,7 +572,19 @@ export class GameApp {
       ai.foodRecoveryStartedSec = nowSec;
       ai.foodRecoveryReason = "food runway unsafe";
       const d = preCrisisEvent.detail ?? {};
-      const net = Number(d.netPerMin ?? 0);
+      // v0.10.1-r3-A5 P0-2: unify food-rate sampler. The recovery toast
+      // historically displayed `produced - consumed` from the pre-crisis
+      // event detail, while the HUD Resource panel displays
+      // `produced - consumed - spoiled` from `state.metrics.*PerMin`. On a
+      // colony with significant spoilage (no warehouse coverage), the two
+      // numbers diverged by 13× (-509/min toast vs -39/min panel) and read
+      // as a 13× false alarm. Subtracting `foodSpoiledPerMin` here makes
+      // the toast read the same number the player sees in the resource
+      // panel. Falls back to the event detail's netPerMin when the
+      // spoilage metric isn't yet flushed.
+      const spoil = Number(state.metrics?.foodSpoiledPerMin ?? 0);
+      const eventNet = Number(d.netPerMin ?? 0);
+      const net = Number.isFinite(spoil) ? eventNet - spoil : eventNet;
       const risk = Number(d.starvationRisk ?? 0);
       state.controls.actionKind = "warning";
       state.controls.actionMessage = `Autopilot recovery: food runway unsafe (net ${net.toFixed(1)}/min, risk ${risk}). Expansion paused; farms, warehouses, and roads take priority.`;
