@@ -24,6 +24,8 @@ JSON schema:
 }
 
 Rules:
+- HARD SURVIVAL CHECK (overrides everything below): if `buildings.farms === 0` OR (`summary.food < 60` AND `summary.timeSec < 180`), priority MUST be "survive", resourceFocus MUST be "food", workerFocus MUST be "farm". Early-game starvation is the #1 cause of run failure — a colony with zero farms in the first 3 minutes is dying.
+- LATE-GAME STONE CHECK: if `summary.stone < 10` AND `buildings.quarries === 0`, priority MUST be "survive" (stone unlocks the smithy/kitchen/clinic chain — without a quarry the colony cannot progress past bootstrap).
 - Use "survive" when food is critically low, workers are few, or colony is near collapse.
 - Use "grow" when resources are stable and there is no immediate threat.
 - Use "defend" when threat is high or hostile events are active.
