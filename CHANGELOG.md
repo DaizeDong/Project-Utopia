@@ -208,6 +208,20 @@
   shadow + sunset LUT, motion pass, DPI scaling) reaffirmed as still
   deferred — R3 deliberately did not push a second numeric amplitude lever.
   See `assignments/homework7/Post-Mortem.md` §4.5 R3 Progress Note (2026-05-01).
+- B2 R3 submission-deliverables YELLOW score 8/10 (R2→R3 sustained-stable;
+  checklist **PASS 18 / PENDING 4 / FAIL 0**, no sub-item closed and no
+  regression). R0 RED 7/22 → R1 YELLOW 17/22 → R2 YELLOW 18/22 → R3 YELLOW
+  18/22 (cumulative **+11** across the loop). 4 PENDING items are all
+  author-fill under TA HW7 §1.5 anti-LLM-polish red line: (1) README pillar
+  names + summaries, (2) Post-Mortem §1-§5 substantive prose (esp. §5 AI
+  Tool Evaluation), (3) demo video record + URL backfill, (4) submission
+  format choice (zip OR GitHub URL — pick one). R1 engineering payload
+  (`assignments/homework7/build-submission.sh` + `npm run submission:zip`)
+  and R2 placeholder grep-gates (pillar=2, AUTHOR=4, demo=pending) all
+  preserved unchanged in R3 with no regression. See PROCESS-LOG R3 Closeout
+  — Submission Deliverables (B2) for the full 22-item trajectory table,
+  4-item author-action checklist with validator gates, and R1+R2
+  preservation verification.
 
 ## [Unreleased] — HW7 Final Polish Loop Round 1
 
