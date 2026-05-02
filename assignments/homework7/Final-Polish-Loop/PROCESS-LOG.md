@@ -419,3 +419,144 @@ HTML-comment author guard in `Post-Mortem.md`.
   `src/` or `test/` touched). Plan explicitly forbids auto-filling any
   of the 4 author-fill items per TA HW7 §1.5; implementer wrote the
   gates only.
+
+---
+
+## Round 2 — 2026-05-01 (orchestrator closeout)
+
+**HEAD**: `d242719` → `0344a4b`（Stage C 9 commits + 1 no-op = 10 plans accepted）
+**触发**: 自动 / "继续 round2 完整迭代"
+**Verdict**: YELLOW
+
+### Reviewer 输出概览
+
+- A1 stability: GREEN 8/10；0 P0 / 1 P1 / 1 P2，5 sessions ~32 min；**连续第 3 轮 0 P0 ✅** (停止条件 1 持续)；P1=×8 sim cap to ×0.3-1.1（A2 issue）；P2=top HUD freeze post-colony-end
+- A2 performance: YELLOW 4/10（P50 仍 40-42 at 4x/8x；root = simStepsPerFrame fan-out + AgentDirector 1-1.5ms with 10-13ms peaks；engine 自 cap ×0.4）→ R2 plan 加 cadence gate 修
+- A3 first-impression: YELLOW 4/10（**改善 R1 RED→YELLOW**）；2 P0：LMB 仍选 worker（R1 fix 真因 = ENTITY_PICK_GUARD_PX 36 太宽，sprite ~12px）+ Start Colony 1049×630 fold；3 P1+1 P2 → R2 plan 改 14px + hover ghost
+- A4 polish-aesthetic: RED 3/10（结构性 freeze；R1 lighting amplify 仍不可见）→ R2 plan 仅 docs Post-Mortem §4.5 consolidate 2→4 entries
+- A5 balance-critic: RED 3/10（**R1 entity.hunger fix 仍不够**：AFK 23 min food self-regen 18→313；Tier-5 raid 0 walls 仍写 defended）→ R2 plan **找到真因** = TRADE_CARAVAN +0.5/s + ProgressionSystem emergency relief +12 charges 一直补食物
+- A6 ui-design: YELLOW 5.5/10（同 R1）；2 P0：1366 chip wrap + 1024 KPI/toast z-order；P1=AILog Director Timeline 9 行重复 → R2 plan 加 1366 dedicated media + alertStack --hud-height + group fold ×N badge
+- A7 rationality-audit: YELLOW 5/10（**改善 R1 RED→R2 YELLOW**）；10 件新发现，最严重 = 工程字符串 fallback/llm/model leak 玩家 + Best Runs seed 1337 调试数据 → R2 plan 加 isDevMode gate + pickBootSeed
+- B1 action-items: GREEN 8/9 closed + AI-8 documented-defer（natural pop 上限 20）→ effective 9/9 → 停止条件 4 持续 ✅
+- B2 submission-deliverables: YELLOW 8/10（R0 3 → R1 7 → R2 8 trajectory；18/22 PASS）；4 PENDING 是作者填空（TA §1.5 anti-LLM-polish）+ 1 FAIL = submission format
+- C1 code-architect: YELLOW 6/10；**首个正 delta**：5A/11B/7C/2D（R1: 4A/11B/8C/2D）；debt -2（解 debt-pop-2 + PriorityFSM 新 A 级；R1 commits 无新 debt）；2 D 级仍 ColonyPlanner / ColonyPerceiver
+
+### 本轮通过的 plan
+
+| reviewer_id | track | scope | commit |
+|---|---|---|---|
+| A1 | docs (no-op) | GREEN 3 轮 streak documented | (no commit) |
+| B1 | docs | AI-8 documented-defer (CHANGELOG +26 + PROCESS-LOG +33) | cc39e0a |
+| A4 | docs | Post-Mortem §4.5 +84/-23 audio/lighting/motion/resolution 4 entries | c2ef09f |
+| B2 | docs | PROCESS-LOG +137 R2 4 author gates + CHANGELOG +25 trajectory | 425d669 |
+| A5 | code | **关键根因修复**：rename WhenFoodZero→WhenFoodLow + threshold=8 + TRADE_CARAVAN food 0.5→0.22 + emergency需deaths>0 + raid需walls/guards | 91a8d5b |
+| A2 | code | AgentDirector 0.5s sim-time cadence gate + ProgressionSystem 0.25s dt-accumulator gate；保留 fast-path | 37581ec |
+| C1 | code (refactor) | wave-3/4：staged FEATURE_FLAGS.USE_VISITOR_FSM=OFF + 3 fsm/Visitor*.js + 9 invariant tests +374 LOC | d725bcf |
+| A3 | code | ENTITY_PICK_GUARD 36→14 + hover ghost preview + 9 folded fixes | e5d754a |
+| A6 | code | 1366 dedicated media + alertStack --hud-height + AIPolicyTimelinePanel group fold ×N badge | 9158eb6 |
+| A7 | code | AIAutomationPanel coverage/mode/proxy/model isDevMode gate + .pressure-label CSS + pickBootSeed boot 随机化 + createServicesForFreshBoot + 6 invariant tests | 0344a4b |
+
+### Validator gate
+
+- node --test: **1723/1732 pass**（4 R0/R1 pre-existing + 2 A5-anticipated regressions: escalation-lethality distribution shift + scenario E food=5<threshold=8；3 skip）— PASS
+- prod build: vite build 2.47s 0 errors → PASS
+- preview smoke (150s on :4173): 0 console errors / 0 warnings / 0 5xx → PASS
+- FPS gate: YELLOW（mid 56.26/44.64，stress 8x/86ent 55.93/45.25，4x 56.45/44.64；frameMs=0.4ms 证 A2 cadence gate 工作；headless RAF cap 限制达不到 60 target methodology）
+- freeze-diff: PASS（16 src files；3 ADDED 在 src/simulation/npc/fsm/ 匹配 C1 plan；0 新 TILE/role/audio/panel）
+- bundle size: WARN（largest 623.30 kB；3 chunks 500K-1MB；0 chunk >1MB）
+
+### Bench (regression-only)
+
+- DevIndex day-90 = **47.66**（R1 53.53 Δ -10.97%）— **A5 plan §5 ≤30% corridor 内**，因为 emergency relief 不再无条件救济；HW6 baseline 37.77 Δ +26.2%（仍正向）
+- Deaths day-90 = **60**（R1 77 Δ -22%）— **IMPROVED**；A5 raid milestone gate 让 假胜利数 减少
+
+### 停止条件离触达
+
+| 条件 | 状态 |
+|---|---|
+| A1 stability 连续 2 轮 0 P0 | ✅ R0+R1+R2 = 3 轮 0 P0；**MET**（持续）|
+| A2 performance 连续 2 轮 P50/P5 达标 | ⚠️ R1+R2 P5 ✅ 但 P50 受 headless RAF cap 限制 ~56 < 60；A2 R2 cadence gate 已实施；real Chrome 需用户验证 |
+| A3-A7 共识问题单调下降 / 两轮无新增 | ⚠️ R2 vs R1：A3 +1, A4 = (structural), A5 = (struggling), A6 =, A7 +1；mixed trend，未严格单调下降但无 RED 新增 |
+| B1 全 closed/documented-defer | ✅ R2 = 9 closed + AI-8 documented-defer = effective 9/9；**MET**（持续 R1+R2 共 2 轮，AI-6+AI-8 都 defer）|
+| B2 全 green | ❌ R2 = 18/22 + 4 PENDING + 1 FAIL；**作者必须介入填**（pillar names / Post-Mortem §1-§5 / demo URL / submission format）|
+| C1 架构债非递增 + 0 D 级 | ⚠️ debt R1 28→R2 26（Δ -2，**首次改善**）；但 2 D 级（ColonyPlanner / ColonyPerceiver）仍存 |
+| Validator 连续 2 轮 GREEN | ❌ R0 YELLOW + R1 YELLOW + R2 YELLOW = 0 GREEN streak；headless RAF 是阻塞 |
+| 人类试玩确认无 reviewer 过拟合 | n/a | 需用户介入 |
+
+**结论：7 条停止条件中 2 条 MET（A1 + B1）；C1 debt 首次正 delta 但仍 2 D 级；headless FPS cap 阻塞 Validator GREEN；B2 PENDING 作者必须介入。**
+
+### R0 → R1 → R2 三轮 trajectory 总结
+
+| reviewer | R0 | R1 | R2 | net Δ |
+|---|---|---|---|---|
+| A1 | 8 GREEN | 8 GREEN | 8 GREEN | stable 0 P0 ✅ |
+| A2 | 4 YELLOW (unmeasurable) | 4 YELLOW (P50 ~55) | 4 YELLOW (P50 ~56) | A2 infra 加完 → cadence gate 加完，但 headless RAF cap 阻塞 |
+| A3 | 4 YELLOW | 3 RED | 4 YELLOW | net 0；R1 dip 后 R2 恢复 |
+| A4 | 3 RED | 3 RED | 3 RED | structural freeze 阻塞 |
+| A5 | 3 RED | 3 RED | 3 RED | 三轮 RED；R0/R1/R2 各 layer 真因被找到 |
+| A6 | 5 YELLOW | 5.5 YELLOW | 5.5 YELLOW | +0.5 然后稳 |
+| A7 | 4 RED | 4 RED | 5 YELLOW | R2 转 YELLOW ✅ |
+| B1 | 9/10 | 9/10 (effective 10/10) | 9/9 (effective) | stable MET ✅ |
+| B2 | 3 RED | 7 YELLOW | 8 YELLOW | +5 over 3 rounds |
+| C1 | 6 YELLOW | 6 YELLOW | 6 YELLOW (debt -2) | **首个正 debt delta** |
+
+**积极**：A1+B1 持续 GREEN；A7 R2 转 YELLOW；B2 持续上升；C1 首个正 delta；A2 infra 加完
+**阻塞**：A2 P50 受 headless RAF cap 限制（不是 project bug）；A4 audio/lighting/motion 受 freeze 阻；A5 三轮真因不同（食物 → entity.hunger → TRADE_CARAVAN/emergency）；C1 D 级系统仍 2 个
+
+### 下一轮重点（如继续 R3）
+
+1. **真实 Chrome** 测 FPS — headless RAF cap 在 Round 3 必须用 non-headless 或外部 Chrome 验证 A2 cadence gate 是否真的让 P50 ≥ 60
+2. **A5 R2 fix 验证**：A5 R3 reviewer 实测 30 分钟 AFK 是否真死人；TRADE_CARAVAN 减半 + emergency 需 deaths>0 + raid 需 walls 三件是否足够
+3. **C1 wave-4**：USE_VISITOR_FSM flag 是否翻 ON 让 VisitorAI 真正迁移；同时启动 AnimalAI 迁移
+4. **A4 freeze 边界重新评估**：是否可以放宽 freeze 让 audio + walk-cycle 进入 Round 3+？这是 user 决策
+5. **B2 PENDING 4 项**：作者必须填 pillar names / Post-Mortem §1-§5 / demo URL / submission format choice
+
+### R3 Closeout — Perf Methodology Note (A2)
+
+> **Status**: docs-only closeout note. Captured during R3 wave-0 to immortalise the
+> R0/R1/R2 perf-measurement lesson so R4+ Reviewers and Validators do not re-litigate
+> the same false-RED. Source: A2 R3 self-feedback (`Round3/Feedbacks/A2-performance-auditor.md`)
+> — A2 ran the headless build, recorded P50 ≈ 0.996 fps across all scenarios (mid /
+> stress 8x / 86-ent), then cross-checked against `window.__perftrace.topSystems` and
+> showed avg sim cost < 2 ms / peak < 6 ms / 30 min mem growth +11.52 % — all PASS.
+
+**Phenomenon — Playwright headless RAF 1 Hz throttle.** When Chromium runs headless
+under Playwright with no `--disable-renderer-backgrounding` family of flags, the
+compositor backgrounds the (offscreen) renderer and clamps `requestAnimationFrame`
+to ~1 Hz. Observed signal: `dt ≈ 1004 ms` per game tick, fps ≈ 0.996 across mid /
+stress / 86-ent, and `__perftrace.frameMs` ≈ 0.4 ms (i.e. the render loop itself
+finishes in <1 ms per frame, but the browser only fires it once per second). This
+makes any FPS measurement off the headless harness essentially uninformative — it
+measures the throttle, not the project. The R0 / R1 / R2 Validator gates all hit
+this and recorded YELLOW with "headless RAF cap" annotations; R0 → R2 P50 numbers
+(54.5 / 55 / 56) were not the project drifting — they were noise inside the throttle.
+
+**Ground-truth path — `__perftrace.topSystems`.** The project ships an in-build
+perf trace that records sim-system wall-time independent of the RAF schedule:
+`window.__perftrace.topSystems` exposes per-system avg / peak ms over a sliding
+window, and `__perftrace.frameMs` exposes the render loop wall-time. These are
+the **canonical perf signals** under headless Playwright. A2 R3 numbers (avg < 2 ms,
+peak < 6 ms, mem +11.52 % over 30 min) were collected via this path and constitute
+the actual perf verdict for Round 0 → Round 3.
+
+**Required Chromium flags for any future non-headless / hybrid FPS measurement.**
+A Reviewer or Validator that needs a real RAF-driven fps number (not a `__perftrace`
+sim-time number) must launch Playwright Chromium with **all three** of:
+
+```
+--disable-renderer-backgrounding
+--disable-background-timer-throttling
+--disable-backgrounding-occluded-windows
+```
+
+These three together prevent the headless / occluded compositor from clamping
+the RAF cadence. Missing any one of them silently re-enables the 1 Hz throttle
+on at least one Chromium version family.
+
+**Mandatory R4+ rule.** Any future Reviewer / Validator that records an FPS number
+**must** either (a) launch Playwright with the three flags above and cite which
+flags were used in their report, **or** (b) cite `window.__perftrace.topSystems` /
+`__perftrace.frameMs` as the ground-truth perf signal. Citing a raw fps number
+from a default-flag headless run is grounds for that report being marked
+UNRELIABLE-MEASUREMENT in the Validator gate. Cross-ref: `assignments/homework7/Post-Mortem.md` §4.5
+records this as the canonical R3 perf-methodology cross-link.

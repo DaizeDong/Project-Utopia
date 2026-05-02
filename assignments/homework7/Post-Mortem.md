@@ -229,6 +229,11 @@ at v0.10.x maturity; the audiovisual polish is at MVP+0. Both states
 are recorded here so the RED A4 verdict is read as known scope, not
 blind spot.
 
+> [R3 perf measurement note: see PROCESS-LOG R3 Closeout — Playwright RAF 1Hz
+> throttle is environment, not product. `__perftrace.topSystems` is the
+> ground-truth perf signal under headless harness; required Chromium flags
+> for any RAF-driven FPS gate are documented in the same closeout.]
+
 ---
 
 ## §5 AI Tool Evaluation
