@@ -636,3 +636,76 @@ All 3 share the same root: post-freeze new-affordance scope vs in-freeze
 information-access scope. The pattern is informational for future reviewers
 — "documented-defer" in B1 audit means "closed under freeze, blocked behind
 freeze for the cleaner implementation", not "unaddressed defect".
+
+### R3 Closeout — Submission Deliverables (B2)
+
+> **Status**: docs-only closeout note. Captured during R3 wave-0 to immortalise
+> the R0/R1/R2/R3 trajectory of the 22 submission-deliverables sub-items.
+> Source: B2 R3 reviewer feedback (`Round3/Feedbacks/B2-submission-deliverables.md`)
+> — verdict **YELLOW 8/10**, checklist **PASS 18 / PENDING 4 / FAIL 0**;
+> R2→R3 sustained-stable (no sub-item closed, no regression). Build commit
+> at R3: `916e63a` (parent); plan rollback anchor: `0344a4b`.
+
+**22-item trajectory table (HW7 R0 → R1 → R2 → R3):**
+
+| Round | Verdict | Score | PASS | PENDING | FAIL | Net Δ | Cumulative Δ |
+|---|---|---|---|---|---|---|---|
+| R0 | RED   | — | 7/22  | — | 5 | baseline | baseline |
+| R1 | YELLOW | — | 17/22 | 4 | 1 | +10 | +10 |
+| R2 | YELLOW | 8 | 18/22 | 4 | 0 | +1  | +11 |
+| R3 | YELLOW | 8 | 18/22 | 4 | 0 | +0 (sustained-stable) | **+11** |
+
+R3 is a **deliberate-no-op round**: every remaining open item is author-fill
+gated under TA HW7 §1.5 anti-LLM-polish red line. R3 reviewer's correct
+posture = re-run engineering grep gates + browser smoke + verify no R1/R2
+regression; **do not** LLM-fill pillar names / Post-Mortem prose / demo
+video URL. R2 made the same call; R3 maintains.
+
+**4 PENDING items — author-action checklist (no reviewer can close these).**
+
+| # | Item | Source artifact | Author action | Validator gate |
+|---|---|---|---|---|
+| 1 | README "Highlights — Two Pillars" pillar names + 2-3 sentence summaries | `README.md` line 12 + line 18 | Copy exact pillar names from `assignments/homework2/a2.md`; write author-voice summary; cite ≥1 `src/` path each | `grep -c "<copy exact pillar name from A2>" README.md` → must be **0** |
+| 2 | Post-Mortem §1-§5 substantive content | `assignments/homework7/Post-Mortem.md` line 27 / 63 / 118 / 236 + 2 pillar placeholders (line 33 / 42) | Author-voice first-person prose against existing skeleton; §5 AI Tool Evaluation MUST be hand-written (TA red line); v0.9.0 utility scoring → v0.10.0 -2530 LOC FSM rewrite is natural §5 LLM-failure-story material | `grep -c "AUTHOR:" assignments/homework7/Post-Mortem.md` → must be **0**; `grep -c "<copy exact pillar name from A2>" Post-Mortem.md` → must be **0** |
+| 3 | Demo video record + URL backfill | `assignments/homework7/Demo-Video-Plan.md` (frontmatter + §1-§4 7-shot table) | Record 3-min video against pinned commit; upload YouTube/Vimeo (NOT unlisted-only — grader visibility); update Demo-Video-Plan frontmatter `status: published` + `url:` + `recorded_against_build:`; sync URL to README line 92 + Post-Mortem Demo Video section + CHANGELOG | `grep -c "pending — see Demo-Video-Plan" README.md` → must be **0**; `grep "status:" Demo-Video-Plan.md` → must show `published` |
+| 4 | Submission format — choose ONE (zip OR GitHub URL) | `assignments/homework7/build-submission.sh` + `package.json scripts.submission:zip` | Decide: (A) `npm run submission:zip` → upload `dist-submission/*.zip` to Canvas, OR (B) push main + submit `repo URL @ commit sha`. **Submit only one** to avoid grader ambiguity | `ls assignments/homework7/dist-submission/*.zip` exists OR submitted GitHub URL reachable at pinned sha |
+
+**R1 + R2 engineering fixes — R3 verification (all preserved, no regression).**
+
+| Gate | Verification command | R3 result |
+|---|---|---|
+| `assignments/homework7/build-submission.sh` exists | `ls assignments/homework7/build-submission.sh` | ✓ EXISTS (~119 LOC, R1) |
+| `package.json` `submission:zip` script wired | `grep -c "submission:zip" package.json` | ✓ 1 hit (R1, line 42) |
+| `dist/` already built for grader | `ls dist/` | ✓ `assets/` + `index.html` |
+| README pillar placeholder count (design-intent gate) | `grep -c "<copy exact pillar name from A2>" README.md` | **2** (matches R2 design intent — author-fill anchor) |
+| Post-Mortem AUTHOR comment count (design-intent gate) | `grep -c "AUTHOR:" assignments/homework7/Post-Mortem.md` | **4** (matches R2 design intent — author-fill anchor) |
+| Demo Video URL status (design-intent gate) | README line 92 | "pending — see Demo-Video-Plan.md" (matches R2 — video unrecorded) |
+| Demo-Video-Plan.md frontmatter `status:` | `grep "^status:" Demo-Video-Plan.md` | `pending` (matches R2 — `recorded_against_build: TBD` also unchanged) |
+
+**Anti-LLM-polish posture restated for R3.** TA HW7 §1.5 explicitly states:
+"Please note that you do not need to beautify your report using LLMs.
+Reports should be clear, concise and comprehensively reflect your effort
+on the implementation." The 4 PENDING items above are NOT engineering
+defects the reviewer should close — they are author-fill anchors that
+**must remain open until the author personally completes them**. Any R3
+reviewer "convenience-fill" of pillar names, Post-Mortem prose, or fabricated
+LLM-failure stories would (a) trip TA's LLM-polish detection, (b) erase
+the +11 cumulative engineering progress, and (c) violate the explicit
+`<!-- AUTHOR: ... -->` "do NOT regenerate prose with an LLM (TA will detect)"
+comments embedded in `Post-Mortem.md` frontmatter (line 6) and skeleton
+sections. **The PENDING-4 status is design intent under freeze-aware
+process discipline, not a reviewer-fixable gap.**
+
+**Distance to GREEN = author admin work, not engineering work.** Estimated
+~30 min admin (pillar copy + Post-Mortem prose) + 1 × 3-min recording session
++ 1 submission decision. Once executed, the validator gates above flip green
+and submission ships at GREEN 22/22 with no further reviewer round needed.
+build-submission.sh's stdout heredoc already prints the 3 grep-gate reminders
+to the author at zip-time, providing redundant cueing alongside this
+PROCESS-LOG checklist.
+
+**Stop-condition #5 (B2 GREEN-or-PENDING-author-only).** R3 satisfies the
+"sustained stable, all open items author-bound" stop condition for the
+second consecutive round (R2 + R3 = 2-round streak). No further reviewer
+intervention is appropriate; the next state transition (PENDING → PASS)
+is gated on author execution, not on additional polish-loop rounds.
