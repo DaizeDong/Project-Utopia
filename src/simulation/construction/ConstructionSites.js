@@ -13,8 +13,8 @@
  * rebuild that scans tileState (used after snapshot load).
  */
 import { BALANCE } from "../../config/balance.js";
-import { TILE } from "../../config/constants.js";
-import { getTileState, setTileField, toIndex } from "../../world/grid/Grid.js";
+import { MOVE_DIRECTIONS_4, TILE } from "../../config/constants.js";
+import { getTileState, isPassable, setTileField, toIndex } from "../../world/grid/Grid.js";
 
 /**
  * Returns the BALANCE work-time (seconds) required for the given build
@@ -142,6 +142,35 @@ export function rebuildConstructionSites(state) {
 export function getConstructionOverlay(state, ix, iz) {
   const entry = getTileState(state.grid, ix, iz);
   return entry?.construction ?? null;
+}
+
+/**
+ * R6 PG-bridge-and-water — pick the tile a BUILDER should physically stand
+ * on while applying construction work to `site`. For sites whose tile is
+ * passable (FARM/LUMBER/etc on GRASS) the worker walks ONTO the site tile
+ * (returns site coords). For sites whose tile is impassable (canonical
+ * case: a `bridge` blueprint sitting on TILE.WATER), the worker cannot
+ * route to the site itself — pick the nearest 4-neighbour passable tile as
+ * the stand-on target. Returns null only when the site is impassable AND
+ * none of its four neighbours are passable (orphan blueprint mid-ocean).
+ *
+ * @param {object} grid
+ * @param {{ix:number,iz:number}} site
+ * @returns {{ix:number,iz:number}|null}
+ */
+export function getBuildStandTile(grid, site) {
+  if (!grid || !site) return null;
+  const { ix, iz } = site;
+  // Common case: the site's own tile is passable — the BUILDER stands on it.
+  if (isPassable(grid, ix, iz)) return { ix, iz };
+  // Impassable site (water bridge blueprint). Scan 4-neighbours for the
+  // first passable tile. Order matches MOVE_DIRECTIONS_4; deterministic.
+  for (const dir of MOVE_DIRECTIONS_4) {
+    const nx = ix + dir.dx;
+    const nz = iz + dir.dz;
+    if (isPassable(grid, nx, nz)) return { ix: nx, iz: nz };
+  }
+  return null;
 }
 
 /**

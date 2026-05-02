@@ -15,6 +15,7 @@ import { ROLE, TILE } from "../../../config/constants.js";
 import {
   applyConstructionWork,
   findOrReserveBuilderSite,
+  getBuildStandTile,
   releaseBuilderSite,
 } from "../../construction/ConstructionSites.js";
 import {
@@ -129,7 +130,26 @@ function arrived(worker, state) {
   const t = worker.fsm?.target;
   if (!t || !state?.grid) return false;
   const here = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), state.grid);
-  return here.ix === t.ix && here.iz === t.iz;
+  // R6 PG-bridge-and-water — water-blueprint adjacent arrival. SEEKING_BUILD
+  // sets `payload.adjacentArrival = true` + `payload.siteIx/siteIz` when the
+  // construction site is on an impassable tile (canonical case: bridge on
+  // WATER) and the worker's stand-on target is a 4-neighbour land tile.
+  // Strict equality on the stand-on target is the normal arrival predicate;
+  // the adjacent-arrival branch additionally accepts Manhattan ≤ 1 from the
+  // ACTUAL site coordinate so a BUILDER standing on the shore counts as
+  // "at" the water blueprint and BUILDING.tick can apply work. Other states
+  // (SEEKING_HARVEST/DELIVERING/SEEKING_PROCESS) never set the flag, so
+  // their strict-equality semantics are unchanged.
+  if (here.ix === t.ix && here.iz === t.iz) return true;
+  const payload = worker.fsm?.payload;
+  if (payload?.adjacentArrival === true
+      && Number.isFinite(payload.siteIx)
+      && Number.isFinite(payload.siteIz)) {
+    const dx = Math.abs(here.ix - payload.siteIx);
+    const dz = Math.abs(here.iz - payload.siteIz);
+    if (dx + dz <= 1) return true;
+  }
+  return false;
 }
 
 // IDLE
@@ -394,9 +414,28 @@ const SEEKING_BUILD = Object.freeze({
   onEnter(worker, state, _services) {
     if (!worker.fsm) return;
     const site = findOrReserveBuilderSite(state, worker);
-    worker.fsm.target = site
-      ? { ix: site.ix, iz: site.iz, meta: { siteKey: `${site.ix},${site.iz}` } }
-      : null;
+    if (!site) { worker.fsm.target = null; return; }
+    // R6 PG-bridge-and-water — split the navigation target ("stand-on tile")
+    // from the construction target ("site tile"). For land sites the two
+    // coincide. For water sites (bridge blueprint on TILE.WATER) the
+    // stand-on tile is a 4-neighbour land tile and the BUILDER applies work
+    // from there via the Manhattan ≤ 1 arrival predicate + BUILDING.tick's
+    // payload.siteIx/siteIz lookup. If no shore tile exists (orphan
+    // mid-ocean blueprint), fall back to the site tile so the OLD failure
+    // mode (A* returns null, builder loops) is preserved — the planner
+    // should have prevented mid-ocean placement in the first place.
+    const stand = getBuildStandTile(state.grid, site) ?? { ix: site.ix, iz: site.iz };
+    const adjacent = stand.ix !== site.ix || stand.iz !== site.iz;
+    worker.fsm.target = {
+      ix: stand.ix,
+      iz: stand.iz,
+      meta: { siteKey: `${site.ix},${site.iz}` },
+    };
+    worker.fsm.payload = {
+      siteIx: site.ix,
+      siteIz: site.iz,
+      adjacentArrival: adjacent,
+    };
   },
   tick(worker, state, services, dt) {
     setIntent(worker, "Seek Construct", "seek_construct");
@@ -437,9 +476,24 @@ const BUILDING = Object.freeze({
     setIntent(worker, "Construct", "construct");
     if (!worker.fsm) return;
     const site = findOrReserveBuilderSite(state, worker);
-    if (site) {
-      worker.fsm.target = { ix: site.ix, iz: site.iz, meta: { siteKey: `${site.ix},${site.iz}` } };
-    }
+    if (!site) return;
+    // R6 PG-bridge-and-water — re-derive stand-on tile + adjacent flag.
+    // PriorityFSM._enterState wipes payload on every transition, so the
+    // SEEKING_BUILD payload doesn't survive into BUILDING; rebuild it here
+    // so the dispatcher's BUILDING tick body + transition `when()` clauses
+    // (which call arrived(worker, state)) keep seeing the correct flag.
+    const stand = getBuildStandTile(state.grid, site) ?? { ix: site.ix, iz: site.iz };
+    const adjacent = stand.ix !== site.ix || stand.iz !== site.iz;
+    worker.fsm.target = {
+      ix: stand.ix,
+      iz: stand.iz,
+      meta: { siteKey: `${site.ix},${site.iz}` },
+    };
+    worker.fsm.payload = {
+      siteIx: site.ix,
+      siteIz: site.iz,
+      adjacentArrival: adjacent,
+    };
   },
   tick(worker, state, _services, dt) {
     setIntent(worker, "Construct", "construct");
@@ -449,6 +503,12 @@ const BUILDING = Object.freeze({
     syncTargetTile(worker);
     const site = findOrReserveBuilderSite(state, worker);
     if (!site) return;
+    // R6 PG-bridge-and-water — only apply work if the BUILDER is on the
+    // site tile (land case) OR within Manhattan ≤ 1 of it (water-blueprint
+    // shore case). Otherwise the worker would silently build the bridge
+    // while still walking — visible as "construction completes from across
+    // the map". The arrived() helper already encodes both branches.
+    if (!arrived(worker, state)) return;
     applyConstructionWork(state, site.ix, site.iz, dt);
     if (worker.debug) worker.debug.lastConstructApplySec = Number(state.metrics?.timeSec ?? 0);
   },

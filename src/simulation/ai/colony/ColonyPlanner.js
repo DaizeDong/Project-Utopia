@@ -897,16 +897,21 @@ export function generateFallbackPlan(observation, state) {
   const strandedNow = Number(logisticsHint?.strandedCarryWorkers ?? 0);
   if (isolatedNow >= 1 || strandedNow >= 2) {
     const roadSteps = planLogisticsRoadSteps(state);
+    // R6 PG-bridge-and-water — bridge steps carry their own resource cost
+    // (3 wood + 1 stone), so the affordability heuristic should account for
+    // both. We keep the wood-floored cap as a coarse upper bound; the
+    // BuildSystem cost guard rejects unaffordable steps at placement time.
     const affordableRoads = Math.min(roadSteps.length, Math.max(0, Math.floor(wood)));
     for (let i = 0; i < affordableRoads; i++) {
       const rs = roadSteps[i];
+      const stepKind = rs.type === "bridge" ? "bridge" : "road";
       const reasonLabel = isolatedNow >= 1 ? "isolated worksite" : "stranded carriers";
       steps.push(_step(
         nextId++,
-        "road",
+        stepKind,
         `${rs.ix},${rs.iz}`,
         "critical",
-        `Logistics: connect ${reasonLabel} via A* path tile (${rs.ix},${rs.iz})`,
+        `Logistics: connect ${reasonLabel} via A* ${stepKind} tile (${rs.ix},${rs.iz})`,
         { logistics: "isolated_resolved" },
       ));
     }

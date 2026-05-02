@@ -11,10 +11,26 @@
 
 import { TILE, TILE_INFO, MOVE_DIRECTIONS_4 } from "../../../config/constants.js";
 import { inBounds, getTile, toIndex, listTilesByType } from "../../../world/grid/Grid.js";
-import { TERRAIN_MECHANICS, BALANCE } from "../../../config/balance.js";
+import { TERRAIN_MECHANICS, BALANCE, BUILD_COST } from "../../../config/balance.js";
 import { RoadNetwork } from "../../navigation/RoadNetwork.js";
 
 const ROAD_PASSABLE = new Set([TILE.GRASS, TILE.ROAD, TILE.BRIDGE, TILE.WAREHOUSE]);
+
+// R6 PG-bridge-and-water — WATER is allowed as an A* neighbour but at a
+// punitive step cost so a land path is preferred whenever one exists. The
+// cost is the bridge build resource cost (wood + stone) which is also the
+// rough opportunity cost the colony pays per water-step crossing. The
+// reconstructed path tags water steps with `type: 'bridge'` and land steps
+// with `type: 'road'`, which roadPlansToSteps + the ColonyPlanner
+// consumer use to emit the right blueprint kind.
+const BRIDGE_STEP_COST = (() => {
+  const c = BUILD_COST?.bridge ?? {};
+  const total = Number(c.wood ?? 0) + Number(c.stone ?? 0);
+  // Floor at 5× a normal grass step (=1.0) so the A* never picks water as
+  // a tie-breaker on land-reachable plans; 4 wood + 1 stone = 5 in v0.10
+  // which already satisfies the floor.
+  return Math.max(5.0, total);
+})();
 
 // Production-style buildings whose adjacency makes a road tile "compounding" —
 // roads serving multiple worksites are worth a small cost discount because
@@ -78,7 +94,7 @@ function roadAStar(grid, startIx, startIz, endIx, endIz) {
     open.pop();
 
     if (current.key === endKey) {
-      return reconstructPath(cameFrom, current.key, width);
+      return reconstructPath(cameFrom, current.key, width, tiles);
     }
 
     if (closed.has(current.key)) continue;
@@ -96,11 +112,23 @@ function roadAStar(grid, startIx, startIz, endIx, endIz) {
       if (closed.has(nKey)) continue;
 
       const nTile = tiles[nKey];
-      if (!ROAD_PASSABLE.has(nTile) && !endpoints.has(nKey)) continue;
+      // R6 PG-bridge-and-water — WATER is allowed as a neighbour for the
+      // A* expansion (with BRIDGE_STEP_COST punishment) so planRoadConnections
+      // can produce a road→bridge→bridge→road sequence between islands.
+      // Land tiles outside ROAD_PASSABLE (FARM, WALL, ...) still block.
+      const isWaterStep = nTile === TILE.WATER;
+      if (!ROAD_PASSABLE.has(nTile) && !isWaterStep && !endpoints.has(nKey)) continue;
 
-      // Cost: existing roads are free, grass costs more
-      let stepCost = nTile === TILE.ROAD || nTile === TILE.BRIDGE || nTile === TILE.WAREHOUSE
-        ? 0.1 : 1.0;
+      // Cost: existing roads/bridges nearly free, grass costs 1, water
+      // crossings pay the bridge resource cost (≥ 5).
+      let stepCost;
+      if (isWaterStep) {
+        stepCost = BRIDGE_STEP_COST;
+      } else if (nTile === TILE.ROAD || nTile === TILE.BRIDGE || nTile === TILE.WAREHOUSE) {
+        stepCost = 0.1;
+      } else {
+        stepCost = 1.0;
+      }
 
       // Elevation penalty for road building
       if (grid.elevation) {
@@ -133,11 +161,18 @@ function heuristic(ax, az, bx, bz) {
   return Math.abs(ax - bx) + Math.abs(az - bz);
 }
 
-function reconstructPath(cameFrom, endKey, width) {
+function reconstructPath(cameFrom, endKey, width, tiles) {
   const path = [];
   let key = endKey;
   while (key !== undefined) {
-    path.push({ ix: key % width, iz: Math.floor(key / width) });
+    const ix = key % width;
+    const iz = Math.floor(key / width);
+    // R6 PG-bridge-and-water — tag the build kind per step so downstream
+    // step emitters (roadPlansToSteps + ColonyPlanner) can place a bridge
+    // blueprint on water and a road blueprint on land.
+    const t = tiles ? tiles[key] : TILE.GRASS;
+    const stepType = t === TILE.WATER ? "bridge" : "road";
+    path.push({ ix, iz, type: stepType });
     key = cameFrom.get(key);
   }
   path.reverse();
@@ -204,14 +239,19 @@ export function planRoadConnections(grid, roadNetwork) {
     const path = roadAStar(grid, building.ix, building.iz, nearestWH.ix, nearestWH.iz);
     if (!path) continue;
 
-    // Count tiles that need to become roads (skip existing roads/warehouses)
+    // Count tiles that need to become roads or bridges (skip existing
+    // roads/warehouses/bridges). R6 PG-bridge-and-water — water steps
+    // tagged by reconstructPath get emitted as bridge blueprints.
     let tilesNeeded = 0;
     const roadSteps = [];
     for (const step of path) {
       const t = getTile(grid, step.ix, step.iz);
       if (t === TILE.GRASS) {
         tilesNeeded++;
-        roadSteps.push(step);
+        roadSteps.push({ ...step, type: "road" });
+      } else if (t === TILE.WATER) {
+        tilesNeeded++;
+        roadSteps.push({ ...step, type: "bridge" });
       }
     }
 
@@ -242,8 +282,12 @@ export function roadPlansToSteps(plans, maxSteps = 12) {
   for (const plan of plans) {
     for (const tile of plan.path) {
       if (steps.length >= maxSteps) return steps;
+      // R6 PG-bridge-and-water — honour per-step type tag from the planner
+      // (road for land tiles, bridge for water crossings). Default to "road"
+      // for legacy plans / older callers that didn't tag.
+      const stepType = tile.type === "bridge" ? "bridge" : "road";
       steps.push({
-        type: "road",
+        type: stepType,
         ix: tile.ix,
         iz: tile.iz,
         priority: plan.tilesNeeded <= 3 ? "high" : "medium",
@@ -317,7 +361,9 @@ export function planLogisticsRoadSteps(state, opts = {}) {
 
   const rawSteps = roadPlansToSteps(plans, triggers.maxRoadStepsPerPlan);
   return rawSteps.map((s) => ({
-    type: "road",
+    // R6 PG-bridge-and-water — propagate the per-step type (road/bridge)
+    // so ColonyPlanner emits a bridge build step on water crossings.
+    type: s.type === "bridge" ? "bridge" : "road",
     ix: s.ix,
     iz: s.iz,
     hint: `${s.ix},${s.iz}`,
