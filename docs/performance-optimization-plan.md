@@ -1,6 +1,45 @@
 # Performance Optimization Plan
 
-Date: 2026-04-26
+Date: 2026-04-26 (original draft) — refreshed 2026-05-01 (post HW7 R3 + Hotfix iter4, HEAD `2f31346`).
+
+## HW7 Final-Polish-Loop perf track — DONE vs PLANNED
+
+The Round-9 baseline below remains the authoritative architectural picture for the simulation hotspots. HW7's Final-Polish-Loop (R0 → R3 + Hotfix iter4) layered observability and small-but-targeted shaves on top of that baseline rather than re-cutting the simulation core. See `docs/optimization-progress.md` for measured deltas.
+
+### Completed under HW7
+
+- **R0 — Observability infrastructure (DONE)**
+  - `__fps_observed` always-on render-loop FPS probe in `src/app/GameApp.js` (separate from RAF-based EMA so headless-throttle measurement is at least visible).
+  - `?perftrace=1` query flag exposes `__perftrace` snapshot of `state.debug.systemTimingsMs`.
+  - `src/ui/panels/PerformancePanel.js` renders top hot systems lazily.
+  - Regression test: `test/perf-system-budget.test.js` (soft-skipped under `CI_FAST=1`).
+- **R1 — SceneRenderer per-frame allocation shave (DONE)**
+  - `src/render/SceneRenderer.js` `__pressureLensSignature` cache short-circuit (eliminated 4/5 per-frame allocations).
+  - `__updatePressureLensLabels` Map reuse via `clear()`.
+  - Scratch buffers `_labelProjectedScratch`, `_labelEntriesScratch`, `_labelEntryToPoolIdxScratch`, `_labelVisibleCandidatesScratch`, `_labelVisibleScratchMap` reused via `length = 0` / `clear()`.
+  - `__entityMeshUpdateIntervalSec` ≥ 1/30 s throttle when `selectedEntityId == null`.
+  - Regression test: `test/perf-allocation-budget.test.js` (8 tests).
+- **R2 — Sim-time cadence gates (DONE)**
+  - `src/simulation/ai/colony/AgentDirectorSystem.js` — `AGENT_DIRECTOR_HEAVY_TICK_INTERVAL_SEC = 0.5 s` gate on heavy work (perceiver.observe, snapshotState pre/post, executeNextSteps, shouldReplan). Fast-path (mode select, `agentState.activePlan` mirror, fallback throttle) preserved at every-tick cadence.
+  - `src/simulation/meta/ProgressionSystem.js` — 0.25 s dt-accumulator gate on coverage / milestones / recovery scans.
+  - Regression test: `test/agent-director-cadence.test.js`.
+- **R3 — Methodology lock-in (DONE)**
+  - Headless RAF cap documented as a measurement-pipeline issue (not a project bug).
+  - Required Chromium flags listed for any future non-headless / hybrid FPS measurement: `--disable-renderer-backgrounding`, `--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`. Missing any one silently re-enables the 1 Hz throttle.
+  - Cross-link: `assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md` § "R3 Closeout — Perf Methodology Note (A2)".
+  - Prod-build state validated: `vite build` ~5 s, 144 modules, 3 chunks 500–650 KB (`vendor-three` 612.94 KB largest), 0 chunks > 1 MB.
+- **Hotfix iter4 — Non-perf hotfixes (DONE)** Pop-cap removal + recruit-button surfacing + dev-dock force-hide. Perf surface unchanged.
+
+### Planned for HW8+
+
+- **Real-Chrome FPS validation (PLANNED)** — apply the three Chromium flags above (or move to a non-headless Playwright harness) so Gate 3 can move from YELLOW (headless RAF cap) to GREEN on its own merits. Sim-side ground truth at R2 (≤ 0.4 ms/frame at 8× / 86 entities, `headroomFps ≈ 2500`) already supports a 60 fps target.
+- **Bundle WARN → GREEN (PLANNED)** — `vendor-three` tree-shaking / scoped imports; lazy-loading the LLM-prompt-builder pathways; or splitting heavy panels into route-level lazy imports. Not addressed under the HW7 freeze.
+- **Multi-seed long-horizon bench (PLANNED)** — single seed=42 plains baseline gives noisy DevIndex / deaths reads; 50-seed averaging recommended for HW8+ to characterize the post-A5 distribution properly.
+- **`worker-ai-bare-init Fix 2/3` deflake (PLANNED)** — wall-clock-dependent assertion; replace `Date.now()` dependency with deterministic simulated-time check.
+- **Faction-aware reachability cache (PLANNED, carried)** — v0.9.x audit-A2 follow-up; would zero scenario E's residual stuck>3s tail.
+- **At-warehouse fast-eat tuning (PLANNED, carried)** — v0.10.0 deferred list.
+- **Phase 2A pathfinding worker** (Round 9 baseline below): IMPLEMENTED for high-load browser runs.
+- **Phase 2B animal AI worker / Phase 2C OffscreenCanvas / Phase 2D adaptive scheduler**: design notes retained below; not planned for HW8 unless the headless-RAF-cap remediation surfaces a real ≥ 10 ms/tick regression.
 
 ## Summary
 
