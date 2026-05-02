@@ -7,6 +7,7 @@ import { BuildSystem } from "../construction/BuildSystem.js";
 import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
 import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
 import { RECOVERY_ESSENTIAL_TYPES, isRecoveryEssential } from "./ProgressionSystem.js";
+import { runProposers, DEFAULT_BUILD_PROPOSERS } from "../ai/colony/BuildProposer.js";
 
 const EVAL_INTERVAL_SEC = 2;
 const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
@@ -98,67 +99,27 @@ export function assessColonyNeeds(state) {
   const maxFarmsEmergency = Math.max(5, workers);
   const currentFarms = buildings.farms ?? 0;
 
-  // v0.10.1-r3-A5 P0-1: zero-farm safety net. Without this, the autopilot's
-  // bootstrap phase emits warehouse@82 ahead of farm@80 — at t=0 wood=34
-  // affords ~2 warehouses then drains, leaving the first farm un-placed
-  // until food runway flips unsafe (~60-90s) and the recovery branch fires.
-  // Pushing farm@99 the moment we see "0 farms exist" guarantees the colony
-  // never starts a run without a single grain producer. Confined to the
-  // first 180 sim-sec so the late-game expansion logic still owns farm
-  // pacing once the bootstrap is done.
-  if (currentFarms === 0 && Number(state.metrics?.timeSec ?? 0) < 180) {
-    needs.push({ type: "farm", priority: 99, reason: "bootstrap: zero-farm safety net" });
-  }
-
-  // v0.10.1-r4-A5 P0-2: zero-lumber safety net (analog to zero-farm @99).
-  // A5 R3 audit: 14 sim-min autopilot run completed with 0 Lumber tiles
-  // placed — wood drained to 0 and the build queue stalled because the
-  // bootstrap branch only emits lumber@78 (below warehouse@82) and the
-  // emergency branch (line 142) requires wood<15 AND <6 lumbers — but
-  // with zero lumbers wood never replenishes after the initial 35-pool
-  // drains, and the planner picked warehouses+farms ahead of any lumber.
-  // Mirror the zero-farm pattern: when zero lumbers exist push lumber@95
-  // (below food@99/100, above quarry@95 ties resolved by sort stability)
-  // for the first 240 sim-sec so every run lands at least one wood
-  // producer before the bootstrap window closes. After 240s late-game
-  // expansion logic (logistics @66 / phase-3 @55) owns lumber pacing.
-  const currentLumbers = buildings.lumbers ?? 0;
-  if (currentLumbers === 0 && Number(state.metrics?.timeSec ?? 0) < 240) {
-    needs.push({ type: "lumber", priority: 95, reason: "bootstrap: zero-lumber safety net (analog to zero-farm @99)" });
-  }
-
-  // v0.10.1-hotfix-B (issue #7): stone-deficit safety net. Stone gates the
-  // entire kitchen/smithy/clinic/bridge chain — without quarry coverage the
-  // processing tier never lands. Late-game user reports "后期一直缺石头,
-  // AI 不建造也不会去探索迷雾找资源点" trace back to: (a) zero quarry +
-  // farm@80 spam outranks the existing quarry@77; (b) quarries exist but
-  // their nodes are exhausted and no rule forces relocation. Push
-  // quarry@95 (above bootstrap@82, below food@99/100) when stone is
-  // critical AND no quarry exists, OR when stone is bone-dry (<5)
-  // regardless of quarry count to force a relocation build onto the
-  // next-best node tile. findPlacementTile already prefers nodeFlag tiles
-  // (findNodeFlagTiles scans the WHOLE grid including hidden-fog tiles),
-  // so the priority bump alone is enough to draw a worker to a
-  // fog-occluded stone node — walking there reveals the fog implicitly.
-  const stoneStock = Number(resources.stone ?? 0);
-  const currentQuarries = buildings.quarries ?? 0;
-  if ((currentQuarries === 0 && stoneStock < 15) || stoneStock < 5) {
-    needs.push({ type: "quarry", priority: 95, reason: "safety net: stone deficit" });
-  }
-
-  // When food is low, prioritize warehouses if farm:warehouse ratio is high
-  if (food < 30 && currentFarms >= 3 && warehouseCount > 0 && currentFarms / warehouseCount > 3) {
-    // Too many farms per warehouse — logistics is the bottleneck
-    needs.push({ type: "warehouse", priority: 100, reason: "emergency: food logistics bottleneck" });
-  } else if (food < 30 && currentFarms < maxFarmsEmergency) {
-    needs.push({ type: "farm", priority: 100, reason: "emergency food shortage" });
-  } else if (food < 30 && warehouseCount < Math.floor(workers / 5) + 2) {
-    needs.push({ type: "warehouse", priority: 100, reason: "emergency: need more warehouses" });
-  }
-  // Only request emergency lumber if there are actually few lumber tiles
-  if (wood < 15 && (buildings.lumbers ?? 0) < 6) {
-    needs.push({ type: "lumber", priority: 95, reason: "emergency wood shortage" });
-  }
+  // v0.10.1 R5 wave-1 (C1-build-proposer refactor):
+  // The four priority-95+ "safety net" if-blocks (zero-farm @99,
+  // zero-lumber @95, zero-quarry @95, emergency-shortage food/wood) were
+  // extracted into named BuildProposer instances. Registration order in
+  // DEFAULT_BUILD_PROPOSERS matches the legacy push order, so the
+  // resulting `needs` array (set of {type, priority} pairs) is
+  // byte-identical to the pre-refactor output (locked by
+  // test/build-proposer-orchestration.test.js). Wave-2 (deferred) will
+  // port the recovery / bootstrap / logistics / processing branches
+  // below and unify with proposeBridges + proposeScoutRoad +
+  // AgentDirSystem.survivalPreempt.
+  const proposerCtx = {
+    workers,
+    food,
+    wood,
+    buildings,
+    resources,
+    timeSec: Number(state.metrics?.timeSec ?? 0),
+  };
+  const earlyNeeds = runProposers(DEFAULT_BUILD_PROPOSERS, state, proposerCtx);
+  needs.push(...earlyNeeds);
   // Warehouse scaling: aggressive — warehouses are the #1 factor for food production
   const prodCount = (buildings.farms ?? 0) + (buildings.lumbers ?? 0) + (buildings.quarries ?? 0) + (buildings.herbGardens ?? 0);
   const warehousesNeeded = Math.max(3, Math.floor(workers / 6) + 1, Math.floor(prodCount / 5) + 2);
