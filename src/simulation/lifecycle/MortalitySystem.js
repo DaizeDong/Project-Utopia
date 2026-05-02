@@ -805,17 +805,29 @@ export class MortalitySystem {
       }
     }
 
+    // R5 PB-combat-plumbing Step 1 — hoist `recomputeCombatMetrics(state)`
+    // out of the `deadIds.size === 0` early-return so combat metrics refresh
+    // every tick, not just on death-ticks. Without this, live raiders /
+    // saboteurs / predators stayed invisible in `state.metrics.combat` until
+    // somebody died, and downstream defense pipelines (RoleAssignmentSystem
+    // GUARD draft, ProgressionSystem milestone, ColonyPlanner threat read)
+    // all read stale data — the user-reported "worker 不主动攻击" repro
+    // (P0-1 in PB-combat-engagement feedback). The pre-collected single-walk
+    // optimisation from v0.8.7 keeps this < 0.5 ms / tick at 80 workers ×
+    // 8 hostiles. The death-tick path below still benefits from the same
+    // call (now via this hoist) — both branches re-emit consistent metrics.
+    recomputeCombatMetrics(state);
+
     if (deadIds.size === 0) return;
 
     state.agents = state.agents.filter((entity) => !deadIds.has(entity.id));
     state.animals = state.animals.filter((entity) => !deadIds.has(entity.id));
 
-    // v0.8.3 entity-death cleanup (Bug C) — re-emit combat metrics now that
-    // dead raiders/predators are filtered out of state.animals. Without
-    // this, RoleAssignmentSystem on the NEXT tick still reads
-    // `activeRaiders > 0` and over-promotes guards even though the threat
-    // is gone. AnimalAISystem ran earlier in this tick (before MortalitySystem)
-    // and counted the now-dead raider as alive.
+    // v0.8.3 entity-death cleanup (Bug C) — after filtering dead entities out
+    // of state.agents / state.animals, re-emit combat metrics so the metrics
+    // reflect the post-filter list (the hoisted call above ran with the
+    // pre-filter list; the difference matters for raiders/saboteurs that
+    // died this tick — they should not be counted in nextTick's activeRaiders).
     recomputeCombatMetrics(state);
 
     if (state.controls.selectedEntityId && deadIds.has(state.controls.selectedEntityId)) {

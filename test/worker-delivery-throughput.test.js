@@ -15,6 +15,16 @@ test("WorkerAISystem unloads gradually when the target warehouse is congested", 
   const warehouse = findNearestTileOfTypes(state.grid, worker, [TILE.WAREHOUSE]);
   assert.ok(worker, "worker should exist");
   assert.ok(warehouse, "warehouse should exist");
+  // R5 PB-combat-plumbing — clear bootstrap wildlife so the broadened
+  // COMBAT_PREEMPT (priority-0 row in DEPOSITING) doesn't fire FIGHTING
+  // for this non-GUARD worker. Bootstrap places a bear/wolf at ~6.3 world
+  // units from the warehouse on seed=1337, which is inside the default
+  // guardAggroRadius (12 world units) — pre-fix, the GUARD-role short-
+  // circuit kept FARM workers depositing; post-fix, any worker engages
+  // a nearby hostile (the user-reported "worker 不主动攻击" repro fix).
+  // This test is specifically about congested warehouse unload, so we
+  // strip wildlife to isolate that pathway.
+  state.animals = [];
 
   const pos = tileToWorld(warehouse.ix, warehouse.iz, state.grid);
   worker.x = pos.x;

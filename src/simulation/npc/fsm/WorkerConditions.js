@@ -18,13 +18,25 @@ import { getTile, listTilesByType, worldToTile } from "../../../world/grid/Grid.
 // Combat / hostile detection
 
 /**
- * True when worker.role === GUARD and a hostile (PREDATOR animal or
- * SABOTEUR visitor) is within BALANCE.guardAggroRadius. Originally ported
+ * True when ANY worker (regardless of role) has a hostile (PREDATOR animal
+ * or SABOTEUR visitor) within `BALANCE.guardAggroRadius`. Originally ported
  * from v0.9.4 JobGuardEngage.findNearestHostile (Job layer retired in
- * v0.10.0-d).
+ * v0.10.0-d) as `hostileInAggroRadiusForGuard` with a `role === GUARD`
+ * short-circuit.
+ *
+ * R5 PB-combat-plumbing Step 2 — renamed and short-circuit dropped (P0-3
+ * in PB-combat-engagement feedback). The previous predicate gated on
+ * `role === GUARD`, so a FARM/HAUL/COOK worker being eaten by a wolf
+ * reported `IDLE / Wander` and never entered FIGHTING. With this rename
+ * the priority-0 `COMBAT_PREEMPT` row in every state's transition list now
+ * fires for any worker with a hostile in range; the aggroRadius (default
+ * 6 world units = 3 tiles) bounds the disruption to "worker is literally
+ * being attacked" (matches the v0.10.0 priority-FSM design intent — the
+ * existing GUARD-specific draft logic still lives in RoleAssignmentSystem,
+ * which orchestrates colony-wide guard composition; this predicate handles
+ * the per-worker self-defence / engage decision only).
  */
-export function hostileInAggroRadiusForGuard(worker, state, _services) {
-  if (String(worker?.role ?? "").toUpperCase() !== ROLE.GUARD) return false;
+export function hostileInAggroRadius(worker, state, _services) {
   return findNearestHostile(worker, state) != null;
 }
 
