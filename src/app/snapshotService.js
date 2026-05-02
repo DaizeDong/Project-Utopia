@@ -6,9 +6,71 @@ const GROUP_TRADERS = "traders";
 const GROUP_SABOTEURS = "saboteurs";
 const KIND_TRADER = "TRADER";
 
+// A1-stability-hunter Round 3 P0:
+// Recursively scrub values that `structuredClone` would otherwise reject
+// with `DataCloneError` (functions, class instances with non-cloneable
+// internals, accidental event-bus / NPC.deathListeners back-references).
+//
+// Scope is intentionally conservative — we only drop entries whose value is
+// a `function`, leaving every plain primitive, array, plain object, Map,
+// Set, and TypedArray untouched. This is enough to fix the observed
+// regression (Save Snapshot → DataCloneError on a stray death-toast
+// listener) without risk of over-stripping legitimate state.
+//
+// `seen` cycle-guard prevents infinite recursion on the inevitable
+// world-graph back-references (e.g. agent → state → grid → agent).
+function stripUncloneable(value, seen = new WeakSet()) {
+  if (value === null || value === undefined) return value;
+  const t = typeof value;
+  if (t === "function") return undefined;
+  if (t !== "object") return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  // Preserve TypedArrays / DataView verbatim — structuredClone handles them.
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return value;
+  if (value instanceof Map) {
+    const next = new Map();
+    for (const [k, v] of value.entries()) {
+      const cleaned = stripUncloneable(v, seen);
+      if (typeof cleaned === "function") continue;
+      next.set(k, cleaned);
+    }
+    return next;
+  }
+  if (value instanceof Set) {
+    const next = new Set();
+    for (const v of value.values()) {
+      const cleaned = stripUncloneable(v, seen);
+      if (typeof cleaned === "function") continue;
+      next.add(cleaned);
+    }
+    return next;
+  }
+  if (Array.isArray(value)) {
+    const next = new Array(value.length);
+    for (let i = 0; i < value.length; i += 1) {
+      const cleaned = stripUncloneable(value[i], seen);
+      next[i] = typeof cleaned === "function" ? null : cleaned;
+    }
+    return next;
+  }
+  // Plain object — drop function-valued keys, recurse on the rest.
+  const next = {};
+  for (const k of Object.keys(value)) {
+    const cleaned = stripUncloneable(value[k], seen);
+    if (cleaned === undefined && typeof value[k] === "function") continue;
+    next[k] = cleaned;
+  }
+  return next;
+}
+
 function ensureStructuredClone(value) {
-  if (typeof structuredClone === "function") return structuredClone(value);
-  return JSON.parse(JSON.stringify(value));
+  // A1-stability-hunter Round 3 P0: strip function/listener leaks BEFORE
+  // structuredClone so a stray `(event) => ...` reference can't take the
+  // whole save path down with `DataCloneError`.
+  const sanitized = stripUncloneable(value);
+  if (typeof structuredClone === "function") return structuredClone(sanitized);
+  return JSON.parse(JSON.stringify(sanitized));
 }
 
 function mapToEntries(value) {
@@ -144,6 +206,15 @@ function ensureAiRuntimeDefaults(snapshot) {
 export function makeSerializableSnapshot(state, rngSnapshot = null) {
   const snapshot = ensureStructuredClone(state);
   snapshot.grid.tiles = Array.from(state.grid.tiles);
+  // A1-stability-hunter Round 3 P0: persist `grid.tileState` (Map<int, entry>)
+  // as entries pairs. Renderer (SceneRenderer.js:1978/2085/2222/2245/2904)
+  // assumes `tileState.get(idx)` is `Map.get`; plain `structuredClone` of a
+  // Map serialises fine but JSON.stringify (saveToStorage) downgrades it to
+  // {} and crashes the first frame after Load. mapToEntries + entriesToMap
+  // restores the contract symmetric with `ai.groupPolicies`.
+  if (state.grid.tileState instanceof Map) {
+    snapshot.grid.tileState = mapToEntries(state.grid.tileState);
+  }
   snapshot.ai.groupPolicies = mapToEntries(state.ai.groupPolicies);
   snapshot.ai.groupStateTargets = mapToEntries(state.ai.groupStateTargets);
   snapshot.meta = {
@@ -165,6 +236,19 @@ function mergeSnapshotMeta(snapshot, extraMeta = null) {
 export function restoreSnapshotState(serialized) {
   const snapshot = ensureStructuredClone(serialized);
   snapshot.grid.tiles = Uint8Array.from(snapshot.grid.tiles ?? []);
+  // A1-stability-hunter Round 3 P0: rehydrate `grid.tileState` as a Map so
+  // SceneRenderer.js + every consumer of `grid.tileState.get(idx)` keeps
+  // working after Load. Mirrors the `ai.groupPolicies` round-trip.
+  // Tolerate legacy snapshots (pre-fix) where the field is missing or was
+  // accidentally serialised as a plain object — fall back to an empty Map
+  // rather than crashing the renderer on the very next frame.
+  if (snapshot.grid.tileState instanceof Map) {
+    // structuredClone preserved Map identity (in-process roundtrip) — keep.
+  } else if (Array.isArray(snapshot.grid.tileState)) {
+    snapshot.grid.tileState = entriesToMap(snapshot.grid.tileState);
+  } else {
+    snapshot.grid.tileState = new Map();
+  }
   snapshot.ai.groupPolicies = entriesToMap(snapshot.ai.groupPolicies);
   snapshot.ai.groupStateTargets = entriesToMap(snapshot.ai.groupStateTargets);
   snapshot.ai.lastStateTargetBatch ??= [];
