@@ -1182,7 +1182,13 @@ export function createInitialGameState(options = {}) {
       // increment `recruitQueue`; RecruitmentSystem drains it gated by
       // food cost + cooldown. autoRecruit=true preserves the old behaviour
       // for tests/fixtures that expected free growth toward a target.
-      recruitTarget: 16,
+      // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): default 16 → 500
+      // (matches the workerTargetInput slider max in index.html). Players
+      // reported workers stuck at 16 forever because the slider/recruitTarget
+      // never auto-rose. Auto-recruit is still effectively gated by infraCap
+      // (warehouses + farms + ...), food buffer, and cooldown — this default
+      // simply removes the hard 16-worker artificial bottleneck.
+      recruitTarget: 500,
       recruitQueue: 0,
       autoRecruit: true,
       recruitCooldownSec: 0,

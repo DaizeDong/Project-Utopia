@@ -110,14 +110,20 @@ export class RecruitmentSystem {
     let recruitQueue = Math.max(0, Number(state.controls.recruitQueue ?? 0) | 0);
     const autoRecruit = state.controls.autoRecruit !== false;
 
-    // v0.8.5 Tier 1 B5 / Tier 2 S5: Re-enforce the documented infrastructure
-    // cap from docs/systems/05-population-lifecycle.md. Code (pre-v0.8.5) used
-    // only state.controls.recruitTarget, which let the player/LLM set a high
-    // recruit target and outgrow infrastructure. Compute the cap inline so
-    // the auto-fill never advances past it. The player's explicit
-    // recruitTarget remains an upper bound (so dropping the slider still
-    // works), but the colony cannot be auto-grown beyond what the buildings
-    // support.
+    // v0.8.5 Tier 1 B5 / Tier 2 S5: Compute the documented infrastructure
+    // cap from docs/systems/05-population-lifecycle.md so the auto-fill
+    // pacing scales with built infrastructure (warehouses, farms, kitchens
+    // etc.). The player's explicit recruitTarget is the user-facing upper
+    // bound (slider in Population Control panel).
+    //
+    // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): the legacy `Math.min(80, ...)`
+    // hard ceiling that capped pop at 80 regardless of how many warehouses
+    // the player built has been removed. Players reported workers stuck at
+    // 16 in late game ("后期 worker 到 16 个就不增长了, 很多地方都缺人")
+    // and asked for ALL hard limits gone. The infraCap formula is preserved
+    // (it remains a soft, infrastructure-derived cap that grows as the
+    // colony builds more support buildings) but is no longer clamped to a
+    // global ceiling — keep building warehouses, keep growing.
     const buildings = state?.buildings ?? {};
     const warehousesCount = Number(buildings.warehouses ?? 0);
     const farmsCount = Number(buildings.farms ?? 0);
@@ -127,9 +133,7 @@ export class RecruitmentSystem {
     const smithiesCount = Number(buildings.smithies ?? 0);
     const clinicsCount = Number(buildings.clinics ?? 0);
     const herbGardensCount = Number(buildings.herbGardens ?? 0);
-    const infraCap = Math.min(
-      80,
-      12
+    const infraCap = 12
         + warehousesCount * 3
         + Math.floor(farmsCount * 0.5)
         + Math.floor(lumbersCount * 0.5)
@@ -137,8 +141,7 @@ export class RecruitmentSystem {
         + kitchensCount * 2
         + smithiesCount * 2
         + clinicsCount * 2
-        + herbGardensCount,
-    );
+        + herbGardensCount;
     const effectiveCap = Math.min(recruitTargetRaw, infraCap);
     state.metrics.populationInfraCap = infraCap;
     state.metrics.populationEffectiveCap = effectiveCap;

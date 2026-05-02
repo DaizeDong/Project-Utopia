@@ -301,7 +301,13 @@ test("ColonyPerceiver.observe computes pop cap", () => {
   const obs = perceiver.observe(state);
 
   assert.ok(obs.workforce.popCap >= 8, "pop cap should be at least 8");
-  assert.ok(obs.workforce.popCap <= 80, "pop cap should not exceed 80");
+  // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): legacy `Math.min(80, ...)`
+  // hard ceiling removed so the LLM/perceiver pop-cap estimate scales with
+  // infrastructure rather than being clamped to a global 80. Lower bound
+  // assertion above is sufficient to verify the formula is producing a
+  // sane value; upper bound is now infrastructure-driven (no fixed ceiling).
+  assert.ok(typeof obs.workforce.popCap === "number" && Number.isFinite(obs.workforce.popCap),
+    "pop cap should be a finite number");
 });
 
 test("ColonyPerceiver.observe identifies growth blockers", () => {
