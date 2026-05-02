@@ -1,12 +1,10 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE, FEATURE_FLAGS, TILE, VISITOR_KIND } from "../../config/constants.js";
+import { EVENT_TYPE, TILE } from "../../config/constants.js";
 import { getLongRunEventTuning, getLongRunVisitorTuning } from "../../config/longRunProfile.js";
 import { clamp } from "../../app/math.js";
 import { findNearestTileOfTypes, getTile, inBounds, listTilesByType, randomPassableTile, worldToTile } from "../../world/grid/Grid.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 import { canAttemptPath, clearPath, followPath, hasActivePath, isPathStuck, setTargetAndPath } from "../navigation/Navigation.js";
-import { mapStateToDisplayLabel, transitionEntityState } from "./state/StateGraph.js";
-import { planEntityDesiredState } from "./state/StatePlanner.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { mutateTile } from "../lifecycle/TileMutationHooks.js";
 import { VisitorFSM } from "./fsm/VisitorFSM.js";
@@ -325,7 +323,10 @@ function shouldTraderRetarget(visitor, state) {
   return false;
 }
 
-function setIdleDesired(visitor) {
+// v0.10.1 R3 wave-3.5 — exported so the FSM helper module
+// (`fsm/VisitorHelpers.js`) and the legacy stride-skip movement branch
+// (still in `update()` below) share a single implementation.
+export function setIdleDesired(visitor) {
   if (!visitor.desiredVel) {
     visitor.desiredVel = { x: 0, z: 0 };
     return;
@@ -594,33 +595,26 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
   setIdleDesired(visitor);
 }
 
-function updateIdleWithoutReasonMetric(visitor, stateNode, dt, state) {
-  if (stateNode !== "idle" && stateNode !== "wander") return;
-  const reason = String(visitor.blackboard?.fsm?.reason ?? "");
-  if (!reason.includes("idle") && !reason.includes("no-warehouse")) return;
-
-  state.metrics.idleWithoutReasonSec ??= {};
-  const group = String(visitor.groupId ?? "visitors");
-  state.metrics.idleWithoutReasonSec[group] = Number(state.metrics.idleWithoutReasonSec[group] ?? 0) + dt;
-
-  const logic = state.debug.logic ?? (state.debug.logic = {
-    invalidTransitions: 0,
-    goalFlipCount: 0,
-    totalPathRecalcs: 0,
-    idleWithoutReasonSecByGroup: {},
-    pathRecalcByEntity: {},
-    lastGoalsByEntity: {},
-    deathByReasonAndReachability: {},
-  });
-  logic.idleWithoutReasonSecByGroup[group] = Number(logic.idleWithoutReasonSecByGroup[group] ?? 0) + dt;
-}
+// v0.10.1 R3 wave-3.5 — named-exports map for the FSM helper module
+// (`fsm/VisitorHelpers.js`). The four behaviour bodies stay in this
+// file (they close over module-private helpers like pickTraderTarget /
+// pickSabotageTarget / applySabotage that are not part of the public
+// surface) but the FSM consumes them through this map to avoid a
+// circular import on `VisitorAISystem` symbols inside FSM-only files.
+export const __visitorBehaviorBodies = Object.freeze({
+  runEatBehavior,
+  traderTick,
+  saboteurTick,
+  runWander,
+});
 
 export class VisitorAISystem {
   constructor() {
     this.name = "VisitorAISystem";
-    // v0.10.1 R2 wave-3 — lazy-init Priority-FSM dispatcher used when
-    // `FEATURE_FLAGS.USE_VISITOR_FSM` is true. flag=false (default)
-    // never constructs this; the legacy StatePlanner path runs unchanged.
+    // v0.10.1 R3 wave-3.5 — Priority-FSM is now the only path. The
+    // wave-2 dual-path + USE_VISITOR_FSM flag are retired. Lazy-init so
+    // tests that construct VisitorAISystem without ever calling update()
+    // (e.g. unit tests of helper functions) don't pay the cost.
     this._fsm = null;
   }
 
@@ -637,6 +631,8 @@ export class VisitorAISystem {
     let visitorIndex = 0;
     let processed = 0;
     let skipped = 0;
+
+    if (!this._fsm) this._fsm = new VisitorFSM();
 
     for (const visitor of state.agents) {
       if (visitor.type !== "VISITOR") continue;
@@ -660,39 +656,7 @@ export class VisitorAISystem {
       visitor._visitorAiAccumDt = 0;
       processed += 1;
 
-      // v0.10.1 R2 wave-3 (C1-code-architect) — flag-gated Priority-FSM
-      // path. Default OFF: production routes through the legacy
-      // StatePlanner / StateGraph branch below (byte-for-byte identical
-      // to d242719). Round-3 wave-3.5 will fill in the per-state
-      // behaviour bodies + flip this flag's default to true.
-      if (FEATURE_FLAGS.USE_VISITOR_FSM) {
-        if (!this._fsm) this._fsm = new VisitorFSM();
-        this._fsm.tickVisitor(visitor, state, services, logicDt);
-        continue;
-      }
-
-      const groupId = visitor.kind === VISITOR_KIND.TRADER ? "traders" : "saboteurs";
-      const plan = planEntityDesiredState(visitor, state);
-      const stateNode = transitionEntityState(visitor, groupId, plan.desiredState, state.metrics.timeSec, plan.reason);
-      visitor.blackboard.intent = stateNode;
-      visitor.stateLabel = mapStateToDisplayLabel(groupId, stateNode);
-      visitor.debug ??= {};
-      visitor.debug.lastIntent = stateNode;
-      visitor.debug.lastStateNode = stateNode;
-
-      if (stateNode === "seek_food" || stateNode === "eat") {
-        runEatBehavior(visitor, state, logicDt, services);
-      } else if (groupId === "traders" && (stateNode === "seek_trade" || stateNode === "trade")) {
-        traderTick(visitor, state, logicDt, services);
-      } else if (groupId === "saboteurs" && (stateNode === "scout" || stateNode === "sabotage" || stateNode === "evade")) {
-        saboteurTick(visitor, state, logicDt, services, stateNode);
-      } else if (stateNode === "wander") {
-        runWander(visitor, state, logicDt, services);
-      } else {
-        setIdleDesired(visitor);
-      }
-
-      updateIdleWithoutReasonMetric(visitor, stateNode, logicDt, state);
+      this._fsm.tickVisitor(visitor, state, services, logicDt);
     }
 
     if (state.debug) {
