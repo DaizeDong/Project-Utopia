@@ -19,17 +19,18 @@
 
 ## 1. 系统概览
 
-游戏中有 **4 个** LLM Agent，均通过 `server/ai-proxy.js`（端口 8787）代理，Vite 将 `/api/*` 请求转发至代理。
+游戏中有 **4 个** LLM Agent，均通过 `server/ai-proxy.js`（端口 8787）代理，Vite 将 `/api/*` 请求转发至代理。Prompt 全部以 markdown 文件形式存放在 `src/data/prompts/`：`environment-director.md` / `strategic-director.md` / `npc-brain.md` / `npc-colony-planner.md`。
 
 | Agent | 触发时机 | Endpoint | Fallback |
 |---|---|---|---|
 | Environment Director | 周期调度（帧循环内节流） | `/api/ai/environment` | `buildEnvironmentFallback()` |
 | Strategic Director | 90 秒 Heartbeat | `/api/ai/environment` 同端点（不同 channel） | `buildFallbackStrategy()` |
 | NPC Brain | 周期调度 | `/api/ai/policy` | `buildPolicyFallback()` |
-| Colony Planner | `shouldReplan()` 条件满足时 | `/api/ai/environment`（异步直调） | `generateFallbackPlan()` |
+| Colony Planner | `AgentDirectorSystem.shouldReplan()` 条件满足时 | `/api/ai/plan`（HW7 前为 `/api/ai/environment` 直调，现统一走 `LLMClient.requestPlan` → 专用 `/plan` 端点） | `generateFallbackPlan()` |
 
 所有 Agent 均支持：
 - `state.ai.enabled = false` → 跳过 LLM，直接走 Fallback
+- `state.ai.coverageTarget === "fallback"` → AgentDirector 短路到算法 `_fallback`（即 `ColonyDirectorSystem`），跳过 LLM 计划
 - 严格 JSON schema 校验（`ResponseSchema.js`）
 - Guardrail 数值截断与文本消毒（`Guardrails.js`）
 
@@ -453,6 +454,28 @@ near_cluster:<id>, near_step:<id>, expansion:<dir>, coverage_gap,
 defense_line:<dir>, terrain:high_moisture, <ix>,<iz>
 
 ## Hard Rules
+- SURVIVAL CHECK (overrides everything else): if buildings.farms === 0,
+  the FIRST step MUST be `farm` with priority `critical`. Workers die
+  60-180 sim-sec without farms. (hotfix iter2 batch B finalize)
+- STONE-DEFICIT CHECK: if resources.stone < 10 AND buildings.quarries === 0,
+  FIRST step MUST be `quarry` with priority `critical`. Without stone the
+  kitchen/smithy/clinic chain is permanently blocked. (hotfix iter2 batch B finalize)
+- ROLE BALANCE CHECK (late-game allocation, hotfix iter4 batch D):
+  extraction roles (FARM + WOOD + STONE) MUST NOT exceed ~70% of the live
+  workforce when buildings/blueprints/threat indicate other work is needed.
+  Reads `## Workforce Status` (Role distribution) + `## Construction
+  Backlog` from the user prompt and applies four sub-rules:
+    1. pendingConstructionSites >= 2 AND BUILD <= 1 → emit `recruit` step
+       (count 1-2, priority `high`) so a fresh worker can be promoted to BUILDER.
+    2. `## Threat Posture` present (active raiders/saboteurs/predators) AND
+       no GUARD reassign step pending → emit `reassign_role` to GUARD,
+       priority `high`, BEFORE further economy steps.
+    3. (FARM + WOOD + STONE) / total > 0.75 AND total >= 8 → next plan
+       SHOULD include `recruit` OR a processing building (kitchen/smithy/clinic)
+       OR a `reassign_role` to COOK/SMITH/HERBALIST/GUARD. Do NOT pile yet
+       another farm/lumber/quarry on an already-extractor-saturated roster.
+    4. Avoid the trap of always adding raw producers when food/wood are
+       stable; late-game stalls when the BUILDER queue starves.
 - Never plan more buildings than resources allow
 - Warehouse spacing >= 5 tiles
 - Production within 12 tiles of warehouse
@@ -464,6 +487,9 @@ defense_line:<dir>, terrain:high_moisture, <ix>,<iz>
 - 3-8 steps, unique numeric ids from 1
 - depends_on references prior step ids
 - priority: critical > high > medium > low
+- skill: `"action": { "type": "skill", "skill": "<name>", "hint": "<hint>" }`
+- recruit / reassign: `"action": { "type": "recruit", "count": N }` /
+  `"action": { "type": "reassign_role", "role": "GUARD" }` (HW7 hotfix iter4 batch D)
 ```
 
 ### 5.3 User Prompt 结构
@@ -556,9 +582,12 @@ defense_line:<dir>, terrain:high_moisture, <ix>,<iz>
 
 ### 5.6 响应消费
 
-- 计划步骤写入 `PlanExecutor` 队列
-- `ConstructionSystem` 读取队列执行建造
+- 计划步骤写入 `AgentDirectorSystem` 的 `_activePlan`（`PlanExecutor` 路径）
+- `ConstructionSystem` + `RecruitmentSystem` + `RoleAssignmentSystem` 读取队列执行建造 / 招募 / 角色分配（recruit / reassign_role 由 hotfix iter4 batch D 拓宽）
 - 计划评估结果写入 `state.ai.fallbackHints`，用于下次 Prompt 的 `## Last Plan Evaluation` Section
+- 实时状态发布至 `state.ai.agentDirector`（mode / activePlan goal/source/steps / plan stats / plan history）供 AI Exchange 与 AI Automation 面板消费
+- `PLAN_STALL_GRACE_SEC = 18`（HW7 前 30→10→18，详见 CHANGELOG）：被 `waiting_resources` 阻塞的计划在 18 sim-sec 内未取得进展才会被 `_failPlan` 收割
+- AgentDirector heavy work 走 0.5s sim-time 节流（HW7 R1 A2），ProgressionSystem 走 0.25s 节流
 
 ---
 
@@ -623,6 +652,7 @@ maxNotes:   4 条
 export const AI_CONFIG = {
   environmentEndpoint:    "/api/ai/environment",
   policyEndpoint:         "/api/ai/policy",
+  planEndpoint:           "/api/ai/plan",        // Phase A: 专用 Colony Planner 端点
   requestTimeoutMs:       120000,   // 2 分钟
   maxDirectiveDurationSec: 180,
   maxPolicyTtlSec:         120,
@@ -640,6 +670,10 @@ OPENAI_BASE_URL=https://api.resurge.one/v1
 OPENAI_MODEL=gemini-3.1-pro-preview
 AI_PROXY_PORT=8787
 OPENAI_REQUEST_TIMEOUT_MS=120000
+# v0.8.7 retry knobs（429/timeout 重试）
+OPENAI_REQUEST_ATTEMPT_TIMEOUT_MS=
+OPENAI_MAX_RETRIES=
+OPENAI_RETRY_BASE_DELAY_MS=
 ```
 
 ---
@@ -670,14 +704,18 @@ GameLoop (帧循环)
   │    │    └─ 失败: buildFallbackStrategy()
   │    └─ state.ai.strategy → state.gameplay.strategicGoal
   │
-  └─ ColonyPlanner (shouldReplan() 触发)
+  └─ AgentDirectorSystem (shouldReplan() 触发；coverageTarget==="llm" 路由 LLM；"fallback" 短路至 ColonyDirectorSystem)
        ├─ ColonyPerceiver.observe()
        ├─ buildPlannerPrompt(observation, memory, state)
-       ├─ callLLM()                         ──→ POST /api/ai/environment (同代理)
+       ├─ LLMClient.requestPlan()           ──→ POST /api/ai/plan
        │    └─ 失败: generateFallbackPlan()
-       └─ PlanExecutor 队列 → ConstructionSystem
+       ├─ _activePlan → executeNextSteps()
+       │    ├─ ConstructionSystem (建造)
+       │    ├─ RecruitmentSystem (recruit)
+       │    └─ RoleAssignmentSystem (reassign_role)
+       └─ state.ai.agentDirector → AI Exchange / AI Automation 面板
 ```
 
 ---
 
-*最后更新：2026-04-25*
+*最后更新：2026-05-01（HW7 Round 3 + hotfix iter5）*
