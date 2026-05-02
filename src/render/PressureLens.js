@@ -449,6 +449,32 @@ export function buildHeatLens(state) {
   const resources = state.resources ?? {};
   const markers = [];
   const seen = new Set();
+  // v0.10.1-r3-A7 P0 — context-sensitive "supply surplus" label. Reviewer A7
+  // observed the heat-lens labelling a tile RED with "supply surplus" while
+  // workers nearby were starving (queue blocked, delivery couldn't drain the
+  // producer). The literal "supply surplus" text contradicts the live colony
+  // state; swap to a delivery-blocked phrasing whenever a starving worker
+  // exists. Threshold mirrors workerHungerSeekThreshold (~0.35): below this
+  // the worker is actively food-seeking, which is the user-visible "starving"
+  // state. We only mutate the label string here — marker kind/priority/etc.
+  // remain identical, so dedup logic and overlay painting stay unchanged.
+  const HUNGRY_WORKER_THRESHOLD = 0.35;
+  let hasHungryWorker = false;
+  if (Array.isArray(state.agents)) {
+    for (const a of state.agents) {
+      if (a && a.alive !== false && a.type === "WORKER"
+          && Number(a.hunger ?? 1) < HUNGRY_WORKER_THRESHOLD) {
+        hasHungryWorker = true;
+        break;
+      }
+    }
+  }
+  const surplusLabel = hasHungryWorker
+    ? "queued (delivery blocked)"
+    : "supply surplus";
+  const surplusTooltip = hasHungryWorker
+    ? "producer beside saturated warehouse — workers are starving, open Worker Focus"
+    : "producer beside saturated warehouse";
   // v0.8.2 Round-6 Wave-1 01b-playability (Step 3) — primary-marker dedup by
   // tileKey, regardless of kind. Each colony tile gets at most one main heat
   // marker (RED > BLUE > warehouse-idle). The `pushUniqueMarker` `seen` set
@@ -502,8 +528,8 @@ export function buildHeatLens(state) {
             weight: 0.9,
             priority: 118,
             labelPriority: 82,
-            label: "supply surplus",
-            hoverTooltip: "producer beside saturated warehouse",
+            label: surplusLabel,
+            hoverTooltip: surplusTooltip,
           });
         }
         continue;
