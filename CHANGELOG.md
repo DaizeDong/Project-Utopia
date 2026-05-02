@@ -48,6 +48,15 @@
   and `__perftrace.topSystems` ground-truth path. Cross-ref added to
   `assignments/homework7/Post-Mortem.md` §4.5; `PROCESS.md` Validator §3 FPS Gate
   now requires `playwright_chrome_flags` field in runtime context.
+- A4 R3 polish-aesthetic YELLOW (RED→YELLOW since R2): visual polish 4/10
+  (V1 lighting 4, V2 colour 5, V3 audio 1, V4 motion 3, V5 bugs 4); the +1
+  composite came from V1 (R2 = 2 → R3 = 4) validating R1's
+  `AtmosphereProfile.js` amplitude push after a fresh capture pass; V3 audio
+  still deferred per §4.5 (~5 work-weeks total deferred polish wave > HW7
+  budget < 1 week); all four §4.5 deferrals (audio bus + SFX, directional
+  shadow + sunset LUT, motion pass, DPI scaling) reaffirmed as still
+  deferred — R3 deliberately did not push a second numeric amplitude lever.
+  See `assignments/homework7/Post-Mortem.md` §4.5 R3 Progress Note (2026-05-01).
 
 ## [Unreleased] — HW7 Final Polish Loop Round 1
 
