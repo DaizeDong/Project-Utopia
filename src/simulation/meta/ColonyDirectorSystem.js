@@ -1,6 +1,6 @@
 import { BUILD_COST, BALANCE } from "../../config/balance.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
-import { TILE } from "../../config/constants.js";
+import { FOG_STATE, TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
 import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
@@ -551,6 +551,127 @@ function proposeBridgesForReachability(state, buildSystem, services = null) {
   return 0;
 }
 
+// v0.10.1-hotfix-iter2 (issue #7): scout-road-toward-fogged-stone proposer.
+// Iter1's stone-deficit safety net pushed quarry@95 into the priority queue,
+// but if every STONE node sits behind fog of war, evaluateBuildPreview rejects
+// the placement with `hidden_tile` and the blueprint never lands — the colony
+// starves of stone forever despite the priority bump.
+//
+// Fix: when stone is critical AND no STONE node is currently in the
+// EXPLORED/VISIBLE half of fog AND at least one STONE node exists in HIDDEN
+// fog, place a single road blueprint on a GRASS tile adjacent to existing
+// infrastructure pointed at the closest hidden STONE node. The worker walking
+// to that road tile reveals fog as a side-effect (VisibilitySystem); once a
+// STONE node enters the EXPLORED state the next ColonyDirector tick can run
+// quarry@95 through the normal placement path and land the blueprint.
+//
+// Throttled to ≤1 scout road / 30 sim-sec via lastStoneScoutProposalSec so
+// we don't spam roads when the colony is genuinely far from any stone.
+function proposeScoutRoadTowardFoggedStone(state, buildSystem, services = null) {
+  const grid = state.grid;
+  if (!grid) return 0;
+  const director = ensureDirectorState(state);
+  const nowSec = Number(state.metrics?.timeSec ?? 0);
+  const lastSec = Number(director.lastStoneScoutProposalSec ?? -Infinity);
+  if (nowSec - lastSec < 30) return 0;
+
+  // Only run when stone is in deficit territory — same threshold as the
+  // assessColonyNeeds quarry@95 safety net so we agree on "is this a crisis".
+  const stoneStock = Number(state.resources?.stone ?? 0);
+  if (stoneStock >= 15) return 0;
+
+  // Affordability — a single road segment.
+  const cost = BUILD_COST.road ?? {};
+  if (!canAfford(state.resources ?? {}, cost)) return 0;
+
+  // Partition STONE node tiles by current fog state. If ANY STONE node is
+  // already EXPLORED/VISIBLE then the regular quarry@95 path will land the
+  // blueprint without needing a scout road — bail.
+  const STONE_FLAG = 2; // NODE_FLAGS.STONE
+  const fogVis = state.fog?.visibility instanceof Uint8Array ? state.fog.visibility : null;
+  const w = Number(grid.width ?? 0);
+  let visibleStoneExists = false;
+  const hiddenStone = [];
+  if (grid.tileState) {
+    for (const [idx, entry] of grid.tileState) {
+      const flags = Number(entry?.nodeFlags ?? 0) | 0;
+      if ((flags & STONE_FLAG) === 0) continue;
+      if (Number(grid.tiles[idx]) !== TILE.GRASS) continue;
+      const fogState = fogVis ? fogVis[idx] : FOG_STATE.VISIBLE;
+      if (fogState !== FOG_STATE.HIDDEN) {
+        visibleStoneExists = true;
+        break;
+      }
+      const ix = idx % w;
+      const iz = Math.floor(idx / w);
+      hiddenStone.push({ ix, iz });
+    }
+  }
+  if (visibleStoneExists) return 0;
+  if (hiddenStone.length === 0) return 0;
+
+  // Build the candidate scout-road tile set: every GRASS tile that is
+  // currently EXPLORED/VISIBLE (not HIDDEN — evaluateBuildPreview rejects
+  // HIDDEN) AND adjacent to existing infrastructure (warehouse / road /
+  // bridge). These are the "frontier" road extensions a worker can actually
+  // place on. For each frontier candidate, score it by the Manhattan
+  // distance to the closest hidden STONE node — the closer to fog-hidden
+  // stone, the better. The first such tile that actually previews ok wins.
+  const anchors = listTilesByType(grid, [TILE.WAREHOUSE, TILE.ROAD, TILE.BRIDGE]);
+  if (anchors.length === 0) return 0;
+
+  const candidates = [];
+  const seen = new Set();
+  const NEIGHBOURS = [
+    { dx: 1, dz: 0 },
+    { dx: -1, dz: 0 },
+    { dx: 0, dz: 1 },
+    { dx: 0, dz: -1 },
+  ];
+  for (const anchor of anchors) {
+    for (const n of NEIGHBOURS) {
+      const ix = anchor.ix + n.dx;
+      const iz = anchor.iz + n.dz;
+      if (!inBounds(ix, iz, grid)) continue;
+      const key = `${ix},${iz}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const idx = ix + iz * w;
+      // Must be a buildable GRASS tile.
+      if (Number(grid.tiles[idx]) !== TILE.GRASS) continue;
+      // Must be currently visible — HIDDEN gets rejected by previewToolAt.
+      const fogState = fogVis ? fogVis[idx] : FOG_STATE.VISIBLE;
+      if (fogState === FOG_STATE.HIDDEN) continue;
+      // Score by distance to closest hidden STONE node.
+      let best = Infinity;
+      for (const stone of hiddenStone) {
+        const d = Math.abs(stone.ix - ix) + Math.abs(stone.iz - iz);
+        if (d < best) best = d;
+      }
+      candidates.push({ ix, iz, dist: best });
+    }
+  }
+  if (candidates.length === 0) return 0;
+  candidates.sort((a, b) => a.dist - b.dist);
+
+  for (const c of candidates) {
+    const preview = buildSystem.previewToolAt(state, "road", c.ix, c.iz, services);
+    if (!preview.ok) continue;
+    const result = buildSystem.placeToolAt(state, "road", c.ix, c.iz, {
+      recordHistory: false,
+      services,
+      owner: "autopilot",
+      reason: "ai scout — extend road toward fogged stone deposit",
+    });
+    if (result.ok) {
+      state.buildings = rebuildBuildingStats(state.grid);
+      director.lastStoneScoutProposalSec = nowSec;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 /**
  * Find a placement tile near a specific target location.
  * @param {object} state
@@ -1008,6 +1129,21 @@ export class ColonyDirectorSystem {
     const bridgeBuilds = proposeBridgesForReachability(state, this._buildSystem, services);
     if (bridgeBuilds > 0) {
       director.buildsPlaced += bridgeBuilds;
+      director.lastBuildSource = "fallback";
+      director.lastBuildTimeSec = nowSec;
+    }
+
+    // v0.10.1-hotfix-iter2 (issue #7): scout-road-toward-fogged-stone. The
+    // assessColonyNeeds quarry@95 safety net only helps when at least one
+    // STONE node is in EXPLORED/VISIBLE fog — otherwise evaluateBuildPreview
+    // rejects every quarry placement with `hidden_tile` and the colony
+    // starves of stone forever. This proposer extends a single road segment
+    // toward the closest fog-hidden STONE node when stone is critical and
+    // no visible STONE exists; the worker walking that road reveals the
+    // fog as a side-effect, so the next director tick can land the quarry.
+    const scoutBuilds = proposeScoutRoadTowardFoggedStone(state, this._buildSystem, services);
+    if (scoutBuilds > 0) {
+      director.blueprintsSubmitted = Number(director.blueprintsSubmitted ?? 0) + scoutBuilds;
       director.lastBuildSource = "fallback";
       director.lastBuildTimeSec = nowSec;
     }
