@@ -46,7 +46,15 @@ test("EventDirector: first tick after init does not dispatch (anchor lastDispatc
   const services = { rng: makeStubRng([0.1]) };
   sys.update(0.5, state, services);
   assert.equal(state.events.queue.length, 0, "no event should dispatch on first tick");
-  assert.equal(state.gameplay.eventDirector.lastDispatchSec, 12, "anchor should be nowSec");
+  // v0.10.2 PJ-pacing P0 — first-anchor offset: lastDispatchSec is seeded to
+  // nowSec - intervalSec*0.5 so the first real dispatch lands at intervalSec/2
+  // game-time rather than a full interval out.
+  const intervalSec = Number(BALANCE.eventDirectorBaseIntervalSec);
+  assert.equal(
+    state.gameplay.eventDirector.lastDispatchSec,
+    12 - intervalSec * 0.5,
+    "anchor should offset back by half-interval",
+  );
 });
 
 test("EventDirector: dispatches one event after intervalSec elapsed", () => {

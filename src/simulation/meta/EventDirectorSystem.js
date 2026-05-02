@@ -1,6 +1,7 @@
 import { BALANCE } from "../../config/balance.js";
 import { EVENT_TYPE } from "../../config/constants.js";
 import { enqueueEvent } from "../../world/events/WorldEventQueue.js";
+import { emitEvent, EVENT_TYPES as BUS_EVENT_TYPES } from "./GameEventBus.js";
 
 /**
  * v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 3) — EventDirectorSystem.
@@ -127,10 +128,12 @@ export class EventDirectorSystem {
     const lastDispatch = Number.isFinite(director.lastDispatchSec) ? director.lastDispatchSec : -Infinity;
     // First-run grace: after init the lastDispatchSec is -Infinity, so the
     // very first tick would otherwise dispatch immediately. Anchor the first
-    // dispatch to nowSec + intervalSec by seeding lastDispatchSec to nowSec
-    // when uninitialised.
+    // dispatch and offset by half-interval so the first event lands at
+    // ~intervalSec/2 instead of a full interval out — v0.10.2 PJ-pacing P0
+    // pulls first event from t=intervalSec to t=intervalSec/2 (45s at the
+    // new 90s base interval) so the early game has visible motion.
     if (!Number.isFinite(lastDispatch)) {
-      director.lastDispatchSec = nowSec;
+      director.lastDispatchSec = nowSec - intervalSec * 0.5;
       return;
     }
     if (nowSec - lastDispatch < intervalSec) return;
@@ -145,6 +148,17 @@ export class EventDirectorSystem {
     }
     const { durationSec, intensity } = getTuning(chosen);
     enqueueEvent(state, chosen, {}, durationSec, intensity);
+
+    // v0.10.2 PJ-pacing P0 — surface the dispatch on the player-visible
+    // event log so chronicle/HUD listeners can react. Reuses the generic
+    // EVENT_STARTED bus type with a `kind:"event_started"` discriminator
+    // (no new mechanic — pure log channel).
+    emitEvent(state, BUS_EVENT_TYPES.EVENT_STARTED, {
+      kind: "event_started",
+      eventType: chosen,
+      intensity,
+      durationSec,
+    });
 
     director.lastDispatchSec = nowSec;
     director.dayBudget = Number(director.dayBudget ?? 0) + 1;

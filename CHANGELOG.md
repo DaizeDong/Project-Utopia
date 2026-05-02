@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r6-PJ (R6 PJ-pacing, P0)
+
+### PJ pacing — 4× event cadence, halved raid grace, first-event anchor offset, event_started log
+
+Implements the P0 fix from `Round6/Plans/PJ-pacing.md` (Reviewer PJ-pacing, Tier A). Direction A: BALANCE knob deltas + EventDirector first-anchor offset + weight rebalance + event_started log surface. Pure pacing tuning — no new tile / role / building / mood mechanic / audio surface; the EVENT_STARTED bus type is a generic log channel, not a new game mechanic.
+
+**1. P0-1: `raidFallbackScheduler.graceSec` 180 → 90 + flat alias `raidFallbackGraceSec` 180 → 90 (`src/config/balance.js`)** — First auto-raid arrival window pulled from ~3 game-min to ~90s post-boot. Pairs with the eventDirectorBaseIntervalSec cut so the early game has visible pressure rather than 6 sim-min of dead air.
+
+**2. P0-2: `eventDirectorBaseIntervalSec` 360 → 90 (`src/config/balance.js`)** — 4× acceleration of proactive event cadence. Reviewer's measured baseline 0.166 events/sim-min was below the 2-4 events/sim-min target band; new cadence yields ~0.67 events/sim-min steady-state which sits in the lower half of the band with headroom for raid-cooldown downgrades.
+
+**3. P0-3: `eventDirectorWeights.banditRaid` 0.30 → 0.18 + `animalMigration` 0.25 → 0.40 (`src/config/balance.js`)** — Necessary offset for the 4× cadence acceleration. Without it, raid frequency would 4× to 1.2/min and break the v0.8.2 Wave-2 deaths budget. New product 4× × 0.18 ≈ 0.72 raids/min vs prior 0.30/min — a ~2.4× lift, not a 4× one. Migration absorbs the freed weight (low gameplay impact, mild pressure).
+
+**4. P0-4: First-anchor offset `nowSec → nowSec - intervalSec*0.5` (`src/simulation/meta/EventDirectorSystem.js`)** — Pre-fix, after the boot-anchor tick the very first dispatch landed at t=intervalSec (90s under the new cadence). Offset pulls it to t=intervalSec/2 (45s) by seeding the anchor backward. Halves the boot dead-zone players experience without bypassing the cadence floor for subsequent dispatches.
+
+**5. P0-5: `EVENT_STARTED` bus type + emit on dispatch (`src/simulation/meta/GameEventBus.js`, `src/simulation/meta/EventDirectorSystem.js`)** — New `EVENT_STARTED: "event_started"` entry in `EVENT_TYPES`. EventDirectorSystem emits one bus event per `enqueueEvent` call with detail `{ kind: "event_started", eventType, intensity, durationSec }`. Chronicle/HUD listeners can subscribe to surface "Event begun" beats to the player. Deliberately uses the generic log channel (not a new event-queue type) to stay clear of the freeze on new mechanic.
+
+**Tests added:** `test/balance-event-pacing.test.js` (4 cases: invariant locks on `eventDirectorBaseIntervalSec === 90`, `raidFallbackGraceSec === 90` + nested mirror, `banditRaid <= 0.18`, `animalMigration >= 0.40`). `test/event-director-first-dispatch.test.js` (2 cases: first-anchor offset — boot anchors lastDispatchSec to -intervalSec/2 then no dispatch at t=intervalSec/2 - 1 (elapsed=intervalSec-1) but exactly one dispatch at t=intervalSec/2 + 1 (elapsed=intervalSec+1); event_started log entry is emitted alongside the queue push with kind discriminator + eventType). All 6 new cases pass. Existing `test/event-director.test.js` updated for the new anchor formula (1 assertion — `lastDispatchSec === 12` → `12 - intervalSec*0.5`).
+
+**Test baseline:** 1867 tests / 1858 pass / 5 fail (all pre-existing on parent `d62cdf0`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step) / 4 skip. Net +6 passes vs parent (1852 → 1858) from the 6 new test cases. Zero new failures introduced; all 5 existing event-director assertions remain green after the assertion-update.
+
+**Files changed:** 3 source (`src/config/balance.js`, `src/simulation/meta/EventDirectorSystem.js`, `src/simulation/meta/GameEventBus.js`; +33 / -5 LOC code) + 1 test update + 2 new tests + CHANGELOG.
+
 ## [Unreleased] — v0.10.2-r6-PG (R6 PG-bridge-and-water, P0)
 
 ### PG bridge-and-water — bridges complete from shore + roadAStar interleaves bridge steps across water
