@@ -2100,7 +2100,11 @@ export class GameApp {
     if (!node) return false;
     const element = node.nodeType === 1 ? node : node.parentElement;
     if (!element || typeof element.closest !== "function") return false;
-    return Boolean(element.closest("#ui, #devDock, #entityFocusOverlay, #gameStateOverlay"));
+    // v0.10.1-hotfix-iter4-batchF (Issue #10) — `#devDock` removed from the
+    // selector list because the bottom developer telemetry section was
+    // deleted for production-deploy parity. closest() against a missing
+    // selector ID still works, but trimming keeps the intent explicit.
+    return Boolean(element.closest("#ui, #entityFocusOverlay, #gameStateOverlay"));
   }
 
   #clearSelection(actionMessage = "Selection cleared.") {
@@ -2141,7 +2145,8 @@ export class GameApp {
     const target = event?.target?.nodeType === 1 ? event.target : document.activeElement;
     if (!target || typeof target.closest !== "function") return false;
     const tag = String(target.tagName ?? "").toUpperCase();
-    if (!target.closest("#ui, #devDock, #entityFocusOverlay, #gameStateOverlay")) return false;
+    // v0.10.1-hotfix-iter4-batchF (Issue #10) — `#devDock` removed (section deleted).
+    if (!target.closest("#ui, #entityFocusOverlay, #gameStateOverlay")) return false;
     return tag === "BUTTON" || tag === "SUMMARY";
   }
 
