@@ -88,15 +88,28 @@ function pickHighlights(summary) {
       Number(world.buildings?.kitchens ?? 0)
     + Number(world.buildings?.smithies ?? 0)
     + Number(world.buildings?.clinics ?? 0);
-  const foodOk = Number(world.resources?.food ?? 0) >= 30;
-  const woodOk = Number(world.resources?.wood ?? 0) >= 15;
-  const stoneOk = Number(world.resources?.stone ?? 0) >= 8;
-  // Late-game extractor-saturated colony: many extraction sites, large
-  // workforce, basics are fine, but the processing chain is thin and
-  // predators/threats are accumulating. Tells the LLM (and the fallback
-  // adjuster) to push BUILDER/GUARD via recruit/reassign_role instead
-  // of yet another farm.
-  if (workerCount >= 12 && extractionSiteCount >= 6 && foodOk && woodOk && stoneOk) {
+  // Hotfix iter5 Gap A — broaden trigger so wood/stone-starved colonies
+  // (which never accumulated reserves but DID over-build extraction
+  // sites) still see the saturation signal. The original wood>=15 +
+  // stone>=8 + food>=30 floor was meant to suppress the highlight on
+  // brand-new colonies still bootstrapping. We replace the floor with a
+  // softer "non-bootstrap" gate (workers>=10 AND at least one of basic
+  // resources flowing OR extraction itself is the imbalance source).
+  // Either path produces the same advice: recruit/promote BUILDER/GUARD/
+  // COOK/SMITH rather than piling more extractors on top.
+  const foodFlow = Number(world.resources?.food ?? 0) >= 8;
+  const woodFlow = Number(world.resources?.wood ?? 0) >= 4;
+  const stoneFlow = Number(world.resources?.stone ?? 0) >= 2;
+  // "Wood-starved AND extraction-still-running" — colonies that can't
+  // ever switch to processing because they keep bleeding wood into
+  // extractor construction are extractor-saturated by definition.
+  const woodStarvedExtractorTreadmill =
+    Number(world.resources?.wood ?? 0) < 4 && extractionSiteCount >= 5;
+  const nonBootstrap =
+    (foodFlow && (woodFlow || stoneFlow))
+    || woodStarvedExtractorTreadmill
+    || processingSiteCount === 0;
+  if (workerCount >= 10 && extractionSiteCount >= 5 && nonBootstrap) {
     const ratio = extractionSiteCount / Math.max(1, extractionSiteCount + processingSiteCount);
     if (ratio > 0.65 || processingSiteCount === 0) {
       highlights.push(
