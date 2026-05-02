@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r5-PF (R5 PF-milestone-tone-gate, P1)
+
+### PF milestone-tone-gate — defer celebratory milestones during mass starvation
+
+Implements the P1 fix from `Round5/Plans/PF-milestone-tone-gate.md` (Reviewer PF-holistic-playability-rank, Tier B, score 5.5/10 dominated by tonal whiplash). Direction A: gate 5 positive-tone milestones on `colonyToneOk(state)` so green "thriving township", "Meals are flowing", "prosperous", "First Meal served", "First Medicine brewed" toasts cannot fire while a third or more of the colony is starving. NO new milestone, NO new copy strings, NO new toast surface — pure suppression of existing emits with re-fire-on-recovery semantics. Hard-freeze compliant.
+
+**1. P1: `POSITIVE_TONE_MILESTONES` set (`src/simulation/meta/ProgressionSystem.js`)** — Added a frozen `Set` of 5 milestone kinds (`pop_30`, `dev_60`, `dev_80`, `first_meal`, `first_medicine`) whose copy is unambiguously celebratory. Located near `RECOVERY_ESSENTIAL_TYPES` so the two whitelist sets sit together.
+
+**2. P1: `colonyToneOk(state)` helper (`src/simulation/meta/ProgressionSystem.js`)** — Returns true when `criticalHungerRatio < 0.30`, where `criticalHungerRatio = (alive workers with hunger < 0.20) / (alive workers)`. Returns `false` when `state.agents` is missing or alive count is zero (don't celebrate when state is unknown). Single linear walk over `state.agents` — no allocations, O(workers).
+
+**3. P1: gate in `detectMilestones` (`src/simulation/meta/ProgressionSystem.js:detectMilestones`)** — One-line insert at the top of the per-rule loop body, immediately after the `seen.includes(rule.kind)` short-circuit and BEFORE the baseline-delta check: `if (POSITIVE_TONE_MILESTONES.has(rule.kind) && !colonyToneOk(state)) continue;`. Critical: the skip does NOT push to `seen`, so the milestone re-fires on a later tick once the colony recovers — matches reviewer's "no green toast during steady-state starvation" while preserving the celebration for healthy colonies.
+
+**Tests added:** `test/milestone-tone-gate.test.js` (3 cases: starving colony with 30 workers @ hunger=0.10 + devIndexSmoothed=65 + pop=30 emits ZERO `dev_60` and ZERO `pop_30`; recovery to hunger=0.85 makes both fire on next tick; neutral milestone `first_farm` still fires under mass starvation because it is NOT in the positive-tone set). `test/milestone-tone-gate-firstmeal.test.js` (3 cases: starving colony does NOT toast `first_meal` even after `state.resources.meals=1`; same for `first_medicine`; well-fed colony emits `first_meal` normally). All 6 new cases pass.
+
+**Test baseline:** 1833 tests / 1823 pass / 6 fail (all pre-existing on parent `3241de1`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step, plus one classifier suite) / 4 skip. Net +6 passes vs parent (1817 → 1823) from the 6 new test cases. Zero new failures introduced; zero milestone/progression regressions.
+
+**Files changed:** 1 source (`src/simulation/meta/ProgressionSystem.js`, ~40 LOC) + 2 new tests + CHANGELOG.
+
 ## [Unreleased] — v0.10.2-r5-PE (R5 PE-classify-and-inspector, P1)
 
 ### PE classify-and-inspector — Working chip + Inspector vitals (HP/Mood/Morale/Energy)
