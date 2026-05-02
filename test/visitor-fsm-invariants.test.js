@@ -13,7 +13,21 @@ import assert from "node:assert/strict";
 import { VisitorFSM } from "../src/simulation/npc/fsm/VisitorFSM.js";
 import { VISITOR_KIND } from "../src/config/constants.js";
 
-function makeState(timeSec = 0) { return { metrics: { timeSec } }; }
+// v0.10.1 R3 wave-3.5 — production STATE_TRANSITIONS now drives via the
+// planner, which reads `state.buildings` / `state.resources` / `state.ai`.
+// Provide the full minimum surface so the default VisitorFSM (used in the
+// tickCount-monotonic test) can call planEntityDesiredState without crash.
+function makeState(timeSec = 0) {
+  return {
+    metrics: { timeSec, tick: 0 },
+    grid: { width: 8, height: 8, tiles: new Uint8Array(64), version: 1 },
+    debug: {},
+    ai: { groupPolicies: new Map(), groupStateTargets: new Map() },
+    resources: { food: 0, wood: 0, stone: 0, herbs: 0 },
+    buildings: { warehouses: 0, farms: 0, lumbers: 0 },
+    gameplay: {},
+  };
+}
 
 function makeVisitor() {
   return {
@@ -64,9 +78,13 @@ test("VisitorFSM invariants: getStats() returns a fresh object on each call", ()
 });
 
 test("VisitorFSM invariants: tickCount accumulates monotonically across ticks", () => {
+  // v0.10.1 R3 wave-3.5 — production FSM ticks now route via the planner
+  // and may call into wander/path helpers that need services.rng. Provide
+  // a deterministic stub so this test stays a pure dispatcher counter check.
   const fsm = new VisitorFSM();
   const visitor = makeVisitor();
-  for (let i = 0; i < 5; i += 1) fsm.tickVisitor(visitor, makeState(i), {}, 0.016);
+  const services = { rng: { next: () => 0.5 }, pathCache: { get: () => null, set: () => {} } };
+  for (let i = 0; i < 5; i += 1) fsm.tickVisitor(visitor, { ...makeState(i), weather: { moveCostMultiplier: 1, current: "clear" } }, services, 0.016);
   assert.equal(fsm.getStats().tickCount, 5);
 });
 

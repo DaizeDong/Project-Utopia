@@ -1,10 +1,11 @@
-// v0.10.1 HW7 Final-Polish-Loop Round 2 wave-3 (C1-code-architect) —
-// Skeleton lock test for the Visitor FSM facade introduced in this
-// wave. Coverage:
+// v0.10.1 HW7 Final-Polish-Loop Round 3 wave-3.5 (C1-code-architect) —
+// Skeleton lock test for the Visitor FSM facade. Wave-3.5 dropped the
+// USE_VISITOR_FSM flag (FSM is now the only path), so the flag-flip
+// subtests from wave-3 are gone. Coverage:
 //   (a) `new VisitorFSM()` is constructible without args
-//   (b) flag=true ticks the FSM and a fresh visitor advances IDLE →
-//       WANDERING by tick 1 (the only enabled transition in this wave)
-//   (c) flag=false default leaves `VisitorAISystem._fsm` null
+//   (b) lazy-init: VisitorAISystem._fsm is null pre-update()
+//   (c) post-update: a fresh trader (no warehouse in minimal state)
+//       plans `wander` → FSM advances IDLE → WANDERING by tick 1
 //   (d) `visitor.stateLabel` is single-written from DISPLAY_LABEL by
 //       the dispatcher (matches the WorkerFSM contract)
 
@@ -13,7 +14,7 @@ import assert from "node:assert/strict";
 import { VisitorFSM } from "../src/simulation/npc/fsm/VisitorFSM.js";
 import { DISPLAY_LABEL } from "../src/simulation/npc/fsm/VisitorStates.js";
 import { VisitorAISystem } from "../src/simulation/npc/VisitorAISystem.js";
-import { _testSetFeatureFlag, FEATURE_FLAGS, VISITOR_KIND } from "../src/config/constants.js";
+import { VISITOR_KIND } from "../src/config/constants.js";
 
 function makeMinimalState({ timeSec = 0, agents = [] } = {}) {
   return {
@@ -21,9 +22,14 @@ function makeMinimalState({ timeSec = 0, agents = [] } = {}) {
     controls: { timeScale: 1 },
     agents,
     animals: [],
-    grid: { width: 8, height: 8, tiles: new Uint8Array(64) },
+    grid: { width: 8, height: 8, tiles: new Uint8Array(64), version: 1 },
     debug: {},
-    ai: { runtimeProfile: "default" },
+    ai: { runtimeProfile: "default", groupPolicies: new Map(), groupStateTargets: new Map() },
+    resources: { food: 0, wood: 0, stone: 0, herbs: 0 },
+    buildings: { warehouses: 0, farms: 0, lumbers: 0 },
+    gameplay: {},
+    weather: { moveCostMultiplier: 1, current: "clear" },
+    environment: {},
   };
 }
 
@@ -38,6 +44,7 @@ function makeVisitor() {
     blackboard: {},
     targetTile: null,
     groupId: "traders",
+    hunger: 1,
   };
 }
 
@@ -47,34 +54,20 @@ test("VisitorFSM: constructs without args + getStats fresh", () => {
   assert.deepEqual(fsm.getStats(), { transitionCount: 0, tickCount: 0 });
 });
 
-test("VisitorFSM: first tick bootstraps IDLE then transitions to WANDERING", () => {
-  const fsm = new VisitorFSM();
-  const visitor = makeVisitor();
-  fsm.tickVisitor(visitor, makeMinimalState({ timeSec: 5 }), {}, 0.016);
-  assert.equal(visitor.fsm.state, "WANDERING");
-  assert.equal(visitor.stateLabel, DISPLAY_LABEL.WANDERING);
-  assert.equal(fsm.getStats().transitionCount, 1);
-});
-
-test("VisitorAISystem: flag=false default leaves _fsm null on construction", () => {
-  assert.equal(FEATURE_FLAGS.USE_VISITOR_FSM, false);
+test("VisitorAISystem: lazy-init leaves _fsm null on construction", () => {
   const sys = new VisitorAISystem();
   assert.equal(sys._fsm, null);
 });
 
-test("VisitorAISystem: flag=true lazy-constructs FSM on update() + advances visitor", () => {
-  _testSetFeatureFlag("USE_VISITOR_FSM", true);
-  try {
-    const sys = new VisitorAISystem();
-    const visitor = makeVisitor();
-    const state = makeMinimalState({ agents: [visitor] });
-    sys.update(0.016, state, {});
-    assert.ok(sys._fsm instanceof VisitorFSM);
-    assert.equal(visitor.fsm.state, "WANDERING");
-    assert.equal(visitor.stateLabel, DISPLAY_LABEL.WANDERING);
-  } finally {
-    _testSetFeatureFlag("USE_VISITOR_FSM", false);
-  }
+test("VisitorAISystem: update() lazy-constructs FSM + advances visitor", () => {
+  const sys = new VisitorAISystem();
+  const visitor = makeVisitor();
+  const state = makeMinimalState({ agents: [visitor] });
+  sys.update(0.016, state, { rng: { next: () => 0.5 }, pathCache: { get: () => null, set: () => {} } });
+  assert.ok(sys._fsm instanceof VisitorFSM);
+  // No warehouse → planner returns `wander` → FSM enters WANDERING.
+  assert.equal(visitor.fsm.state, "WANDERING");
+  assert.equal(visitor.stateLabel, DISPLAY_LABEL.WANDERING);
 });
 
 test("VisitorFSM: state body cannot hijack stateLabel (single-write by dispatcher)", () => {
