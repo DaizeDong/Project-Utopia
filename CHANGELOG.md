@@ -110,6 +110,19 @@ R4 wave-0 docs-only pass — A2 (Performance Auditor) verdict YELLOW 4/10 with t
 
 **Files changed:** 2 (`CHANGELOG.md`, `assignments/homework7/Post-Mortem.md`) plus the `Round4/Implementations/A2-performance-auditor.commit.md` log. No source / test / config changes; track = `docs` only.
 
+### Action Items (HW7 R4 — B1 sustained GREEN streak)
+
+R4 wave-0 docs-only pass — B1 (Action-Items Auditor) verdict GREEN 9/10 sustained from R3 GREEN 9/10. Eleven items audited end-to-end against the live R4 build (parent commit `f749184`): **9 closed / 1 partial (AI-9 heat-lens click-path) / 1 documented-defer (AI-8 trait 行为可见)**. Zero R3→R4 closed→open regression. Closed + documented-defer = 10/11 = 90.9% (≥0.8 threshold). The single retained −1 is for AI-9: the heat-lens hover popover surfaces the supply-surplus / starvation context label correctly but the click-path recipe is closed in Worker Focus rather than on the lens itself, so the lens UX is still two clicks instead of one. Track = `docs` only; no source / test / config files touched in this entry.
+
+**R4 vs R3 — two material upgrades (over and above 0-regression baseline):**
+- **AI ownership: from "label-closed" to "evidence-closed"** — R3 closure leaned on textual ownership boundaries in the AI Log (all directors stamped `[fallback]`, attribution clear). R4 has the LLM live-in-loop: Environment 11/15 LLM, Strategic LLM live, Colony Planner LLM 5 plans / 1 completed, `ai.llmCount = 12`, and the Director Timeline carries real `[1m 42s ago] llm-live Keep throughput … gpt-5.4-nano` timestamps. End-to-end LLM-integration health, not just attribution clarity.
+- **Dev UI quarantine: from "behind a hotkey" to "force-hide CSS"** — Hotfix iter4 Batch F (CHANGELOG line 5–33) reduced the `#devDock` CSS rule body to `display: none !important;`. Even with `?dev=1` / `Ctrl+Shift+D` / `localStorage utopia:devMode=1`, the bottom Developer Telemetry dock + all six cards (Global & Gameplay, A* + Boids, AI Trace, Logic Consistency, System Timings, Objective Log) do not paint. AI-11 status held at closed across R3→R4; the underlying mechanism is now strictly more thorough than R3's hotkey-gated approach.
+
+**R5 candidate — AI-9 closeout path (already scoped by reviewer):**
+B1 R4 §"结论" closing paragraph hands the next implementer a concrete recipe: in `src/render/PressureLens.js`, attach a click handler to the hover popover that emits the `inspect-worker` event onto the worker_id under the cursor, so the heat-lens red-block → Inspector Panel jump is one step rather than two. This change crosses panel boundaries (PressureLens → InspectorPanel via the global event bus) and is intentionally deferred out of R4 because (a) B1 is already GREEN — AI-9 is not a blocker — and (b) the same `PressureLens.js` file is in scope for A4's R5 dedup work, so it is more efficient to merge both edits in a single R5 implementer pass than to fragment them across R4 and R5. Adopting this in R5 would lift B1 to **GREEN 9.5+** (full closure of the only retained partial).
+
+**Files changed:** 1 (`CHANGELOG.md`) plus the `Round4/Implementations/B1-action-items-auditor.commit.md` log. No source / test / config changes; track = `docs` only.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
 ### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
