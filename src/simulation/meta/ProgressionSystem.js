@@ -282,6 +282,45 @@ function getDoctrineMastery(state) {
 // recovery cycle without lumber will starve the build queue at wood=0.
 export const RECOVERY_ESSENTIAL_TYPES = Object.freeze(new Set(["farm", "lumber", "warehouse", "road"]));
 
+// PF-milestone-tone-gate (R5 P1): set of milestone kinds whose copy is
+// unambiguously celebratory ("thriving township", "Meals are flowing",
+// "prosperous", "First Meal served", "First Medicine brewed"). Emitting these
+// during mass starvation produced tonal whiplash (PF-Gap #2) — green toasts
+// while colonists were dying. Gated in detectMilestones via colonyToneOk:
+// when criticalHungerRatio (workers with hunger<0.20 / alive workers) >= 0.30
+// the emit is SKIPPED and the milestone is NOT marked as seen, so it can
+// re-fire later once the colony recovers. Hard-freeze compliant: no new
+// milestones, no new copy strings, no new toast surfaces.
+const POSITIVE_TONE_MILESTONES = Object.freeze(new Set([
+  "pop_30",
+  "dev_60",
+  "dev_80",
+  "first_meal",
+  "first_medicine",
+]));
+
+/**
+ * Returns true when the colony's tonal context is healthy enough to celebrate
+ * a positive milestone. Defined as criticalHungerRatio < 0.30, where
+ * criticalHungerRatio = (alive workers with hunger < 0.20) / (alive workers).
+ * Returns false when there are zero alive workers or `state.agents` is
+ * missing (don't celebrate when state is unknown).
+ * @param {object} state
+ * @returns {boolean}
+ */
+function colonyToneOk(state) {
+  if (!Array.isArray(state?.agents)) return false;
+  let alive = 0;
+  let critical = 0;
+  for (const agent of state.agents) {
+    if (!agent || agent.type !== "WORKER" || agent.alive === false) continue;
+    alive++;
+    if (Number(agent.hunger ?? 0) < 0.20) critical++;
+  }
+  if (alive === 0) return false;
+  return (critical / alive) < 0.30;
+}
+
 /**
  * Returns true when `buildType` is in the recovery-essential whitelist.
  * Use this from any planner / director layer that needs to honor the
@@ -355,6 +394,10 @@ function detectMilestones(state) {
     const current = Number(rule.current(state));
     const start = Number(baseline[rule.baselineKey] ?? 0);
     if (!Number.isFinite(current) || current <= Math.max(start, 0)) continue;
+    // PF-milestone-tone-gate (R5 P1): defer celebratory milestones during
+    // mass starvation. Skip WITHOUT pushing to `seen` so the milestone
+    // re-fires once the colony recovers (criticalHungerRatio < 0.30).
+    if (POSITIVE_TONE_MILESTONES.has(rule.kind) && !colonyToneOk(state)) continue;
     seen.push(rule.kind);
     emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, {
       kind: rule.kind,
