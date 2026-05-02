@@ -1,320 +1,439 @@
-# 经济与资源系统文档 (Economy & Resource System)
+# Economy & Resource System
 
-**版本**: v0.8.2 | **最后更新**: 2026年4月
+**Version**: v0.10.1 (HW7 Final-Polish-Loop R0 → R3 + Hotfix iter 1-4) | **Last updated**: 2026-05-01
 
----
-
-## 1. 资源类型与流转
-
-### 1.1 资源定义
-
-Project Utopia 的经济系统管理两个层次的资源：
-
-#### 原始资源 (Raw Resources)
-- **food** — 从农场收获的谷粒
-- **wood** — 从木材营地提取
-- **stone** — 从采石场开采  
-- **herbs** — 从草药园采集
-
-初始资源: food: 100, wood: 80, stone: 15
-
-#### 加工资源 (Processed Goods)
-- **meals** — 厨房将食物加工成的营养品（恢复×2）
-- **tools** — 铁匠铺制造（+15% 采集速度）
-- **medicine** — 诊所制造（8hp/sec）
-
-#### 工人携带结构 (Carry Structure)
-```javascript
-carry: { food: 0, wood: 0, stone: 0, herbs: 0 }
-```
-
-### 1.2 资源流转图
-
-生产建筑(FARM/LUMBER/QUARRY/HERB_GARDEN)
-  ↓ 生产资源
-Worker.carry (food/wood/stone/herbs)
-  ↓ 运输至仓库
-WAREHOUSE (state.resources)
-  ↓ 分流加工
-KITCHEN(2f→1meal) / SMITHY(3s+2w→1tool) / CLINIC(2h→1medicine)
-  ↓ 工人消费
-Worker consumption (meals/raw food/medicine)
-
-在途损坏(In-Transit Spoilage):
-- 食物: 0.5%/秒（路上）
-- 草药: 1.0%/秒（路上）
-- 宽限期: 500 ticks
+Source of truth: `src/config/balance.js`, `src/config/constants.js`, `src/simulation/economy/*`, `src/simulation/meta/ProgressionSystem.js`, `src/world/events/WorldEventSystem.js`.
 
 ---
 
-## 2. 建筑完整列表
+## 1. Resources & Flow
 
-### 2.1 生产建筑表
+### 1.1 Raw resources (colony stockpile)
 
-| 名称 | 木材 | 石头 | 草药 | 功能 | 工人角色 | 产率 | 备注 |
-|------|:---:|:---:|:---:|------|:------:|------|------|
-| **FARM** | 5 | — | — | 收获食物 | FARM | 0.3-1.0 | 受肥沃度/水分影响 |
-| **LUMBER** | 5 | — | — | 收获木材 | WOOD | 0.4-1.0 | 工具加成 |
-| **QUARRY** | 6 | — | — | 采石 | STONE | 0.45/s | 持续产出 |
-| **HERB_GARDEN** | 4 | — | — | 采草药 | HERBS | 0.28/s | 持续产出 |
-| **KITCHEN** | 8 | 3 | — | 加工meals | COOK | 2f→1m/2.8s | 室内无天气 |
-| **SMITHY** | 6 | 5 | — | 制造tools | SMITH | 3s+2w→1t/8s | 户外天气敏感 |
-| **CLINIC** | 6 | — | 4 | 制造medicine | HERBALIST | 2h→1m/4s | 逆天气 |
-| **WAREHOUSE** | 10 | — | — | 存储hub | HAUL | — | 间距≥5 |
-| **ROAD** | 1 | — | — | 后勤加成 | — | +35% | 连接加成 |
+`state.resources` holds four raw resources, all replenished by worker harvesting:
+
+- **food** — produced at `FARM`
+- **wood** — produced at `LUMBER`
+- **stone** — produced at `QUARRY`
+- **herbs** — produced at `HERB_GARDEN`
+
+`INITIAL_RESOURCES` (HW7 R0 A5-balance-critic update — extends opening runway from ~3:11 to ~6:30):
+
+```js
+INITIAL_RESOURCES = { food: 320, wood: 35, stone: 15, herbs: 8 }
+```
+
+### 1.2 Processed goods (colony stockpile, no carry)
+
+Processing buildings convert raw resources directly into colony-wide stocks:
+
+- **meals** — produced at `KITCHEN` (2 food → 0.95 meals per `kitchenCycleSec = 2.3 s`)
+- **tools** — produced at `SMITHY` (3 stone + 2 wood → 1 tool per `smithyCycleSec = 8 s`)
+- **medicine** — produced at `CLINIC` (1 herbs → 1 medicine per `clinicCycleSec = 4 s`)
+
+Workers do **not** carry processed goods — they consume them directly from `state.resources`.
+
+### 1.3 Carry structure
+
+Each worker maintains a `carry` object with four raw-resource slots:
+
+```js
+worker.carry = { food: 0, wood: 0, stone: 0, herbs: 0 }
+```
+
+`carryTotal` = sum of all four slots. There is no hard per-slot cap; capacity is softly regulated by `workerDeliverThreshold = 2.5` and the `workerCarryPressureSec = 3.8 s` non-zero-carry timer (both checked by `STATE_TRANSITIONS[HARVESTING]` in the worker FSM).
+
+### 1.4 Flow diagram
+
+```
+Production tiles (FARM/LUMBER/QUARRY/HERB_GARDEN)
+   │  worker harvests → worker.carry[type]
+   ▼
+DELIVERING → DEPOSITING (worker FSM)
+   │  handleDeliver() unloads at WAREHOUSE intake
+   ▼
+state.resources.{food,wood,stone,herbs}                 ← colony stockpile
+   ├─→ KITCHEN  (2 food   → 0.95 meals  / 2.3 s)
+   ├─→ SMITHY   (3 stone + 2 wood → 1 tool / 8 s)
+   ├─→ CLINIC   (1 herbs  → 1 medicine / 4 s)
+   ├─→ Worker eat (warehouse fast-eat path; meals 2.0× more efficient)
+   └─→ MortalitySystem (medicine: 6 hp/s per active medicine)
+```
+
+In-transit spoilage on perishables (food / herbs) — see §8.4.
 
 ---
 
-## 3. 土壤系统 (Soil System)
+## 2. Building catalogue (production cost + role + output)
 
-### 3.1 盐碱化机制
+| Building     | Wood | Stone | Herbs | Worker role  | Output                       | Cycle / rate              |
+|--------------|:----:|:-----:|:-----:|:------------:|------------------------------|---------------------------|
+| FARM         | 5    | —     | —     | FARM         | `worker.carry.food`          | per-harvest, fertility-gated |
+| LUMBER       | 5    | —     | —     | WOOD         | `worker.carry.wood`          | per-harvest, weather-modified |
+| QUARRY       | 6    | —     | —     | STONE        | `worker.carry.stone`         | 0.45 / s, weather-modified |
+| HERB_GARDEN  | 4    | —     | —     | HERBS        | `worker.carry.herbs`         | 0.28 / s, weather-modified |
+| KITCHEN      | 8    | 3     | —     | COOK         | `state.resources.meals`      | 2 food → 0.95 meals / 2.3 s |
+| SMITHY       | 6    | 5     | —     | SMITH        | `state.resources.tools`      | 3 s + 2 w → 1 tool / 8 s   |
+| CLINIC       | 6    | —     | 4     | HERBALIST    | `state.resources.medicine`   | 1 h → 1 m / 4 s            |
+| WAREHOUSE    | 10   | —     | —     | (HAUL hub)   | (storage / intake)           | spacing ≥ 5 tile (Manhattan) |
+| ROAD         | 1    | —     | —     | —            | logistics + speed bonus      | +35 % move speed (compounding) |
 
-```javascript
-soilSalinizationPerHarvest: 0.012  // 每次收获 +0.012
-soilSalinizationThreshold: 0.8     // 触发休耕阈值
-soilFallowRecoveryTicks: 1200      // ~3.3分钟恢复
-```
-
-流程:
-1. 每次收获后: salinized += 0.012
-2. 如果 salinized ≥ 0.8: 触发休耕
-3. 休耕期间: fertility = 0, 产量池 = 0
-4. 恢复后: fertility = 0.9, salinized = 0, yieldPool = 120
-
-### 3.2 产量池系统
-
-```javascript
-farmYieldPoolInitial: 120     // 初始值
-farmYieldPoolMax: 180         // 被动上限
-farmYieldPoolRegenPerTick: 0.1
-```
-
-产量池工作:
-1. 初始化为 120
-2. 每次收获时递减
-3. 当未采集时被动恢复 +0.1/tick
-4. 池子枯竭时收获返回 0
+Costs scale with `softTarget` overrun (see `BUILD_COST` in `balance.js`); ruins discount = 0.7×; elevation surcharge = `1 + elevation × 0.15`.
 
 ---
 
-## 4. 加工链
+## 3. Soil System
 
-### 4.1 食物链
+### 3.1 Salinization mechanics
 
-FARM (0.3-1.0 food/harvest)
-  ↓
-Worker.carry[food]
-  ↓ deliver
-WAREHOUSE (state.resources.food)
-  ├→ Worker eating (0.11 recovery/food)
-  └→ KITCHEN (2food + COOK)
-     ↓ 2.8秒周期
-     meals (0.22 recovery/meal)
+```js
+soilSalinizationPerHarvest:    0.012   // increment per FARM harvest
+soilSalinizationThreshold:     0.8     // triggers fallow entry (~67 harvests fresh → fallow)
+soilFallowRecoveryTicks:       1200    // ~3.3 min @ 6 ticks/sec
+soilSalinizationDecayPerTick:  0.00002 // negligible passive decay
+```
 
-### 4.2 工具链
+When `salinized ≥ 0.8`: `fallowUntil = currentTick + 1200`; `fertility` hard-capped at 0 for the fallow duration. On recovery: `fertility = 0.9`, `salinized = 0`, `yieldPool = 120`.
 
-QUARRY (0.45 stone/sec)
-  ↓
-WAREHOUSE
-  ↓
-SMITHY (3stone + 2wood + SMITH)
-  ↓ 8秒周期
-  tools (最多3件有效)
-  ↓
-+15% 采集速度 × 件数
+### 3.2 Yield pool
 
-### 4.3 医疗链
+```js
+farmYieldPoolInitial:        120
+farmYieldPoolMax:            180
+farmYieldPoolRegenPerTick:   0.1
+yieldPoolDepletedThreshold:  60   // planner signal
+```
 
-HERB_GARDEN (0.28 herbs/sec)
-  ↓
-WAREHOUSE
-  ↓
-CLINIC (2herbs + HERBALIST)
-  ↓ 4秒周期
-  medicine
-  ↓
-MortalitySystem: 8 hp/sec per medicine
+Per-node-type pool variants:
+
+| Node type | Initial | Regen / tick | Notes |
+|---|---|---|---|
+| FOREST (LUMBER) | 80  | 0.05 | Regenerates |
+| STONE  (QUARRY) | 120 | 0.0  | **Does not** regenerate (finite deposit) |
+| HERB   (HERB_GARDEN) | 60 | 0.08 | Regenerates |
 
 ---
 
-## 5. 仓库与后勤
+## 4. Processing chain
 
-### 5.1 仓库选择
+### 4.1 Food chain
 
-```javascript
-worksiteCoverageSoftRadius: 10  // 绿区
-worksiteCoverageHardRadius: 16  // 黄区（警告）
-// >16 tile = 隔离状态 → -15% 效率
+```
+FARM (per-harvest food, fertility/moisture-gated)
+  → worker.carry.food → DEPOSITING → state.resources.food
+       ├─→ Worker eat (warehouse fast-eat path; +0.11 hunger / food unit)
+       └─→ KITCHEN (2 food + COOK staffed, 2.3 s cycle, output = 0.95 meals)
+              → state.resources.meals
+                 → Worker eat (mealHungerRecoveryMultiplier = 2.0× = +0.22 / meal)
 ```
 
-### 5.2 摄入限制 (M2 吞吐量)
+### 4.2 Tool chain
 
-```javascript
-warehouseIntakePerTick: 2       // 每tick最多2工人
-warehouseQueueMaxWaitTicks: 120 // 超时
+```
+QUARRY (0.45 stone/s) → state.resources.stone
+                            └─→ SMITHY (3 stone + 2 wood + SMITH, 8 s cycle, output = 1 tool)
+                                  → state.resources.tools
+                                     → +0.12 harvest speed bonus per tool, capped at 5 tools (+0.60)
 ```
 
-排队机制:
-- Worker1,2 → 卸载（消费2个令牌）
-- Worker3 → 进入队列
-- tick+1: 令牌重置, Worker3 卸载
+### 4.3 Medicine chain
 
-### 5.3 卸载速率
-
-```javascript
-baseRate = 4.2 res/sec
-penalty = 1 + max(0, load-1) × 0.32
-isolationPenalty = 0.8  // 孤立仓库
-
-effectiveRate = baseRate / penalty × isolation
+```
+HERB_GARDEN (0.28 herbs/s) → state.resources.herbs
+                                 └─→ CLINIC (1 herb + HERBALIST, 4 s cycle, output = 1 medicine)
+                                       → state.resources.medicine
+                                          → MortalitySystem: 6 hp/s per active medicine
 ```
 
 ---
 
-## 6. 建造成本与规则
+## 5. Warehouse & Logistics
 
-### 6.1 成本计算
+### 5.1 Warehouse selection
 
-基础成本 (BUILD_COST):
-```javascript
-{ farm: {wood: 5}, kitchen: {wood: 8, stone: 3}, ... }
+```js
+worksiteCoverageSoftRadius:  10    // green zone
+worksiteCoverageHardRadius:  16    // amber zone (warning); >16 → isolation penalty
+warehouseSpacingRadius:      5     // Manhattan separation between warehouses
 ```
 
-升级器 (超过 softTarget):
-```javascript
-cost *= min(cap, 1 + perExtra × max(0, count - softTarget))
-// 例: 第7个农场 = 5w × 1.1 = 5.5w → 6w
+### 5.2 Intake throttling (M2)
+
+```js
+warehouseIntakePerTick:        2      // ≤ 2 workers unload per warehouse per tick
+warehouseQueueMaxWaitTicks:    120    // queue timeout
+warehouseSoftCapacity:         4      // load penalty kicks in beyond this
 ```
 
-地形修正:
-```javascript
-elevationMult = 1 + elevation × 0.15
-ruinDiscount = 0.7  // 废墟折扣
-final = base × elevMult × ruinDiscount
+### 5.3 Unload rate
+
+```js
+baseRate          = workerUnloadRatePerSecond = 4.2 res/s
+queuePenalty      = 1 + max(0, load - 1) × warehouseQueuePenalty (0.32)
+isolationPenalty  = isolationDepositPenalty   = 0.85 (warehouse not road-connected)
+roadLogisticsBonus = 1.15 (warehouse road-connected)
+effectiveRate     = baseRate / queuePenalty × isolation × roadBonus
 ```
 
-### 6.2 放置规则
+### 5.4 Warehouse spoilage (HW7 R0 + R2)
 
-1. **地块**: 不能在水/HIDDEN上
-2. **节点门控** (M1a):
-   - lumber → FOREST 节点
-   - quarry → STONE 节点
-   - herb_garden → HERB 节点
-3. **后勤**: 生产建筑需仓库≤10 tile
-4. **间距**: 仓库≥5 tile曼哈顿距离
+Slow passive spoilage on the warehouse stockpile caps indefinite hoarding without choking
+active construction loops:
 
-### 6.3 拆除回收 (M1c)
+```js
+warehouseFoodSpoilageRatePerSec: 0.0003   // ~9.5 food/day @ 1000-stock (HW7 R0)
+warehouseWoodSpoilageRatePerSec: 0.00015  // half as aggressive (HW7 R2 NEW)
+```
 
-```javascript
-woodRecovery: 0.25    // 25%
-stoneRecovery: 0.35   // 35%
-foodRecovery: 0.0
-herbsRecovery: 0.0
+A 35-60 wood active-construction stockpile loses ~0.005-0.009 wood/s — negligible. A
+no-op 235+ wood stockpile slowly decays back toward equilibrium.
+
+---
+
+## 6. Build cost & placement rules
+
+Base cost via `BUILD_COST` table; modifiers:
+
+```js
+softTarget overrun:  cost *= min(cap, 1 + perExtra × max(0, count - softTarget))
+elevation:           cost *= 1 + elevation × 0.15
+ruins discount:      cost *= 0.7
+```
+
+Placement constraints:
+1. Tile must be passable and not WATER / HIDDEN.
+2. **Node gating** (M1a): `lumber → FOREST node`, `quarry → STONE node`, `herb_garden → HERB node`. FARM is fertility-gated, not node-gated.
+3. Production buildings need a warehouse within 10 tile (Manhattan).
+4. Warehouses ≥ 5 tile (Manhattan) apart.
+
+Demolish recovery (M1c): `wood 25 %`, `stone 35 %`, `food/herbs 0`.
+
+---
+
+## 7. Resource metrics & crisis detection
+
+### 7.1 Flow telemetry
+
+`EconomyTelemetry` snapshots per-resource production / consumption / spoilage on a 3-s sliding window — exposed as `state.metrics.foodProducedPerMin`, `foodConsumedPerMin`, `foodSpoiledPerMin`, etc.
+
+### 7.2 Crisis thresholds
+
+```js
+foodEmergencyThreshold:        18    // food < 18 → warning
+foodEmergencyCrisisThreshold:  0     // → autopilot pause
+resourceCollapseCarryGrace:    1.5   // (HW7 R0; was 0.5) widens carry-in-transit grace
+                                     //   so first-warehouse construction window
+                                     //   doesn't trip loss-state mid-haul
+```
+
+### 7.3 Warehouse density risk (M2)
+
+Score from producer-tile count proxy; at score ≥ 400 the warehouse rolls fire (0.008 / tick → 20 % loss + 30 cap) and vermin (0.005 / tick → 15 % loss + 40 cap) checks.
+
+### 7.4 Survival score (HW7 R2 NEW)
+
+```js
+survivalScorePerProductiveBuildingSec: 0.08   // bonus per productive building per second
+```
+
+A "do nothing" run accrues only the time floor (`perSec = 1`); a built-up colony scores 2-3× faster. Productive buildings counted: farms + lumbers + quarries + herbGardens + kitchens + smithies + clinics. ~6 productive buildings → +0.48 / s ≈ 1.5× time floor; 30+ → +2.4 / s ≈ 3.4× time floor.
+
+### 7.5 Recovery gating (HW7 R3 NEW)
+
+`ProgressionSystem.RECOVERY_ESSENTIAL_TYPES = Set(["farm", "lumber", "warehouse", "road"])`
+defines the build types allowed during the "recovery" budget window after a near-collapse.
+`ColonyDirectorSystem` reads this whitelist (via `isRecoveryEssential`) so non-essential
+builds (kitchen / smithy / clinic / herb_garden / wall / gate) are deferred until the
+colony exits recovery.
+
+---
+
+## 8. Worker economy
+
+### 8.1 Hunger drain & per-entity reconnect (HW7 R1 + R2)
+
+The v0.10.1-l rewrite replaced the per-entity hunger FSM with a **fixed global drain** to
+simplify accounting:
+
+```js
+workerFoodConsumptionPerSecond:  0.038   // (HW7 R0; was 0.05) global per-worker drain on state.resources.food
+                                         // pairs with INITIAL_RESOURCES.food = 320 to stretch
+                                         // pure-burn runway to ~702 s (~11:42)
+```
+
+**Bug + fix history (HW7 R1 → R2):** the global drain alone left `entity.hunger` static
+forever — workers never starved, so AFK runs trivially won. R1 (commit f385318)
+**reconnected** `entity.hunger` to the legacy MortalitySystem starvation chain by re-
+introducing a per-second hunger-decay knob that fires when the colony's food stockpile
+drops into a "low" band:
+
+```js
+workerHungerDecayPerSecond:           0.0055   // fallback per-second hunger decay (legacy chain)
+workerHungerDecayWhenFoodLow:         0.020    // (HW7 R1 NEW; renamed from WhenFoodZero in R2)
+                                               //   per-second entity.hunger decay when
+                                               //   state.resources.food < threshold
+workerHungerDecayLowFoodThreshold:    8        // (HW7 R2 NEW) the "low" food band threshold
+                                               //   sits below recoveryCriticalResourceThreshold (12)
+```
+
+R2 (commit 91a8d5b) widened the trigger from strict `food == 0` to `food < 8` because
+TRADE_CARAVAN's previous +0.5 food/s plus ProgressionSystem's emergency-relief charges
+kept food asymptotically above 0 — AFK still won under R1. With the band trigger, passive
+trickle income can no longer fully offset the 0.020/s decay; total time-to-first-death =
+~50 s decay (hunger 1.0 → 0.045) + 34 s holdSec ≈ 84 s after food enters the low band.
+
+**Eat target:**
+
+```js
+workerHungerSeekThreshold:                0.18   // FSM survival-preempt trigger
+workerEatRecoveryTarget:                  0.70   // exit EATING when hunger ≥ 0.70
+workerHungerEatRecoveryPerFoodUnit:       0.11   // raw food
+mealHungerRecoveryMultiplier:             2.0    // meals = 0.22 hunger / meal
+warehouseEatRatePerWorkerPerSecond:       0.60   // per-worker fast-eat flow (HW7 v0.10.1-h)
+warehouseEatCapPerSecond:                 4.0    // global shared cap (~6.7 uncapped workers)
+```
+
+### 8.2 Emergency rations
+
+When `worker.hunger < 0.18` AND no warehouse is reachable:
+
+```js
+emergencyRationCooldownSec: ~2.8 s
+eatRate: ~1.1 / s drawn directly from state.resources.food
+```
+
+Prevents death from warehouse-path failures.
+
+### 8.3 Carry pressure & in-transit spoilage
+
+```js
+foodSpoilageRatePerSec:        0.005   // off-road, after grace
+herbSpoilageRatePerSec:        0.01    // off-road, after grace
+spoilageGracePeriodTicks:      500     // first 500 off-road ticks: ×0.5 loss rate
+workerCarryPressureSec:        3.8     // non-zero-carry timer triggers force-deliver transition
+spoilageOnRoadMultiplier:      0       // ROAD/BRIDGE fully suppress in-transit spoilage
+```
+
+### 8.4 Trade caravan rebalance (HW7 R2)
+
+`WorldEventSystem` TRADE_CARAVAN per-tick yield was halved during HW7 R2 (commit 91a8d5b)
+to fix "AFK food self-regen 18 → 313" runs:
+
+```js
+// Pre-R2: state.resources.food += dt * 0.50 * intensity * mult
+//         state.resources.wood += dt * 0.34 * intensity * mult
+// R2:
+state.resources.food += dt * 0.22 * event.intensity * yieldMultiplier;
+state.resources.wood += dt * 0.18 * event.intensity * yieldMultiplier;
+```
+
+A 20 s caravan at intensity = 1 now injects ~4.4 food (was ~10) — still meaningful relief
+for active colonies but cannot single-handedly sustain a no-op run.
+
+### 8.5 Autopilot quarry early boost (HW7 R2)
+
+```js
+autopilotQuarryEarlyBoost: 12   // raises early-game (t < 300 s) quarry/herb priority
+                                //   so ColonyDirector promotes processing above farm
+                                //   in bootstrap when the wood-gate (≥ 6) lets
+                                //   farm-spam (priority 80) win otherwise.
 ```
 
 ---
 
-## 7. 资源指标
+## 9. Population & wildlife (HW7 hotfix iter4 — caps removed)
 
-### 7.1 流量监控
+### 9.1 Pop cap removed (Batch E, Issue #9)
 
-```javascript
-// 每3秒快照
-foodProducedPerMin
-foodConsumedPerMin
-foodSpoiledPerMin
-woodProducedPerMin
-[...]
-```
+The `Math.min(80, ...)` clamp on `infraCap` was deleted from both
+`PopulationGrowthSystem.js` and `ColonyPerceiver.js`. The infrastructure-derived formula
+(warehouses + farms + lumbers + quarries + kitchens + smithies + clinics + herb_gardens)
+is preserved as a soft cap that grows with build-out. `state.controls.recruitTarget`
+default raised 16 → 500 (matches the slider's `max="500"`); pre-fix, every fresh save
+opened with the slider at 16 and most players never realised they had to drag it.
 
-### 7.2 危急检测
+### 9.2 Wildlife spawn (HW7 hotfix iter1, Batch A — Issue #4)
 
-```javascript
-foodEmergencyThreshold: 18    // food < 18 → warning
-foodEmergencyCrisisThreshold: 0  // → pause if autopilot
-resourceEmptySec: { food, wood }  // 追踪零时间
-```
-
-### 7.3 仓库密度风险 (M2)
-
-```javascript
-score = producerTileCount × 50  // 近似库存
-if (score >= 400) {
-  fireChance = 0.008/tick    // 20% loss + 30 cap
-  verminChance = 0.005/tick  // 15% loss + 40 cap
+```js
+INITIAL_POPULATION = {
+  workers: 12,
+  visitors: 4,
+  herbivores: 8,    // (HW7 hotfix-A; was 3)
+  predators: 2,     // (HW7 hotfix-A; was 1)
 }
+wildlifeSpawnRadiusBonus: 6   // (HW7 hotfix-A; was 3)
+                              //   widens initial-spawn box so the bumped INITIAL_POPULATION
+                              //   finds enough candidate tiles within wildlife-zone radius
+                              //   (was returning null silently → under-target spawn counts)
 ```
+
+Per-zone caps in `longRunProfile.js` (herbivores max 6 / zone, predators max 2 / zone) still gate breed/recovery; initial spawn now populates multiple zones (or duplicates within zones for templates with a single zone) so the world feels alive from second 1 instead of looking empty.
 
 ---
 
-## 8. 工人经济
+## 10. System update order (relevant slice)
 
-### 8.1 饥饿与进食
-
-```javascript
-hungerDecayPerSecond: 0.0055
-hungerSeekThreshold: 0.18     // 触发进食
-hungerRecoverTarget: 0.70     // 饱满目标
-
-recoveryPerFoodUnit: 0.11     // raw food
-mealMultiplier: 2.0           // meals = 0.22/meal
+```
+TileStateSystem          → soil fertility, salinization, fallow, fire spread
+NPCBrainSystem           → LLM/fallback policy fan-out
+WarehouseQueueSystem     → reset intake tokens
+WorkerAISystem           → harvest / deliver / deposit / eat (FSM)
+ConstructionSystem       → builder workSec accrual + completion
+VisitorAISystem          → trader / saboteur (PriorityFSM via VisitorFSM)
+AnimalAISystem           → herbivore / predator (legacy StatePlanner)
+MortalitySystem          → hunger death + medicine healing
+BoidsSystem              → flocking velocity (path-dampened separation)
+ResourceSystem           → flow accounting, spoilage, crisis detection
+ProcessingSystem         → kitchen / smithy / clinic cycles
 ```
 
-### 8.2 应急口粮
-
-当工人饥饿 < 0.18 且无法到达仓库:
-```javascript
-emergencyRationCooldown: 2.8秒
-eatRate: ~1.1/sec
-```
-
-### 8.3 工人携带与腐烂
-
-```javascript
-foodSpoilageRatePerSec: 0.005  // 宽限期500ticks
-herbSpoilageRatePerSec: 0.01   // 宽限期500ticks
-carryPressureSec: 3.8           // 强制投递阈值
-```
+Full `SYSTEM_ORDER` lives in `src/config/constants.js`. See `docs/systems/01-architecture.md` for the canonical 23-system pipeline.
 
 ---
 
-## 9. 系统执行顺序
+## 11. Key tunables — quick reference
 
-```javascript
-TileStateSystem          // 肥沃度/盐碱化
-→ WorkerAISystem         // 收获/卸载/进食
-→ ResourceSystem         // 流量汇总
-→ ProcessingSystem       // 厨房/铁匠/诊所
-```
+| Parameter                                  | Value    | Source                                  |
+|--------------------------------------------|:--------:|-----------------------------------------|
+| `INITIAL_RESOURCES.food`                   | 320      | HW7 R0 A5 — opening runway              |
+| `workerFoodConsumptionPerSecond`           | 0.038    | HW7 R0 A5 — global drain                |
+| `workerHungerDecayWhenFoodLow`             | 0.020    | HW7 R1 + R2 — entity.hunger reconnect   |
+| `workerHungerDecayLowFoodThreshold`        | 8        | HW7 R2 — band trigger                   |
+| `resourceCollapseCarryGrace`               | 1.5      | HW7 R0 A5 — wider grace                 |
+| `warehouseFoodSpoilageRatePerSec`          | 0.0003   | HW7 R0                                  |
+| `warehouseWoodSpoilageRatePerSec`          | 0.00015  | HW7 R2 NEW                              |
+| `survivalScorePerProductiveBuildingSec`    | 0.08     | HW7 R2 NEW                              |
+| `autopilotQuarryEarlyBoost`                | 12       | HW7 R2 NEW                              |
+| TRADE_CARAVAN food rate                    | 0.22 / s | HW7 R2 (was 0.50)                       |
+| TRADE_CARAVAN wood rate                    | 0.18 / s | HW7 R2 (was 0.34)                       |
+| `INITIAL_POPULATION.herbivores`            | 8        | HW7 hotfix-A (was 3)                    |
+| `INITIAL_POPULATION.predators`             | 2        | HW7 hotfix-A (was 1)                    |
+| `wildlifeSpawnRadiusBonus`                 | 6        | HW7 hotfix-A (was 3)                    |
+| `state.controls.recruitTarget` default     | 500      | HW7 hotfix iter4 batch E (was 16)       |
+| `infraCap` ceiling                         | (none)   | HW7 hotfix iter4 batch E (`Math.min(80,…)` removed) |
+| `kitchenCycleSec`                          | 2.3      | v0.8.5.1 hotfix                         |
+| `kitchenMealOutput`                        | 0.95     | v0.8.5.1 hotfix                         |
+| `toolHarvestSpeedBonus`                    | 0.12     | v0.8.5.1 hotfix                         |
+| `toolMaxEffective`                         | 5        | v0.8.5                                  |
+| `medicineHealPerSecond`                    | 6        | balance.js                              |
+
+`RECOVERY_ESSENTIAL_TYPES = { farm, lumber, warehouse, road }` exported from `ProgressionSystem.js` (HW7 R3 NEW).
 
 ---
 
-## 10. 关键参数参考
+## File inventory
 
-| 参数 | 值 | 用途 |
-|------|:---:|------|
-| hungerDecayPerSecond | 0.0055 | 工人饥饿速度 |
-| kitchenCycleSec | 2.8 | 饭菜周期 |
-| farmYieldPoolInitial | 120 | 可采次数 |
-| soilSalinizationPerHarvest | 0.012 | 休耕速度 |
-| soilFallowRecoveryTicks | 1200 | 恢复时间 |
-| warehouseIntakePerTick | 2 | 卸载并发 |
-| workerUnloadRatePerSecond | 4.2 | 卸载速率 |
-| toolHarvestSpeedBonus | 0.15 | 工具加成 |
-| roadLogisticsBonus | 1.15 | 道路加成 |
-| isolationDepositPenalty | 0.85 | 隔离衰减 |
-
----
-
-## 文件清单
-
-- src/simulation/economy/ResourceSystem.js
-- src/simulation/economy/ProcessingSystem.js
-- src/simulation/economy/TileStateSystem.js
-- src/simulation/economy/LogisticsSystem.js
-- src/simulation/construction/BuildSystem.js
-- src/simulation/construction/BuildAdvisor.js
-- src/simulation/npc/WorkerAISystem.js
-- src/config/constants.js
-- src/config/balance.js
-- src/entities/EntityFactory.js
+- `src/config/balance.js`
+- `src/config/constants.js`
+- `src/simulation/economy/ResourceSystem.js`
+- `src/simulation/economy/ProcessingSystem.js`
+- `src/simulation/economy/TileStateSystem.js`
+- `src/simulation/economy/LogisticsSystem.js`
+- `src/simulation/economy/WarehouseQueueSystem.js`
+- `src/simulation/construction/BuildSystem.js`
+- `src/simulation/construction/BuildAdvisor.js`
+- `src/simulation/construction/ConstructionSystem.js`
+- `src/simulation/meta/ProgressionSystem.js` (RECOVERY_ESSENTIAL_TYPES, survival score)
+- `src/simulation/npc/WorkerAISystem.js` (carry / deliver / eat)
+- `src/world/events/WorldEventSystem.js` (TRADE_CARAVAN yield)
+- `src/entities/EntityFactory.js`

@@ -85,6 +85,24 @@ to lazily invalidate its Union-Find graph. A `WeakMap`-backed `TILE_LIST_CACHE` 
 `listTilesByType()` results against the current `grid.version`, avoiding full scans for
 every pathfinding call.
 
+### Boot Seed Resolution (`pickBootSeed`)
+
+Added in HW7 R3 (A7-rationality-audit P0 #7) and exported from `src/world/grid/Grid.js`,
+`pickBootSeed({ urlParams, storage, random })` resolves the initial map seed for fresh
+page loads with this precedence:
+
+1. URL query `?seed=<n>` (explicit player choice — produces a reproducible link).
+2. `localStorage.utopia:bootSeed` (pinned seed for repeat runs).
+3. Random 31-bit unsigned integer (every fresh boot gets a unique world).
+
+Returning a randomized seed by default fixed a leaderboard bug where every fresh boot
+funnelled through `DEFAULT_MAP_SEED = 1337`, recording every loss as `seed 1337 · loss`.
+The helper is pure and unit-testable (both `urlParams` and `storage` are injectable);
+tests and benchmarks that need determinism still call `createInitialGrid({ seed: 1337 })`
+or `createServices(1337, …)` explicitly. Production boot routes through the wrapper
+`createServicesForFreshBoot` in `src/app/createServices.js`, which threads `pickBootSeed`
+into the seed argument.
+
 ---
 
 ## Tile Types
@@ -109,6 +127,9 @@ each ID.
 | 11 | `TILE.SMITHY` | yes | 1.0 | Processing |
 | 12 | `TILE.CLINIC` | yes | 1.0 | Processing |
 | 13 | `TILE.BRIDGE` | yes | 0.65 | Infrastructure |
+| 14 | `TILE.GATE` | faction-aware | 0.85 | Defence |
+
+**GATE** (added v0.8.4) is faction-aware: passable for the colony faction, blocked for hostile factions (predators, raiders, saboteurs). The base `TILE_INFO` marks it `passable: true` so callers that don't pass a faction (raw `isPassable()` probes, scenario tooling) get the colony-side answer; `AStar` consults `src/simulation/navigation/Faction.js#isTilePassableForFaction` when `options.faction` is supplied. No new tile types were added in HW7.
 
 **Production tiles** (`FARM`, `LUMBER`, `HERB_GARDEN`) maintain `tileState` entries
 that track fertility, yield pool, salinization, fallow status, and node flags.
