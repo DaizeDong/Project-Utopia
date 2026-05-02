@@ -1,5 +1,19 @@
 # Project Utopia — Comprehensive Game Evaluation Report
 
+> **HISTORICAL BASELINE — 2026-04-21**. Frozen reference snapshot used when
+> comparing Phase-level DevIndex deltas. Do not overwrite.
+>
+> **Current baseline (2026-05-01)**: HW7 Final-Polish-Loop R3 — DevIndex
+> day-90 = **49.41** / Deaths = **86** vs HW6 baseline DevIndex 37.77 /
+> Deaths 157 (Δ +30.8% / −45%). See `tuning-log.md` HW7 R0 → R3 + hotfix
+> entries and `benchmark-catalog.md` § 6 for the full trajectory.
+>
+> The numbers below are retained verbatim as the v0.5.4 historical snapshot;
+> they predate the Phase 1-11 work, the v0.8.0 Living-World rewrite, the
+> v0.9.0 Job-layer rewrite, the v0.10.0 Worker-FSM rewrite, and the
+> v0.10.1 + HW7 polish loop. Cross-reference this file when validating
+> long-horizon trend deltas only.
+
 > Generated: 2026-04-21 06:45:13
 > Version: 0.5.4 (Phase 1: Resource Chains + Bridge)
 > Scenarios: 22 | Duration: 1410s total sim time

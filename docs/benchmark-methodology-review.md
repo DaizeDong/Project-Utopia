@@ -189,3 +189,69 @@ const T_composite =
 - 用 **执行后效果衡量** 替代 **输出格式验证**
 - 用 **参数化采样** 替代 **硬编码预设**
 - 用 **多轮学习曲线** 替代 **单轮通过率**
+
+---
+
+## 7. Headless RAF cap caveat (HW7 R0 → R3 perf-measurement lesson, added 2026-05-01)
+
+> **Source**: HW7 Final-Polish-Loop R3 closeout — `assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md`
+> lines 514-562. A2 R3 self-feedback. Cross-link: `assignments/homework7/Post-Mortem.md` § 4.5.
+
+### 7.1 Phenomenon — Playwright headless RAF 1 Hz throttle
+
+When Chromium runs headless under Playwright with no
+`--disable-renderer-backgrounding` family of flags, the compositor
+backgrounds the (offscreen) renderer and clamps `requestAnimationFrame`
+to ~1 Hz. Observed signal across HW7 R0/R1/R2/R3:
+
+- `dt ≈ 1004 ms` per game tick
+- fps ≈ 0.996 across mid / stress / 86-ent
+- `__perftrace.frameMs ≈ 0.4 ms` (the render loop itself finishes
+  in <1 ms per frame, but the browser only fires it once per second)
+
+This makes **any FPS measurement off the headless harness essentially
+uninformative** — it measures the throttle, not the project. The R0 / R1 / R2
+Validator gates all hit this and recorded YELLOW with "headless RAF cap"
+annotations; R0 → R2 P50 numbers (54.5 / 55 / 56) were not the project
+drifting — they were noise inside the throttle.
+
+### 7.2 Ground-truth path — `__perftrace.topSystems`
+
+The project ships an in-build perf trace that records sim-system wall-time
+**independent of the RAF schedule**:
+
+- `window.__perftrace.topSystems` exposes per-system avg / peak ms over a
+  sliding window.
+- `window.__perftrace.frameMs` exposes the render loop wall-time.
+
+These are the **canonical perf signals** under headless Playwright. A2 R3
+numbers (avg < 2 ms, peak < 6 ms, mem +11.52 % over 30 min) were
+collected via this path and constitute the actual perf verdict for
+HW7 R0 → R3.
+
+### 7.3 Required Chromium flags for any future non-headless / hybrid FPS measurement
+
+A Reviewer or Validator that needs a real RAF-driven fps number (not a
+`__perftrace` sim-time number) must launch Playwright Chromium with
+**all three** of:
+
+```
+--disable-renderer-backgrounding
+--disable-background-timer-throttling
+--disable-backgrounding-occluded-windows
+```
+
+Missing any one of them silently re-enables the 1 Hz throttle on at least
+one Chromium version family.
+
+### 7.4 Mandatory R4+ rule
+
+Any future Reviewer / Validator that records an FPS number **must** either
+
+- (a) launch Playwright with the three flags above and cite which flags
+  were used in their report, **or**
+- (b) cite `window.__perftrace.topSystems` / `__perftrace.frameMs` as
+  the ground-truth perf signal.
+
+Citing a raw fps number from a default-flag headless run is grounds for
+that report being marked UNRELIABLE-MEASUREMENT in the Validator gate.

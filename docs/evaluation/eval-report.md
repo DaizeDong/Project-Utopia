@@ -1,5 +1,23 @@
 # Project Utopia — Comprehensive Game Evaluation Report
 
+> **HISTORICAL SNAPSHOT — 2026-04-11**. The full v0.5.4 22-scenario tier
+> report is preserved verbatim below for trend-comparison purposes only.
+>
+> **Current state (2026-05-01)**: v0.10.1 + HW7 Final-Polish-Loop R3 +
+> hotfix iter 1-6. Latest regression-only bench: DevIndex day-90 = **49.41**
+> / Deaths = **86** (vs HW6 baseline 37.77 / 157, Δ **+30.8%** /
+> **−45%**). Tests: **1782 / 1784 pass** (5 pre-existing fail, 3 skip).
+> See `docs/benchmarks/tuning-log.md` HW7 R0 → R3 + hotfix entries and
+> `docs/benchmark-catalog.md` § 6 for the full trajectory.
+>
+> The 22-scenario tier report below was generated against v0.5.4 and is
+> structurally outdated — it predates Phase 2-11, the v0.8.0 Living-World
+> rewrite, the v0.9.0 Job-layer rewrite, the v0.10.0 Worker-FSM rewrite,
+> and the HW7 polish loop. A re-run via `scripts/comprehensive-eval.mjs`
+> against the current v0.10.1 build is **deferred** — the bench-relevant
+> verdicts (DevIndex / Deaths / test count) are tracked in tuning-log.md
+> instead, which is the canonical surface for HW7 R0 → R3 + hotfix work.
+
 > Generated: 2026-04-11 09:15:45
 > Version: 0.5.4 (Phase 1: Resource Chains + Bridge)
 > Scenarios: 22 | Duration: 2820s total sim time

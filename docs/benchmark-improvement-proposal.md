@@ -1,8 +1,34 @@
 # Benchmark 系统性改进方案
 
-> **日期**: 2026-04-11  
-> **输入**: benchmark-methodology-review.md 识别的三大系统性问题  
+> **日期**: 2026-04-11 (created); **2026-05-01 update** — HW7 R0/R1/R2/R3 landing notes
+> **输入**: benchmark-methodology-review.md 识别的三大系统性问题
 > **方法**: 从四个独立视角（ML benchmark 设计、游戏 AI 评估、统计严谨性、软件架构）交叉论证
+
+---
+
+## 0a. HW7 landing status (2026-05-01)
+
+The proposals below were authored 2026-04-11. After the v0.8.0 → v0.10.1
+work and the HW7 Final-Polish-Loop (R0 → R3 + hotfix iter 1-6), the
+following partial landings have occurred:
+
+| Proposal | Landed in | Status |
+|----------|-----------|--------|
+| § 1.5 实验矩阵 — 16 seeds × ≥8 presets | `scripts/long-horizon-matrix.mjs` | **PARTIAL** — matrix harness lands 10 seeds × 3 presets = 30 runs (v0.8.0 Phase 6); the 16-seed × 8-preset target proposed here is **not** yet realised. |
+| § 2.4 CrisisInjector dynamic events | HW7 R2 A5 BALANCE pass (`91a8d5b`) | **PARTIAL** — A5 wired emergency-relief gating around real fail-state events instead of unconditional rescue, which is the closest we have to a "稳态后注入突发事件" probe. The dedicated `CrisisInjector` class is **not** built. |
+| § 1.2 ScenarioSampler — 程序化场景生成 | — | **NOT LANDED** — still using hand-curated `BenchmarkPresets.js`. |
+| § 2.1 六个能力探针 (Capability Probes) | — | **NOT LANDED** — discrete probe runner does not exist. |
+| § 3.3 Bayesian Beta-Binomial 评分 | `src/benchmark/run.js` | **PARTIAL** — `npm run bench:perf` / `bench:logic` use Bayesian scoring under `src/benchmark/run.js` per `docs/benchmarks/README.md` harness inventory. |
+| § 3.4 Decision Trace Graph (因果链追踪) | — | **NOT LANDED**. |
+| § 4.1 unified `src/benchmark/framework/` | partial — `src/benchmark/run.js` exists but plugin directory does not | **PARTIAL**. |
+| **A5 BALANCE recovery / emergency / raid milestone gates** (HW7 R2) | commit `91a8d5b` | **LANDED** — separate from the original proposal but addresses the same "测试算法是否智能 vs 测试是否能熬过" gap by removing unconditional emergency relief, halving TRADE_CARAVAN food drip, requiring `deaths > 0` for emergency to fire, and requiring walls/guards for raid-defeated milestones. |
+| **A2 cadence gate** (HW7 R2/R3) | commit `37581ec` | **LANDED** — AgentDirector 0.5 s heavy-work gate + ProgressionSystem 0.25 s scan gate. Reduces `frameMs` to ~0.4 ms in headless trace; addresses the long-standing perf YELLOW that § 4.3 phase-3 evaluation methodology pre-supposed. |
+
+The remaining proposals in § 1-§ 4 below are still the long-term roadmap.
+Where a section above is marked NOT LANDED, the original text is retained
+verbatim as the unfulfilled spec.
+
+---
 
 ---
 

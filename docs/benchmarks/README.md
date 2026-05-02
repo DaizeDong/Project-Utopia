@@ -66,3 +66,39 @@ typos fail fast.
 `baseline-v0.7.0.{json,md}` — the frozen reference snapshot used when
 comparing Phase-level DevIndex deltas. Do not overwrite without updating the
 CHANGELOG and the living-world design spec's tuning log.
+
+> **Current bench-relevant baseline (2026-05-01)**: HW7 Final-Polish-Loop R3
+> — DevIndex day-90 = **49.41** / Deaths = **86** (vs HW6 baseline DevIndex
+> 37.77 / Deaths 157, Δ +30.8% / −45%). See `baseline-v0.7.0.md` historical
+> note + `tuning-log.md` HW7 R0 → R3 + hotfix entries + `benchmark-catalog.md`
+> § 6 for the full trajectory.
+
+## Script invocation reference (refreshed 2026-05-01)
+
+These are the canonical bench harnesses currently in `scripts/`:
+
+| Script | npm alias | Intent | Notes |
+|---|---|---|---|
+| `scripts/long-horizon-bench.mjs` | `npm run bench:long` | Single-run multi-day DevIndex curve | Flags: `--seed N`, `--max-days D`, `--preset NAME`, `--tick-rate R`, `--stop-on-death BOOL`, `--stop-on-saturation BOOL`, `--soft-validation BOOL`, `--out-dir PATH`. Unknown / malformed flags rejected. |
+| `scripts/long-horizon-matrix.mjs` | `npm run bench:long:matrix` | Nightly 10-seed × 3-preset matrix (30 runs) | Outputs to `output/benchmark-runs/long-horizon/` |
+| `scripts/long-horizon-bench.mjs --soft-validation true --max-days 90` | `npm run bench:long:smoke` | CI PR-gate smoke (90-day, soft validation) | Hard violations (monotonicity, data integrity, crash, loss-before-day-180) still block |
+| `scripts/bench-perf.mjs` | `npm run bench:perf` | Per-preset perf wall-time (grid-gen, A*, render) | Used as Phase tuning sanity-check |
+| `scripts/logic-baseline.mjs` | `npm run bench:logic` | Goal-flip / invariant / deliverWithoutCarry counts | Ships per-version logic invariant baseline |
+| `scripts/soak-sim.mjs` | — | Steady-state colony metrics, fixed wall-time | Outputs to `output/benchmark-runs/` |
+| `scripts/ablation-benchmark.mjs` | — | A/B param-toggle comparison | Phase-component contribution attribution |
+| `scripts/comprehensive-eval.mjs` | — | 22-scenario / 3-tier evaluation report | Source for `docs/evaluation/eval-report.md` |
+| `src/benchmark/run.js` | (entry) | Bayesian scoring across presets | Per `docs/benchmark-improvement-proposal.md` § 3.3 |
+
+For the 8 component / runner benches (perceiver, planner, executor,
+evaluator, director, skills, ablation, benchmark-runner), see
+`docs/benchmark-catalog.md` § 3.
+
+### HW7 perf-measurement caveat (NEW)
+
+When running any of these harnesses under Playwright headless Chromium,
+the renderer is throttled to ~1 Hz unless launched with
+`--disable-renderer-backgrounding` + `--disable-background-timer-throttling` +
+`--disable-backgrounding-occluded-windows`. Use
+`window.__perftrace.topSystems` / `__perftrace.frameMs` as the
+ground-truth perf signal under headless mode. See
+`docs/benchmark-methodology-review.md` § 7 for the full caveat.
