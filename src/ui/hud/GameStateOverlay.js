@@ -177,6 +177,12 @@ export class GameStateOverlay {
     // mount a partial DOM); we tolerate missing elements by short-circuiting
     // every access with `?.`.
     this.leaderboardEl = document.getElementById("overlayLeaderboardList");
+    // v0.10.1-A3 R3 — all-loss banner above the Best Runs list. Only
+    // surfaces when every recorded run has cause === "loss" (the default in
+    // survival mode), so a streak of failures gets reframed as "this is
+    // expected; aim for a higher score" rather than reading as 10 dead
+    // runs to a fresh viewer.
+    this.leaderboardBannerEl = document.getElementById("overlayLeaderboardBanner");
     this.endSeedChip = document.getElementById("overlayEndSeedChip");
     this.endSeedRank = document.getElementById("overlayEndSeedRank");
     this.clearLeaderboardBtn = document.getElementById("overlayClearLeaderboardBtn");
@@ -367,6 +373,23 @@ export class GameStateOverlay {
     const sig = safeList.map((e) => `${e.id ?? ""}|${e.score ?? 0}|${e.ts ?? 0}`).join(";");
     if (sig === this._lastLeaderboardSig) return;
     this._lastLeaderboardSig = sig;
+    // v0.10.1-A3 R3 — all-loss banner gate. Hide when empty (the CSS
+    // :empty::before placeholder already says "No runs yet"); show when
+    // every recorded run is a loss; hide otherwise. The banner reframes a
+    // wall of "loss" rows as "survival mode — every run ends; aim for a
+    // higher score" so first-impression readers don't bounce.
+    if (this.leaderboardBannerEl) {
+      const allLoss = safeList.length > 0
+        && safeList.every((e) => String(e?.cause ?? "loss") === "loss");
+      if (allLoss) {
+        this.leaderboardBannerEl.textContent =
+          "Survival mode — every run ends. Aim for a higher score on the next one.";
+        this.leaderboardBannerEl.removeAttribute("hidden");
+      } else {
+        this.leaderboardBannerEl.setAttribute("hidden", "");
+        this.leaderboardBannerEl.textContent = "";
+      }
+    }
     if (safeList.length === 0) {
       this.leaderboardEl.innerHTML = "";
       return;
