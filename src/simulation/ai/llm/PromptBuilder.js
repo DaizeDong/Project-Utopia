@@ -331,6 +331,57 @@ function adjustWorkerPolicy(policy, context, summary) {
     addNote(notes, "Large workforce: diversify into wood and quarry production.");
   }
 
+  // Hotfix iter4 batch D — late-game extractor-saturation guard.
+  // Symptom from playtest: late-game (workerCount >= 12) the policy layer
+  // keeps boosting farm/wood/quarry intent because the basic resource
+  // signals don't trip; meanwhile the role-assignment system has nothing
+  // to promote to BUILDER/GUARD/processing roles because every worker is
+  // anchored on an extractor. We can't add new intent keys (build/guard
+  // aren't in WORKERS allowedIntents — that would require an aiConfig.js
+  // change which is out of scope for this batch), but we CAN dampen the
+  // extraction intents and bias `deliver` so existing carry stockpiles
+  // unblock construction sites and idle workers become available for the
+  // role-assignment system to promote. The colony-planner LLM gets the
+  // recruit/reassign_role guidance via npc-colony-planner.md (and the
+  // operationalHighlights signal added in PromptPayload.pickHighlights).
+  const _farms = Number(world?.buildings?.farms ?? 0);
+  const _lumbers = Number(world?.buildings?.lumbers ?? 0);
+  const _quarries = Number(world?.buildings?.quarries ?? 0);
+  const _kitchens = Number(world?.buildings?.kitchens ?? 0);
+  const _smithies = Number(world?.buildings?.smithies ?? 0);
+  const _clinics = Number(world?.buildings?.clinics ?? 0);
+  const _walls = Number(world?.buildings?.walls ?? 0);
+  const extractionSites = _farms + _lumbers + _quarries;
+  const processingSites = _kitchens + _smithies + _clinics;
+  const basicsStable = food >= 30 && wood >= 15 && stoneCount >= 8;
+  if (workerCount >= 12 && extractionSites >= 6 && basicsStable) {
+    const ratio = extractionSites / Math.max(1, extractionSites + processingSites);
+    const isSaturated = ratio > 0.65 || processingSites === 0;
+    if (isSaturated) {
+      // Dampen raw extraction intents, bias delivery so carry unloads
+      // and the worker becomes idle/available for role promotion.
+      policy.intentWeights.farm = Math.max(0.5, (Number(policy.intentWeights.farm) || 1) * 0.7);
+      policy.intentWeights.wood = Math.max(0.5, (Number(policy.intentWeights.wood) || 1) * 0.7);
+      policy.intentWeights.quarry = Math.max(0.4, (Number(policy.intentWeights.quarry) || 0.8) * 0.7);
+      boost(policy.intentWeights, "deliver", 0.3);
+      // Boost processing-chain intents so the dampened extractors don't
+      // also stall the cook/smith chain.
+      if (_kitchens > 0) boost(policy.intentWeights, "cook", 0.2);
+      if (_smithies > 0) boost(policy.intentWeights, "smith", 0.2);
+      addNote(notes, `Extractor-saturated (${extractionSites}/${extractionSites + processingSites} sites are extraction): dampening farm/wood/quarry, biasing deliver so workers free up for BUILDER/GUARD/processing promotion.`);
+    }
+  }
+  // Defense gap: high threat but no walls and large workforce. Bias
+  // safety target priority so steering pushes workers toward defended
+  // tiles, freeing the role-assignment system to keep promoting GUARDs.
+  const _threatLevel = Number(world?.gameplay?.threat ?? 0);
+  if (_threatLevel >= 55 && _walls <= 2 && workerCount >= 8) {
+    boostTarget(policy, "safety", 0.3);
+    boostTarget(policy, "warehouse", 0.15);
+    policy.riskTolerance = clamp(policy.riskTolerance - 0.08, 0, 1);
+    addNote(notes, `Defense gap (threat ${_threatLevel.toFixed(0)}, ${_walls} walls): pulling workers toward defended interior so GUARD promotions stick.`);
+  }
+
   // Auto-build queue: construct buildings when resources allow
   // Priority: food production > logistics > defense (inspired by RimWorld colony priorities)
   const buildQueue = [];
@@ -794,6 +845,33 @@ function applyStrategyToPolicy(policy, strategy) {
   } else if (strategy.workerFocus === "deliver") {
     policy.intentWeights.deliver = Math.max(policy.intentWeights.deliver ?? 1.0, 1.6);
     if (policy.notes) addNote(policy.notes, "Strategy: delivery focus prioritized.");
+  } else if (strategy.workerFocus === "build") {
+    // Hotfix iter4 batch D — strategic-director workerFocus="build" tells
+    // the policy layer to free workers from extraction so the role-
+    // assignment system can promote BUILDERs and the colony-planner can
+    // queue/finish blueprints. We can't add a `build` intent (not in
+    // WORKERS allowedIntents), so we dampen extraction and bias delivery
+    // to free idle workers.
+    policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.6);
+    policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.6);
+    policy.intentWeights.quarry = Math.min(policy.intentWeights.quarry ?? 0.8, 0.6);
+    policy.intentWeights.deliver = Math.max(policy.intentWeights.deliver ?? 1.0, 1.5);
+    if (policy.notes) addNote(policy.notes, "Strategy: build focus — extraction dampened so workers free up for BUILDER promotion.");
+  } else if (strategy.workerFocus === "guard") {
+    // Hotfix iter4 batch D — strategic-director workerFocus="guard" tells
+    // the policy layer to lower risk and pull workers toward defended
+    // interior so the role-assignment system has idle workers available
+    // for GUARD promotion. Same constraint: no `guard` intent, so we use
+    // safety target priority + lower risk tolerance.
+    policy.intentWeights.farm = Math.min(policy.intentWeights.farm, 0.7);
+    policy.intentWeights.wood = Math.min(policy.intentWeights.wood, 0.7);
+    policy.intentWeights.quarry = Math.min(policy.intentWeights.quarry ?? 0.8, 0.5);
+    if (policy.targetPriorities) {
+      policy.targetPriorities.safety = Math.max(Number(policy.targetPriorities.safety ?? 1.0), 1.7);
+      policy.targetPriorities.warehouse = Math.max(Number(policy.targetPriorities.warehouse ?? 1.0), 1.6);
+    }
+    policy.riskTolerance = Math.min(policy.riskTolerance, 0.25);
+    if (policy.notes) addNote(policy.notes, "Strategy: guard focus — extraction dampened, safety prioritized so GUARD promotions stick.");
   }
 
   // Survival mode

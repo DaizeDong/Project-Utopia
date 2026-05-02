@@ -71,10 +71,54 @@ function pickHighlights(summary) {
     highlights.push(`Dry terrain: ${Math.round(world.terrain.lowMoistureRatio * 100)}% of land is low-moisture — herb gardens and farms may underperform`);
   }
 
+  // Hotfix iter4 batch D — late-game role-allocation imbalance signal.
+  // We can't see per-role counts in the world summary (those live on
+  // state.agents and would require a WorldSummary.js change which is
+  // out-of-scope for this batch), but we CAN infer extractor saturation
+  // from buildings + worker count + resource stability. Surface the
+  // signal so all four LLM channels (strategic / colony-planner /
+  // npc-brain / environment-director) and the fallback policy adjuster
+  // see it.
+  const workerCount = Number(world.population?.workers ?? 0);
+  const extractionSiteCount =
+      Number(world.buildings?.farms ?? 0)
+    + Number(world.buildings?.lumbers ?? 0)
+    + Number(world.buildings?.quarries ?? 0);
+  const processingSiteCount =
+      Number(world.buildings?.kitchens ?? 0)
+    + Number(world.buildings?.smithies ?? 0)
+    + Number(world.buildings?.clinics ?? 0);
+  const foodOk = Number(world.resources?.food ?? 0) >= 30;
+  const woodOk = Number(world.resources?.wood ?? 0) >= 15;
+  const stoneOk = Number(world.resources?.stone ?? 0) >= 8;
+  // Late-game extractor-saturated colony: many extraction sites, large
+  // workforce, basics are fine, but the processing chain is thin and
+  // predators/threats are accumulating. Tells the LLM (and the fallback
+  // adjuster) to push BUILDER/GUARD via recruit/reassign_role instead
+  // of yet another farm.
+  if (workerCount >= 12 && extractionSiteCount >= 6 && foodOk && woodOk && stoneOk) {
+    const ratio = extractionSiteCount / Math.max(1, extractionSiteCount + processingSiteCount);
+    if (ratio > 0.65 || processingSiteCount === 0) {
+      highlights.push(
+        `Role distribution: extractor-saturated (${workerCount} workers, ${extractionSiteCount} extraction vs ${processingSiteCount} processing sites) — recruit/promote BUILDER, GUARD, COOK/SMITH instead of more farms/lumbers/quarries.`,
+      );
+    }
+  }
+  // Threat + low defense signal — even without per-role counts, a high
+  // threat reading with no walls and few processing buildings means GUARD
+  // promotion + walls/road-defense are higher ROI than extraction.
+  const threatLevel = Number(world.gameplay?.threat ?? 0);
+  const wallCount = Number(world.buildings?.walls ?? 0);
+  if (threatLevel >= 55 && wallCount <= 2 && workerCount >= 8) {
+    highlights.push(
+      `Defense gap: threat=${threatLevel.toFixed(0)} with only ${wallCount} wall(s) — promote GUARDs and queue defense_line instead of more extraction.`,
+    );
+  }
+
   if (highlights.length === 0) {
     highlights.push("World is currently stable; keep policies legible and avoid noisy steering.");
   }
-  return highlights.slice(0, 6);
+  return highlights.slice(0, 8);
 }
 
 function buildGroupContracts() {
