@@ -283,7 +283,7 @@ export const BALANCE = Object.freeze({
   boidsGroupProfiles: {
     workers: {
       neighborRadius: 4.4,
-      separationRadius: 2.8,
+      separationRadius: 1.4,
       weights: { separation: 2.6, alignment: 0.12, cohesion: 0.04, seek: 1.22 },
     },
     traders: {
@@ -298,12 +298,12 @@ export const BALANCE = Object.freeze({
     },
     herbivores: {
       neighborRadius: 4.7,
-      separationRadius: 1.8,
+      separationRadius: 0.9,
       weights: { separation: 1.25, alignment: 0.8, cohesion: 0.62, seek: 1.08 },
     },
     predators: {
       neighborRadius: 4.2,
-      separationRadius: 1.72,
+      separationRadius: 0.86,
       weights: { separation: 1.35, alignment: 0.68, cohesion: 0.54, seek: 1.18 },
     },
   },

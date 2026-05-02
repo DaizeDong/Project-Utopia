@@ -42,7 +42,7 @@ const WILDLIFE_LONG_RUN_TUNING = Object.freeze({
     }),
   }),
   ecologyGraceSec: 45,
-  herbivoreLowWatermark: 2,
+  herbivoreLowWatermark: 3,
   herbivoreStableFloor: 2,
   herbivoreRecoveryDelaySec: 45,
   herbivoreRecoverySpawnCount: 2,

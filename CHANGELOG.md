@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r6-PH (R6 PH-wildlife-collision, P0)
+
+### PH wildlife-collision — herbivore recovery floor + predator-return relaxation + halved separation radii
+
+Implements the P0 fix from `Round6/Plans/PH-wildlife-collision.md` (Reviewer PH-wildlife-collision, Tier A). Direction A: longRunProfile watermark alignment + WildlifePopulationSystem predator-return gate relaxation + balance.js separationRadius halve for workers/herbivores/predators. Hard-freeze compliant (config + one gate comparator + three numeric constants — no new tile / role / building / mood / audio / UI panel).
+
+**1. P0 F1: `herbivoreLowWatermark` 2 → 3 (`src/config/longRunProfile.js`)** — Aligns the recovery trigger with the zone-default `herbivores.min=3`. Pre-fix, `h < 2` was the recovery gate — but the lowest steady-state observed was `h=3` (zone min), so `herbivoreLowSec` never accumulated past zero and recovery never fired. Now `h < 3` (i.e. `h ≤ 2`) triggers `herbivoreLowSec` accumulation, so a herd that drops to 2 will trigger respawn after the 45s `herbivoreRecoveryDelaySec`.
+
+**2. P0 F1: predator-return gate `h ≥ max(4, target)` → `h ≥ min(target, max(min, h))` (`src/simulation/ecology/WildlifePopulationSystem.js:395`)** — Pre-fix, `Math.max(4, herbivoreLimits.target=4)` required `h ≥ 4` to bring predators back, but herbivore recovery only spawns up to `target=4` — and only once `h < watermark=2` — so predators were locked at 0 indefinitely once a (h=3, p=0) deadlock formed. New gate `Math.min(target, Math.max(min ?? watermark, h))` evaluates to `h ≥ min(target, max(min, h))`: as long as the herd is at or above the zone min (3), predators can return without waiting for full target re-stocking. Resolves the user-observed "wildlife dies and never respawns" deadlock.
+
+**3. P0 F2: `boidsGroupProfiles.{workers,herbivores,predators}.separationRadius` halved (`src/config/balance.js:286, :301, :306`)** — workers 2.8 → 1.4, herbivores 1.8 → 0.9, predators 1.72 → 0.86. Pre-fix the separation field was 1.7-3× the rendered sprite radius, so units appeared to push each other from "halfway across the screen" — the user-reported "collision feels too large" complaint. Click-guard (14px) is correct; the separation field was the culprit. BoidsSystem's impassable-tile revert (BoidsSystem.js:354-364) still hard-bounds against actual tile collisions, so dense packs won't clip terrain.
+
+**Tests:** No invariant tests added (track=code, scope=~25 LOC config). Existing `test/wildlife-population-system.test.js` (6 cases) all green. The "suppresses predator recovery when prey floor is too low" test (h=1, p=0) still asserts no predator spawn under the new gate: `1 ≥ min(4, max(3, 1)) = 1 ≥ 3` → false.
+
+**Test baseline:** 1867 tests / 1858 pass / 5 fail (all pre-existing on parent `211f666`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step) / 4 skip. Verified by stashing edits + re-running full suite — same 5 failures pre and post. Zero new failures introduced.
+
+**Files changed:** 3 source (`src/config/longRunProfile.js`, `src/simulation/ecology/WildlifePopulationSystem.js`, `src/config/balance.js`; +5 / -5 LOC code) + CHANGELOG.
+
 ## [Unreleased] — v0.10.2-r6-PJ (R6 PJ-pacing, P0)
 
 ### PJ pacing — 4× event cadence, halved raid grace, first-event anchor offset, event_started log
