@@ -26,6 +26,7 @@ import {
   suggestRelocateDepletedProducer,
 } from "./SkillLibrary.js";
 import { formatObservationForLLM } from "./ColonyPerceiver.js";
+import { computeFoodHeadroomSec } from "../../population/PopulationGrowthSystem.js";
 import { planLogisticsRoadSteps, formatLogisticsHintForLLM } from "./RoadPlanner.js";
 import { planThreatResponseSteps, formatThreatHintForLLM } from "./ThreatPlanner.js";
 import { formatAnalyticsForLLM, validatePlanCandidates } from "./ColonyAnalytics.js";
@@ -1091,11 +1092,20 @@ export function generateFallbackPlan(observation, state) {
   const recruitQueue = Number(state?.controls?.recruitQueue ?? 0);
   const inFoodRecovery = Boolean(state?.ai?.foodRecoveryMode);
   const totalCurrentPop = workerCount + recruitQueue;
+  // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): mirror the same
+  // forward-looking food-runway gate that PopulationGrowthSystem now
+  // enforces, so the fallback planner doesn't re-enqueue a `recruit` step
+  // every tick that the system would just block. Models the colony at
+  // (current workers + queue + 1) — i.e. what the runway would be if the
+  // step we're about to push actually lands a new mouth.
+  const recruitMinHeadroomSec = Number(BALANCE.recruitMinFoodHeadroomSec ?? 60);
+  const projectedHeadroomSec = computeFoodHeadroomSec(state, totalCurrentPop + 1);
   if (
     !inFoodRecovery
     && food > recruitMinBuffer
     && totalCurrentPop < recruitTarget
     && (foodRate >= 0)
+    && projectedHeadroomSec >= recruitMinHeadroomSec
   ) {
     const headroom = recruitTarget - totalCurrentPop;
     const surplusBased = Math.max(1, Math.floor((food - recruitMinBuffer) / 60));

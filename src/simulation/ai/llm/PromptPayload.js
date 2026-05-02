@@ -71,6 +71,24 @@ function pickHighlights(summary) {
     highlights.push(`Dry terrain: ${Math.round(world.terrain.lowMoistureRatio * 100)}% of land is low-moisture — herb gardens and farms may underperform`);
   }
 
+  // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): surface the same
+  // food-runway number that PopulationGrowthSystem and ColonyPlanner use
+  // to refuse recklessly-timed recruits. The LLM otherwise sees only
+  // spot food + per-min rates and happily emits `recruit` actions while
+  // the colony is bleeding food — reviewer's PC log captured 3/3 such
+  // recruits at drain −12/−24 food/s. With this line the LLM sees the
+  // gate's actual number and can self-suppress.
+  const headroomSec = Number(world.population?.foodHeadroomSec ?? Infinity);
+  if (Number.isFinite(headroomSec) && headroomSec < 9999) {
+    if (headroomSec < 30) {
+      highlights.push(`FOOD RUNWAY CRITICAL: ${headroomSec.toFixed(0)}s headroom — DO NOT recruit; queue farm/kitchen instead.`);
+    } else if (headroomSec < 60) {
+      highlights.push(`Food runway low: ${headroomSec.toFixed(0)}s headroom (recruit gate fires below 60s) — defer recruit until production catches up.`);
+    } else if (headroomSec < 180) {
+      highlights.push(`Food runway: ${headroomSec.toFixed(0)}s headroom — recruit OK but watch drain rate.`);
+    }
+  }
+
   // Hotfix iter4 batch D — late-game role-allocation imbalance signal.
   // We can't see per-role counts in the world summary (those live on
   // state.agents and would require a WorldSummary.js change which is

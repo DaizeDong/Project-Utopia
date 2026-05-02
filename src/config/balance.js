@@ -1116,6 +1116,16 @@ export const BALANCE = Object.freeze({
   // causing seed-7 collapse; 50 still safe (cooldown × cost = 25/12 ≈ 2.1/s
   // drain).
   recruitMinFoodBuffer: 20,        // skip auto-recruit below this food stock
+  // v0.10.1 R5 PC-recruit-flow-rate-gate (PC-1/PC-2): gate recruit on
+  // forward-looking food-runway (seconds) rather than spot stock alone.
+  // foodHeadroomSec = food / max(0.01, projectedDrainRate) where
+  //   projectedDrainRate = workers * warehouseEatRatePerWorkerPerSecond
+  //                        - foodProductionRatePerSec.
+  // 60 s is the "two cooldowns" runway — long enough to absorb a missed
+  // farm tick or a brief raid; short enough that early-game recruit isn't
+  // blocked once farms are online. Reviewer's PC log showed 3/3 recruits
+  // at drainRate −12/-24 food/s; this gate would have blocked all three.
+  recruitMinFoodHeadroomSec: 60,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
