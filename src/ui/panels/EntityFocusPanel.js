@@ -200,6 +200,7 @@ export const ENTITY_FOCUS_GROUP_ORDER = Object.freeze([
   "starving",
   "hungry",
   "blocked",
+  "working",
   "idle",
   "hauling",
   "combat",
@@ -212,6 +213,7 @@ const ENTITY_FOCUS_ROW_SORT_ORDER = Object.freeze([
   "blocked",
   "combat",
   "hauling",
+  "working",
   "idle",
   "other",
 ]);
@@ -225,6 +227,13 @@ const ENTITY_FOCUS_GROUP_META = Object.freeze({
   starving: Object.freeze({ label: "Critical hunger", shortLabel: "Critical" }),
   hungry: Object.freeze({ label: "Hungry", shortLabel: "Hungry" }),
   blocked: Object.freeze({ label: "Blocked", shortLabel: "Blocked" }),
+  // v0.10.1-r5 (PE-classify-and-inspector P1): add "working" chip group
+  // so productive FSM states (HARVESTING / BUILDING / PROCESSING / SEEKING_*
+  // / RESTING / FIGHTING) classify here instead of falling through to
+  // "Other". Closes the regex gap noted in the PE entity-info-completeness
+  // review — "Other" should now collapse to true residuals (visitors,
+  // unknown kinds) rather than 9 of 12 worker FSM states.
+  working: Object.freeze({ label: "Working", shortLabel: "Working" }),
   idle: Object.freeze({ label: "Idle", shortLabel: "Idle" }),
   hauling: Object.freeze({ label: "Hauling", shortLabel: "Hauling" }),
   combat: Object.freeze({ label: "Combat", shortLabel: "Combat" }),
@@ -322,6 +331,13 @@ function classifyEntityFocusGroup(entity) {
   const stateNode = entityFocusStateNode(entity);
   const text = normalizeSearchText(entity?.stateLabel, entity?.debug?.lastIntent, stateNode);
   if (entityCarryTotal(entity) > 0.05 || /\b(deliver|delivering|depositing|haul|hauling)\b/.test(text)) return "hauling";
+  // v0.10.1-r5 (PE-classify-and-inspector P1): productive FSM states
+  // (HARVESTING / BUILDING / PROCESSING + their SEEKING_* prefixes,
+  // plus RESTING / SEEKING_REST and FIGHTING) — match here BEFORE the
+  // idle check so they aren't misclassified as Other. Word boundaries
+  // keep predator "Hunt" (handled by combat check above) out of the
+  // "harvest"/"build" buckets.
+  if (/\b(harvest|harvesting|seeking_harvest|seek_task|build|building|seeking_build|seek_construct|construct|process|processing|seeking_process|seek_process|rest|resting|seeking_rest|seek_rest|engage|fighting)\b/.test(text)) return "working";
   if (stateNode === "idle" || stateNode === "wander" || /\b(idle|wander)\b/.test(text)) return "idle";
   return "other";
 }

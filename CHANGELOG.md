@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r5-PE (R5 PE-classify-and-inspector, P1)
+
+### PE classify-and-inspector — Working chip + Inspector vitals (HP/Mood/Morale/Energy)
+
+Implements the P1 fix from `Round5/Plans/PE-classify-and-inspector.md` (Reviewer PE-entity-info-completeness, Tier B). Plan direction A: add one new chip group + extend the classifier regex + add 4 gated overview lines. No new tile / role / building / panel / mood mechanic / audio surface — chip is a new entry in the existing `ENTITY_FOCUS_GROUP_ORDER` virtual array (same precedent as the v0.10.1-r4 "workers" chip), and the inspector lines render existing `entity.hp/mood/morale/energy/rest` fields that already live on the worker dict. Hard-freeze compliant.
+
+**1. P1-A: `working` chip group (`src/ui/panels/EntityFocusPanel.js`)** — Added `"working"` to `ENTITY_FOCUS_GROUP_ORDER` (between `"blocked"` and `"idle"`) and to `ENTITY_FOCUS_ROW_SORT_ORDER` (between `"hauling"` and `"idle"`). Added `working: { label: "Working", shortLabel: "Working" }` to `ENTITY_FOCUS_GROUP_META`. Reviewer's static analysis showed `classifyEntityFocusGroup` regex only matched `wander|idle` (idle chip), `deliver|hauling` (hauling chip), and combat patterns — so 9 of 12 worker FSM states (`HARVESTING / SEEKING_HARVEST / BUILDING / SEEKING_BUILD / PROCESSING / SEEKING_PROCESS / RESTING / SEEKING_REST / FIGHTING`) all fell through to "Other".
+
+**2. P1-A: classifier regex extension (`src/ui/panels/EntityFocusPanel.js`)** — Added a new branch in `classifyEntityFocusGroup` AFTER the carry/hauling check and BEFORE the idle check: `if (/\b(harvest|harvesting|seeking_harvest|seek_task|build|building|seeking_build|seek_construct|construct|process|processing|seeking_process|seek_process|rest|resting|seeking_rest|seek_rest|engage|fighting)\b/.test(text)) return "working";`. Word boundaries keep predator "Hunt" routed to combat (combat check runs earlier in the dispatch chain). After the fix, "Other" collapses to true residuals (visitors, init-phase entities, unknown kinds) instead of capturing 75 percent of the active workforce.
+
+**3. P1-A: Inspector overview HP/Mood/Morale/Energy lines (`src/ui/panels/InspectorPanel.js`)** — Extended `#renderEntitySection`'s overview block with 4 new lines, each gated on `Number.isFinite(field)`: HP shows `40 / 100`, Mood/Morale/Energy show 0-100 percent. Energy falls back to `entity.rest` when `entity.energy` is unset (workers track rest per the `tooTired`/`restRecovered` predicates). Pre-fix, HP only existed for WALL/GATE tile selections; visitor SCOUTs and animals without these fields render no empty rows.
+
+**Tests added:** `test/entity-focus-classify-working.test.js` (4 cases: order asserts working sits between blocked and idle; all 9 productive `stateLabel` strings classify as working; all 9 raw FSM enum names via `entity.fsm.state` classify as working; predator "Hunt" with hp damage stays in combat). `test/inspector-panel-overview-fields.test.js` (3 cases: worker with hp=40 maxHp=100 mood=0.7 morale=0.5 rest=0.3 renders all 4 lines; worker with explicit energy=0.85 prefers energy over rest; visitor without any vitals fields renders zero lines).
+
+**Tests updated:** `test/entity-focus-groups.test.js` — the existing high-load test had `worker("other", { stateLabel: "Harvest" })` which previously fell to "Other"; "Harvest" now correctly classifies as "working". Renamed that worker to `working`, added a new genuinely-other worker with empty `stateLabel`, and updated the order/count assertions to include `working: 1`.
+
+**Test baseline:** 1828 tests / 1819 pass / 5 fail (all pre-existing on parent `e1a66da`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step) / 4 skip. Net +7 passes vs parent (1812 → 1819) from the 7 new test cases. Zero new failures introduced.
+
+**Files changed:** 2 source (`src/ui/panels/EntityFocusPanel.js`, `src/ui/panels/InspectorPanel.js`) + 2 new tests + 1 updated test (`test/entity-focus-groups.test.js`) + CHANGELOG.
+
 ## [Unreleased] — v0.10.2-r5-PD (R5 PD-late-game-escalation, P0 knob-only)
 
 ### PD late-game-escalation — pop-dim cap raised to 200 + raid foodFloor 60→30 + raidTierMax verification
