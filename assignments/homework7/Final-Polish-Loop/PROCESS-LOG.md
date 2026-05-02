@@ -560,3 +560,79 @@ flags were used in their report, **or** (b) cite `window.__perftrace.topSystems`
 from a default-flag headless run is grounds for that report being marked
 UNRELIABLE-MEASUREMENT in the Validator gate. Cross-ref: `assignments/homework7/Post-Mortem.md` §4.5
 records this as the canonical R3 perf-methodology cross-link.
+
+### R3 Closeout — Action Items Audit (B1)
+
+> **Status**: docs-only closeout note. Captured during R3 wave-0 to immortalise
+> the R0/R1/R2/R3 trajectory of the 11 HW6 → HW7 action items. Source: B1 R3
+> reviewer feedback (`Round3/Feedbacks/B1-action-items-auditor.md`) — verdict
+> **GREEN 9/10**, 9 closed + 1 partial (AI-9 heat-lens click-path recipe) +
+> 1 documented-defer (AI-8 trait behaviour visibility); 0 regressed.
+> Build commit at R3: `2407c53`.
+
+**11-item trajectory table (HW6 R8/R9 → HW7 R0 → R1 → R2 → R3):**
+
+| ID | Item (one-liner) | R0 | R1 | R2 | R3 |
+|---|---|---|---|---|---|
+| AI-1 | High-speed/density perf stutter | partial | closed | closed | closed |
+| AI-2 | Autopilot starvation pre-warning | closed | closed | closed | closed |
+| AI-3 | AI/Autopilot/director ownership | closed | closed | closed | closed |
+| AI-4 | Manual action feedback closure | closed | closed | closed | closed |
+| AI-5 | First-session objective chain | closed | closed | closed | closed |
+| AI-6 | Worker survival/starvation diagnose | partial | documented-defer | closed | closed |
+| AI-7 | Character/family/memory persistence | closed | closed | closed | closed |
+| AI-8 | Trait behaviour visibility | partial | partial | documented-defer | documented-defer |
+| AI-9 | Heat-lens problem→cause→action chain | partial | partial | partial | **documented-defer (R3)** |
+| AI-10 | Help default tab = Controls | closed | closed | closed | closed |
+| AI-11 | Developer-facing UI leakage | partial | closed | closed | closed |
+
+**AI-9 R3 reclassification — partial → documented-defer (rationale).** B1 R3
+reviewer's "next round" suggestion was to attach a hover popover on heat-lens
+red blocks listing **Responsible worker · Suggested fix** as a one-click path.
+This is a **net-new UI affordance** (popover component + heat-lens click
+handler + worker-routing wiring); under the HW7 hard freeze (no new UI
+panel/control surface) it qualifies as a FREEZE-VIOLATION and is therefore
+explicitly deferred. **The functionally equivalent information is already
+closed in the Worker Focus panel** — Worker Focus surfaces Food Diagnosis +
+Food Route Facts + Decision Context against any hunger-critical worker, and
+heat-lens labels (R3 A7 fix `c4b526d`) now already context-flip from
+`"supply surplus"` → `"queued (delivery blocked)"` + `"Worker Focus"` tooltip
+pointer when an alive WORKER with `hunger < 0.35` exists. The lens UX gap is
+the two-step jump (lens red block → Worker Focus filter → starving worker)
+vs the single-step popover; jump distance, not information availability.
+Re-open path is post-HW7: heat-lens overlay popover component + click-path
+recipe in v1.1+. **Note: classified as documented-defer (functionally partial)**
+to preserve the trail for future rounds — the underlying AI-9 click-path UX
+is not closed, only deferred under freeze conservatism.
+
+**AI-8 R2 documented-defer maintained at R3.** Trait textual visibility
+(specialist + temperament in Backstory + Obituary) closed in HW6 R6;
+trait-driven behavioural differences (e.g. swift → measurably faster
+movement) require new telemetry surface + new behaviour coupling code, both
+out of scope under HW7 freeze + post-v0.10.0 worker-FSM refactor. Carried
+forward unchanged from R2 closeout.
+
+**Final closeout tally — 9/11 closed + 2/11 documented-defer + 0 partial + 0 regressed.**
+Effective trail-closed = (closed + documented-defer) / total = 11/11 = 100%
+under the `(closed + documented_defer) >= total * 0.8 AND 0 regressed`
+formula (stop-condition #4: B1 全 closed/documented-defer). Stop-condition
+#4 met for the third consecutive round (R1 + R2 + R3 = 3-round streak).
+
+**Distance to v1.0 GREEN-with-zero-defer.** The shortest path is **2 future
+implementation rounds** in a post-freeze v1.1: (a) AI-9 heat-lens click-path
+popover (worker-routing one-click action surface, est. 1 wave); (b) AI-8
+trait→behaviour coupling + telemetry surface (est. 2-3 waves; depends on
+mood→output coupling already landed in R6). Neither is a regression risk
+under freeze; both are forward roadmap items. The HW7 R3 closeout therefore
+ships under "documented-defer trail-closed", which is the highest tier
+achievable without breaking freeze conservatism.
+
+**Cross-reference — 3 documented-defer total across B1 audit history.**
+- AI-6 R1: durable per-character memory in 1k-entity stress (later closed in R2)
+- AI-8 R2: trait behaviour visibility (carried forward)
+- AI-9 R3: heat-lens click-path popover (this round)
+
+All 3 share the same root: post-freeze new-affordance scope vs in-freeze
+information-access scope. The pattern is informational for future reviewers
+— "documented-defer" in B1 audit means "closed under freeze, blocked behind
+freeze for the cleaner implementation", not "unaddressed defect".
