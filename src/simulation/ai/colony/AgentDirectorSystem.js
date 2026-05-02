@@ -204,6 +204,30 @@ export class AgentDirectorSystem {
     // Ensure fallback's build system is ready (for scenario requirements)
     this._fallback._buildSystem = this._fallback._buildSystem ?? new BuildSystem();
 
+    // v0.10.1-hotfix-B (issues #3 + #7) — survival safety preempt. Step 3
+    // below throttles the fallback to every 3rd tick when an LLM plan is
+    // active, and an active plan can hold the build slot for up to
+    // PLAN_STALL_GRACE_SEC. That meant zero-farm starts (#3) and late-game
+    // stone crises (#7) both went unaddressed for tens of seconds while
+    // the LLM emitted unrelated steps. Run the rule-based fallback
+    // *unconditionally* (bypass throttle) when a survival-critical
+    // condition is true so the safety nets in assessColonyNeeds (farm@99,
+    // quarry@95) always get a build slot. Done BEFORE plan execution so
+    // the safety placement consumes resources first; the LLM plan then
+    // naturally throttles via canAfford / waiting_resources.
+    const sBuildings = state.buildings ?? {};
+    const sResources = state.resources ?? {};
+    const sFarms = Number(sBuildings.farms ?? 0);
+    const sQuarries = Number(sBuildings.quarries ?? 0);
+    const sStone = Number(sResources.stone ?? 0);
+    const sFood = Number(sResources.food ?? 0);
+    const survivalPreempt = (sFarms === 0 && nowSec < 180)
+      || (sFood < 30 && sFarms < 3)
+      || (sQuarries === 0 && sStone < 8);
+    if (survivalPreempt) {
+      this._fallback.update(dt, state, services);
+    }
+
     // v0.10.1-r2-A2 P0: heavy-path cadence gate. At 4x/8x speed, the sim-step
     // loop in GameApp.update can fire SYSTEM_ORDER 4-12× per render frame.
     // perceiver.observe + snapshotState pre/post + executeNextSteps +

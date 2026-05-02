@@ -40,6 +40,8 @@ Use these in `hint` to guide placement:
 - `<ix>,<iz>` — explicit coordinate
 
 ## Hard Rules
+- **SURVIVAL CHECK (overrides everything else)**: if `buildings.farms === 0`, your FIRST step MUST be a `farm` action with priority `critical`. A colony with zero farms is starving — workers will die within 60-180 sim-sec. Do NOT propose warehouses, roads, or processing buildings before the first farm.
+- **STONE-DEFICIT CHECK**: if `resources.stone < 10` AND `buildings.quarries === 0`, your FIRST step MUST be a `quarry` action with priority `critical`. Without stone the kitchen/smithy/clinic chain is permanently blocked.
 - Never plan more buildings than current resources can afford
 - Warehouse spacing >= 5 tiles from nearest warehouse
 - Production buildings should be within 12 tiles of a warehouse

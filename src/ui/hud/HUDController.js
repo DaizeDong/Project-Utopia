@@ -312,8 +312,23 @@ export class HUDController {
     this._glossaryApplied = false;
     this._lastHudHeight = 0;
 
+    // v0.10.1-hotfix-batchC (issue #1) — priority-overflow chip hider for the
+    // top status bar. Real-Chrome users at 1366×768/1440×900 still saw chips
+    // clipped/wrapped despite the existing media-query rules (R0..R3 fixes),
+    // because the sidebar-open width contribution + chip flex-shrink rules do
+    // not deterministically trim chips when the bar would overflow. Instead
+    // of relying on @media + flex-wrap, we install a ResizeObserver on the
+    // statusBar and on the sidebar; whenever the bar's scrollWidth exceeds
+    // its clientWidth (i.e. content would overflow horizontally), we walk a
+    // fixed priority list and hide chips in order until overflow is gone.
+    // When width is recovered, we re-show in reverse-priority order so the
+    // most useful chips return first. Each hide tags the element with
+    // `data-overflow-hidden="1"`; we never touch elements without that tag,
+    // so user CSS / display:none-by-other-means is respected.
+    this._overflowHiddenSelectors = new Set();
     this.setupSpeedControls();
     this.#observeStatusBarHeight();
+    this.#observeStatusBarOverflow();
     this.#dismissBootSplash();
   }
 
@@ -376,6 +391,127 @@ export class HUDController {
     });
     observer.observe(bar);
     this._statusBarObserver = observer;
+  }
+
+  // v0.10.1-hotfix-batchC (issue #1) — Priority queue for top-bar overflow.
+  // Selectors are listed lowest-priority FIRST (hidden first when bar would
+  // overflow; restored last when there is room). Resource chips & autopilot
+  // are intentionally absent because they are core HUD signals.
+  static get OVERFLOW_HIDE_PRIORITY() {
+    return [
+      "#statusBar #latestDeathRow",
+      "#statusBar #statusBuildHint",
+      "#statusBar #statusScoreBreak",
+      "#statusBar #storytellerStrip",
+      "#statusBar .hud-goal-chip:nth-child(n+5)",
+      "#statusBar .hud-goal-chip:nth-child(n+4)",
+      "#statusBar .hud-goal-chip:nth-child(n+3)",
+      "#statusBar #statusScenario",
+      "#statusBar #statusScenarioHeadline",
+      "#statusBar #hudMedicine",
+      "#statusBar #hudTools",
+      "#statusBar #hudMeals",
+      "#statusBar #hudThreat",
+      "#statusBar #hudProsperity",
+      "#statusBar #hudHerbs",
+    ];
+  }
+
+  #observeStatusBarOverflow() {
+    if (typeof ResizeObserver === "undefined") return;
+    if (typeof document === "undefined") return;
+    const bar = document.getElementById("statusBar");
+    if (!bar) return;
+    this._statusBar = bar;
+    let scheduled = false;
+    const reflow = () => {
+      scheduled = false;
+      try { this.#applyStatusBarOverflowPriority(); } catch (_err) { /* defensive */ }
+    };
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      const raf = typeof requestAnimationFrame === "function" ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+      raf(reflow);
+    };
+    const observer = new ResizeObserver(() => schedule());
+    observer.observe(bar);
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar) observer.observe(sidebar);
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("resize", schedule);
+    }
+    this._statusBarOverflowObserver = observer;
+    // Initial pass after the bar has rendered.
+    schedule();
+  }
+
+  #applyStatusBarOverflowPriority() {
+    const bar = this._statusBar;
+    if (!bar) return;
+    const priority = HUDController.OVERFLOW_HIDE_PRIORITY;
+    const isOverflowing = () => {
+      const sw = Number(bar.scrollWidth ?? 0);
+      const cw = Number(bar.clientWidth ?? 0);
+      if (!Number.isFinite(sw) || !Number.isFinite(cw)) return false;
+      return sw - cw > 4;
+    };
+    // Step 1: while the bar overflows, walk priority list and hide one entry
+    // at a time until either we run out of selectors or overflow is gone.
+    if (typeof bar.querySelectorAll === "function") {
+      for (const sel of priority) {
+        if (!isOverflowing()) break;
+        if (this._overflowHiddenSelectors.has(sel)) continue;
+        const matches = bar.querySelectorAll(sel);
+        if (!matches || matches.length === 0) continue;
+        let touched = false;
+        for (const node of matches) {
+          if (!node || !node.style) continue;
+          if (node.dataset && node.dataset.overflowHidden === "1") continue;
+          // Don't override a real `display:none` set by other code (e.g.
+          // tier="secondary" CSS). Probe inline display first.
+          node.dataset.overflowHidden = "1";
+          node.dataset.overflowPrevDisplay = node.style.display ?? "";
+          node.style.display = "none";
+          touched = true;
+        }
+        if (touched) this._overflowHiddenSelectors.add(sel);
+      }
+    }
+    // Step 2: if there is now headroom, walk back in REVERSE priority and
+    // restore selectors until restoring one would cause overflow again.
+    const reversed = [...this._overflowHiddenSelectors].reverse();
+    for (const sel of reversed) {
+      if (typeof bar.querySelectorAll !== "function") break;
+      const matches = bar.querySelectorAll(sel);
+      if (!matches || matches.length === 0) {
+        this._overflowHiddenSelectors.delete(sel);
+        continue;
+      }
+      // Speculatively un-hide and check overflow.
+      const restored = [];
+      for (const node of matches) {
+        if (!node || !node.style) continue;
+        if (node.dataset?.overflowHidden !== "1") continue;
+        const prev = node.dataset.overflowPrevDisplay ?? "";
+        node.style.display = prev;
+        delete node.dataset.overflowHidden;
+        delete node.dataset.overflowPrevDisplay;
+        restored.push(node);
+      }
+      if (isOverflowing() && restored.length > 0) {
+        // Reverting: still no room, hide them again and stop trying to
+        // restore higher-priority entries.
+        for (const node of restored) {
+          if (!node || !node.style) continue;
+          node.dataset.overflowHidden = "1";
+          node.dataset.overflowPrevDisplay = node.style.display ?? "";
+          node.style.display = "none";
+        }
+        break;
+      }
+      this._overflowHiddenSelectors.delete(sel);
+    }
   }
 
   // v0.10.1-n (A7-rationality-audit P0 #1) — Try-Again / regenerate-world hook.
@@ -1877,6 +2013,12 @@ export class HUDController {
     // Pinned below the HUD topbar; renders the latest salient eventTrace beat
     // from `extractLatestNarrativeBeat` with a 4-second dwell + ring-buffer.
     this.#renderAuthorTicker(state);
+    // v0.10.1-hotfix-batchC (issue #1) — re-evaluate top-bar overflow after
+    // chip text/visibility may have changed this frame. The ResizeObserver
+    // already handles viewport / sidebar width changes; this catches the
+    // case where the bar's content width grew (e.g. autopilot string
+    // expanded) without the bar itself resizing.
+    try { this.#applyStatusBarOverflowPriority(); } catch (_err) { /* defensive */ }
   }
 
   // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 4) — Author Voice ticker.
