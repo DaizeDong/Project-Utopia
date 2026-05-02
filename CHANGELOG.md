@@ -2,6 +2,50 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
+### A6 UI-Design — chip flex-wrap + ≤1280 icon-only + disabled tooltip + themed scrollbar + toast z-order (R3 P0×3 + P1×2)
+
+- **fix (P0 #1 1366×768 chip clipping)**: `src/ui/hud/HUDController.js` —
+  `scenarioGoalChips()` now also returns `name` + `count` fields so each chip
+  renders as `<span class="hud-goal-chip-name">farms </span><span class="hud-goal-chip-count">0/6</span>`
+  instead of a flat textContent. The chip's `title=` attribute carries the
+  full label so hover always exposes "farms 0/6" regardless of viewport.
+  `index.html` extends the existing `@media (max-width:1366px) and (min-width:1025px)`
+  block with `.hud-goal-list { min-width: 0 }` and `.hud-goal-chip { font-size: 10px }`
+  so chip wrapping (already declared in R2) actually triggers without the
+  parent flex container clipping. New `@media (max-width:1280px) and (min-width:1025px)`
+  block hides `.hud-goal-chip-name` (icon-only collapse) so all 6 chips fit
+  on the very narrowest supported laptop.
+- **fix (P1 #2 disabled build tool tooltip)**: `src/ui/tools/BuildToolbar.js` —
+  exported new pure helper `describeBuildToolCostBlock(toolKey, resources)`
+  returning strings like `"Need 5 wood (have 0)"` or `"Need 8 wood (have 3) and 3 stone (have 0)"`.
+  The cost-blocked sync loop now caches the button's pre-existing title
+  in `data-cost-title-original` and writes the deficit string to `title=`;
+  un-blocking restores the cached title. Hover on a disabled Clinic now
+  reveals "Need 6 wood (have 0) and 2 herbs (have 0)" instead of silence.
+- **fix (P1 #6 themed scrollbar)**: `index.html` — added wildcard
+  `*::-webkit-scrollbar` (8 px), `*::-webkit-scrollbar-thumb`
+  (rgba(58,160,255,0.28)), and Firefox `* { scrollbar-color, scrollbar-width: thin }`
+  so Best Runs / Colony Inspector / Settings / any ad-hoc scroll container
+  picks up the dark accent palette. The narrow `panel-body-scroll`/
+  `entityFocusBody`/`dock-body` rules above still override width=4 px where
+  needed; `#sidebarTabStrip { display: none }` still suppresses its own
+  scrollbar.
+- **fix (P1 #4 toast/EntityFocus z-order)**: `index.html` — explicit comment
+  on `#floatingToastLayer` documents why z:25 must exceed `#entityFocusOverlay`
+  z:12 so build/death/milestone toasts spawned near the bottom-left render
+  ON TOP of the worker focus card instead of being occluded.
+- **test**: 1 new test file / 5 new test points
+  - `test/hud-chip-responsive.test.js` — static CSS contract assertions
+    against `index.html` (1366 band has flex-wrap+min-width:0; 1280 band
+    hides chip-name; wildcard scrollbar is themed; toast z > entity focus z)
+    plus a live HUDController DOM-shape assertion (each chip emits
+    `.hud-goal-chip-name` + `.hud-goal-chip-count` + `title=` attribute).
+- **test baseline**: 1767 / 1758 pass / 6 fail / 3 skip (was 1762 / 1753
+  pass / 6 fail / 3 skip on parent 668b6e8; +5 pass, identical fail set:
+  escalation-lethality, foodProducedPerMin flush, RoleAssignment-1-quarry,
+  RaidEscalator DI=30, RaidFallbackScheduler popFloor, FSM scenario E
+  walled-warehouse — all pre-existing per R3 baseline).
+
 ### A5 Balance-Critic — recovery whitelist + food-rate sampler + Riverlands distinct goals (R3 P0×3)
 
 - **fix (P0-1 autopilot livelock)**: `src/simulation/meta/ProgressionSystem.js` —

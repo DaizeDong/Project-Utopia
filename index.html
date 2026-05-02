@@ -701,6 +701,12 @@
     /* Build click feedback layer. Floating toast + pulse animation to make
        buildResult.reasonText visible at the click location. */
     #floatingToastLayer {
+      /* v0.10.1-A6 R3 (P0 #4) — z:25 keeps build/death/milestone toasts
+         above #entityFocusOverlay (z:12) so a click near the bottom-left
+         spawns a toast that renders ON TOP of the worker focus card
+         instead of being silently occluded by the panel's blurred
+         backdrop. alertStack at z:40 still wins for the topbar pop-up
+         queue. */
       position: absolute; inset: 0; z-index: 25;
       pointer-events: none;
       overflow: hidden;
@@ -2002,12 +2008,34 @@
       .hud-goal-list {
         max-width: none;
         flex-wrap: wrap;
+        /* v0.10.1-A6 R3 (P0) — explicit min-width:0 lets the goal-list
+           shrink inside its flex parent so chip wrapping (rather than
+           clipping or pushing the sidebar) is the overflow strategy. */
+        min-width: 0;
+      }
+      .hud-goal-chip {
+        /* Slightly tighter chip typography at the 1025-1366 band so a
+           full row of 6 fits without wrapping a third row when the
+           sidebar is open. Numbers stay 11 px so contrast vs the chip
+           name is preserved. */
+        font-size: 10px;
       }
       #alertStack {
         top: calc(var(--hud-height) + 8px);
         right: calc(clamp(280px, 22vw, 460px) + 16px);
         z-index: 16;
       }
+    }
+    /* v0.10.1-A6 R3 (P0) — ≤1280 px icon-only chip mode. Hide the
+       verbose chip-name span so the chip collapses to "<icon> 0/6";
+       the full label stays available via the chip's title= attribute
+       (set in HUDController#renderGoalChips), so hover still surfaces
+       "farms 0/6" for players who need it. The 1281-1366 band keeps the
+       full label visible — it's only the very narrow laptops where the
+       collapse fires. */
+    @media (max-width: 1280px) and (min-width: 1025px) {
+      .hud-goal-chip-name { display: none; }
+      .hud-goal-chip { padding: 2px 5px; }
     }
     @media (min-width: 1025px) and (max-width: 1200px) {
       .hud-scenario { max-width: 160px; }
@@ -2038,6 +2066,26 @@
     .panel-body-scroll::-webkit-scrollbar-track,
     #entityFocusBody::-webkit-scrollbar-track,
     .dock-body::-webkit-scrollbar-track { background: transparent; }
+
+    /* v0.10.1-A6 R3 (P0 #6) — themed scrollbar fallback. The block above
+       only covers the three named scroll containers (panel-body-scroll,
+       entityFocusBody, dock-body); reviewer noted Best Runs, Colony
+       Inspector, Settings and other ad-hoc scroll regions still showed
+       the OS-native grey scrollbar, breaking visual continuity with
+       the dark accent palette. This wildcard rule applies the same
+       narrow accent thumb to *every* scroll container, then the
+       targeted rules above override width/thumb where needed (Tab strip
+       opts out via `scrollbar-width: none`). Firefox uses the
+       `scrollbar-color` shorthand which has no per-element width slot,
+       so we set a thin default once at the wildcard level. */
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-track { background: rgba(10,18,30,0.4); }
+    *::-webkit-scrollbar-thumb {
+      background: rgba(58,160,255,0.28);
+      border-radius: 4px;
+    }
+    *::-webkit-scrollbar-thumb:hover { background: rgba(58,160,255,0.55); }
+    * { scrollbar-color: rgba(58,160,255,0.28) rgba(10,18,30,0.4); scrollbar-width: thin; }
 
     @media (max-width: 900px) {
       #devDockGrid { grid-template-columns: repeat(3, 1fr); }
