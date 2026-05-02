@@ -46,6 +46,28 @@ function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
   const sepR = Number(profile.separationRadius ?? BALANCE.boidsSeparationRadius);
   const weights = profile.weights ?? BALANCE.boidsWeights;
 
+  // v0.10.1-hotfix-A (issue #2) — workers/visitors with an active A* path
+  // experience strong inter-worker repulsion that pushes them off their
+  // route, especially in narrow lanes / 1-tile corridors near warehouses.
+  // The separation force fights the seek force every tick because path
+  // followers naturally cluster in lanes, and at the current weights
+  // (workers separation=2.6, seek=1.22) separation wins ~2:1 on a single
+  // crowded tile. Damp separation strongly when the entity has an active
+  // path so path-following dominates; the spatial collision in the
+  // integrator (impassable-tile revert) plus the traffic-penalty A* layer
+  // already handles real congestion. Animals (no path) keep full sep.
+  const isPathFollower = entity.type === "WORKER" || entity.type === "VISITOR";
+  const hasPath = Boolean(
+    isPathFollower
+    && entity.path
+    && Number(entity.pathIndex ?? 0) < entity.path.length,
+  );
+  // 0.35 chosen so the effective separation weight while pathing
+  // (workers: 2.6 × 0.35 ≈ 0.91) sits below the seek weight (1.22),
+  // letting the A*-derived desiredVel drive net steering.
+  const SEP_DAMPEN_ON_PATH = 0.35;
+  const separationFactor = hasPath ? SEP_DAMPEN_ON_PATH : 1.0;
+
   for (let i = 0; i < neighbors.length; i += 1) {
     const other = neighbors[i];
     if (other === entity) continue;
@@ -79,13 +101,14 @@ function boidsSteer(entity, neighbors, desiredX, desiredZ, out) {
     cohZ = cohZ / count - entity.z;
   }
 
+  const sepWeight = Number(weights.separation ?? BALANCE.boidsWeights.separation) * separationFactor;
   out.x =
-    sepX * Number(weights.separation ?? BALANCE.boidsWeights.separation) +
+    sepX * sepWeight +
     aliX * Number(weights.alignment ?? BALANCE.boidsWeights.alignment) +
     cohX * Number(weights.cohesion ?? BALANCE.boidsWeights.cohesion) +
     desiredX * Number(weights.seek ?? BALANCE.boidsWeights.seek);
   out.z =
-    sepZ * Number(weights.separation ?? BALANCE.boidsWeights.separation) +
+    sepZ * sepWeight +
     aliZ * Number(weights.alignment ?? BALANCE.boidsWeights.alignment) +
     cohZ * Number(weights.cohesion ?? BALANCE.boidsWeights.cohesion) +
     desiredZ * Number(weights.seek ?? BALANCE.boidsWeights.seek);
