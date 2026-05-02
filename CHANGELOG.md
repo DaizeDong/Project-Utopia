@@ -2,6 +2,55 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
+### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
+
+- **fix (P0 heat-lens context-sensitive supply-surplus label)**:
+  `src/render/PressureLens.js` — `buildHeatLens()` now scans `state.agents`
+  once per call for an alive WORKER with `hunger < 0.35` (the
+  workerHungerSeekThreshold proxy = "actively food-seeking"). When found, the
+  RED "supply surplus" marker label flips to `"queued (delivery blocked)"`
+  and the hover tooltip gains a "Worker Focus" pointer so the player
+  understands the surplus is queue-blocked rather than abundance. Marker
+  kind / id / priority / labelPriority are unchanged so dedup + halo
+  expansion paths stay green. Closes the contradiction reviewers reported
+  ("red tile = surplus" while colony was visibly starving).
+- **fix (P1 #5 autopilot Goal-reached cap)**:
+  `src/simulation/meta/ColonyDirectorSystem.js` — `selectNextBuilds()` reads
+  `getScenarioRuntime(state).logisticsTargets` + `counts` and skips any
+  non-emergency proposal whose tile-type count already meets/exceeds the
+  scenario's declared logistics goal (warehouses / farms / lumbers / walls).
+  Emergency proposals (priority ≥ 90, e.g. food crisis / recovery branches)
+  bypass the cap so survival still outranks "tidy goal counts". Stops the
+  autopilot from overshooting warehouses 6/2 and farms 17/6 (reviewer A7
+  observed) when the scenario victory is already secured.
+- **fix (P1 #7 Threat scale anchor)**:
+  `src/ui/hud/HUDController.js` — colony-health card threat label changed
+  from `"Threat: 50%"` to `"Threat 50% (raid at 80%)"` so a bare percentage
+  reads as actionable against the published 80% raid inflection rather
+  than abstract. Mirrors A5's BalanceCritic raid-escalator anchor.
+- **note (P0 #1 / P0 #2 already closed)**:
+  - Tile-inspector "B = build · R = road · T = fertility" miseducating hint
+    was deleted in `3f87bf4` (A3 R3 step 6 — `src/render/SceneRenderer.js`
+    line 2259 replaced with `"Press 1-12 to select a build tool"`).
+  - T-key terrain overlay cycle is already correct in
+    `SceneRenderer.toggleTerrainLens()` (5-mode cycle:
+    `null → fertility → elevation → connectivity → nodeDepletion → null`)
+    + `shortcutResolver.js` "KeyT" branch + `GameApp.toggleTerrainLens()`
+    wrapper. No code change needed here; the suspected "live still shows
+    only Fertility" report was a stale observation from before the R2 fix.
+- **test**: 1 new test file / 4 new test points
+  - `test/heat-lens-context-label.test.js` — minimal FARM+hot-WAREHOUSE
+    fixture; (a) baseline label === `"supply surplus"` when worker
+    hunger=1.0; (b) flips to `"queued (delivery blocked)"` + tooltip carries
+    `"Worker Focus"` when worker hunger=0.10; (c) marker kind/id/priority
+    preserved across the flip; (d) gate at 0.35 — hunger=0.34 flips,
+    hunger=0.50 does not.
+- **tests**: 1762 / 6 fail / 3 skip (full suite). All 6 failing tests
+  pre-exist on the parent commit ffa012f and are out-of-scope for A7
+  (raid-escalator log curve drift, exploit-regression escalation-lethality
+  median-tick range, ResourceSystem foodProducedPerMin emit timing,
+  RoleAssignment STONE quota, FSM scenario-E walled-warehouse carry-eat).
+
 ### A6 UI-Design — chip flex-wrap + ≤1280 icon-only + disabled tooltip + themed scrollbar + toast z-order (R3 P0×3 + P1×2)
 
 - **fix (P0 #1 1366×768 chip clipping)**: `src/ui/hud/HUDController.js` —

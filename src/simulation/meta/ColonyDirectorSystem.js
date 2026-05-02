@@ -597,11 +597,50 @@ export function selectNextBuilds(state, maxCount = MAX_BUILDS_PER_TICK, buffer =
   const budgetResources = { ...(state.resources ?? {}) };
   const selected = [];
 
+  // v0.10.1-r3-A7 P1 #5 — Goal-reached cap. Reviewer A7 observed the autopilot
+  // continuing to push warehouse + farm builds well past the scenario's
+  // logistics targets (warehouses 6/2, farms 17/6), turning a "victory" into a
+  // sprawl. Read scenario.targets.logistics via the cached runtime view and
+  // filter out any proposal whose tile-type count already meets/exceeds the
+  // declared goal. We only cap NON-EMERGENCY proposals so a starvation /
+  // recovery branch can still place a farm above the static goal when the
+  // scenario goal is unrealistically low. The cap acts on the proposal layer
+  // (not assessColonyNeeds) so existing planner unit tests stay green.
+  let goalCap = null;
+  try {
+    const runtime = getScenarioRuntime(state);
+    const targets = runtime?.logisticsTargets ?? null;
+    const counts = runtime?.counts ?? null;
+    if (targets && counts) {
+      goalCap = {
+        warehouse: { current: counts.warehouses ?? 0, goal: Number(targets.warehouses ?? 0) },
+        farm:      { current: counts.farms ?? 0,      goal: Number(targets.farms ?? 0) },
+        lumber:    { current: counts.lumbers ?? 0,    goal: Number(targets.lumbers ?? 0) },
+        wall:      { current: counts.walls ?? 0,      goal: Number(targets.walls ?? 0) },
+      };
+    }
+  } catch {
+    // Scenario runtime unavailable (test states without scenario field) —
+    // skip the cap silently and fall through to the legacy planner.
+    goalCap = null;
+  }
+  const isGoalReached = (need) => {
+    if (!goalCap) return false;
+    const entry = goalCap[need.type];
+    if (!entry || !(entry.goal > 0)) return false;
+    return entry.current >= entry.goal;
+  };
+
   for (const need of needs) {
     if (selected.length >= maxCount) break;
     const cost = BUILD_COST[need.type] ?? {};
     const isEmergency = need.priority >= 90;
     const isStrategic = STRATEGIC_BUILD_TYPES.has(need.type);
+
+    // Goal-reached cap: skip non-emergency builds whose scenario goal is met.
+    // Emergency-priority needs (food crisis, recovery) bypass the cap because
+    // the colony's survival outranks "tidy goal counts".
+    if (!isEmergency && isGoalReached(need)) continue;
 
     // Strategic builds use the base buffer (not the stockpile-inflated buffer)
     const effectiveBuffer = isStrategic ? RESOURCE_BUFFER : buffer;

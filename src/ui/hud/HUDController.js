@@ -2091,6 +2091,10 @@ export class HUDController {
     if (dayEl) dayEl.textContent = `Day ${day}`;
     if (foodRateEl) foodRateEl.textContent = foodRateText;
     if (idleEl) idleEl.textContent = `${idleCount} idle`;
-    if (threatEl) threatEl.textContent = `Threat: ${Math.round(threat)}%`;
+    // v0.10.1-r3-A7 P1 #7 — anchor the Threat percent to its consequence so
+    // a bare "50%" reads as actionable rather than abstract. The 80% raid
+    // mark is the BalanceCritic-published escalator inflection; surfacing it
+    // here lets the player frame the current value against a known event.
+    if (threatEl) threatEl.textContent = `Threat ${Math.round(threat)}% (raid at 80%)`;
   }
 }
