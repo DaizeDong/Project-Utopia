@@ -356,7 +356,12 @@ export class BuildToolbar {
     if (this.state) {
       this.state.controls ??= {};
       const cc = this.state.controls;
-      if (!Number.isFinite(cc.recruitTarget)) cc.recruitTarget = 16;
+      // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): default 16 → 500
+      // (matches the workerTargetInput slider max in index.html). Pre-Batch-E
+      // saves loaded with recruitTarget=16, which manifested as workers
+      // stuck at 16. New default lets infraCap + food buffer be the actual
+      // gates rather than a hard 16-worker artificial bottleneck.
+      if (!Number.isFinite(cc.recruitTarget)) cc.recruitTarget = 500;
       if (!Number.isFinite(cc.recruitQueue)) cc.recruitQueue = 0;
       if (!Number.isFinite(cc.recruitCooldownSec)) cc.recruitCooldownSec = 0;
       if (typeof cc.autoRecruit !== "boolean") cc.autoRecruit = true;
@@ -369,34 +374,56 @@ export class BuildToolbar {
     this.autoRecruitToggle = document.getElementById("autoRecruitToggle");
     this.recruitStatusVal = document.getElementById("recruitStatusVal");
 
-    if (this.recruitOneBtn) {
-      this.recruitOneBtn.addEventListener("click", () => {
-        const food = Number(this.state.resources?.food ?? 0);
-        const cost = Number(BALANCE.recruitFoodCost ?? 25);
-        const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
-        if (food < cost) {
-          c.actionMessage = "Not enough food to recruit.";
-          c.actionKind = "warn";
-          this.sync();
-          return;
-        }
-        if ((c.recruitQueue ?? 0) >= maxQueue) {
-          c.actionMessage = "Recruit queue is full.";
-          c.actionKind = "warn";
-          this.sync();
-          return;
-        }
-        c.recruitQueue = Math.min(maxQueue, Number(c.recruitQueue ?? 0) + 1);
-        c.actionMessage = `Recruit queued (${c.recruitQueue}).`;
-        c.actionKind = "info";
+    // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9 Part B) — companion
+    // recruit controls in the right-sidebar Population card (always-open,
+    // first-class colony management surface). Same enqueue logic as the
+    // dev-tools panel button; #syncRecruitControls below mirrors status to
+    // both sets of nodes so they stay in lockstep.
+    this.recruitOneSidebarBtn = document.getElementById("recruitOneSidebarBtn");
+    this.autoRecruitSidebarToggle = document.getElementById("autoRecruitSidebarToggle");
+    this.recruitStatusSidebarVal = document.getElementById("recruitStatusSidebarVal");
+
+    const handleRecruitClick = () => {
+      const food = Number(this.state.resources?.food ?? 0);
+      const cost = Number(BALANCE.recruitFoodCost ?? 25);
+      const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
+      if (food < cost) {
+        c.actionMessage = "Not enough food to recruit.";
+        c.actionKind = "warn";
         this.sync();
-      });
+        return;
+      }
+      if ((c.recruitQueue ?? 0) >= maxQueue) {
+        c.actionMessage = "Recruit queue is full.";
+        c.actionKind = "warn";
+        this.sync();
+        return;
+      }
+      c.recruitQueue = Math.min(maxQueue, Number(c.recruitQueue ?? 0) + 1);
+      c.actionMessage = `Recruit queued (${c.recruitQueue}).`;
+      c.actionKind = "info";
+      this.sync();
+    };
+
+    if (this.recruitOneBtn) {
+      this.recruitOneBtn.addEventListener("click", handleRecruitClick);
+    }
+    if (this.recruitOneSidebarBtn) {
+      this.recruitOneSidebarBtn.addEventListener("click", handleRecruitClick);
     }
 
+    const handleAutoToggle = (checked) => {
+      c.autoRecruit = Boolean(checked);
+      this.sync();
+    };
     if (this.autoRecruitToggle) {
       this.autoRecruitToggle.addEventListener("change", () => {
-        c.autoRecruit = Boolean(this.autoRecruitToggle.checked);
-        this.sync();
+        handleAutoToggle(this.autoRecruitToggle.checked);
+      });
+    }
+    if (this.autoRecruitSidebarToggle) {
+      this.autoRecruitSidebarToggle.addEventListener("change", () => {
+        handleAutoToggle(this.autoRecruitSidebarToggle.checked);
       });
     }
 
@@ -1348,26 +1375,56 @@ export class BuildToolbar {
       const maxQueue = Number(BALANCE.recruitMaxQueueSize ?? 12);
       const queue = Math.max(0, Number(c.recruitQueue ?? 0) | 0);
       const cooldown = Math.max(0, Number(c.recruitCooldownSec ?? 0));
+      // v0.8.8 A2 (F7) — color cues:
+      //  - Food segment red when food < cost (recruit blocked)
+      //  - Queue segment amber when queue >= maxQueue (recruit blocked)
+      const queueColor = queue >= maxQueue ? "#fbbf24" : "";
+      const foodColor = food < cost ? "#f87171" : "";
+      const queueSeg = queueColor
+        ? `<span style="color: ${queueColor}">Queue: ${queue}</span>`
+        : `Queue: ${queue}`;
+      const foodSeg = foodColor
+        ? `<span style="color: ${foodColor}">Food: ${Math.floor(food)}/${cost}</span>`
+        : `Food: ${Math.floor(food)}/${cost}`;
+      const statusHtml = `${queueSeg} · Cooldown: ${cooldown.toFixed(0)}s · ${foodSeg}`;
       if (this.recruitStatusVal) {
-        // v0.8.8 A2 (F7) — color cues:
-        //  - Food segment red when food < cost (recruit blocked)
-        //  - Queue segment amber when queue >= maxQueue (recruit blocked)
-        const queueColor = queue >= maxQueue ? "#fbbf24" : "";
-        const foodColor = food < cost ? "#f87171" : "";
-        const queueSeg = queueColor
-          ? `<span style="color: ${queueColor}">Queue: ${queue}</span>`
-          : `Queue: ${queue}`;
-        const foodSeg = foodColor
-          ? `<span style="color: ${foodColor}">Food: ${Math.floor(food)}/${cost}</span>`
-          : `Food: ${Math.floor(food)}/${cost}`;
-        this.recruitStatusVal.innerHTML =
-          `${queueSeg} · Cooldown: ${cooldown.toFixed(0)}s · ${foodSeg}`;
+        this.recruitStatusVal.innerHTML = statusHtml;
       }
+      // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9 Part B): mirror the
+      // recruit panel status to the sidebar's Population card so both
+      // copies of the recruit controls stay in lockstep.
+      if (this.recruitStatusSidebarVal) {
+        this.recruitStatusSidebarVal.innerHTML = statusHtml;
+      }
+      const recruitDisabled = (queue >= maxQueue) || (food < cost);
       if (this.recruitOneBtn) {
-        this.recruitOneBtn.disabled = (queue >= maxQueue) || (food < cost);
+        this.recruitOneBtn.disabled = recruitDisabled;
+        // v0.10.1-iter4 — A6 R3 disabled-tooltip pattern. Surface the
+        // blocking reason on hover so players don't wonder why the button
+        // is grayed out.
+        if (recruitDisabled) {
+          this.recruitOneBtn.title = food < cost
+            ? `Need ${cost} food (have ${Math.floor(food)})`
+            : `Recruit queue full (${queue}/${maxQueue})`;
+        } else {
+          this.recruitOneBtn.title = "Spawn one worker now (costs 25 food, blocked when food below the recruit buffer or queue full).";
+        }
+      }
+      if (this.recruitOneSidebarBtn) {
+        this.recruitOneSidebarBtn.disabled = recruitDisabled;
+        if (recruitDisabled) {
+          this.recruitOneSidebarBtn.title = food < cost
+            ? `Need ${cost} food (have ${Math.floor(food)})`
+            : `Recruit queue full (${queue}/${maxQueue})`;
+        } else {
+          this.recruitOneSidebarBtn.title = "Spawn one worker now (costs 25 food, blocked when food below the recruit buffer or queue full).";
+        }
       }
       if (this.autoRecruitToggle) {
         this.autoRecruitToggle.checked = c.autoRecruit !== false;
+      }
+      if (this.autoRecruitSidebarToggle) {
+        this.autoRecruitSidebarToggle.checked = c.autoRecruit !== false;
       }
     }
 

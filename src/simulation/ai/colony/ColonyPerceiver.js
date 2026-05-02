@@ -1374,8 +1374,12 @@ export class ColonyPerceiver {
     const sm = buildings.smithies ?? 0;
     const cl = buildings.clinics ?? 0;
     const hg = buildings.herbGardens ?? 0;
-    const popCap = Math.min(80, 8 + wh * 4 + Math.floor(fm * 0.8)
-      + Math.floor(lm * 0.5) + qu * 2 + ki * 2 + sm * 2 + cl * 2 + hg);
+    // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): legacy `Math.min(80, ...)`
+    // hard cap removed so the LLM/perceiver pop-cap estimate scales with
+    // built infrastructure rather than being clamped to a global ceiling.
+    // Per-building contributions (the soft cap) are unchanged.
+    const popCap = 8 + wh * 4 + Math.floor(fm * 0.8)
+      + Math.floor(lm * 0.5) + qu * 2 + ki * 2 + sm * 2 + cl * 2 + hg;
 
     // Growth blockers
     const growthBlockers = [];

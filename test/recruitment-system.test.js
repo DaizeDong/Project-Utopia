@@ -49,7 +49,12 @@ function deterministicServices() {
 
 test("EntityFactory seeds recruit controls with sane defaults", () => {
   const state = createInitialGameState();
-  assert.equal(state.controls.recruitTarget, 16, "default recruitTarget=16");
+  // v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9): default raised 16 → 500
+  // (matches workerTargetInput slider max in index.html) so players who
+  // never touch the slider aren't artificially capped at 16 workers.
+  // Auto-recruit is still gated by infraCap (warehouses + farms + ...),
+  // food buffer, and cooldown — this just removes the hard bottleneck.
+  assert.equal(state.controls.recruitTarget, 500, "default recruitTarget=500 (was 16)");
   assert.equal(state.controls.recruitQueue, 0, "default recruitQueue=0");
   assert.equal(state.controls.autoRecruit, true, "default autoRecruit=true");
   assert.equal(state.controls.recruitCooldownSec, 0, "default cooldown=0");

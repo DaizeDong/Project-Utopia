@@ -2873,6 +2873,22 @@
             <div class="kv" title="Traders who visit to exchange goods, boosted by depots and roads"><div>Visitors</div><div id="visitorsVal">0</div></div>
             <div class="kv" title="Wild animals that graze on farms, attracted by high fertility"><div>Herbivores</div><div id="herbivoresVal">0</div></div>
             <div class="kv" title="Dangerous animals that attack workers and livestock"><div>Predators</div><div id="predatorsVal">0</div></div>
+            <!-- v0.10.1-iter4 (HW7 hotfix Batch E — Issue #9 Part B) — surface
+                 the manual recruit button on the Colony sidebar (right side,
+                 always-open Population card) so players don't have to dig
+                 through Dev Tools > Population Control. Wired in
+                 BuildToolbar.#setupRecruitControls (companion to the existing
+                 #recruitOneBtn — both buttons share the same enqueue logic). -->
+            <div class="recruit-controls" style="margin-top:6px; border-top:1px solid var(--divider); padding-top:6px;">
+              <button id="recruitOneSidebarBtn" type="button" style="width:100%;" title="Spawn one worker now (costs 25 food, blocked when food below the recruit buffer or queue full).">+1 Worker (25 food)</button>
+              <div style="margin-top:4px; display:flex; align-items:center; gap:6px;">
+                <label class="recruit-auto-label" style="display:flex; align-items:center; gap:3px;">
+                  <input id="autoRecruitSidebarToggle" type="checkbox" />
+                  <span class="small">Auto</span>
+                </label>
+                <span id="recruitStatusSidebarVal" class="small muted" style="flex:1;">Queue: 0</span>
+              </div>
+            </div>
             <div style="margin-top:6px; border-top:1px solid var(--divider); padding-top:6px">
               <div class="kv" title="Workers assigned to harvest food from farms"><div>FARM</div><div id="farmersVal">0</div></div>
               <div class="kv" title="Workers assigned to chop wood at Lumber Camps"><div>WOOD</div><div id="loggersVal">0</div></div>

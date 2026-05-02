@@ -1,5 +1,64 @@
 # Changelog
 
+## [Unreleased] — HW7 Final Polish Loop Hotfix iter4
+
+### Batch E (Issue #9) — Pop cap stuck at 16 + recruit button surfaced on right sidebar
+
+User playtest report: "后期 worker 到 16 个就不增长了, 很多地方都缺人.
+检查是不是有限制, 你要去除所有游戏里的硬性限制, 不要制约发展. 并且右侧
+界面似乎没有手动招募按钮, 即使用食物就行 worker 招募." (Late-game
+workers stuck at 16 forever; remove all hard limits on growth; the right
+sidebar has no manual recruit button despite food-cost recruit existing.)
+
+**Part A — hard caps removed (3 spots):**
+- `src/simulation/population/PopulationGrowthSystem.js` — `infraCap`
+  computation lost its `Math.min(80, ...)` ceiling. The infrastructure-
+  derived formula is preserved (warehouses + farms + lumbers + quarries
+  + kitchens + smithies + clinics + herbGardens — soft cap that grows
+  as the colony builds out) but no longer clipped to a global 80-worker
+  ceiling. Players who keep building warehouses can keep growing.
+- `src/simulation/ai/colony/ColonyPerceiver.js` — companion `popCap`
+  estimate (used by the LLM observation packet + the formatted prompt
+  body) lost its matching `Math.min(80, ...)` clamp so the LLM's
+  perception of "at pop cap" matches the new uncapped reality.
+- `src/entities/EntityFactory.js` + `src/ui/tools/BuildToolbar.js` —
+  initial / backfill default for `state.controls.recruitTarget` raised
+  16 → 500 (matches the `workerTargetInput` slider's `max="500"`).
+  Pre-fix: the recruit slider opened at 16 and most players never
+  realised they had to drag it. Post-fix: the user-facing upper bound
+  is the slider's full range (500), and infraCap (warehouse-derived,
+  unbounded) is the actual gate. Auto-recruit still respects the food
+  buffer + cooldown — this just removes the artificial 16 bottleneck.
+
+**Part B — Recruit button surfaced on right sidebar Population card:**
+- `index.html` — added `#recruitOneSidebarBtn` + `#autoRecruitSidebarToggle`
+  + `#recruitStatusSidebarVal` inside the always-open `data-panel-key="population"`
+  card on the Colony sidebar (right side, ~line 2873). Pre-fix: the
+  existing `#recruitOneBtn` was buried in `Settings > Dev Tools >
+  Population Control` (a nested `<details>` collapsed by default,
+  inside a `dev-only` panel). Players had no way to discover it.
+- `src/ui/tools/BuildToolbar.js` — `#setupRecruitControls` resolves
+  the new sidebar nodes alongside the existing dev-panel nodes; both
+  buttons share a single `handleRecruitClick` closure (food/cost gate
+  + queue clamp). Sync loop (`#syncManagementInfo`) mirrors the same
+  status string + disabled state to both buttons + both auto toggles
+  so they stay in lockstep. Disabled tooltip pattern (A6 R3): when
+  the button is disabled, hover surfaces "Need 25 food (have 12)" or
+  "Recruit queue full (12/12)" so the blocking reason is obvious.
+
+**Tests updated to reflect new caps:**
+- `test/colony-perceiver.test.js` — `popCap <= 80` upper bound assertion
+  replaced with a finite-number sanity check (formula is now uncapped).
+- `test/recruitment-system.test.js` — default `recruitTarget` assertion
+  bumped from 16 to 500 (matches new EntityFactory seed).
+
+**Test baseline:** 1784 pass / 5 fail / 3 skip (full suite). All 5
+failing tests pre-exist on parent commit 4814af5 and are not impacted
+by this change (raid-escalator log curve drift, exploit-regression
+escalation-lethality median tick range, ResourceSystem foodProducedPerMin
+emit timing, RoleAssignment STONE quota, RaidFallbackScheduler popFloor
+gate). Recruitment + perceiver subset (44 tests): all green.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
 ### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
