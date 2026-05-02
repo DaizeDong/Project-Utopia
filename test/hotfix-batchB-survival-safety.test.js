@@ -21,11 +21,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createInitialGameState } from "../src/entities/EntityFactory.js";
-import { rebuildBuildingStats } from "../src/world/grid/Grid.js";
-import { assessColonyNeeds } from "../src/simulation/meta/ColonyDirectorSystem.js";
+import { rebuildBuildingStats, getTileState, toIndex } from "../src/world/grid/Grid.js";
+import { assessColonyNeeds, ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
 import { AgentDirectorSystem } from "../src/simulation/ai/colony/AgentDirectorSystem.js";
 import { MemoryStore } from "../src/simulation/ai/memory/MemoryStore.js";
 import { createServices } from "../src/app/createServices.js";
+import { FOG_STATE, NODE_FLAGS, TILE } from "../src/config/constants.js";
 
 function makeBaseState(seed = 42) {
   const state = createInitialGameState("temperate_plains", seed);
@@ -136,4 +137,128 @@ test("AgentDirectorSystem: no survival preempt when farms exist and stone is hea
   // Mode should be "hybrid" (no llmClient, no apiKey) — verifies the survival
   // preempt block doesn't break normal flow.
   assert.equal(state.ai.agentDirector.mode, "hybrid");
+});
+
+// v0.10.1-hotfix-iter2 (issue #7 follow-up): scout-road-toward-fogged-stone.
+// When stone is critical AND every STONE node sits in HIDDEN fog, the
+// quarry@95 safety net cannot land (evaluateBuildPreview rejects HIDDEN
+// tiles). The new proposer must extend a single road blueprint toward the
+// closest hidden STONE node so the worker walking that road reveals the fog.
+test("ColonyDirectorSystem: scout-road proposer fires when stone is critical and every STONE node is fog-hidden", () => {
+  const state = makeBaseState();
+  state.controls = { ...(state.controls ?? {}), tool: "none", timeScale: 1 };
+  state.resources = { food: 200, wood: 50, stone: 0, herbs: 5, meals: 0, tools: 0, medicine: 0 };
+  state.buildings = { ...rebuildBuildingStats(state.grid), farms: 5, quarries: 0 };
+
+  const grid = state.grid;
+  const w = Number(grid.width ?? 0);
+  const h = Number(grid.height ?? 0);
+
+  // Force a deterministic fog field: HIDDEN everywhere except a small box
+  // around a known WAREHOUSE/anchor. We pick (5, 5) as the anchor and reveal
+  // a 3-tile box around it. Then plant a STONE node at (40, 40) which is
+  // far outside that box and therefore HIDDEN.
+  const fogVis = new Uint8Array(w * h); // 0 == HIDDEN
+  state.fog = { visibility: fogVis, version: 1 };
+  for (let dz = -3; dz <= 3; dz += 1) {
+    for (let dx = -3; dx <= 3; dx += 1) {
+      const ix = 5 + dx;
+      const iz = 5 + dz;
+      if (ix < 0 || iz < 0 || ix >= w || iz >= h) continue;
+      fogVis[ix + iz * w] = FOG_STATE.EXPLORED;
+    }
+  }
+
+  // Place a WAREHOUSE at the anchor so the proposer has an infrastructure
+  // anchor to extend from.
+  const anchorIdx = 5 + 5 * w;
+  grid.tiles[anchorIdx] = TILE.WAREHOUSE;
+  state.buildings = rebuildBuildingStats(grid);
+
+  // Strip ALL existing STONE node flags so no stone is currently visible.
+  // Then plant exactly one STONE node deep in the HIDDEN fog at (40, 40).
+  if (grid.tileState) {
+    for (const [, entry] of grid.tileState) {
+      if (entry && Number(entry.nodeFlags ?? 0) & NODE_FLAGS.STONE) {
+        entry.nodeFlags = Number(entry.nodeFlags ?? 0) & ~NODE_FLAGS.STONE;
+      }
+    }
+  }
+  const stoneIx = 40;
+  const stoneIz = 40;
+  const stoneIdx = toIndex(stoneIx, stoneIz, w);
+  let stoneEntry = getTileState(grid, stoneIx, stoneIz);
+  if (!stoneEntry) {
+    stoneEntry = { nodeFlags: 0, fertility: 1, yieldPool: 0 };
+    grid.tileState.set(stoneIdx, stoneEntry);
+  }
+  stoneEntry.nodeFlags = (Number(stoneEntry.nodeFlags ?? 0) | NODE_FLAGS.STONE) & 0xff;
+  // Make sure the underlying tile is GRASS (the proposer only considers GRASS
+  // node tiles that are still unbuilt) and that fog hides it.
+  grid.tiles[stoneIdx] = TILE.GRASS;
+  fogVis[stoneIdx] = FOG_STATE.HIDDEN;
+
+  const services = { rng: { next: () => 0.5 } };
+  const director = new ColonyDirectorSystem();
+
+  const roadsBefore = Number(state.buildings.roads ?? 0);
+  const blueprintsBefore = Number(state.ai?.colonyDirector?.blueprintsSubmitted ?? 0);
+
+  // Run 2 ticks past the EVAL_INTERVAL_SEC so the director runs at least once.
+  state.metrics.timeSec = 0;
+  director.update(0.1, state, services);
+  state.metrics.timeSec = 3;
+  director.update(0.1, state, services);
+
+  const roadsAfter = Number(state.buildings.roads ?? 0);
+  const blueprintsAfter = Number(state.ai?.colonyDirector?.blueprintsSubmitted ?? 0);
+  const lastScoutSec = Number(state.ai?.colonyDirector?.lastStoneScoutProposalSec ?? -Infinity);
+
+  assert.ok(
+    roadsAfter > roadsBefore || blueprintsAfter > blueprintsBefore || Number.isFinite(lastScoutSec),
+    `scout-road proposer should have placed a road blueprint or marked lastStoneScoutProposalSec; got roadsBefore=${roadsBefore}, roadsAfter=${roadsAfter}, blueprintsBefore=${blueprintsBefore}, blueprintsAfter=${blueprintsAfter}, lastScoutSec=${lastScoutSec}`,
+  );
+});
+
+// Counter-test: when stone is healthy, the scout-road proposer must NOT
+// fire — this is purely an emergency reachability hack, not background
+// pathfinding.
+test("ColonyDirectorSystem: scout-road proposer does NOT fire when stone is healthy", () => {
+  const state = makeBaseState();
+  state.controls = { ...(state.controls ?? {}), tool: "none", timeScale: 1 };
+  state.resources = { food: 200, wood: 50, stone: 50, herbs: 5, meals: 0, tools: 0, medicine: 0 };
+  state.buildings = { ...rebuildBuildingStats(state.grid), farms: 5, quarries: 1 };
+
+  const grid = state.grid;
+  const w = Number(grid.width ?? 0);
+  const h = Number(grid.height ?? 0);
+
+  // Same fog setup as above (mostly HIDDEN, small reveal box, hidden STONE
+  // far away). The only difference is stone=50 which fails the `stoneStock
+  // >= 15` short-circuit at the top of the proposer.
+  const fogVis = new Uint8Array(w * h);
+  state.fog = { visibility: fogVis, version: 1 };
+  for (let dz = -3; dz <= 3; dz += 1) {
+    for (let dx = -3; dx <= 3; dx += 1) {
+      const ix = 5 + dx;
+      const iz = 5 + dz;
+      if (ix < 0 || iz < 0 || ix >= w || iz >= h) continue;
+      fogVis[ix + iz * w] = FOG_STATE.EXPLORED;
+    }
+  }
+  grid.tiles[5 + 5 * w] = TILE.WAREHOUSE;
+  state.buildings = rebuildBuildingStats(grid);
+
+  const services = { rng: { next: () => 0.5 } };
+  const director = new ColonyDirectorSystem();
+  state.metrics.timeSec = 0;
+  director.update(0.1, state, services);
+  state.metrics.timeSec = 3;
+  director.update(0.1, state, services);
+
+  const lastScoutSec = state.ai?.colonyDirector?.lastStoneScoutProposalSec;
+  assert.ok(
+    lastScoutSec === undefined || lastScoutSec === -Infinity,
+    `scout-road proposer should NOT have fired with stone=50; got lastStoneScoutProposalSec=${lastScoutSec}`,
+  );
 });
