@@ -206,6 +206,21 @@ To desynchronize re-evaluation waves, each worker's next retarget time receives 
 offset derived from `(workerId.charCodeAt(0) % 7) * 0.12` seconds, preventing all workers
 from simultaneously flooding the same newly-vacated tile.
 
+### Boids Path-Dampening (HW7 hotfix iter1, Batch A)
+
+Workers/visitors with an active A* path receive a strongly attenuated separation force
+inside `BoidsSystem.computeBoidsForce`. The dampening factor is a hard-coded constant
+`SEP_DAMPEN_ON_PATH = 0.35` (NOT a `BALANCE` knob), applied only when
+`entity.type === "WORKER" || "VISITOR"` AND `entity.path` is non-empty AND
+`pathIndex < path.length`. Animals (no `path`) keep full separation.
+
+Rationale: at the v0.10.x worker boids weights (`separation: 2.6`, `seek: 1.22`),
+separation wins ~2:1 on a single crowded tile, pushing path followers off narrow
+warehouse-approach lanes. With the dampening, effective separation while pathing
+(2.6 × 0.35 ≈ 0.91) sits below seek (1.22), letting the A*-derived `desiredVel` drive
+net steering. The integrator's impassable-tile revert plus the traffic-penalty A* layer
+already handle real congestion.
+
 ---
 
 ## Job Reservation System
@@ -463,13 +478,15 @@ correctly at all times regardless of AI availability.
 
 ```
 SimulationClock → VisibilitySystem → ProgressionSystem → DevIndexSystem
-→ RaidEscalatorSystem → ColonyDirectorSystem → RoleAssignmentSystem
-→ PopulationGrowthSystem → EnvironmentDirectorSystem → WeatherSystem
-→ WorldEventSystem → TileStateSystem → NPCBrainSystem
-→ WarehouseQueueSystem → WorkerAISystem → VisitorAISystem
-→ AnimalAISystem → MortalitySystem → BoidsSystem
+→ RaidEscalatorSystem → EventDirectorSystem → AgentDirectorSystem
+→ RoleAssignmentSystem → PopulationGrowthSystem → EnvironmentDirectorSystem
+→ WeatherSystem → WorldEventSystem → TileStateSystem → NPCBrainSystem
+→ WarehouseQueueSystem → WorkerAISystem → ConstructionSystem
+→ VisitorAISystem → AnimalAISystem → MortalitySystem → BoidsSystem
 → ResourceSystem → ProcessingSystem
 ```
+
+`AgentDirectorSystem` (HW6 LLM colony planner wave) wraps the legacy `ColonyDirectorSystem` as a fallback so non-LLM runs are unchanged. `ConstructionSystem` (v0.8.4 Agent A) sits **after** `WorkerAISystem` so any builder `workAppliedSec` increment from the same tick is reflected before completion is checked.
 
 Key ordering dependencies:
 - `NPCBrainSystem` runs before `WorkerAISystem` so policies are current when FSM
