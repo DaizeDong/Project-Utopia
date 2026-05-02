@@ -123,6 +123,23 @@ B1 R4 §"结论" closing paragraph hands the next implementer a concrete recipe:
 
 **Files changed:** 1 (`CHANGELOG.md`) plus the `Round4/Implementations/B1-action-items-auditor.commit.md` log. No source / test / config changes; track = `docs` only.
 
+### Submission (HW7 R4 — B2 trajectory plateau, 4 AUTHOR ACTION pending)
+
+R4 wave-0 docs-only pass — B2 (Submission Deliverables) verdict YELLOW 8/10 sustained. **R0 RED 7/22 → R1 YELLOW 17/22 (+10) → R2 YELLOW 18/22 (+1) → R3 YELLOW 18/22 (+0) → R4 YELLOW 18/22 (+0).** 4-round stable plateau; checklist composition: **PASS 18 / PENDING 4 / FAIL 0**. Track = `docs` only; no source / test / config files touched. The plateau is **author-gated, not reviewer-fail** — each remaining PENDING is a human action the author must perform (fill / record / decide), and the reviewer/enhancer/implementer/validator triangle is explicitly out of scope per the policy noted below.
+
+**4 AUTHOR ACTION reminders (ordered; author executes personally):**
+
+1. **README "Highlights — Two Pillars" pillar names** — `README.md` lines 12 + 18 carry the `_<copy exact pillar name from A2>_` placeholder. Author fills the two pillar names verbatim from the A2 (Performance Auditor) verdict. Validator gate: `rg -c "copy exact pillar name from A2" README.md` should drop from `2` → `0` once filled.
+2. **Post-Mortem.md §1–§5 substantive content** — `assignments/homework7/Post-Mortem.md` has 4 `<!-- AUTHOR: -->` placeholders. Author writes first-person narrative for each section. Validator gate: `rg -c "AUTHOR:" assignments/homework7/Post-Mortem.md` should drop from `4` → `0` once filled.
+3. **Demo video record + URL backfill** — Author follows `Demo-Video-Plan.md` §1–§4 to record the demo, then backfills the resulting URL into three sites: `README.md` line 92, `assignments/homework7/Post-Mortem.md`, and `CHANGELOG.md` (a future Submission sub-section). All three references must point to the same URL.
+4. **Submission format decision** — Author picks ONE submission delivery: either (a) zip via `npm run submission:zip` (produces `dist-submission/` artefact) OR (b) GitHub URL + commit SHA reference. Mutually exclusive; the choice is the author's per the course's submission guidelines.
+
+**DO NOT LLM-fill — TA red-line note:** TA HW7 §1.5 anti-LLM-polish rule explicitly prohibits LLM-regenerated submission prose. The Post-Mortem.md frontmatter self-warns `status: skeleton — author to flesh out each section in the first person; do NOT regenerate prose with an LLM (TA will detect)`. These 4 PENDING items are human author actions; any enhancer / implementer / validator that attempts to close them via LLM-generated text would (a) trip the TA's anti-polish detector and (b) erase the +11 cumulative engineering progress represented by the 18 currently-PASS items. The plateau is intentional: it preserves the +11 progress wall behind a human-only gate.
+
+**R4 vs R3 incremental context (product polish; does NOT shift deliverable counts):** Hotfix iter4 Batch F (#devDock force-hide via `display: none !important;` — see CHANGELOG line 5) and Batch E (pop cap removal + recruit button surfaced on right sidebar — line 35) landed between R3 and R4. Both are runtime-side product improvements; neither touches the 22-item submission checklist or the 4 author-action PENDING items.
+
+**Files changed:** 1 (`CHANGELOG.md`) plus the `Round4/Implementations/B2-submission-deliverables.commit.md` log. No source / test / config / README / Post-Mortem changes; track = `docs` only.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
 ### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
