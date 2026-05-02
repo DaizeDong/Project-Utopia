@@ -1779,15 +1779,16 @@
        so taller monitors get more telemetry. Grid is auto-fit so wide
        monitors get wider cards. RimWorld debug-menu reference: tabbed
        sub-windows, only the selected concern claims pixels. */
+    /* v0.10.1-hotfix-iter4-batchF (Issue #10) — bottom developer
+       telemetry dock force-hidden for production-deploy parity. The
+       `<section id="devDock">` element + DeveloperPanel telemetry render
+       path are intact (so any forked branch or dev-tools regression keeps
+       working), but the dock no longer claims viewport pixels in any
+       mode. Other dev surfaces (Debug sidebar tab, dev-only Settings,
+       AI Decision/Exchange/Policy floating panels, "Why no WHISPER?"
+       badge) are unaffected. */
     #devDock {
-      position: absolute; bottom: 0; left: 0; right: 0; z-index: 11;
-      background: var(--panel-bg);
-      border-top: 1px solid var(--panel-border);
-      display: flex; flex-direction: column;
-      max-height: clamp(160px, 24vh, 360px);
-      backdrop-filter: blur(8px);
-      pointer-events: auto;
-      transition: opacity 0.2s ease;
+      display: none !important;
     }
 
     #wrap.dock-collapsed #devDock {

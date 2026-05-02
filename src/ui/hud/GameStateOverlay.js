@@ -504,6 +504,10 @@ export class GameStateOverlay {
     if (uiLayer) uiLayer.style.display = isInteractive ? "none" : "";
     const entityFocus = document.getElementById("entityFocusOverlay");
     if (entityFocus) entityFocus.style.display = isInteractive ? "none" : "";
+    // v0.10.1-hotfix-iter4-batchF (Issue #10) — bottom #devDock section
+    // deleted for production-deploy parity. The lookup is preserved as a
+    // safe null-coalesce for backward compatibility with any forked
+    // index.html that still ships the section, but now no-ops in trunk.
     const devDock = document.getElementById("devDock");
     if (devDock) devDock.style.display = isInteractive ? "none" : "";
     if (this.menuPanel) this.menuPanel.hidden = !isMenu;

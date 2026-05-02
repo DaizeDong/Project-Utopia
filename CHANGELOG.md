@@ -2,6 +2,36 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Hotfix iter4
 
+### Batch F (Issue #10) — Bottom debug panel hidden for production-deploy parity
+
+User playtest report: "把 dev 模式下的 debug (最底端面板) 删了, 一切对准我们正式部署的界面." (Delete the debug panel at the bottom of the screen in dev mode; align everything with our production-deploy UI.)
+
+**Identified panel:** `<section id="devDock">` — the "Developer Telemetry" dock anchored `position: absolute; bottom: 0; left: 0; right: 0` claiming the bottom 24vh of the viewport (`max-height: clamp(160px, 24vh, 360px)`) when `body.dev-mode` is set (URL `?dev=1`, `localStorage.utopia:devMode === "1"`, or Ctrl+Shift+D chord). Six telemetry cards (Global & Gameplay, A* + Boids, AI Trace, Logic Consistency, System Timings, Objective / Event Log) plus Collapse All / Expand All / Reset Layout controls — all visible in dev mode. The casual production view (no `?dev=1`) was already hiding the dock via the `body:not(.dev-mode) .dev-only` gate, so production was already correct. The user's "align everything with production-deploy" intent meant the dock had to disappear from dev mode too.
+
+**Change applied (force-hide via CSS):**
+- `index.html` — the `#devDock` CSS rule body was reduced to `display: none !important;` (replacing the `position: absolute; bottom: 0; …; max-height: clamp(160px, 24vh, 360px)` block). The `<section id="devDock">` markup, all six `<details class="dock-card">` cards, the `Hide Dev Telemetry` toggle button in the Debug sidebar, the inline `toggleDevDockBtn` click handler, the `#wrap.dock-collapsed #devDock` selector, and the `#devDockHeader/Controls/Grid` + `.dock-card/-body/-title` rules are all left in place. With `display: none !important;` on the parent, none of those descendants paint.
+- `src/app/GameApp.js` — `#devDock` trimmed from the two `closest()` selectors in `#isNodeInUiArea` and `#shouldIgnoreGlobalShortcut` so global-shortcut + selection routing don't waste a node walk on a hidden subtree.
+- `src/ui/hud/GameStateOverlay.js` — comment added above the existing `getElementById("devDock")` null-guard documenting that the dock is now CSS-hidden; behaviour unchanged (the `if (devDock) devDock.style.display = …` toggle has no visible effect because the CSS `!important` rule wins).
+
+**Why CSS force-hide instead of full DOM deletion:**
+- Preserves the `DeveloperPanel.js` render path verbatim (no churn to a 1000+ LOC engineering panel that other dev surfaces may inspect for telemetry strings).
+- Preserves `BuildToolbar.#setDockCollapsed` + the `dock-collapsed` class on `#wrap`; users with the legacy `utopiaDockCollapsed` localStorage entry continue to round-trip cleanly.
+- Single-line CSS revert (`display: none !important;` → original block) restores the dock if a future iteration wants to bring it back behind a stricter gate.
+
+**Remaining dev surfaces (all preserved):**
+- Debug sidebar tab (right edge, `dev-only`) — surfaces population controls, Stress Test, dev tools, AI exchange + decision traces.
+- Settings sidebar tab `dev-only` sub-panels (terrain sliders, balance toggles).
+- AI Decision / AI Exchange / AI Policy floating panels (`dev-only`).
+- "Why no WHISPER?" status badge (`dev-only`, top-right of HUD).
+
+**Verified in browser (Playwright at 1058×639):**
+- `http://127.0.0.1:5174/` (production view, no `?dev=1`) — no bottom debug panel; bottom of viewport shows only the legitimate game UI (Entity Focus inspector left, Pause/Play/Speed/Autopilot/AI Log controls center, Build sidebar right). `getComputedStyle(devDock).display === "none"`. Identical to pre-fix.
+- `http://127.0.0.1:5174/?dev=1` (dev view) — no bottom debug panel; bottom of viewport now identical to production view. `body.dev-mode === true`, `getComputedStyle(devDock).display === "none"`, `getBoundingClientRect()` reports `{w:0, h:0, bottom:0}`. Pre-fix: the dock claimed the bottom 160 px (top:479 → bottom:639 at this viewport) with full telemetry rendering.
+
+**Tests:** 1784 / 1776 pass / 5 fail / 3 skip — identical to baseline. No new regressions; the 5 fails are pre-existing.
+
+**Files changed:** 4 (`index.html`, `src/app/GameApp.js`, `src/ui/hud/GameStateOverlay.js`, `CHANGELOG.md`) plus the iter4-batchF.md log.
+
 ### Batch E (Issue #9) — Pop cap stuck at 16 + recruit button surfaced on right sidebar
 
 User playtest report: "后期 worker 到 16 个就不增长了, 很多地方都缺人.
