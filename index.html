@@ -3205,6 +3205,30 @@
             <div class="small muted" id="benchmarkLastRunVal" style="margin-top:3px">Last benchmark: none</div>
             <div class="small muted" id="simControlVal" style="margin-top:3px">Sim: running | simDt=0.000 | steps=0</div>
             <div class="small muted" id="workerBreakdownVal" style="margin-top:3px">Workers: base=0 stress=0 total=0</div>
+            <!-- v0.10.1-hotfix-batchC (issue #5) — Dev Entity Inject sub-panel,
+                 extends the existing PerformancePanel (no new panel file).
+                 Gated by `.dev-only` so the sub-panel only renders for users
+                 who opted into dev-mode (URL `?dev=1`, localStorage, or the
+                 Ctrl+Shift+D chord). Wraps the same `devStressSpawn` /
+                 `applyPopulationTargets` GameApp APIs the existing
+                 Settings>Population Control uses, but surfaces them as quick
+                 buttons here so a dev can inject/clear entities without
+                 hunting through the settings tree. -->
+            <details class="subpanel dev-only" id="devEntityInjectSubpanel" style="margin-top:6px;">
+              <summary>Dev: Entity Inject</summary>
+              <div class="subpanel-body">
+                <div class="small muted">Worker target: <span id="devInjectWorkerTargetLabel">0</span></div>
+                <input id="devInjectWorkerTarget" type="range" min="0" max="200" value="0"
+                       title="Drag, then click 'Set Workers' to fast-spawn workers via devStressSpawn (bypasses food cost; honours infraCap)." />
+                <div class="benchmark-grid" style="margin-top:4px;">
+                  <button type="button" id="devInjectApplyWorkersBtn" title="Spawn workers up to the slider target. Bypasses food cost / cooldown / queue.">Set Workers</button>
+                  <button type="button" id="devInjectSpawnHerbivoresBtn" title="Spawn 5 herbivores at random passable tiles.">+5 Herbivores</button>
+                  <button type="button" id="devInjectSpawnPredatorsBtn" title="Spawn 5 predators at random passable tiles.">+5 Predators</button>
+                  <button type="button" id="devInjectClearNonWorkersBtn" title="Despawn all visitors / traders / saboteurs / herbivores / predators. Workers are preserved.">Clear Non-Workers</button>
+                </div>
+                <div class="small muted" id="devInjectStatusVal" style="margin-top:4px;">Idle.</div>
+              </div>
+            </details>
           </div>
         </details>
 
