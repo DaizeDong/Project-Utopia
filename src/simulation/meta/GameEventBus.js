@@ -49,6 +49,10 @@ const EVENT_TYPES = Object.freeze({
   // existing positive WORKER_SOCIALIZED shape (`band`, `opinion`).
   WORKER_BORN: "worker_born",
   WORKER_RIVALRY: "worker_rivalry",
+  // v0.10.2 PJ-pacing P0 — surface EventDirector dispatches to the player.
+  // Emitted by EventDirectorSystem each time it pushes an event into
+  // state.events.queue. Detail: { kind: "event_started", eventType, intensity }.
+  EVENT_STARTED: "event_started",
 });
 
 export { EVENT_TYPES };

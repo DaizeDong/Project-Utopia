@@ -862,8 +862,12 @@ export const BALANCE = Object.freeze({
   // boot calm) + popFloor 18 -> 24 (only fire raid when colony is genuinely
   // defendable) + EventDirector interval 240 -> 360 (~50% slower proactive
   // pressure). 01b raid params untouched (already tightened in 8604240).
+  // v0.10.2 PJ-pacing P0-1: graceSec 180 → 90. R6 Final-Polish-Loop pacing
+  // pass — first raid arriving 6 sim-min in left the early game with no
+  // tension; halved to land first auto-raid window at ~90s post-boot which
+  // pairs with the eventDirectorBaseIntervalSec 360→90 cut below.
   raidFallbackScheduler: Object.freeze({
-    graceSec: 180,        // boot grace (~3 game-min) before the first auto-raid
+    graceSec: 90,         // boot grace (~90s) before the first auto-raid
     popFloor: 10,         // skip if colony hasn't grown to a defendable size
     // v0.10.2 PD P0-3: 60 → 30. An 80-worker colony churning meals bounces food
     // 8-56 most of the time, so foodFloor=60 vetoed the fallback fire on a
@@ -875,7 +879,8 @@ export const BALANCE = Object.freeze({
   // Flat aliases so callers can read BALANCE.raidFallback* directly without
   // dereferencing the frozen sub-block (matches the `raidIntervalBaseTicks`
   // flat-field convention this file already uses).
-  raidFallbackGraceSec: 180,
+  // v0.10.2 PJ-pacing P0-1: 180 → 90 (mirror of raidFallbackScheduler.graceSec).
+  raidFallbackGraceSec: 90,
   raidFallbackPopFloor: 10,
   // v0.10.2 PD P0-3: 60 → 30 — see raidFallbackScheduler.foodFloor above.
   raidFallbackFoodFloor: 30,
@@ -902,11 +907,19 @@ export const BALANCE = Object.freeze({
   // seed-99 (loss day 23) via combined event + raid pressure; per Stage B
   // §7 Risk #2 lifted to 360s (~50% slower) alongside the 02a raidFallback
   // tightening above.
-  eventDirectorBaseIntervalSec: 360,
+  // v0.10.2 PJ-pacing P0-2: 360 → 90 (4× acceleration). R6 Final-Polish-Loop
+  // pacing pass — 6 sim-min between events left the player twiddling thumbs.
+  // Coupled with banditRaid weight cut 0.30 → 0.18 and animalMigration bump
+  // 0.25 → 0.40 below to keep raid frequency near the prior baseline (4× ×
+  // 0.18 ≈ 0.72 raid/min vs prior 0.30/min) and protect deaths budget.
+  eventDirectorBaseIntervalSec: 90,
   // v0.8.5 Tier 3: moraleBreak 0.07 → 0.10. Rare event was invisible at 0.07.
+  // v0.10.2 PJ-pacing P0-3: rebalance to absorb 4× cadence acceleration —
+  // banditRaid 0.30 → 0.18 (offset for raid frequency) + animalMigration
+  // 0.25 → 0.40 (filler with mild gameplay impact).
   eventDirectorWeights: Object.freeze({
-    banditRaid: 0.30,
-    animalMigration: 0.25,
+    banditRaid: 0.18,
+    animalMigration: 0.40,
     tradeCaravan: 0.18,
     diseaseOutbreak: 0.10,
     wildfire: 0.10,
