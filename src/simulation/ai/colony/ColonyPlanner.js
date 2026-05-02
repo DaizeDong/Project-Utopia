@@ -263,6 +263,8 @@ Key insight: Tools multiply everything. Prioritize quarry→smithy after basic f
 - When nextExhaustionMinutes.<type> drops under 10, relocate or rotate; do not keep feeding the depleted node.
 
 ## Hard Rules
+- **SURVIVAL CHECK (overrides every other rule)**: if observation shows \`farms === 0\`, your FIRST step MUST be \`{ "action": { "type": "farm" }, "priority": "critical" }\`. Zero-farm colonies starve within 60-180 sim-sec. Do NOT propose warehouses, roads, or processing buildings before the first farm. This is the single most common cause of run failure.
+- **STONE-DEFICIT CHECK**: if \`stone < 10\` AND \`quarries === 0\`, your FIRST step MUST be \`{ "action": { "type": "quarry" }, "priority": "critical" }\`. Stone unlocks kitchen/smithy/clinic — without a quarry the colony is permanently capped at bootstrap.
 - Never plan more buildings than current resources can afford
 - Warehouse spacing >= 5 tiles from nearest warehouse
 - Production buildings within 12 tiles of a warehouse
