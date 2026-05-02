@@ -89,6 +89,27 @@ escalation-lethality median tick range, ResourceSystem foodProducedPerMin
 emit timing, RoleAssignment STONE quota, RaidFallbackScheduler popFloor
 gate). Recruitment + perceiver subset (44 tests): all green.
 
+### Performance (HW7 R4 — A2 headless cap noted)
+
+R4 wave-0 docs-only pass — A2 (Performance Auditor) verdict YELLOW 4/10 with the gap traced to the headless harness, not the simulation. Nothing in this subsection ships code; it archives the R4 measurement set + the A2 known-cap so the R5 reviewer does not re-flag the same Chromium-RAF artefact as a sim regression.
+
+**R4 measurement summary (parent commit `f749184`, headless Playwright Chromium):**
+- **P3 mid-load** — `__fps_observed.fps` p50 = **48.76** (target 60). Window: ~5 min steady-state, sim 1×.
+- **P4 stress** — `__fps_observed.fps` p50 = **55.01**. Sample partially polluted by a colony-wipe event mid-window (recovery transient, not representative of true peak load).
+- **P5 long-horizon** — heap delta **+14.84%** over the 5-minute observation window (within the healthy band). Note: HW7 brief asks for a 30 min P5; the wave-0 harness compressed it to 5 min and the slower-leak window (5 min → 30 min+) is therefore unverified for this round.
+- **`__perftrace.topSystems`** — every simulation system reports sub-millisecond average tick time across P3 / P4 / P5 samples. Sim 4× and 8× speed multipliers stay stable (no frame-budget overrun in the sim layer).
+
+**Known cap — headless Chromium RAF lock (NOT a sim regression):**
+- The in-app `__fps_observed` reports a 50–57 fps band under headless Playwright, even when the page is otherwise idle. A direct `requestAnimationFrame` probe in the same tab measures **~238 fps free-run**, confirming Chromium's headless RAF scheduler is throttling our observed-fps callback below the probe rate. Sim-side perftrace shows zero stalls at the same wall-clock window, so the gap is harness-side, not gameplay-side.
+- The R4 numbers (P3 48.76, P4 55.01) sit inside this artefact band. Treating them as "sim under-budget" would be a misdiagnosis.
+
+**R5 retest protocol (required to lift the YELLOW):**
+- Run the perf battery in **headed Chrome** (not headless Chromium), with display-vsync engaged or `--disable-gpu-vsync` toggled in a controlled A/B, so the GPU-paint path and the sim-tick path can be distinguished as independent fps contributors.
+- Re-run P5 at the brief-spec **30 min** window (not the wave-0 5 min window) to cover the slow-leak band that the compressed wave-0 sample cannot certify.
+- If headed Chrome + 30 min P5 still report sub-60 fps with sim sub-ms perftrace, the next step is the deferred A2 instrumentation split (`renderFps` + `simTickFps` separation) — explicitly out of scope for R4 under the P2 priority + hard-freeze policy.
+
+**Files changed:** 2 (`CHANGELOG.md`, `assignments/homework7/Post-Mortem.md`) plus the `Round4/Implementations/A2-performance-auditor.commit.md` log. No source / test / config changes; track = `docs` only.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
 ### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
