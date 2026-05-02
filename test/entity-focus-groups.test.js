@@ -33,7 +33,11 @@ test("deriveEntityFocusGroups assigns the accepted high-load focus groups", () =
       worker("idle", { stateLabel: "Idle", blackboard: { intent: "idle" } }),
       worker("hauling", { stateLabel: "Deliver", carry: { food: 0, wood: 3, stone: 0, herbs: 0 } }),
       worker("combat", { hp: 55, maxHp: 100 }),
-      worker("other", { stateLabel: "Harvest" }),
+      worker("working", { stateLabel: "Harvest" }),
+      // v0.10.1-r5 (PE-classify-and-inspector P1): "Harvest" now classifies
+      // as "working" via the productive-states regex; "other" is reserved
+      // for stateless / unknown entities (visitor SCOUTs, init phase).
+      worker("other", { stateLabel: "" }),
     ],
     animals: [],
   };
@@ -44,6 +48,7 @@ test("deriveEntityFocusGroups assigns the accepted high-load focus groups", () =
     "starving",
     "hungry",
     "blocked",
+    "working",
     "idle",
     "hauling",
     "combat",
@@ -52,6 +57,7 @@ test("deriveEntityFocusGroups assigns the accepted high-load focus groups", () =
   assert.equal(focus.groupCounts.starving, 1);
   assert.equal(focus.groupCounts.hungry, 1);
   assert.equal(focus.groupCounts.blocked, 1);
+  assert.equal(focus.groupCounts.working, 1);
   assert.equal(focus.groupCounts.idle, 1);
   assert.equal(focus.groupCounts.hauling, 1);
   assert.equal(focus.groupCounts.combat, 1);

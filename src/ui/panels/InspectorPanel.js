@@ -417,6 +417,30 @@ export class InspectorPanel {
     const speed = Math.hypot(entity.vx || 0, entity.vz || 0).toFixed(3);
     const desired = entity.desiredVel ? vecFmt(entity.desiredVel.x || 0, entity.desiredVel.z || 0) : "(0, 0)";
     const blackboardIntent = entity.blackboard?.intent ?? entity.debug?.lastIntent ?? "-";
+    // v0.10.1-r5 (PE-classify-and-inspector P1): HP / Mood / Morale / Energy
+    // are exposed on workers but were missing from the inspector overview
+    // (HP only rendered for WALL/GATE tiles). Each line is gated on field
+    // presence — visitors / animals without these fields won't see empty rows.
+    // Energy falls back to `entity.rest` (which workers track via the
+    // tooTired/restRecovered predicates) when `energy` itself is unset.
+    const hpEntity = Number(entity.hp);
+    const maxHpEntity = Number(entity.maxHp);
+    const showHp = Number.isFinite(hpEntity) && Number.isFinite(maxHpEntity) && maxHpEntity > 0;
+    const hpLine = showHp
+      ? `<div class="small"><b>HP:</b> ${hpEntity.toFixed(0)} / ${maxHpEntity.toFixed(0)}</div>`
+      : "";
+    const moodEntity = Number(entity.mood);
+    const moodLine = Number.isFinite(moodEntity)
+      ? `<div class="small"><b>Mood:</b> ${(moodEntity * 100).toFixed(0)}%</div>`
+      : "";
+    const moraleEntity = Number(entity.morale);
+    const moraleLine = Number.isFinite(moraleEntity)
+      ? `<div class="small"><b>Morale:</b> ${(moraleEntity * 100).toFixed(0)}%</div>`
+      : "";
+    const energyRaw = Number.isFinite(Number(entity.energy)) ? Number(entity.energy) : Number(entity.rest);
+    const energyLine = Number.isFinite(energyRaw)
+      ? `<div class="small"><b>Energy:</b> ${(energyRaw * 100).toFixed(0)}%</div>`
+      : "";
     const groupPolicy = this.state.ai.groupPolicies.get(entity.groupId)?.data ?? null;
     const entityInsights = getEntityInsight(this.state, entity);
     const digest = getCausalDigest(this.state);
@@ -438,6 +462,10 @@ export class InspectorPanel {
         <div class="small"><b>Velocity:</b> ${vecFmt(entity.vx || 0, entity.vz || 0)} | speed=${speed}</div>
         <div class="small"><b>DesiredVel:</b> ${desired}</div>
         <div class="small"><b>Hunger:</b> ${hunger}</div>
+        ${hpLine}
+        ${moodLine}
+        ${moraleLine}
+        ${energyLine}
         <div class="small"><b>Carry:</b> ${carry}</div>
         <div class="small"><b>Intent:</b> ${blackboardIntent}</div>
         <div class="small"><b>Target Tile:</b> ${target}</div>
