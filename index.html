@@ -2043,6 +2043,29 @@
       #statusNextAction { max-width: 180px; }
       #statusScoreBreak { display: none; }
     }
+    /* Hotfix iter5 Gap B — close the 1025-1080 px sidebar overflow gap.
+       The default sidebar width clamp(280px, 22vw, 460px) resolves to its
+       280 px floor at 1060 viewport; on Colony-tab content the +1 Worker
+       button + Auto checkbox + status row pushed past the panel edge for
+       a subtle horizontal overflow. Pull the sidebar in 24 px (256 px),
+       trim recruit-row label/font, and override the panel-body padding
+       so the content fits cleanly. Above 1080 px the existing clamp
+       takes over again with no visible change. */
+    @media (min-width: 1025px) and (max-width: 1080px) {
+      #sidebar {
+        --sidebar-width: 256px;
+      }
+      #sidebarPanelArea .sidebar-panel-body { padding: 5px 4px; font-size: 11px; }
+      .recruit-controls { font-size: 10.5px; }
+      .recruit-controls #recruitOneSidebarBtn,
+      .recruit-controls #recruitOneBtn { padding: 3px 6px; font-size: 10.5px; }
+      /* Hide the "Auto" text label so the checkbox + status fit on one
+         row; the checkbox itself still toggles auto-recruit and the
+         tooltip on the parent label preserves accessibility. */
+      .recruit-auto-label .small { display: none; }
+      .recruit-controls .kv > div,
+      #sidebarPanelArea .kv > div { font-size: 10.5px; }
+    }
     @media (max-width: 640px) {
       .hud-objective { display: none; }
       #storytellerStrip { display: none; }
