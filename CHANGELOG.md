@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-r4-A3 (R4 wave-1 Plan 1/3)
+
+### A3 first-impression — actionable fog hint + EntityFocus default chip + BuildToolbar grouping + FogOverlay alpha
+
+Implements the 3 P0 frictions from A3-first-impression R4 (verdict YELLOW 4/10, friction_count=8, "i_want_to_quit_at: 01:33"). Plan: `Round4/Plans/A3-first-impression.md`. All changes stay strictly inside the freeze: no new buildings / mechanics / panels / chips outside the existing chip family — only copy edits, default value flip, CSS grouping, and a shader alpha constant.
+
+**1. Actionable fog hint (`src/simulation/construction/BuildAdvisor.js`)** — `explainBuildReason("hidden_tile")` upgraded from "Cannot build on unexplored terrain. Scout this area first." to "…Scout this area first — extend a road from visible ground toward this tile to lift the fog." A3 reviewer (timeline 02:30-03:00) clicked the briefing-highlighted east depot location, hit the unexplored toast, and could not deduce *how* to scout. The new sentence names the road-extension mechanic so a brand-new player can act without docs. `explainBuildRecovery("hidden_tile")` already mentioned roads — kept consistent.
+
+**2. EntityFocus default "My workers" chip (`src/ui/panels/EntityFocusPanel.js`)** — Default `entityFocusFilter` flipped from `"all"` to `"workers"` (a new virtual chip, not a new ENTITY_FOCUS_GROUP_META entry). The chip filters by `entity.type === "WORKER"`, hiding the 26-entity mixed list (saboteur/trader/wolf/deer/worker jumble) at first contact so a brand-new player sees only "my 12 workers" by default. The chip renders leftmost (before "All") and is one click to swap. The empty-list footer text learns the new id.
+
+**3. BuildToolbar progressive disclosure (`index.html`)** — 13-button toolbar broken into 3 lightweight section headings (Foundation / Defense & Edit / Processing) via `<div class="build-cat-heading">` with `grid-column:1/-1`. New CSS rule (`.tool-grid .build-cat-heading`, 9px uppercase muted text). No buttons added or removed; no JS hooks; existing casual-mode tier gating preserved.
+
+**4. FogOverlay alpha bump (`src/render/FogOverlay.js`)** — HIDDEN-zone alpha bumped 0.75 → 0.88 (~17%) in both the inline shader `mix()` call and the descriptive comment. A3 reviewer reported "no visible fog" — the new alpha makes unexplored terrain read as definitively darker. Explored-zone alpha (0.35) unchanged so the soft-edge memory zone still reads.
+
+**Tests added:** `test/buildadvisor-fog-hint.test.js` (2 cases: reason text contains "extend a road" + still surfaces visibility framing; recovery text still mentions roads).
+
+**Test baseline:** 1799 tests / 1791 pass / 5 fail (all pre-existing on parent `cad38c3`: escalation-lethality, ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor) / 3 skip. **Net +1 pass vs parent baseline (1790 → 1791)** from the 2 new test cases.
+
+**Files changed:** 4 source (`src/simulation/construction/BuildAdvisor.js`, `src/ui/panels/EntityFocusPanel.js`, `src/render/FogOverlay.js`, `index.html`) + 1 new test + CHANGELOG.
+
+**Deferred from plan:** Step 7 (briefing depot scout-hint chip) — no obvious ScenarioOverlay chip render path in HUDController; defer to a follow-up plan after locating the briefing-label render hook.
+
 ## [Unreleased] — v0.10.1-r4-A5 (R4 wave-0 Plan 6/6)
 
 ### A5 balance critic — zero-lumber + Recovery gating + map differentiation

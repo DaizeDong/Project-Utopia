@@ -42,8 +42,15 @@ export class FogOverlay {
         tVisibility: { value: this.texture },
         fogColor: { value: new THREE.Color(0x0b141c) },
         // edgeSoftness drives a smoothstep blend between explored (0.35 alpha) and
-        // hidden (0.75 alpha) zones. 0.15 gives a ~1-tile soft border without
+        // hidden (0.88 alpha) zones. 0.15 gives a ~1-tile soft border without
         // washing out unexplored territory.
+        // v0.10.1-r4-A3 (F1) — hidden alpha bumped 0.75 → 0.88 (~17%) so
+        // unexplored terrain reads as "definitely darker" rather than the
+        // previous "barely tinted" state. A3 reviewer (00:00-03:00 timeline)
+        // could not visually locate the fog boundary, leading to repeated
+        // "Cannot build on unexplored terrain" toasts on what looked like
+        // visible ground. Explored alpha (0.35) preserved so the soft-edge
+        // memory zone still reads.
         edgeSoftness: { value: 0.15 },
       },
       vertexShader: `
@@ -66,11 +73,11 @@ export class FogOverlay {
           // Use 1.5 threshold so interpolated edge pixels between VISIBLE and
           // EXPLORED still render rather than popping to invisible.
           if (visibility > 1.5) discard;
-          // Smooth transition: at visibility=0 (HIDDEN) alpha=0.75,
+          // Smooth transition: at visibility=0 (HIDDEN) alpha=0.88,
           // at visibility=1 (EXPLORED boundary) alpha=0.35.
           // smoothstep gives a gentle S-curve around the EXPLORED/HIDDEN edge.
           float t = smoothstep(0.5 - edgeSoftness, 0.5 + edgeSoftness, visibility);
-          float alpha = mix(0.75, 0.35, t);
+          float alpha = mix(0.88, 0.35, t);
           gl_FragColor = vec4(fogColor, alpha);
         }
       `,

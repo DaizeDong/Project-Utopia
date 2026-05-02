@@ -441,7 +441,7 @@ export function explainBuildReason(reason, context = {}) {
   if (reason === "occupiedTile") return `Clear the ${BUILDABLE_TILE_LABEL[context.oldType] ?? "existing structure"} before building here.`;
   if (reason === "insufficientResource") return "Insufficient resources.";
   if (reason === "warehouseTooClose") return "Warehouses are too close together. Spread depots to widen logistics coverage.";
-  if (reason === "hidden_tile") return "Cannot build on unexplored terrain. Scout this area first.";
+  if (reason === "hidden_tile") return "Cannot build on unexplored terrain. Scout this area first — extend a road from visible ground toward this tile to lift the fog.";
   if (reason === "hardCap") return "Build limit reached for this structure type.";
   if (reason === "missing_resource_node") {
     if (context.tool === "lumber") return "No forest node on this tile. Lumber camps must be sited on a forest.";
