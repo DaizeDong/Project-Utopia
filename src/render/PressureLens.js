@@ -439,6 +439,91 @@ function warehouseStarvationScore(state, key) {
   return score / threshold;
 }
 
+// v0.10.1-hotfix-batchC (issue #6b) — per-tile aggregator for live worker
+// counts at heat-lens tiles. Walks `state.agents` ONCE per heat-lens build
+// and bins workers by their current goal/target tile so each marker can
+// show "N workers waiting" in its hover tooltip without an O(N*M) scan.
+function summarizeWorkersByTile(state) {
+  const out = new Map();
+  if (!state || !Array.isArray(state.agents)) return out;
+  const bump = (ix, iz, kind) => {
+    if (!Number.isFinite(Number(ix)) || !Number.isFinite(Number(iz))) return;
+    const key = tileKey(Math.round(Number(ix)), Math.round(Number(iz)));
+    let row = out.get(key);
+    if (!row) { row = { total: 0, harvest: 0, deliver: 0, idle: 0 }; out.set(key, row); }
+    row.total += 1;
+    if (kind === "harvest") row.harvest += 1;
+    else if (kind === "deliver") row.deliver += 1;
+    else row.idle += 1;
+  };
+  for (const a of state.agents) {
+    if (!a || a.alive === false || a.type !== "WORKER") continue;
+    // FSM target tile (v0.10.0+ source of truth) — this is the tile the
+    // worker is heading toward (HARVESTING/DELIVERING/BUILDING/etc).
+    const target = a.fsm?.target;
+    const fsmState = String(a.fsm?.state ?? "");
+    let kind = "idle";
+    if (fsmState.includes("HARVEST")) kind = "harvest";
+    else if (fsmState.includes("DELIVER") || fsmState.includes("DEPOSIT")) kind = "deliver";
+    if (target && (Number.isFinite(target.ix) || Number.isFinite(target.tx))) {
+      const ix = Number.isFinite(target.ix) ? target.ix : target.tx;
+      const iz = Number.isFinite(target.iz) ? target.iz : target.tz;
+      bump(ix, iz, kind);
+      continue;
+    }
+    // Fallback: bucket by current tile so a worker stuck at a saturated
+    // warehouse still attributes to that tile's surplus marker.
+    const tx = Number(a.tile?.ix ?? a.tileX);
+    const tz = Number(a.tile?.iz ?? a.tileZ);
+    if (Number.isFinite(tx) && Number.isFinite(tz)) bump(tx, tz, kind);
+  }
+  return out;
+}
+
+function workerSummaryNear(workersByTile, ix, iz, radius = 1) {
+  let total = 0;
+  let harvest = 0;
+  let deliver = 0;
+  for (let dz = -radius; dz <= radius; dz += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const row = workersByTile.get(tileKey(ix + dx, iz + dz));
+      if (!row) continue;
+      total += row.total;
+      harvest += row.harvest;
+      deliver += row.deliver;
+    }
+  }
+  return { total, harvest, deliver };
+}
+
+function buildSurplusTooltip(state, ix, iz, workersByTile, fallback) {
+  const summary = workerSummaryNear(workersByTile, ix, iz, 1);
+  if (summary.total <= 0) return fallback;
+  const parts = [];
+  parts.push(`${summary.total} worker${summary.total === 1 ? "" : "s"} near this tile`);
+  if (summary.deliver > 0) parts.push(`${summary.deliver} trying to deposit`);
+  if (summary.harvest > 0) parts.push(`${summary.harvest} harvesting`);
+  return `${fallback} — ${parts.join(", ")}`;
+}
+
+function buildStarvedTooltip(state, ix, iz, workersByTile, fallback, label) {
+  const summary = workerSummaryNear(workersByTile, ix, iz, 1);
+  const food = Number(state.resources?.food ?? 0);
+  const wood = Number(state.resources?.wood ?? 0);
+  const stone = Number(state.resources?.stone ?? 0);
+  const herbs = Number(state.resources?.herbs ?? 0);
+  let resourceStr = "";
+  if (label === "input starved" || label === "stone input empty") {
+    resourceStr = `food=${Math.floor(food)} wood=${Math.floor(wood)} stone=${Math.floor(stone)} herbs=${Math.floor(herbs)}`;
+  }
+  const parts = [fallback];
+  if (summary.total > 0) {
+    parts.push(`${summary.total} worker${summary.total === 1 ? "" : "s"} idle near this tile`);
+  }
+  if (resourceStr) parts.push(resourceStr);
+  return parts.join(" — ");
+}
+
 export function buildHeatLens(state) {
   const grid = state.grid;
   const width = Number(grid?.width ?? 0);
@@ -449,6 +534,11 @@ export function buildHeatLens(state) {
   const resources = state.resources ?? {};
   const markers = [];
   const seen = new Set();
+  // v0.10.1-hotfix-batchC (issue #6b) — pre-aggregate worker positions so
+  // every hot tile can show live "N workers waiting" without re-scanning
+  // state.agents. One pass over agents per heat-lens build (~rare; gated
+  // by heatLensSignature).
+  const workersByTile = summarizeWorkersByTile(state);
   // v0.10.1-r3-A7 P0 — context-sensitive "supply surplus" label. Reviewer A7
   // observed the heat-lens labelling a tile RED with "supply surplus" while
   // workers nearby were starving (queue blocked, delivery couldn't drain the
@@ -529,7 +619,11 @@ export function buildHeatLens(state) {
             priority: 118,
             labelPriority: 82,
             label: surplusLabel,
-            hoverTooltip: surplusTooltip,
+            // v0.10.1-hotfix-batchC (issue #6b) — enrich tooltip with live
+            // worker count so hovering tells the player "this many workers
+            // are stuck here right now", not just an abstract "supply
+            // surplus" label.
+            hoverTooltip: buildSurplusTooltip(state, ix, iz, workersByTile, surplusTooltip),
           });
         }
         continue;
@@ -549,7 +643,7 @@ export function buildHeatLens(state) {
             priority: 116,
             labelPriority: 100,
             label: "input starved",
-            hoverTooltip: "processor input below safe threshold",
+            hoverTooltip: buildStarvedTooltip(state, ix, iz, workersByTile, "processor input below safe threshold", "input starved"),
           });
         }
         continue;
@@ -573,7 +667,7 @@ export function buildHeatLens(state) {
               priority: 110,
               labelPriority: 62,
               label: "warehouse idle",
-              hoverTooltip: "warehouse has little connected flow",
+              hoverTooltip: buildStarvedTooltip(state, ix, iz, workersByTile, "warehouse has little connected flow", "warehouse idle"),
             });
           }
         }
@@ -598,7 +692,7 @@ export function buildHeatLens(state) {
       priority: 116,
       labelPriority: 96,
       label: "stone input empty",
-      hoverTooltip: "smithy has no stone input",
+      hoverTooltip: buildStarvedTooltip(state, firstSmithy.ix, firstSmithy.iz, workersByTile, "smithy has no stone input", "stone input empty"),
     });
   }
 
