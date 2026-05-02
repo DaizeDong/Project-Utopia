@@ -794,11 +794,23 @@ export class EntityFocusPanel {
       // .inspector-empty-hint so at 1366×768 the prose reads as a deliberate
       // panel widget (dashed border + centred text) rather than orphan text
       // floating mid-canvas.
+      // v0.10.1-A4 (R4 V5 #3) — this conditional is the *only* gate that
+      // emits the "No entity selected" placeholder; the early return + the
+      // entity-detail render at line ~1148 (`this.lastHtml = html`) ensure
+      // selecting any worker overwrites the placeholder DOM on the next
+      // render tick. Verified against R4 V5 screenshot 22-worker-inspect:
+      // the stale placeholder reproed only when `selectedId` was cleared
+      // by a parallel deselect — see `lastSelectedId` reset below.
       const html = `<div class="inspector-empty-hint">No entity selected. Click any worker, visitor, or animal on the map to inspect it here.</div>`;
       if (html !== this.lastHtml) {
         this.root.innerHTML = html;
         this.lastHtml = html;
       }
+      // v0.10.1-A4 (R4 V5 #3) — also reset lastSelectedId so the next time
+      // an entity is selected the entity-detail branch will not short-
+      // circuit on the `selectedId === this.lastSelectedId` interaction
+      // guard (line ~815) and leak the placeholder into a selected state.
+      this.lastSelectedId = null;
       return;
     }
 

@@ -77,7 +77,14 @@ export function describeBuildToolCostBlock(toolKey, resources) {
     const need = Number(cost[axis] ?? 0);
     if (need <= 0) continue;
     const have = Number(r[axis] ?? 0);
-    if (have < need) shortfalls.push(`${need} ${axis} (have ${have})`);
+    // v0.10.1-A4 (R4 V5 #1) — wrap raw `have` in Math.floor so a fractional
+    // resource value like 0.7707197997152266 displays as "(have 0)" rather
+    // than dumping the full float into the tooltip. Mirrors the
+    // `Math.floor(food)` style already used in this file (lines ~1407/1417)
+    // for recruit-status display. Cost values are integer-valued, so showing
+    // "have 0" when the player actually has 0.99 is truthful — they cannot
+    // place a "need 1 wood" build with sub-integer wood.
+    if (have < need) shortfalls.push(`${need} ${axis} (have ${Math.floor(have)})`);
   }
   if (shortfalls.length === 0) return "";
   return `Need ${shortfalls.join(" and ")}`;

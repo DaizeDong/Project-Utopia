@@ -140,6 +140,22 @@ R4 wave-0 docs-only pass — B2 (Submission Deliverables) verdict YELLOW 8/10 su
 
 **Files changed:** 1 (`CHANGELOG.md`) plus the `Round4/Implementations/B2-submission-deliverables.commit.md` log. No source / test / config / README / Post-Mortem changes; track = `docs` only.
 
+### Polish (HW7 R4 — A4 V5 hotfix triplet: BuildToolbar Math.floor + PressureLens dedup + EntityFocus stale hint)
+
+R4 wave-0 code-track pass — A4 (Polish-Aesthetic) V5 hotfix triplet. The reviewer V5 verdict was RED 3/10 with most callouts (audio loop / day-night cycle / drop shadows) explicitly hard-freeze deferred per Post-Mortem §4.5 and out of R4 scope. This wave addresses ONLY the three 30-minute hotfix regressions called out as P1 in the V5 reviewer table, all of which are inside the freeze policy (no new mechanic / panel / asset):
+
+1. **`describeBuildToolCostBlock` raw float in disabled tooltip** (`src/ui/tools/BuildToolbar.js:80`) — V5 reproed `"Need 5 wood (have 0.7707197997152266)"` because the template literal embedded `${have}` (raw `Number(r[axis])`) without a flooring wrapper. Wrapped in `Math.floor(have)` mirroring the existing `Math.floor(food)` style at lines 1407 / 1417 of the same file. Truthful round-down: a player with 0.99 wood cannot place a 1-wood-cost build, so "have 0" is the honest signal.
+2. **PressureLens source-side same-tile + same-kind + same-label dedup** (`src/render/PressureLens.js:357-389`) — V5 reproed `"west lumber route ×2 sits on top of west frontier wilds"` because the screen-space `dedupPressureLabels` pass only dedups within `nearPx=24` proximity and `bucketPx=32` cells; two source-side markers emitted at the EXACT same tile with the EXACT same `(kind, label)` slipped through and consumed two of the top-24 slice slots. Added a `(roundedTile, kind, label)` tuple dedup at the end of `buildPressureLens` that keeps only the highest-priority + highest-weight survivor per tuple. Intentionally narrower than tile-level dedup — markers with DIFFERENT kinds at the same tile (e.g., a `bandit_raid` event whose centroid coincides with a `route` gap centroid AND shares the route's label) are preserved as distinct hazards (test `pressure lens exposes unresolved scenario gaps and active map pressure` pins all 6 kinds must coexist).
+3. **EntityFocus stale "No entity selected" placeholder defensive cleanup** (`src/ui/panels/EntityFocusPanel.js:791-810`) — the `if (!selectedId)` gate at the top of `render()` already prevents the placeholder from rendering when an entity is selected, BUT the empty-state branch did not reset `this.lastSelectedId`. If a worker had been selected then deselected (e.g., via canvas click on bare tile), the entity-detail render's interaction-guard at line ~815 (`selectedId === this.lastSelectedId && #isUserInteracting()`) would short-circuit the next selection, leaking the stale placeholder DOM into a transitional frame. Added explicit `this.lastSelectedId = null;` reset inside the empty-state branch + clarifying comment block.
+
+**Tests:**
+- New: `test/build-toolbar-cost-format.test.js` — 4 unit tests pinning the Math.floor wrap (fractional, integer, 0.99 edge, multi-axis). All 4 pass.
+- Regression: 1791 tests, **1785 pass / 6 fail / 3 skip**. The 6 failures match the pre-A4 baseline exactly (escalation-lethality median tick / ResourceSystem flush / RoleAssignment quarry / RaidEscalator DI=30 / RaidFallbackScheduler popFloor / bare-init worker-stuck-3s) and pre-date this wave. **Net regression: 0** — A4 added 4 new passes (cost-format coverage) and zero new failures.
+
+**Files changed:** 4 (`src/ui/tools/BuildToolbar.js`, `src/render/PressureLens.js`, `src/ui/panels/EntityFocusPanel.js`, `test/build-toolbar-cost-format.test.js`). LOC delta: +109 / -3 = +106. Track = `code` only.
+
+**Hard-freeze deferred (NOT in this wave, per Post-Mortem §4.5):** audio loop, day/night ambient tint, building drop-shadows. These remain on the post-MVP roadmap and would push A4 V5 RED → YELLOW; outside R4 budget.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
 ### A7 Rationality-Audit — heat-lens context label + autopilot goal cap + threat anchor (R3 P0 + P1 #5/#7)
