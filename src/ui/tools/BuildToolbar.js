@@ -382,6 +382,24 @@ export class BuildToolbar {
       btn.addEventListener("click", () => {
         const tool = btn.dataset.tool;
         if (!tool) return;
+        // v0.10.1-A3 R3 — second-click on the *same* active tool toggles
+        // back to the "select" tool so the next LMB returns to inspecting
+        // tiles instead of trying to re-place. Without this, the only way
+        // to "deselect" a build tool was to click the Select button — which
+        // the first-impression reviewer never discovered, leading to ghost
+        // placements when they tried to inspect a tile after a build.
+        const c = this.state.controls;
+        if (c.tool === tool && tool !== "select") {
+          c.tool = "select";
+          c.buildPreview = null;
+          c.actionMessage = `Tool deselected — left click now inspects tiles.`;
+          c.actionKind = "info";
+          this.sync();
+          if (typeof document !== "undefined") {
+            document.dispatchEvent(new CustomEvent("utopia:clearToasts", { detail: { reason: "toolToggleOff" }, bubbles: false }));
+          }
+          return;
+        }
         this.state.controls.tool = tool;
         if (tool === "select") {
           this.state.controls.buildPreview = null;

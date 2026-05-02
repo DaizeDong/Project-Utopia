@@ -2,6 +2,43 @@
 
 ## [Unreleased] — HW7 Final Polish Loop Round 3
 
+### A3 First-Impression — three P0s (click router + Help/briefing single-source + Best Runs banner)
+
+- **fix (UX P0)**: `src/ui/tools/BuildToolbar.js` — second-click on the
+  already-active build tool now toggles `controls.tool` back to `"select"`
+  (status: "Tool deselected — left click now inspects tiles."). Without this,
+  the only way out of placement mode was the Select button, which the
+  first-impression reviewer never discovered, leading to ghost placements
+  whenever they tried to inspect a tile after a build.
+- **fix (UX P0)**: `src/render/SceneRenderer.js` — removed the misleading
+  tile-tooltip footer `"B = build · R = road · T = fertility"` (no `B`
+  binding exists in the global keymap; `R` resets the camera; `T` is the
+  terrain overlay). Replaced with the correct `"Press 1-12 to select a build
+  tool"`, aligned with the Help dialog Controls tab and the BuildToolbar
+  hotkey legend. Closes A7 P0 alignment.
+- **fix (UX P0)**: `index.html` Help dialog Getting Started — replaced
+  `"Open the <b>Build</b> panel (top-left) and place a <b>Farm</b> on green
+  grass"` with right-sidebar guidance pointing players at the briefing's
+  `"First build"` line (which is per-scenario via `scenario.briefing`).
+  Removes the two-source contradiction the first-impression reviewer logged
+  (Help said farm; briefing said road).
+- **fix (UX P0)**: `index.html` + `src/ui/hud/GameStateOverlay.js` — added
+  an all-loss survival-mode reframer banner above the Best Runs leaderboard.
+  Surfaces only when every recorded run has `cause === "loss"`; says
+  `"Survival mode — every run ends. Aim for a higher score on the next one."`
+  Empty-state placeholder (`"No runs yet — finish a run to record one."`)
+  was already correct via CSS `:empty::before`; this banner closes the gap
+  for streaks of failures so a fresh viewer sees "this is expected" rather
+  than "ten dead runs".
+- **test**: `test/click-router-tool-priority.test.js` — 16 new test points:
+  pure `decidePointerTarget` priority matrix across all 11 placement tools
+  (asserts `place` wins over tile-inspect for any active build tool with a
+  legal tile + no entity nearby); BuildToolbar second-click toggle source-text
+  guard (regresses if the toggle branch is removed); SceneRenderer guard that
+  the deprecated `B = build &nbsp;·&nbsp; R = road &nbsp;·&nbsp; T = fertility`
+  HTML row does not return; index.html guard that the misleading "Build panel
+  (top-left)" Help line does not return.
+
 ### Docs (HW7 Round 2 → Round 3 — sustained stable)
 
 - A2 R3 perf YELLOW: documented Playwright headless RAF 1Hz throttle as

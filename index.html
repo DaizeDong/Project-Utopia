@@ -1512,6 +1512,18 @@
       cursor: pointer;
     }
     .overlay-board-clear:hover { color: #fff; background: rgba(255,255,255,0.08); }
+    /* v0.10.1-A3 R3 — survival-mode reframer above all-loss leaderboard */
+    .overlay-board-banner {
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--text-muted);
+      background: rgba(255, 215, 138, 0.08);
+      border: 1px solid rgba(255, 215, 138, 0.25);
+      border-radius: 4px;
+      padding: 5px 8px;
+      margin: 0 0 6px 0;
+      font-style: italic;
+    }
     .overlay-end-seedline {
       display: flex;
       align-items: center;
@@ -2602,6 +2614,13 @@
                this list closes the gap. Empty until first run. -->
           <div id="overlayLeaderboard" class="overlay-leaderboard">
             <h3 class="overlay-board-title">Best Runs</h3>
+            <!-- v0.10.1-A3 R3 — survival-mode banner shown only when every
+                 recorded run is a "loss" (the default outcome in survival
+                 mode). Without this, the first-impression reviewer read 10
+                 loss entries as "the player can't win" instead of "every run
+                 ends; aim higher". Hidden when empty or when any run has a
+                 non-loss outcome. -->
+            <div id="overlayLeaderboardBanner" class="overlay-board-banner" hidden></div>
             <ol id="overlayLeaderboardList" class="overlay-leaderboard-list"></ol>
             <button id="overlayClearLeaderboardBtn" type="button" class="overlay-board-clear" title="Clear local leaderboard (kept in browser localStorage only).">Clear</button>
           </div>
@@ -3398,9 +3417,19 @@
           </ul>
           <h3>Getting Started</h3>
           <ul>
-            <li>Open the <b>Build</b> panel (top-left) and place a <b>Farm</b> on green grass — workers will harvest food.</li>
-            <li>Add a <b>Lumber Camp</b> near trees and a <b>Warehouse</b> to store goods.</li>
-            <li>Connect buildings with <b>Roads</b> — they speed hauling significantly.</li>
+            <!-- v0.10.1-A3 R3 — aligned with the scenario briefing's
+                 "First build" line (overlayMenuPriority): the Build toolbar
+                 lives in the right sidebar (not "top-left"), and the first
+                 build varies by scenario, so this text now points players at
+                 the briefing instead of prescribing a single tool. -->
+            <li>Open the <b>Build</b> tab in the right sidebar — the menu
+                briefing's <b>"First build"</b> line tells you which tool to
+                place first for the current scenario.</li>
+            <li>Press <code>1</code>–<code>9</code> to quick-pick a build tool, then
+                left-click a tile to place. Workers will haul, build, and
+                harvest automatically once the tile is placed.</li>
+            <li>Connect buildings with <b>Roads</b> — they speed hauling
+                significantly and unlock processing chains.</li>
           </ul>
         </section>
         <section class="help-page" data-help-page="chain">

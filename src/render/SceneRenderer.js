@@ -2256,7 +2256,12 @@ export class SceneRenderer {
       rows.push(`<span style="opacity:0.55;font-style:italic">${hints.join(" · ")}</span>`);
     }
 
-    rows.push(`<span style="opacity:0.4;font-size:10px">B = build &nbsp;·&nbsp; R = road &nbsp;·&nbsp; T = fertility</span>`);
+    // v0.10.1-A3 R3 — removed misleading "B = build · R = road · T = fertility"
+    // hint. Those single-letter shortcuts do not exist in the global keymap
+    // (build = 1-12, R = reset camera, T = terrain overlay), so the line
+    // actively miseducated. Replaced with the correct number-row shortcut
+    // that aligns with the Help dialog Controls tab.
+    rows.push(`<span style="opacity:0.4;font-size:10px">Press 1-12 to select a build tool</span>`);
 
     el.innerHTML = rows.join("<br>");
     el.style.whiteSpace = "normal";
