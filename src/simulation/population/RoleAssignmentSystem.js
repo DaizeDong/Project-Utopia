@@ -229,11 +229,27 @@ export class RoleAssignmentSystem {
     // promotes guards (was dead-field pre-fix — saboteurs were invisible to
     // RoleAssignmentSystem, leaving farms exposed during pure-saboteur runs).
     const activeSaboteurs = Number(combat?.activeSaboteurs ?? 0);
-    const totalActiveThreats = activeRaiders + activeSaboteurs;
+    const activePredators = Number(combat?.activePredators ?? 0);
     const nearestDist = Number(combat?.nearestThreatDistance ?? -1);
     // Tight proximity gate (~6 tiles) keeps the live-promotion responsive
     // for actual raids while avoiding any ambient draft.
     const proximityGate = 6;
+    // R5 PB-combat-plumbing Step 4 — count plain wolves/bears toward
+    // GUARD draft ONLY when they are deep inside the colony (nearestDist
+    // ≤ proximityGate / 2 = 3 tiles), not on the perimeter (P0-2 in
+    // PB-combat-engagement feedback). The earlier policy explicitly
+    // excluded `activePredators` to avoid economy thrash from wolves
+    // chasing deer past the colony edge — that policy still applies for
+    // perimeter encounters (handled by per-worker counter-attack +
+    // FIGHTING via the v0.10.1 Step 2/3 broadened COMBAT_PREEMPT). The
+    // half-proximity floor catches the case where a predator has already
+    // breached past the perimeter and is actively hunting workers, where
+    // a draft is justified. Raiders/saboteurs continue to count at full
+    // proximityGate (their presence anywhere within 6 tiles is hostile-
+    // intent by definition; predators may be transiting).
+    const predatorsInsideColony = (activePredators > 0 && nearestDist > 0 && nearestDist <= proximityGate / 2)
+      ? activePredators : 0;
+    const totalActiveThreats = activeRaiders + activeSaboteurs + predatorsInsideColony;
     const liveTargetGuards = (totalActiveThreats > 0 && nearestDist > 0 && nearestDist <= proximityGate)
       ? Math.min(guardCap, Math.max(1, totalActiveThreats * Number(BALANCE.targetGuardsPerThreat ?? 1)))
       : 0;

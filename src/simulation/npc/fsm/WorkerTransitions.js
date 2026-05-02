@@ -25,7 +25,7 @@ import {
   fsmTargetGone,
   fsmTargetNull,
   harvestAvailableForRole,
-  hostileInAggroRadiusForGuard,
+  hostileInAggroRadius,
   noHostileInRange,
   partialCarryStuckAtDriedYield,
   pathFailedRecently,
@@ -49,8 +49,14 @@ import { STATE } from "./WorkerStates.js";
 
 // Reusable transition rows. Spread these into per-state lists below.
 
+// R5 PB-combat-plumbing Step 3 — predicate renamed from
+// `hostileInAggroRadiusForGuard` to `hostileInAggroRadius`; the GUARD-role
+// short-circuit was removed in WorkerConditions.js so this priority-0 row
+// now fires FIGHTING for any worker (regardless of role) with a hostile
+// in aggro range. Composes with PA's transition layout — the priority-0
+// slot is unchanged; only the predicate body is more permissive.
 const COMBAT_PREEMPT = Object.freeze({
-  priority: 0, to: STATE.FIGHTING, when: hostileInAggroRadiusForGuard,
+  priority: 0, to: STATE.FIGHTING, when: hostileInAggroRadius,
 });
 const SURVIVAL_REST = Object.freeze({
   priority: 2, to: STATE.SEEKING_REST, when: tooTired,
