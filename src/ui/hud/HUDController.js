@@ -450,11 +450,42 @@ export class HUDController {
     const bar = this._statusBar;
     if (!bar) return;
     const priority = HUDController.OVERFLOW_HIDE_PRIORITY;
+    // v0.10.1-hotfix-iter2 (issue #1 follow-up): the 1025-1366 media-query
+    // band lets `.hud-goal-list { flex-wrap: wrap }` push to a second row
+    // when the goal chips don't fit on one line. The width-only check
+    // (`scrollWidth > clientWidth + 4`) is fooled by this — the inner list
+    // wraps but the bar's own clientWidth absorbs the overflow, so the
+    // bar reports no horizontal scroll. Detect inner-list wrap by walking
+    // visible children's offsetTop values and treating any vertical
+    // dispersion (more than one row) as overflow. We deliberately avoid
+    // checking the bar's own height because the media-query sets a hard
+    // `min-height: 56px` to leave headroom — that 56px floor would
+    // otherwise force the hider to drain every priority chip even when
+    // the row fits cleanly.
+    const ROW_TOLERANCE_PX = 6;
+    const hasWrappedRow = () => {
+      if (typeof bar.querySelectorAll !== "function") return false;
+      let minTop = Infinity;
+      let maxTop = -Infinity;
+      const list = bar.querySelector(".hud-goal-list");
+      const candidates = list ? list.children : bar.children;
+      for (const child of candidates) {
+        if (!child || child.offsetParent === null) continue;
+        const top = Number(child.offsetTop ?? 0);
+        if (!Number.isFinite(top)) continue;
+        if (top < minTop) minTop = top;
+        if (top > maxTop) maxTop = top;
+      }
+      if (!Number.isFinite(minTop) || !Number.isFinite(maxTop)) return false;
+      return (maxTop - minTop) > ROW_TOLERANCE_PX;
+    };
     const isOverflowing = () => {
       const sw = Number(bar.scrollWidth ?? 0);
       const cw = Number(bar.clientWidth ?? 0);
       if (!Number.isFinite(sw) || !Number.isFinite(cw)) return false;
-      return sw - cw > 4;
+      if (sw - cw > 4) return true;
+      if (hasWrappedRow()) return true;
+      return false;
     };
     // Step 1: while the bar overflows, walk priority list and hide one entry
     // at a time until either we run out of selectors or overflow is gone.
