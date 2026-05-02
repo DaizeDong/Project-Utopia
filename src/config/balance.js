@@ -1002,6 +1002,16 @@ export const BALANCE = Object.freeze({
   // v0.8.5 Tier 3: 1 → 2. 2v1 is decisive; 1v1 with HP variance is a
   // coin-flip and ~30% of GUARD encounters lost a worker pre-v0.8.5.
   targetGuardsPerThreat: 2,
+  // R5 PA-worker-fsm-task-release Step 4 — minimum seconds between role
+  // changes for a single worker (economy allocator only). RoleAssignmentSystem
+  // re-evaluates the FARM/WOOD/HAUL/specialist split every managerIntervalSec
+  // (1.2 s); without hysteresis a marginal food-vs-wood swing could flip the
+  // same worker FARM↔WOOD on consecutive ticks, trashing in-flight paths and
+  // surfacing as observed 3-4× role thrash per 15 s window. GUARD promotion
+  // under live threat (combat.activeRaiders + combat.activeSaboteurs > 0)
+  // is exempt — emergency draft preempts the cooldown so saboteur breaches
+  // still draft economy workers immediately.
+  roleChangeCooldownSec: 4,
   // --- v0.8.4 Strategic walls + GATE (Agent C) ---------------------------
   // Walls now have HP and can be attacked by hostile factions (predators,
   // raiders, saboteurs). When wallHp drops to 0 the tile mutates to RUINS,

@@ -332,6 +332,21 @@ export function yieldPoolDriedUp(worker, state, _services) {
   return Number(ts?.yieldPool ?? 0) <= 0;
 }
 
+/**
+ * R5 PA-worker-fsm-task-release Step 2 — true when the harvester has a
+ * non-zero carry AND the current yield pool tile has dried up AND a
+ * warehouse exists to deliver to. Used by HARVESTING → DELIVERING so a
+ * worker holding partial carry (e.g. 2.93 wood, below carryFull = 3.2)
+ * doesn't sit on a played-out node for 12+ s waiting for the carry-empty
+ * + yield-dried fallback to fire. Mirrors the v0.10.1-pre behaviour where
+ * the legacy commitment latch flushed any non-zero carry on dried tiles.
+ */
+export function partialCarryStuckAtDriedYield(worker, state, services) {
+  if (carryTotal(worker) <= 1e-4) return false;
+  if (!yieldPoolDriedUp(worker, state, services)) return false;
+  return Number(state?.buildings?.warehouses ?? 0) > 0;
+}
+
 // Processing-specific
 
 /**

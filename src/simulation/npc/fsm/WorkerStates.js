@@ -407,8 +407,16 @@ const SEEKING_BUILD = Object.freeze({
     executeMovement(worker, state, dt);
   },
   onExit(worker, state, _services) {
-    // Only release the builder claim when leaving without arriving — once at
-    // the site BUILDING.onExit handles the post-construction release.
+    // R5 PA-worker-fsm-task-release Step 1 — release the builder claim on
+    // ANY non-arrival exit (fsmTargetNull / fsmTargetGone / pathFailedRecently
+    // / SURVIVAL_REST preempt / COMBAT_PREEMPT). Without this, a BUILDER who
+    // bounces back to IDLE because findOrReserveBuilderSite returned null
+    // can leak the only-this-tick scout reservation, and another BUILDER
+    // sitting on a stale builderId entry causes IDLE → SEEKING_BUILD →
+    // IDLE oscillation (the user-reported "BUILDER stuck in Wander while
+    // red blueprints sit unbuilt"). On successful arrival, BUILDING.onExit
+    // owns the release; we deliberately skip here so the BUILDING state
+    // body keeps the reservation while applying construction work.
     if (!arrived(worker, state)) releaseBuilderSite(state, worker);
     // v0.10.0-c — do NOT clearPath. BUILDING tick stays at the site; the
     // arrival path persisting is the same shape as v0.9.4 JobBuildSite.

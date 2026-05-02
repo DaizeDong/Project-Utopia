@@ -27,6 +27,7 @@ import {
   harvestAvailableForRole,
   hostileInAggroRadiusForGuard,
   noHostileInRange,
+  partialCarryStuckAtDriedYield,
   pathFailedRecently,
   processAvailableForRole,
   processInputDepleted,
@@ -108,6 +109,14 @@ const HARVESTING_TRANSITIONS = Object.freeze([
   COMBAT_PREEMPT,
   SURVIVAL_REST,
   { priority: 5, to: STATE.DELIVERING, when: carryFull },
+  // R5 PA-worker-fsm-task-release Step 3 — partial-carry flush. When the
+  // tile yieldPool dries up while the worker still has non-zero carry
+  // (below the carryFull threshold), route to DELIVERING so the resources
+  // reach a warehouse rather than sitting on the dead tile until carry-
+  // empty fires (which can take 12+ s as the worker stares at zero
+  // yieldPool). Slot priority 6 so it loses to carryFull (5) but wins
+  // over the priority-8 yield-empty IDLE fallback.
+  { priority: 6, to: STATE.DELIVERING, when: partialCarryStuckAtDriedYield },
   // Yield-pool dried up + carry empty → reset to IDLE.
   { priority: 8, to: STATE.IDLE, when: (worker, state, services) => {
     if (!yieldPoolDriedUp(worker, state, services)) return false;
