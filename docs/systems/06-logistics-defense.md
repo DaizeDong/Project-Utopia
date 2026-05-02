@@ -4,13 +4,16 @@
 1. [道路网络](#道路网络)
 2. [仓库与物流](#仓库与物流)
 3. [运输链](#运输链)
-4. [压力透镜指标](#压力透镜指标)
-5. [供应热图系统](#供应热图系统)
-6. [天气系统](#天气系统)
-7. [事件系统](#事件系统)
-8. [突袭系统](#突袭系统)
-9. [生态压力](#生态压力)
-10. [桥梁与水路隔离检测](#桥梁与水路隔离检测)
+4. [仓库腐烂](#仓库腐烂)
+5. [压力透镜指标](#压力透镜指标)
+6. [Heat Lens 与上下文标签](#heat-lens-与上下文标签)
+7. [Boids 路径阻尼](#boids-路径阻尼)
+8. [天气系统](#天气系统)
+9. [事件系统](#事件系统)
+10. [突袭系统](#突袭系统)
+11. [生态压力](#生态压力)
+12. [桥梁与水路隔离检测](#桥梁与水路隔离检测)
+13. [自动驾驶 Scout-Road 提议](#自动驾驶-scout-road-提议)
 
 ---
 
@@ -25,8 +28,8 @@
 ```javascript
 class UnionFind {
   // 路径压缩 + 按秩合并
-  find(x)      // O(α(n)) 平均时间复杂度
-  union(a, b)  // 合并两个集合
+  find(x)            // O(α(n)) 平均时间复杂度
+  union(a, b)        // 合并两个集合
   connected(a, b)    // 检查连通性
   componentSize(x)   // 获取分量大小
 }
@@ -34,8 +37,10 @@ class UnionFind {
 
 #### 瓦片分类
 
-- **道路瓦片集合** = `{ROAD, BRIDGE, WAREHOUSE}`
-- 仅这三种瓦片参与连通性计算
+- **道路瓦片集合** = `{ROAD, BRIDGE, WAREHOUSE, GATE}`（GATE 在 v0.8.4 加入；
+  对友方阵营可通过，对敌对阵营 — predators / raiders / saboteurs — 由
+  `src/simulation/navigation/Faction.js#isTilePassableForFaction` 阻挡）
+- 仅这些瓦片参与连通性计算
 - 其他建筑（农场、工坊等）不参与路网
 
 #### 构建过程
@@ -64,7 +69,8 @@ getComponentSize(ix, iz, grid)
 #### 性能优化
 
 - **懒加载重建**：仅当 `grid.version` 变化时重建
-- **位数组存储**：`parent`, `rank`, `size` 使用类型数组（Int32Array, Uint8Array, Uint16Array）
+- **位数组存储**：`parent`, `rank`, `size` 使用类型数组（Int32Array,
+  Uint8Array, Uint16Array）
 
 ### 道路速度加成与磨损机制
 
@@ -72,32 +78,18 @@ getComponentSize(ix, iz, grid)
 
 ```javascript
 roadSpeedMultiplier: 1.35        // 基础速度加成
-roadStackPerStep: 0.03           // 每个连续道路步骤的堆叠加成
-roadStackStepCap: 20             // 最多堆叠20步 → 最大1.6倍
+roadStackPerStep: 0.04           // 每个连续道路步骤的堆叠加成 (v0.8.8 Tier C: 0.03→0.04)
+roadStackStepCap: 15             // 最多堆叠15步 → 最大~1.56倍 (v0.8.8 Tier C: 20→15)
 
 // 有效加成公式
 = 1 + (roadSpeedMultiplier - 1) × (1 - wear) × (1 + min(step, cap) × perStep)
-= 1 + 0.35 × (1 - wear) × (1 + min(step, 20) × 0.03)
 ```
 
 #### 磨损衰减
 
 - 道路瓦片通过 `tileState.wear` 追踪（0～1）
 - 高流量或时间推移导致磨损增加
-- 物流系统在计算相邻道路平均磨损时应用衰减：
-
-```javascript
-_avgAdjacentRoadWear(ix, iz, grid, roadNet) {
-  let totalWear = 0, count = 0;
-  for (const adjacent of [4方向邻居]) {
-    if (roadNet.isRoadTile(adjacent)) {
-      totalWear += adjacent.wear;
-      count++;
-    }
-  }
-  return count > 0 ? totalWear / count : 0;
-}
-```
+- 物流系统在计算相邻道路平均磨损时应用衰减
 
 #### 堆叠重置
 
@@ -110,7 +102,7 @@ _avgAdjacentRoadWear(ix, iz, grid, roadNet) {
 
 ### 仓库覆盖范围与效率等级
 
-**系统**：`LogisticsSystem`
+**系统**：`LogisticsSystem`（`src/simulation/logistics/`）
 
 三个效率等级由生产建筑与仓库的连通关系决定：
 
@@ -120,72 +112,37 @@ _avgAdjacentRoadWear(ix, iz, grid, roadNet) {
 | 邻接道路但不连接仓库 | 1.0 | 道路就近但孤立 |
 | 无任何道路邻接 | 0.85 | 隔离惩罚（`ISOLATION_PENALTY`） |
 
-#### 计算流程
-
-```javascript
-update(dt, state) {
-  for (tile of PRODUCTION_TILES) {
-    if (roadNet.isAdjacentToConnectedRoad(tile.ix, tile.iz, grid)) {
-      avgWear = _avgAdjacentRoadWear(...)
-      bonus = 1 + (1.15 - 1) × (1 - avgWear)
-      efficiency[tile] = bonus          // ~1.15 最大
-    } else if (roadNet.isAnyRoadNeighbor(tile.ix, tile.iz, grid)) {
-      efficiency[tile] = 1.0
-    } else {
-      efficiency[tile] = 0.85           // 隔离惩罚
-    }
-  }
-}
-```
-
 ### 仓库队列与吞吐量限制
 
-**配置**：`BALANCE`
-
 ```javascript
-warehouseIntakePerTick: 2           // M2a: 每游戏 tick 最多接纳 2 个工人
-warehouseQueueMaxWaitTicks: 120     // 队列超时时间（约 2s 游戏时间）
-warehouseSoftCapacity: 4            // M2: 软上限队列大小
+warehouseIntakePerTick: 2           // 每游戏 tick 最多接纳 2 个工人
+warehouseQueueMaxWaitTicks: 120     // 队列超时（约 2s 游戏时间）
+warehouseSoftCapacity: 4            // 软上限队列大小（v0.8.5 Tier 1: 3→4）
 ```
 
 - 尝试向仓库卸货的工人排队等待
 - 超过 120 tick（~2秒）未被处理 → 触发 `WAREHOUSE_QUEUE_TIMEOUT` 事件
 - 工人重新分配目标，产生 `strandedCarryWorkers` 状态
 
-### 仓库密度与风险
-
-**配置**：`BALANCE`
+### 仓库密度与火灾风险
 
 ```javascript
-warehouseDensityRadius: 6               // 曼哈顿半径扫描范围
-warehouseDensityRiskThreshold: 400      // 密度分数阈值（触发"热"状态）
-warehouseDensityAvgStockPerTile: 50     // 单位瓦片平均库存基线
+warehouseDensityRadius: 6
+warehouseDensityRiskThreshold: 400
+warehouseDensityAvgStockPerTile: 50
 
-// 每 tick 风险滚动
 warehouseFireIgniteChancePerTick: 0.008
 verminSwarmIgniteChancePerTick: 0.005
 ```
 
-#### 密度计算指标
-
-系统在 `state.metrics.warehouseDensity` 中维护：
+`state.metrics.warehouseDensity`：
 
 ```javascript
 {
-  byKey: { "ix,iz": densityScore, ... },  // 各仓库密度分数
-  hotWarehouses: ["ix,iz", ...],          // 分数 ≥ 阈值的仓库列表
+  byKey: { "ix,iz": densityScore, ... },
+  hotWarehouses: ["ix,iz", ...],
   threshold: 400,
   peak: maxScore,
-}
-```
-
-高密度仓库的实时损失：
-
-```javascript
-if (roll() < fireChance) {
-  lossFood = 0.2 × min(food, 30)
-  lossWood = 0.2 × min(wood, 30)
-  // ... 火灾损失 food, wood, stone, herbs
 }
 ```
 
@@ -205,42 +162,19 @@ Worker.harvest(resource_tile)
   → worker.carry[resource] += amount
 ```
 
-- 耕地、木材厂等资源地产出资源到工人手中
 - 工人在携带任何资源时受 **carry fatigue**（1.5× 休息衰减）
-- 物资在途中腐烂（食物 0.5%/s，草药 1%/s，有 500 tick 恩惠期）
+- 物资在途中按食物 0.5%/s, 草药 1%/s 腐烂（500 tick 恩惠期）
 
-#### 2. 不在线交付与隔离惩罚
+#### 2. 隔离仓库递送惩罚
 
 ```javascript
-if (workerIsOff-road) {
-  durationEstimate = distance / speed
-  if (durationEstimate > spoilageHalfLifeSeconds) {
-    planner.emit(riskSpoilage)  // 软告警
-  }
-}
-
-// 递送到隔离仓库时的惩罚
 unloadRate = 4.2 item/s
 if (warehouse.efficiency === 0.85) {  // ISOLATION_PENALTY
   actualUnloadRate = 4.2 × 0.8 = 3.36 item/s
 }
 ```
 
-- 隔离仓库递送速度降低 20%
-- 通过修建连接仓库的道路来解除隔离
-
 #### 3. 仓库分配与碎片化风险
-
-```javascript
-// 工人通过 RoleAssignmentSystem 分配货物卸货点
-targetWarehouse = selectDepot(
-  worker.carry,
-  state.metrics.logistics.buildingEfficiency,
-  policy
-)
-```
-
-检测的问题状态：
 
 | 状态 | 原因 | 影响 |
 |------|------|------|
@@ -248,56 +182,31 @@ targetWarehouse = selectDepot(
 | `overloadedWarehouses` | 吞吐量超过 2/tick × 5s 缓冲 | 物流效率降低 |
 | `isolatedWorksites` | 无连接道路的生产地 | 效率 0.85× 衰减 |
 
-### 路由验证与碎片化检测
+---
 
-**配置**：`src/world/scenarios/ScenarioFactory.js`（运行时）
+## 仓库腐烂
 
-```javascript
-// 路由对象结构
-{
-  id: "route_0",
-  label: "south supply",
-  connected: boolean,      // 是否两端都连接到仓库
-  gapTiles: [ix, iz, ...], // 未铺装的道路瓦片列表
-  ready: boolean,          // 所有 gap 已填补
-}
+v0.10.1 引入仓库内库存的被动腐烂以避免无操作下仓库无限堆积。
 
-// 仓库对象结构
-{
-  id: "depot_0",
-  anchor: "south_depot",   // 指向 anchors[south_depot]
-  ready: boolean,          // 是否满足覆盖范围
-  radius: 2,               // 覆盖范围
-}
-```
-
-#### 断裂路由检测
+### 食物腐烂（v0.10.1-j）
 
 ```javascript
-function detectBrokenRoutes(runtime) {
-  for (const route of runtime.routes) {
-    route.connected = roadNetwork.areConnected(
-      route.startIx, route.startIz,
-      route.endIx, route.endIz,
-      grid
-    );
-    route.gapTiles = [list of GRASS tiles between endpoints]
-  }
-}
+warehouseFoodSpoilageRatePerSec: 0.0003
 ```
 
-#### 未就绪仓库检测
+按比例衰减；1000 食物每天损失 ~9.5，大致抵消盈余生产，使 90 天食物
+仍约为初始值的 3 倍。`BALANCE.spoilageOnRoadMultiplier = 0` 默认保留
+"道路上零腐烂" 行为，可调（v0.8.8 Tier C 引入的旋钮）。
+
+### 木材腐烂（v0.10.1-r2-A5 P0-3，新增）
 
 ```javascript
-function detectUnreadyDepots(runtime) {
-  for (const depot of runtime.depots) {
-    const anchor = anchors[depot.anchor];
-    depot.ready = countWarehousesInRadius(anchor, depot.radius) > 0
-                   && connectedToNetwork(anchor);
-  }
-}
+warehouseWoodSpoilageRatePerSec: 0.00015
 ```
 
+与食物相同的比例腐烂模式，调整为约一半的强度，使正常建造周期木材
+（35–60）几乎不损失，而无操作下 235+ 的堆积会缓慢回到平衡点。保持
+木材作为有意义的资源，而不破坏正在进行的建造循环。
 
 ---
 
@@ -320,17 +229,62 @@ function detectUnreadyDepots(runtime) {
 
 ---
 
-## 供应热图系统
+## Heat Lens 与上下文标签
 
-**位置**：`src/render/PressureLens.js` — buildHeatLens()
+**位置**：`src/render/PressureLens.js — buildHeatLens()`
 
 ### 三通道颜色编码
 
 | 通道 | 颜色 | 瓦片类型 | 触发条件 |
 |------|------|---------|----------|
-| RED | 红色（过量） | 原始生产地 | 邻接热仓库（密度≥400） |
-| BLUE | 蓝色（饥饿） | 处理厂/仓库 | 输入资源空或仓库闲置 |
-| GREY | 灰色（健康） | 其他 | 默认 |
+| RED (heat_surplus) | 红色 | 原始生产地 | 邻接热仓库（密度≥400） |
+| BLUE (heat_starved) | 蓝色 | 处理厂/仓库 | 输入资源空或仓库闲置 |
+| GREY | 灰色 | 其他 | 默认 |
+
+### 上下文敏感的 "supply surplus" 标签（HW7 R3 A7 P0）
+
+`buildHeatLens()` 每次调用扫描一次 `state.agents`，找到任何 `alive WORKER`
+且 `hunger < 0.35`（即 `workerHungerSeekThreshold` 代理值，"主动找食物" 状态）。
+当存在饥饿工人时：
+
+- RED "supply surplus" 标签翻转为 **`"queued (delivery blocked)"`**
+- 悬停 tooltip 增加 **"Worker Focus"** 指针，提示玩家打开 Worker Focus 面板
+
+这样玩家不会看到 "供应过剩" 的红格而旁边工人正在饿死的矛盾。Marker
+kind / id / priority / labelPriority 不变，halo 扩展和 dedup 路径保持
+绿色。
+
+### 实时 Popover（HW7 hotfix Batch C）
+
+Heat Lens marker 增加了实时 popover，在悬停时显示 worker-context tooltip
+（"N workers waiting" 等聚合信息）。`summarizeWorkersByTile(state)` 每次
+heat-lens build 单次扫描 `state.agents`，预聚合工人按瓦片分布；由
+`heatLensSignature` 节流。
+
+### Logistics Legend Tooltip + Help
+
+Logistics 图例增加了 tooltip 解释每种 marker 的含义；F1 Help 对话框增加
+4-bullet "Heat Lens" 章节（hotfix Batch C + iter2 Gap A）。
+
+---
+
+## Boids 路径阻尼
+
+**位置**：`src/simulation/movement/BoidsSystem.js`
+
+HW7 hotfix Batch A — 工人在执行 A* 路径时，分离权重（separation）按
+**0.35×** 阻尼，防止工人在路径上相互推挤导致 jitter。
+
+```javascript
+const SEP_DAMPEN_ON_PATH = 0.35;
+const hasPath = Boolean(/* ... entity has active A* path ... */);
+const separationFactor = hasPath ? SEP_DAMPEN_ON_PATH : 1.0;
+// workers (sep weight 2.6) × 0.35 ≈ 0.91 < seek weight 1.22
+// → seek 占主导，工人沿路径前进，不再被相邻工人推开
+```
+
+这条修复直接来自玩家试玩反馈：高密度路径上的工人会原地抖动并互相
+让位，看起来 "AI 笨"。阻尼让 path-following 不被 separation 主导。
 
 ---
 
@@ -338,7 +292,7 @@ function detectUnreadyDepots(runtime) {
 
 **位置**：`src/world/weather/WeatherSystem.js`
 
-### 5种天气 + 4季节
+### 5 种天气
 
 天气类型：CLEAR, RAIN, STORM, DROUGHT, WINTER
 
@@ -352,7 +306,7 @@ function detectUnreadyDepots(runtime) {
 | 干旱 | 1.0× | 0.55× | 1.05× |
 | 冬季 | 1.25× | 0.65× | 0.9× |
 
-灾害前线生成：basePenalty + zonePenalty，计算平均压力分数。
+灾害前线生成：`basePenalty + zonePenalty`，计算平均压力分数。
 
 ---
 
@@ -360,19 +314,36 @@ function detectUnreadyDepots(runtime) {
 
 **位置**：`src/world/events/WorldEventSystem.js`
 
-### 3种事件类型
+### 3 种主事件类型
 
-EVENT_TYPE = { ANIMAL_MIGRATION, BANDIT_RAID, TRADE_CARAVAN }
+`EVENT_TYPE = { ANIMAL_MIGRATION, BANDIT_RAID, TRADE_CARAVAN }`
 
-生命周期：prepare(1s) → active(durationSec) → resolve(1s) → cooldown(4s)
+v0.8.2 Round-6 Wave-2 还增加了 MORALE_BREAK / DISEASE_OUTBREAK / WILDFIRE
+（由 `EventDirectorSystem` 按 ~240s cadence 排队）。
 
-### 目标评分算法
+### 生命周期
 
+`prepare(1s) → active(durationSec) → resolve(1s) → cooldown(4s)`
+
+### 目标评分
+
+```
 突袭：score = roads×0.05 + hazard×0.52 + hazardRatio×0.55 - walls×0.06 + bonuses
-
 商队：score = warehouses×0.18 + roads×0.055 + safety + bonuses - penalties
-
 迁移：score = occupancy×0.18 + hazard×0.38 + wildlifeBonus
+```
+
+### TRADE_CARAVAN 食物速率减半（HW7 R2 A5 P0）
+
+```javascript
+state.resources.food += dt * 0.22 * intensity * yieldMultiplier;  // 0.5 → 0.22
+state.resources.wood += dt * 0.18 * intensity * yieldMultiplier;  // 0.34 → 0.18
+```
+
+A5 R2 根因：20s 商队按 intensity=1 注入约 10 食物，EventDirector 的
+`tradeCaravan` weight=1 每隔几分钟就重新触发，使 AFK 食物在 30 分钟内
+从 18 升到 313 — 让 "do nothing wins"。减半使商队对活跃殖民地仍是有
+意义的补给，但无法单独维持零农场的无操作运行。
 
 ---
 
@@ -380,20 +351,58 @@ EVENT_TYPE = { ANIMAL_MIGRATION, BANDIT_RAID, TRADE_CARAVAN }
 
 **位置**：`src/simulation/meta/RaidEscalatorSystem.js`
 
-### DevIndex驱动升级
+### DevIndex 驱动升级
 
+```
 tier = clamp(floor(devIndexSmoothed / 15), 0, 10)
 intervalTicks = max(600, 3600 - tier × 300)
 intensityMultiplier = 1 + tier × 0.3
+```
 
-升级表：DevIndex 0 → tier 0 (1.0×), 30 → tier 2 (1.6×), 100 → tier 6+ (2.8×)
+升级表：DevIndex 0 → tier 0 (1.0×), 30 → tier 2 (1.6×),
+100 → tier 6+ (2.8×)
 
 ### 掠夺者与防御
 
+```
 loss = intensity × dt × 0.62 × lossMultiplier × mitigation
 mitigation = max(0.42, 1 - walls × 0.12)
+```
 
-次级破坏：pressure ≥ 1.2 时额外造成建筑毁灭
+次级破坏：pressure ≥ 1.2 时额外造成建筑毁灭。
+
+### `raidsRepelled` 计数器（HW7 R2 A5 P0）
+
+`WorldEventSystem` 在 BANDIT_RAID 从 `active → resolve` 时考虑 +1，但
+**只有真正进行了防御** 才计数：
+
+```javascript
+const defenseScore = Number(event.payload?.defenseScore ?? 0);
+const blockedByWalls = event.payload?.blockedByWalls === true;
+if (defenseScore >= 1 || blockedByWalls) {
+  state.metrics.raidsRepelled += 1;
+}
+```
+
+预 r2 时纯按 event-status 转换递增，所以 0 墙 0 守卫的零防御运行也会
+得到 "raid 击退" 计数。现在要求 (a) `defenseScore >= 1`（HP 加权墙覆盖
+≥ 1，约等于路径上 1+ 墙）或 (b) `applyBanditRaidImpact` 显式设置
+`blockedByWalls = true`（实际遮蔽时）。
+
+### `defended_tier_5` Milestone（HW7 R2 A5 P0）
+
+```javascript
+const tier = Number(state.gameplay?.raidEscalation?.tier ?? 0);
+const repelled = Number(state.metrics?.raidsRepelled ?? 0);
+const walls = Number(state.buildings?.walls ?? 0);
+const guards = Number(state.combat?.guardCount ?? 0);
+const hasDefense = guards >= 1 || walls >= 4;
+return tier >= 5 && repelled >= 1 && hasDefense ? 1 : 0;
+```
+
+要求真实防御基础设施（≥4 墙 OR ≥1 GUARD-role 工人）+ tier ≥ 5 + 至少
+一次有效击退。预 r2 在 0 墙 0 守卫的运行也会点亮该 milestone（A5 R2
+观察到 "Tier-5 raid defended" 在零防御运行下亮起）。
 
 ---
 
@@ -403,12 +412,20 @@ mitigation = max(0.42, 1 - walls × 0.12)
 
 ### 食草动物与农场压力
 
+```
 herbivoreFarmPressurePerSecond: 0.34
 herbivoreFarmPressureDecayPerSecond: 0.16
+```
 
-农场产出惩罚：penalty = min(0.7, pressure × 0.44)
+农场产出惩罚：`penalty = min(0.7, pressure × 0.44)`
 
-生态热点：PressureLens 提取最多4个压力最高的农场作为ecology标记
+生态热点：PressureLens 提取最多 4 个压力最高的农场作为 ecology 标记。
+
+### 初始野生动物提升（HW7 hotfix-A Issue #4）
+
+`INITIAL_POPULATION` 从 `herbivores: 3, predators: 1` 提升至
+`herbivores: 8, predators: 2`，回应玩家 "动物太少" 反馈，让世界从
+第 1 秒开始就有可见的野生动物群落。
 
 ---
 
@@ -416,13 +433,35 @@ herbivoreFarmPressureDecayPerSecond: 0.16
 
 **位置**：`src/simulation/ai/colony/ColonyPlanner.js`
 
-### 隔离检测BFS
+### 隔离检测 BFS
 
-candidateHasReachableWarehouse(grid, ix, iz, minSteps=3)
+`candidateHasReachableWarehouse(grid, ix, iz, minSteps=3)`
 
-从候选瓦片出发，仅沿ROAD/BRIDGE行走，在6步内到达仓库则reachable=true
+从候选瓦片出发，仅沿 ROAD/BRIDGE 行走，在 6 步内到达仓库则
+`reachable = true`。
 
-隔离惩罚：通过 scoreFallbackCandidate() 应用 0.8× 得分衰减
+隔离惩罚：通过 `scoreFallbackCandidate()` 应用 0.8× 得分衰减。
+
+---
+
+## 自动驾驶 Scout-Road 提议
+
+**位置**：`src/simulation/meta/ColonyDirectorSystem.js — proposeScoutRoadTowardFoggedStone()`
+
+HW7 hotfix iter2 Gap B — 自动驾驶在以下条件下扩展一段 scout 道路指向
+雾隐 STONE 节点：
+
+1. **石头赤字**：`state.resources.stone < 15`（同 `assessColonyNeeds` 的
+   `quarry@95` 触发阈值）
+2. **可见 STONE 为零**：当前 EXPLORED/VISIBLE 半区无 STONE 节点
+3. **存在雾隐 STONE**：HIDDEN 雾区至少有一个 STONE 节点
+4. **有钱**：`canAfford(state.resources, BUILD_COST.road)`
+5. **节流**：每 30 sim-sec 最多一条 scout road（防止真正远离石头时刷屏）
+
+候选集 = 每个邻接现有 infrastructure（warehouse / road / bridge）的
+EXPLORED/VISIBLE GRASS 瓦片，按到最近雾隐 STONE 的曼哈顿距离评分。
+工人走到该 road 瓦片会顺带通过 `VisibilitySystem` 揭开周围雾，使下
+一个 ColonyDirector tick 能通过正常 placement 路径放下 quarry 蓝图。
 
 ---
 
@@ -433,32 +472,33 @@ candidateHasReachableWarehouse(grid, ix, iz, minSteps=3)
 事件状态：
 - Weather: WINTER (1.25× move, 0.65× farm yield)
 - Event: BanditRaid (pressure: 1.8, intensity: 2.4)
-- Logistics: 3条断裂道路，2个未就绪仓库
-- Ecology: 食草动物迁移+农场压力0.6 (26% yield loss)
+- Logistics: 3 条断裂道路，2 个未就绪仓库
+- Ecology: 食草动物迁移 + 农场压力 0.6 (26% yield loss)
+- 工人 hunger=0.10（饥饿）
 
-Pressure Lens输出（优先级排序）：
-1. [120] route gap - 最高优先级
-2. [108] depot - 仓库覆盖
-3. [96] bandit raid - 突袭事件
-4. [84] weather - 天气前线
-5. [70] traffic - 流量热点
-6. [64] ecology - 生态压力
+Pressure Lens 输出（优先级排序）：
+1. [120] route gap
+2. [108] depot
+3. [96] bandit raid
+4. [84] weather
+5. [70] traffic
+6. [64] ecology
 
-Heat Lens输出：
-1. BLUE: Kitchen (food < 10)
-2. RED: Farm (adjacent to hot warehouse)
+Heat Lens 输出（饥饿工人在场，标签翻转）：
+1. RED "queued (delivery blocked)" — 农场紧邻饱和仓库
+2. BLUE "input starved" — Kitchen (food < 10)
 3. GREY: idle
 
 ---
 
 ## 性能特征
 
-缓存策略：RoadNetwork按grid.version重建，LogisticsSystem级联重建，WeatherSystem定期采样
+缓存策略：RoadNetwork 按 `grid.version` 重建，LogisticsSystem 级联重建，
+WeatherSystem 定期采样，Heat Lens 按 `heatLensSignature` 节流。
 
 时间复杂度：
-- Union-Find连通性：O(α(n))
+- Union-Find 连通性：O(α(n))
 - 仓库密度计算：O(w×h × r²) ≈ O(7000)
-- BFS隔离检测：O(r²) ≈ O(36)
+- BFS 隔离检测：O(r²) ≈ O(36)
 - 事件评分：O(candidates × zones) ≈ O(300)
 - 标记生成：O(200)
-
