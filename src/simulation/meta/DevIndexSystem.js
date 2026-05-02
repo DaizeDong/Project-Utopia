@@ -43,6 +43,17 @@ function clamp0to100(v) {
   return v;
 }
 
+// v0.10.2 PD P0-1: population dim is allowed up to 200 so RaidEscalator and
+// other downstream consumers can read a value that keeps climbing past the
+// 30-worker plateau. Composite math still uses clamp0to100 inside
+// computeWeightedComposite.
+function clamp0to200(v) {
+  if (!Number.isFinite(v)) return 0;
+  if (v < 0) return 0;
+  if (v > 200) return 200;
+  return v;
+}
+
 function computeWeightedComposite(dims, weights) {
   const w = weights ?? DEFAULT_WEIGHTS;
   let sum = 0;
@@ -92,7 +103,9 @@ export class DevIndexSystem {
 
     // 2. Normalise each dimension into [0, 100] independently.
     const dims = scoreAllDims(snapshot);
-    g.devIndexDims.population = clamp0to100(dims.population);
+    // v0.10.2 PD P0-1: pop dim preserved up to 200 (composite blend below
+    // still clamps to 0-100 in computeWeightedComposite).
+    g.devIndexDims.population = clamp0to200(dims.population);
     g.devIndexDims.economy = clamp0to100(dims.economy);
     g.devIndexDims.infrastructure = clamp0to100(dims.infrastructure);
     g.devIndexDims.production = clamp0to100(dims.production);

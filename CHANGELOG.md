@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r5-PD (R5 PD-late-game-escalation, P0 knob-only)
+
+### PD late-game-escalation — pop-dim cap raised to 200 + raid foodFloor 60→30 + raidTierMax verification
+
+Implements the 3 P0 fixes from `Round5/Plans/PD-late-game-escalation.md` (Reviewer PD-late-game-pacing, Tier A). Knob-only direction A: addresses all three findings with one scorer tweak + 2 BALANCE edits + comment-only verification on the tier ceiling. No new tile / role / building / panel / mood / audio surface — hard-freeze compliant.
+
+**1. P0-1: scorePopulation cap raised 100 → 200 (`src/simulation/telemetry/EconomyTelemetry.js`)** — Pop-dim was structurally capped at 100 once worker count hit ~30 (`ratio × 80` saturated at `clamp01To100`). For an 80-worker colony the dim sat at 100 for the entire late game, so DevIndex composite plateaued at ~58 and RaidEscalator's `2.5 × log2(1 + DI/15)` curve floored at tier 7. New saturation point = 200 (3.33× target). Composite math is unaffected because `computeWeightedComposite` still clamps the blended result to 0-100 via `clamp0to100`.
+
+**2. P0-1 (cont): DevIndexSystem preserves the wider pop-dim (`src/simulation/meta/DevIndexSystem.js`)** — Added `clamp0to200` helper and switched the `g.devIndexDims.population = clamp0to100(...)` assignment to `clamp0to200(...)` so the per-dim value stored on `state.gameplay.devIndexDims` keeps its 0-200 range for downstream consumers. The composite (`g.devIndex` / `g.devIndexSmoothed`) still computes via `computeWeightedComposite` which calls `clamp0to100` internally — no leakage to the HUD's 0-100 composite.
+
+**3. P0-3: raidFallbackFoodFloor 60 → 30 (`src/config/balance.js`)** — An 80-worker colony churning meals bounces food between 8 and 56 most of the time. The old `foodFloor = 60` vetoed the fallback fire whenever food dipped below 60, stretching raid cadence to 2-4× nominal. Lowered to 30. The genuinely-starving case is still protected by `popFloor = 10` + `graceSec = 180`. Updated both the frozen `raidFallbackScheduler.foodFloor` and the flat `raidFallbackFoodFloor` alias.
+
+**4. P0-2: raidTierMax = 10 verified (`src/config/balance.js` comment + `src/simulation/meta/RaidEscalatorSystem.js` audited)** — Confirmed tier ceiling at line 78/83 of `RaidEscalatorSystem.computeRaidEscalation` reads `BALANCE.raidTierMax` and clamps via `Math.max(0, …)` → `clamp(Math.floor(rawTier), 0, tierMax)` with no upstream silent cap. Added a comment block above the BALANCE constant documenting the verification.
+
+**Tests added:** `test/late-game-pacing-knobs.test.js` (3 cases: scorePopulation > 100 + state.gameplay.devIndexDims.population > 100 for 80 workers; tier ≥ 8 reachable at sustained DI=100; full DevIndexSystem integration with 80 workers + saturated walls drives composite ≥ 60 + tier ≥ 7). `test/raid-fallback-foodfloor-30.test.js` (3 cases: BALANCE knob = 30 sanity; fallback raid fires at food=35; still vetoed at food=20). All 6 new cases pass.
+
+**Tests updated for new pop-dim cap:** `test/saturation-indicator.test.js` (500 agents now saturates at 200 not 100; cap-per-dim assertion in the all-dims test is `population: 200, others: 100`); `test/dev-index.test.js` Case 2 (per-dim cap loop is `population: 200, others: 100`).
+
+**Test baseline:** 1814 tests / 1805 pass / 5 fail (all pre-existing on parent `8440301`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30 [perTier=8 vs test's expected tier-3], RaidFallbackScheduler popFloor, Fallback planner recruit-step) / 4 skip. Net +3 passes vs parent (1802 → 1805). Zero new failures introduced.
+
+**Files changed:** 3 source (`src/simulation/telemetry/EconomyTelemetry.js`, `src/simulation/meta/DevIndexSystem.js`, `src/config/balance.js`) + 2 new tests (`test/late-game-pacing-knobs.test.js`, `test/raid-fallback-foodfloor-30.test.js`) + 2 updated tests (`test/dev-index.test.js`, `test/saturation-indicator.test.js`) + CHANGELOG.
+
 ## [Unreleased] — v0.10.1-r4-A3 (R4 wave-1 Plan 1/3)
 
 ### A3 first-impression — actionable fog hint + EntityFocus default chip + BuildToolbar grouping + FogOverlay alpha

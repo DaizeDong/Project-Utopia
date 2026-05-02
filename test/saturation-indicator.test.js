@@ -29,14 +29,17 @@ test("Saturation: 500 food (2.5× target) saturates economy at 100, does not exc
   assert.ok(econScore >= 99, `with all resources at 2.5× target, econ should saturate near 100, got ${econScore}`);
 });
 
-test("Saturation: 500 agents (far above target) saturates population at 100", () => {
+test("Saturation: 500 agents (far above target) saturates population at 200", () => {
+  // v0.10.2 PD P0-1: scorePopulation now saturates at 200 (was 100) so the
+  // DevIndex population dim keeps climbing past the 30-worker plateau.
+  // Composite math (computeWeightedComposite) still clamps to 0-100.
   const state = createInitialGameState({ seed: 501 });
   // Purge existing agents so we only count fresh workers.
   state.agents = [];
   for (let i = 0; i < 500; i += 1) state.agents.push(createWorker(0, 0));
   const snapshot = collectEconomySnapshot(state);
   const popScore = scorePopulation(snapshot);
-  assert.equal(popScore, 100, `500 agents should saturate at exactly 100, got ${popScore}`);
+  assert.equal(popScore, 200, `500 agents should saturate at exactly 200, got ${popScore}`);
 });
 
 test("Saturation: massive wall count saturates defense at 100", () => {
@@ -49,7 +52,8 @@ test("Saturation: massive wall count saturates defense at 100", () => {
   assert.equal(defScore, 100, `massive walls should saturate defense at 100, got ${defScore}`);
 });
 
-test("Saturation: all dims stay at or below 100 simultaneously under extreme inputs", () => {
+test("Saturation: all dims stay at or below their cap simultaneously under extreme inputs", () => {
+  // v0.10.2 PD P0-1: population dim cap raised 100 → 200; other dims still 100.
   const state = createInitialGameState({ seed: 503 });
   state.resources.food = 99999;
   state.resources.wood = 99999;
@@ -61,7 +65,8 @@ test("Saturation: all dims stay at or below 100 simultaneously under extreme inp
   }
   const dims = scoreAllDims(collectEconomySnapshot(state));
   for (const [k, v] of Object.entries(dims)) {
-    assert.ok(v <= 100, `dim ${k} exceeded 100 under extreme input: ${v}`);
+    const cap = k === "population" ? 200 : 100;
+    assert.ok(v <= cap, `dim ${k} exceeded ${cap} under extreme input: ${v}`);
   }
 });
 
