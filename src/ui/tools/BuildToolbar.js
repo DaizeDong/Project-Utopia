@@ -49,6 +49,40 @@ export function isBuildToolCostBlocked(toolKey, resources) {
   return false;
 }
 
+/**
+ * v0.10.1-A6 (R3 P0 #2) — when a build tool is cost-blocked, compose a
+ * single human-readable string listing every shortfall axis so the
+ * disabled button can render a `title=` tooltip explaining *why* it is
+ * greyed out (reviewer feedback: Clinic disabled with no hover hint).
+ *
+ * Returns "" when the tool is not blocked, has no cost entry, or is in
+ * the ALWAYS_ENABLED_TOOLS set, so callers can use the result directly
+ * as the title attribute (empty string clears the tooltip).
+ *
+ * Format examples:
+ *   "Need 5 wood (have 0)"
+ *   "Need 8 wood (have 3) and 3 stone (have 0)"
+ *
+ * @param {string} toolKey — value of `button[data-tool]`
+ * @param {object|null} resources — { food, wood, stone, herbs }
+ * @returns {string} — tooltip text, or "" when not blocked
+ */
+export function describeBuildToolCostBlock(toolKey, resources) {
+  if (!toolKey || ALWAYS_ENABLED_TOOLS.has(toolKey)) return "";
+  const cost = BUILD_COST[toolKey];
+  if (!cost || typeof cost !== "object") return "";
+  const r = resources ?? {};
+  const shortfalls = [];
+  for (const axis of ["wood", "stone", "herbs", "food"]) {
+    const need = Number(cost[axis] ?? 0);
+    if (need <= 0) continue;
+    const have = Number(r[axis] ?? 0);
+    if (have < need) shortfalls.push(`${need} ${axis} (have ${have})`);
+  }
+  if (shortfalls.length === 0) return "";
+  return `Need ${shortfalls.join(" and ")}`;
+}
+
 // v0.8.2 Round-5 Wave-2 (02b-casual Step 4): when a build preview reports
 // "insufficientResource", pick the first limiting raw resource that still
 // has a production-chain bottleneck and return the chain's nextAction so
@@ -1207,10 +1241,35 @@ export class BuildToolbar {
       if (blocked) {
         btn.disabled = true;
         btn.setAttribute("data-cost-blocked", "1");
+        // v0.10.1-A6 (R3 P0 #2) — surface a "Need X wood (have Y)"
+        // tooltip on the disabled button so players understand *why*
+        // the tool is greyed out instead of clicking and getting
+        // silence. Cache the pre-existing title once so we can restore
+        // it when the tool becomes affordable again.
+        const reason = describeBuildToolCostBlock(tool, resources);
+        if (reason) {
+          if (
+            btn.getAttribute?.("data-cost-title-original") === null
+            || btn.getAttribute?.("data-cost-title-original") === undefined
+          ) {
+            const original = btn.getAttribute?.("title") ?? "";
+            btn.setAttribute("data-cost-title-original", original);
+          }
+          btn.setAttribute("title", reason);
+        }
       } else {
         if (btn.getAttribute?.("data-cost-blocked") === "1") {
           btn.disabled = false;
           btn.removeAttribute("data-cost-blocked");
+        }
+        // Restore original title once the tool is affordable again so
+        // the next render() doesn't leave a stale "Need 5 wood" hint
+        // dangling on an enabled button.
+        const original = btn.getAttribute?.("data-cost-title-original");
+        if (original !== null && original !== undefined) {
+          if (original) btn.setAttribute("title", original);
+          else btn.removeAttribute?.("title");
+          btn.removeAttribute?.("data-cost-title-original");
         }
       }
     });

@@ -91,7 +91,15 @@ function scenarioGoalChips(state) {
     if (safeTarget <= 0) return;
     const safeCurrent = finiteCount(current);
     chips.push({
+      // v0.10.1-A6 (R3 P0) — `label` retains the legacy "name N/T" form so
+      // existing tests + dev-mode plain-text rendering stay green; the
+      // split `name`/`count` fields feed the two-span DOM structure used
+      // by #renderGoalChips, which lets the ≤1280 media query hide the
+      // name span (icon-only mode) while the count + chip title stay
+      // visible.
       label: `${label} ${safeCurrent}/${safeTarget}`,
+      name: label,
+      count: `${safeCurrent}/${safeTarget}`,
       done: safeCurrent >= safeTarget,
     });
   };
@@ -535,8 +543,26 @@ export class HUDController {
     const chipNodes = chips.map((chip) => {
       const el = doc.createElement("span");
       el.className = `hud-goal-chip hud-goal-chip--${chip.done ? "done" : "pending"}`;
-      el.textContent = chip.label;
       el.setAttribute?.("data-status", chip.done ? "done" : "pending");
+      // v0.10.1-A6 (R3 P0) — split chip text into name + count spans so
+      // the ≤1280 px responsive band can hide the verbose name and keep
+      // only the count visible (icon-only mode). The `title` attribute
+      // carries the full label so hover still surfaces "farms 0/6".
+      // Falls back to single-span text when chip lacks split fields
+      // (preserves the legacy textContent contract for existing tests).
+      el.setAttribute?.("title", chip.label);
+      if (chip.name && chip.count && doc?.createElement) {
+        const nameSpan = doc.createElement("span");
+        nameSpan.className = "hud-goal-chip-name";
+        nameSpan.textContent = `${chip.name} `;
+        const countSpan = doc.createElement("span");
+        countSpan.className = "hud-goal-chip-count";
+        countSpan.textContent = chip.count;
+        el.appendChild?.(nameSpan);
+        el.appendChild?.(countSpan);
+      } else {
+        el.textContent = chip.label;
+      }
       return el;
     });
     if (typeof node.replaceChildren === "function") {
