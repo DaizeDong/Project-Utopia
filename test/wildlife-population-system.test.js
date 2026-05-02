@@ -48,7 +48,13 @@ test("wildlife breeding respects max capacity and cooldown", () => {
   const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
   const zone = state.gameplay.scenario.wildlifeZones?.[0];
   assert.ok(zone, "expected wildlife zone");
-  state.animals = state.animals.filter((animal) => animal.kind === ANIMAL_KIND.HERBIVORE);
+  // v0.10.1-hotfix-A — INITIAL_POPULATION.herbivores bumped 3 → 8, but this
+  // test was authored for the breed-from-3 cap-at-4 case. Trim to 3 so the
+  // test's stability floor + breed semantics still verify what they were
+  // designed to verify (breed once, then cooldown gates the next attempt).
+  state.animals = state.animals
+    .filter((animal) => animal.kind === ANIMAL_KIND.HERBIVORE)
+    .slice(0, 3);
   state.metrics.timeSec = 120;
   state.gameplay.wildlifeRuntime.zoneControl[zone.id] = {
     herbivoreLowSec: 0,

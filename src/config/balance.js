@@ -168,8 +168,15 @@ export const INITIAL_RESOURCES = Object.freeze({
 export const INITIAL_POPULATION = Object.freeze({
   workers: 12,
   visitors: 4,
-  herbivores: 3,
-  predators: 1,
+  // v0.10.1-hotfix-A (issue #4) — playtest: "动物太少" (too few animals).
+  // Herbivores 3→8 and predators 1→2 to create a visible wildlife population
+  // at game start. Per-zone caps in longRunProfile.js (herbivores max 6,
+  // predators max 2) still gate breed/recovery, but initial spawn now
+  // populates multiple zones (or duplicates within zones for templates with
+  // a single wildlife zone) so the world feels alive from second 1 instead
+  // of frame-zero looking empty.
+  herbivores: 8,
+  predators: 2,
 });
 
 // v0.8.0 Phase 7.A § 14.2: +0.05 lumberProductionMultiplier across all
@@ -484,7 +491,14 @@ export const BALANCE = Object.freeze({
   policyTtlDefaultSec: 30,
   doctrineMasteryRewardMultiplier: 1.08,
   maxEventIntensity: 3,
-  wildlifeSpawnRadiusBonus: 3,
+  // v0.10.1-hotfix-A (issue #4) — 3 → 6. Widen the initial-spawn box so the
+  // bumped INITIAL_POPULATION (herbivores 8, predators 2) finds enough
+  // candidate tiles within the wildlife zone radius. With bonus=3 and a
+  // typical zone radius of 3-4, the spawn box is ~6×6 — barely room for
+  // 4-5 animals after near-other / near-core / hazard exclusions. bonus=6
+  // doubles the area and prevents `pickSpawnTile` from returning null,
+  // which previously dropped silently to under-target spawn counts.
+  wildlifeSpawnRadiusBonus: 6,
   // v0.8.8 B2 — leash radius (Manhattan) for animals that fail to find a
   // valid in-zone target. Pre-fix the fallback used randomPassableTile()
   // which could teleport animals across the entire map, breaking the

@@ -62,6 +62,50 @@ test("BoidsSystem publishes stable traffic hotspot metrics", () => {
   assert.notEqual(Number(state.metrics.traffic.version ?? 0), firstVersion);
 });
 
+test("BoidsSystem dampens worker separation while following A* path (issue #2)", () => {
+  // Build two identical scenarios: 3 workers on the same tile all seeking east.
+  // In scene A, all carry an active A* path (hasPath=true → sep × 0.35).
+  // In scene B, none have a path (hasPath=false → full sep). A worker placed
+  // BEHIND the cluster (west) will be pushed west by separation, but on-path
+  // should be pushed less, so its westward drift magnitude < no-path's.
+  function makeScene(withPath) {
+    const grid = createGrid(8, 8, TILE.GRASS);
+    const trailing = createWorker("trail", -0.4, 0.0);
+    const lead1 = createWorker("lead1", 0.0, 0.0);
+    const lead2 = createWorker("lead2", 0.0, 0.0);
+    for (const w of [trailing, lead1, lead2]) {
+      w.desiredVel = { x: 1.0, z: 0 };
+      if (withPath) {
+        w.path = [{ ix: 6, iz: 4 }];
+        w.pathIndex = 0;
+        w.pathGridVersion = grid.version;
+      }
+    }
+    return {
+      grid,
+      agents: [trailing, lead1, lead2],
+      animals: [],
+      metrics: { timeSec: 0 },
+      debug: {},
+      _trailing: trailing,
+    };
+  }
+
+  const sceneOn = makeScene(true);
+  const sceneOff = makeScene(false);
+  new BoidsSystem().update(0.1, sceneOn);
+  new BoidsSystem().update(0.1, sceneOff);
+
+  // Trailing worker is pushed west by 2 leads; on-path's westward push
+  // should be weaker (i.e., vx is more positive / less negative) than
+  // off-path's because separation × 0.35 < separation × 1.0.
+  assert.ok(
+    sceneOn._trailing.vx > sceneOff._trailing.vx,
+    `on-path trailing vx (${sceneOn._trailing.vx}) should be > off-path trailing vx `
+    + `(${sceneOff._trailing.vx}) — separation dampening on path failed`,
+  );
+});
+
 test("BoidsSystem high-load LOD does not double-integrate skipped time", () => {
   const grid = createGrid(80, 80, TILE.GRASS);
   const agents = [];
