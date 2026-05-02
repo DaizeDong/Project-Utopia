@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — HW7 Final Polish Loop Round 3
+
+### Docs (HW7 Round 2 → Round 3 — sustained stable)
+
+- A2 R3 perf YELLOW: documented Playwright headless RAF 1Hz throttle as
+  measurement-pipeline issue (not product); see PROCESS-LOG R3 Closeout for
+  required Chromium flags (`--disable-renderer-backgrounding
+  --disable-background-timer-throttling --disable-backgrounding-occluded-windows`)
+  and `__perftrace.topSystems` ground-truth path. Cross-ref added to
+  `assignments/homework7/Post-Mortem.md` §4.5; `PROCESS.md` Validator §3 FPS Gate
+  now requires `playwright_chrome_flags` field in runtime context.
+
 ## [Unreleased] — HW7 Final Polish Loop Round 1
 
 ### Polish (HW7 Round 1 — A4 wave-1)
