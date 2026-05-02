@@ -20,11 +20,31 @@ function clamp(v, min, max) {
  * `worker.carry` is intentionally NOT cleared — the new role's deposit
  * logic in WorkerAISystem can drop carry at any warehouse, and clearing
  * here would silently destroy resources (Bug D parity).
+ *
+ * R5 PA-worker-fsm-task-release Step 5 — economy-side role-change cooldown.
+ * `BALANCE.roleChangeCooldownSec` (default 4 s) acts as hysteresis at the
+ * role layer (the FSM layer dropped its sticky-bonus in v0.10.0). When
+ * the worker's last role change is within the cooldown window, skip the
+ * flip and return false. Callers in the GUARD-promotion branch pass
+ * `{ force: true }` to bypass when an active hostile is in range so a
+ * saboteur breach can still draft economy workers immediately.
+ *
+ * @returns {boolean} true if the role actually changed; false if skipped
+ *   (already-equal, or suppressed by cooldown).
  */
-function setWorkerRole(state, worker, newRole) {
-  if (!worker) return;
+function setWorkerRole(state, worker, newRole, opts = null) {
+  if (!worker) return false;
   const currentRole = worker.role;
-  if (currentRole === newRole) return;
+  if (currentRole === newRole) return false;
+  const force = Boolean(opts?.force);
+  const cooldown = Number(BALANCE.roleChangeCooldownSec ?? 0);
+  if (!force && cooldown > 0) {
+    const nowSec = Number(state?.metrics?.timeSec ?? 0);
+    const last = Number(worker._roleChangedAtSec ?? -Infinity);
+    if (Number.isFinite(last) && (nowSec - last) < cooldown) {
+      return false;
+    }
+  }
   if (state?._jobReservation && typeof state._jobReservation.releaseAll === "function") {
     state._jobReservation.releaseAll(worker.id);
   }
@@ -37,6 +57,8 @@ function setWorkerRole(state, worker, newRole) {
     releaseBuilderSite(state, worker);
   }
   worker.role = newRole;
+  worker._roleChangedAtSec = Number(state?.metrics?.timeSec ?? 0);
+  return true;
 }
 
 /**
@@ -287,10 +309,20 @@ export class RoleAssignmentSystem {
       }
     }
     const guardSet = new Set(guards);
-    for (const w of guards) setWorkerRole(state, w, "GUARD");
+    // R5 PA-worker-fsm-task-release Step 5 — GUARD draft under live threat
+    // bypasses the role-change cooldown. Without `force: true`, a worker
+    // recently moved (e.g. WOOD → FARM 2 s ago) couldn't be promoted to
+    // GUARD while a saboteur breaches the perimeter. Promotion is gated
+    // upstream by the proximityGate + activeThreats check, so passing
+    // `force: true` only when there ARE active threats keeps the cooldown
+    // honest for steady-state allocation flips.
+    const guardForce = totalActiveThreats > 0;
+    for (const w of guards) setWorkerRole(state, w, "GUARD", { force: guardForce });
     // Any current GUARD that didn't make the cut reverts to FARM (the
     // economy-side allocator below will pick them up correctly because
-    // they're now in the `workers` pool with a non-GUARD role).
+    // they're now in the `workers` pool with a non-GUARD role). The
+    // cooldown is honoured here — short raids should leave guards as
+    // GUARDs for at least roleChangeCooldownSec to dampen draft churn.
     for (const w of currentGuardSet) {
       if (!guardSet.has(w)) setWorkerRole(state, w, "FARM");
     }
