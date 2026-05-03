@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R13 Plan-R13-fog-reset, P0)
+
+### Plan-R13-fog-reset — Cross-run fog bleed bug: clear FogSystem state on every session-start
+
+Implements the P0 bug fix from `assignments/homework7/Final-Polish-Loop/Round13/Plans/Plan-R13-fog-reset.md` (R13 user issue #7). User report: after game-over + new game / regenerate, the prior run's exploration map persisted into the new run. Root cause: `VisibilitySystem.update` only reseeds `state.fog.visibility` on a length-mismatch (i.e. when grid dims change). `createInitialGameState` does not include a `fog` slot, so `deepReplaceObject(this.state, next)` inside `regenerateWorld` preserves the prior `Uint8Array` — the new run boots with the old fog. This both leaks information (player sees prior-run hostile zones) and breaks the AI proposer fog gate from `Plan-R13-fog-aware-build` (proposers think tiles are EXPLORED when they aren't in this run).
+
+**(Step 2) Explicit `next.fog` reset in `regenerateWorld`** — `src/app/GameApp.js` lines ~1590-1599 (immediately after the `createInitialGameState` call, before `deepReplaceObject`). Adds `next.fog = { visibility: null, version: 0 }` so that after the deepReplace, VisibilitySystem's existing length-mismatch branch (`!(fog.visibility instanceof Uint8Array) || ...`) reseeds the initial reveal box on the next tick. Selected Suggestion A from the plan; Suggestion B (`runId` mismatch check inside VisibilitySystem) skipped because it adds a `runId` concept that couples VisibilitySystem to session lifecycle — the surgical 2-line fix at the regenerate path is cleaner and `restartSession` / `resetSessionWorld` both route through `regenerateWorld` so this single patch covers all session-start paths.
+
+**Files changed:** 1 source modified — `src/app/GameApp.js` (+10 LOC: R13 commentary block + 1-line `next.fog` reset). 1 new test — `test/fog-reset-on-regenerate.test.js` (+~95 LOC, 2 cases: (a) deep-replace preserves prior `Uint8Array` without the patch but the patched version reseeds to exactly `(2*fogInitialRevealRadius+1)²` tiles after one tick; (b) regression guard that the existing length-mismatch branch still reseeds on dim change). Hard-freeze compliant: pure data reset on an existing slice, no new mechanic, no new state field.
+
+**Acceptance:** After `regenerateWorld()`, `state.fog.visibility === null` at the moment of the call. After one VisibilitySystem tick, fog visibility count matches a fresh boot (no carryover). Test baseline **2008 pass / 0 fail / 4 skip** (+2 over the prior 2006 baseline from the new test cases).
+
 ## [Unreleased] — v0.10.1-n (R12 Plan-R12-non-temperate-fallback, P1)
 
 ### Plan-R12-non-temperate-fallback — Buff non-Temperate starting wood + selectively bump starting food so 5-of-6 maps survive past the 6:30 food cliff on default fallback

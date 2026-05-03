@@ -1588,6 +1588,16 @@ export class GameApp {
       return { ok: false, reason: "invalid_seed", reasonText: `Seed '${seed}' is not a finite number.` };
     }
     const next = createInitialGameState({ templateId, seed, terrainTuning, width, height, bareInitial: true });
+    // R13 #7 Plan-R13-fog-reset (P0 bug fix): explicitly clear fog state so
+    // VisibilitySystem reseeds the initial reveal on every new session.
+    // Without this, the prior run's `state.fog.visibility` Uint8Array survives
+    // `deepReplaceObject` (because `createInitialGameState` does not include a
+    // `fog` slot), and VisibilitySystem only reseeds on the length-mismatch
+    // branch — which doesn't fire when grid dims match across regenerates.
+    // Cross-run fog bleed leaks the prior run's exploration map (and breaks
+    // the AI proposer fog gate that thinks tiles are EXPLORED when they
+    // aren't in this run).
+    next.fog = { visibility: null, version: 0 };
     const currentWidth = Number(this.state.grid?.width ?? next.grid?.width ?? 96);
     const currentHeight = Number(this.state.grid?.height ?? next.grid?.height ?? 72);
     const chosenWidth = Number.isFinite(Number(width)) && Number(width) >= 24
