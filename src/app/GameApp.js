@@ -1573,6 +1573,20 @@ export class GameApp {
   }
 
   regenerateWorld({ templateId, seed, terrainTuning, width, height }, options = {}) {
+    // A1-stability-hunter R11 P2 #1 — input validation. Mirrors the
+    // `loadSnapshot` `{ok:false, reason}` convention so harness scripts can
+    // distinguish "regen succeeded" from "regen silently fell back to the
+    // default template". Empty/undefined templateId is permitted (downstream
+    // `createInitialGameState` resolves to `DEFAULT_MAP_TEMPLATE_ID`).
+    if (templateId !== undefined && templateId !== null) {
+      const validTemplate = MAP_TEMPLATES.some((tpl) => tpl.id === templateId);
+      if (!validTemplate) {
+        return { ok: false, reason: "invalid_template", reasonText: `Unknown templateId '${templateId}'.` };
+      }
+    }
+    if (seed !== undefined && seed !== null && !Number.isFinite(Number(seed))) {
+      return { ok: false, reason: "invalid_seed", reasonText: `Seed '${seed}' is not a finite number.` };
+    }
     const next = createInitialGameState({ templateId, seed, terrainTuning, width, height, bareInitial: true });
     const currentWidth = Number(this.state.grid?.width ?? next.grid?.width ?? 96);
     const currentHeight = Number(this.state.grid?.height ?? next.grid?.height ?? 72);
@@ -1655,6 +1669,18 @@ export class GameApp {
     const targetPhase = options.phase
       ?? (options.autoStart ? "active" : this.state.session.phase === "active" ? "active" : "menu");
     this.#setRunPhase(targetPhase);
+    // A1-stability-hunter R11 P2 #1 — mirror saveSnapshot/loadSnapshot's
+    // `{ok:true, ...}` contract so Playwright/benchmark scripts can
+    // `expect(r.ok).toBe(true)` without a follow-up `getTelemetry()` round-trip.
+    // Echo the *committed* templateId/seed (post-deepReplaceObject) rather than
+    // the requested values so the caller observes the actual world that landed
+    // (matters when `templateId`/`seed` were undefined and resolved to defaults).
+    return {
+      ok: true,
+      templateId: this.state.world.mapTemplateId,
+      seed: this.state.world.mapSeed,
+      phase: this.state.session.phase,
+    };
   }
 
   undoLastBuild() {
