@@ -1142,6 +1142,15 @@ export class SceneRenderer {
       this.tileMaterialsByType.set(type, material);
       this.scene.add(mesh);
     }
+    // PHH R11 (Plan-PHH-convoy-feel): per-tile foot-traffic EWMA weights.
+    // Per-tile index 0..(W*H-1) → weight ∈ [0..4]. Decays toward 0 over
+    // ~30 sim-sec (half-life). Used to amber-tint road tiles via setColorAt.
+    this._roadTrafficWeights = new Float32Array(this.state.grid.width * this.state.grid.height);
+    // Reverse map (tileIdx → road instance index), filled in #rebuildTilesIfNeeded.
+    this._roadInstanceIdxByTileIdx = new Int32Array(this.state.grid.width * this.state.grid.height).fill(-1);
+    this._roadTintColor = new THREE.Color();
+    this._roadBaseColor = new THREE.Color(TILE_INFO[TILE.ROAD]?.color ?? 0xb89a76);
+    this._roadAmberColor = new THREE.Color(0xff9a3a);
   }
 
   #setupTileBorders() {
@@ -1472,6 +1481,32 @@ export class SceneRenderer {
     this._haloMatrix = new THREE.Matrix4();
     this._haloPos = new THREE.Vector3();
     this._haloScale = new THREE.Vector3(1, 1, 1);
+
+    // PHH R11 (Plan-PHH-convoy-feel): per-worker fading motion trail. ONE
+    // LineSegments for ALL workers, indexed by render slot. 8 segments × 2
+    // verts × 3 floats = 48 floats per worker. Alpha decays linearly from
+    // 0.5 (head) → 0 (tail) over ~2 sim-sec at 30 Hz render cadence.
+    const TRAIL_LENGTH = 8;
+    this._trailLength = TRAIL_LENGTH;
+    const trailVerts = maxWorkers * TRAIL_LENGTH * 2;
+    this._trailPositions = new Float32Array(trailVerts * 3);
+    this._trailColors = new Float32Array(trailVerts * 4);
+    const trailGeometry = new THREE.BufferGeometry();
+    trailGeometry.setAttribute("position", new THREE.BufferAttribute(this._trailPositions, 3));
+    trailGeometry.setAttribute("color", new THREE.BufferAttribute(this._trailColors, 4));
+    const trailMaterial = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: false,
+    });
+    this.workerTrailMesh = new THREE.LineSegments(trailGeometry, trailMaterial);
+    this.workerTrailMesh.frustumCulled = false;
+    this.workerTrailMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
+    this.scene.add(this.workerTrailMesh);
+    // Per-worker history: id → ring buffer of {x, z, age} (oldest at [0]).
+    this._workerTrailHistory = new Map();
   }
 
   #setHaloMatrix(mesh, index, x, y, z) {
@@ -2903,15 +2938,20 @@ export class SceneRenderer {
     const counts = new Map();
     for (const type of this.tileMeshesByType.keys()) counts.set(type, 0);
 
+    // PHH R11: rebuild reverse map (tileIdx → road-instance index) so the
+    // per-tick foot-traffic loop can write setColorAt on the right slot.
+    if (this._roadInstanceIdxByTileIdx) this._roadInstanceIdxByTileIdx.fill(-1);
     for (let iz = 0; iz < this.state.grid.height; iz += 1) {
       for (let ix = 0; ix < this.state.grid.width; ix += 1) {
-        const tile = this.state.grid.tiles[ix + iz * this.state.grid.width];
+        const tileIdx = ix + iz * this.state.grid.width;
+        const tile = this.state.grid.tiles[tileIdx];
         const info = TILE_INFO[tile];
         const mesh = this.tileMeshesByType.get(tile);
         if (!mesh) continue;
         const idx = counts.get(tile) ?? 0;
         const p = tileToWorld(ix, iz, this.state.grid);
         setInstancedMatrix(mesh, idx, p.x, info.height / 2, p.z, 1, info.height, 1);
+        if (tile === TILE.ROAD && this._roadInstanceIdxByTileIdx) this._roadInstanceIdxByTileIdx[tileIdx] = idx;
         counts.set(tile, idx + 1);
       }
     }
@@ -3348,6 +3388,99 @@ export class SceneRenderer {
     return 1 / 30;
   }
 
+  // PHH R11 (Plan-PHH-convoy-feel): one LineSegments for all worker trails
+  // + per-tile EWMA foot-traffic weights tinted onto road InstancedMesh via
+  // setColorAt. Render-only; no entity/AI/sim mutation. Called from inside
+  // the worker bucket loop in #updateEntityMeshes (only when worker spheres
+  // are visible).
+  #updateWorkerTrailsAndRoadTraffic(visibleCount) {
+    if (!this.workerTrailMesh || !this._workerTrailHistory) return;
+    const TRAIL_LEN = this._trailLength;
+    const positions = this._trailPositions;
+    const colors = this._trailColors;
+    const history = this._workerTrailHistory;
+    const seen = new Set();
+    const grid = this.state.grid;
+    const W = grid.width;
+    const H = grid.height;
+    const tiles = grid.tiles;
+    const weights = this._roadTrafficWeights;
+    const roadMap = this._roadInstanceIdxByTileIdx;
+    const roadMesh = this.tileMeshesByType?.get(TILE.ROAD);
+    let segCursor = 0;
+    for (let n = 0; n < visibleCount; n += 1) {
+      const e = this.workerEntities[n];
+      const id = e.id ?? n;
+      seen.add(id);
+      let h = history.get(id);
+      if (!h) { h = []; history.set(id, h); }
+      // Age existing entries; append new head; cap at TRAIL_LEN.
+      for (let k = 0; k < h.length; k += 1) h[k].age += 1;
+      h.push({ x: e.x, z: e.z, age: 0 });
+      while (h.length > TRAIL_LEN) h.shift();
+      // Write segments: (h[k], h[k+1]) for k in 0..len-2. Pad missing with head.
+      const head = h[h.length - 1];
+      for (let k = 0; k < TRAIL_LEN - 1; k += 1) {
+        const a = h[k] ?? head;
+        const b = h[k + 1] ?? head;
+        const pi = segCursor * 6;
+        positions[pi] = a.x;     positions[pi + 1] = 0.05; positions[pi + 2] = a.z;
+        positions[pi + 3] = b.x; positions[pi + 4] = 0.05; positions[pi + 5] = b.z;
+        const aA = Math.max(0, 0.5 - (a.age ?? 0) * (0.5 / TRAIL_LEN));
+        const aB = Math.max(0, 0.5 - (b.age ?? 0) * (0.5 / TRAIL_LEN));
+        const ci = segCursor * 8;
+        colors[ci] = 1; colors[ci + 1] = 1; colors[ci + 2] = 1; colors[ci + 3] = aA;
+        colors[ci + 4] = 1; colors[ci + 5] = 1; colors[ci + 6] = 1; colors[ci + 7] = aB;
+        segCursor += 1;
+      }
+      // Foot-traffic EWMA: bump weight if current tile is a road tile.
+      if (weights && tiles) {
+        const { ix, iz } = worldToTile(e.x, e.z, grid);
+        if (ix >= 0 && ix < W && iz >= 0 && iz < H) {
+          const tIdx = ix + iz * W;
+          if (tiles[tIdx] === TILE.ROAD) {
+            // EWMA: weight = weight*0.97 + 4*0.03; clamped to [0,4].
+            weights[tIdx] = weights[tIdx] * 0.97 + 0.12;
+            if (weights[tIdx] > 4) weights[tIdx] = 4;
+          }
+        }
+      }
+    }
+    // Drop history entries for workers no longer present.
+    if (history.size > seen.size) {
+      for (const key of history.keys()) if (!seen.has(key)) history.delete(key);
+    }
+    // Zero out unused trail slots (so stale segments don't render).
+    const totalSegs = (this.workerMesh?.instanceMatrix?.count ?? 1200) * (TRAIL_LEN - 1);
+    for (let s = segCursor; s < totalSegs; s += 1) {
+      const ci = s * 8;
+      colors[ci + 3] = 0; colors[ci + 7] = 0;
+    }
+    this.workerTrailMesh.geometry.attributes.position.needsUpdate = true;
+    this.workerTrailMesh.geometry.attributes.color.needsUpdate = true;
+    this.workerTrailMesh.geometry.setDrawRange(0, segCursor * 2);
+    this.workerTrailMesh.visible = true;
+
+    // Decay weights + write road tile colors. Decay rate ~0.967/sec ≈ 30 s
+    // half-life — applied per-tick scaled by 1/30 (worker mesh ticks ~30 Hz).
+    if (!weights || !roadMesh || !roadMap) return;
+    const decay = 0.999; // per-tick (~30 Hz → ~0.967/sec)
+    const baseR = this._roadBaseColor.r, baseG = this._roadBaseColor.g, baseB = this._roadBaseColor.b;
+    const ambR = this._roadAmberColor.r, ambG = this._roadAmberColor.g, ambB = this._roadAmberColor.b;
+    const tmp = this._roadTintColor;
+    const total = W * H;
+    for (let i = 0; i < total; i += 1) {
+      if (roadMap[i] < 0) continue;
+      weights[i] *= decay;
+      // Quantize to 5 buckets for that "warm-amber, 5 levels" feel.
+      const t = Math.min(weights[i] / 4, 1);
+      const tQ = Math.floor(t * 4) / 4;
+      tmp.setRGB(baseR + (ambR - baseR) * tQ, baseG + (ambG - baseG) * tQ, baseB + (ambB - baseB) * tQ);
+      roadMesh.setColorAt(roadMap[i], tmp);
+    }
+    if (roadMesh.instanceColor) roadMesh.instanceColor.needsUpdate = true;
+  }
+
   #updateEntityMeshes() {
     this.#collectEntityBuckets();
     const totalEntities = this.allEntities.length;
@@ -3480,9 +3613,12 @@ export class SceneRenderer {
         this.workerHaloMesh.count = visibleCount;
         this.workerHaloMesh.instanceMatrix.needsUpdate = true;
       }
+      // PHH R11: per-tick worker trails + road foot-traffic EWMA tint.
+      this.#updateWorkerTrailsAndRoadTraffic(visibleCount);
     } else {
       this.workerMesh.count = 0;
       if (this.workerHaloMesh) this.workerHaloMesh.count = 0;
+      if (this.workerTrailMesh) this.workerTrailMesh.visible = false;
     }
     this.workerMesh.instanceMatrix.needsUpdate = true;
 

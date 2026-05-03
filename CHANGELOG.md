@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-PHH-convoy-feel, P1)
+
+### Plan-PHH-convoy-feel — Fading worker motion trails + road foot-traffic EWMA tint
+
+Implements the P1 living-system fix from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-PHH-convoy-feel.md` (Reviewer PHH-living-system). PHH's blind playthrough confirmed the convoy-promise gap: the theme contract leans on *"resource flows appear as moving crowds…the player's building decisions reshape traffic patterns,"* but at default 12-worker density ≤2 workers walk any single route at a time — workers look like independent ants, the road tile they walked on doesn't *show* it was walked. PHH's living-system convoy pillar scored 3/10. The fix is purely additive renderer geometry — no new entities, no AI/sim/balance/HUD changes.
+
+**(Step 1) Per-worker fading motion trail — single LineSegments for all workers** — `src/render/SceneRenderer.js` `#setupEntityMeshes`. Allocates one `THREE.LineSegments` for the entire worker pool (max 1200), backed by a `Float32Array(maxWorkers × 8 × 2 × 3)` position buffer + `Float32Array(× 4)` RGBA color buffer. Single draw call regardless of worker count. Per-worker history (`Map<id, [{x,z,age}]>` ring buffer of last 8 positions) is maintained in the per-tick worker loop; alpha decays linearly from 0.5 (head) → 0 (tail) over the 8 segments (~2 sim-sec at 30 Hz mesh cadence). Material uses `vertexColors: true`, additive blending, `depthTest: false` so the ribbon overlays terrain cleanly. Stale history entries for workers no longer present are pruned each tick.
+
+**(Step 2) Road foot-traffic EWMA tint — per-tile weights → setColorAt on existing road InstancedMesh** — `src/render/SceneRenderer.js` `#setupTileMesh` + `#rebuildTilesIfNeeded` + `#updateWorkerTrailsAndRoadTraffic`. Allocates a `Float32Array(W × H)` of per-tile traversal weights and an `Int32Array(W × H)` reverse-map (tileIdx → road instance index, filled during tile rebuild). When a worker stands on a `TILE.ROAD` tile, `weights[idx] = weights[idx] * 0.97 + 0.12` (capped at 4); per tick all road weights decay by `× 0.999` (~30 s half-life at 30 Hz). Mapped to alpha via 5-bucket quantization (`Math.floor(t * 4) / 4` where `t = min(weight/4, 1)`) and lerped from base road color to warm amber `0xff9a3a`, written via `roadMesh.setColorAt(roadInstanceIdx, color)`. Zero new draw calls — reuses the existing road `InstancedMesh` bucket via per-instance color.
+
+**Files changed:** 1 source modified — `src/render/SceneRenderer.js` (+137 / -1 LOC: trail BufferGeometry + road weights/reverse-map init in setup, road-instance index capture in tile rebuild, new private `#updateWorkerTrailsAndRoadTraffic` helper called from the worker bucket loop). Hard-freeze compliant: no new TILE / role / building / mood / mechanic / event / HUD pill / BALANCE knob — pure renderer-layer additive geometry on already-wired pipelines (workerEntities loop, road InstancedMesh).
+
+**Acceptance:** workers visibly trail a fading white ribbon; road tiles with recent traversal warm to amber and decay back to neutral over ~30 sim-sec; quiet roads remain at base color. Together they convert "sparse independent ants" into "visible convoy past + present" without spawning entities. PHH living-system "convoys" pillar projected 3/10 → ~6.5/10; aggregate living-system 4.3/10 → ~5.5/10.
+
+**Test baseline:** **1981 pass / 0 fail / 4 skip** (full suite, 1586 top-level tests across 120 suites; +0 net regression, no new tests — renderer-layer visual change verified by direct comparison per the plan's manual repro).
+
+**Suggestions B (trails-only minimal variant), C (road-tint-only minimal variant), D (FREEZE-VIOLATING Boids cohesion increase), E (FREEZE-VIOLATING new convoy-escort entity type)** explicitly NOT taken — Suggestion A (this plan) lands both perceptual layers in one coordinated render-only pass; the two are independently rollback-safe (deleting either's call site preserves the other).
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-PGG-responsive-collapse, P1)
 
 ### Plan-PGG-responsive-collapse — 1366×768 sidebar collapse + Entity Focus backdrop blur + topbar run-status demote
