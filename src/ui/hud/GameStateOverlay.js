@@ -487,6 +487,10 @@ export class GameStateOverlay {
     const isMenu = phase === "menu";
     const isEnd = phase === "end";
     const isInteractive = isMenu || isEnd;
+    // v0.10.1-n R11 Plan-PII-modal-zstack — capture the previous phase
+    // before we overwrite `#lastPhase` so the splash-mount stacking guard
+    // below can detect the !menu→menu transition.
+    const priorPhase = this.#lastPhase;
     // v0.8.2 Round-0 01a-onboarding — when we first enter the end phase
     // start the read-gate timer; the next few ticks (~2.5s) disable the
     // restart/new-map buttons so players actually see the stats. Also
@@ -549,6 +553,30 @@ export class GameStateOverlay {
       }
     }
     if (isMenu) {
+      // v0.10.1-n R11 Plan-PII-modal-zstack — splash-mount stacking guard.
+      // Reviewer PII observed a 2-minute "frozen" trap at HEAD 652220f when
+      // clicking "New Map" from a Run Ended panel: the splash re-mounted
+      // BEHIND a still-visible run-ended overlay and its Start button was
+      // occluded by an invisible stacking-order issue, sim clock stuck at
+      // 0:04. Defensive idempotent fix: when transitioning into menu phase,
+      // (a) force the local `#overlayEndPanel` hidden (the existing
+      // `endPanel.hidden = !isEnd` write a few lines up should have done
+      // this, but we belt-and-brace in case of a phase race), (b) sweep any
+      // stray `.overlay-panel.run-ended` element that test rigs or third-
+      // party code may have injected, and (c) clear any `pausedByOverlay`
+      // latch so the sim resumes cleanly. All three operations are no-ops
+      // when nothing is amiss.
+      if (priorPhase !== "menu") {
+        if (this.endPanel) this.endPanel.hidden = true;
+        const stale = typeof document !== "undefined" && typeof document.querySelector === "function"
+          ? document.querySelector(".overlay-panel.run-ended")
+          : null;
+        if (stale) {
+          if (typeof stale._dispose === "function") stale._dispose();
+          else if (typeof stale.remove === "function") stale.remove();
+        }
+        if (this.state?.run?.pausedByOverlay) this.state.run.pausedByOverlay = false;
+      }
       this.#syncMenuInputsFromState();
       this.#renderMenuCopy();
       // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 3c) — boot-screen Best

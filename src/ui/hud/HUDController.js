@@ -1773,6 +1773,32 @@ export class HUDController {
       } else {
         this.aiAutopilotChip.removeAttribute?.("data-kind");
       }
+      // v0.10.1-n R11 Plan-PII-modal-zstack — surface the llm/llm →
+      // fallback/llm degradation as a one-line player-facing toast. PII
+      // observed mid-run state.ai mode flip from "llm/llm" to
+      // "fallback/llm" with no toast / log / badge color change. R10's
+      // most satisfying moment was the Storyteller line after the
+      // saboteur kill; R11 silently mutes it. The toast only fires on the
+      // first observed transition (not on cold boot when there is no
+      // prior llm/llm) and is debounced to ≥30 sim-sec to prevent spam
+      // when a flicky proxy oscillates.
+      const aiMode = String(state?.ai?.mode ?? "").trim().toLowerCase();
+      const coverage = String(state?.ai?.coverageTarget ?? "").trim().toLowerCase();
+      const combined = `${aiMode}/${coverage}`;
+      const nowSec = Number(state?.metrics?.timeSec ?? 0);
+      const lastEmit = Number(this._llmDegradeLastEmitSec ?? -Infinity);
+      if (
+        this._llmLastModeCombined === "llm/llm"
+        && combined === "fallback/llm"
+        && (nowSec - lastEmit) >= 30
+      ) {
+        if (state?.controls) {
+          state.controls.actionMessage = "Story AI offline — fallback director taking over.";
+          state.controls.actionKind = "warn";
+        }
+        this._llmDegradeLastEmitSec = nowSec;
+      }
+      this._llmLastModeCombined = combined;
     }
     if (this.aiToggleTop) this.aiToggleTop.checked = Boolean(state.ai?.enabled);
     if (this.aiToggleMirror) this.aiToggleMirror.checked = Boolean(state.ai?.enabled);
