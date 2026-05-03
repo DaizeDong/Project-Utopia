@@ -234,8 +234,9 @@ export const BALANCE = Object.freeze({
   // hunger decay kick in.
   workerHungerDecayLowFoodThreshold: 8,
   // v0.10.1-j: warehouse food spoilage — slow passive decay to cap indefinite
-  // stockpile growth. At 0.00011/s a 1000-food stockpile loses ~9.5/day,
+  // stockpile growth. At 0.0003/s a 1000-food stockpile loses ~26/day,
   // roughly offsetting surplus production so 90-day food stays ~3× initial.
+  // (PN-test-triage R7: docstring rate refreshed from stale 0.00011/s → 0.0003/s.)
   warehouseFoodSpoilageRatePerSec: 0.0003,
   // v0.10.1-r1-A5 P0-3: wood overflow cap — same proportional spoilage
   // pattern as food but tuned half as aggressive so normal construction-

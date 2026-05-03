@@ -296,6 +296,11 @@ test("Fallback planner emits a recruit step when food surplus + pop below target
   state.controls.recruitTarget = 32;
   state.controls.recruitQueue = 0;
   state.controls.autoRecruit = false;
+  // PN-test-triage R7: v0.10.1 R5 PC food-headroom gate requires
+  // projectedHeadroomSec >= recruitMinHeadroomSec (60). Prime
+  // foodProducedPerMin = 600 (≫ drain) so headroom = Infinity and the
+  // recruit step survives the gate.
+  state.metrics.foodProducedPerMin = 600;
   state.ai ??= {};
   state.ai.foodRecoveryMode = false;
 

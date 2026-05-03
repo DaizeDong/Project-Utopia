@@ -61,10 +61,11 @@ function ensureEscalationState(state) {
  * which combined with EventDirector and saboteurs made late-game
  * unsurvivable. The log curve flattens the late-game tier ramp:
  *   tier = floor(2.5 × log2(1 + DI / devIndexPerRaidTier))
- *   DI=15  → tier 2.5 → 2
- *   DI=30  → tier 3.9 → 3
- *   DI=60  → tier 5.5 → 5
- *   DI=100 → tier 6.7 → 6
+ * (v0.10.2 retune: devIndexPerRaidTier 15 → 8 — examples updated)
+ *   DI=8   → tier 2.5 → 2
+ *   DI=30  → tier 5.6 → 5
+ *   DI=60  → tier 7.1 → 7 (clamped to raidTierMax)
+ *   DI=100 → tier 8.3 → clamped to raidTierMax
  *
  * Plus: above DI 60, intensity is softened by the colony's defenseScore so
  * a fortified colony enjoys a "fortified plateau" rather than raid spirals.
