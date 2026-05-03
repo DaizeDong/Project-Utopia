@@ -1781,6 +1781,50 @@ function placeDistrictBlobs(tiles, width, height, count, tileType, seed, pickCen
 // per-template generators are gone. Connectivity is now ensured by the
 // branching river network leaving thin land strips between branches.
 
+// v0.10.2 PL-terrain-min-guarantee R7: hard floor for FARM/LUMBER/QUARRY counts.
+// Walks GRASS tiles outside the spawn-ring exclusion in (Manhattan-) distance
+// order from grid center and stamps the closest qualifying tile when the
+// resource count is below the floor. Only mutates GRASS — never WATER, WALL,
+// WAREHOUSE, ROAD, or other resources — so it is purely additive.
+const RESOURCE_FLOOR = Object.freeze({ farms: 2, lumbers: 2, quarries: 1 });
+function enforceResourceFloor(tiles, width, height, cx, cz, hardExclusion) {
+  let farms = 0, lumbers = 0, quarries = 0;
+  const total = width * height;
+  for (let i = 0; i < total; i += 1) {
+    const t = tiles[i];
+    if (t === TILE.FARM) farms += 1;
+    else if (t === TILE.LUMBER) lumbers += 1;
+    else if (t === TILE.QUARRY) quarries += 1;
+  }
+  if (farms >= RESOURCE_FLOOR.farms && lumbers >= RESOURCE_FLOOR.lumbers && quarries >= RESOURCE_FLOOR.quarries) return;
+  const candidates = [];
+  for (let iz = 1; iz < height - 1; iz += 1) {
+    for (let ix = 1; ix < width - 1; ix += 1) {
+      const idx = toIndex(ix, iz, width);
+      if (tiles[idx] !== TILE.GRASS) continue;
+      const dx = ix - cx, dz = iz - cz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist < hardExclusion) continue;
+      candidates.push({ idx, dist });
+    }
+  }
+  candidates.sort((a, b) => a.dist - b.dist);
+  let cursor = 0;
+  const stamp = (tileType, currentCount, target) => {
+    let n = currentCount;
+    while (n < target && cursor < candidates.length) {
+      const c = candidates[cursor++];
+      if (tiles[c.idx] !== TILE.GRASS) continue;
+      tiles[c.idx] = tileType;
+      n += 1;
+    }
+    return n;
+  };
+  stamp(TILE.FARM, farms, RESOURCE_FLOOR.farms);
+  stamp(TILE.LUMBER, lumbers, RESOURCE_FLOOR.lumbers);
+  stamp(TILE.QUARRY, quarries, RESOURCE_FLOOR.quarries);
+}
+
 function applyWalls(tiles, width, height, profile, seed) {
   const cx = Math.floor(width / 2);
   const cz = Math.floor(height / 2);
@@ -3428,6 +3472,17 @@ function generateTerrainTiles(width, height, templateId, seed, tuning = {}) {
     1.8,
     3.6,
   );
+
+  // v0.10.2 PL-terrain-min-guarantee R7: defensive minimum-resource floor pass.
+  // The biome-aware placeDistrictBlobs picker can return null (no qualifying
+  // GRASS center) or skip on too-close blob centers; combined with per-template
+  // painters that paint FARM/LUMBER tiles into WATER-heavy zones, some seeds
+  // historically shipped with 0 farms / 0 lumbers / 0 quarries (PL R7 P0
+  // opening-stall). This pass guarantees a FLOOR of farms>=2, lumbers>=2,
+  // quarries>=1 across all 6 templates by stamping the closest qualifying
+  // GRASS tiles outside the spawn-ring hard exclusion (12 tiles) — additive
+  // only, never overwrites WATER/WALL/WAREHOUSE/ROAD/existing resources.
+  enforceResourceFloor(tiles, width, height, cx, cz, ZONE_HARD_EXCLUSION);
 
   applyWalls(tiles, width, height, profile, seed + 2101);
   ensureMinimumInfrastructure(tiles, width, height, seed + 2301);
