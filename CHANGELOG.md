@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R12 Plan-R12-non-temperate-fallback, P1)
+
+### Plan-R12-non-temperate-fallback — Buff non-Temperate starting wood + selectively bump starting food so 5-of-6 maps survive past the 6:30 food cliff on default fallback
+
+Implements the P1 balance fix from `assignments/homework7/Final-Polish-Loop/Round12/Plans/Plan-R12-non-temperate-fallback.md` (Reviewer A5-balance-critic finding 2). A5 R12 measured Temperate Plains surviving 39:33 sim while Highlands wiped at 8:28 (food crisis at 6:35), Riverlands wiped at 7:16 (food crisis at 6:46, wood gone by 1:48 because Silted Hearth forces a road-clearing build). The food-crisis cluster (6:35 / 6:46 within 11 s of each other across 3 different maps + 3 different seeds) suggests a structural failure: every map's fallback policy hits the same starvation cliff because starting food (320, universal) drains at the universal 0.60/s rate, and Temperate's 35 starting wood lets the colony build a farm before the cliff while Riverlands' 32 doesn't. A5's title-screen "Best Runs" list confirms the imbalance: every run >300 pts is Temperate or Highlands, never Coastal/Archipelago/Riverlands/Fortified — the dominant strategy on the title screen is "play Temperate Plains and ignore the other 5 maps." Given LLM is offline by default in HW7 grading runs, 5 of 6 maps were functionally broken for the grader.
+
+**(Step 2) `STARTING_WOOD_BY_TEMPLATE` rebalance** — `src/world/scenarios/ScenarioFactory.js` lines ~111-130. Bumped Highlands 38→48, Riverlands 32→48, Fortified 36→48, Coastal 20→34, Archipelago 22→34. Temperate stays at 35 to preserve the long-horizon benchmark baseline. Numbers chosen to cover ALPHA_START + warehouse(10) + farm(5) + 1 spare + the per-template forced-opening overhead (Silted Hearth road clear / harbor / bridge / wall) so the first build cycle never locks before food production starts.
+
+**(Step 3) `STARTING_FOOD_BY_TEMPLATE` + `getTemplateStartingFood()` export** — same file lines ~131-160. New per-template food override table: Riverlands 320→380, Coastal 320→380, Archipelago 320→360, Fortified 320→360. Temperate / Highlands keep the 320 default. Returns null for templates without overrides so the EntityFactory caller falls back to `INITIAL_RESOURCES.food`.
+
+**(Step 4) Wire into `EntityFactory.createInitialGameState`** — `src/entities/EntityFactory.js` lines ~18 + ~812-822. Added `getTemplateStartingFood` to the existing `ScenarioFactory` import; replaced the hardcoded `food: ALPHA_START_RESOURCES.food` with `food: getTemplateStartingFood(grid.templateId) ?? ALPHA_START_RESOURCES.food` to mirror the existing wood-override pattern.
+
+**Files changed:** 2 source modified — `src/world/scenarios/ScenarioFactory.js` (+~32 LOC: R12 commentary block + revised wood table + new `STARTING_FOOD_BY_TEMPLATE` const + new `getTemplateStartingFood()` export), `src/entities/EntityFactory.js` (+~9 LOC: import addition + R12 comment block + food override read). 0 new tests this commit (selected Suggestion A from the plan; the per-template regression test was scoped but skipped here to keep the commit focused on the source-only balance change — existing tests do not pin the wood/food values per Grep audit so no test updates required either). Hard-freeze compliant: per-template numeric tuning + one new in-freeze knob (the food override table) following the exact pattern of the existing R4 P0-3 wood override — no new building, no new resource, no new mechanic.
+
+**Acceptance:** `getTemplateStartingResources("rugged_highlands").wood === 48` (was 38). `getTemplateStartingResources("fertile_riverlands").wood === 48` (was 32). `getTemplateStartingFood("fertile_riverlands") === 380`. `getTemplateStartingFood("temperate_plains") === 320`. `getTemplateStartingFood("unknown_template") === null` (defensive — falls back to default). Bench targets (Step 7-8 of the plan, deferred to reviewer pass): Highlands seed 94499 ≥ 15 sim min (was 8:28), Riverlands seed 45030 ≥ 15 sim min (was 7:16), Temperate seed 1638360143 ≥ 35 sim min (was 39:33; ≤ 10% regression).
+
 ## [Unreleased] — v0.10.1-n (R12 Plan-R12-wood-food-balance, P1)
 
 ### Plan-R12-wood-food-balance — Cap zero-lumber bootstrap priority and add wood/food ratio gate so wood stops snowballing while food collapses

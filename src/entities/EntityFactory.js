@@ -15,7 +15,7 @@ import {
   describeMapTemplate,
   stripInitialBuildings,
 } from "../world/grid/Grid.js";
-import { buildScenarioBundle, seedResourceNodes, getTemplateStartingResources } from "../world/scenarios/ScenarioFactory.js";
+import { buildScenarioBundle, seedResourceNodes, getTemplateStartingResources, getTemplateStartingFood } from "../world/scenarios/ScenarioFactory.js";
 import { createPerformanceTelemetry } from "../app/performanceTelemetry.js";
 
 const ALPHA_START_RESOURCES = Object.freeze({
@@ -810,7 +810,12 @@ export function createInitialGameState(options = {}) {
       terrainTuning: grid.terrainTuning,
     },
     resources: {
-      food: ALPHA_START_RESOURCES.food,
+      // v0.10.1-n R12 Plan-R12-non-temperate-fallback (A5 #2): per-template
+      // food overrides for maps with forced opening builds that delay food
+      // production (Silted Hearth road-clear, harbor build, bridge build,
+      // wall-heavy opening). ALPHA_START_RESOURCES.food (320) is the
+      // fallback when the template has no override.
+      food: getTemplateStartingFood(grid.templateId) ?? ALPHA_START_RESOURCES.food,
       // v0.10.1-r4-A5 P0-3: per-template starting wood overrides. Pulls
       // from STARTING_WOOD_BY_TEMPLATE in ScenarioFactory; legacy
       // INITIAL_RESOURCES.wood (35) is the fallback when the template
@@ -819,6 +824,8 @@ export function createInitialGameState(options = {}) {
       // measured Archipelago effective wood ~2.35 vs Temperate 35;
       // override seeds Archipelago 22 / Coastal 20 so the first
       // warehouse(10)+farm(5) build cycle never locks on water maps.
+      // R12 A5 #2 follow-up: bumped most non-Temperate templates to 48
+      // (Highlands/Riverlands/Fortified) and 34 (Archipelago/Coastal).
       wood: getTemplateStartingResources(grid.templateId).wood ?? ALPHA_START_RESOURCES.wood,
       stone: ALPHA_START_RESOURCES.stone,
       herbs: 0,
