@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-A1-regenerate-return, P2)
+
+### Plan-A1-regenerate-return — `regenerate()` mirrors `saveSnapshot`'s `{ok:true,...}` contract
+
+Implements the P2 launcher-runtime API hygiene fix from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-A1-regenerate-return.md` (Reviewer A1-stability-hunter). R11 already fixed the R10 P1 ("second `regenerate()` ignored") and A1's session 3 confirmed that two consecutive calls (`rugged_highlands seed 12345` → `archipelago_isles seed 7777`) both visibly regenerate the splash. The remaining quirk: the function returned `null` regardless of success while sibling `saveSnapshot()` returns `{ok:true, slotId, bytes}` and `loadSnapshot()` returns `{ok:true, slotId, phase}`. Asymmetric return-shape forced Playwright/benchmark scripts to round-trip through `getTelemetry()` to verify what got regenerated, instead of the simple `expect(r.ok).toBe(true)` idiom every other launcher API supports. Pure API-surface change — no game-loop impact.
+
+**(Step 1) `GameApp.regenerateWorld` input validation + success return** — `src/app/GameApp.js`. Validates `templateId` against `MAP_TEMPLATES` (returns `{ok:false, reason:'invalid_template', reasonText}` for unknown IDs instead of silently falling back to `DEFAULT_MAP_TEMPLATE_ID`); validates `seed` via `Number.isFinite` (returns `{ok:false, reason:'invalid_seed', reasonText}`). Empty/undefined values still pass through to `createInitialGameState`'s default-resolution. On success, returns `{ok:true, templateId, seed, phase}` echoing the *committed* world state (post-`deepReplaceObject` + `#setRunPhase`) — so the caller observes the actual world that landed, not the requested arguments (matters when `templateId`/`seed` were undefined and resolved to defaults).
+
+**(Step 2) `__utopiaLongRun.regenerate` shim — drop `?? null` fallback** — `src/main.js`. Replaces `app?.regenerateWorld?.(norm, options) ?? null` with the same `{ok:false, reason:'notReady', reasonText}` shape used by the `saveSnapshot` / `loadSnapshot` shims for the unbuilt-app case.
+
+**Files changed:** 2 source modified — `src/app/GameApp.js` (+~16 LOC: validation guards + success-shape return at the bottom of `regenerateWorld`) and `src/main.js` (+3 / -1 LOC: shim fallback shape). 1 test added — `test/launcher-regenerate-contract.test.js` (6 cases: undefined-app `notReady`, success shape, invalid template, invalid seed, chained-call regression guard, `template`-alias composition). Hard-freeze compliant: no new mechanic, no new HUD, no behaviour change other than (a) the return value shape and (b) input validation now rejecting unknown templateIds instead of silently falling back. Internal `regenerateWorld` callers (`onRegenerateMap`, `resetSessionWorld`, `startSession`) already discard the return value so are unaffected.
+
+**Acceptance:** A1's harness ergonomic ask satisfied — `await lr.regenerate({template:'rugged_highlands', seed:12345})` now resolves to `{ok:true, templateId:'rugged_highlands', seed:12345, phase:'<post-regen-phase>'}`; chained calls each return their own success shape. Invalid input returns `{ok:false, reason}` rather than throwing or silently swallowing.
+
+**Test baseline:** **1989 pass / 0 fail / 4 skip** (full suite, 120 suites; +6 over the prior baseline from `launcher-regenerate-contract.test.js`'s six cases).
+
+**Suggestions B (return-only `{ok:true}` minimal variant), C (combined fix for `configure()` / `startRun()`), D (FREEZE-VIOLATING re-architect all launcher-runtime APIs)** explicitly NOT taken — A1 specifically requested the full shape (Suggestion A); B halves the harness ergonomic win; C crosses into a behaviour change for `startRun()` (silent override → `{ok:false}`) — defer to a sibling plan if orchestrator wants P2 #2 in the same round.
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-PII-modal-zstack, P2)
 
 ### Plan-PII-modal-zstack — Splash mount stacking guard + LLM-degradation toast

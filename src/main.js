@@ -227,7 +227,12 @@ if (canvas) {
       startRun: () => app?.startSession?.(),
       regenerate: (params, options) => {
         const norm = normalizeRegenerateArgs(params);
-        return app?.regenerateWorld?.(norm, options) ?? null;
+        // A1-stability-hunter R11 P2 #1 — mirror saveSnapshot/loadSnapshot's
+        // `{ok, ...}` contract so harness scripts can `expect(r.ok).toBe(true)`
+        // (was returning `null` despite working). When `app` is unbuilt, we
+        // surface a `notReady` shape just like the snapshot shims.
+        return app?.regenerateWorld?.(norm, options) ??
+          { ok: false, reason: "notReady", reasonText: "GameApp not initialised." };
       },
       focusTile: (ix, iz, zoom) => app?.focusTile?.(ix, iz, zoom) ?? null,
       focusEntity: (entityId, zoom) => app?.focusEntity?.(entityId, zoom) ?? null,
