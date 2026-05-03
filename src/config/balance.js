@@ -808,6 +808,18 @@ export const BALANCE = Object.freeze({
   // priority 80. This knob raises the early-game (t<300s) quarry/herb
   // priority so ColonyDirector promotes processing above farm in bootstrap.
   autopilotQuarryEarlyBoost: 12,
+  // v0.10.1-n R12 Plan-R12-wood-food-balance (A5-balance-critic finding 1):
+  // Cap above which ZeroLumberProposer suppresses its bootstrap "zero-lumber
+  // safety net" emission. A5 R12 measured wood snowballing 22× starting
+  // (685+ peak) while food collapsed to 0 across 3 maps × 3 seeds; the
+  // fallback director assigns workers by role but only WOOD producers
+  // deliver to the warehouse fast enough so once the lumber@95 safety net
+  // landed a lumber camp the wood economy ran away with no balancing sink.
+  // When wood/food > maxWoodPerFarmRatio (and food > 0) the bootstrap
+  // proposer returns []; food-emergency rules (@99/@100) keep firing and
+  // workers shift onto food. 5 is the trigger of the measured snowball;
+  // raise to 7-10 if benches show the gate fires too aggressively.
+  maxWoodPerFarmRatio: 5,
   // --- Living World v0.8.0 — Phase 4 (DevIndex), spec § 5.6 ---
   // DevIndexSystem ring-buffer window size (sim ticks). The smoothed score
   // published at state.gameplay.devIndexSmoothed is the arithmetic mean of

@@ -138,11 +138,13 @@ test("ZeroFarmProposer silent after t>=180", () => {
 // 4. ZeroLumberProposer behaviour
 // -----------------------------------------------------------------------------
 
-test("ZeroLumberProposer fires lumber@95 at t<240 when lumbers===0", () => {
+test("ZeroLumberProposer fires lumber@75 at t<240 when lumbers===0", () => {
+  // R12 Plan-R12-wood-food-balance (A5 #1): priority lowered 95→75 so
+  // food/farm/warehouse emergency rules preempt the lumber safety net.
   const out = ZeroLumberProposer.evaluate({}, makeCtx({ lumbers: 0, timeSec: 10 }));
   assert.equal(out.length, 1);
   assert.equal(out[0].type, "lumber");
-  assert.equal(out[0].priority, 95);
+  assert.equal(out[0].priority, 75);
 });
 
 test("ZeroLumberProposer silent when lumbers>=1", () => {
