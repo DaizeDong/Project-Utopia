@@ -46,6 +46,7 @@ import { EventDirectorSystem } from "../simulation/meta/EventDirectorSystem.js";
 import { createServices } from "./createServices.js";
 import { GameLoop } from "./GameLoop.js";
 import { computeSimulationStepPlan } from "./simStepper.js";
+import { computeHonestCapped } from "./perfCapHonest.js";
 import {
   DEFAULT_BENCHMARK_CONFIG,
   DEFAULT_DISPLAY_SETTINGS,
@@ -746,8 +747,21 @@ export class GameApp {
         ? `frame-pressure step cap ${effectiveMaxSteps}/${this.maxSimulationStepsPerFrame}`
         : "target speed above measured wall-clock throughput")
       : "";
+    // v0.10.2 PK-followup-deeper-perf R7 — `(capped)` HUD suffix should only
+    // fire when the throttle genuinely bites the player. Sub-step budget
+    // tightening alone (effectiveMaxSteps < maxSimulationStepsPerFrame) is
+    // hidden from the HUD while wall-clock still hits >=85% of target.
+    // `capActive` is unchanged — benchmark `cappedSamples` consumes it.
+    const honestCapped = computeHonestCapped({
+      capActive,
+      effectiveMaxSteps,
+      maxSimulationStepsPerFrame: this.maxSimulationStepsPerFrame,
+      diverged,
+      currentFramePressure,
+    });
     this.state.metrics.performanceCap = {
       active: capActive,
+      honestCapped,
       reason: capReason,
       targetScale,
       actualScale: smoothedActualWall,
@@ -762,6 +776,7 @@ export class GameApp {
       actualScale: smoothedActualWall,
       entityCount,
       capActive,
+      honestCapped,
       capReason,
       effectiveMaxSteps,
       fixedStepSec,
