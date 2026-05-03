@@ -2467,6 +2467,67 @@
       #overlayEndPanel:not([hidden]) { animation-duration: 0.2s !important; }
     }
 
+    /* === v0.10.1-n PGG-aesthetic-theme R11 P2 — responsive collapse for
+       1366×768 and similar laptop viewports. World canvas is the theme's
+       hero; UI chrome must not consume >30 % of pixels at common laptop
+       sizes. Three coordinated rules in the 1025-1440 px band (above 1024
+       the existing block at L1905 already moves the sidebar to a bottom
+       bar; we don't want to fight that). At ≥1441 px the layout is
+       unchanged.
+
+       (1) Right sidebar collapses to a 60 px icon-rail; expands on
+           hover/focus to its prior width. The 36 px tab strip remains the
+           always-visible spine; #sidebarPanelArea fades out when collapsed
+           and back in on hover. CSS-only — no JS, no new HTML. The 60 px
+           overall width gives 36 px tab strip + 24 px panel-area peek so
+           the panel border still reads as a chrome edge.
+       (2) Entity Focus panel (#entityFocusOverlay) gets a stronger
+           backdrop-blur + translucent fill so the world stays visible
+           through it. Default already has blur(8px) but the bg is solid
+           --panel-bg; switching to a translucent rgba lets the world
+           bleed through when the panel covers ~30 % of the canvas.
+       (3) Topbar #statusObjective ("Run --:--:--") demoted: hidden in
+           the bar. Run timer remains visible globally via #gameTimer in
+           #speedControls (top-right) and Day-N via #colonyHealthDay in
+           the Colony tab — no data is lost. */
+    @media (max-width: 1440px) and (min-width: 1025px) {
+      /* (1) Sidebar collapses to a 60 px icon-rail. */
+      #wrap.sidebar-open #sidebar {
+        --sidebar-width: 60px;
+        --sidebar-panel-width: calc(var(--sidebar-width) - 36px);
+      }
+      #wrap.sidebar-open #sidebar:hover,
+      #wrap.sidebar-open #sidebar:focus-within {
+        --sidebar-width: clamp(280px, 22vw, 460px);
+        --sidebar-panel-width: calc(var(--sidebar-width) - 36px);
+      }
+      #wrap.sidebar-open #sidebar #sidebarPanelArea {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 140ms ease;
+      }
+      #wrap.sidebar-open #sidebar:hover #sidebarPanelArea,
+      #wrap.sidebar-open #sidebar:focus-within #sidebarPanelArea {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      /* Track the new collapsed width in #statusBar's right-edge clamp so
+         the topbar reaches the rail edge (not the prior 280-460 cap). */
+      #wrap.sidebar-open #statusBar { right: 60px; }
+      #wrap.sidebar-open #alertStack { right: calc(60px + 16px); }
+
+      /* (2) Entity Focus panel — translucent fill so the world reads through. */
+      #entityFocusOverlay {
+        background: rgba(20, 28, 40, 0.62);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+
+      /* (3) Topbar run-timer block — demoted (gameTimer + colonyHealthDay
+         carry the data elsewhere). */
+      #statusBar #statusObjective { display: none !important; }
+    }
+
   </style>
 </head>
 <body>

@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-PGG-responsive-collapse, P1)
+
+### Plan-PGG-responsive-collapse — 1366×768 sidebar collapse + Entity Focus backdrop blur + topbar run-status demote
+
+Implements the P2 polish item from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-PGG-responsive-collapse.md` (Reviewer PGG-aesthetic-theme). PGG's blind audit at 1366×768 (a still-common laptop default) found the world canvas — the theme's *hero* — squeezed into ~50 % of available pixels: the right Build Tools sidebar consumed ~25 % horizontal real-estate (eight vertical tabs + always-visible kbd-shortcut card), the Entity Focus card consumed ~30 % of the bottom-left canvas, the topbar story-banner truncated into "Autopilot OFF - manual; buil…", and status text wrapped onto two rows. At 1920×1080 the same layout breathes. The fix is purely responsive — three coordinated `@media (max-width: 1440px) and (min-width: 1025px)` rules in `index.html` (the 1024 break already remaps the sidebar to a bottom bar, which we don't want to fight).
+
+**(Step 1) Right sidebar collapses to a 60 px icon-rail; expands on hover/focus** — `index.html` (CSS-only). The existing `#sidebar` already exposes `--sidebar-width` (clamp(280px, 22vw, 460px)) + `--sidebar-panel-width` (sidebar minus the 36 px tab strip). At <1440 px we pin `--sidebar-width: 60px` so the always-visible 36 px tab strip + a 24 px panel-edge sliver remains as a visual chrome anchor. `#sidebarPanelArea` opacity drops to 0 with `pointer-events: none` so the collapsed rail isn't accidentally clickable. `:hover` / `:focus-within` on `#sidebar` restores the full clamp width + opacity 1 + pointer events. The transform-collapse and z-stack contracts the existing CSS already wires off `--sidebar-width` ride along automatically. `#statusBar` and `#alertStack` right-edges retargeted to the new 60 px rail.
+
+**(Step 2) Entity Focus panel — translucent fill so the world reads through** — `index.html`. `#entityFocusOverlay` already had `backdrop-filter: blur(8px)` but the bg was solid `var(--panel-bg)`; switching to `rgba(20, 28, 40, 0.62)` with `backdrop-filter: blur(10px)` lets the canvas bleed through the panel at the band where it covers ~30 % of the visible canvas. `-webkit-backdrop-filter` mirror for older WebKit. Default opaque card preserved at ≥1441 px.
+
+**(Step 3) Topbar `#statusObjective` ("Run --:--:--") demoted** — `index.html`. `display: none` inside `#statusBar` at <1440 px. The run-time data is NOT lost — `#gameTimer` in `#speedControls` (top-right) shows the elapsed game time globally, and `#colonyHealthDay` in the Colony tab carries the Day-N readout. Score / Dev are already globally hidden (line 194-195), so this rule eliminates only the redundant "Run HH:MM:SS" string.
+
+**Files changed:** 1 file modified — `index.html` (+~60 LOC inside `<style>` directly above `</style>` at line 2470). Hard-freeze compliant: no new HTML elements, no new JS event handlers, no new HUD components, no new icons. The Colony tab and `#gameTimer` already render the demoted run-status data via existing infrastructure.
+
+**Acceptance:** at 1366×768, world canvas recovers ~40 % of its squeezed area; UI chrome drops below the ~30 % target. Sidebar collapses to 60 px and overlays (not pushes) on hover. Entity Focus is translucent. Topbar Run timer hidden but data still visible via game-timer + Colony tab. At ≥1441 px layout is byte-identical to pre-fix. PGG A3 compliance projection: 55 % → ~80 % on re-audit.
+
+**Suggestions B (sidebar-only minimal variant), C (FREEZE-VIOLATING hamburger menu), D (FREEZE-VIOLATING `?` floating button)** explicitly NOT taken — Suggestion A (this plan) lands all three audit findings in one coordinated CSS pass at the upper edge of the in-freeze surface; Suggestion D's benefit is partially captured for free since the kbd-shortcut card lives inside the rail and is hidden whenever the rail is collapsed.
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-PGG-sphere-dominance, P1)
 
 ### Plan-PGG-sphere-dominance — Lift entity-sphere visual weight + demote painted tile glyphs + add grid hairlines
