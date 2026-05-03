@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r7-PL (R7 PL-terrain-min-guarantee, P0)
+
+### PL terrain-min-guarantee — defensive FARM/LUMBER/QUARRY floor pass
+
+Implements the P0 fix from `Round7/Plans/Plan-PL-terrain-min-guarantee.md` (Reviewer PL-opening-stall, Tier A). PL-feedback reported temperate_plains seeds shipping with 0 FARM / 0 LUMBER / 0 QUARRY tiles, causing total starvation by sim t≤4:20. Investigation: the existing `placeDistrictBlobs` calls in `generateTerrainTiles` already run unconditionally for all 6 templates (not in a fallback else-branch as plan diagnosed) — but the biome-affinity scoring inside `pickDistrictCenter` can return null on water-heavy seeds (no qualifying GRASS center) and `placeDistrictBlobs` skips on too-close blob centers, so silent zero-resource ship-outs remain possible on adversarial seeds.
+
+**Fix:** New `enforceResourceFloor(tiles, w, h, cx, cz, hardExclusion)` defensive helper (~30 LOC) called once after the QUARRY blobs pass and before `applyWalls`. Counts current FARM/LUMBER/QUARRY tiles; if any are below the floor (farms≥2, lumbers≥2, quarries≥1 — `RESOURCE_FLOOR` frozen constant), walks GRASS tiles outside the spawn-ring hard exclusion (12 tiles, Euclidean) sorted by distance ascending, and stamps the closest qualifying GRASS tile until each floor is met. Purely additive — never overwrites WATER, WALL, WAREHOUSE, ROAD, or existing resource tiles. Hard-freeze compliant (no new tile/role/building/mood/audio/UI panel — defensive helper only).
+
+**Tests added:** `test/grid-terrain-min-guarantee.test.js` (18 cases: 6 templates × 3 seeds [42, 1337, 1213082125], each asserting farms≥2 ∧ lumbers≥2 ∧ quarries≥1). All 18 pass — 17 pass via the existing per-template painters + biome-aware blobs; 1 (no observed) would be saved by the new floor pass on adversarial seeds. Tests are baseline guards against any future per-template refactor that inadvertently silences the resource pipeline.
+
+**Test baseline:** 1920 tests / 1911 pass / 5 fail (all pre-existing on parent `e1977c0`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step) / 4 skip. Net +18 passes vs parent (1893 → 1911) from the 18 new test cases. Zero new failures introduced; verified by stash-and-rerun on parent commit (1893 pass / 5 fail, identical failing test names).
+
+**Files changed:** 1 source modified (`src/world/grid/Grid.js`) + 1 test new (`test/grid-terrain-min-guarantee.test.js`) + CHANGELOG. Approx +60 / -2 LOC across 3 files.
+
 ## [Unreleased] — v0.10.2-r6-PI (R6 PI-devpanel-buildbar, P1)
 
 ### PI devpanel-buildbar — Demolish promoted to slot 2 + Settings Dev Tools quick spawner
