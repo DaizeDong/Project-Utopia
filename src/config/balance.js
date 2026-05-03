@@ -753,6 +753,16 @@ export const BALANCE = Object.freeze({
   fogInitialRevealRadius: 5,
   // Master toggle. Disable for benchmark presets that need full vision.
   fogEnabled: true,
+  // R13 Plan-R13-fog-aware-build (#5+#7) — IDLE worker fog-edge bias weight.
+  // When >0, IDLE workers preferentially target EXPLORED tiles adjacent to
+  // HIDDEN ones to lift fog organically. When `state.ai.scoutNeeded` is true
+  // the bias is forced regardless of weight. 0 disables the bias entirely.
+  workerExploreFogEdgeBiasWeight: 0.6,
+  // R13 Plan-R13-fog-aware-build — Manhattan radius of the fog-edge scan
+  // around the IDLE worker. Small to keep the per-tick scan cheap; the
+  // worker walks outward and the next IDLE tick's scan re-anchors at the
+  // new position so the frontier "rolls" naturally.
+  workerExploreFogEdgeScanRadius: 12,
   // --- Living World v0.8.0 — Phase 3 (M1a resource nodes), spec § 14 ---
   // Node count ranges (min/max per map) seeded at map generation end.
   // FOREST / STONE / HERB node flags gate placement of LUMBER / QUARRY /

@@ -35,6 +35,7 @@ import {
   applyHarvestStep,
   chooseWorkerTarget,
   handleDeliver,
+  pickFogEdgeTileNear,
   pickWanderNearby,
   setIdleDesired,
 } from "../WorkerAISystem.js";
@@ -177,7 +178,17 @@ const IDLE = Object.freeze({
     if (!hasActivePath(worker, state) || stalePath || nowSec >= nextWanderRefreshSec) {
       if (!hasPendingPathRequest(worker, services) && canAttemptPath(worker, state)) {
         clearPath(worker);
-        const target = pickWanderNearby(worker, state, services);
+        // R13 Plan-R13-fog-aware-build (#5+#7) — fog-edge bias. When the
+        // autopilot has flagged `state.ai.scoutNeeded` (no buildable
+        // visible terrain) ALWAYS try the fog-edge picker first; otherwise
+        // try it stochastically per `BALANCE.workerExploreFogEdgeBiasWeight`.
+        // Falls back to the standard wander picker when no fog edge is
+        // within scan radius (e.g. fully-revealed colony interior).
+        const wantExplore = state?.ai?.scoutNeeded === true
+          || ((services?.rng?.next ? services.rng.next() : 0)
+              < Number(BALANCE.workerExploreFogEdgeBiasWeight ?? 0));
+        let target = wantExplore ? pickFogEdgeTileNear(worker, state, services) : null;
+        if (!target) target = pickWanderNearby(worker, state, services);
         if (target && setTargetAndPath(worker, target, state, services)) {
           blackboard.nextWanderRefreshSec = nowSec
             + WANDER_REFRESH_BASE_SEC

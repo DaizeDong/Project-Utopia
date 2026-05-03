@@ -1240,6 +1240,49 @@ export function pickWanderNearby(worker, state, services) {
   return firstPassable;
 }
 
+// R13 Plan-R13-fog-aware-build (#5+#7) — pick an EXPLORED tile near the
+// worker that has at least one HIDDEN 4-neighbour (i.e. on the fog edge).
+// IDLE workers wander toward these so the colony perimeter lifts fog
+// organically, which keeps the autopilot from running out of visible
+// candidate tiles. Returns null when no fog edge exists in the scan
+// radius (caller falls back to `pickWanderNearby`).
+//
+// Uses the BALANCE.workerExploreFogEdgeScanRadius (default 12) Manhattan
+// box around the worker's current tile and stops at the first match
+// reachable from a 16-attempt random sample (cheap; no full BFS).
+export function pickFogEdgeTileNear(worker, state, services) {
+  const grid = state?.grid;
+  if (!grid) return null;
+  const fog = state?.fog?.visibility;
+  if (!(fog instanceof Uint8Array)) return null;
+  const w = Number(grid.width ?? 0);
+  const h = Number(grid.height ?? 0);
+  if (w <= 0 || h <= 0) return null;
+  const origin = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), grid);
+  const radius = Math.max(2, Number(BALANCE.workerExploreFogEdgeScanRadius ?? 12));
+  const random = () => (services?.rng?.next ? services.rng.next() : Math.random());
+  // FOG_STATE values: 0=HIDDEN, 1=EXPLORED, 2=VISIBLE — see config/constants.js.
+  // Avoid importing the constant here to keep the helper self-contained;
+  // we only need the HIDDEN check and the not-HIDDEN check (== 0 / != 0).
+  const HIDDEN = 0;
+  for (let i = 0; i < 24; i += 1) {
+    const dx = Math.floor((random() * 2 - 1) * radius);
+    const dz = Math.floor((random() * 2 - 1) * radius);
+    const ix = Math.max(0, Math.min(w - 1, origin.ix + dx));
+    const iz = Math.max(0, Math.min(h - 1, origin.iz + dz));
+    const idx = ix + iz * w;
+    if (fog[idx] === HIDDEN) continue; // self must be visible / explored
+    if (!TILE_INFO[getTile(grid, ix, iz)]?.passable) continue;
+    // 4-neighbour HIDDEN check — at least one means we're on the fog edge.
+    const N = (iz - 1) >= 0 && fog[ix + (iz - 1) * w] === HIDDEN;
+    const S = (iz + 1) < h && fog[ix + (iz + 1) * w] === HIDDEN;
+    const E = (ix + 1) < w && fog[(ix + 1) + iz * w] === HIDDEN;
+    const W = (ix - 1) >= 0 && fog[(ix - 1) + iz * w] === HIDDEN;
+    if (N || S || E || W) return { ix, iz };
+  }
+  return null;
+}
+
 // v0.9.0-e — handleWander / attemptAutoBuild / getActiveWorkerPolicy deleted.
 // JobWander.tick replicates the wander cadence (carry-bypass eat + path
 // retarget loop). The fog-frontier bias was specific to the legacy intent
