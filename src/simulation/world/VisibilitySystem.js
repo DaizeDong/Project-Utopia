@@ -19,6 +19,23 @@ import { worldToTile } from "../../world/grid/Grid.js";
  *     version: number, // incremented whenever any tile changes state
  *   }
  */
+/**
+ * R13 Plan-R13-fog-aware-build (#5+#7) — fog-respect helper exported as a
+ * standalone function for proposers/autopilot pickers that don't need a
+ * VisibilitySystem instance. Mirrors `VisibilitySystem.isTileExplored`.
+ */
+export function isTileExplored(state, ix, iz) {
+  const fog = state?.fog;
+  if (!fog?.visibility) return true;
+  const w = Number(state?.grid?.width ?? 0);
+  const h = Number(state?.grid?.height ?? 0);
+  if (ix < 0 || iz < 0 || ix >= w || iz >= h) return false;
+  const idx = ix + iz * w;
+  if (idx < 0 || idx >= fog.visibility.length) return false;
+  const v = fog.visibility[idx];
+  return v === FOG_STATE.EXPLORED || v === FOG_STATE.VISIBLE;
+}
+
 export class VisibilitySystem {
   constructor() {
     this.name = "VisibilitySystem";
@@ -107,6 +124,31 @@ export class VisibilitySystem {
       return { ix: Math.max(0, Math.min(width - 1, Math.floor(core.ix))), iz: Math.max(0, Math.min(height - 1, Math.floor(core.iz))) };
     }
     return { ix: Math.floor(width / 2), iz: Math.floor(height / 2) };
+  }
+
+  /**
+   * R13 Plan-R13-fog-aware-build (#5+#7) — fog-respect helper.
+   *
+   * Returns true iff the tile is EXPLORED or VISIBLE (i.e. the autopilot /
+   * proposer chain has "knowledge" of it). Returns true when fog is disabled
+   * (no fog state present) so callers don't need to special-case the master
+   * toggle. Returns false for out-of-bounds indices.
+   *
+   * Used by autopilot tile-pickers to skip HIDDEN candidates (they would
+   * be rejected later by `evaluateBuildPreview` with reason "hidden_tile",
+   * but checking here lets the picker keep searching instead of returning
+   * a guaranteed-fail tile and aborting the build slot).
+   */
+  static isTileExplored(state, ix, iz) {
+    const fog = state?.fog;
+    if (!fog?.visibility) return true;
+    const w = Number(state?.grid?.width ?? 0);
+    const h = Number(state?.grid?.height ?? 0);
+    if (ix < 0 || iz < 0 || ix >= w || iz >= h) return false;
+    const idx = ix + iz * w;
+    if (idx < 0 || idx >= fog.visibility.length) return false;
+    const v = fog.visibility[idx];
+    return v === FOG_STATE.EXPLORED || v === FOG_STATE.VISIBLE;
   }
 
   #seedInitialReveal(vis, width, height, center, radius) {

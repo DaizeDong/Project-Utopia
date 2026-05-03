@@ -889,6 +889,13 @@ export class ColonyDirectorSystem {
       ? Math.min(2, normalBuildsPerTick)
       : normalBuildsPerTick;
     const builds = selectNextBuilds(state, buildsPerTick, getObjectiveResourceBuffer(state));
+    // R13 Plan-R13-fog-aware-build (#5+#7) — track whether any of this tick's
+    // build candidates failed because `findPlacementTile` couldn't find a
+    // visible tile. If we tried to place at least one building but none had
+    // even one visible candidate, latch `state.ai.scoutNeeded` so the IDLE
+    // worker fog-edge bias kicks in next tick.
+    let attemptedBuilds = 0;
+    let buildsWithNoVisibleTile = 0;
     for (const build of builds) {
       let tile = null;
 
@@ -898,7 +905,8 @@ export class ColonyDirectorSystem {
       }
 
       if (!tile) tile = findPlacementTile(state, this._buildSystem, build.type, services);
-      if (!tile) continue;
+      attemptedBuilds += 1;
+      if (!tile) { buildsWithNoVisibleTile += 1; continue; }
 
       const result = this._buildSystem.placeToolAt(state, build.type, tile.ix, tile.iz, {
         recordHistory: false, services, owner: "autopilot", reason: build.reason,
@@ -924,6 +932,22 @@ export class ColonyDirectorSystem {
         emitEvent(state, EVENT_TYPES.BUILDING_PLACED, {
           buildingType: build.type, ix: tile.ix, iz: tile.iz, reason: build.reason, owner: "autopilot",
         });
+      }
+    }
+
+    // R13 Plan-R13-fog-aware-build (#5+#7) — latch `state.ai.scoutNeeded`
+    // when every attempted build this tick failed because no visible tile
+    // was found. The IDLE worker wander biases toward fog-edge tiles when
+    // this flag is true, so workers proactively reveal terrain so the next
+    // director tick can place. Cleared by any successful placement (any
+    // tile-finder hit clears via the inverse condition below).
+    if (state.ai && typeof state.ai === "object") {
+      if (attemptedBuilds > 0 && buildsWithNoVisibleTile === attemptedBuilds) {
+        state.ai.scoutNeeded = true;
+        state.ai.scoutNeededReason = "no-buildable-visible-terrain";
+      } else if (attemptedBuilds > 0) {
+        state.ai.scoutNeeded = false;
+        state.ai.scoutNeededReason = null;
       }
     }
 
