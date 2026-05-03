@@ -15,6 +15,8 @@ test("pressure lens exposes unresolved scenario gaps and active map pressure", (
 
   setWeather(state, WEATHER.STORM, 18, "test");
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+  state.events.queue[0]._spawnAtSec = 0;
   eventSystem.update(1.1, state);
 
   state.metrics.traffic = {

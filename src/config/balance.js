@@ -660,6 +660,17 @@ export const BALANCE = Object.freeze({
   // at most one density-risk event per warehouse per tick.
   warehouseFireIgniteChancePerTick: 0.008,
   verminSwarmIgniteChancePerTick: 0.005,
+  // R13 #2 Plan-R13-event-mitigation (P0): pre-event warning + preparedness cap.
+  // BANDIT_RAID prepare phase is extended to eventPreWarningLeadSec (was fixed 1s)
+  // so the player gets a 30s heads-up to build walls/draft guards before the raid
+  // becomes active. Drain/loss for raid+fire+vermin are multiplied by
+  // (1 - prepFraction), where prepFraction = clamp(walls + guards*guardWeight) /
+  // eventPreparednessFullCapAtWalls, capped at eventPreparednessMaxMitigation.
+  // Floor of 30% damage preserved — preparedness mitigates, never no-ops.
+  eventPreWarningLeadSec: 30,
+  eventPreparednessFullCapAtWalls: 12,
+  eventPreparednessGuardWeight: 1.5,
+  eventPreparednessMaxMitigation: 0.7,
   // M2b loss fractions and caps applied to colony-wide stockpile on ignition.
   // v0.8.5 Tier 3: density risk currently steals only 1/sec from an 8-producer
   // cluster. 0.20 → 0.30 makes it felt without cratering production; cap 30 →

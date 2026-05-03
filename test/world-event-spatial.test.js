@@ -15,6 +15,8 @@ test("bandit raid targets scenario-specific zones and can damage route tiles", (
 
     setWeather(state, WEATHER.STORM, 18, "test");
     enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+    // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+    state.events.queue[0]._spawnAtSec = 0;
     system.update(1.1, state);
 
     const raid = state.events.active.find((event) => event.type === EVENT_TYPE.BANDIT_RAID);
