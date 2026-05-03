@@ -46,6 +46,14 @@ export function proposeScoutRoadTowardFoggedStone(state, buildSystem, director, 
   const stoneStock = Number(state.resources?.stone ?? 0);
   if (stoneStock >= 15) return 0;
 
+  // R9 PY Plan-Recovery-Director Step 4 — hard cap matches
+  // PROCESSING_TARGETS.roads = 30 referenced in PY's secondary findings.
+  // PY trace observed 79 roads on a 9-worker colony — ScoutRoadProposer was
+  // the over-emitter (no count cap on the scout-toward-fogged-stone branch).
+  // Bail before any candidate enumeration when total roads ≥ 30.
+  const roadCount = Number(state.buildings?.roads ?? 0);
+  if (roadCount >= 30) return 0;
+
   const cost = BUILD_COST.road ?? {};
   if (!canAfford(state.resources ?? {}, cost)) return 0;
 

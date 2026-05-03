@@ -325,6 +325,22 @@ export class RoleAssignmentSystem {
       }
     }
     const guardSet = new Set(guards);
+    // R9 PY Plan-Recovery-Director Step 5 — threat-aware GUARD floor when
+    // strategy.priority="defend". Pre-fix: GUARD draft was gated on
+    // `combat.activeRaiders + activeSaboteurs > 0`; when the StrategicDirector
+    // declared a defend posture but no live hostiles intersected the colony
+    // (e.g. "incoming raid in 30s" forecast), `roleCounts.GUARD = 0` and the
+    // colony entered the raid with zero defenders. Backstop: if defend strategy
+    // is active, no guards are drafted, and there are ≥4 workers, draft 1
+    // non-BUILDER worker as GUARD. Honours BUILDER reservation invariant.
+    const strategyDefend = String(state?.ai?.strategy?.priority ?? state?.gameplay?.strategy?.priority ?? "") === "defend";
+    if (strategyDefend && guards.length === 0 && allWorkers.length >= 4) {
+      const candidate = allWorkers.find((w) => !guardSet.has(w) && w.role !== "BUILDER");
+      if (candidate) {
+        guardSet.add(candidate);
+        guards.push(candidate);
+      }
+    }
     // R5 PA-worker-fsm-task-release Step 5 — GUARD draft under live threat
     // bypasses the role-change cooldown. Without `force: true`, a worker
     // recently moved (e.g. WOOD → FARM 2 s ago) couldn't be promoted to

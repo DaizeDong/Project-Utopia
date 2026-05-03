@@ -30,6 +30,17 @@ const FOOD_FLOOR_FIRE = 60;
 const SATURATION_RATIO = 0.95;
 const ASSUMED_WAREHOUSE_CAPACITY = 200;
 
+// R9 PZ Plan-Recovery-Director Steps 2-3 — diagnostic-driven trigger.
+// PZ verbatim: "the inspector pins 'no warehouse access point' in red while
+// the autopilot queues a Lumber camp." The original R6 PK trigger only fires
+// when criticalHungerRatio>0.5 OR food<60; the PZ trace never tripped that
+// because workers were "only a bit hungry" — yet 30%+ of them already had
+// `entity.debug.nutritionSourceType === "none"` for ≥10 s. NO_ACCESS_RATIO_FIRE
+// catches that blind-spot via a per-worker diagnostic-state predicate, latched
+// for NO_ACCESS_DWELL_SEC to suppress single-tick thrash.
+const NO_ACCESS_RATIO_FIRE = 0.30;
+const NO_ACCESS_DWELL_SEC = 10;
+
 function computeCriticalHungerRatio(state) {
   const agents = Array.isArray(state?.agents) ? state.agents : [];
   let alive = 0;
@@ -41,6 +52,19 @@ function computeCriticalHungerRatio(state) {
   }
   if (alive === 0) return 0;
   return critical / alive;
+}
+
+function computeNoAccessRatio(state) {
+  const agents = Array.isArray(state?.agents) ? state.agents : [];
+  let alive = 0;
+  let noAccess = 0;
+  for (const a of agents) {
+    if (!a || a.type !== "WORKER" || a.alive === false) continue;
+    alive++;
+    if (String(a.debug?.nutritionSourceType ?? "") === "none") noAccess++;
+  }
+  if (alive === 0) return 0;
+  return noAccess / alive;
 }
 
 /** @type {import("../BuildProposer.js").BuildProposer} */
@@ -57,6 +81,36 @@ export const WarehouseNeedProposer = Object.freeze({
     const overSaturated = warehouses > 0 && cap > 0
       && (food / cap) >= SATURATION_RATIO;
     const noAccess = warehouses === 0;
+
+    // Diagnostic-driven branch: ≥30% of WORKERs report
+    // nutritionSourceType==="none" for ≥10 s. Latched on `state.ai` so a
+    // single-tick clear of the diagnostic doesn't reset the dwell counter.
+    const nowSec = Number(ctx.timeSec ?? state?.metrics?.timeSec ?? 0);
+    const noAccessRatio = computeNoAccessRatio(state);
+    if (state?.ai && typeof state.ai === "object") {
+      if (noAccessRatio >= NO_ACCESS_RATIO_FIRE) {
+        if (typeof state.ai.warehouseDiagnosticSinceSec !== "number") {
+          state.ai.warehouseDiagnosticSinceSec = nowSec;
+        }
+      } else {
+        // Reset the latch once the diagnostic clears below the firing band.
+        if (typeof state.ai.warehouseDiagnosticSinceSec === "number") {
+          state.ai.warehouseDiagnosticSinceSec = null;
+        }
+      }
+    }
+    const dwellSince = Number(state?.ai?.warehouseDiagnosticSinceSec ?? Infinity);
+    const diagnosticDwellMet = noAccessRatio >= NO_ACCESS_RATIO_FIRE
+      && (nowSec - dwellSince) >= NO_ACCESS_DWELL_SEC;
+
+    if (diagnosticDwellMet) {
+      return [{
+        type: "warehouse",
+        priority: 90,
+        reason: "warehouse-need: 30%+ workers report no warehouse access (10s+ dwell)",
+      }];
+    }
+
     if (!noAccess && !overSaturated) return [];
 
     const critRatio = computeCriticalHungerRatio(state);
