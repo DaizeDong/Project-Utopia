@@ -26,11 +26,13 @@ test("RaidEscalator: DI=0 yields tier 0 and baseline interval/intensity", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Case 2 — devIndexSmoothed = 30 ⇒ tier 3 (v0.8.5 log curve).
-// Pre-v0.8.5 used floor(DI/15) = floor(2) = 2; v0.8.5 S1 shifted to
-// floor(2.5 × log2(1 + DI/15)) = floor(3.96) = 3 to soften late-game tiers.
+// Case 2 — devIndexSmoothed = 30 ⇒ tier 5 (v0.10.2 perTier=8 retune).
+// Pre-v0.8.5 used floor(DI/15) = 2; v0.8.5 S1 shifted to
+// floor(2.5 × log2(1 + DI/15)) = floor(3.96) = 3; v0.10.2 retuned
+// devIndexPerRaidTier 15 → 8 so floor(2.5 × log2(1 + 30/8)) =
+// floor(5.62) = 5.
 // ---------------------------------------------------------------------------
-test("RaidEscalator: DI=30 yields tier 3 (v0.8.5 log curve)", () => {
+test("RaidEscalator: DI=30 yields tier 5 (v0.10.2 perTier=8 retune)", () => {
   const state = createInitialGameState({ seed: 102 });
   const services = createServices(state.world.mapSeed);
   state.gameplay.devIndexSmoothed = 30;
@@ -39,15 +41,15 @@ test("RaidEscalator: DI=30 yields tier 3 (v0.8.5 log curve)", () => {
   sys.update(1 / 30, state, services);
 
   const esc = state.gameplay.raidEscalation;
-  assert.equal(esc.tier, 3, `expected tier 3 at DI=30 (log-curve), got ${esc.tier}`);
+  assert.equal(esc.tier, 5, `expected tier 5 at DI=30 (perTier=8 log-curve), got ${esc.tier}`);
   const expectedInterval = Math.max(
     Number(BALANCE.raidIntervalMinTicks),
-    Number(BALANCE.raidIntervalBaseTicks) - 3 * Number(BALANCE.raidIntervalReductionPerTier),
+    Number(BALANCE.raidIntervalBaseTicks) - 5 * Number(BALANCE.raidIntervalReductionPerTier),
   );
   assert.equal(esc.intervalTicks, expectedInterval);
   // DI=30 is below the fortified-plateau threshold (60), so the intensity
   // is just the linear tier × intensityPerTier.
-  assert.ok(Math.abs(esc.intensityMultiplier - (1 + 3 * Number(BALANCE.raidIntensityPerTier))) < 1e-9);
+  assert.ok(Math.abs(esc.intensityMultiplier - (1 + 5 * Number(BALANCE.raidIntensityPerTier))) < 1e-9);
   assert.equal(esc.devIndexSample, 30);
 });
 

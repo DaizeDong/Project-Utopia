@@ -33,11 +33,14 @@ function primeStateForFallback(state, { tier = 2, food = 200, pop = 30, elapsedS
     ? state.metrics.tick - intervalTicks - 5
     : state.metrics.tick - elapsedSinceLastRaid;
   state.resources.food = food;
-  // Synthesize a population large enough to clear popFloor.
+  // Synthesize a population at exactly `pop` agents. PN-test-triage R7:
+  // truncate when oversize so callers requesting `pop < initial agents`
+  // (e.g. defense-in-depth popFloor cases) actually drop below the floor.
   state.agents = state.agents ?? [];
   while (state.agents.length < pop) {
     state.agents.push({ id: `mock${state.agents.length}`, type: "WORKER", alive: true });
   }
+  if (state.agents.length > pop) state.agents.length = pop;
   for (const a of state.agents) a.alive = true;
   state.events = state.events ?? { queue: [], active: [] };
   state.events.queue = [];
@@ -92,8 +95,12 @@ test("RaidFallbackScheduler: food < foodFloor does not trigger", () => {
 test("RaidFallbackScheduler: pop < popFloor does not trigger (defense-in-depth)", () => {
   const state = createInitialGameState({ seed: 405 });
   const services = createServices(state.world.mapSeed);
-  // pop = floor - 2 (below threshold).
-  const lowPop = Math.max(1, Number(BALANCE.raidFallbackPopFloor ?? 18) - 2);
+  // pop = floor - 2 (below threshold). PN-test-triage R7: dropped stale `?? 18`
+  // fallback (live BALANCE.raidFallbackPopFloor = 10 since v0.10.1) — read live
+  // config so future retunes can't silently mask drift. Fail-fast guard below.
+  const popFloor = Number(BALANCE.raidFallbackPopFloor);
+  assert.ok(Number.isFinite(popFloor) && popFloor > 1, "popFloor must be live-configured");
+  const lowPop = Math.max(1, popFloor - 2);
   primeStateForFallback(state, { tier: 2, food: 300, pop: lowPop });
   const sys = new RaidEscalatorSystem();
   sys.update(1 / 30, state, services);

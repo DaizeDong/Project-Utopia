@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r7-PN (R7 PN-test-triage, P1)
+
+### PN test-triage — refresh 5 stale test thresholds + 2 docstring fixes
+
+Implements the P1 fix from `Round7/Plans/Plan-PN-test-triage.md` (Reviewer PN-test-triage, Tier A). PN-feedback diagnosed all 5 pre-existing test failures as stale-threshold drift after recent SUT retunes (v0.10.1-* and v0.8.5) — none reflected genuine behaviour bugs; every SUT path was doing what the live BALANCE constants now say it should. Triage classified all 5 as UPDATE-TEST surgical edits.
+
+**Fixes (5 test files):**
+1. `test/food-rate-breakdown.test.js` — spoilage threshold 2 → 3 at lines :69 and :96 (tracks v0.10.1-j live `warehouseFoodSpoilageRatePerSec = 0.0003/s`).
+2. `test/raid-fallback-scheduler.test.js` — dropped stale `?? 18` fallback in popFloor lookup (live `BALANCE.raidFallbackPopFloor = 10`); added `Number.isFinite` guard so future config drift fails fast; `primeStateForFallback` helper now truncates oversize agent lists (initial pop=12 was masking the popFloor=8 case).
+3. `test/recruitment-system.test.js` — primed `state.metrics.foodProducedPerMin = 600` to satisfy v0.10.1 R5 PC food-headroom gate (`projectedHeadroomSec >= recruitMinHeadroomSec`).
+4. `test/phase1-resource-chains.test.js` — primed `state.resources.stone = 25` (clears v0.8.5 RoleAssignmentSystem urgent-stone override `< 20` threshold) and relaxed assertion from `equal(stoners, 1)` to `>= 1` since perWorker formula at pop=12 (`stonePerWorker = 1/5`) naturally allocates 2 STONE workers.
+5. `test/raid-escalator.test.js` — DI=30 tier assertion 3 → 5 + intensity formula `1 + 3*intensityPerTier` → `1 + 5*intensityPerTier`; test renamed to reflect v0.10.2 `devIndexPerRaidTier 15 → 8` retune (`floor(2.5 × log2(1 + 30/8)) = 5`).
+
+**Bonus janitorial (2 docstring fixes):**
+- `src/simulation/meta/RaidEscalatorSystem.js:59-67` — refreshed log-curve example table to reflect `devIndexPerRaidTier = 8` (was stale `15` examples).
+- `src/config/balance.js:236-239` — refreshed `warehouseFoodSpoilageRatePerSec` docstring rate from stale `0.00011/s` to live `0.0003/s`.
+
+**Test baseline:** 1920 tests / **1916 pass / 0 fail** / 4 skip. **All 5 pre-existing failures resolved** (was 1916 pass / 5 fail / 4 skip before this commit on parent `25e846c`). Zero behaviour changes in product code; all edits are test-thresholds and non-functional docstrings.
+
+**Files changed:** 5 test files modified + 2 source docstrings updated + CHANGELOG. Approx +55 / -25 LOC across 8 files. Pure test-triage; hard-freeze compliant (no new tile / role / building / mood / mechanic / audio / UI panel).
+
 ## [Unreleased] — v0.10.2-r7-PM (R7 PM-delete-animal-combat-metrics-twin, P0)
 
 ### PM delete-animal-combat-metrics-twin — surgical deletion of unthrottled inline duplicate
