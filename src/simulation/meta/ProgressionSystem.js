@@ -95,10 +95,15 @@ const MILESTONE_RULES = Object.freeze([
     current: (state) => Number(state.buildings?.lumbers ?? 0),
   },
   {
+    // PEE R10 P1 (Plan-PEE-goal-attribution): rule defines defaults, but
+    // detectMilestones overrides label/message at emit time when the new
+    // warehouse covers a scenario depot, so the toast can read
+    // "First Warehouse covers east depot" instead of the misleading
+    // "First extra Warehouse raised" the player saw on their ONLY warehouse.
     kind: "first_warehouse",
     key: "firstWarehouse",
-    label: "First extra Warehouse raised",
-    message: "The logistics net has a second anchor.",
+    label: "First Warehouse raised",
+    message: "Delivery anchor established.",
     baselineKey: "warehouses",
     current: (state) => Number(state.buildings?.warehouses ?? 0),
   },
@@ -386,7 +391,7 @@ function ensureProgressionState(state) {
   return ensureRecoveryState(state);
 }
 
-function detectMilestones(state) {
+function detectMilestones(state, runtime) {
   const seen = state.gameplay.milestonesSeen;
   const baseline = state.gameplay.milestoneBaseline ?? {};
   for (const rule of MILESTONE_RULES) {
@@ -399,16 +404,31 @@ function detectMilestones(state) {
     // re-fires once the colony recovers (criticalHungerRatio < 0.30).
     if (POSITIVE_TONE_MILESTONES.has(rule.kind) && !colonyToneOk(state)) continue;
     seen.push(rule.kind);
+    // PEE R10 P1: depot-aware "first warehouse" copy. When the new warehouse
+    // pushes a scenario depot to `ready`, name the depot in the toast so the
+    // player gets explicit cause→effect attribution. Closes the "told me what
+    // to do but not when I'd done it" loop PEE flagged as the holistic-fun
+    // killer in Round-10 blind playthrough.
+    let label = rule.label;
+    let message = rule.message;
+    if (rule.kind === "first_warehouse" && runtime) {
+      const readyDepot = (runtime.depots ?? []).find((d) => d?.ready);
+      if (readyDepot) {
+        const depotLabel = String(readyDepot.label ?? "depot").replace(/\bruined\s+/i, "").trim();
+        label = `First Warehouse covers ${depotLabel}`;
+        message = "Frontier route reclaimed.";
+      }
+    }
     emitEvent(state, EVENT_TYPES.COLONY_MILESTONE, {
       kind: rule.kind,
       key: rule.key,
-      label: rule.label,
-      message: rule.message,
+      label,
+      message,
       current,
       baseline: start,
     });
     if (state.controls) {
-      state.controls.actionMessage = `${rule.label}: ${rule.message}`;
+      state.controls.actionMessage = `${label}: ${message}`;
       state.controls.actionKind = "milestone";
     }
   }
@@ -875,7 +895,7 @@ export class ProgressionSystem {
       const coverage = buildCoverageStatus(state);
       detectScenarioObjectiveMilestones(state, runtime);
       maybeTriggerRecovery(state, runtime, coverage, dt);
-      detectMilestones(state);
+      detectMilestones(state, runtime);
       // Carry remainder so cadence stays close to interval over many ticks
       // rather than drifting; clamp if accumulator wildly overshoots.
       const remainder = this._scanAccumulatorSec - this._scanIntervalSec;
