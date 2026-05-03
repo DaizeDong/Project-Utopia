@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r10-paa-game-over-copy (R10 Plan-PAA-game-over-copy, P0 UX)
+
+### Plan-PAA-game-over-copy — Disambiguate end-screen tier titles + promote `session.reason` to hero
+
+Implements the P0 UX fix from `assignments/homework7/Final-Polish-Loop/Round10/Plans/Plan-PAA-game-over-copy.md` (Reviewer PAA-mystery-game-over). Repro: a thriving high-tier colony (`devIndex ∈ [50,75)`) loses, `GameStateOverlay` shows `"Routes compounded into rest."` in red-gradient hero text and the actual `session.reason` ("Colony wiped — no surviving colonists.") sits in plain body text below. EN-as-second-language player parses "rest" as "you finished your work, now you sleep" — the screen reads like a positive outcome and the player has no idea why the run ended. Confirmed by the user's Chinese-language report: "为什么我赢了又游戏结束了?" ("why did I win AND the game end?").
+
+**(Step 1) Reword the four `END_TITLE_BY_TIER` strings to contain unambiguous loss verbs** — `src/ui/hud/GameStateOverlay.js:16-31`. `low` ("The colony stalled.") and `mid` ("The frontier ate them.") were already loss-explicit, kept verbatim. `high` swapped from "Routes compounded into rest." → "The routes outlived the colony." (now contains the loss verb `outlived` instead of the misread-as-positive `rest` / `compounded`). `elite` swapped from "The chain reinforced itself." → "Even the chain could not hold." (now contains the loss verb `could not hold` instead of the misread-as-positive `reinforced`). Tier-aware tone preserved: "your routes outlasted you" for high, "even your reinforcement failed" for elite.
+
+**(Step 2) Visual-hierarchy swap — hero carries `session.reason`, subhead carries the tier-flavoured epilogue** — `src/ui/hud/GameStateOverlay.js:561-585`. The hero `#overlayEndTitle` now renders `session.reason ?? "Run ended."` (the actual cause-of-death sentence the player needs to read), keeping the existing red-gradient hero styling + `data-dev-tier` attribute. The subhead `#overlayEndReason` now renders `${TierLabel}-tier finale · "${authoredTitle}"` (explicit tier label + the tier-flavoured epilogue in quotes). DOM nodes are unchanged — only the two `textContent` role assignments swap, so no CSS/layout regression risk and no Playwright selector breaks.
+
+**Tests updated:** `test/end-panel-finale.test.js` — the existing 4-tier branch test was rewritten to assert the new contract: (a) hero `#overlayEndTitle` carries `session.reason` verbatim, (b) subhead `#overlayEndReason` starts with `"${TierLabel}-tier finale"` AND includes the authored title, (c) the four tier subheads are pairwise distinct (one per bucket), (d) literal-string guards on the two reworded titles ("The routes outlived the colony." / "Even the chain could not hold.") catch future copy regressions. The two adjacent tests (`author-line-carries-openingPressure` and `falls-back-to-deriveDevTier`) were not touched — they assert orthogonal contracts (`#overlayEndAuthorLine` and the `data-dev-tier` attribute fallback) that are unaffected by the role-swap.
+
+**Test baseline:** **1967 pass / 0 fail / 4 skip** (full suite, 1574 top-level tests across 118 suites). Targeted `end-panel-finale.test.js` passes 4/4 cases.
+
+**Files changed:** 1 source modified (`src/ui/hud/GameStateOverlay.js` — 4 string literals + 2 textContent role assignments + 1 tier-label template literal + comment block) + 1 test rewritten (`test/end-panel-finale.test.js` — the 4-tier branch test only) + CHANGELOG. Approx +28/-12 source LOC. Hard-freeze compliant: no new tile / role / building / mood / mechanic / BALANCE knob / DOM element / event listener / CSS rule — pure copy edit + existing-DOM-node textContent role swap. Suggestion C from the plan (visible "High Tier — DevIndex 67/100" badge) explicitly deferred to v0.10.3 as it would add a new DOM element.
+
 ## [Unreleased] — v0.10.2-r10-pbb-recruit-flow-fix (R10 Plan-PBB-recruit-flow-fix, P0 CRITICAL FOUNDATIONAL)
 
 ### Plan-PBB-recruit-flow-fix — Restore foodProducedPerMin telemetry so auto-recruit can fire
