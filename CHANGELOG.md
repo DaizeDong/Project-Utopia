@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r7-PK-followup (R7 PK-followup-deeper-perf, P1)
+
+### PK-followup deeper-perf — HUD `(capped)` suffix only fires on genuine throttle
+
+Implements the P1 fix from `Round7/Plans/Plan-PK-followup-deeper-perf.md` (Reviewer PK-followup-deeper-perf, Tier B; PO R7 4.5/10 perf-throttle complaint + PM-deep-perf methodology). PO R7 flagged the HUD label "running ×0.4 (capped)" as the single most-demoralising visible regression — "the engine is silently cheating the player out of 90% of requested time-acceleration… more demoralising than hidden." PM-deep-perf measured that the wall-clock scale genuinely hits ×8.04 during active windows, but transient frame spikes (Worker peak 14.66 ms, AnimalAI peak 3.98 ms) drive the broader `cap.active` flag to fire on benign sub-step-budget tightening even when steady-state perf is fine. The "(capped)" suffix should be reserved for cases where the player can actually feel the throttle.
+
+**Fix:** Direction A (smaller of two PM-suggested options). Introduce a new HUD-only `state.metrics.performanceCap.honestCapped` boolean that suppresses the "(capped)" suffix when the cap is sub-step-budget-only AND wall-clock is still hitting ≥85% of target. The broader `cap.active` flag is unchanged — benchmark `cappedSamples` consumers still read it. Pure helper `computeHonestCapped` lives in new `src/app/perfCapHonest.js` so the test exercises the truth-table directly without spinning up GameApp. Hard-freeze compliant (no new tile / role / building / mood / mechanic / audio / UI panel — pure HUD label gating + 1 new metrics field).
+
+**Truth table** (capActive must be true; otherwise honest is false):
+- sub-step-budget tightened, no divergence, no frame pressure → `honestCapped = false` (HUD silent — wall-clock honest)
+- divergence (target ≥4× and smoothed wall-clock < 0.85× target) → `honestCapped = true` (HUD shows "(capped)")
+- current frame pressure (workFrameMs > 45 ∨ simCpuFrameMs > 22 ∨ renderCpuMs > 24) → `honestCapped = true` (HUD shows "(capped)")
+
+**Tests added:** `test/perf-cap-honest-labeling.test.js` — 4 cases (sub-step-only-quiet, divergence-loud, frame-pressure-loud, capActive-false-short-circuit). All 4 pass.
+
+**Files changed:** 4 source modified (`src/app/perfCapHonest.js` new helper, `src/app/GameApp.js` write `honestCapped`, `src/ui/hud/HUDController.js` read `honestCapped`, `src/entities/EntityFactory.js` initial-state shape) + 1 test new + CHANGELOG. Approx +85 / -7 LOC across 6 files. No change to `cap.active` semantics; benchmark `cappedSamples` count unchanged.
+
 ## [Unreleased] — v0.10.2-r7-PJ-followup (R7 PJ-followup-cadence-dampener, P1)
 
 ### PJ-followup cadence-dampener — opening-crisis safety net for EventDirector

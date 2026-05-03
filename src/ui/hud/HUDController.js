@@ -2021,10 +2021,16 @@ export class HUDController {
       const requested = Number(state.controls.timeScale ?? 1);
       const actual = Number(state.metrics.timeScaleActualWall ?? state.metrics.timeScaleActual ?? requested);
       const cap = state.metrics.performanceCap ?? {};
-      const showLabel = fast && !paused && (cap.active || Math.abs(actual - requested) > 0.2);
+      // v0.10.2 PK-followup-deeper-perf R7 — read `cap.honestCapped` so the
+      // "(capped)" suffix is only shown when the throttle genuinely bites the
+      // player (wall-clock divergence or frame pressure). Sub-step budget
+      // tightening alone is hidden when actual scale is still >=85% of target.
+      // `cap.active` is preserved for benchmark `cappedSamples` semantics.
+      const honestCapped = Boolean(cap.honestCapped);
+      const showLabel = fast && !paused && (honestCapped || Math.abs(actual - requested) > 0.2);
       this.timeScaleActualLabel.style.display = showLabel ? "" : "none";
       if (showLabel) {
-        this.timeScaleActualLabel.textContent = cap.active
+        this.timeScaleActualLabel.textContent = honestCapped
           ? `target ×${requested.toFixed(1)} / running ×${actual.toFixed(1)} (capped)`
           : `target ×${requested.toFixed(1)} / running ×${actual.toFixed(1)}`;
         this.timeScaleActualLabel.title = cap.reason || "Actual wall-clock simulation speed.";

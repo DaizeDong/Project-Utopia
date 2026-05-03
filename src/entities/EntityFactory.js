@@ -869,6 +869,9 @@ export function createInitialGameState(options = {}) {
       performance: createPerformanceTelemetry(),
       performanceCap: {
         active: false,
+        // v0.10.2 PK-followup-deeper-perf R7 — HUD-only narrower flag; see
+        // computeHonestCapped + GameApp `performanceCap` assignment.
+        honestCapped: false,
         reason: "",
         targetScale: 1,
         actualScale: 1,
