@@ -236,13 +236,16 @@ function drawFarm(ctx, profile) {
   // soil is handled instead via the SoilExhaustion overlay layer
   // (renderInstancedTileOverlays in SceneRenderer.js), which paints a
   // tinted decal on top of farm tiles whose salinized > 0.5.
+  // PGG R11 (Plan-PGG-sphere-dominance): glyph stroke alphas multiplied by
+  // 0.75 (0.42→0.315, 0.44→0.33) so the painted glyphs recede behind the
+  // sphere agents. Base biome fill remains at full opacity.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);
   ctx.save();
   ctx.strokeStyle = profile.line;
   ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.42;
+  ctx.globalAlpha = 0.42 * 0.75;
   for (let x = 5; x < size; x += 10) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
@@ -253,7 +256,7 @@ function drawFarm(ctx, profile) {
   ctx.save();
   ctx.strokeStyle = profile.detail;
   ctx.lineWidth = 1.4;
-  ctx.globalAlpha = 0.44;
+  ctx.globalAlpha = 0.44 * 0.75;
   for (let x = 10; x < size; x += 18) {
     ctx.beginPath();
     ctx.moveTo(x, 4);
@@ -261,18 +264,20 @@ function drawFarm(ctx, profile) {
     ctx.stroke();
   }
   ctx.restore();
-  drawNoiseDots(ctx, size, profile.accent, 48, 1.2, 2.1, 0.16);
+  drawNoiseDots(ctx, size, profile.accent, 48, 1.2, 2.1, 0.16 * 0.75);
 }
 
 function drawLumber(ctx, profile) {
+  // PGG R11 (Plan-PGG-sphere-dominance): glyph alphas multiplied by 0.75
+  // (0.35→0.2625, 0.22→0.165, 0.26→0.195) so painted lumber blots recede.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);
-  drawNoiseDots(ctx, size, profile.accent, 70, 3.2, 5.8, 0.35);
-  drawNoiseDots(ctx, size, profile.detail, 48, 1.8, 3.4, 0.22);
+  drawNoiseDots(ctx, size, profile.accent, 70, 3.2, 5.8, 0.35 * 0.75);
+  drawNoiseDots(ctx, size, profile.detail, 48, 1.8, 3.4, 0.22 * 0.75);
   ctx.save();
   ctx.fillStyle = profile.line;
-  ctx.globalAlpha = 0.26;
+  ctx.globalAlpha = 0.26 * 0.75;
   for (let y = 6; y < size; y += 18) {
     for (let x = 5; x < size; x += 18) {
       ctx.fillRect(x, y, 2, 6);
@@ -377,12 +382,14 @@ function drawWater(ctx, profile) {
 }
 
 function drawQuarry(ctx, profile) {
+  // PGG R11 (Plan-PGG-sphere-dominance): "drawStone" in plan; this is the
+  // STONE-resource glyph. Glyph alphas multiplied by 0.75.
   const { width: size } = ctx.canvas;
   ctx.fillStyle = profile.base;
   ctx.fillRect(0, 0, size, size);
   ctx.save();
   ctx.fillStyle = profile.detail;
-  ctx.globalAlpha = 0.34;
+  ctx.globalAlpha = 0.34 * 0.75;
   for (let i = 0; i < 14; i += 1) {
     const x = 3 + ((i * 19) % (size - 14));
     const y = 4 + ((i * 23) % (size - 14));
@@ -394,7 +401,7 @@ function drawQuarry(ctx, profile) {
   ctx.save();
   ctx.strokeStyle = profile.line;
   ctx.lineWidth = 1.4;
-  ctx.globalAlpha = 0.26;
+  ctx.globalAlpha = 0.26 * 0.75;
   for (let i = 0; i < 8; i += 1) {
     const x = 6 + ((i * 21) % (size - 16));
     const y = 3 + ((i * 29) % (size - 16));
@@ -403,7 +410,7 @@ function drawQuarry(ctx, profile) {
     ctx.strokeRect(x, y, w, h);
   }
   ctx.restore();
-  drawNoiseDots(ctx, size, profile.accent, 40, 1.4, 3.2, 0.22);
+  drawNoiseDots(ctx, size, profile.accent, 40, 1.4, 3.2, 0.22 * 0.75);
 }
 
 function drawHerbGarden(ctx, profile) {
@@ -690,6 +697,23 @@ export function createProceduralTileTexture(tileType) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   drawPattern(ctx, profile);
+  // PGG R11 (Plan-PGG-sphere-dominance): subtle 1-px grid hairlines on the
+  // right + bottom edges of each tile texture. rgba(255,255,255,0.04) is
+  // below the noisy-stripe threshold but above the perceivable-grid threshold,
+  // so tile boundaries read as the atomic unit at default zoom without
+  // requiring the heat-lens overlay. Two-edge (right + bottom) avoids
+  // double-stroke at neighbour boundaries.
+  const { width: cw, height: ch } = canvas;
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cw - 0.5, 0);
+  ctx.lineTo(cw - 0.5, ch);
+  ctx.moveTo(0, ch - 0.5);
+  ctx.lineTo(cw, ch - 0.5);
+  ctx.stroke();
+  ctx.restore();
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;

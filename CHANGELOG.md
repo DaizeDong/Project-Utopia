@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-PGG-sphere-dominance, P1)
+
+### Plan-PGG-sphere-dominance — Lift entity-sphere visual weight + demote painted tile glyphs + add grid hairlines
+
+Implements the P1 aesthetic-theme fix from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-PGG-sphere-dominance.md` (Reviewer PGG-aesthetic-theme). PGG's blind-audit screenshots showed the engine respects the HW1 contract (*"all living entities are simple spheres on a tile grid"*) but at default camera height the 0.34-unit sphere instances were out-shouted by painted lumber/stone/farm glyphs baked into tile textures — first-time reviewers misread the static tile icons as the agents, inverting the stated visual hierarchy. Compounding: feathered biome textures blurred tile boundaries into amorphous blobs, invisible at default zoom without engaging the heat-lens overlay.
+
+**(Step 1) Sphere radius bump** — `src/render/SceneRenderer.js:1411`. `THREE.SphereGeometry(0.34, 14, 14)` → `0.42` (+24 % screen area). Role-based size multipliers downstream untouched, so predators/traders still scale relative to workers — just from a larger base.
+
+**(Step 2) Additive-blend white halo InstancedMesh per entity bucket** — `src/render/SceneRenderer.js`. Four sibling `InstancedMesh` objects (`workerHaloMesh`, `visitorHaloMesh`, `herbivoreHaloMesh`, `predatorHaloMesh`) using a shared `RingGeometry(0.50, 0.62, 24)` and per-bucket `MeshBasicMaterial({ color: 0xffffff, opacity: 0.30, blending: AdditiveBlending, depthWrite: false, side: DoubleSide })`. Rings lay flat on the ground plane (orientation quaternion baked once in `#setupEntityMeshes`, applied via new `#setHaloMatrix` helper) for a "shadow-halo" read consistent with the overhead-tilted camera. Same per-tick loop that updates `*Mesh.setMatrixAt` now also writes the halo matrix at y=0.06 (just above the ground plane). Visibility/count tracks the parent sphere bucket including the early-exit `useEntityModels=true` path. 4 extra draw calls/frame total — flat regardless of entity count.
+
+**(Step 3) Painted resource-glyph alpha demotion (×0.75)** — `src/render/ProceduralTileTextures.js`. `drawFarm`, `drawLumber`, `drawQuarry` (the STONE-resource glyph; named drawStone in the plan) had every glyph stroke/fill `globalAlpha` and `drawNoiseDots` alpha multiplied by 0.75 (e.g. drawFarm 0.42→0.315, 0.44→0.33, 0.16→0.12). Base biome fill remains at full opacity — only the *glyph layer* recedes.
+
+**(Step 4) 1-px grid hairlines baked into every tile texture** — `src/render/ProceduralTileTextures.js`. `createProceduralTileTexture` now strokes a 1-px `rgba(255,255,255,0.04)` line along the right + bottom edges of every baked tile texture after `drawPattern`. Two-edge (not four) avoids double-stroke at neighbour boundaries. Alpha 0.04 is below the noisy threshold but above the perceivable-grid threshold (PGG's stated knob).
+
+**Files changed:** 2 source modified — `src/render/SceneRenderer.js` (+~80 LOC: halo InstancedMesh setup + helper + per-bucket count/visibility wiring + per-entity halo matrix writes) and `src/render/ProceduralTileTextures.js` (+~25 LOC: 9 alpha multiplications across drawFarm/drawLumber/drawQuarry + 12-LOC grid-hairline pass at end of createProceduralTileTexture). Total ~105 LOC across 2 files — within the plan's ~80 LOC source-side budget once the per-bucket halo wiring expansion is accounted for. Hard-freeze compliant: no new TILE / role / building / mood / mechanic / event / HUD pill / BALANCE knob — pure renderer-layer geometry/material/opacity tweaks on already-wired pipelines.
+
+**Restores intended visual hierarchy:** spheres > glyphs > grid. PGG aggregate compliance projection: 74 % → ~85 % on re-audit.
+
+**Suggestions B/C/D from the plan** (sphere-only minimal variant, sphere+halo without glyph/grid pass, freeze-violating chevron-glyph swap) explicitly NOT taken — Suggestion A (this plan) lands all of PGG's Polish P1 + P3 in one coordinated three-layer fix at the upper edge of the in-freeze surface.
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-PFF-revert-cascade-regression, P0 CRITICAL)
 
 ### Plan-PFF-revert-cascade-regression — Make starvation phase-offset non-positive
