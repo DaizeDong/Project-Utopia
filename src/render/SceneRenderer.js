@@ -1408,7 +1408,9 @@ export class SceneRenderer {
   }
 
   #setupEntityMeshes() {
-    const sphere = new THREE.SphereGeometry(0.34, 14, 14);
+    // PGG R11 (Plan-PGG-sphere-dominance): lift sphere visual weight (+24 % area)
+    // so agents out-pop painted tile glyphs. Was 0.34; now 0.42.
+    const sphere = new THREE.SphereGeometry(0.42, 14, 14);
     const maxWorkers = 1200;
     const maxVisitors = 240;
     const maxHerbivores = 300;
@@ -1437,6 +1439,45 @@ export class SceneRenderer {
     this.predatorMesh.renderOrder = RENDER_ORDER.ENTITY_MODEL;
 
     this.scene.add(this.workerMesh, this.visitorMesh, this.herbivoreMesh, this.predatorMesh);
+
+    // PGG R11 (Plan-PGG-sphere-dominance): subtle additive-blend white halo per
+    // entity so spheres read against any tile background. One InstancedMesh per
+    // entity bucket (4 extra draw calls/frame total — flat regardless of entity
+    // count). Ring is laid flat on the ground plane (rotation.x = -PI/2 baked
+    // into the orientation quaternion in #syncEntitySphereHalos) for a
+    // "shadow-halo" read consistent with the overhead-tilted camera.
+    const haloGeometry = new THREE.RingGeometry(0.50, 0.62, 24);
+    const makeHaloMaterial = () => new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.30,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.workerHaloMesh = new THREE.InstancedMesh(haloGeometry, makeHaloMaterial(), maxWorkers);
+    this.visitorHaloMesh = new THREE.InstancedMesh(haloGeometry, makeHaloMaterial(), maxVisitors);
+    this.herbivoreHaloMesh = new THREE.InstancedMesh(haloGeometry, makeHaloMaterial(), maxHerbivores);
+    this.predatorHaloMesh = new THREE.InstancedMesh(haloGeometry, makeHaloMaterial(), maxPredators);
+    for (const halo of [this.workerHaloMesh, this.visitorHaloMesh, this.herbivoreHaloMesh, this.predatorHaloMesh]) {
+      halo.frustumCulled = false;
+      halo.castShadow = false;
+      halo.receiveShadow = false;
+      halo.renderOrder = RENDER_ORDER.ENTITY_MODEL;
+      halo.count = 0;
+    }
+    this.scene.add(this.workerHaloMesh, this.visitorHaloMesh, this.herbivoreHaloMesh, this.predatorHaloMesh);
+    // Halo ring laid flat on the ground plane (rotate -PI/2 around X).
+    this._haloQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    this._haloMatrix = new THREE.Matrix4();
+    this._haloPos = new THREE.Vector3();
+    this._haloScale = new THREE.Vector3(1, 1, 1);
+  }
+
+  #setHaloMatrix(mesh, index, x, y, z) {
+    this._haloPos.set(x, y, z);
+    this._haloMatrix.compose(this._haloPos, this._haloQuaternion, this._haloScale);
+    mesh.setMatrixAt(index, this._haloMatrix);
   }
 
   #setupDebugPath() {
@@ -3343,6 +3384,17 @@ export class SceneRenderer {
       this.visitorMesh.instanceMatrix.needsUpdate = true;
       this.herbivoreMesh.instanceMatrix.needsUpdate = true;
       this.predatorMesh.instanceMatrix.needsUpdate = true;
+      // PGG R11: keep halos in lockstep with their parent sphere meshes.
+      if (this.workerHaloMesh) {
+        this.workerHaloMesh.visible = false;
+        this.visitorHaloMesh.visible = false;
+        this.herbivoreHaloMesh.visible = false;
+        this.predatorHaloMesh.visible = false;
+        this.workerHaloMesh.count = 0;
+        this.visitorHaloMesh.count = 0;
+        this.herbivoreHaloMesh.count = 0;
+        this.predatorHaloMesh.count = 0;
+      }
 
       if (this.state.debug) {
         this.state.debug.renderMode = "sprites";
@@ -3397,6 +3449,13 @@ export class SceneRenderer {
     this.visitorMesh.visible = visitorFallbackVisible;
     this.herbivoreMesh.visible = herbivoreFallbackVisible;
     this.predatorMesh.visible = predatorFallbackVisible;
+    // PGG R11: halos visible iff their sphere bucket is visible.
+    if (this.workerHaloMesh) {
+      this.workerHaloMesh.visible = workerFallbackVisible;
+      this.visitorHaloMesh.visible = visitorFallbackVisible;
+      this.herbivoreHaloMesh.visible = herbivoreFallbackVisible;
+      this.predatorHaloMesh.visible = predatorFallbackVisible;
+    }
 
     // v0.8.7.1 P7 — replace per-frame .slice() allocations with bounded
     // for-loops. Hot path on 700+ entities; eliminates 4 slice copies per
@@ -3405,6 +3464,8 @@ export class SceneRenderer {
     // so 4+ entities on the same tile no longer z-fight at the same world
     // coordinate. ~⅓ tile horizontal spread, ≤0.06 vertical so shadow cast
     // stays stable.
+    // PGG R11: same per-entity loop also writes the halo InstancedMesh matrix
+    // (lower y so the ring lays just above the ground plane, below the sphere).
     if (workerFallbackVisible) {
       const capacity = Number(this.workerMesh.instanceMatrix?.count ?? this.workerEntities.length);
       const visibleCount = Math.min(this.workerEntities.length, capacity);
@@ -3412,10 +3473,16 @@ export class SceneRenderer {
         const e = this.workerEntities[n];
         const j = entityStackJitter(e.id ?? n);
         setInstancedMatrix(this.workerMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
+        if (this.workerHaloMesh) this.#setHaloMatrix(this.workerHaloMesh, n, e.x + j.dx, 0.06 + j.dy, e.z + j.dz);
       }
       this.workerMesh.count = visibleCount;
+      if (this.workerHaloMesh) {
+        this.workerHaloMesh.count = visibleCount;
+        this.workerHaloMesh.instanceMatrix.needsUpdate = true;
+      }
     } else {
       this.workerMesh.count = 0;
+      if (this.workerHaloMesh) this.workerHaloMesh.count = 0;
     }
     this.workerMesh.instanceMatrix.needsUpdate = true;
 
@@ -3426,10 +3493,16 @@ export class SceneRenderer {
         const e = this.visitorEntities[n];
         const j = entityStackJitter(e.id ?? n);
         setInstancedMatrix(this.visitorMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
+        if (this.visitorHaloMesh) this.#setHaloMatrix(this.visitorHaloMesh, n, e.x + j.dx, 0.06 + j.dy, e.z + j.dz);
       }
       this.visitorMesh.count = visibleCount;
+      if (this.visitorHaloMesh) {
+        this.visitorHaloMesh.count = visibleCount;
+        this.visitorHaloMesh.instanceMatrix.needsUpdate = true;
+      }
     } else {
       this.visitorMesh.count = 0;
+      if (this.visitorHaloMesh) this.visitorHaloMesh.count = 0;
     }
     this.visitorMesh.instanceMatrix.needsUpdate = true;
 
@@ -3440,10 +3513,16 @@ export class SceneRenderer {
         const e = this.herbivoreEntities[n];
         const j = entityStackJitter(e.id ?? n);
         setInstancedMatrix(this.herbivoreMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
+        if (this.herbivoreHaloMesh) this.#setHaloMatrix(this.herbivoreHaloMesh, n, e.x + j.dx, 0.06 + j.dy, e.z + j.dz);
       }
       this.herbivoreMesh.count = visibleCount;
+      if (this.herbivoreHaloMesh) {
+        this.herbivoreHaloMesh.count = visibleCount;
+        this.herbivoreHaloMesh.instanceMatrix.needsUpdate = true;
+      }
     } else {
       this.herbivoreMesh.count = 0;
+      if (this.herbivoreHaloMesh) this.herbivoreHaloMesh.count = 0;
     }
     this.herbivoreMesh.instanceMatrix.needsUpdate = true;
 
@@ -3454,10 +3533,16 @@ export class SceneRenderer {
         const e = this.predatorEntities[n];
         const j = entityStackJitter(e.id ?? n);
         setInstancedMatrix(this.predatorMesh, n, e.x + j.dx, 0.48 + j.dy, e.z + j.dz);
+        if (this.predatorHaloMesh) this.#setHaloMatrix(this.predatorHaloMesh, n, e.x + j.dx, 0.06 + j.dy, e.z + j.dz);
       }
       this.predatorMesh.count = visibleCount;
+      if (this.predatorHaloMesh) {
+        this.predatorHaloMesh.count = visibleCount;
+        this.predatorHaloMesh.instanceMatrix.needsUpdate = true;
+      }
     } else {
       this.predatorMesh.count = 0;
+      if (this.predatorHaloMesh) this.predatorHaloMesh.count = 0;
     }
     this.predatorMesh.instanceMatrix.needsUpdate = true;
 
