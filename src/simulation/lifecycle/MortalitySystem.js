@@ -354,6 +354,49 @@ function releaseDeathSideEffects(state, entity, services = null) {
   }
 }
 
+// v0.10.1 R6 PK — throttle wrapper. The full `recomputeCombatMetrics` walks
+// every agent + animal twice (once for actor counts + saboteur/worker arrays,
+// once O(W*(P+S)) for nearestThreatDistance). At 80 workers + 0 hostiles
+// that's still ~6.4 k iterations / tick — small individually but called from
+// MortalitySystem's every-tick path it stacked into the dominant `topSystems`
+// entry under 4× speed (R6-PK perf-cap repro). Fast-path: when the previous
+// tick recorded zero active threats AND the entity-count signature hasn't
+// changed, the cached `state.metrics.combat` is already correct — no walk
+// needed. Live-threat ticks fall through to the full walk so GUARD draft
+// reaction stays per-tick; signature mismatch (entity births/deaths) also
+// forces a recompute. Net: ~95 % cache-hit on a peaceful 80-worker colony,
+// 0 % on a raid, drop-in identical observable metrics.
+let __combatMetricsLastSig = -1;
+let __combatMetricsLastNoThreatTick = -1;
+
+function recomputeCombatMetricsThrottled(state) {
+  const prev = state.metrics?.combat;
+  const animals = Array.isArray(state.animals) ? state.animals : [];
+  const agents = Array.isArray(state.agents) ? state.agents : [];
+  // Cheap signature: agent + animal lengths. Births/deaths/spawns all bump
+  // at least one length, so a held signature == "no entities entered or left
+  // since last walk".
+  const sig = (agents.length << 16) | (animals.length & 0xffff);
+  // `activeThreats` is the canonical "metrics populated" sentinel — the walk
+  // always writes a numeric value (0 or higher). `undefined` means metrics
+  // were never computed (or were externally reset to `{}`); we must walk to
+  // re-populate or downstream consumers see an empty object forever.
+  const populated = prev && typeof prev.activeThreats === "number";
+  const prevHadThreats = populated && prev.activeThreats > 0;
+  if (
+    populated
+    && !prevHadThreats
+    && sig === __combatMetricsLastSig
+    && __combatMetricsLastNoThreatTick >= 0
+  ) {
+    // Cache hit — peaceful tick, no entity churn. Skip the O(n) walk.
+    return;
+  }
+  recomputeCombatMetrics(state);
+  __combatMetricsLastSig = sig;
+  __combatMetricsLastNoThreatTick = Number(state.metrics?.timeSec ?? 0);
+}
+
 // v0.8.3 entity-death cleanup (Bug C) — recompute combat metrics after a
 // death pass so RoleAssignmentSystem on the next tick doesn't over-promote
 // guards based on a raider that died this tick. Mirrors the AnimalAISystem
@@ -816,7 +859,10 @@ export class MortalitySystem {
     // optimisation from v0.8.7 keeps this < 0.5 ms / tick at 80 workers ×
     // 8 hostiles. The death-tick path below still benefits from the same
     // call (now via this hoist) — both branches re-emit consistent metrics.
-    recomputeCombatMetrics(state);
+    // v0.10.1 R6 PK — wrap with `recomputeCombatMetricsThrottled` so peaceful
+    // ticks (no live threats + no entity churn) skip the full walk. Live-
+    // threat ticks still walk every tick — GUARD reaction is unchanged.
+    recomputeCombatMetricsThrottled(state);
 
     if (deadIds.size === 0) return;
 
