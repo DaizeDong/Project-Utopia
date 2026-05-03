@@ -299,7 +299,15 @@ const SEEKING_HARVEST = Object.freeze({
     const reservation = state?._jobReservation;
     const nowSec = Number(state?.metrics?.timeSec ?? 0);
     if (reservation?.tryReserve) {
-      reservation.tryReserve(worker.id, tgt.ix, tgt.iz, "harvest", nowSec);
+      // PX R9 B1 — honor the boolean. A `false` result means another worker
+      // already holds this tile; null the target so the dispatcher's
+      // `fsmTargetNull` transition (priority 7 in SEEKING_HARVEST_TRANSITIONS,
+      // WorkerTransitions.js:109) routes us back to IDLE for re-pick next tick.
+      const claimed = reservation.tryReserve(worker.id, tgt.ix, tgt.iz, "harvest", nowSec);
+      if (!claimed) {
+        worker.fsm.target = null;
+        return;
+      }
     }
   },
   tick(worker, state, services, dt) {
@@ -342,7 +350,15 @@ const HARVESTING = Object.freeze({
     const reservation = state?._jobReservation;
     const nowSec = Number(state?.metrics?.timeSec ?? 0);
     if (reservation?.tryReserve) {
-      reservation.tryReserve(worker.id, t.ix, t.iz, "harvest", nowSec);
+      // PX R9 B1 — honor the boolean on arrival too. If the target tile is
+      // already claimed by a different worker, abandon: null the target so
+      // HARVESTING.tick's `if (!t) return;` short-circuits and the dispatcher's
+      // priority-8 yieldPoolDriedUp / IDLE catch-all routes us back to IDLE.
+      const claimed = reservation.tryReserve(worker.id, t.ix, t.iz, "harvest", nowSec);
+      if (!claimed) {
+        worker.fsm.target = null;
+        return;
+      }
     }
   },
   tick(worker, state, services, dt) {

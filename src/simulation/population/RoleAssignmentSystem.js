@@ -353,8 +353,17 @@ export class RoleAssignmentSystem {
     const builderPerSite = Number(BALANCE.builderPerSite ?? 1.5);
     const builderMin = Math.max(0, Number(BALANCE.builderMin ?? 0));
     const builderMax = Math.max(0, Number(BALANCE.builderMax ?? 6));
+    // PX R9 B3 — replace the size-by-total-sites formula with a
+    // size-by-unclaimed-sites floor. Pre-fix: with 1 BUILDER + 12 sites the
+    // 0.30 fractionCap (12*0.30=3) was the binding constraint and the target
+    // ceil(12*1.5)=18 → 3, but the IDLE → SEEKING_BUILD bounce pattern from
+    // the soft-claim race kept only 1 BUILDER actively building. Floor of 2
+    // ensures redundancy on a non-empty queue; `Math.ceil(sitesUnclaimed*0.4)`
+    // pulls extra builders only when the queue actually has unclaimed work.
+    const sitesUnclaimedCount = sitesArr.reduce(
+      (acc, s) => acc + (s && !s.builderId ? 1 : 0), 0);
     let targetBuilders = sitesCount > 0
-      ? Math.ceil(sitesCount * builderPerSite)
+      ? Math.max(2, Math.ceil(sitesUnclaimedCount * 0.4))
       : 0;
     targetBuilders = Math.max(builderMin, Math.min(builderMax, targetBuilders));
     // v0.8.6 Tier 3 BC3: enforce BALANCE.builderMaxFraction (default 0.30) so

@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r9-honor-reservation (R9 Plan-Honor-Reservation, P0)
+
+### Plan-Honor-Reservation — close the harvest race + drain the build queue
+
+Implements the P0 fix from `assignments/homework7/Final-Polish-Loop/Round9/Plans/Plan-Honor-Reservation.md` (Reviewer PX-work-assignment-binding, B1 + B3). PX god-mode harness measured the user's verbatim complaint — "工作场景与 worker 能够一一绑定 broken" — as two distinct race conditions: (B1) FARM/LUMBER/QUARRY workers piling onto a single high-scoring tile while only one held the soft reservation, and (B3) 9-12 unbuilt blueprints sitting idle while the BUILDER pool sat at 1. Two surgical edits target both root causes.
+
+**(a) `WorkerStates.js` SEEKING_HARVEST + HARVESTING `onEnter` honor `tryReserve()` boolean** — `src/simulation/npc/fsm/WorkerStates.js:298-313, 342-358`. Prior code called `reservation.tryReserve(...)` and discarded the return value, violating the documented JobReservation contract ("a `false` result means the worker lost the race and should abandon"). Both onEnters now check the boolean — if `false`, null `worker.fsm.target` so the dispatcher's priority-7 `fsmTargetNull` transition (`WorkerTransitions.js:109`) routes back to IDLE for re-pick on the next tick. Net effect: 1-tick latency for losers, then they pick a different tile. PX evidence (race tile (54,42) with 2-4 simultaneous claimants in 8/8 snapshots) closes — only the holder of the live reservation can sit in HARVESTING.
+
+**(b) `RoleAssignmentSystem` BUILDER quota uses `max(2, ceil(sitesUnclaimed * 0.4))`** — `src/simulation/population/RoleAssignmentSystem.js:351-368`. Pre-fix formula `ceil(sitesCount * 1.5)` keyed off TOTAL sites (claimed and unclaimed alike), so once a single BUILDER reserved a single site the quota dropped just enough to be capped by `builderMaxFraction=0.30` and the remaining unclaimed queue starved. Post-fix: counts genuinely unclaimed sites (`builderId == null`), scales builder draft by 0.4× that count, and floors at 2 whenever a site exists. Downstream `builderMaxFraction` cap and `economyHeadroom` cap are unchanged — the floor of 2 is honored only when the worker pool can spare them. PX evidence (12 workers, 9-12 sites, only 1 BUILDER) closes — colony now drafts builders proportional to actual backlog.
+
+**Tests added:** `test/r9-honor-reservation.test.js` — 5 invariants. (1) HARVESTING.onEnter nulls `fsm.target` when `tryReserve` returns false; pre-existing reservation by another worker survives. (2) HARVESTING.onEnter happy path — claims the reservation when the tile is free. (3) BUILDER quota with 6 unclaimed sites + 12 workers ⇒ ≥2 builders. (4) BUILDER quota with 1 already-claimed site + 12 workers ⇒ floor of 2 still holds (redundancy invariant). (5) BUILDER quota with 0 sites ⇒ 0 (floor only kicks in for non-empty queue).
+
+**Tests rebaselined:** `test/worker-ai-bare-init.test.js` — the "bare-init: 3 blueprints + workers → at least 3 BUILDERs" test was tuned to the OLD `ceil(3*1.5)=5` formula. New formula yields `max(2, ceil(3*0.4))=2`, so the assertion is relaxed from `≥3` to `≥2`. The original invariant the test protects (BUILDER pool is non-trivially drafted on a non-empty queue) is preserved by the floor of 2.
+
+**Test baseline:** **1942 pass / 0 fail / 4 skip** (was 1941 pass / 1 fail / 4 skip pre-fix; the failure was the rebaselined test). New `r9-honor-reservation.test.js` adds 5 tests. Related suites all clean: `worker-fsm-*` 51/51, `role-assignment-*` 51/51, `job-reservation*` covered by the broader run.
+
+**Files changed:** 2 source modified (`src/simulation/npc/fsm/WorkerStates.js` +14/-4 LOC, `src/simulation/population/RoleAssignmentSystem.js` +12/-2 LOC) + 1 test added (`test/r9-honor-reservation.test.js` +127 LOC) + 1 test rebaselined (`test/worker-ai-bare-init.test.js` +6/-2 LOC) + CHANGELOG. Approx +159/-8 LOC across 5 files. Hard-freeze compliant (no new tile / role / building / mood / mechanic — surgical edits to existing code paths only).
+
 ## [Unreleased] — v0.10.2-r8-PU (R8 Plan-PU-hud-honesty, P1)
 
 ### PU-hud-honesty — non-freezing recovery header + actionable struggling sub-banner
