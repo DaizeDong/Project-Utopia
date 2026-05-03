@@ -81,7 +81,7 @@ function buildAuthorToneLabel(metric, value) {
   return { label: "", tierKey: "low" };
 }
 
-function scenarioGoalChips(state) {
+export function scenarioGoalChips(state) {
   const runtime = getScenarioRuntime(state);
   const targets = runtime.logisticsTargets ?? {};
   const counts = runtime.counts ?? {};
@@ -110,6 +110,36 @@ function scenarioGoalChips(state) {
   add("farms", counts.farms, targets.farms);
   add("lumber", counts.lumbers, targets.lumbers);
   add("walls", counts.walls, targets.walls);
+
+  // R9 PV §3 — Plan-Cascade-Mitigation Step 1. Surface a food-runway chip
+  // when foodHeadroomSec drops into the warning band. The recovery toast +
+  // generic objective log were silent through the warning window between
+  // food=20 and food=0; this chip restores actionable signal so the player
+  // sees the cliff coming with ≥30 sim-sec lead time. Pushed last so it
+  // renders at the end of the goal-chip row; the priority-overflow hider
+  // does NOT include `.hud-goal-chip` last-of-type, so the runway chip
+  // survives bar overflow at narrow widths (resource chips drop first).
+  const foodHeadroom = Number(state?.metrics?.foodHeadroomSec ?? Infinity);
+  const workersAlive = Number(state?.metrics?.populationStats?.workers ?? 0);
+  if (Number.isFinite(foodHeadroom) && workersAlive >= 1) {
+    if (foodHeadroom < 15) {
+      chips.push({
+        label: `food <${Math.max(0, Math.round(foodHeadroom))}s`,
+        name: "food",
+        count: `<${Math.max(0, Math.round(foodHeadroom))}s`,
+        done: false,
+        severity: "error",
+      });
+    } else if (foodHeadroom < 30) {
+      chips.push({
+        label: `food <${Math.round(foodHeadroom)}s`,
+        name: "food",
+        count: `<${Math.round(foodHeadroom)}s`,
+        done: false,
+        severity: "warning",
+      });
+    }
+  }
   return chips;
 }
 
@@ -711,6 +741,12 @@ export class HUDController {
       const el = doc.createElement("span");
       el.className = `hud-goal-chip hud-goal-chip--${chip.done ? "done" : "pending"}`;
       el.setAttribute?.("data-status", chip.done ? "done" : "pending");
+      // R9 PV Step 1 — surface severity (warning/error) for the food-runway
+      // chip so CSS can colour it red/amber. Defaults to "" for plain
+      // scenario goal chips, preserving the legacy DOM contract.
+      if (chip.severity) {
+        el.setAttribute?.("data-severity", String(chip.severity));
+      }
       // v0.10.1-A6 (R3 P0) — split chip text into name + count spans so
       // the ≤1280 px responsive band can hide the verbose name and keep
       // only the count visible (icon-only mode). The `title` attribute

@@ -79,3 +79,31 @@ export function evaluateRunOutcomeState(state) {
     devTier: deriveDevTier(state?.gameplay?.devIndex),
   };
 }
+
+/**
+ * R9 PV §5.3 — Plan-Cascade-Mitigation Step 4. Pure helper invoked by
+ * GameApp#evaluateRunOutcome to prepend a famine chronicle entry when the
+ * end-of-run death distribution is starvation-dominated. Mutates
+ * `state.gameplay.objectiveLog` in place; idempotent via the head-prefix
+ * check ("Famine —") so repeated invocations don't multiply the entry.
+ * Returns true if an entry was added.
+ */
+export function maybeRecordFamineChronicle(state) {
+  try {
+    const reasons = state?.metrics?.deathsByReason ?? {};
+    const starvationDeaths = Number(reasons.starvation ?? 0);
+    const totalDeaths = Number(state?.metrics?.deathsTotal ?? 0);
+    if (totalDeaths < 1 || starvationDeaths < 0.5 * totalDeaths) return false;
+    state.gameplay ??= {};
+    if (!Array.isArray(state.gameplay.objectiveLog)) state.gameplay.objectiveLog = [];
+    const log = state.gameplay.objectiveLog;
+    const head = String(log[0] ?? "");
+    if (head.includes("Famine —")) return false;
+    const t = Number(state?.metrics?.timeSec ?? 0).toFixed(1);
+    log.unshift(`[${t}s] Famine — every colonist hungry, no reserves (${starvationDeaths}/${totalDeaths} deaths from starvation).`);
+    state.gameplay.objectiveLog = log.slice(0, 24);
+    return true;
+  } catch {
+    return false;
+  }
+}

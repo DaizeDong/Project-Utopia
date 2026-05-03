@@ -549,10 +549,33 @@ function shouldStarve(entity, dt, state, services, nowSec) {
       if (nutrition.reachable) {
         entity.starvationSec = Math.max(0, Number(entity.starvationSec ?? 0) - dt * 1.2);
       } else {
+        // R9 PV §3a — Plan-Cascade-Mitigation Step 2. Desync the starvation
+        // cliff. Pre-fix: when the global food pool emptied, every worker
+        // entered lethal hunger the same tick with `starvationSec=0`, then
+        // ticked +dt in lockstep → 12 deaths in ~25 sim-sec. On the FIRST
+        // entry into the unreachable-food accumulator we seed `starvationSec`
+        // to a deterministic ±10s phase offset hashed from worker.id, so the
+        // cliff stretches to ~50 sim-sec. No RNG state mutation; entities
+        // without an id (visitors) hash to 0 → no phase shift, preserving
+        // baseline. The seed runs at most once per starvation episode
+        // (gated by `_starvationPhaseSeeded`); subsequent ticks accumulate
+        // normally so `holdSec` semantics are preserved.
+        if (!entity._starvationPhaseSeeded) {
+          const idStr = String(entity.id ?? "");
+          let h = 0;
+          for (let i = 0; i < idStr.length; i += 1) h = ((h << 5) - h + idStr.charCodeAt(i)) | 0;
+          const phaseOffset = ((Math.abs(h) % 21) - 10);  // -10 .. +10 sim-sec
+          entity.starvationSec = Number(entity.starvationSec ?? 0) + phaseOffset;
+          entity._starvationPhaseSeeded = true;
+        }
         entity.starvationSec = Number(entity.starvationSec ?? 0) + dt;
       }
     } else {
       entity.starvationSec = 0;
+      // Reset the seed gate so the next starvation episode gets a fresh
+      // phase offset (id-hash is deterministic — same worker re-enters with
+      // the same offset, so cohort spread persists across episodes).
+      entity._starvationPhaseSeeded = false;
     }
 
     return {
