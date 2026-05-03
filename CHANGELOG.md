@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r8-PS (R8 Plan-PS-builder-claim, P0 critical)
+
+### PS-late-game-stall — BUILDER claim cooldown bypass + zombie-world end-gate + survivalScore worker-clamp
+
+Implements the P0 fix from `assignments/homework7/Final-Polish-Loop/Round8/Plans/PS-late-game-stall.md` (Reviewer PS-late-game-stall, Tier A). PS reviewer's three independent BLIND runs all converged on the same terminal state — `buildings=0`, `workers→0`, devIdx stuck at ~15.5 — within sim 6 min. Run 3 (manual W+F+L bootstrap, 30 sim min) recorded **0 builderId assignments across 53,675 sim-steps**, then continued to phase=active in zombie-world after workers reached 0, while survivalScore kept accruing +1/s against the corpse colony. Three sub-fixes target the three causal chains:
+
+**(a) BUILDER promotion bypasses `roleChangeCooldownSec` when sites unclaimed** — `RoleAssignmentSystem.js:425`. The R5 PA-shipped role-change cooldown (4s, hysteresis to dampen FARM↔WOOD churn) was suppressing FARM→BUILDER promotion on the second manager interval — every worker had been demoted to FARM on the first interval and could not flip back inside the cooldown window. Fix: pass `{ force: builderForce }` where `builderForce = sitesArr.some((s) => s && !s.builderId)`. Bypass is gated on unclaimed sites so the cycle still respects cooldown when every site already has a builder (no thrash regression). +2 telemetry fields published on `state.metrics`: `builderTargetCount` and `constructionSitesCount`, written from both the early-return (n===0) branch and the main exit path.
+
+**(b) Zombie-world session-end gate** — `GameApp.js:#evaluateRunOutcome`. The upstream `evaluateRunOutcomeState` already returns a loss when `workers <= 0`, but PS Run 3's manual-bootstrap path apparently did not refresh `populationStats.workers` for the entire 30-min horizon, so outcome stayed null. Fix: in the `!outcome` branch, check workers + construction-progress + grace window (`BALANCE.zombieWorldGraceSec=60`) and force `#setRunPhase("end", { outcome: "loss", ... })` when all three hold. Tracked via `state.gameplay._zombieSinceSec`; reset to -1 once any worker is alive again so a momentary blip doesn't trip the gate.
+
+**(c) survivalScore worker-clamp** — `ProgressionSystem.js:655`. Pre-fix Run 3 accrued +91 → +1031 across sim 6→28 min with workers=0 / buildings=0 / production=0 — the score panel said "you're earning points" while the world was rigor-mortis. Fix: clamp `perSec * ticks` by `min(workersAlive/4, 1)` so a 4-worker colony scores 100% baseline, a 1-worker colony scores 25%, a corpse scores 0. Source-of-truth chain: `state.metrics.populationStats.workers ?? state.agents.filter(WORKER && alive).length ?? 0`.
+
+**Tests added:** `test/ps-r8-late-game-stall.test.js` — 4 cases. (a) Bare-init colony with all-FARM workers (post-cooldown stamp) + 1 warehouse blueprint → ≥1 BUILDER after one tick. (c) workers=0 → 0 score over 60s; workers ∈ {1,4,8} → linear-then-clamp accrual. (b) `BALANCE.zombieWorldGraceSec` exists and is sane (full GameApp gate exercised by manual smoke per plan §6).
+
+**Existing tests adjusted:** `test/survival-score-system.test.js` (freshState fixture: +`populationStats: { workers: 4 }`) and `test/balance-fail-state-and-score.test.js` (stateA + stateB stub-state factories). Per plan Risk R3 — these tests previously bypassed `state.agents` and would now collapse to 0 score under the workerScale clamp; the clamp itself is the documented score-deception fix, so the fixtures were updated to reflect the contract.
+
+**Test baseline:** 1932 tests / **1928 pass / 0 fail** / 4 skip on `node --test test/*.test.js`. Net +4 passes vs parent `5be7536` from the new `ps-r8-late-game-stall.test.js`. The pre-existing failure on `test/ui/hud-score-dev-tooltip.test.js` (asserts `+5/birth` against live `survivalScorePerBirth=10` — stale post-v0.8.5 retune) is unchanged on parent and not addressed here.
+
+**Files changed:** 4 source modified (`src/config/balance.js` +1 BALANCE constant, `src/simulation/population/RoleAssignmentSystem.js` cooldown bypass + 2 telemetry writes, `src/app/GameApp.js` zombie gate + 1 import, `src/simulation/meta/ProgressionSystem.js` worker-clamp) + 1 test new + 2 tests adjusted + CHANGELOG. Approx +110 / -10 LOC across 8 files. Hard-freeze compliant (no new tile / role / building / mood / mechanic / audio / UI panel — pure cooldown semantics + end-phase gating + score formula clamp + 1 tunable BALANCE knob).
+
 ## [Unreleased] — v0.10.2-r7-PK-followup (R7 PK-followup-deeper-perf, P1)
 
 ### PK-followup deeper-perf — HUD `(capped)` suffix only fires on genuine throttle

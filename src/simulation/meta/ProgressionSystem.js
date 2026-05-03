@@ -652,7 +652,19 @@ export function updateSurvivalScore(state, dt) {
   const perBirth = Number(BALANCE.survivalScorePerBirth ?? 5);
   const perDeath = Number(BALANCE.survivalScorePenaltyPerDeath ?? 10);
   const ticks = Math.max(0, Number(dt) || 0);
-  metrics.survivalScore += perSec * ticks;
+  // PS-late-game-stall (R8): silence survivalScore creep when the colony
+  // is dead. Pre-fix Run 3 accrued +91 -> +1031 across sim 6->28 min with
+  // workers=0 / buildings=0 / production=0 — the score panel said
+  // "you're earning points" while the world was rigor-mortis. clamp the
+  // perSec accumulator by min(workers/4, 1) so a 4-worker colony scores
+  // 100% baseline, a 1-worker colony scores 25%, a corpse scores 0.
+  const workersAlive = Number(
+    state?.metrics?.populationStats?.workers
+      ?? state?.agents?.filter?.((a) => a?.type === "WORKER" && a?.alive !== false)?.length
+      ?? 0,
+  );
+  const workerScale = Math.max(0, Math.min(1, workersAlive / 4));
+  metrics.survivalScore += perSec * ticks * workerScale;
 
   // v0.10.1-r1-A5 P0-2: score must reflect outcomes, not just time.
   // Add a per-second bonus proportional to productive-building count so a

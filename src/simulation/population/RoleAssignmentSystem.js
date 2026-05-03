@@ -422,7 +422,17 @@ export class RoleAssignmentSystem {
       }
     }
     const builderSet = new Set(builders);
-    for (const w of builders) setWorkerRole(state, w, "BUILDER");
+    // PS-late-game-stall (R8): BUILDER promotion must bypass
+    // roleChangeCooldownSec when there are unclaimed construction sites.
+    // Pre-fix the v0.8.x role cooldown stranded a 12-worker bare-init colony
+    // as FARM after the first manager interval set them all to FARM — the
+    // BUILDER promotion attempted on the next tick was suppressed by the 4s
+    // cooldown, so PS Run-3 saw "0 builderId across 53k sim steps". Force is
+    // gated on sitesUnclaimed so the saved cycle still uses cooldown when
+    // every site already has a builder (no thrash regression).
+    const sitesUnclaimed = sitesArr.some((s) => s && !s.builderId);
+    const builderForce = sitesUnclaimed;
+    for (const w of builders) setWorkerRole(state, w, "BUILDER", { force: builderForce });
     // Any current BUILDER that didn't make the cut reverts to FARM. When
     // sites empty (targetBuilders === 0) this drains the entire BUILDER pool.
     for (const w of currentBuilderSet) {
@@ -440,6 +450,10 @@ export class RoleAssignmentSystem {
         GUARD: guards.length,
         BUILDER: builders.length,
       };
+      // PS-late-game-stall (R8): expose targetBuilders + sitesCount so the
+      // R8 audit can confirm the BUILDER promotion path is firing.
+      state.metrics.builderTargetCount = targetBuilders;
+      state.metrics.constructionSitesCount = sitesCount;
       return;
     }
 
@@ -773,5 +787,9 @@ export class RoleAssignmentSystem {
       if (r && counts[r] !== undefined) counts[r] += 1;
     }
     state.metrics.roleCounts = counts;
+    // PS-late-game-stall (R8): expose targetBuilders + sitesCount so the
+    // R8 audit can confirm the BUILDER promotion path is firing.
+    state.metrics.builderTargetCount = targetBuilders;
+    state.metrics.constructionSitesCount = sitesCount;
   }
 }
