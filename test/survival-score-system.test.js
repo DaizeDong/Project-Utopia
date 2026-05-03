@@ -29,6 +29,11 @@ function freshState() {
       deathsTotal: 0,
       survivalLastBirthsSeen: 0,
       survivalLastDeathsSeen: 0,
+      // PS-late-game-stall (R8): workerScale clamps perSec accrual by
+      // min(workers/4, 1). Tests of full per-second accrual keep workers >= 4
+      // to exercise the unscaled (workerScale=1) path; a separate test in
+      // ps-r8-late-game-stall.test.js asserts the workers=0 zero-accrual path.
+      populationStats: { workers: 4 },
     },
   };
 }

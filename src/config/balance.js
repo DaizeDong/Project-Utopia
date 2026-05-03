@@ -779,6 +779,14 @@ export const BALANCE = Object.freeze({
   // buildings) at +0.48/s ≈ 1.5× the time floor; a developed colony at
   // 30+ productive buildings hits +2.4/s ≈ 3.4× the time floor.
   survivalScorePerProductiveBuildingSec: 0.08,
+  // PS-late-game-stall (R8): zombie-world session-end gate. When workers=0
+  // for >= this many sim-sec AND no construction-site progress, force
+  // session.phase=end so the survival-score / leaderboard do not accrue
+  // points to a dead colony. Run-3 of the R8 PS reviewer trace stayed in
+  // phase=active for 30 min after workers reached 0 because the upstream
+  // populationStats.workers field was not refreshing in the manual-bootstrap
+  // path; this knob backstops that.
+  zombieWorldGraceSec: 60,
   // v0.10.1-r1-A5 P0-4: autopilot processing-chain unblock. ColonyDirector
   // currently bumps quarry to priority 77 only when hasAccessibleWorksite
   // returns false; on Archipelago/Temperate the STONE node spawns far

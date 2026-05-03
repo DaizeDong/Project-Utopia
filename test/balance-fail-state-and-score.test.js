@@ -130,11 +130,15 @@ test("score divergence: productive buildings drive ≥40% score gap over 600s", 
   );
 
   // State A: no productive buildings (do-nothing baseline)
+  // PS-late-game-stall (R8): both states must keep workers >= 4 so the new
+  // workerScale clamp doesn't zero the perSec floor — this test isolates the
+  // per-building bonus, NOT the worker-presence floor.
   const stateA = {
     metrics: {
       survivalScore: 0, timeSec: 0,
       birthsTotal: 0, deathsTotal: 0,
       survivalLastBirthsSeen: 0, survivalLastDeathsSeen: 0,
+      populationStats: { workers: 4 },
     },
     buildings: {
       warehouses: 1, farms: 0, lumbers: 0, quarries: 0,
@@ -148,6 +152,7 @@ test("score divergence: productive buildings drive ≥40% score gap over 600s", 
       survivalScore: 0, timeSec: 0,
       birthsTotal: 0, deathsTotal: 0,
       survivalLastBirthsSeen: 0, survivalLastDeathsSeen: 0,
+      populationStats: { workers: 4 },
     },
     buildings: {
       warehouses: 1, farms: 5, lumbers: 3, quarries: 1,

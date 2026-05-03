@@ -69,6 +69,7 @@ import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState } from "./runOutcome.js";
+import { BALANCE } from "../config/balance.js";
 import { ensurePerformanceTelemetry, recordPerformanceSample } from "./performanceTelemetry.js";
 import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
 import { setActiveUiProfile } from "./uiProfileState.js";
@@ -2542,7 +2543,38 @@ export class GameApp {
   #evaluateRunOutcome() {
     if (this.state.session.phase !== "active") return;
     const outcome = evaluateRunOutcomeState(this.state);
-    if (!outcome) return;
+    // PS-late-game-stall (R8): zombie-world gate. If workers=0 AND no
+    // construction sites are making progress AND we've been in this state
+    // for >= BALANCE.zombieWorldGraceSec, force a loss outcome. This closes
+    // the Run-3 hole where manual placements perturbed the population delta
+    // and #evaluateRunOutcome's outcome.workers check returned null for the
+    // entire 30-min horizon. Tracked via state.gameplay._zombieSinceSec so
+    // a momentary 0-worker blip doesn't trigger; reset to -1 once any
+    // worker is alive again.
+    if (!outcome) {
+      const workers = Number(this.state.metrics?.populationStats?.workers ?? 0);
+      this.state.gameplay ??= {};
+      if (workers <= 0) {
+        const sites = Array.isArray(this.state.constructionSites) ? this.state.constructionSites : [];
+        const noProgress = sites.every((s) => Number(s?.workAppliedSec ?? 0) === 0);
+        const nowSec = Number(this.state.metrics?.timeSec ?? 0);
+        const zombieSince = Number(this.state.gameplay._zombieSinceSec ?? -1);
+        if (zombieSince < 0) {
+          this.state.gameplay._zombieSinceSec = nowSec;
+        } else if (noProgress && (nowSec - zombieSince) >= Number(BALANCE.zombieWorldGraceSec ?? 60)) {
+          this.#setRunPhase("end", {
+            outcome: "loss",
+            reason: "Colony wiped — no surviving colonists, no recoverable construction.",
+            actionMessage: "Run ended: zombie-world gate fired (no workers, no progress).",
+            actionKind: "error",
+          });
+          return;
+        }
+      } else {
+        this.state.gameplay._zombieSinceSec = -1;
+      }
+      return;
+    }
     // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 2b) — record the run into
     // the local leaderboard BEFORE flipping to the end phase so the boot /
     // end overlay reads the freshest entry on its first render. The
