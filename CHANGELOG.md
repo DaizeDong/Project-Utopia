@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-PFF-revert-cascade-regression, P0 CRITICAL)
+
+### Plan-PFF-revert-cascade-regression — Make starvation phase-offset non-positive
+
+Implements the P0 regression fix from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-PFF-revert-cascade-regression.md` (Reviewer PFF-r9-regression-audit). PFF's bisection at seed-42 / temperate_plains / 30-day pinned a +12 DevIndex / +18 K SurvivalScore regression to a single line in `MortalitySystem.js` introduced by commit `2f87413` (Plan-Cascade-Mitigation): the per-worker deterministic phase-offset on `entity.starvationSec` was symmetric (`((Math.abs(h) % 21) - 10)`, range -10..+10) instead of strictly non-positive. The intent was to STRETCH the cohort tail (delay only); the symmetric implementation also FRONT-LOADED the cohort head by up to 10 sim-sec — ~29 % below baseline `holdSec=34 s`, beneath the recovery latch's response window. Result: workers died ~10 sim-sec earlier, the cascade-recovery loop's latency budget broke, and the bench fell from "max_days_reached @ DevIndex 43.87" back to "loss @ day-9 / DevIndex 28.68."
+
+**(Step 2) One-line operator + range fix** — `src/simulation/lifecycle/MortalitySystem.js:567`. Changed `const phaseOffset = ((Math.abs(h) % 21) - 10);` (range -10..+10) → `const phaseOffset = -(Math.abs(h) % 11);` (range -10..0). Cohort spread is preserved (~10-sec window), but every worker's death is now DELAYED relative to baseline `holdSec`, never accelerated. The seed-once gate (`_starvationPhaseSeeded`) is unchanged so the offset still applies at cohort entry only, not per-tick. Comment expanded inline to explain the invariant for future maintainers.
+
+**(Step 3) Bench-floor invariant test** — `test/mortality-phase-offset-non-positive.test.js` (new, 4 cases). Mirrors the id-hash derivation literally and asserts every offset across 1024 string-id workers, 1024 numeric-id workers, and 4096 distribution-coverage workers satisfies `-10 <= offset <= 0`. Plus visitor-safe id (empty/null/undefined) → 0, and a distribution sanity check that ≥8 of 11 buckets are populated. If anyone reverts to a symmetric range, swaps the modulus, or drops the negation, this test will fail with the offending id and value.
+
+**Bench verification:** `node scripts/long-horizon-bench.mjs --seed 42 --preset temperate_plains --max-days 30 --tick-rate 4` → `outcome=max_days_reached days=30 devIndex(last)=44.45 survivalScore=26694`. All three plan acceptance gates met (DevIndex ≥ 40 ✓, SurvivalScore ≥ 20 000 ✓, outcome = max_days_reached ✓), and post-fix numbers actually exceed `564a866`'s pre-regression baseline (43.87 / 26 092 / 30). The `passed=false` flag in bench output reflects existing population/death thresholds independent of this plan's gates.
+
+**Test baseline:** **1981 pass / 0 fail / 4 skip** (full suite, 1586 top-level tests across 120 suites; +4 from this plan's new invariant test, +0 net regression). No pre-existing test pinned the exact post-offset starvationSec of a specific worker id (clean bisection per the audit), so the operator change was safe.
+
+**Files changed:** 1 source modified (`src/simulation/lifecycle/MortalitySystem.js`, +4/-1 LOC: comment + operator/range swap) + 1 test added (`test/mortality-phase-offset-non-positive.test.js`, +73 LOC) + CHANGELOG. Approx ~30 LOC total — within the plan's ~30 LOC budget. Hard-freeze compliant: no new TILE / role / building / mood / mechanic / event type / HUD pill / BALANCE knob — only an operator + range tightening on an existing per-tick deterministic offset.
+
+**Suggestions B (clamp at apply time), C (full revert of lines 552–579), and D (FREEZE-VIOLATING adaptive recovery latch redesign)** explicitly NOT taken — Suggestion A (this plan) is the safest single-line fix, preserves the cliff-spreading design intent, and eliminates the regressive half by construction (no per-tick clamp gymnastics, no risk of clobbering legitimate positive starvationSec carried in from a prior tick).
+
 ## [Unreleased] — v0.10.2-r10-pee-goal-attribution (R10 Plan-PEE-goal-attribution, P1)
 
 ### Plan-PEE-goal-attribution — Recognise warehouse-on-depot completion + fix "first extra" toast misnomer
