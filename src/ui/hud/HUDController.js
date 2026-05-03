@@ -2316,12 +2316,42 @@ export class HUDController {
     const threat = Number(state.gameplay?.threat ?? 0);
     const timeSec = Number(state.metrics?.timeSec ?? 0);
 
-    // Determine status tier
+    // R12 Plan-R12-stable-tier-fix (A7 #1 P0): tier predicate now consults
+    // food rate, food runway, and farm/warehouse count — not just threat.
+    // Pre-fix the screenshot-13 case (Food -151/min, 0 farms, 1m 12s runway)
+    // earned the green STABLE pill purely because threat=33 < 50, lying to
+    // first-time players about their actual T+72s failure path.
+    const computedRates = this._lastComputedRates ?? {};
+    const foodRatePerMin = Number.isFinite(computedRates.food) ? computedRates.food : 0;
+    const foodStock = Number(state.resources?.food ?? 0);
+    const farmsCount = Number(state.buildings?.farms ?? 0);
+    const warehousesCount = Number(state.buildings?.warehouses ?? 0);
+    // Headroom in seconds: how long until food hits 0 at the current net rate.
+    // Positive (or near-zero) net rate => +Infinity (no headroom problem).
+    const foodHeadroomSec = foodRatePerMin >= -0.05
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, (foodStock / -foodRatePerMin) * 60);
+
+    // Determine status tier (R12 multi-input predicate)
     let status;
-    if (threat < 20) status = "thriving";
-    else if (threat < 50) status = "stable";
-    else if (threat < 70) status = "struggling";
-    else status = "crisis";
+    if (foodHeadroomSec < 30 || threat >= 70) {
+      // CRISIS preempts everything: < 30s food runway OR threat >= 70.
+      status = "crisis";
+    } else if (
+      foodRatePerMin < -10 ||
+      foodHeadroomSec < 90 ||
+      farmsCount === 0 ||
+      warehousesCount === 0
+    ) {
+      // STABLE/THRIVING require food infra + rate stability.
+      status = "struggling";
+    } else if (threat < 20 && farmsCount >= 1 && foodRatePerMin >= 0) {
+      status = "thriving";
+    } else if (threat < 50) {
+      status = "stable";
+    } else {
+      status = "struggling";
+    }
 
     const badgeText = status.charAt(0).toUpperCase() + status.slice(1).toUpperCase()
       .replace("THRIVING", "THRIVING")
