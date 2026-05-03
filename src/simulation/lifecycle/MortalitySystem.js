@@ -564,7 +564,10 @@ function shouldStarve(entity, dt, state, services, nowSec) {
           const idStr = String(entity.id ?? "");
           let h = 0;
           for (let i = 0; i < idStr.length; i += 1) h = ((h << 5) - h + idStr.charCodeAt(i)) | 0;
-          const phaseOffset = ((Math.abs(h) % 21) - 10);  // -10 .. +10 sim-sec
+          // PFF R11: non-positive only — phase-offset must DELAY death, never accelerate.
+          // Symmetric ±10 s (pre-fix) front-loaded the cohort head by ~29 % vs baseline
+          // holdSec=34 s, breaking the recovery latch's response window.
+          const phaseOffset = -(Math.abs(h) % 11);  // -10 .. 0 sim-sec
           entity.starvationSec = Number(entity.starvationSec ?? 0) + phaseOffset;
           entity._starvationPhaseSeeded = true;
         }
