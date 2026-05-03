@@ -1747,8 +1747,15 @@ export class HUDController {
       // v0.8.2 Round-0 01b (P1): freeze the visible ticker when the session is
       // not active so the menu/end overlays don't create the illusion that the
       // simulation is still running behind them.
+      // R8 PU-hud-honesty (a): NOTE — `foodRecoveryMode` does NOT pause the
+      // simulation (only `pausedByCrisis` does, via controls.isPaused). The
+      // freeze gate below MUST stay phase-only; recovery mode must keep the
+      // Score/Dev/Run header ticking so the player sees that time IS still
+      // accruing. The data-recovery attribute below surfaces recovery as a
+      // visual cue without freezing the timer (no early-return path).
       const totalSec = Math.max(0, Math.floor(Number(state.metrics?.timeSec ?? 0)));
       const inActive = state.session?.phase === "active" && totalSec > 0;
+      const inRecovery = Boolean(state.ai?.foodRecoveryMode);
       // v0.8.2 Round-6 Wave-3 02c-speedrunner (Step 4) — keep the final
       // score visible while the end overlay is up so reviewers can see
       // their result before the boot screen takes over. `inEnd` flips on
@@ -1848,6 +1855,14 @@ export class HUDController {
       // Round 2 01b: keep Score and Dev as separate hover targets while the
       // wrapper carries the combined title for legacy tests and narrow DOMs.
       this.statusObjective.setAttribute?.("title", `${scoreTitle} | ${devTitle}`);
+      // R8 PU-hud-honesty (a): expose recovery state on the wrapper so CSS
+      // / consumers can apply a non-freezing visual cue (e.g. amber tint).
+      // The timer itself MUST keep ticking — see `inActive` derivation.
+      if (inRecovery) {
+        this.statusObjective.setAttribute?.("data-recovery", "active");
+      } else {
+        this.statusObjective.removeAttribute?.("data-recovery");
+      }
     }
     // v0.8.2 Round-0 02c-speedrunner (Step 5) — Compact scenario-progress
     // ribbon. Surfaces the `scenario.targets` counts (routes/depots/wh/farms/

@@ -146,11 +146,22 @@ export function getAutopilotStatus(state, options = {}) {
   const recoveryText = enabled && state?.ai?.foodRecoveryMode
     ? `${llmText} | Recovery: food runway - expansion paused`
     : llmText;
+  // R8 PU-hud-honesty (b): make "manual takeover recommended" actionable.
+  // Append a tool-key hint (Space pauses, 2 selects Farm) and a landmark
+  // coord so the player knows WHERE the colony centre is. Coords come from
+  // grid dims (cheap, always available). Keeps the legacy "manual takeover
+  // recommended" substring intact for the autopilot-struggling-banner test.
+  const gridW = Number(state?.grid?.width ?? 0);
+  const gridH = Number(state?.grid?.height ?? 0);
+  const landmark = (gridW > 0 && gridH > 0)
+    ? ` near (${Math.floor(gridW / 2)},${Math.floor(gridH / 2)})`
+    : "";
+  const actionHint = ` \u2014 press Space to pause, 2 for Farm tool${landmark}`;
   const text = struggling
-    ? `${recoveryText} | Autopilot struggling \u2014 manual takeover recommended`
+    ? `${recoveryText} | Autopilot struggling \u2014 manual takeover recommended${actionHint}`
     : recoveryText;
   const title = struggling
-    ? `${llmTitle} \u2014 colony food is below emergency line; consider disabling autopilot and rebuilding farms manually.`
+    ? `${llmTitle} \u2014 colony food is below emergency line; consider disabling autopilot (Space pauses sim) and rebuilding farms manually with the Farm tool (2)${landmark}.`
     : llmTitle;
 
   return {

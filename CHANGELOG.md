@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r8-PU (R8 Plan-PU-hud-honesty, P1)
+
+### PU-hud-honesty — non-freezing recovery header + actionable struggling sub-banner
+
+Implements the P1 fix from R8 Plan-PU-holistic-rank (last R8 implementer). Two small UX honesty fixes targeting the autopilot Recovery + struggling-banner surfaces.
+
+**(a) Score/Dev/Run header stays alive during Recovery** — `src/ui/hud/HUDController.js`. Audited the `inActive` derivation in the statusObjective render block (lines 1748-1851). The freeze gate is purely `state.session?.phase === "active" && totalSec > 0` — `foodRecoveryMode` does NOT pause the simulation (only `pausedByCrisis` flips `controls.isPaused`), so the timer correctly keeps ticking during recovery. Made this contract explicit with a comment block and added a `data-recovery="active"` attribute on `#statusObjective` so visual layers can apply a non-freezing cue (e.g. amber tint) without affecting timer text. Cleared on recovery exit.
+
+**(b) "Manual takeover recommended" sub-banner is now actionable** — `src/ui/hud/autopilotStatus.js:142-154`. Appended a tool-key hint (`press Space to pause, 2 for Farm tool`) and a landmark coord (`near (X,Y)` from `state.grid` centroid, defensive fallback when grid missing) to both the banner text and the hover title. Legacy substring `"manual takeover recommended"` preserved so `test/autopilot-struggling-banner.test.js` still pins the trigger condition. Title gains the same hint phrasing for screen-reader / hover surfaces.
+
+**Test baseline:** All autopilot/HUD tests pass (24/24 across `autopilot-struggling-banner`, `hud-autopilot-status-contract`, `autopilot-status-degraded`, `autopilot-food-crisis-autopause`, `ui/hud-autopilot-chip`, `hud-autopilot-toggle`). The pre-existing `ui/hud-score-dev-tooltip` failure (expects `+5/birth`, code emits `+10/birth`) is on the parent commit too — unrelated to this change.
+
+**Files changed:** 2 source modified (`src/ui/hud/HUDController.js` +12/-2 LOC, `src/ui/hud/autopilotStatus.js` +14/-3 LOC) + CHANGELOG. Approx +26/-5 LOC across 3 files. Hard-freeze compliant (no new tile / role / building / mood / mechanic — pure UI honesty pass on existing surfaces).
+
 ## [Unreleased] — v0.10.2-r8-PT (R8 Plan-PT-raid-pressure-restore, P1)
 
 ### PT-invasion-pressure — banditRaid weight revert + cadence bump + tier-driven saboteur draft
