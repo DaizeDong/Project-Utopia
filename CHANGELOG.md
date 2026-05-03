@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R11 Plan-PII-modal-zstack, P2)
+
+### Plan-PII-modal-zstack — Splash mount stacking guard + LLM-degradation toast
+
+Implements the P2 polish from `assignments/homework7/Final-Polish-Loop/Round11/Plans/Plan-PII-modal-zstack.md` (Reviewer PII-holistic-rank). PII's blind playthrough surfaced two silent regressions sharing a common root: the UI fails to narrate state transitions the player needs to perceive. (1) Clicking "New Map" from a Run Ended panel re-mounted the splash *behind* the still-mounted run-ended overlay — sim clock stuck at 0:04 for two real-time minutes because the run-ended overlay held the pause latch and the splash's Start button was occluded by an invisible stacking-order issue. A real player would conclude "game froze, reload." (2) Mid-run `state.ai` flipped from `llm/llm` to `fallback/llm` with no toast, no log line, no badge color change — R10's most satisfying moment ("the Storyteller line after the saboteur kill") was silently muted in R11.
+
+**(Step 1) Splash-mount stacking guard.** `src/ui/hud/GameStateOverlay.js#render`. Captures `priorPhase` before overwriting `#lastPhase`, then in the `if (isMenu)` branch when `priorPhase !== "menu"` (a !menu→menu transition): force-hides `#overlayEndPanel`, sweeps any stray `.overlay-panel.run-ended` element via `document.querySelector` (calls `_dispose()` if present, else `.remove()`), and clears `state.run.pausedByOverlay` if latched. All three operations are no-ops when nothing is amiss; idempotent and defensive.
+
+**(Step 2) LLM-degradation toast.** `src/ui/hud/HUDController.js#render` (autopilot-chip section). Maintains `_llmLastModeCombined` + `_llmDegradeLastEmitSec` instance state. When the prior tick's combined `${aiMode}/${coverage}` was exactly `"llm/llm"` AND the current is `"fallback/llm"` AND ≥30 sim-sec have elapsed since the last emission, writes `state.controls.actionMessage = "Story AI offline — fallback director taking over."` with `actionKind = "warn"` (reusing the existing toast surface — no new event type, no new HUD component). On cold boot `_llmLastModeCombined` is `undefined` so the first observed `fallback/llm` does NOT fire (boot-time "Why no WHISPER?" panel already covers boot-state communication).
+
+**Files changed:** 2 source modified — `src/ui/hud/GameStateOverlay.js` (+~20 LOC: priorPhase capture + isMenu transition guard) and `src/ui/hud/HUDController.js` (+~22 LOC: combined-mode tracker + 30 s debounced degradation toast). 1 test added — `test/splash-unmount-stale-run-ended.test.js` (two cases: stale removal on transition + no-throw negative control). Hard-freeze compliant: no new mechanic, no new HUD component, no new event type — both fixes extend existing infrastructure.
+
+**Acceptance:** PII's most-frustrating moment (modal pause-trap on "New Map" from Run Ended) is gone; LLM mode-degradation now surfaces as a one-line warning toast within 1 tick of the transition; toast does not fire on boot or more than once per 30 sim-sec. Unit test covers stale-overlay removal and no-throw negative control.
+
+**Test baseline:** **1987 pass / 0 fail / 4 skip** (full suite, 120 suites; +2 over the v0.10.1-n cumulative pre-fix baseline from the new splash test's two cases). Local impacted suites (`game-state-overlay`, `end-panel-finale`, `hud-controller`, `hud-autopilot-status-contract`, `hud-autopilot-toggle`) all green.
+
+**Suggestions B (splash-only minimal variant), C (LLM-toast-only minimal variant), D (FREEZE-VIOLATING Frontier-progress topbar pill), E (FREEZE-VIOLATING centralised modal z-stack manager)** explicitly NOT taken — Suggestion A (this plan) lands both PII frustrations in one coordinated UI-only pass at the upper edge of the in-freeze surface; the two fixes are independently rollback-safe.
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-PHH-convoy-feel, P1)
 
 ### Plan-PHH-convoy-feel — Fading worker motion trails + road foot-traffic EWMA tint
