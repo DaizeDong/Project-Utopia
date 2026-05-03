@@ -110,13 +110,37 @@ export function getScenarioVoiceForTemplate(templateId) {
 //
 // Numbers chosen to cover ALPHA_START + warehouse(10) + farm(5) + 1 spare
 // on the wood-starved water maps so the first build cycle doesn't lock.
+//
+// v0.10.1-n R12 Plan-R12-non-temperate-fallback (A5 #2): bumped non-Temperate
+// starts so the autopilot fallback policy can build farm+lumber+1 spare BEFORE
+// the universal 0.60/s food drain hits the 6:30 cliff. A5 R12 measured all
+// non-Temperate maps wiping at 7-9 sim min while Temperate survived 39:33;
+// pre-bumps Highlands 38→48, Riverlands 32→48, Coastal 20→34, Archipelago
+// 22→34, Fortified 36→48. Temperate stays at 35 to preserve the long-horizon
+// benchmark baseline.
 const STARTING_WOOD_BY_TEMPLATE = Object.freeze({
-  temperate_plains: 35,    // unchanged — long-horizon benchmark baseline
-  fertile_riverlands: 32,  // mild dip — river maps yield wood faster
-  rugged_highlands: 38,    // slight bump — stone-rich, lumber clusters scarcer
-  fortified_basin: 36,     // mild bump — wall-heavy opening
-  archipelago_isles: 22,   // big bump from effective ~2 — see audit above
-  coastal_ocean: 20,       // big bump — hardest water map
+  temperate_plains: 35,    // baseline preserved — long-horizon benchmark
+  fertile_riverlands: 48,  // was 32 — Silted Hearth scenario forces road-clearing
+  rugged_highlands: 48,    // was 38 — A5 R12 wiped at 8:28
+  fortified_basin: 48,     // was 36 — wall-heavy opening + saboteur tension
+  archipelago_isles: 34,   // was 22 — bridge-required + water-fragmented spawn
+  coastal_ocean: 34,       // was 20 — hardest map, harbor-required opening
+});
+
+// v0.10.1-n R12 Plan-R12-non-temperate-fallback Part 2: per-template starting
+// food overrides for maps with forced opening builds that delay food
+// production. Default 320 (from INITIAL_RESOURCES.food) is preserved for
+// Temperate / Highlands; bumped for maps where the scenario forces non-food-
+// producing first builds (Silted Hearth road-clear, harbor build, bridge build,
+// wall-heavy opening). Returns null for templates without overrides so the
+// caller falls back to INITIAL_RESOURCES.food.
+const STARTING_FOOD_BY_TEMPLATE = Object.freeze({
+  temperate_plains: 320,
+  rugged_highlands: 320,
+  fertile_riverlands: 380,  // +60 for the Silted Hearth road-clear delay
+  fortified_basin: 360,     // +40 for wall-heavy opening
+  archipelago_isles: 360,   // +40 for bridge-build delay
+  coastal_ocean: 380,       // +60 for harbor-build delay (A5: hardest map)
 });
 
 /**
@@ -129,6 +153,18 @@ const STARTING_WOOD_BY_TEMPLATE = Object.freeze({
 export function getTemplateStartingResources(templateId) {
   const wood = STARTING_WOOD_BY_TEMPLATE[templateId];
   return Object.freeze({ wood: typeof wood === "number" ? wood : null });
+}
+
+/**
+ * Per-template starting food override. Returns the food floor to seed
+ * `state.resources.food` at colony creation; null when the template has
+ * no override so the caller can fall back to INITIAL_RESOURCES.food.
+ * @param {string} templateId
+ * @returns {number | null}
+ */
+export function getTemplateStartingFood(templateId) {
+  const food = STARTING_FOOD_BY_TEMPLATE[templateId];
+  return typeof food === "number" ? food : null;
 }
 
 // v0.10.1-r4-A5 P0-3: per-template early-game target hints. Surfaces a
