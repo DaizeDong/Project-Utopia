@@ -35,6 +35,11 @@ import { ZeroLumberProposer } from "./proposers/ZeroLumberProposer.js";
 import { ZeroQuarryProposer } from "./proposers/ZeroQuarryProposer.js";
 import { EmergencyShortageProposer } from "./proposers/EmergencyShortageProposer.js";
 import { WarehouseNeedProposer } from "./proposers/WarehouseNeedProposer.js";
+import { RecoveryProposer, isRecoveryMode } from "./proposers/RecoveryProposer.js";
+import { BootstrapProposer } from "./proposers/BootstrapProposer.js";
+import { LogisticsProposer } from "./proposers/LogisticsProposer.js";
+import { ProcessingProposer } from "./proposers/ProcessingProposer.js";
+import { SurvivalPreemptProposer } from "./proposers/SurvivalPreemptProposer.js";
 
 /**
  * @typedef {object} BuildNeed
@@ -129,6 +134,47 @@ export const DEFAULT_BUILD_PROPOSERS = Object.freeze([
   WarehouseNeedProposer,
 ]);
 
+/**
+ * v0.10.1 R6 wave-2 (C1-code-architect refactor) — phase-block proposers.
+ *
+ * Mirrors the original push order inside `assessColonyNeeds` for the
+ * non-safety-net branches:
+ *
+ *   1. recovery   (priority 88-98) — gated by isRecoveryMode(state); the
+ *      caller MUST short-circuit the rest of WAVE_2 when this fires
+ *      (the original code did `needs.sort + filter + return` after the
+ *      recovery branch).
+ *   2. bootstrap  (priority 75-82) — independent of recovery.
+ *   3. logistics  (priority 60-70)
+ *   4. processing (priority 45-77+earlyBoost)
+ *
+ * Bridge / ScoutRoad are NOT registered here — they are side-effecting
+ * functions (place blueprints, mutate state.buildings) and don't fit
+ * the pure read-only `evaluate(state, ctx) => BuildNeed[]` contract
+ * locked by `test/build-proposer-interface.test.js`. They live in the
+ * `proposers/` directory for code locality and are imported directly
+ * by ColonyDirectorSystem. See BridgeProposer.js / ScoutRoadProposer.js
+ * headers for the deviation rationale.
+ */
+export const WAVE_2_BUILD_PROPOSERS = Object.freeze([
+  RecoveryProposer,
+  BootstrapProposer,
+  LogisticsProposer,
+  ProcessingProposer,
+]);
+
+/**
+ * v0.10.1 R6 wave-2 — survival-preempt proposer family. Used by
+ * AgentDirectorSystem to decide whether the rule-based fallback should
+ * fire ahead of LLM plan execution. Output records have shape
+ * {kind: "survival-preempt", priority, reason} rather than the
+ * BuildNeed shape — the caller checks `result.length > 0` as a fire
+ * signal, not as a build queue.
+ */
+export const SURVIVAL_PROPOSERS = Object.freeze([
+  SurvivalPreemptProposer,
+]);
+
 // Re-export the individual proposers for callers that want to register a
 // custom subset (e.g. test fixtures or LLM strategies).
 export {
@@ -137,4 +183,10 @@ export {
   ZeroQuarryProposer,
   EmergencyShortageProposer,
   WarehouseNeedProposer,
+  RecoveryProposer,
+  isRecoveryMode,
+  BootstrapProposer,
+  LogisticsProposer,
+  ProcessingProposer,
+  SurvivalPreemptProposer,
 };

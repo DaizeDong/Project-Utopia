@@ -1,13 +1,19 @@
-import { BUILD_COST, BALANCE } from "../../config/balance.js";
+import { BUILD_COST } from "../../config/balance.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
-import { FOG_STATE, TILE } from "../../config/constants.js";
+import { TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
 import { canAfford } from "../construction/BuildAdvisor.js";
 import { BuildSystem } from "../construction/BuildSystem.js";
 import { getScenarioRuntime, hasInfrastructureConnection } from "../../world/scenarios/ScenarioFactory.js";
-import { isFoodRunwayUnsafe } from "../economy/ResourceSystem.js";
-import { RECOVERY_ESSENTIAL_TYPES, isRecoveryEssential } from "./ProgressionSystem.js";
-import { runProposers, DEFAULT_BUILD_PROPOSERS } from "../ai/colony/BuildProposer.js";
+import { isRecoveryEssential } from "./ProgressionSystem.js";
+import {
+  runProposers,
+  DEFAULT_BUILD_PROPOSERS,
+  WAVE_2_BUILD_PROPOSERS,
+  isRecoveryMode,
+} from "../ai/colony/BuildProposer.js";
+import { proposeBridgesForReachability } from "../ai/colony/proposers/BridgeProposer.js";
+import { proposeScoutRoadTowardFoggedStone } from "../ai/colony/proposers/ScoutRoadProposer.js";
 
 const EVAL_INTERVAL_SEC = 2;
 const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
@@ -101,15 +107,17 @@ export function assessColonyNeeds(state) {
 
   // v0.10.1 R5 wave-1 (C1-build-proposer refactor):
   // The four priority-95+ "safety net" if-blocks (zero-farm @99,
-  // zero-lumber @95, zero-quarry @95, emergency-shortage food/wood) were
-  // extracted into named BuildProposer instances. Registration order in
-  // DEFAULT_BUILD_PROPOSERS matches the legacy push order, so the
-  // resulting `needs` array (set of {type, priority} pairs) is
-  // byte-identical to the pre-refactor output (locked by
-  // test/build-proposer-orchestration.test.js). Wave-2 (deferred) will
-  // port the recovery / bootstrap / logistics / processing branches
-  // below and unify with proposeBridges + proposeScoutRoad +
-  // AgentDirSystem.survivalPreempt.
+  // zero-lumber @95, zero-quarry @95, emergency-shortage food/wood) +
+  // R6 WarehouseNeedProposer @90 are emitted by DEFAULT_BUILD_PROPOSERS
+  // (locked by test/build-proposer-orchestration.test.js).
+  //
+  // v0.10.1 R6 wave-2 (C1-code-architect refactor):
+  // The recovery / bootstrap / logistics / processing branches were
+  // extracted into WAVE_2_BUILD_PROPOSERS. Recovery short-circuit
+  // semantics (sort + RECOVERY_ESSENTIAL_TYPES filter + early return)
+  // are preserved by the orchestrator: when isRecoveryMode(state) is
+  // true we ONLY run RecoveryProposer, then sort+filter+return — same
+  // as the legacy `if (recoveryMode) { ... return; }` block.
   const proposerCtx = {
     workers,
     food,
@@ -127,29 +135,14 @@ export function assessColonyNeeds(state) {
     needs.push({ type: "warehouse", priority: 92, reason: "logistics: warehouse coverage" });
   }
 
-  const recoveryMode = Boolean(state.ai?.foodRecoveryMode) || isFoodRunwayUnsafe(state);
-  if (recoveryMode) {
-    if (currentFarms < maxFarmsEmergency) {
-      needs.push({ type: "farm", priority: 98, reason: "recovery: restore food runway" });
-    }
-    if (warehouseCount < Math.floor(workers / 5) + 2) {
-      needs.push({ type: "warehouse", priority: 96, reason: "recovery: restore food logistics" });
-    }
-    // v0.10.1-r3-A5 P0-1: also push lumber when wood is depleted, so the
-    // recovery cycle can keep building farms (which cost wood). Pre-r3 the
-    // recovery filter whitelisted lumber but the recovery branch never
-    // pushed it, so wood=0 stalled farm placement until the bootstrap
-    // branch fired again.
-    if ((state.resources?.wood ?? 0) < 10 && (buildings.lumbers ?? 0) < 4) {
-      needs.push({ type: "lumber", priority: 92, reason: "recovery: wood floor for farm builds" });
-    }
-    if ((buildings.roads ?? 0) < Math.max(6, workers)) {
-      needs.push({ type: "road", priority: 88, reason: "recovery: reconnect food routes" });
-    }
+  // Recovery short-circuit (legacy lines 130-159). When recovery mode is
+  // on, only RecoveryProposer's needs are kept, sorted, dedup'd against
+  // RECOVERY_ESSENTIAL_TYPES, and returned. The phase-block proposers
+  // (bootstrap/logistics/processing) are skipped entirely.
+  if (isRecoveryMode(state)) {
+    const recoveryNeeds = runProposers([WAVE_2_BUILD_PROPOSERS[0]], state, proposerCtx);
+    needs.push(...recoveryNeeds);
     needs.sort((a, b) => b.priority - a.priority);
-    // v0.10.1-r3-A5 P0-1: source the whitelist from ProgressionSystem
-    // (RECOVERY_ESSENTIAL_TYPES) so future edits live in one place. Same
-    // set membership as before — farm/lumber/warehouse/road.
     const seenRecovery = new Set();
     return needs.filter((n) => {
       if (!isRecoveryEssential(n.type) || seenRecovery.has(n.type)) return false;
@@ -158,68 +151,11 @@ export function assessColonyNeeds(state) {
     });
   }
 
-  // Bootstrap phase targets
-  if ((buildings.warehouses ?? 0) < PHASE_TARGETS.bootstrap.warehouses) {
-    needs.push({ type: "warehouse", priority: 82, reason: "bootstrap: need warehouses" });
-  }
-  if ((buildings.farms ?? 0) < PHASE_TARGETS.bootstrap.farms) {
-    needs.push({ type: "farm", priority: 80, reason: "bootstrap: need farms" });
-  }
-  if ((buildings.lumbers ?? 0) < PHASE_TARGETS.bootstrap.lumbers) {
-    needs.push({ type: "lumber", priority: 78, reason: "bootstrap: need lumbers" });
-  }
-  if ((buildings.roads ?? 0) < PHASE_TARGETS.bootstrap.roads) {
-    needs.push({ type: "road", priority: 75, reason: "bootstrap: need roads" });
-  }
-
-  // Logistics phase targets
-  if ((buildings.warehouses ?? 0) < PHASE_TARGETS.logistics.warehouses) {
-    needs.push({ type: "warehouse", priority: 70, reason: "logistics: need warehouses" });
-  }
-  if ((buildings.farms ?? 0) < PHASE_TARGETS.logistics.farms) {
-    needs.push({ type: "farm", priority: 68, reason: "logistics: need more farms" });
-  }
-  if ((buildings.lumbers ?? 0) < PHASE_TARGETS.logistics.lumbers) {
-    needs.push({ type: "lumber", priority: 66, reason: "logistics: need more lumbers" });
-  }
-  if ((buildings.roads ?? 0) < PHASE_TARGETS.logistics.roads) {
-    needs.push({ type: "road", priority: 60, reason: "logistics: need more roads" });
-  }
-
-  // Processing buildings — build early so stone/herbs accumulate for smithy/clinic
-  const needQuarry = (buildings.quarries ?? 0) < PHASE_TARGETS.processing.quarries
-    || !hasAccessibleWorksite(state, [TILE.QUARRY]);
-  const needHerbGarden = (buildings.herbGardens ?? 0) < PHASE_TARGETS.processing.herbGardens
-    || !hasAccessibleWorksite(state, [TILE.HERB_GARDEN]);
-
-  // v0.10.1-r1-A5 P0-4: early-game (t<300s) processing-chain boost so
-  // quarry/herb_garden outrank the priority-80 farm spam in bootstrap.
-  // Outside the early window the legacy 77/76 priorities are preserved.
-  const earlyBoost = Number(state.metrics?.timeSec ?? 0) < 300
-    ? Number(BALANCE.autopilotQuarryEarlyBoost ?? 0)
-    : 0;
-  if (needQuarry) {
-    needs.push({ type: "quarry", priority: 77 + earlyBoost, reason: "processing: need accessible quarry" });
-  }
-  if (needHerbGarden) {
-    needs.push({ type: "herb_garden", priority: 76 + earlyBoost, reason: "processing: need accessible herb garden" });
-  }
-  if ((buildings.kitchens ?? 0) < PHASE_TARGETS.processing.kitchens) {
-    needs.push({ type: "kitchen", priority: 72, reason: "processing: need kitchen" });
-  }
-  // Smithy: highest priority after quarry — tools accelerate ALL resource production
-  if ((buildings.smithies ?? 0) < PHASE_TARGETS.processing.smithies) {
-    needs.push({ type: "smithy", priority: 74, reason: "processing: need smithy for tools" });
-  }
-  if ((buildings.roads ?? 0) < PHASE_TARGETS.processing.roads) {
-    needs.push({ type: "road", priority: 55, reason: "processing: expand road network" });
-  }
-  if ((buildings.clinics ?? 0) < PHASE_TARGETS.fortification.clinics) {
-    needs.push({ type: "clinic", priority: 68, reason: "processing: need clinic" });
-  }
-  if ((buildings.walls ?? 0) < PHASE_TARGETS.fortification.walls) {
-    needs.push({ type: "wall", priority: 45, reason: "fortification: need walls" });
-  }
+  // Phase-block proposers: bootstrap → logistics → processing. Recovery
+  // is skipped (returns [] anyway when !isRecoveryMode). This replaces
+  // the 6 if-chains that previously occupied lines 161-222.
+  const phaseNeeds = runProposers(WAVE_2_BUILD_PROPOSERS, state, proposerCtx);
+  needs.push(...phaseNeeds);
 
   // Bridge: connect islands when water blocks logistics routes
   const waterTiles = listTilesByType(state.grid, [TILE.WATER]);
@@ -463,192 +399,16 @@ function findNodeFlagTiles(grid, flag) {
   return out;
 }
 
-// v0.9.3-balance — Bridge AI. The user reports "AI does not build bridges".
-// Root cause: assessColonyNeeds proposes bridge at priority 60, which
-// almost never wins when 6+ higher-priority needs are eligible. There is
-// also no reachability-driven placement — workers stranded by water do
-// not trigger a bridge.
-//
-// Fix: a small standalone proposer that runs once per ColonyDirector tick
-// (independent of the priority queue). It identifies "narrow water
-// crossings" — WATER tiles with ≥2 land neighbours on opposite sides —
-// and places a bridge blueprint on the most useful one. Throttled by
-// `lastBridgeProposalSec` so we don't spam.
-function proposeBridgesForReachability(state, buildSystem, services = null) {
-  const grid = state.grid;
-  if (!grid) return 0;
-  const director = ensureDirectorState(state);
-  const nowSec = Number(state.metrics?.timeSec ?? 0);
-  const lastSec = Number(director.lastBridgeProposalSec ?? -Infinity);
-  if (nowSec - lastSec < 30) return 0; // throttle: at most one bridge / 30s
-
-  const cost = BUILD_COST.bridge ?? {};
-  if (!canAfford(state.resources ?? {}, cost)) return 0;
-
-  // Find narrow water crossings: WATER tiles with passable land on at
-  // least two opposite-axis neighbours. A 1-tile bridge there connects
-  // two land regions across a river/strait.
-  const w = Number(grid.width ?? 0);
-  const h = Number(grid.height ?? 0);
-  const candidates = [];
-  for (let iz = 1; iz < h - 1; iz += 1) {
-    for (let ix = 1; ix < w - 1; ix += 1) {
-      if (grid.tiles[ix + iz * w] !== TILE.WATER) continue;
-      const N = grid.tiles[ix + (iz - 1) * w];
-      const S = grid.tiles[ix + (iz + 1) * w];
-      const E = grid.tiles[(ix + 1) + iz * w];
-      const W = grid.tiles[(ix - 1) + iz * w];
-      const isLand = (t) => t !== TILE.WATER && t !== undefined;
-      const NS = isLand(N) && isLand(S);
-      const EW = isLand(E) && isLand(W);
-      if (!NS && !EW) continue;
-      // Distance to nearest warehouse — prefer crossings near the colony
-      // so the bridge actually unlocks reachable production tiles.
-      const warehouses = listTilesByType(grid, [TILE.WAREHOUSE]);
-      const distWh = warehouses.length > 0
-        ? Math.min(...warehouses.map((wh) => Math.abs(wh.ix - ix) + Math.abs(wh.iz - iz)))
-        : 999;
-      candidates.push({ ix, iz, distWh });
-    }
-  }
-  if (candidates.length === 0) return 0;
-  candidates.sort((a, b) => a.distWh - b.distWh);
-
-  for (const c of candidates) {
-    const preview = buildSystem.previewToolAt(state, "bridge", c.ix, c.iz, services);
-    if (!preview.ok) continue;
-    const result = buildSystem.placeToolAt(state, "bridge", c.ix, c.iz, {
-      recordHistory: false, services, owner: "autopilot", reason: "ai bridge — connect across narrow water",
-    });
-    if (result.ok) {
-      state.buildings = rebuildBuildingStats(state.grid);
-      director.lastBridgeProposalSec = nowSec;
-      return 1;
-    }
-  }
-  return 0;
-}
-
-// v0.10.1-hotfix-iter2 (issue #7): scout-road-toward-fogged-stone proposer.
-// Iter1's stone-deficit safety net pushed quarry@95 into the priority queue,
-// but if every STONE node sits behind fog of war, evaluateBuildPreview rejects
-// the placement with `hidden_tile` and the blueprint never lands — the colony
-// starves of stone forever despite the priority bump.
-//
-// Fix: when stone is critical AND no STONE node is currently in the
-// EXPLORED/VISIBLE half of fog AND at least one STONE node exists in HIDDEN
-// fog, place a single road blueprint on a GRASS tile adjacent to existing
-// infrastructure pointed at the closest hidden STONE node. The worker walking
-// to that road tile reveals fog as a side-effect (VisibilitySystem); once a
-// STONE node enters the EXPLORED state the next ColonyDirector tick can run
-// quarry@95 through the normal placement path and land the blueprint.
-//
-// Throttled to ≤1 scout road / 30 sim-sec via lastStoneScoutProposalSec so
-// we don't spam roads when the colony is genuinely far from any stone.
-function proposeScoutRoadTowardFoggedStone(state, buildSystem, services = null) {
-  const grid = state.grid;
-  if (!grid) return 0;
-  const director = ensureDirectorState(state);
-  const nowSec = Number(state.metrics?.timeSec ?? 0);
-  const lastSec = Number(director.lastStoneScoutProposalSec ?? -Infinity);
-  if (nowSec - lastSec < 30) return 0;
-
-  // Only run when stone is in deficit territory — same threshold as the
-  // assessColonyNeeds quarry@95 safety net so we agree on "is this a crisis".
-  const stoneStock = Number(state.resources?.stone ?? 0);
-  if (stoneStock >= 15) return 0;
-
-  // Affordability — a single road segment.
-  const cost = BUILD_COST.road ?? {};
-  if (!canAfford(state.resources ?? {}, cost)) return 0;
-
-  // Partition STONE node tiles by current fog state. If ANY STONE node is
-  // already EXPLORED/VISIBLE then the regular quarry@95 path will land the
-  // blueprint without needing a scout road — bail.
-  const STONE_FLAG = 2; // NODE_FLAGS.STONE
-  const fogVis = state.fog?.visibility instanceof Uint8Array ? state.fog.visibility : null;
-  const w = Number(grid.width ?? 0);
-  let visibleStoneExists = false;
-  const hiddenStone = [];
-  if (grid.tileState) {
-    for (const [idx, entry] of grid.tileState) {
-      const flags = Number(entry?.nodeFlags ?? 0) | 0;
-      if ((flags & STONE_FLAG) === 0) continue;
-      if (Number(grid.tiles[idx]) !== TILE.GRASS) continue;
-      const fogState = fogVis ? fogVis[idx] : FOG_STATE.VISIBLE;
-      if (fogState !== FOG_STATE.HIDDEN) {
-        visibleStoneExists = true;
-        break;
-      }
-      const ix = idx % w;
-      const iz = Math.floor(idx / w);
-      hiddenStone.push({ ix, iz });
-    }
-  }
-  if (visibleStoneExists) return 0;
-  if (hiddenStone.length === 0) return 0;
-
-  // Build the candidate scout-road tile set: every GRASS tile that is
-  // currently EXPLORED/VISIBLE (not HIDDEN — evaluateBuildPreview rejects
-  // HIDDEN) AND adjacent to existing infrastructure (warehouse / road /
-  // bridge). These are the "frontier" road extensions a worker can actually
-  // place on. For each frontier candidate, score it by the Manhattan
-  // distance to the closest hidden STONE node — the closer to fog-hidden
-  // stone, the better. The first such tile that actually previews ok wins.
-  const anchors = listTilesByType(grid, [TILE.WAREHOUSE, TILE.ROAD, TILE.BRIDGE]);
-  if (anchors.length === 0) return 0;
-
-  const candidates = [];
-  const seen = new Set();
-  const NEIGHBOURS = [
-    { dx: 1, dz: 0 },
-    { dx: -1, dz: 0 },
-    { dx: 0, dz: 1 },
-    { dx: 0, dz: -1 },
-  ];
-  for (const anchor of anchors) {
-    for (const n of NEIGHBOURS) {
-      const ix = anchor.ix + n.dx;
-      const iz = anchor.iz + n.dz;
-      if (!inBounds(ix, iz, grid)) continue;
-      const key = `${ix},${iz}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const idx = ix + iz * w;
-      // Must be a buildable GRASS tile.
-      if (Number(grid.tiles[idx]) !== TILE.GRASS) continue;
-      // Must be currently visible — HIDDEN gets rejected by previewToolAt.
-      const fogState = fogVis ? fogVis[idx] : FOG_STATE.VISIBLE;
-      if (fogState === FOG_STATE.HIDDEN) continue;
-      // Score by distance to closest hidden STONE node.
-      let best = Infinity;
-      for (const stone of hiddenStone) {
-        const d = Math.abs(stone.ix - ix) + Math.abs(stone.iz - iz);
-        if (d < best) best = d;
-      }
-      candidates.push({ ix, iz, dist: best });
-    }
-  }
-  if (candidates.length === 0) return 0;
-  candidates.sort((a, b) => a.dist - b.dist);
-
-  for (const c of candidates) {
-    const preview = buildSystem.previewToolAt(state, "road", c.ix, c.iz, services);
-    if (!preview.ok) continue;
-    const result = buildSystem.placeToolAt(state, "road", c.ix, c.iz, {
-      recordHistory: false,
-      services,
-      owner: "autopilot",
-      reason: "ai scout — extend road toward fogged stone deposit",
-    });
-    if (result.ok) {
-      state.buildings = rebuildBuildingStats(state.grid);
-      director.lastStoneScoutProposalSec = nowSec;
-      return 1;
-    }
-  }
-  return 0;
-}
+// v0.10.1 R6 wave-2 (C1-code-architect refactor):
+// `proposeBridgesForReachability` and `proposeScoutRoadTowardFoggedStone`
+// were extracted to `proposers/BridgeProposer.js` and
+// `proposers/ScoutRoadProposer.js`. They keep their side-effecting
+// shape (place a blueprint, mutate state.buildings) so they don't fit
+// the pure {evaluate} BuildProposer contract — they're imported from
+// the proposers/ directory as standalone functions. ColonyDirector
+// passes the `director` (state.ai.colonyDirector) explicitly so the
+// throttle bookkeeping (lastBridgeProposalSec / lastStoneScoutProposalSec)
+// lives where the original ensureDirectorState() helper expected it.
 
 /**
  * Find a placement tile near a specific target location.
@@ -793,19 +553,12 @@ export function selectNextBuild(state) {
   return builds.length > 0 ? builds[0] : null;
 }
 
-/**
- * Check if any tile of the given types is within reasonable distance of a warehouse.
- * If not, the Director should build new ones near existing infrastructure.
- */
-function hasAccessibleWorksite(state, tileTypes, maxDistance = 12) {
-  const tiles = listTilesByType(state.grid, tileTypes);
-  if (tiles.length === 0) return false;
-  const warehouses = listTilesByType(state.grid, [TILE.WAREHOUSE]);
-  if (warehouses.length === 0) return false;
-  return tiles.some((t) =>
-    warehouses.some((w) => Math.abs(w.ix - t.ix) + Math.abs(w.iz - t.iz) <= maxDistance),
-  );
-}
+// v0.10.1 R6 wave-2 (C1-code-architect refactor):
+// `hasAccessibleWorksite` was the only consumer of the processing-branch
+// quarry/herb_garden accessibility check; it moved into
+// `ProcessingProposer.js` as a private helper alongside the rest of the
+// processing block. No remaining call site here, so the function was
+// deleted.
 
 function ensureDirectorState(state) {
   if (!state.ai) state.ai = {};
@@ -1104,7 +857,7 @@ export class ColonyDirectorSystem {
     // expansion@70+ needs). Throttled internally to ≤1 bridge / 30 sim-s
     // and only fires when affordable. Runs only when autopilot is on so
     // a manual player can still place bridges where they want.
-    const bridgeBuilds = proposeBridgesForReachability(state, this._buildSystem, services);
+    const bridgeBuilds = proposeBridgesForReachability(state, this._buildSystem, director, services);
     if (bridgeBuilds > 0) {
       director.buildsPlaced += bridgeBuilds;
       director.lastBuildSource = "fallback";
@@ -1119,7 +872,7 @@ export class ColonyDirectorSystem {
     // toward the closest fog-hidden STONE node when stone is critical and
     // no visible STONE exists; the worker walking that road reveals the
     // fog as a side-effect, so the next director tick can land the quarry.
-    const scoutBuilds = proposeScoutRoadTowardFoggedStone(state, this._buildSystem, services);
+    const scoutBuilds = proposeScoutRoadTowardFoggedStone(state, this._buildSystem, director, services);
     if (scoutBuilds > 0) {
       director.blueprintsSubmitted = Number(director.blueprintsSubmitted ?? 0) + scoutBuilds;
       director.lastBuildSource = "fallback";
