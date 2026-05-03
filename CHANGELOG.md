@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R12 Plan-R12-glued-tokens, P0)
+
+### Plan-R12-glued-tokens — `${groupId}:${focus}` → `${titleCase(groupId)}: ${focus}` AI summary fix
+
+Implements the P0 narrative-templater fix from `assignments/homework7/Final-Polish-Loop/Round12/Plans/Plan-R12-glued-tokens.md` (Reviewer A7-rationality-audit Top issue #2). A7's screenshots 15-ai-log.png + 16-debug.png captured the AI summary line rendering as `AI: env=let the colony breathe | saboteursstrike a soft frontier corridor | workersrebuild the broken supply lane | tradersshug the warehouse lanes` — the role-noun and the action-verb glued together with no separator. A7 called it "the highest-confidence dead-text defect in the run because it is the AI's primary storytelling surface and the prose breaks rationality on first glance." Three downstream surfaces consume the same template: Live Causal Chain (AI Log), AI Decisions (Debug → System Narrative → AI), and the Director timeline tooltip — all three were affected.
+
+**(Step 1) `titleCaseGroup` helper + template fix in `WorldExplain.getAiInsight`** — `src/ui/interpretation/WorldExplain.js`. Adds a small private `titleCaseGroup(groupId)` helper near the other module-private helpers (defensive against null/undefined/empty-string input). Changes the template at line ~261 from `${entry.groupId}:${entry.focus}` to `${titleCaseGroup(entry.groupId)}: ${entry.focus}` so `"workers"` + `"rebuild the broken supply lane"` now renders as `"Workers: rebuild the broken supply lane"` (Title-Case + colon-space). Selected Suggestion A combined with Suggestion C from the plan: maximal readability win for ~5 LOC. Suggestion B (em-dash separator) rejected because the existing `" | "` separator already gives visual breaks. Suggestion D (re-architect as structured object) is freeze-violating, deferred.
+
+**Files changed:** 1 source modified — `src/ui/interpretation/WorldExplain.js` (+12 / -1 LOC: helper + template + comments). 2 test files touched — `test/world-explain.test.js` updated (existing assertion `/workers:depot throughput/` → `/Workers: depot throughput/` + negative regression on `workersdepot`); `test/world-explain-ai-summary.test.js` added (4 cases: single-group Title-Case, multi-group separator + negative regressions on the three exact glued tokens A7 captured, no-groups fallback preserved, defensive empty-groupId path). Hard-freeze compliant: pure UI string template change on an already-rendered surface.
+
+**Acceptance:** Live Causal Chain, AI Decisions, and Director timeline tooltip now render `"Workers: rebuild the broken supply lane"` instead of `"workersrebuild ..."`. The substrings `saboteursstrike`, `workersrebuild`, `tradershug` are negative-regression-tested against the rendered summary.
+
+**Test baseline:** **1993 pass / 0 fail / 4 skip** (full suite, 120 suites; +4 over the prior baseline from `world-explain-ai-summary.test.js`'s four cases).
+
 ## [Unreleased] — v0.10.1-n (R11 Plan-A1-regenerate-return, P2)
 
 ### Plan-A1-regenerate-return — `regenerate()` mirrors `saveSnapshot`'s `{ok:true,...}` contract
