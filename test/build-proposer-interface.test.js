@@ -89,12 +89,15 @@ test("runProposers tolerates proposer returning null/undefined", () => {
 // 2. Default proposer interface shape
 // -----------------------------------------------------------------------------
 
-test("DEFAULT_BUILD_PROPOSERS has the 4 wave-1 proposers in order", () => {
-  assert.equal(DEFAULT_BUILD_PROPOSERS.length, 4);
+test("DEFAULT_BUILD_PROPOSERS has the 4 wave-1 proposers + R6 warehouseNeed in order", () => {
+  // v0.10.1 R6 PK-perf-and-warehouse: WarehouseNeedProposer appended after
+  // the original 4 to cover the "no warehouse access point" wipe pattern.
+  assert.equal(DEFAULT_BUILD_PROPOSERS.length, 5);
   assert.equal(DEFAULT_BUILD_PROPOSERS[0].name, "zeroFarm");
   assert.equal(DEFAULT_BUILD_PROPOSERS[1].name, "zeroLumber");
   assert.equal(DEFAULT_BUILD_PROPOSERS[2].name, "zeroQuarry");
   assert.equal(DEFAULT_BUILD_PROPOSERS[3].name, "emergencyShortage");
+  assert.equal(DEFAULT_BUILD_PROPOSERS[4].name, "warehouseNeed");
 });
 
 for (const proposer of [

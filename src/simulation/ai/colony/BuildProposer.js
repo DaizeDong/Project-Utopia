@@ -34,6 +34,7 @@ import { ZeroFarmProposer } from "./proposers/ZeroFarmProposer.js";
 import { ZeroLumberProposer } from "./proposers/ZeroLumberProposer.js";
 import { ZeroQuarryProposer } from "./proposers/ZeroQuarryProposer.js";
 import { EmergencyShortageProposer } from "./proposers/EmergencyShortageProposer.js";
+import { WarehouseNeedProposer } from "./proposers/WarehouseNeedProposer.js";
 
 /**
  * @typedef {object} BuildNeed
@@ -119,6 +120,13 @@ export const DEFAULT_BUILD_PROPOSERS = Object.freeze([
   ZeroLumberProposer,
   ZeroQuarryProposer,
   EmergencyShortageProposer,
+  // v0.10.1 R6 PK-perf-and-warehouse — sub-fix (b). Slotted last so the
+  // legacy EmergencyShortage @100 family wins on identical-priority
+  // tiebreaks (it doesn't — WarehouseNeedProposer emits @90 — but the
+  // registration order also documents that this is a NEW safety net
+  // covering the "no warehouse access point" wipe pattern that
+  // EmergencyShortage's `warehouseCount > 0` guard misses entirely.
+  WarehouseNeedProposer,
 ]);
 
 // Re-export the individual proposers for callers that want to register a
@@ -128,4 +136,5 @@ export {
   ZeroLumberProposer,
   ZeroQuarryProposer,
   EmergencyShortageProposer,
+  WarehouseNeedProposer,
 };
