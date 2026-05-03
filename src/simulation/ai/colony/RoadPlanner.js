@@ -23,14 +23,16 @@ const ROAD_PASSABLE = new Set([TILE.GRASS, TILE.ROAD, TILE.BRIDGE, TILE.WAREHOUS
 // reconstructed path tags water steps with `type: 'bridge'` and land steps
 // with `type: 'road'`, which roadPlansToSteps + the ColonyPlanner
 // consumer use to emit the right blueprint kind.
-const BRIDGE_STEP_COST = (() => {
-  const c = BUILD_COST?.bridge ?? {};
-  const total = Number(c.wood ?? 0) + Number(c.stone ?? 0);
-  // Floor at 5× a normal grass step (=1.0) so the A* never picks water as
-  // a tie-breaker on land-reachable plans; 4 wood + 1 stone = 5 in v0.10
-  // which already satisfies the floor.
-  return Math.max(5.0, total);
-})();
+//
+// PDD R10 (Plan-PDD-smart-pathing) — lowered 5.0 → 2.0 stopgap. A bridge
+// step amortizes over expected lifetime traffic (workers cross it forever),
+// so the build-cost floor was way too pessimistic. 2.0 keeps water 2× as
+// expensive as a grass step (so land still wins ties on land-reachable
+// plans) but lets a 1-tile bridge shortcut beat a ≥3-tile grass detour.
+// The dual-search in `planRoadConnections` provides the safety net: even
+// if A* picks a wasteful bridge, we compare against the land-only path
+// and pick whichever scores lower on (build cost + amortized traversal).
+const BRIDGE_STEP_COST = 2.0;
 
 // Production-style buildings whose adjacency makes a road tile "compounding" —
 // roads serving multiple worksites are worth a small cost discount because
@@ -65,8 +67,12 @@ function isAdjacentToResourceTile(grid, ix, iz) {
  * Lightweight A* for road planning — finds shortest path between two tiles
  * on GRASS/ROAD/BRIDGE/WAREHOUSE tiles only.
  * Returns array of {ix, iz} from start to end (inclusive), or null if no path.
+ *
+ * PDD R10 — `options.allowBridge` (default true) gates water-tile expansion.
+ * `false` produces a strictly land-only path (`null` if no land route exists);
+ * used by `planRoadConnections`'s dual-search to pick by total-cost-of-ownership.
  */
-function roadAStar(grid, startIx, startIz, endIx, endIz) {
+function roadAStar(grid, startIx, startIz, endIx, endIz, { allowBridge = true } = {}) {
   const { tiles, width, height } = grid;
   const startKey = toIndex(startIx, startIz, width);
   const endKey = toIndex(endIx, endIz, width);
@@ -116,7 +122,10 @@ function roadAStar(grid, startIx, startIz, endIx, endIz) {
       // A* expansion (with BRIDGE_STEP_COST punishment) so planRoadConnections
       // can produce a road→bridge→bridge→road sequence between islands.
       // Land tiles outside ROAD_PASSABLE (FARM, WALL, ...) still block.
+      // PDD R10 — when `allowBridge:false`, water tiles are skipped entirely
+      // so the search returns a strictly land-only path (or null).
       const isWaterStep = nTile === TILE.WATER;
+      if (isWaterStep && !allowBridge) continue;
       if (!ROAD_PASSABLE.has(nTile) && !isWaterStep && !endpoints.has(nKey)) continue;
 
       // Cost: existing roads/bridges nearly free, grass costs 1, water
@@ -198,6 +207,31 @@ function findDisconnectedBuildings(grid, roadNetwork) {
   return disconnected;
 }
 
+// PDD R10 — total-cost-of-ownership scorer for the dual-search in
+// `planRoadConnections`. Sums per-tile build resource cost (bridges on
+// water, roads on grass; existing roads/bridges/warehouses are free) and
+// adds an amortized traversal term so a longer path with cheaper steps
+// is fairly compared to a shorter one with bridges. The amortization
+// constant assumes ~50 round-trip traversals over the path's lifetime —
+// rough order-of-magnitude calibration, not a precise economic model.
+const TRAFFIC_AMORTIZATION = 50;
+function scorePath(path, grid) {
+  if (!path || path.length === 0) return Infinity;
+  const bridgeCost = (BUILD_COST?.bridge?.wood ?? 0) + (BUILD_COST?.bridge?.stone ?? 0);
+  const roadCost = BUILD_COST?.road?.wood ?? 1;
+  let buildCost = 0;
+  for (const step of path) {
+    const t = getTile(grid, step.ix, step.iz);
+    if (t === TILE.WATER) buildCost += bridgeCost;
+    else if (t === TILE.GRASS) buildCost += roadCost;
+    // existing ROAD/BRIDGE/WAREHOUSE tiles are free — already built.
+  }
+  // Divide traversal term by 100 to bring it into parity-of-magnitude with
+  // build-resource units; a 10-tile path contributes ~5 to the score, a
+  // 30-tile detour contributes ~15.
+  return buildCost + (path.length * TRAFFIC_AMORTIZATION) / 100;
+}
+
 /**
  * Plan road segments to connect disconnected production buildings
  * to the nearest warehouse.
@@ -236,7 +270,14 @@ export function planRoadConnections(grid, roadNetwork) {
     if (alreadyPlanned.has(planKey)) continue;
     alreadyPlanned.add(planKey);
 
-    const path = roadAStar(grid, building.ix, building.iz, nearestWH.ix, nearestWH.iz);
+    // PDD R10 — dual-search: compute land-only and bridge-allowed paths,
+    // then pick by total-cost-of-ownership (build resources spent +
+    // amortized traversal over expected lifetime traffic). On archipelago
+    // maps the bridge variant typically wins; on contiguous land the
+    // land-only variant matches and wins on the build-cost tiebreak.
+    const pathLand = roadAStar(grid, building.ix, building.iz, nearestWH.ix, nearestWH.iz, { allowBridge: false });
+    const pathBridge = roadAStar(grid, building.ix, building.iz, nearestWH.ix, nearestWH.iz, { allowBridge: true });
+    const path = scorePath(pathBridge, grid) <= scorePath(pathLand, grid) ? pathBridge : pathLand;
     if (!path) continue;
 
     // Count tiles that need to become roads or bridges (skip existing
