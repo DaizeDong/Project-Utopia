@@ -1001,13 +1001,30 @@ export class HUDController {
       if (event.detail && event.detail.userInitiated === true) return true;
       return false;
     };
+    // R12 Plan-R12-autopilot-hitregion (A3 P1 #3 + A5 secondary stale-banner):
+    // Update the Autopilot status chip text IMMEDIATELY on toggle so the user
+    // gets visible feedback that their click registered, instead of waiting
+    // for the next render() tick. The next render will overwrite this with the
+    // canonical getAutopilotStatus() output, but the placeholder closes the
+    // perceptual gap (~16-200ms depending on time scale) where the chip still
+    // showed the prior state and made the toggle feel broken.
+    const eagerSyncBanner = (checked) => {
+      if (!this.aiAutopilotChip) return;
+      this.aiAutopilotChip.textContent = checked
+        ? "Autopilot ON · syncing…"
+        : "Autopilot OFF · manual";
+    };
     this.aiToggleTop?.addEventListener("change", (event) => {
       if (!isUserInitiated(event)) return;
-      syncAutopilot(Boolean(this.aiToggleTop.checked));
+      const checked = Boolean(this.aiToggleTop.checked);
+      eagerSyncBanner(checked);
+      syncAutopilot(checked);
     });
     this.aiToggleMirror?.addEventListener("change", (event) => {
       if (!isUserInitiated(event)) return;
-      syncAutopilot(Boolean(this.aiToggleMirror.checked));
+      const checked = Boolean(this.aiToggleMirror.checked);
+      eagerSyncBanner(checked);
+      syncAutopilot(checked);
     });
   }
 
