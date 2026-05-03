@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r10-pbb-recruit-flow-fix (R10 Plan-PBB-recruit-flow-fix, P0 CRITICAL FOUNDATIONAL)
+
+### Plan-PBB-recruit-flow-fix — Restore foodProducedPerMin telemetry so auto-recruit can fire
+
+Implements the P0 CRITICAL FOUNDATIONAL fix from `assignments/homework7/Final-Polish-Loop/Round10/Plans/Plan-PBB-recruit-flow-fix.md` (Reviewer PBB-recruit-growth). PBB's Playwright trace (80 sim-sec, autopilot ON, LLM driving alpha_broken_frontier): `birthsTotal = 0`, `recruitTotal = undefined`, `recruitQueue` stuck at 0, `populationGrowthBlockedReason = "food headroom 40s < 60s (auto-fill skipped)"` for the entire run.
+
+**Root cause:** `state.metrics.foodProducedPerMin` was structurally always 0 in shipped play — no code path called `recordResourceFlow(state, "food", "produced", ...)` on the worker farm-deposit path. `consumed` and `spoiled` flows ARE recorded correctly (`ResourceSystem.js:390,418`, `ProcessingSystem.js`), so the metric was a HUD curiosity from before R5 — *until R5 PC built a load-bearing population-growth gate on top of it*: `BALANCE.recruitMinFoodHeadroomSec = 60` made `RecruitmentSystem` refuse to fill the queue unless projected `food / drainRate ≥ 60s`. With `producedPerMin = 0`, headroom is `food / (workers × 0.6)` ≈ 44s for 12 workers + 320 food — mathematically unsatisfiable in early-mid game. R5 PC weaponised a pre-existing broken metric.
+
+**(Step 1) Worker warehouse-unload deposit emits production flow** — `src/simulation/npc/WorkerAISystem.js:846`. Added `recordResourceFlow(state, "food", "produced", unloadFood)` immediately after `state.resources.food += unloadFood`. Imported `recordResourceFlow` next to the existing `recordProductionEntry` import from `ResourceSystem.js`. No new dependency edge.
+
+**(Step 1b) Bootstrap-no-warehouse direct-deposit also emits** — `src/simulation/npc/WorkerAISystem.js:520-528` (`resolveWorkCooldown` directDepositState branch from v0.8.6 Tier 0 LR-C1). Same `recordResourceFlow` call gated on `resourceType === "food"` so the recruit-headroom gate sees real production before the first warehouse exists. Wood/stone/herbs telemetry on this path is logged as a follow-up (NOT load-bearing under R5 PC's gate).
+
+**(Step 2) Defensive recruitTotal initialisation** — `src/entities/EntityFactory.js:917-924`. Added `recruitTotal: 0,` next to the existing `birthsTotal: 0,` in the metrics-shape literal. Pre-fix: only ever incremented inside the spawn branch at `PopulationGrowthSystem.js:262`, so `state.metrics.recruitTotal + 1 → NaN` for any consumer that read it before the first recruit fired (HUD / analytics / R5 PC's gate).
+
+**Tests added:** `test/recruit-food-flow-invariant.test.js` — 4 invariants. (1) `recordResourceFlow(state, "food", "produced", 10)` + `ResourceSystem.update` flush → `foodProducedPerMin > 0` (matches expected 10 × 60/windowSec ≈ 170.94 within tolerance). (2) Negative control: no produced emit → metric stays at 0. (3) Zero/negative emits are clamped to 0 (no metric bump). (4) `state.metrics.recruitTotal === 0` (finite, not undefined) at frame 0 from `createInitialGameState`.
+
+**Test baseline:** **1967 pass / 0 fail / 4 skip** (full suite, 1574 top-level tests across 118 suites). New invariant test adds 4 passing cases; no existing test regressed.
+
+**Files changed:** 2 source modified — `src/simulation/npc/WorkerAISystem.js` (+15/-2: import extension + 2 deposit-site emits), `src/entities/EntityFactory.js` (+8/-0: defensive `recruitTotal: 0,` with comment) — plus 1 test added (`test/recruit-food-flow-invariant.test.js` +118 LOC) + CHANGELOG. Approx +23/-2 source LOC + 118 test LOC. Hard-freeze compliant: no new tile / role / building / mood / mechanic / BALANCE knob; only a missing helper-call addition + a defensive default init. Once this lands, every dependent gate (R5 PC, R6 PC pacing, R8 Iter 4 recruit cap) becomes meaningful instead of a permanent "no" switch — those tuning conversations re-open with real data.
+
+**Follow-up (deferred to v0.10.3):** `recordResourceFlow` for wood/stone/herbs at the same deposit sites (currently silent telemetry but NOT load-bearing); tighter Playwright re-verification per Plan Step 5 once a runtime is available.
+
 ## [Unreleased] — v0.10.2-r9-eat-pipeline (R9 Plan-Eat-Pipeline, P0)
 
 ### Plan-Eat-Pipeline — survival-bypass on carry-eat + warehouse contention sensor
