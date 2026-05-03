@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R12 Plan-R12-build-tab-1click, P1)
+
+### Plan-R12-build-tab-1click — First click on the Build sidebar tab opens the Build Tools palette directly
+
+Implements the P1 first-impression fix from `assignments/homework7/Final-Polish-Loop/Round12/Plans/Plan-R12-build-tab-1click.md` (Reviewer A3-first-impression Top issue #1). A3 reported that the in-game opening briefing says "Open the Build tab in the right sidebar" but the first click on the Build tab produced no visible Build Tools palette — only the top-bar objective chips (`routes 0/1`, `depots 0/1`, etc.) appeared to change. The toolbar only showed up on the second click. Root cause (audit-confirmed via the static CSS at `index.html:2495-2513`): on a fresh boot the sidebar opens by default with Build as the default-active tab; at viewport widths 1025–1440 px (laptop range) the `#sidebarPanelArea` is `opacity: 0; pointer-events: none` until `:hover` or `:focus-within`, so the panel is INVISIBLE even though `sidebar-open` is set. The previous click handler hit the `alreadyActive && sidebarOpen` branch and called `setSidebarOpen(false)` — closing a sidebar the user never saw open in the first place. The second click then re-opened it AND the click triggered `:focus-within`, finally revealing the panel. Two-click delay on the very first instruction in the briefing.
+
+**(Step 2) Tab-button click handler gates close-on-active by panel visibility** — `index.html` lines ~3943-3982. Adds an `isPanelAreaVisible()` helper that reads `getComputedStyle('#sidebarPanelArea')` and checks `opacity !== '0' && pointerEvents !== 'none' && visibility !== 'hidden'`. The close-on-active-tab branch now requires `alreadyActive && isPanelAreaVisible()`; otherwise the handler falls through to `showSidebarPanel(key) + btn.focus()` so `:focus-within` reveals the icon-rail panel-area on the very first click. Selected Suggestion A from the plan; Suggestion B (only force `BuildToolbar.show()`) misses the responsive-CSS root cause; Suggestion C (persist last-active tab) deferred as out-of-scope; Suggestion D (replace right-rail tabs with top dock) freeze-violating.
+
+**Files changed:** 1 source modified — `index.html` (+~25 LOC: helper function + comment block + gated branch + fallback focus call). 1 test added — `test/sidebar-tab-first-click.test.js` (4 cases: helper exists and inspects opacity/pointer-events; close-branch is gated; fallback branch force-shows panel and focuses tab; `!sidebarOpen` regression guard for switching to other tabs from collapsed sidebar). Hard-freeze compliant: pure UI click-handler change, no new mechanic, no new tab, no new panel — preserves the close-on-active-tab pattern when the sidebar IS actually visible.
+
+**Acceptance:** Fresh-boot single click on Build tab → Build Tools palette renders (briefing instruction works literally). Second click on Build tab when palette is visible → sidebar still closes (toggle pattern preserved). Click on Colony tab from collapsed sidebar → opens sidebar AND shows Colony panel (regression guard). New unit test pins all four contract assertions against the inline-handler source.
+
+**Test baseline:** **2001 pass / 0 fail / 4 skip** (full suite, 120 suites; +4 over the prior baseline from the four cases in `sidebar-tab-first-click.test.js`).
+
 ## [Unreleased] — v0.10.1-n (R12 Plan-R12-stable-tier-fix, P0)
 
 ### Plan-R12-stable-tier-fix — Colony-health badge tier (`STABLE`/`THRIVING`/`STRUGGLING`/`CRISIS`) couples on real food runway, not just threat
