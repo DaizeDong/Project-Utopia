@@ -107,12 +107,30 @@ test("deriveDevTier maps DevIndex into the 4-band bucket", () => {
   assert.equal(deriveDevTier(NaN), "low");
 });
 
-test("end-panel finale title branches on devTier — 4 distinct authored lines", () => {
+test("end-panel finale: hero carries reason, subhead carries tier-flavoured epilogue (4 distinct subheads)", () => {
+  // v0.10.1 R10 Plan-PAA-game-over-copy — the hero `#overlayEndTitle` now
+  // carries `session.reason` (the cause-of-death sentence). The subhead
+  // `#overlayEndReason` becomes "<TierLabel>-tier finale · \"<title>\"".
+  // We assert (a) the hero is the reason, (b) the subhead encodes both
+  // the explicit tier label and the tier-flavoured authored title, and
+  // (c) the four subheads are pairwise distinct (one per tier bucket).
   withOverlayDom((nodes) => {
     const state = createInitialGameState({ templateId: "temperate_plains", seed: 1337 });
     const overlay = new GameStateOverlay(state);
 
-    const titles = new Set();
+    // Authored titles per tier — kept in lockstep with END_TITLE_BY_TIER
+    // in src/ui/hud/GameStateOverlay.js. Future copy edits to those four
+    // strings MUST update this table so the contract is enforced both at
+    // the source and at the test boundary.
+    const expectedTitles = {
+      low:   "The colony stalled.",
+      mid:   "The frontier ate them.",
+      high:  "The routes outlived the colony.",
+      elite: "Even the chain could not hold.",
+    };
+
+    const subheads = new Set();
+    const reasonText = "Colony wiped — no surviving colonists.";
     for (const tier of ["low", "mid", "high", "elite"]) {
       // Drive devIndex into each bucket via deriveDevTier's thresholds.
       const devIndex = tier === "low" ? 10
@@ -120,18 +138,40 @@ test("end-panel finale title branches on devTier — 4 distinct authored lines",
         : tier === "high" ? 60
         : 90;
       state.gameplay.devIndex = devIndex;
-      overlay.render({ phase: "end", reason: "Run ended.", devTier: tier });
-      const title = nodes.overlayEndTitle.textContent;
-      assert.ok(title && title !== "Colony Lost",
-        `tier=${tier} must produce an authored title, got "${title}"`);
-      assert.ok(!/Run Ended/.test(title),
-        `tier=${tier} title must not include legacy "Run Ended"; got "${title}"`);
-      titles.add(title);
+      overlay.render({ phase: "end", reason: reasonText, devTier: tier });
+
+      // (a) HERO = reason.
+      const hero = nodes.overlayEndTitle.textContent;
+      assert.equal(hero, reasonText,
+        `tier=${tier}: hero #overlayEndTitle must carry session.reason verbatim; got "${hero}"`);
+
+      // (b) SUBHEAD = "<TierLabel>-tier finale · \"<authored title>\"".
+      const sub = nodes.overlayEndReason.textContent;
+      const tierLabel = tier.charAt(0).toUpperCase() + tier.slice(1);
+      assert.ok(sub.startsWith(`${tierLabel}-tier finale`),
+        `tier=${tier}: subhead must start with "${tierLabel}-tier finale"; got "${sub}"`);
+      assert.ok(sub.includes(expectedTitles[tier]),
+        `tier=${tier}: subhead must include authored title "${expectedTitles[tier]}"; got "${sub}"`);
+
+      // data-dev-tier attribute survives the role swap (CSS / a11y hook).
       assert.equal(nodes.overlayEndTitle.attrs["data-dev-tier"], tier,
         "endTitle exposes data-dev-tier for CSS / a11y selectors");
+
+      subheads.add(sub);
     }
-    assert.equal(titles.size, 4,
-      `4 devTier buckets MUST produce 4 distinct titles; got ${titles.size}: ${[...titles].join(" | ")}`);
+    assert.equal(subheads.size, 4,
+      `4 devTier buckets MUST produce 4 distinct subheads; got ${subheads.size}: ${[...subheads].join(" | ")}`);
+
+    // Literal-string guard for the two reworded tiers — catches a future
+    // copy regression that drops the loss verb.
+    state.gameplay.devIndex = 60;
+    overlay.render({ phase: "end", reason: reasonText, devTier: "high" });
+    assert.ok(nodes.overlayEndReason.textContent.includes("The routes outlived the colony."),
+      "high-tier subhead must contain the v0.10.1 loss-verb copy verbatim");
+    state.gameplay.devIndex = 90;
+    overlay.render({ phase: "end", reason: reasonText, devTier: "elite" });
+    assert.ok(nodes.overlayEndReason.textContent.includes("Even the chain could not hold."),
+      "elite-tier subhead must contain the v0.10.1 loss-verb copy verbatim");
   });
 });
 

@@ -11,13 +11,20 @@ import { deriveDevTier } from "../../app/runOutcome.js";
 // devTier comes from runOutcome.deriveDevTier(state.gameplay.devIndex):
 //   low   (<25)   — "scrappy outpost" tier
 //   mid   (25-49) — "frontier ate them" tier
-//   high  (50-74) — "routes compounded" tier
-//   elite (>=75)  — "chain reinforced itself" tier
+//   high  (50-74) — "routes outlived" tier
+//   elite (>=75)  — "chain could not hold" tier
+//
+// v0.10.1 R10 Plan-PAA-game-over-copy — every tier title now contains an
+// unambiguous past-tense loss verb (`stalled`, `ate`, `outlived`,
+// `could not hold`). Earlier copy ("Routes compounded into rest." /
+// "The chain reinforced itself.") read as a positive outcome to
+// EN-as-second-language players, who parsed "rest" / "reinforced" as
+// "you won, now you sleep" — directly contradicting the loss reason.
 const END_TITLE_BY_TIER = Object.freeze({
   low:   "The colony stalled.",
   mid:   "The frontier ate them.",
-  high:  "Routes compounded into rest.",
-  elite: "The chain reinforced itself.",
+  high:  "The routes outlived the colony.",
+  elite: "Even the chain could not hold.",
 });
 
 // v0.8.2 Round-6 Wave-3 (02e-indie-critic Step 5/6) — finale signature
@@ -560,8 +567,17 @@ export class GameStateOverlay {
       // when the tier resolver returns nothing recognised (defence in depth).
       const devTier = resolveDevTier(this.state, session);
       const finaleTitle = END_TITLE_BY_TIER[devTier] ?? "Colony Lost";
+      // v0.10.1 R10 Plan-PAA-game-over-copy — visual-hierarchy swap. The
+      // hero `#overlayEndTitle` now carries `session.reason` (the actual
+      // cause-of-death sentence the player needs to read), while
+      // `#overlayEndReason` becomes a tier-flavoured epilogue subhead
+      // prefixed with an explicit tier label. This kills the EN-as-L2
+      // misread where the poetic tier title was being parsed as the
+      // outcome itself. DOM nodes and styling are unchanged — only the
+      // textContent role assignments swap.
+      const reasonText = session?.reason ?? "Run ended.";
       if (this.endTitle) {
-        this.endTitle.textContent = finaleTitle;
+        this.endTitle.textContent = reasonText;
         this.endTitle.setAttribute?.("data-dev-tier", devTier);
         this.endTitle.style.background = "linear-gradient(135deg, #922b21, #e74c3c)";
         this.endTitle.style.webkitBackgroundClip = "text";
@@ -569,7 +585,8 @@ export class GameStateOverlay {
         this.endTitle.style.backgroundClip = "text";
       }
       if (this.endReason) {
-        this.endReason.textContent = session?.reason ?? "";
+        const tierLabel = devTier.charAt(0).toUpperCase() + devTier.slice(1);
+        this.endReason.textContent = `${tierLabel}-tier finale · "${finaleTitle}"`;
       }
       if (this.endMeta) {
         this.endMeta.textContent = formatOutcomeMeta(this.state);
