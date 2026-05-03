@@ -1212,48 +1212,14 @@ export class AnimalAISystem {
       updateIdleWithoutReasonMetric(animal, stateNode, animalDt, state);
     }
     finalizeEcologyMetrics(state, ecology);
-    // v0.8.3 worker-vs-raider combat — publish a per-tick combat snapshot
-    // (active raiders, active predators, guard count) so ColonyPlanner /
-    // ThreatPlanner / panels can read it without re-walking state every
-    // call. Lives under state.metrics.combat (new sub-object); not added to
-    // state.ai.agentDirector.stats per scope guardrails.
-    state.metrics ??= {};
-    let activePredators = 0;
-    let activeRaiders = 0;
-    for (const a of state.animals ?? []) {
-      if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
-      activePredators += 1;
-      if (String(a.species ?? "") === "raider_beast") activeRaiders += 1;
-    }
-    let guardCount = 0;
-    let workerCount = 0;
-    for (const w of state.agents ?? []) {
-      if (!w || w.alive === false || w.type !== "WORKER") continue;
-      workerCount += 1;
-      if (w.role === "GUARD") guardCount += 1;
-    }
-    // Nearest predator-to-worker distance for proximity gates.
-    let nearestSq = Infinity;
-    if (activePredators > 0 && workerCount > 0) {
-      for (const w of state.agents) {
-        if (!w || w.alive === false || w.type !== "WORKER") continue;
-        for (const a of state.animals) {
-          if (!a || a.alive === false || a.kind !== ANIMAL_KIND.PREDATOR) continue;
-          const dx = a.x - w.x;
-          const dz = a.z - w.z;
-          const d2 = dx * dx + dz * dz;
-          if (d2 < nearestSq) nearestSq = d2;
-        }
-      }
-    }
-    state.metrics.combat = {
-      activeThreats: activePredators,
-      activeRaiders,
-      activePredators,
-      guardCount,
-      workerCount,
-      nearestThreatDistance: nearestSq === Infinity ? -1 : Math.sqrt(nearestSq),
-    };
+    // v0.10.2 PM-deep-perf R7 — inline combat-metrics duplicate deleted.
+    // Canonical writer is MortalitySystem.recomputeCombatMetricsThrottled
+    // (lifecycle pass, R6 PK-throttled, ~95% cache-hit on peaceful ticks).
+    // Saves ~2.0 ms/tick avg per PM measurement; no behaviour change because
+    // MortalitySystem writes the identical state.metrics.combat shape
+    // (activeThreats, activeRaiders, activePredators, activeSaboteurs,
+    // guardCount, workerCount, nearestThreatDistance) and additionally
+    // counts saboteurs which the deleted twin missed.
     if (state.debug) {
       state.debug.animalAiLod = {
         stride,

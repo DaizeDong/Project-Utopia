@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r7-PM (R7 PM-delete-animal-combat-metrics-twin, P0)
+
+### PM delete-animal-combat-metrics-twin — surgical deletion of unthrottled inline duplicate
+
+Implements the P0 fix from `Round7/Plans/Plan-PM-delete-animal-combat-metrics-twin.md` (Reviewer PM-deep-perf, Tier A). PM-feedback measured `AnimalAISystem.update` at avg=2.84 ms/tick (highest sustained avg in the perf report) and traced the bulk of the cost to an inline anonymous code block (lines 1215-1256) that re-walked every agent + animal twice on EVERY tick to overwrite `state.metrics.combat` — duplicating work that `MortalitySystem.recomputeCombatMetricsThrottled` (the canonical, R6 PK-throttled writer) already does on the lifecycle pass with ~95% cache-hit on peaceful ticks. Net waste: ~480 distance computes per tick at the 80-worker / 6-hostile bench profile.
+
+**Fix:** Direction A — pure deletion. The 42-line inline block (`state.metrics ??= {}` through `state.metrics.combat = { ... }`) deleted in full and replaced with an 8-line provenance comment. The adjacent `state.debug.animalAiLod` block (lines 1257+) preserved untouched. MortalitySystem's `recomputeCombatMetricsThrottled` (lifecycle pass, throttled) is now the sole writer of `state.metrics.combat`. The deleted twin was strictly inferior — it missed `activeSaboteurs` entirely, so saboteur-only threats would have been invisible to any reader that fell into AnimalAISystem's writer rather than MortalitySystem's. Hard-freeze compliant (no new tile / role / building / mood / audio / UI panel — pure deletion).
+
+**Verification:**
+- Grep across `src/` confirms zero callers reference AnimalAISystem as a combat-metrics writer; the only readers (`ColonyPlanner`, `ThreatPlanner`, `RoleAssignmentSystem`, `NPCBrainSystem`) document tolerance for the R6 PK throttle window.
+- Test files mentioning AnimalAISystem (`animal-ecology`, `predator-species`, `worker-combat`, `wall-hp-attack`, `v0.10.0-c-fsm-trace-parity`) do not assert on `state.metrics.combat` after `AnimalAISystem.update` — confirmed by `Grep -P "metrics\.combat"` returning empty.
+- Existing combat-metrics tests (`combat-metrics-throttle.test.js`, `combat-metrics-per-tick.test.js`, `entity-death-cleanup.test.js`) call `recomputeCombatMetrics` directly through MortalitySystem and remain green.
+
+**Test baseline:** 1920 tests / 1911 pass / 5 fail (all pre-existing on parent `d2b864e`: ResourceSystem flush, RoleAssignment quarry, RaidEscalator DI=30, RaidFallback popFloor, Fallback planner recruit-step) / 4 skip. Identical pass/fail counts pre and post change (verified by stash-and-rerun on parent commit). Zero new failures introduced; zero new tests added (per plan: deletion is its own invariant — the readers tolerating MortalitySystem-as-sole-writer is enforced by the R6 PK throttle test that already lives at `combat-metrics-throttle.test.js`).
+
+**Files changed:** 1 source modified (`src/simulation/npc/AnimalAISystem.js`) + CHANGELOG. Net **-34 LOC** (deleted 42 lines of duplicate work, added 8 lines of provenance comment). Estimated runtime savings per PM measurement: ~2.0 ms/tick avg on AnimalAISystem at the 80-worker bench profile.
+
 ## [Unreleased] — v0.10.2-r7-PL (R7 PL-terrain-min-guarantee, P0)
 
 ### PL terrain-min-guarantee — defensive FARM/LUMBER/QUARRY floor pass
