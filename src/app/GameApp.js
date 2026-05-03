@@ -68,7 +68,7 @@ import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, M
 import { pushWarning } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
-import { evaluateRunOutcomeState } from "./runOutcome.js";
+import { evaluateRunOutcomeState, maybeRecordFamineChronicle } from "./runOutcome.js";
 import { BALANCE } from "../config/balance.js";
 import { ensurePerformanceTelemetry, recordPerformanceSample } from "./performanceTelemetry.js";
 import { getScenarioIntroPayload } from "../world/scenarios/ScenarioFactory.js";
@@ -2602,6 +2602,11 @@ export class GameApp {
         // intentional: leaderboard persistence must never block end-phase.
       }
     }
+    // R9 PV §5.3 — Plan-Cascade-Mitigation Step 4. Prepend a famine
+    // chronicle entry when the end-of-run death distribution is
+    // starvation-dominated. Helper is pure + idempotent; see
+    // runOutcome.js#maybeRecordFamineChronicle.
+    maybeRecordFamineChronicle(this.state);
     this.#setRunPhase("end", {
       ...outcome,
     });

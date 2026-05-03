@@ -626,8 +626,19 @@ export function maybeTriggerRecovery(state, runtime, coverage, dt) {
   // scene-setting sentence so the event feels diegetic. Mechanics unchanged —
   // same resources applied, same actionKind, same recovery charge consumed.
   logObjective(state, `A relief caravan crested the ridge as the last grain ran out — +${foodBoost} food, +${woodBoost} wood, threat eased by ${threatRelief.toFixed(0)}.`);
-  state.controls.actionMessage = "The colony breathes again. Rebuild your routes before the next wave.";
-  state.controls.actionKind = "success";
+  // R9 PV §3c — Plan-Cascade-Mitigation Step 3. Suppress the false
+  // reassurance toast when the cliff is already armed (foodHeadroomSec<20).
+  // Pre-fix: "The colony breathes again" fired at the very moment a cascade
+  // was about to wipe N workers — the worst possible UX. The objective log
+  // entry above still records the +food/+wood/+threat-relief mechanically,
+  // and the resources tick up visibly; we only mute the top-bar
+  // reassurance string when the runway is actually critical.
+  const headroomNow = Number(state.metrics?.foodHeadroomSec ?? Infinity);
+  const cascadeArming = Number.isFinite(headroomNow) && headroomNow < 20;
+  if (!cascadeArming) {
+    state.controls.actionMessage = "The colony breathes again. Rebuild your routes before the next wave.";
+    state.controls.actionKind = "success";
+  }
   return recovery;
 }
 
