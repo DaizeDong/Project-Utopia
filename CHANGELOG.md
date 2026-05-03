@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r7-PJ-followup (R7 PJ-followup-cadence-dampener, P1)
+
+### PJ-followup cadence-dampener — opening-crisis safety net for EventDirector
+
+Implements the P1 fix from `Round7/Plans/Plan-PJ-followup-cadence-dampener.md` (Reviewer PJ-followup-cadence-dampener, Tier B; PL-derived F4 recommendation). PL-feedback identified R6's PJ-pacing 4× cadence acceleration (`eventDirectorBaseIntervalSec` 360→90s) as an accelerant of the opening-stall P0: PL run 1 had **4 of 12 workers in FIGHTING at t=180** because saboteur-draft / wildlife events fired during the same 30s window food crashed. Without R6 cadence the death window slips from t≈3:30 to t≈4:30 — same outcome, more headroom for autopilot to recover. The fix defers PJ cadence acceleration during the bootstrap window without permanently undoing R6 PJ.
+
+**Fix:** Direction A — multiply effective `intervalSec` by 2.5× inside `EventDirectorSystem.update` while bootstrap conditions hold (`(state.buildings?.farms ?? 0) === 0 && state.metrics.timeSec < 180`). Effective interval becomes 225s (instead of 90s) during opening crisis. Dampener disengages naturally the moment EITHER condition flips: farms appear (Plan-PL-terrain-min-guarantee or autopilot's first farm) OR timeSec reaches 180. Anchor offset (`-effectiveIntervalSec * 0.5`) and gate (`< effectiveIntervalSec`) both respect the dampener; first event during bootstrap lands at ~112s instead of ~45s. Zero new BALANCE constants — pure inline literal with comment justification. Hard-freeze compliant (no new tile/role/building/mood/mechanic/audio/UI panel — pure interval modulation).
+
+**Defense-in-depth posture:** Once Plan-PL-terrain-min-guarantee (R7 PL, also shipped this round) ensures farms ≥ 2 at t=0 on a fresh map, this dampener is effectively a no-op on day 1. It remains a safety net for adversarial seeds / future templates that slip through the PL guarantee, and for runtime states where farms get demolished early.
+
+**Tests added:** `test/event-director-bootstrap-dampener.test.js` (4 cases): (1) farms=0 ∧ t<180 → no dispatch until ~112s effective half-interval; (2) farms=1 ∧ t<180 → first dispatch at baseline 45s (dampener disengaged); (3) dampener engaged at t=120 then farms=2 set at t=150 → baseline 90s cadence resumes; (4) dampener disengages at t=180 even with farms=0. All 4 pass.
+
+**Existing tests adjusted:** `test/event-director.test.js` (5 cases) and `test/event-director-first-dispatch.test.js` (2 cases) — both stub-state factories gained `buildings: { farms: 1 }` so existing cadence assertions test baseline interval without the dampener engaging. Comment cross-references the new bootstrap-dampener test file as the dampener-path coverage.
+
+**Test baseline:** 1924 tests / **1920 pass / 0 fail** / 4 skip. Net **+4 passes** vs parent `daa908d` (was 1920/1916 pass/0 fail/4 skip) from the 4 new bootstrap-dampener cases. Existing event-director suites (`event-director.test.js`, `event-director-first-dispatch.test.js`, `event-director-disease-wildfire.test.js`) all green after the stub-state `farms: 1` adjustment.
+
+**Files changed:** 1 source modified (`src/simulation/meta/EventDirectorSystem.js`) + 1 test new (`test/event-director-bootstrap-dampener.test.js`) + 2 tests adjusted (`test/event-director.test.js`, `test/event-director-first-dispatch.test.js`) + CHANGELOG. Approx +175 / -5 LOC across 5 files (~20 LOC of source change + ~155 LOC of new test coverage + 12 LOC of stub-state adjustments).
+
 ## [Unreleased] — v0.10.2-r7-PN (R7 PN-test-triage, P1)
 
 ### PN test-triage — refresh 5 stale test thresholds + 2 docstring fixes

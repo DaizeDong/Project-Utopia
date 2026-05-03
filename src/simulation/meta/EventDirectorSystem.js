@@ -125,18 +125,30 @@ export class EventDirectorSystem {
     const nowSec = Number(state.metrics?.timeSec ?? 0);
     const intervalSec = Number(BALANCE.eventDirectorBaseIntervalSec ?? 240);
 
+    // v0.10.2 PJ-followup-cadence-dampener R7 — opening-crisis safety net.
+    // While the colony has no farms AND we're in the bootstrap window (<180s),
+    // throttle event cadence to 2.5× baseline so saboteur draft / wildlife
+    // events don't pull workers off harvest during the food crash window.
+    // Disengages naturally the moment Plan-PL-terrain-min-guarantee or the
+    // autopilot's first farm completes. Defense-in-depth complement to the
+    // PL terrain floor for adversarial seeds that slip through the guarantee.
+    const bootstrapWindow = (state.buildings?.farms ?? 0) === 0 && Number(state.metrics?.timeSec ?? 0) < 180;
+    const effectiveIntervalSec = bootstrapWindow ? intervalSec * 2.5 : intervalSec;
+
     const lastDispatch = Number.isFinite(director.lastDispatchSec) ? director.lastDispatchSec : -Infinity;
     // First-run grace: after init the lastDispatchSec is -Infinity, so the
     // very first tick would otherwise dispatch immediately. Anchor the first
     // dispatch and offset by half-interval so the first event lands at
     // ~intervalSec/2 instead of a full interval out — v0.10.2 PJ-pacing P0
     // pulls first event from t=intervalSec to t=intervalSec/2 (45s at the
-    // new 90s base interval) so the early game has visible motion.
+    // new 90s base interval) so the early game has visible motion. The
+    // dampener applies to this offset too: during bootstrap the first event
+    // lands at ~effectiveIntervalSec/2 (≈112s) instead of ~45s.
     if (!Number.isFinite(lastDispatch)) {
-      director.lastDispatchSec = nowSec - intervalSec * 0.5;
+      director.lastDispatchSec = nowSec - effectiveIntervalSec * 0.5;
       return;
     }
-    if (nowSec - lastDispatch < intervalSec) return;
+    if (nowSec - lastDispatch < effectiveIntervalSec) return;
 
     const rng = typeof services?.rng?.next === "function"
       ? () => services.rng.next()

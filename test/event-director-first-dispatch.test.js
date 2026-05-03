@@ -20,6 +20,11 @@ function makeStubState() {
   return {
     metrics: { tick: 0, timeSec: 0 },
     events: { queue: [], active: [], log: [], listeners: new Map() },
+    // v0.10.2 PJ-followup-cadence-dampener R7 — set farms=1 so the bootstrap
+    // dampener disengages and these first-dispatch assertions test baseline
+    // half-interval anchor. The dampener has its own dedicated test file:
+    // event-director-bootstrap-dampener.test.js.
+    buildings: { farms: 1 },
     gameplay: {
       raidEscalation: { tier: 0, intervalTicks: 3600, intensityMultiplier: 1, devIndexSample: 0 },
       lastRaidTick: -9999,

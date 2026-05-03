@@ -13,6 +13,11 @@ function makeStubState() {
   return {
     metrics: { tick: 0, timeSec: 0 },
     events: { queue: [], active: [] },
+    // v0.10.2 PJ-followup-cadence-dampener R7 — set farms=1 so the bootstrap
+    // dampener disengages and these cadence assertions test baseline interval.
+    // The dampener (effective interval ×2.5 while farms=0 ∧ timeSec<180) has
+    // its own dedicated test file: event-director-bootstrap-dampener.test.js.
+    buildings: { farms: 1 },
     gameplay: {
       raidEscalation: {
         tier: 0,
