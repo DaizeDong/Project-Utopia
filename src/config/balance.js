@@ -262,7 +262,9 @@ export const BALANCE = Object.freeze({
   predatorHungerDecayPerSecond: 0.012,
   predatorHungerRecoveryOnHit: 0.24,
   predatorAttackDamage: 26,
-  predatorAttackDistance: 1.8,
+  // PCC R10 — was 1.8. Bumped to 2.4 to match worker meleeReachTiles=2.0
+  // closely so predators can reach as far as a GUARD instead of being kited.
+  predatorAttackDistance: 2.4,
   predatorAttackCooldownSec: 1.4,
   predatorPatrolRefreshSec: 1.6,
   predatorFarmPressureAttraction: 1.05,
@@ -1029,6 +1031,18 @@ export const BALANCE = Object.freeze({
   // v0.8.5 Tier 3: 14 → 18. 1 GUARD vs 1 wolf needs to be survivable;
   // 18 brings GUARD DPS to 11.25 matching bear's 10.
   guardAttackDamage: 18,
+  // PCC R10 — split GUARD vs non-GUARD damage to restore role identity.
+  // R5 PB widened the COMBAT_PREEMPT row so every worker fights, but they
+  // all read guardAttackDamage=18 → "tap to delete" feel. Non-GUARDs now
+  // read these reduced numbers; GUARDs keep the existing keys above.
+  workerAttackDamage: 10,
+  workerNonGuardAttackCooldownSec: 2.2,
+  // PCC R10 — saboteurs sting back when adjacent to a worker. Were
+  // noncombatants (HP 50 reusing wallMaxHp, no melee). Decoupled HP and
+  // gave them a cooldown-gated strike via existing damage pipeline.
+  saboteurMaxHp: 65,
+  saboteurAttackDamage: 8,
+  saboteurAttackCooldownSec: 2.0,
   // v0.8.3 worker-vs-raider combat — Iteration tuning. 4-tile aggro felt
   // too short in the live probe (GUARDs auto-promoted from idle workers
   // were often 5-7 tiles from the spawn-injected raider and never closed
@@ -1041,7 +1055,9 @@ export const BALANCE = Object.freeze({
   // a stand-off at d≈1.2 tiles (the predator's preferred preyChase distance
   // sat just outside the melee threshold). 1.3 closes the gap so a GUARD
   // tracking a raider into melee range will land hits without overshooting.
-  meleeReachTiles: 2.6,
+  // PCC R10 — was 2.6. Lowered to 2.0 to close the 0.8-tile kite gap vs
+  // predators (predatorAttackDistance bumped 1.8 → 2.4 in parallel).
+  meleeReachTiles: 2.0,
   workerAttackCooldownSec: 1.6,
   // raider_beast stat-randomisation envelope. Same seed must reproduce the
   // same draw — see EntityFactory.createAnimal raider branch. Wolf/bear

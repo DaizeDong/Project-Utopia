@@ -350,10 +350,13 @@ export function createVisitor(x, z, kind = VISITOR_KIND.SABOTEUR, random = Math.
   };
   // v0.8.5 Tier 2 S3: saboteur engagement. Saboteurs now have a smaller HP
   // pool than the default 100 used by baseAgent so worker/GUARD melee can
-  // actually kill them. Reuse BALANCE.wallMaxHp (50) for symmetry — same
-  // expected attrition as a wall. Traders keep the default HP.
+  // actually kill them. Traders keep the default HP.
+  // PCC R10 — decoupled from BALANCE.wallMaxHp (50) so future wall buffs
+  // don't accidentally buff saboteurs. Bumped 50 → 65 in the dedicated
+  // saboteurMaxHp knob so non-GUARD workers (now 10 dmg, was 18) need ~7
+  // hits instead of ~3, restoring the "raid event" feel.
   if (kind === VISITOR_KIND.SABOTEUR) {
-    const saboteurHp = Number(BALANCE.wallMaxHp ?? 50);
+    const saboteurHp = Number(BALANCE.saboteurMaxHp ?? 65);
     visitor.hp = saboteurHp;
     visitor.maxHp = saboteurHp;
   }
