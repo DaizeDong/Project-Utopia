@@ -518,6 +518,32 @@ function applyVisitorWallAttack(state, attacker, barrier, dt) {
   return false;
 }
 
+// PCC R10 — saboteurs strike back when adjacent to a worker. Pure addition
+// to the existing tick: reuses `attackCooldownSec` (same field workers use,
+// defaulted via `?? 0`), the existing `dealDamage`-equivalent inline pattern
+// from WorkerStates.js FIGHTING, and the existing death-attribution pipeline
+// (MortalitySystem coerces deathReason). No new entity field, no new event.
+function findAdjacentWorkerForSaboteur(visitor, state) {
+  const agents = state.agents;
+  if (!agents || agents.length === 0) return null;
+  let best = null;
+  let bestDistSq = 4.0; // strike reach: ~2 world-units (tile size scale)
+  for (let i = 0; i < agents.length; i += 1) {
+    const a = agents[i];
+    if (!a || a.type !== "WORKER") continue;
+    if (a.alive === false) continue;
+    if (Number(a.hp ?? 0) <= 0) continue;
+    const dx = Number(a.x ?? 0) - Number(visitor.x ?? 0);
+    const dz = Number(a.z ?? 0) - Number(visitor.z ?? 0);
+    const d2 = dx * dx + dz * dz;
+    if (d2 <= bestDistSq) {
+      best = a;
+      bestDistSq = d2;
+    }
+  }
+  return best;
+}
+
 function saboteurTick(visitor, state, dt, services, stateNode) {
   const policy = state.ai.groupPolicies.get(visitor.groupId)?.data;
   const sabotageWeight = Number(policy?.intentWeights?.sabotage ?? 1);
@@ -526,6 +552,26 @@ function saboteurTick(visitor, state, dt, services, stateNode) {
   const chanceScale = Math.max(0.35, Math.min(2.8, sabotageWeight * threatFactor / Math.max(0.6, resistance)));
 
   const bb = visitor.blackboard ?? (visitor.blackboard = {});
+
+  // PCC R10 — adjacent-worker melee strike (cooldown-gated). Runs before
+  // sabotage-target/path logic so an engaged saboteur fights instead of
+  // disengaging to scout. No new state machine — the saboteur keeps its
+  // sabotage path; this just adds an HP cost to the worker that closed in.
+  visitor.attackCooldownSec = Math.max(0, Number(visitor.attackCooldownSec ?? 0) - dt);
+  if (Number(visitor.attackCooldownSec ?? 0) <= 0) {
+    const target = findAdjacentWorkerForSaboteur(visitor, state);
+    if (target) {
+      const dmg = Number(BALANCE.saboteurAttackDamage ?? 8);
+      target.hp = Math.max(0, Number(target.hp ?? 0) - dmg);
+      visitor.attackCooldownSec = Number(BALANCE.saboteurAttackCooldownSec ?? 2.0);
+      if (target.hp <= 0 && target.alive !== false) {
+        target.alive = false;
+        target.deathReason = "killed-by-saboteur";
+        target.deathSec = Number(state.metrics?.timeSec ?? 0);
+      }
+    }
+  }
+
   visitor.sabotageCooldown -= dt;
   if (visitor.sabotageCooldown <= 0) {
     const base = BALANCE.sabotageCooldownMinSec + services.rng.next() * (BALANCE.sabotageCooldownMaxSec - BALANCE.sabotageCooldownMinSec);

@@ -268,9 +268,17 @@ const FIGHTING = Object.freeze({
     }
     if (dist <= meleeReach && Number(worker.attackCooldownSec ?? 0) <= 0
         && Number(target.hp ?? 0) > 0) {
-      const dmg = Number(BALANCE.guardAttackDamage ?? 14);
+      // PCC R10 — split GUARD vs non-GUARD damage so role identity holds.
+      // Non-GUARDs still engage (R5 PB intent) but with lower DPS so a
+      // saboteur breach is no longer "tap to delete" by a passing FARM.
+      const isGuard = worker.role === "GUARD";
+      const dmg = isGuard
+        ? Number(BALANCE.guardAttackDamage ?? 14)
+        : Number(BALANCE.workerAttackDamage ?? 10);
       target.hp = Math.max(0, Number(target.hp ?? 0) - dmg);
-      worker.attackCooldownSec = Number(BALANCE.workerAttackCooldownSec ?? 1.6);
+      worker.attackCooldownSec = isGuard
+        ? Number(BALANCE.workerAttackCooldownSec ?? 1.6)
+        : Number(BALANCE.workerNonGuardAttackCooldownSec ?? 2.2);
       if (target.hp <= 0 && target.alive !== false) {
         target.alive = false;
         target.deathReason = "killed-by-worker";
