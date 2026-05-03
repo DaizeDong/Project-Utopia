@@ -5,6 +5,15 @@ import { getScenarioRuntime } from "../../world/scenarios/ScenarioFactory.js";
 
 const GROUP_FOCUS_ORDER = Object.freeze(["workers", "traders", "saboteurs", "herbivores", "predators"]);
 
+// R12 Plan-R12-glued-tokens (A7 #2): Title-Case helper for groupId labels in
+// the AI summary line. Keeps the rendered prose from glueing role-noun +
+// action-verb (e.g. "saboteursstrike a soft frontier corridor") and matches
+// the existing capitalisation in HUD role pills (Workers/Traders).
+function titleCaseGroup(groupId) {
+  const s = String(groupId ?? "").trim();
+  return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
 }
@@ -258,7 +267,11 @@ export function getAiInsight(state) {
   const envSummary = String(directive?.summary ?? "").trim();
   const groups = pickTopFocusGroups(state, 3);
   const groupSummary = groups.length > 0
-    ? groups.map((entry) => `${entry.groupId}:${entry.focus}`).join(" | ")
+    // R12 Plan-R12-glued-tokens (A7 #2): Title-Case + ": " separator so the
+    // line reads "Workers: rebuild ..." instead of the glued "workersrebuild
+    // ..." A7 captured across Live Causal Chain, AI Decisions, and Director
+    // timeline tooltip.
+    ? groups.map((entry) => `${titleCaseGroup(entry.groupId)}: ${entry.focus}`).join(" | ")
     : "no active group focuses";
   const summaryParts = [];
   if (envFocus) summaryParts.push(`env=${envFocus}`);

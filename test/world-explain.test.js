@@ -226,7 +226,9 @@ test("world explain builds a shared causal digest from frontier pressure and AI 
   const digest = getCausalDigest(state);
 
   assert.match(aiInsight.summary, /env=contested logistics lane/i);
-  assert.match(aiInsight.summary, /workers:depot throughput/i);
+  // R12 glued-tokens: separator + Title-Case (was /workers:depot/)
+  assert.match(aiInsight.summary, /Workers: depot throughput/);
+  assert.ok(!/workersdepot/.test(aiInsight.summary), "no glued tokens");
   assert.equal(digest.severity, "error");
   assert.match(digest.headline, /Reconnect 1 isolated worksite/i);
   assert.match(digest.action, /route repair should outrank more expansion/i);
