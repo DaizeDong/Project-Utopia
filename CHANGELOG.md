@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r6-PI (R6 PI-devpanel-buildbar, P1)
+
+### PI devpanel-buildbar — Demolish promoted to slot 2 + Settings Dev Tools quick spawner
+
+Implements the P1 fix from `Round6/Plans/PI-devpanel-buildbar.md` (Reviewer PI-devpanel-buildbar, Tier A). Two independent UX wins on one card: (a) the build bar reorder so Demolish (data-tool="erase") sits at slot 2 right after the runtime-injected Select button — pairing the two non-build modes at the head of the bar matches RTS/colony-sim muscle memory; (b) a new dev-only "Quick Spawn" card in the Settings sidebar tab that takes a count + 7-type select (worker/visitor/saboteur/herbivore/predator/all-wildlife/bandit) and routes through the existing `GameApp.devStressSpawn` / `devSpawnAnimals` / `applyPopulationTargets` / `devClearNonWorkers` primitives. Hard-freeze compliant — the new card is a `<details class="card dev-only">` inside the existing Settings sidebar tab (not a new UI panel), and it strictly reuses spawn primitives that already exist on the dev path; tier change of `erase` from `secondary` to `primary` keeps it always visible (necessary at slot 2 — casual-mode tier gating would otherwise hide it before the player has unlocked secondary).
+
+**1. P1-A: build bar reorder (`index.html`)** — Moved `<button data-tool="erase">` out of the "Defense & Edit" group and inserted it as the FIRST static `data-tool` button (above the "Foundation" heading). At runtime, `BuildToolbar.#injectSelectToolButton` inserts a "select" button before the first `data-tool` element, so the rendered order becomes `[Select, Demolish, (Foundation) Road, Farm, Lumber, Warehouse, (Defense) Wall, Bridge, (Processing) Quarry, Herbs, Kitchen, Smithy, Clinic]`. data-hotkey="7" preserved for the keyboard shortcut (the help-modal hotkey table is the source of truth, not the visual position). Tier bumped `secondary → primary` so casual-mode tier-gating doesn't hide it before unlock. The "Defense & Edit" heading renamed to "Defense" since erase moved out.
+
+**2. P1-B: Settings Dev Tools card (`index.html` + `src/ui/tools/BuildToolbar.js` + `src/app/GameApp.js`)** — New `<details class="card dev-only" id="devToolsCard">` inserted at the bottom of the `data-sidebar-panel="settings"` panel body. Contains: number input (1-50, default 5) + 7-option select (Worker / Visitor (Trader) / Saboteur / Herbivore / Predator / All Wildlife / Bandit (Saboteur alias)) + Spawn / Clear buttons + status line. `BuildToolbar.#dispatchDevSpawn(type, n)` is the central dispatcher: wildlife routes through `onDevSpawnAnimals` (random passable tile, no cap); workers route through `onDevSetWorkerCount(current + n)`; visitors / saboteurs / bandits bump `populationTargets` deltas through `onApplyPopulationTargets`; `all_wildlife` splits 50/50 between herbivore and predator. `GameApp.js` BuildToolbar handler list now includes `onDevSetWorkerCount`, `onDevSpawnAnimals`, `onDevClearNonWorkers` (mirroring the existing PerformancePanel wiring at line 275-277).
+
+**Tests added:** `test/ui/build-bar-order.test.js` (3 cases: contains all 12 expected static build tools; erase is the first static `data-tool` button; Foundation row follows in `[erase, road, farm, lumber, warehouse]` order). All 3 pass. Existing `test/index-html-tool-cost-consistency.test.js` (2 cases) still green — does not depend on tool order.
+
+**Test baseline:** Pre-existing failure `recruitment-system.test.js: Fallback planner emits a recruit step…` confirmed unchanged by stash-and-rerun (12 pass / 1 fail on parent `0dff5f3` AND on this commit). Zero new failures introduced. New test file adds +3 passes.
+
+**Files changed:** 3 source modified (`index.html`, `src/ui/tools/BuildToolbar.js`, `src/app/GameApp.js`) + 1 test new (`test/ui/build-bar-order.test.js`) + CHANGELOG. Approx +110 / -10 LOC.
+
 ## [Unreleased] — v0.10.2-r6-PK (R6 PK-perf-and-warehouse, P0)
 
 ### PK perf-and-warehouse — recomputeCombatMetrics throttle + WarehouseNeedProposer

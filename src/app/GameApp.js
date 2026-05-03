@@ -246,6 +246,12 @@ export class GameApp {
       onSetCameraZoomRange: (minZoom, maxZoom) => this.setCameraZoomRange(minZoom, maxZoom),
       onSetRenderDetailThreshold: (value) => this.setRenderDetailThreshold(value),
       onSetDisplaySettings: (settings) => this.setDisplaySettings(settings),
+      // v0.10.1-r6-PI (PI-devpanel-buildbar) — Settings → Dev Tools quick spawner
+      // wraps the same primitives the Debug → Performance Entity Inject sub-panel
+      // already uses (so balance/test surface is identical).
+      onDevSetWorkerCount: (target) => this.devStressSpawn(target),
+      onDevSpawnAnimals: (opts) => this.devSpawnAnimals(opts),
+      onDevClearNonWorkers: () => this.devClearNonWorkers(),
     });
     this.hud = new HUDController(this.state);
     this.inspector = new InspectorPanel(this.state);

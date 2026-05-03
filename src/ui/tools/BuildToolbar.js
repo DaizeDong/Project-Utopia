@@ -263,6 +263,12 @@ export class BuildToolbar {
     this.loadSnapshotBtn = document.getElementById("loadSnapshotBtn");
     this.comparePresetsBtn = document.getElementById("comparePresetsBtn");
     this.exportReplayBtn = document.getElementById("exportReplayBtn");
+    // v0.10.1-r6-PI (PI-devpanel-buildbar) — Settings → Dev Tools quick spawner.
+    this.devSpawnCount = document.getElementById("devSpawnCount");
+    this.devSpawnType = document.getElementById("devSpawnType");
+    this.devSpawnBtn = document.getElementById("devSpawnBtn");
+    this.devClearBtn = document.getElementById("devClearBtn");
+    this.devSpawnStatus = document.getElementById("devSpawnStatus");
     this.buildToolLabelVal = document.getElementById("buildToolLabelVal");
     this.buildToolSummaryVal = document.getElementById("buildToolSummaryVal");
     this.buildToolCostVal = document.getElementById("buildToolCostVal");
@@ -655,6 +661,96 @@ export class BuildToolbar {
     this.exportReplayBtn?.addEventListener("click", () => {
       this.handlers.onExportReplay?.();
     });
+
+    // v0.10.1-r6-PI (PI-devpanel-buildbar) — Settings → Dev Tools quick spawner.
+    // Routes the chosen entity type through the appropriate GameApp dev primitive
+    // (devSpawnAnimals for wildlife, applyPopulationTargets for workers/visitors/
+    // saboteurs — there's no per-call "spawn N visitors" entry point so we read
+    // the current count and bump the target). Status line echoes spawned/cleared
+    // count so the dev knows the action landed without opening console.
+    this.devSpawnBtn?.addEventListener("click", () => {
+      const n = Math.max(1, Math.min(50, Math.floor(Number(this.devSpawnCount?.value) || 5)));
+      const type = this.devSpawnType?.value ?? "herbivore";
+      this.#dispatchDevSpawn(type, n);
+    });
+
+    this.devClearBtn?.addEventListener("click", () => {
+      const result = this.handlers?.onDevClearNonWorkers?.();
+      const removed = result?.ok ? Number(result.removed ?? 0) : 0;
+      this.#setDevSpawnStatus(
+        result?.ok
+          ? `Cleared ${removed} non-worker entit${removed === 1 ? "y" : "ies"}.`
+          : `Clear failed: ${result?.reason ?? "unknown"}.`,
+      );
+    });
+  }
+
+  // v0.10.1-r6-PI (PI-devpanel-buildbar) — set the small status line under the
+  // Spawn / Clear buttons. Falls back silently if the element was never wired
+  // (e.g. headless DOM in tests).
+  #setDevSpawnStatus(text) {
+    if (this.devSpawnStatus) this.devSpawnStatus.textContent = text;
+  }
+
+  // v0.10.1-r6-PI (PI-devpanel-buildbar) — central dispatch for the 7 entity
+  // types the dev card can spawn. Wildlife uses devSpawnAnimals (random
+  // passable tile, no cap); workers/visitors/saboteurs use applyPopulationTargets
+  // (delta against current count). all_wildlife splits the count 50/50 between
+  // herbivores and predators. bandit is an alias for saboteur (the sim has no
+  // distinct "bandit" entity type — bandit raids spawn saboteur-class visitors).
+  #dispatchDevSpawn(type, n) {
+    const toAnimals = (kind, count) => this.handlers?.onDevSpawnAnimals?.({ kind, count });
+    const bumpTarget = (key, count) => {
+      const current = Number(this.state.controls.populationTargets?.[key] ?? 0);
+      const targets = { ...(this.state.controls.populationTargets ?? {}) };
+      targets[key] = current + count;
+      this.handlers?.onApplyPopulationTargets?.(targets);
+    };
+    let label = type;
+    let summary = "";
+    switch (type) {
+      case "worker": {
+        const current = Number(this.state.controls.populationTargets?.workers ?? 0);
+        const result = this.handlers?.onDevSetWorkerCount?.(current + n);
+        summary = result?.ok ? `spawned ${Number(result.spawned ?? 0)} (total ${Number(result.total ?? 0)})` : `failed: ${result?.reason ?? "unknown"}`;
+        break;
+      }
+      case "visitor":
+        bumpTarget("traders", n);
+        summary = `target +${n} (traders)`;
+        break;
+      case "saboteur":
+      case "bandit": {
+        bumpTarget("saboteurs", n);
+        label = type === "bandit" ? "bandit (saboteur)" : "saboteur";
+        summary = `target +${n} (saboteurs)`;
+        break;
+      }
+      case "herbivore": {
+        const result = toAnimals("herbivore", n);
+        summary = result?.ok ? `spawned ${Number(result.spawned ?? 0)} (total ${Number(result.total ?? 0)})` : `failed: ${result?.reason ?? "unknown"}`;
+        break;
+      }
+      case "predator": {
+        const result = toAnimals("predator", n);
+        summary = result?.ok ? `spawned ${Number(result.spawned ?? 0)} (total ${Number(result.total ?? 0)})` : `failed: ${result?.reason ?? "unknown"}`;
+        break;
+      }
+      case "all_wildlife": {
+        const half = Math.max(1, Math.ceil(n / 2));
+        const otherHalf = Math.max(0, n - half);
+        const r1 = toAnimals("herbivore", half);
+        const r2 = otherHalf > 0 ? toAnimals("predator", otherHalf) : null;
+        const sH = r1?.ok ? Number(r1.spawned ?? 0) : 0;
+        const sP = r2?.ok ? Number(r2.spawned ?? 0) : 0;
+        summary = `spawned ${sH} herb + ${sP} pred`;
+        break;
+      }
+      default:
+        summary = `unknown type "${type}"`;
+        break;
+    }
+    this.#setDevSpawnStatus(`Spawn ${n} × ${label}: ${summary}.`);
   }
 
   // v0.8.2 Round-1 02a-rimworld-veteran — Role Quota sliders surface the
