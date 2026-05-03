@@ -915,6 +915,13 @@ export function createInitialGameState(options = {}) {
       // dropped births that collided on the same integer timeSec).
       survivalScore: 0,
       birthsTotal: 0,
+      // R10 Plan-PBB-recruit-flow-fix Step 2 — defensive default. Previously
+      // only incremented inside the spawn branch at PopulationGrowthSystem.js
+      // line 262, which left `recruitTotal` as `undefined` for any consumer
+      // that read it before the first recruit fired (HUD / analytics / R5
+      // PC's gate). Initialising to 0 here keeps `metrics.recruitTotal + 1`
+      // from coercing to NaN.
+      recruitTotal: 0,
       lastBirthGameSec: -1,
       survivalLastBirthsSeen: 0,
       survivalLastDeathsSeen: 0,

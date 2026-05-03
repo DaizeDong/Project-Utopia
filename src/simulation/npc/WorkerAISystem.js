@@ -19,7 +19,7 @@ import { enqueueEvent } from "../../world/events/WorldEventQueue.js";
 import { JobReservation } from "./JobReservation.js";
 import { RoadNetwork } from "../navigation/RoadNetwork.js";
 import { LogisticsSystem, ISOLATION_PENALTY } from "../economy/LogisticsSystem.js";
-import { recordProductionEntry } from "../economy/ResourceSystem.js";
+import { recordProductionEntry, recordResourceFlow } from "../economy/ResourceSystem.js";
 import { buildSpatialHash, queryNeighbors } from "../movement/SpatialHash.js";
 import { WorkerFSM } from "./fsm/WorkerFSM.js";
 
@@ -520,6 +520,14 @@ function resolveWorkCooldown(worker, dt, amount, resourceType, rng, isNight, dir
     if (directDepositState && directDepositState.resources) {
       const cur = Number(directDepositState.resources[resourceType] ?? 0);
       directDepositState.resources[resourceType] = cur + yielded;
+      // R10 Plan-PBB-recruit-flow-fix Step 1b — bootstrap-no-warehouse path
+      // also feeds foodProducedPerMin so the recruit-headroom gate sees real
+      // production before the first warehouse exists. Scoped to "food" only
+      // (matches the load-bearing gate); wood/stone/herbs telemetry on this
+      // path is tracked as a follow-up in CHANGELOG.
+      if (resourceType === "food") {
+        recordResourceFlow(directDepositState, "food", "produced", yielded);
+      }
     } else {
       worker.carry[resourceType] += yielded;
     }
@@ -844,6 +852,12 @@ export function handleDeliver(worker, state, services, dt) {
     const unloadFood = Math.min(Number(worker.carry.food ?? 0), remaining);
     worker.carry.food = Math.max(0, Number(worker.carry.food ?? 0) - unloadFood);
     state.resources.food += unloadFood;
+    // R10 Plan-PBB-recruit-flow-fix Step 1 — true-source production emit so
+    // state.metrics.foodProducedPerMin is non-zero in shipped play. Without
+    // this, RecruitmentSystem's foodHeadroomSec gate (BALANCE.recruitMin
+    // FoodHeadroomSec=60) is mathematically unsatisfiable and auto-recruit
+    // never fires. See assignments/.../Round10/Plans/Plan-PBB-recruit-flow-fix.md.
+    recordResourceFlow(state, "food", "produced", unloadFood);
     remaining -= unloadFood;
     const unloadWood = Math.min(Number(worker.carry.wood ?? 0), remaining);
     worker.carry.wood = Math.max(0, Number(worker.carry.wood ?? 0) - unloadWood);
