@@ -2,7 +2,8 @@
 // Behaviour-preservation lock for the C1 wave-1 extraction.
 //
 // Pre-refactor, lines 96-161 of `src/simulation/meta/ColonyDirectorSystem.js`
-// hosted four priority-95+ "safety net" if-blocks. The wave-1 refactor
+// hosted four priority-95+ "safety net" if-blocks (R12 A5 #1: ZeroLumber
+// dropped to priority 75 — see Plan-R12-wood-food-balance). The wave-1 refactor
 // extracts those blocks into `BuildProposer` instances and orchestrates
 // them via `runProposers(DEFAULT_BUILD_PROPOSERS, state, ctx)`. The
 // downstream branches in `assessColonyNeeds` (recovery / bootstrap /
@@ -78,9 +79,10 @@ function makeState({
 }
 
 // Helper: filter `needs` down to records that COULD have come from the
-// wave-1 safety-net section (priority >= 95 AND reason matches one of the
+// wave-1 safety-net section (priority >= 75 AND reason matches one of the
 // four legacy patterns). The downstream branches in assessColonyNeeds
-// never emit priority >= 95, so this filter is exact.
+// never emit priority >= 75 with these reason strings, so this filter is exact.
+// R12 A5 #1: lowered the floor 95→75 to admit the now-priority-75 ZeroLumber.
 function safetyNetSubset(needs) {
   const SAFETY_REASONS = [
     /zero-farm safety net/,
@@ -135,7 +137,14 @@ const FIXTURES = [
     },
     expectedSafetyNet: [
       { type: "farm",   priority: 99, reason: "bootstrap: zero-farm safety net" },
-      { type: "lumber", priority: 95, reason: "bootstrap: zero-lumber safety net (analog to zero-farm @99)" },
+      // R12 A5 #1: ZeroLumber NOW emits at priority 75 (was 95). The
+      // downstream phase-3 bootstrap branch emits a lumber@78 record with a
+      // different reason that wins the type-dedupe in assessColonyNeeds, so
+      // the safety-net subset (filtered by reason regex) no longer sees the
+      // ZeroLumber record. The intent — at least one lumber is always
+      // proposed — is preserved by the surviving lumber@78. Asserting on
+      // the ZeroLumber@75 record specifically is now covered by the
+      // colony-director-zero-lumber-safety.test.js direct-output test.
       { type: "quarry", priority: 95, reason: "safety net: stone deficit" },
       // food=80 → no emergency food rule fires; wood=30 → no emergency lumber.
     ],
@@ -149,7 +158,9 @@ const FIXTURES = [
     },
     expectedSafetyNet: [
       // ZeroFarm: farms=1 → silent
-      { type: "lumber", priority: 95, reason: "bootstrap: zero-lumber safety net (analog to zero-farm @99)" },
+      // R12 A5 #1: ZeroLumber@75 emitted but deduped out by downstream
+      // phase-3 lumber@78 (different reason). Direct-output test asserts
+      // the @75 emission separately.
       // ZeroQuarry: quarries=1 AND stone=20 → silent
       // Emergency: food=80 → no food rule; wood=30 → no wood rule
     ],
