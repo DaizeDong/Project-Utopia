@@ -662,10 +662,22 @@ export const BALANCE = Object.freeze({
   // v0.8.5 Tier 3: density risk currently steals only 1/sec from an 8-producer
   // cluster. 0.20 → 0.30 makes it felt without cratering production; cap 30 →
   // 60 keeps proportionality to mid-game stockpiles.
-  warehouseFireLossFraction: 0.3,
+  // PR-resource-reset (R8): 0.3 → 0.15. PR reviewer measured single-fire
+  // -18 food / -12.6 wood at fraction=0.3 — too brutal vs the 90s reaction
+  // window before the next fire roll. Halving keeps fire as a "stings"
+  // event without "clears the stockpile in one tick".
+  warehouseFireLossFraction: 0.15,
   warehouseFireLossCap: 60,
   verminSwarmLossFraction: 0.15,
   verminSwarmLossCap: 40,
+  // PR-resource-reset (R8): per-tick aggregate cap on event-driven resource
+  // drain. Sum of BANDIT_RAID + WAREHOUSE_FIRE + VERMIN_SWARM food drain
+  // per simulation second is clamped to this value. PR reviewer measured
+  // 11× baseline (6.1 food/s vs 0.55 food/s expected) under simultaneous
+  // events — players had no reaction window. 2 food/s is ~4× baseline,
+  // still a real cost but allows player counter-play.
+  eventDrainBudgetFoodPerSec: 2.0,
+  eventDrainBudgetWoodPerSec: 1.0,
   // --- Living World v0.8.0 — Phase 3 (M1 soil + yieldPool), spec § 14 ---
   // Per-harvest accumulator increment on tileState.salinized for FARM harvests.
   // v0.8.0 Phase 7.A tuning: 0.02 → 0.012. ~67 harvests before fallow (was 40)

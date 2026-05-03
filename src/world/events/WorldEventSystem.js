@@ -736,8 +736,59 @@ function applyBanditRaidImpact(event, state, ctx = null) {
   }
 }
 
+// PR-resource-reset (R8): per-tick aggregate drain budget. Sum of
+// BANDIT_RAID + WAREHOUSE_FIRE + VERMIN_SWARM food/wood drain in any
+// single simulation tick is clamped to BALANCE.eventDrainBudget*PerSec
+// × dt. Reviewer measured 11× baseline (6.1 food/s vs 0.55 food/s
+// expected) under simultaneous events — this gives the player a
+// counter-play window. Returns the headroom remaining for the current
+// tick; callers consume by calling consumeDrainBudget.
+function ensureDrainBudget(state, dt) {
+  state._eventDrainBudgetTick ??= { tick: -1, foodSpent: 0, woodSpent: 0 };
+  const tickNow = Number(state.metrics?.tick ?? 0);
+  if (state._eventDrainBudgetTick.tick !== tickNow) {
+    state._eventDrainBudgetTick.tick = tickNow;
+    state._eventDrainBudgetTick.foodSpent = 0;
+    state._eventDrainBudgetTick.woodSpent = 0;
+  }
+  const foodBudget = Number(BALANCE.eventDrainBudgetFoodPerSec ?? 2.0) * Math.max(0, dt);
+  const woodBudget = Number(BALANCE.eventDrainBudgetWoodPerSec ?? 1.0) * Math.max(0, dt);
+  return {
+    foodHeadroom: Math.max(0, foodBudget - state._eventDrainBudgetTick.foodSpent),
+    woodHeadroom: Math.max(0, woodBudget - state._eventDrainBudgetTick.woodSpent),
+  };
+}
+
+function consumeDrainBudget(state, foodLoss, woodLoss) {
+  if (!state._eventDrainBudgetTick) return;
+  state._eventDrainBudgetTick.foodSpent += Math.max(0, Number(foodLoss) || 0);
+  state._eventDrainBudgetTick.woodSpent += Math.max(0, Number(woodLoss) || 0);
+}
+
 function applyActiveEvent(event, dt, state, ctx = null) {
   if (event.type === EVENT_TYPE.BANDIT_RAID) {
+    // PR-resource-reset (R8): named toast on raid start so the player sees
+    // "Bandit raid drains -X food" instead of silent stockpile bleed.
+    // Dedup via payload flag — emits once per raid lifecycle.
+    event.payload ??= {};
+    if (!event.payload.toastEmittedThisRaid) {
+      event.payload.toastEmittedThisRaid = true;
+      const projected = Math.round(Number(event.intensity ?? 1) * Number(event.durationSec ?? 30) * 0.62);
+      pushWarning(
+        state,
+        `Bandit raid started — projected drain ~${projected} food / ${Math.round(projected * 0.82)} wood`,
+        "warning",
+        "WorldEventSystem",
+      );
+      if (state.gameplay) {
+        state.gameplay.objectiveLog ??= [];
+        const nowSec = Number(state.metrics?.timeSec ?? 0);
+        state.gameplay.objectiveLog.unshift(
+          `[${nowSec.toFixed(1)}s] Bandit raid drains ~${projected} food / ${Math.round(projected * 0.82)} wood`,
+        );
+        state.gameplay.objectiveLog = state.gameplay.objectiveLog.slice(0, 24);
+      }
+    }
     // v0.8.5 Tier 1 B3: read the HP-weighted effective wall coverage when
     // available so a half-broken wall provides only half the mitigation.
     // Falls back to raw wallCoverage / defenseScore for events that
@@ -750,9 +801,16 @@ function applyActiveEvent(event, dt, state, ctx = null) {
     );
     const mitigation = Math.max(0.42, 1 - defense * 0.12);
     const lossMultiplier = Math.max(1, Number(event.payload?.lossMultiplier ?? 1));
-    const loss = event.intensity * dt * 0.62 * lossMultiplier * mitigation;
-    state.resources.food = Math.max(0, state.resources.food - loss);
-    state.resources.wood = Math.max(0, state.resources.wood - loss * 0.82);
+    // PR-resource-reset (R8): clamp BANDIT_RAID food/wood drain to the
+    // per-tick aggregate budget so simultaneous events cannot collectively
+    // burn 11× baseline as observed in PR Run.
+    const rawLoss = event.intensity * dt * 0.62 * lossMultiplier * mitigation;
+    const { foodHeadroom, woodHeadroom } = ensureDrainBudget(state, dt);
+    const foodLoss = Math.min(rawLoss, foodHeadroom);
+    const woodLoss = Math.min(rawLoss * 0.82, woodHeadroom);
+    state.resources.food = Math.max(0, state.resources.food - foodLoss);
+    state.resources.wood = Math.max(0, state.resources.wood - woodLoss);
+    consumeDrainBudget(state, foodLoss, woodLoss);
 
     const saboteurs = getSaboteurs(state, ctx);
     const boost = Math.max(0.3, 1.5 - saboteurs.length * 0.03);
@@ -962,14 +1020,22 @@ function applyWarehouseDensityRisk(dt, state, services, ctx = null) {
     const densityScore = Number(density.byKey?.[key] ?? 0);
 
     if (rng() < fireChance) {
-      const lossFood = fireLossFraction * Math.min(Number(state.resources.food ?? 0), fireLossCap);
-      const lossWood = fireLossFraction * Math.min(Number(state.resources.wood ?? 0), fireLossCap);
+      // PR-resource-reset (R8): respect per-tick aggregate drain budget. A
+      // hot-warehouse fire that lands in the same tick as a BANDIT_RAID gets
+      // pro-rated against the remaining headroom rather than stacking.
+      const { foodHeadroom, woodHeadroom } = ensureDrainBudget(state, dt);
+      const rawFood = fireLossFraction * Math.min(Number(state.resources.food ?? 0), fireLossCap);
+      const rawWood = fireLossFraction * Math.min(Number(state.resources.wood ?? 0), fireLossCap);
+      const lossFood = Math.min(rawFood, foodHeadroom);
+      const lossWood = Math.min(rawWood, woodHeadroom);
+      // stone / herbs are infrequent enough to leave uncapped (no PR data)
       const lossStone = fireLossFraction * Math.min(Number(state.resources.stone ?? 0), fireLossCap);
       const lossHerbs = fireLossFraction * Math.min(Number(state.resources.herbs ?? 0), fireLossCap);
       state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
       state.resources.wood = Math.max(0, Number(state.resources.wood ?? 0) - lossWood);
       state.resources.stone = Math.max(0, Number(state.resources.stone ?? 0) - lossStone);
       state.resources.herbs = Math.max(0, Number(state.resources.herbs ?? 0) - lossHerbs);
+      consumeDrainBudget(state, lossFood, lossWood);
       emitEvent(state, EVENT_TYPES.WAREHOUSE_FIRE, {
         entityId: null,
         ix: loc.ix,
@@ -1007,8 +1073,12 @@ function applyWarehouseDensityRisk(dt, state, services, ctx = null) {
     }
 
     if (rng() < verminChance) {
-      const lossFood = verminLossFraction * Math.min(Number(state.resources.food ?? 0), verminLossCap);
+      // PR-resource-reset (R8): respect per-tick aggregate drain budget.
+      const { foodHeadroom } = ensureDrainBudget(state, dt);
+      const rawFood = verminLossFraction * Math.min(Number(state.resources.food ?? 0), verminLossCap);
+      const lossFood = Math.min(rawFood, foodHeadroom);
       state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
+      consumeDrainBudget(state, lossFood, 0);
       emitEvent(state, EVENT_TYPES.VERMIN_SWARM, {
         entityId: null,
         ix: loc.ix,

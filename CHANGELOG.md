@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r8-PR (R8 Plan-PR-event-drain-soften, P0 critical)
+
+### PR-resource-reset — event-drain budget cap + halved warehouse-fire fraction + named raid toast
+
+Implements the P0 fix from `assignments/homework7/Final-Polish-Loop/Round8/Plans/PR-resource-reset.md` (Reviewer PR-resource-reset, Tier A). PR reviewer's patched `app.stepSimulation` per-tick discontinuity audit proved resources are not "reset" — they're drained to 0 by three concurrent events with no aggregate cap. Hard data: WAREHOUSE_FIRE single-roll -18 food / -12.6 wood at fraction=0.3, plus simultaneous BANDIT_RAID + WAREHOUSE_FIRE + VERMIN_SWARM combined to 11× baseline (6.1 food/s vs 0.55 expected). Three sub-fixes target the three causal factors:
+
+**(a) `BALANCE.warehouseFireLossFraction` 0.3 → 0.15** — `src/config/balance.js`. Halves single-fire damage. Cap=60 preserved so fire still "stings" (max ~9 food, 9 wood per roll) but no longer "clears the stockpile in one tick."
+
+**(b) Per-tick aggregate drain budget** — `src/world/events/WorldEventSystem.js`. New `BALANCE.eventDrainBudgetFoodPerSec=2.0` / `eventDrainBudgetWoodPerSec=1.0`. Helpers `ensureDrainBudget(state, dt)` + `consumeDrainBudget(state, food, wood)` clamp the combined BANDIT_RAID + WAREHOUSE_FIRE + VERMIN_SWARM food/wood drain to the budget per simulation second. Same-tick second event sees the prior event's drain and respects remaining headroom — pro-rated rather than stacked. Reviewer's worst-case 11× baseline collapses to ~4× baseline (2 food/s); stockpile depletion time stretches from ~90s to ~5+ min.
+
+**(c) Named "Bandit raid started" toast** — `src/world/events/WorldEventSystem.js:applyActiveEvent` BANDIT_RAID branch. Single emission per raid lifecycle (deduped via `event.payload.toastEmittedThisRaid` flag) using the existing `pushWarning` + `objectiveLog` paths — no new UI panel. Player sees "Bandit raid started — projected drain ~X food / Y wood" instead of silent stockpile bleed. Fire/vermin already emitted toasts at lines 991/1027 — those are unchanged.
+
+**Tests added:** `test/pr-r8-resource-drain-cap.test.js` — 4 cases. (1) BANDIT_RAID + forced-fire same-tick → combined food/wood drain ≤ budget. (2) `warehouseFireLossFraction === 0.15` + raw single-fire ceiling = 9.0 food. (3) Full BANDIT_RAID lifecycle emits exactly one named toast + one objectiveLog entry. (4) Solo high-intensity raid (intensity=10, raw drain 6.2 food/s) clamped to 2 food/s budget.
+
+**Test baseline:** 1936 tests / **1933 pass / 0 fail** / 3 skip on `node --test test/*.test.js`. Net +5 passes vs parent `6672268` (was 1932/1928 pass/0 fail/4 skip) from the 4 new pr-r8-resource-drain-cap cases.
+
+**Files changed:** 2 source modified (`src/config/balance.js` +1 BALANCE knob retune + 2 new BALANCE knobs, `src/world/events/WorldEventSystem.js` +2 helpers + raid/fire/vermin clamp) + 1 test new + CHANGELOG. Approx +95 / -8 LOC across 4 files. Hard-freeze compliant (no new tile / role / building / mood / mechanic / audio / UI panel — pure numeric retune + budget clamp + reused `pushWarning`/`objectiveLog` paths).
+
 ## [Unreleased] — v0.10.2-r8-PS (R8 Plan-PS-builder-claim, P0 critical)
 
 ### PS-late-game-stall — BUILDER claim cooldown bypass + zombie-world end-gate + survivalScore worker-clamp
