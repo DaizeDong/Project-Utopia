@@ -3941,6 +3941,25 @@
       }
 
       // Tab button clicks
+      // R12 Plan-R12-build-tab-1click (A3 P1 #1) — first click on a sidebar
+      // tab ALWAYS opens the corresponding panel content. The previous logic
+      // hit the `alreadyActive` branch on a fresh boot (Build is the default-
+      // active tab + sidebar opens by default), which closed the sidebar.
+      // Worse, at viewport widths 1025–1440 px the .sidebar-open #sidebarPanelArea
+      // is `opacity: 0` until :hover/:focus-within (icon-rail layout, see
+      // CSS ~line 2495), so the panel is INVISIBLE even when "open". The
+      // first click thus appeared to do nothing (or only revealed the
+      // status-bar objective chips when the sidebar collapsed). New
+      // semantics: clicking the already-active tab closes the sidebar ONLY
+      // when its panel-area is actually visible to the user (opacity > 0
+      // AND pointer-events enabled). Otherwise force-show the panel + focus
+      // the tab so :focus-within reveals the icon-rail panel-area.
+      function isPanelAreaVisible() {
+        const area = document.getElementById('sidebarPanelArea');
+        if (!area) return false;
+        const cs = getComputedStyle(area);
+        return cs.opacity !== '0' && cs.pointerEvents !== 'none' && cs.visibility !== 'hidden';
+      }
       document.querySelectorAll('.sidebar-tab-btn[data-sidebar-target]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const key = btn.dataset.sidebarTarget;
@@ -3950,12 +3969,15 @@
             // Open sidebar and show panel
             setSidebarOpen(true);
             showSidebarPanel(key);
-          } else if (alreadyActive) {
-            // Click active tab again = close sidebar
+          } else if (alreadyActive && isPanelAreaVisible()) {
+            // Click active tab again with panel visible = close sidebar
             setSidebarOpen(false);
           } else {
-            // Switch to different panel
+            // Either switching panels OR the active panel is hidden by the
+            // responsive icon-rail collapse — force-show it and ensure focus
+            // so :focus-within reveals the panel-area in the 1025–1440 px range.
             showSidebarPanel(key);
+            btn.focus();
           }
         });
       });
