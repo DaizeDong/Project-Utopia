@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r10-pee-goal-attribution (R10 Plan-PEE-goal-attribution, P1)
+
+### Plan-PEE-goal-attribution — Recognise warehouse-on-depot completion + fix "first extra" toast misnomer
+
+Implements the P1 holistic-fun fix from `assignments/homework7/Final-Polish-Loop/Round10/Plans/Plan-PEE-goal-attribution.md` (Reviewer PEE-holistic-rank). PEE's Round-10 blind playthrough hit "told me what to do but not when I'd done it": briefing said *"clear a path back, then rebuild the east warehouse,"* the player placed a warehouse on the east depot tile, and 70 sim-seconds later the milestone toast read **"First extra Warehouse raised: The logistics net has a second anchor"** — calling the player's *only* second warehouse "extra" and gaslighting them into thinking a phantom warehouse already existed. The runtime state `unreadyDepots = ['east ruined depot']` reinforced the disconnect: the system never narrated that the player had hit the scenario goal.
+
+**(Step 1) `first_warehouse` milestone copy — drop "extra," add depot-aware variant** — `src/simulation/meta/ProgressionSystem.js:97-110`. Default rule label/message swapped from `"First extra Warehouse raised" / "The logistics net has a second anchor."` → `"First Warehouse raised" / "Delivery anchor established."` (the misleading "extra" wording is gone in the fallback path too — even the second warehouse on a depot-less map no longer claims to be "extra").
+
+**(Step 2) Depot-aware override at emit time** — `src/simulation/meta/ProgressionSystem.js:389-433`. `detectMilestones` now takes the cached `runtime` (already computed by the caller for `detectScenarioObjectiveMilestones` + `maybeTriggerRecovery`), and when the `first_warehouse` rule fires it inspects `runtime.depots` for any depot whose `ready` flag flipped on this tick. If found, label becomes `"First Warehouse covers <depot label>"` (with `\bruined\s+\b` stripped for cleanliness — "east ruined depot" → "east depot") and message becomes `"Frontier route reclaimed."`. The hook closes the cause→effect loop PEE called out: the toast now narrates the scenario-goal recognition at the moment of completion. The dequeue itself is automatic — `getScenarioRuntime` already recomputes `runtime.depots[].ready` from the live grid via `hasWarehouseNear` each call (no separate `unreadyDepots` mutation needed; the ready flag IS the dequeue).
+
+**(Step 3) Round-trip test** — `test/scenario-frontier-depot-dequeue.test.js` (new, 2 cases). (1) Build a 5×1 fixture with a `RUINS` east-depot tile + `radius:2` depot zone, fire `setTile(4,0,WAREHOUSE)` + bump `state.buildings.warehouses`, run two `progression.update(0.1)` ticks → assert `runtime.depots[0].ready === true`, `readyDepots === 1`, exactly one `first_warehouse` milestone fires, label matches `/Warehouse covers east depot/`, label does NOT match `/first extra/i`, label does NOT match `/\bruined\b/i`. (2) Negative control: same flow without `depotZones` → label is the neutral `"First Warehouse raised"`, still no "first extra" regression.
+
+**Test baseline:** **1977 pass / 0 fail / 4 skip** (full suite, 1582 top-level tests across 120 suites; +2 from this plan's new test, +0 net regression). All existing milestone / progression / alpha-scenario tests stay green — no test asserted the old "first extra" string, so the copy edit was safe.
+
+**Files changed:** 1 source modified (`src/simulation/meta/ProgressionSystem.js` — rule defaults rewritten + `detectMilestones` takes `runtime` parameter + depot-aware emit-time override + caller passes `runtime`) + 1 test added (`test/scenario-frontier-depot-dequeue.test.js` +110 LOC) + CHANGELOG. Approx +20/-7 source LOC, well within the plan's ~40 LOC budget. Hard-freeze compliant: no new tile / role / building / mood / mechanic / event type / HUD pill / BALANCE knob — only a milestone string + an emit-time read of an already-cached runtime object.
+
+**Suggestions C and D from the plan** (HUD "Frontier 0/2" pill + cyan ring on scenario-goal tiles) explicitly deferred to v0.10.3 — both add new HUD/renderer overlays, freeze violations in R10.
+
 ## [Unreleased] — v0.10.2-r10-pdd-smart-pathing (R10 Plan-PDD-smart-pathing, P0)
 
 ### Plan-PDD-smart-pathing — Dual-search road planning + multi-tile bridge sequences
