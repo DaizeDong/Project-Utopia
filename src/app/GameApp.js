@@ -611,7 +611,28 @@ export class GameApp {
       const consumed = Number(state.metrics?.foodConsumedPerMin ?? 0);
       const risk = Number(state.metrics?.starvationRiskCount ?? 0);
       const startedAt = Number(ai.foodRecoveryStartedSec ?? nowSec);
-      if (food >= 24 && produced >= consumed && risk <= 0 && nowSec - startedAt >= 20) {
+      // R9 PY/PZ Plan-Recovery-Director Step 1 — broaden release gate from a
+      // four-way AND (food≥24 ∧ produced≥consumed ∧ risk≤0 ∧ dwell≥20s) to
+      // (stableHealth ∧ (escapeHatch ∨ produced≥consumed)). PY trace: the
+      // produced≥consumed clause is structurally unsatisfiable while spoilage>0
+      // and only farms exist, latching foodRecoveryMode permanently and
+      // skipping ProcessingProposer in BuildProposer (quarry/kitchen/smithy
+      // never reach the queue → production dim sticks at 30 forever).
+      // escapeHatch fires when the colony has actually recovered along ANY
+      // structural axis: (a) farms reach half the worker-target, (b) at least
+      // one warehouse exists (the diagnostic blind-spot from R6 PK is closed),
+      // or (c) headroom > 90s. The 20-sec dwell + risk≤0 + food≥24 are
+      // preserved so the latch can't flicker tick-to-tick on a transient blip.
+      const farmsTarget = Math.max(5, Number(state.metrics?.populationStats?.workers ?? 0));
+      const farms = Number(state.buildings?.farms ?? 0);
+      const warehouses = Number(state.buildings?.warehouses ?? 0);
+      const headroomSec = Number(state.metrics?.foodHeadroomSec ?? 0);
+      const dwellOk = nowSec - startedAt >= 20;
+      const escapeHatch = (farms >= Math.ceil(farmsTarget / 2))
+        || (warehouses >= 1)
+        || (headroomSec > 90);
+      const stableHealth = food >= 24 && risk <= 0 && dwellOk;
+      if (stableHealth && (escapeHatch || produced >= consumed)) {
         ai.foodRecoveryMode = false;
         ai.foodRecoveryReason = "";
         state.controls.actionKind = "info";

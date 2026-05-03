@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r9-recovery-director (R9 Plan-Recovery-Director, P0)
+
+### Plan-Recovery-Director — release the foodRecoveryMode latch + close the autopilot diagnostic blind-spot + cap road over-emission + GUARD floor under defend strategy
+
+Implements the P0 fix from `assignments/homework7/Final-Polish-Loop/Round9/Plans/Plan-Recovery-Director.md` (Reviewers PY-dev-completion + PZ-holistic-rank). PY trace: `foodRecoveryMode` SET at sim t=127.4s, never released across the next 33 sim-min — the four-way AND release gate (`food≥24 ∧ produced≥consumed ∧ risk≤0 ∧ dwell≥20s`) was structurally unsatisfiable while spoilage>0 and only farms exist, so `BuildProposer` skipped `ProcessingProposer` and quarry/herbGarden/kitchen/smithy/clinic/wall NEVER reached the queue (production dim sticks at 30, defense dim sticks at 0). PZ verbatim: inspector pins "no warehouse access point" in red while the autopilot queues a Lumber camp. Three surgical sub-fixes target each root cause without touching the build-system / mood / role / tile freeze.
+
+**(a) GameApp.js recovery-release loosened from AND-chain to (stableHealth ∧ (escapeHatch ∨ produced≥consumed))** — `src/app/GameApp.js:608-635`. New `escapeHatch` fires when the colony has actually recovered along ANY structural axis: (1) `farms ≥ ceil(workers/2)` with workers floored at 5, (2) `warehouses ≥ 1`, or (3) `foodHeadroomSec > 90`. The 20-sec dwell + `risk≤0` + `food≥24` gates are preserved as `stableHealth` so the latch can't flicker tick-to-tick on a transient blip. Net effect: PY's 33-sim-min lockup releases on the first warehouse build (typically t≈10 sim-min), allowing ProcessingProposer to queue quarry/kitchen.
+
+**(b) WarehouseNeedProposer diagnostic-driven trigger** — `src/simulation/ai/colony/proposers/WarehouseNeedProposer.js`. Added `computeNoAccessRatio(state)` walking `state.agents` once counting WORKERs whose `entity.debug.nutritionSourceType === "none" && alive !== false`. New trigger predicate: when `noAccessRatio ≥ 0.30` AND a 10-sec dwell is met (latched on `state.ai.warehouseDiagnosticSinceSec`, reset when ratio drops below 0.30), emits warehouse @priority=90 with reason `"warehouse-need: 30%+ workers report no warehouse access (10s+ dwell)"`. Closes PZ's "autopilot ignores its own diagnostic" — the same per-worker field the inspector reads now drives the proposer.
+
+**(c) ScoutRoadProposer hard cap at 30 roads** — `src/simulation/ai/colony/proposers/ScoutRoadProposer.js:46-54`. After the existing `stoneStock ≥ 15` early-return, bail when `state.buildings.roads ≥ 30`. PY trace observed 79 roads on a 9-worker colony — `LogisticsProposer` road target is 20 but `ScoutRoadProposer` was the over-emitter (no count cap on the scout-toward-fogged-stone branch). 30 matches `PROCESSING_TARGETS.roads` referenced in PY's secondary findings.
+
+**(d) RoleAssignmentSystem GUARD floor under defend strategy** — `src/simulation/population/RoleAssignmentSystem.js:327-341`. When `state.ai.strategy.priority === "defend"` (or `state.gameplay.strategy.priority` for forward-compat) AND `guards.length === 0` AND `allWorkers.length ≥ 4`, draft 1 non-BUILDER candidate as GUARD. Pre-fix: GUARD draft was gated on `combat.activeRaiders + activeSaboteurs > 0`; when StrategicDirector declared a defend posture but no live hostiles intersected the colony (e.g. forecast / between-raid lull), `roleCounts.GUARD = 0` and the colony entered the next raid with zero defenders. Honours BUILDER reservation invariant by excluding BUILDER candidates.
+
+**Tests added:** `test/r9-recovery-director.test.js` — 6 invariants. (3) WarehouseNeedProposer fires on diagnostic ratio with dwell; latches on first observation (no early fire); resets latch when diagnostic clears. (4) ScoutRoadProposer returns 0 when roads ≥ 30. (5) RoleAssignmentSystem drafts ≥1 GUARD under `strategy.priority="defend"` with no live hostiles; does NOT draft under `strategy.priority="grow"`.
+
+**Test baseline:** **1962 pass / 0 fail / 4 skip** (full suite, 1565 top-level tests across 118 suites). Targeted regression suites (`warehouse-need-proposer`, `role-assignment-system`, `role-assignment-quotas`, `role-assignment-population-scaling`, `role-assignment-cooldown`, `role-assignment-band-table`, `build-proposer-orchestration`, `colony-director-behavior-lock`, `recovery-boost-food-floor`, `recovery-essential-whitelist`) — 55/55 pass.
+
+**Files changed:** 4 source modified — `src/app/GameApp.js` (+22/-3), `src/simulation/ai/colony/proposers/WarehouseNeedProposer.js` (+59/-2), `src/simulation/ai/colony/proposers/ScoutRoadProposer.js` (+8/-0), `src/simulation/population/RoleAssignmentSystem.js` (+15/-0) — plus 1 test added (`test/r9-recovery-director.test.js` +151 LOC) + CHANGELOG. Approx +104/-5 source LOC. Hard-freeze compliant (no new tile / role / building / mood / mechanic — pure predicate refinement and proposer wiring).
+
 ## [Unreleased] — v0.10.2-r9-cascade-mitigation (R9 Plan-Cascade-Mitigation, P0)
 
 ### Plan-Cascade-Mitigation — soften the synchronised starvation cliff + restore HUD signal
