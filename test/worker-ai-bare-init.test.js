@@ -70,9 +70,14 @@ test("bare-init: 3 blueprints + workers → at least 3 BUILDERs after manager ti
   roles.update(tickSec, state);
 
   const builderCount = workers.filter((w) => w.role === ROLE.BUILDER).length;
+  // R9 Plan-Honor-Reservation re-baseline (PX B3): targetBuilders formula
+  // changed from `ceil(sitesCount * 1.5)` (3 sites → 5 → cap 3) to
+  // `max(2, ceil(sitesUnclaimed * 0.4))` (3 unclaimed → max(2,2) = 2). The
+  // floor of 2 still guarantees redundancy on a non-empty queue, which is
+  // the invariant the original test was protecting (≥1 BUILDER assigned).
   assert.ok(
-    builderCount >= 3,
-    `expected ≥3 BUILDERs after 2 manager ticks (3 sites × 1.5 builderPerSite = 4.5 → ceil=5, capped to economyHeadroom). Got ${builderCount}.`,
+    builderCount >= 2,
+    `expected ≥2 BUILDERs after 2 manager ticks (R9 formula: max(2, ceil(3*0.4)) = 2). Got ${builderCount}.`,
   );
 });
 
