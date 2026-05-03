@@ -41,6 +41,19 @@ const ASSUMED_WAREHOUSE_CAPACITY = 200;
 const NO_ACCESS_RATIO_FIRE = 0.30;
 const NO_ACCESS_DWELL_SEC = 10;
 
+// R9 PW Plan-Eat-Pipeline Step 2 — warehouse contention sensor.
+// PW Test C in v0.10.1-m: 50 workers + 1 warehouse → 49/50 in critical hunger
+// while food=3879 + meals=194 sat in stockpile. The single warehouse becomes
+// the eat-pipeline bottleneck; workers physically queue 30 deep. Healthy
+// ratio observed by PW is "~10-12 workers per warehouse" — fire when the
+// observed ratio crosses 12.0 so the colony auto-builds warehouse #2 at the
+// 13:1 contention point rather than waiting for the 50:1 starvation cascade.
+// Self-limiting: each new warehouse drops the ratio (50/1=50, 50/2=25, …,
+// 50/5=10 → silent). Slot at priority 88 — one notch under noAccess @90 so
+// the no-warehouse-at-all blind-spot still preempts.
+const CONTENTION_RATIO_FIRE = 12;
+const CONTENTION_PRIORITY = 88;
+
 function computeCriticalHungerRatio(state) {
   const agents = Array.isArray(state?.agents) ? state.agents : [];
   let alive = 0;
@@ -109,6 +122,26 @@ export const WarehouseNeedProposer = Object.freeze({
         priority: 90,
         reason: "warehouse-need: 30%+ workers report no warehouse access (10s+ dwell)",
       }];
+    }
+
+    // R9 PW Plan-Eat-Pipeline Step 2 — contention sensor (sibling branch
+    // to the R9 PZ diagnostic-driven trigger above). Fires when the
+    // workers/warehouses ratio exceeds CONTENTION_RATIO_FIRE so the
+    // role-assigner queues warehouse #N before the eat-pipeline melts
+    // down at scale. noAccess (warehouses=0) is handled by the legacy
+    // hunger-crisis branch below at @90, so this contention check is
+    // skipped when warehouses==0 — leaving noAccess as the higher-priority
+    // path.
+    const workerCount = Number(ctx.workers ?? 0);
+    if (warehouses > 0 && workerCount > 0) {
+      const contention = workerCount / warehouses;
+      if (contention > CONTENTION_RATIO_FIRE) {
+        return [{
+          type: "warehouse",
+          priority: CONTENTION_PRIORITY,
+          reason: `warehouse-need: contention ${contention.toFixed(1)} workers/warehouse > ${CONTENTION_RATIO_FIRE}`,
+        }];
+      }
     }
 
     if (!noAccess && !overSaturated) return [];
