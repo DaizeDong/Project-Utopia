@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R12 Plan-R12-debug-leak-gate, P0)
+
+### Plan-R12-debug-leak-gate — `aiModeVal` corner chip collapses to "AI online/offline" in casual mode
+
+Implements the P0 engineering-string quarantine from `assignments/homework7/Final-Polish-Loop/Round12/Plans/Plan-R12-debug-leak-gate.md` (Reviewers A6-ui-design Top issue #1 + A7-rationality-audit Top issue #3). Both reviewers independently flagged the same three engineering strings on every in-game frame across every captured viewport: (a) the storyteller strip's `Why no WHISPER?: LLM never reached` (already gated at `HUDController.js:1516` via `isDevMode(state)` — confirmed wired), (b) the AI Log header's `coverage=fallback mode=fallback proxy=unknown model=gpt-5-4-nano` (already gated at `AIAutomationPanel.js:134` — confirmed wired), and (c) the corner chip's `aiModeVal` writing `off / fallback (unknown, gpt-5-4-nano)` — **never gated**. The third site was the actual leak path R12 reviewers were observing.
+
+**(Step 2) `aiModeVal` casual-mode collapse** — `src/ui/hud/HUDController.js` line ~1221. Wraps the corner-chip write in `if (isDevMode(state)) { … full engineer string … } else { … "AI online" / "AI offline" … }`. `isDevMode` was already imported at line 7. Casual players now see a compact two-word label that conveys whether the LLM director is running without leaking the proxy health string, the LLM mode token, or the model identifier. Dev-mode preserves the legacy full string for local debugging. Companion gates (WHISPER suffix at line ~1561, AI Log engineering footer at `AIAutomationPanel.js:134`, `[timeout]` toast suffix at `GameApp.js:2106`) verified already in place — no changes required for those three sites.
+
+**Files changed:** 1 source modified — `src/ui/hud/HUDController.js` (+~10 LOC: `isDevMode(state)` branch + comment block at the `aiModeVal.textContent` write). 1 test added — `test/hud-debug-leak-gate.test.js` (4 cases: casual `AI offline`, casual `AI online`, dev-mode via `state.controls.devMode`, dev-mode via `body.dev-mode` class). Hard-freeze compliant: pure UI string-gating change on an already-rendered DOM node, no new mechanic, no behaviour change.
+
+**Acceptance:** `#aiModeVal.textContent` in casual mode contains `"AI online"` or `"AI offline"` — no `proxy=`, `model=`, `mode=fallback`, or `gpt-` substring. Dev-mode boot (`?dev=1` or `state.controls.devMode = true`) preserves the full `<on/off> / <mode> (<proxyHealth>, <proxyModel>)` format. New test pins both branches.
+
+**Test baseline:** **1997 pass / 0 fail / 4 skip** (full suite, 120 suites; +4 over the prior baseline from `hud-debug-leak-gate.test.js`'s four cases).
+
+**Suggestions B (minimal variant — only `aiModeVal`, skip the WHISPER + AIAutomationPanel verification audit), C (combined — also re-gate the `[timeout]` suffix), D (FREEZE-VIOLATING — redesign AI Log + Debug as one tabbed panel)** explicitly NOT taken — the audit confirmed the WHISPER and engineering-footer gates are already firing correctly (the leak was specifically the third, ungated `aiModeVal` site), so Suggestion A reduces to a single-site fix; the `[timeout]` suffix at `GameApp.js:2106` was already gated in a prior round.
+
 ## [Unreleased] — v0.10.1-n (R12 Plan-R12-glued-tokens, P0)
 
 ### Plan-R12-glued-tokens — `${groupId}:${focus}` → `${titleCase(groupId)}: ${focus}` AI summary fix

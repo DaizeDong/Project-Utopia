@@ -1218,7 +1218,18 @@ export class HUDController {
       this.objectiveVal.textContent = `Survived ${formatted} · Score ${score} | ${digest.headline}`;
     }
     const proxyModel = state.metrics.proxyModel || "-";
-    this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode} (${state.metrics.proxyHealth ?? "unknown"}, ${proxyModel})`;
+    // v0.10.1 R12 Plan-R12-debug-leak-gate (A6 #1 + A7 #3 P0): collapse the
+    // engineer jargon `off / fallback (unknown, gpt-5-4-nano)` to a casual
+    // one-liner so the corner chip stops leaking proxy/model identifiers to
+    // first-time players. Dev-mode preserves the full string for local
+    // debugging. Companion gates: WHISPER suffix at line ~1561, AI Log
+    // engineering footer at AIAutomationPanel.js:134, [timeout] suffix at
+    // GameApp.js:2106. devModeGate.js is the single source of truth.
+    if (isDevMode(state)) {
+      this.aiModeVal.textContent = `${state.ai.enabled ? "on" : "off"} / ${state.ai.mode} (${state.metrics.proxyHealth ?? "unknown"}, ${proxyModel})`;
+    } else {
+      this.aiModeVal.textContent = state.ai.enabled ? "AI online" : "AI offline";
+    }
     const fmtSec = (sec) => (sec >= 0 ? `${sec.toFixed(1)}s` : "-");
     if (this.aiEnvVal) {
       this.aiEnvVal.textContent = `${state.ai.lastEnvironmentSource} @ ${fmtSec(state.ai.lastEnvironmentResultSec)} | ${aiInsight.environmentFocus}`;
