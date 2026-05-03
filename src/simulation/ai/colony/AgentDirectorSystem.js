@@ -19,6 +19,7 @@ import { LearnedSkillLibrary } from "./LearnedSkillLibrary.js";
 import { PlacementSpecialist } from "./PlacementSpecialist.js";
 import { BuildSystem } from "../../construction/BuildSystem.js";
 import { rebuildBuildingStats } from "../../../world/grid/Grid.js";
+import { runProposers, SURVIVAL_PROPOSERS } from "./BuildProposer.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -215,16 +216,21 @@ export class AgentDirectorSystem {
     // quarry@95) always get a build slot. Done BEFORE plan execution so
     // the safety placement consumes resources first; the LLM plan then
     // naturally throttles via canAfford / waiting_resources.
-    const sBuildings = state.buildings ?? {};
-    const sResources = state.resources ?? {};
-    const sFarms = Number(sBuildings.farms ?? 0);
-    const sQuarries = Number(sBuildings.quarries ?? 0);
-    const sStone = Number(sResources.stone ?? 0);
-    const sFood = Number(sResources.food ?? 0);
-    const survivalPreempt = (sFarms === 0 && nowSec < 180)
-      || (sFood < 30 && sFarms < 3)
-      || (sQuarries === 0 && sStone < 8);
-    if (survivalPreempt) {
+    //
+    // v0.10.1 R6 wave-2 (C1-code-architect refactor): the inline boolean
+    // expression was extracted to SurvivalPreemptProposer and dispatched
+    // through the shared `runProposers` walker. Behaviour preserved
+    // exactly — the proposer evaluates the same three sub-conditions
+    // (zero-farm, food-crisis, stone-crisis) and returns a single
+    // {kind: "survival-preempt"} record when any fires. We treat
+    // `length > 0` as the fire signal.
+    const survivalCtx = {
+      buildings: state.buildings ?? {},
+      resources: state.resources ?? {},
+      timeSec: nowSec,
+    };
+    const survivalSignals = runProposers(SURVIVAL_PROPOSERS, state, survivalCtx);
+    if (survivalSignals.length > 0) {
       this._fallback.update(dt, state, services);
     }
 
