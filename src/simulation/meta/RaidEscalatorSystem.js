@@ -1,6 +1,8 @@
 import { BALANCE } from "../../config/balance.js";
-import { EVENT_TYPE } from "../../config/constants.js";
+import { EVENT_TYPE, VISITOR_KIND } from "../../config/constants.js";
 import { enqueueEvent } from "../../world/events/WorldEventQueue.js";
+import { createVisitor } from "../../entities/EntityFactory.js";
+import { tileToWorld } from "../../world/grid/Grid.js";
 
 /**
  * RaidEscalatorSystem — Living World v0.8.0 Phase 4 (spec §§ 5.4-5.5, Plan C).
@@ -186,6 +188,12 @@ export class RaidEscalatorSystem {
     const durationSec = Number(BALANCE.raidFallbackDurationSec ?? 18);
     const intensity = Number(g.raidEscalation.intensityMultiplier ?? 1);
     enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, { source: "raid_fallback_scheduler" }, durationSec, intensity);
+    // PT-invasion-pressure (R8): tier-driven saboteur draft. high-DI raids
+    // currently drain food + 0 actors — felt as "minor nuisance". Inject
+    // (tier - threshold + 1) SABOTEUR visitors at grid edge so a tier-6 raid
+    // also drops 2 saboteurs the GUARD must hunt down. Spawn helper lifted
+    // from EnvironmentDirectorSystem.#maybeSpawnThreatGatedRaid pattern.
+    this.#maybeSpawnTierSaboteurs(state, _services, tier);
     // v0.8.6 Tier 2 CB-H3: do NOT set lastRaidTick at enqueue time. Pre-fix
     // the raid was enqueued AND lastRaidTick was bumped to currentTick, so
     // WorldEventSystem's per-event cooldown gate dropped the same-tick raid
@@ -193,5 +201,31 @@ export class RaidEscalatorSystem {
     // refused to fire. The raid was effectively a no-op. The advance is now
     // moved to WorldEventSystem._applyEvent for BANDIT_RAID at the moment
     // the event is actually drained from the queue.
+  }
+
+  // PT-invasion-pressure (R8) — Spawns (tier - threshold + 1) SABOTEUR
+  // visitors at random grid-edge tiles when raid tier ≥
+  // raidEscalatorTierSaboteurThreshold (default 5), capped at
+  // raidEscalatorTierSaboteurMax (default 6). Determinism: uses services.rng
+  // when present; in headless tests with no rng, returns no-op (consistent
+  // with EnvironmentDirectorSystem.#maybeSpawnThreatGatedRaid behaviour).
+  #maybeSpawnTierSaboteurs(state, services, tier) {
+    const threshold = Number(BALANCE.raidEscalatorTierSaboteurThreshold ?? 5);
+    if (tier < threshold) return;
+    const cap = Number(BALANCE.raidEscalatorTierSaboteurMax ?? 6);
+    const count = Math.max(1, Math.min(cap, tier - threshold + 1));
+    const grid = state.grid;
+    if (!grid) return;
+    const rng = services?.rng;
+    if (typeof rng?.next !== "function") return;
+    if (!Array.isArray(state.agents)) state.agents = [];
+    for (let i = 0; i < count; i += 1) {
+      // Pick a random N/S edge tile; small jitter so multiple don't stack.
+      const ix = Math.max(1, Math.min(grid.width - 2, Math.floor(rng.next() * grid.width)));
+      const iz = rng.next() < 0.5 ? 1 : (grid.height - 2);
+      const wp = tileToWorld(ix, iz, grid);
+      const sab = createVisitor(wp.x, wp.z, VISITOR_KIND.SABOTEUR, () => rng.next());
+      state.agents.push(sab);
+    }
   }
 }

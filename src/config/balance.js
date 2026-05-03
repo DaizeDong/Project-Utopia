@@ -864,8 +864,20 @@ export const BALANCE = Object.freeze({
   raidTierMax: 10,
   raidIntervalBaseTicks: 3600,
   raidIntervalMinTicks: 600,
-  raidIntervalReductionPerTier: 300,
+  // PT-invasion-pressure (R8): 300 → 450. tier 6 ⇒ max(600, 3600-2700) =
+  // 900 ticks (30 sim-sec) vs prior 1800 (60s). Pairs with banditRaid
+  // weight bump (0.18 → 0.30) to deliver back-to-back high-DI raids.
+  // raidIntervalMinTicks=600 floor still protects against runaway cadence.
+  raidIntervalReductionPerTier: 450,
   raidIntensityPerTier: 0.5,
+  // PT-invasion-pressure (R8): RaidEscalatorSystem injects saboteur visitors
+  // when self-firing a banditRaid at tier ≥ this threshold. Count = (tier -
+  // threshold + 1), capped at raidEscalatorTierSaboteurMax. Converts a
+  // passive food-drain raid into an active "saboteur breach event" the
+  // player must dispatch GUARDs against (no new mechanic — reuses
+  // EnvironmentDirectorSystem's existing SABOTEUR-visitor spawn pattern).
+  raidEscalatorTierSaboteurThreshold: 5,
+  raidEscalatorTierSaboteurMax: 6,
   // Round 2 01d: Heat Lens should warn before a processor is completely empty.
   heatLensStarveThreshold: Object.freeze({ food: 10, wood: 10, stone: 6, herbs: 4 }),
   // v0.8.2 Round-6 Wave-2 (02a-rimworld-veteran Step 6) — Raid fallback
@@ -938,9 +950,16 @@ export const BALANCE = Object.freeze({
   // v0.10.2 PJ-pacing P0-3: rebalance to absorb 4× cadence acceleration —
   // banditRaid 0.30 → 0.18 (offset for raid frequency) + animalMigration
   // 0.25 → 0.40 (filler with mild gameplay impact).
+  // PT-invasion-pressure (R8): R6 PJ-followup over-corrected (0.30 → 0.18)
+  // when offsetting the 4× cadence acceleration. PT god-mode harness
+  // measured 5 raids in 30 sim-min vs target ~9; restore 0.30. Partially
+  // offset by cutting animalMigration 0.40 → 0.34 (filler with mild
+  // gameplay impact). Net total +0.06 (1.06 → 1.12) — small upward drift
+  // is acceptable; raid share rises from 0.18/1.06 ≈ 17% to 0.30/1.12
+  // ≈ 27%, the headline restoration the PT harness asked for.
   eventDirectorWeights: Object.freeze({
-    banditRaid: 0.18,
-    animalMigration: 0.40,
+    banditRaid: 0.30,         // PT R8: 0.18 → 0.30 (revert R6 over-correction)
+    animalMigration: 0.34,    // PT R8: 0.40 → 0.34 (offset)
     tradeCaravan: 0.18,
     diseaseOutbreak: 0.10,
     wildfire: 0.10,
