@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R13 Plan-R13-event-mitigation, P0)
+
+### Plan-R13-event-mitigation — 30-sec pre-event warning + intensity capped by colony preparedness (walls + guards)
+
+Implements the P0 user-directive fix from `assignments/homework7/Final-Polish-Loop/Round13/Plans/Plan-R13-event-mitigation.md` (R13 user issue #2). User report: "Events (raid/fire/vermin) currently kill all without mitigation. Add (a) pre-event warning toast 30 sim-sec early, (b) event intensity capped by colony preparedness (walls + guards)." Pre-fix the only signal a player got was the toast at raid START — no time to react, no benefit from defensive investment. Walls + guards exist but their value to the player was opaque because the BANDIT_RAID drain code applied per-tile defense mitigation (`mitigation = 1 - defense*0.12` floored at 0.42) and that's it; whole-colony preparedness never reduced the per-tick food/wood drain. WAREHOUSE_FIRE and VERMIN_SWARM did not read preparedness at all.
+
+**(Step 1) New `BALANCE` constants** — `src/config/balance.js` lines ~661-672. Adds `eventPreWarningLeadSec=30`, `eventPreparednessFullCapAtWalls=12`, `eventPreparednessGuardWeight=1.5`, `eventPreparednessMaxMitigation=0.7`. Comment block cites this plan and explains the formula: `prepFraction = clamp(walls + guards*1.5) / 12`, capped at 0.7 so the most fortified colony still takes 30% damage (preparedness mitigates, never no-ops).
+
+**(Step 2) `computePreparednessFraction(state)` helper** — `src/world/events/WorldEventSystem.js` lines ~57-75. Pure helper reading `state.buildings.walls` (from `rebuildBuildingStats`) + `state.metrics.combat.guardCount` (from MortalitySystem). Safe defaults so unit tests with minimal state fall through to 0 without crashing.
+
+**(Step 3) Queue-deferred raid spawn + warning toast** — `src/world/events/WorldEventSystem.js` lines ~1156-1192 (queue-drain section). Plan originally proposed extending the `prepare` lifecycle phase from 1s → 30s, but that broke 4 existing tests because they expected `system.update(1.1, state)` to land the raid in `active`. Pivoted to a queue-deferred spawn: BANDIT_RAID events stamp `_spawnAtSec = currentSec + leadSec` on first sight in the queue, emit the warning toast once via `_warningEmitted` dedup, and stay in the queue until `currentSec >= dueAt`. Other event types continue to drain immediately as before. Tests opt out by setting `_spawnAtSec = 0` on the queued event before calling `system.update`.
+
+**(Step 4) Preparedness multiplier on three drain paths** — same file. (a) BANDIT_RAID active drain: `rawLoss *= (1 - prepFraction)` so 12-wall colony takes 30% drain instead of 100%. Stacks with existing per-tile `defense * 0.12` mitigation. (b) WAREHOUSE_FIRE: per-tick `fireLossEffective = fireLossFraction * (1 - prepFraction)` applied to food/wood/stone/herbs. (c) VERMIN_SWARM: same pattern via `verminLossEffective`. Sample once outside the hot-warehouse loop because preparedness is colony-wide.
+
+**Files changed:** 2 source modified — `src/config/balance.js` (+12 LOC: 4 new constants + commentary), `src/world/events/WorldEventSystem.js` (+~50 LOC: helper + queue-deferred spawn + warning toast + 3 mitigation multipliers). 1 new test — `test/event-mitigation.test.js` (+~150 LOC, 4 cases: warning emits exactly once, raid stays queued for the lead window, drain ratio < 0.5 between zero-prep and full-prep colonies, over-prep does not zero damage). 5 existing tests updated with `state.events.queue[0]._spawnAtSec = 0` opt-out (1-line each): `test/world-event-spatial.test.js`, `test/world-explain.test.js` (×2), `test/pr-r8-resource-drain-cap.test.js`, `test/pressure-lens.test.js`, `test/survival-scaling.test.js` (×3). Hard-freeze compliant: zero new event types, zero new mechanics, only adds (a) a per-event `_spawnAtSec` scheduling field and (b) a multiplier read against existing `state.buildings.walls` + `state.metrics.combat.guardCount`. Per-tick budget clamp (R8 PR-resource-reset) preserved — preparedness multiplier reduces `rawLoss` BEFORE the budget clip so the budget headroom now stretches further for fortified colonies.
+
+**Acceptance:** Pre-event warning toast `"Bandit raid incoming in 30s — build walls or draft guards"` fires exactly once 30 sim-sec before the raid becomes active (deduped via `_warningEmitted`). `prepFraction` floored at 0 (zero walls + zero guards → 0% mitigation), capped at 0.7 (12+ walls or 8+ guards → 70% mitigation). Test baseline **2012 pass / 0 fail / 4 skip** preserved (+4 over the prior 2008 baseline from the new test cases).
+
 ## [Unreleased] — v0.10.1-n (R13 Plan-R13-fog-reset, P0)
 
 ### Plan-R13-fog-reset — Cross-run fog bleed bug: clear FogSystem state on every session-start

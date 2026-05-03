@@ -25,6 +25,8 @@ test("world explain summarizes spatial weather fronts and event targets", () => 
 
   setWeather(state, WEATHER.STORM, 18, "test");
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+  state.events.queue[0]._spawnAtSec = 0;
   eventSystem.update(1.1, state);
 
   const weather = getWeatherInsight(state);
@@ -47,6 +49,8 @@ test("world explain marks frontier gap, weather front, and event impact on tiles
 
   setWeather(state, WEATHER.STORM, 18, "test");
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+  state.events.queue[0]._spawnAtSec = 0;
   eventSystem.update(1.1, state);
   state.metrics.traffic = {
     version: 1,

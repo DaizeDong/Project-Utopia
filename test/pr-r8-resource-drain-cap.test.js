@@ -105,6 +105,9 @@ test("PR-R8 (3): BANDIT_RAID emits exactly one 'Bandit raid started' toast over 
   const system = new WorldEventSystem();
 
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, { defenseScore: 0 }, 6, 1.0);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead so the
+  // raid spawns immediately (test pre-dates the warning lead).
+  state.events.queue[0]._spawnAtSec = 0;
   // Pump enough sim-secs to exhaust the active window.
   for (let i = 0; i < 12; i += 1) system.update(1.0, state);
 

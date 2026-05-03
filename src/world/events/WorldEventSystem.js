@@ -56,6 +56,24 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+/**
+ * R13 #2 Plan-R13-event-mitigation (P0) — colony preparedness fraction in
+ * [0, eventPreparednessMaxMitigation]. Reads `state.buildings.walls` (from
+ * rebuildBuildingStats) + `state.metrics.combat.guardCount` (from MortalitySystem)
+ * with safe fallbacks. Scales linearly: 0 prep → 0 mitigation, full cap → 70%
+ * mitigation. Drain/loss callers multiply by `(1 - prepFraction)` so a fortified
+ * colony takes 30% of the unmitigated damage, never zero.
+ */
+function computePreparednessFraction(state) {
+  const walls = Math.max(0, Number(state?.buildings?.walls ?? 0));
+  const guards = Math.max(0, Number(state?.metrics?.combat?.guardCount ?? 0));
+  const guardWeight = Number(BALANCE.eventPreparednessGuardWeight ?? 1.5);
+  const fullCap = Math.max(1, Number(BALANCE.eventPreparednessFullCapAtWalls ?? 12));
+  const maxMit = Math.max(0, Math.min(1, Number(BALANCE.eventPreparednessMaxMitigation ?? 0.7)));
+  const prepScore = walls + guards * guardWeight;
+  return Math.min(maxMit, prepScore / fullCap);
+}
+
 function roundMetric(value, digits = 2) {
   return Number(Number(value ?? 0).toFixed(digits));
 }
@@ -801,10 +819,15 @@ function applyActiveEvent(event, dt, state, ctx = null) {
     );
     const mitigation = Math.max(0.42, 1 - defense * 0.12);
     const lossMultiplier = Math.max(1, Number(event.payload?.lossMultiplier ?? 1));
+    // R13 #2 Plan-R13-event-mitigation (P0) — preparedness cap (walls + guards).
+    // Multiplier is independent of the per-tile `defense` mitigation above:
+    // `defense` measures impact-tile shielding, `prepFraction` measures whole-
+    // colony preparedness. Both stack. Floored at 30% damage by maxMitigation.
+    const prepFraction = computePreparednessFraction(state);
     // PR-resource-reset (R8): clamp BANDIT_RAID food/wood drain to the
     // per-tick aggregate budget so simultaneous events cannot collectively
     // burn 11× baseline as observed in PR Run.
-    const rawLoss = event.intensity * dt * 0.62 * lossMultiplier * mitigation;
+    const rawLoss = event.intensity * dt * 0.62 * lossMultiplier * mitigation * (1 - prepFraction);
     const { foodHeadroom, woodHeadroom } = ensureDrainBudget(state, dt);
     const foodLoss = Math.min(rawLoss, foodHeadroom);
     const woodLoss = Math.min(rawLoss * 0.82, woodHeadroom);
@@ -1011,6 +1034,12 @@ function applyWarehouseDensityRisk(dt, state, services, ctx = null) {
   const grid = state.grid;
   const width = Number(grid?.width ?? 0);
 
+  // R13 #2 Plan-R13-event-mitigation (P0) — preparedness cap. Sample once
+  // outside the hot-warehouse loop (preparedness is colony-wide, not per-tile).
+  const prepFraction = computePreparednessFraction(state);
+  const fireLossEffective = fireLossFraction * (1 - prepFraction);
+  const verminLossEffective = verminLossFraction * (1 - prepFraction);
+
   for (const key of hot) {
     const loc = parseWarehouseKey(key);
     if (!loc) continue;
@@ -1024,13 +1053,13 @@ function applyWarehouseDensityRisk(dt, state, services, ctx = null) {
       // hot-warehouse fire that lands in the same tick as a BANDIT_RAID gets
       // pro-rated against the remaining headroom rather than stacking.
       const { foodHeadroom, woodHeadroom } = ensureDrainBudget(state, dt);
-      const rawFood = fireLossFraction * Math.min(Number(state.resources.food ?? 0), fireLossCap);
-      const rawWood = fireLossFraction * Math.min(Number(state.resources.wood ?? 0), fireLossCap);
+      const rawFood = fireLossEffective * Math.min(Number(state.resources.food ?? 0), fireLossCap);
+      const rawWood = fireLossEffective * Math.min(Number(state.resources.wood ?? 0), fireLossCap);
       const lossFood = Math.min(rawFood, foodHeadroom);
       const lossWood = Math.min(rawWood, woodHeadroom);
       // stone / herbs are infrequent enough to leave uncapped (no PR data)
-      const lossStone = fireLossFraction * Math.min(Number(state.resources.stone ?? 0), fireLossCap);
-      const lossHerbs = fireLossFraction * Math.min(Number(state.resources.herbs ?? 0), fireLossCap);
+      const lossStone = fireLossEffective * Math.min(Number(state.resources.stone ?? 0), fireLossCap);
+      const lossHerbs = fireLossEffective * Math.min(Number(state.resources.herbs ?? 0), fireLossCap);
       state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
       state.resources.wood = Math.max(0, Number(state.resources.wood ?? 0) - lossWood);
       state.resources.stone = Math.max(0, Number(state.resources.stone ?? 0) - lossStone);
@@ -1075,7 +1104,7 @@ function applyWarehouseDensityRisk(dt, state, services, ctx = null) {
     if (rng() < verminChance) {
       // PR-resource-reset (R8): respect per-tick aggregate drain budget.
       const { foodHeadroom } = ensureDrainBudget(state, dt);
-      const rawFood = verminLossFraction * Math.min(Number(state.resources.food ?? 0), verminLossCap);
+      const rawFood = verminLossEffective * Math.min(Number(state.resources.food ?? 0), verminLossCap);
       const lossFood = Math.min(rawFood, foodHeadroom);
       state.resources.food = Math.max(0, Number(state.resources.food ?? 0) - lossFood);
       consumeDrainBudget(state, lossFood, 0);
@@ -1125,12 +1154,44 @@ export class WorldEventSystem {
     if (state.events.queue.length > 0) {
       const escalation = readRaidEscalation(state);
       const currentTick = Number(state.metrics?.tick ?? 0);
+      const currentSec = Number(state.metrics?.timeSec ?? 0);
       // v0.8.7.1 P10 — track lastRaidTick locally so multi-raid drains in
       // the same tick correctly cool down against the previous spawn (mostly
       // defensive; today maxConcurrent gates this to one anyway).
       let lastRaidTick = Number(state.gameplay?.lastRaidTick ?? -9999);
       const tuning = getLongRunEventTuning(state);
-      const drained = state.events.queue.splice(0, state.events.queue.length);
+      // R13 #2 Plan-R13-event-mitigation (P0) — pre-event warning. On first
+      // sight of a queued BANDIT_RAID, stamp `_spawnAtSec` to defer activation
+      // by eventPreWarningLeadSec, then emit the warning toast once. The raid
+      // stays in the queue until its scheduled time arrives. Tests that want
+      // the legacy "raid spawns next tick" semantics can pre-set
+      // `_spawnAtSec = 0` on the queued event before stepping the system.
+      const leadSec = Math.max(0, Number(BALANCE.eventPreWarningLeadSec ?? 30));
+      for (const event of state.events.queue) {
+        if (event.type !== EVENT_TYPE.BANDIT_RAID) continue;
+        if (event._warningEmitted) continue;
+        event._warningEmitted = true;
+        event._spawnAtSec ??= currentSec + leadSec;
+        if (leadSec > 0) {
+          pushWarning(
+            state,
+            `Bandit raid incoming in ${leadSec}s — build walls or draft guards`,
+            "warning",
+            "WorldEventSystem",
+          );
+        }
+      }
+      // Pull only events whose scheduled spawn time has arrived. Non-raid
+      // events have no `_spawnAtSec` and drain immediately as before.
+      const ready = [];
+      const held = [];
+      for (const event of state.events.queue) {
+        const dueAt = Number(event._spawnAtSec ?? 0);
+        if (currentSec >= dueAt) ready.push(event);
+        else held.push(event);
+      }
+      state.events.queue = held;
+      const drained = ready;
       const spawned = [];
       const droppedRaids = [];
       const droppedByCap = [];

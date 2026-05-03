@@ -20,6 +20,8 @@ test("WorldEventSystem: raidEscalation.intervalTicks gates successive raids", ()
 
   // First raid — lastRaidTick starts at -9999 so tick 0 is well past cooldown.
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+  state.events.queue[0]._spawnAtSec = 0;
   system.update(1.0, state);
   const firstActive = state.events.active.filter((e) => e.type === EVENT_TYPE.BANDIT_RAID);
   assert.equal(firstActive.length, 1, "first raid must spawn");
@@ -28,6 +30,7 @@ test("WorldEventSystem: raidEscalation.intervalTicks gates successive raids", ()
   // Second raid queued "immediately" (still tick 0) within the cooldown window.
   // Expectation: WorldEventSystem drops the raid from the queue.
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  state.events.queue[0]._spawnAtSec = 0;
   system.update(1.0, state);
   const activeRaidsNow = state.events.active.filter((e) => e.type === EVENT_TYPE.BANDIT_RAID);
   // The original raid may still be active, but no NEW raid should have
@@ -43,6 +46,7 @@ test("WorldEventSystem: raidEscalation.intervalTicks gates successive raids", ()
   state.events.active = state.events.active.filter((e) => e.type !== EVENT_TYPE.BANDIT_RAID);
 
   enqueueEvent(state, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  state.events.queue[0]._spawnAtSec = 0;
   system.update(1.0, state);
   const afterCooldown = state.events.active.filter((e) => e.type === EVENT_TYPE.BANDIT_RAID);
   assert.equal(afterCooldown.length, 1, "raid spawns again after cooldown elapses");
@@ -67,9 +71,12 @@ test("WorldEventSystem: intensityMultiplier=2 doubles raid intensity payload", (
   const scaledSystem = new WorldEventSystem();
 
   enqueueEvent(baseline, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  // R13 #2 Plan-R13-event-mitigation: opt-out of the 30s warning lead.
+  baseline.events.queue[0]._spawnAtSec = 0;
   baselineSystem.update(1.0, baseline);
 
   enqueueEvent(scaled, EVENT_TYPE.BANDIT_RAID, {}, 12, 1);
+  scaled.events.queue[0]._spawnAtSec = 0;
   scaledSystem.update(1.0, scaled);
 
   const baseRaid = baseline.events.active.find((e) => e.type === EVENT_TYPE.BANDIT_RAID);
