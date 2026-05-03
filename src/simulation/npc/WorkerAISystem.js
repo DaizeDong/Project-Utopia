@@ -36,6 +36,21 @@ const TARGET_REFRESH_JITTER_SEC = 0.5;
 // TASK_LOCK_STATES + JobScheduler sticky-bonus hysteresis are subsumed by
 // FSM state-transition priorities (see WorkerTransitions.js).
 const WORKER_EMERGENCY_RATION_COOLDOWN_SEC = 2.8;
+// v0.10.2-r9-eat-pipeline (Plan-Eat-Pipeline Step 1) — restore the missing
+// `WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD` module constant referenced by
+// `_emergencyRationStep` (line ~565). The original declaration was lost in
+// v0.10.1-l "hunger simplified to global drain", which kept the function
+// (and its export `consumeEmergencyRation`) but stopped exercising it from
+// the FSM hot path; the bare reference would `ReferenceError` on the first
+// invocation. Reinstated at 0.18 per `docs/systems/03-worker-ai.md:397` so
+// PW R9 §scale-stability's survival-bypass branch works against a real
+// emergency floor rather than a phantom symbol.
+const WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18;
+// PW R9 §scale-stability — survival floor for the carry-eat bypass that
+// overrides the v0.8.8 D1 "warehouse-reachable → skip carry-eat" guard.
+// At hunger < 0.15 a worker is ~30 sim-sec from death; the warehouse-queue-
+// munching exploit window is acceptable.
+const WORKER_SURVIVAL_CRITICAL_HUNGER = 0.15;
 const WORKER_MEMORY_RECENT_LIMIT = 6;
 const WORKER_MEMORY_HISTORY_LIMIT = 24;
 
@@ -593,7 +608,15 @@ function _emergencyRationStep(worker, state, dt, nowSec, services = null) {
     } else {
       reachable = worker.debug?.reachableFood;
     }
-    if (reachable !== false) return;
+    // PW R9 §scale-stability — when a worker's hunger crosses
+    // WORKER_SURVIVAL_CRITICAL_HUNGER (≈30 sim-sec from death) AND they
+    // have carry food, eat from carry IMMEDIATELY regardless of whether
+    // the warehouse is theoretically reachable. At 50 workers + 1
+    // warehouse the warehouse is reachable but the queue is 30+ deep;
+    // survival overrides the v0.8.8 D1 carry-munching exploit guard at
+    // this hunger floor.
+    const survivalCritical = hungerNow < WORKER_SURVIVAL_CRITICAL_HUNGER && carryFood > 0;
+    if (reachable !== false && !survivalCritical) return;
   }
   worker.blackboard ??= {};
   const nextAllowed = Number(worker.blackboard.emergencyRationCooldownSec ?? -Infinity);

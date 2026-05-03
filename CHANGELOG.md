@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased] — v0.10.2-r9-eat-pipeline (R9 Plan-Eat-Pipeline, P0)
+
+### Plan-Eat-Pipeline — survival-bypass on carry-eat + warehouse contention sensor
+
+Implements the P0 fix from `assignments/homework7/Final-Polish-Loop/Round9/Plans/Plan-Eat-Pipeline.md` (Reviewer PW-scale-stability). PW Test C in v0.10.1-m: 50 workers + 1 warehouse → 49/50 in critical hunger while food=3879 + meals=194 sat in stockpile. Two distinct structural failures composed: (1) the v0.8.8 D1 "warehouse-reachable → skip carry-eat" guard masks survival even when the worker is queued 30 deep; (2) WarehouseNeedProposer only fires on noAccess / saturation / hunger-crisis, never on workforce-to-warehouse contention. Two surgical sub-fixes target each root cause without touching the build-system / mood / role / tile freeze. Plan-Recovery-Director landed first (sibling diagnostic-driven trigger on the same proposer); this plan layers the contention branch as a sibling next to it.
+
+**(a) WorkerAISystem `_emergencyRationStep` survival bypass** — `src/simulation/npc/WorkerAISystem.js:562-619`. The v0.8.8 D1 gate `if (reachable !== false) return` unconditionally blocked carry-eat whenever any warehouse was theoretically reachable, even with the worker dying in a queue. New predicate `survivalCritical = hungerNow < 0.15 && carryFood > 0` allows the carry-eat path to fire when survival is at stake. The warehouse-munching exploit window is acceptable because at hunger<0.15 the worker is ~30 sim-sec from death — the deposit-then-eat round-trip IS what's killing them. Bonus: restored the missing `WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD = 0.18` module constant lost in v0.10.1-l "hunger simplified to global drain" (the symbol was referenced by `_emergencyRationStep` but never declared, so the function would `ReferenceError` on first invocation; the FSM stopped exercising it from the hot path so the latent crash was invisible until R9 brought the function back). Pinned to 0.18 per `docs/systems/03-worker-ai.md:397`.
+
+**(b) WarehouseNeedProposer contention sensor** — `src/simulation/ai/colony/proposers/WarehouseNeedProposer.js`. Added a third trigger branch (sibling to the R9 PZ diagnostic-driven trigger from Plan-Recovery-Director). When `workers > 0 && warehouses > 0 && workers/warehouses > 12`, emits warehouse @priority=88 — one notch under noAccess/diagnostic @90 so the no-warehouse-at-all blind-spot still preempts. Self-limiting: each new warehouse drops the ratio (50:1=50 → 50:2=25 → 50:5=10, silent). Fires at the 13:1 contention point so the colony auto-builds warehouse #2 before the eat-pipeline melts down at 50:1. Slot-skipping when `warehouses === 0` keeps noAccess on the higher-priority hunger-crisis path.
+
+**Tests added:** `test/r9-eat-pipeline.test.js` — 5 invariants. (1) Survival-critical (hunger=0.10, carry.food>0, reachable warehouse): carry-eat fires. (2) Non-survival (hunger=0.30): v0.8.8 D1 contract preserved (carry-eat blocked, stockpile + carry untouched). (3) Contention sensor at 50:1 emits warehouse @priority=88 with contention reason. (4) 10:1 ratio → silent. (5) `warehouses=0` + 50 critical workers → noAccess @90 wins over contention.
+
+**Test baseline:** **1967 pass / 0 fail / 4 skip** (full suite, 1570 top-level tests across 118 suites). Targeted regression: `warehouse-need-proposer` (8/8), `r9-recovery-director` (6/6), `r9-eat-pipeline` (5/5), `worker-ai-v0812` (1 pass + 1 pre-existing skip), `build-proposer-interface` (22/22) — 41/41 across the closest neighbour suites.
+
+**Files changed:** 2 source modified — `src/simulation/npc/WorkerAISystem.js` (+22/-1, including the restored `WORKER_EMERGENCY_RATION_HUNGER_THRESHOLD` constant declaration), `src/simulation/ai/colony/proposers/WarehouseNeedProposer.js` (+33/-1) — plus 1 test added (`test/r9-eat-pipeline.test.js` +146 LOC) + CHANGELOG. Approx +55/-2 source LOC. Hard-freeze compliant (no new tile / role / building / mood / mechanic — pure predicate refinement on an existing function + sibling branch on an existing proposer).
+
 ## [Unreleased] — v0.10.2-r9-recovery-director (R9 Plan-Recovery-Director, P0)
 
 ### Plan-Recovery-Director — release the foodRecoveryMode latch + close the autopilot diagnostic blind-spot + cap road over-emission + GUARD floor under defend strategy
