@@ -84,7 +84,7 @@ body::after {
 .slide {
   position: absolute;
   inset: 0;
-  padding: 36px 64px 56px;
+  padding: clamp(40px, 4.5vh, 64px) clamp(56px, 5vw, 96px) clamp(48px, 5vh, 72px);
   display: none;
   flex-direction: column;
   overflow: hidden;
@@ -97,61 +97,61 @@ body::after {
 
 .slide-num {
   position: absolute;
-  top: 24px;
-  right: 32px;
+  top: clamp(20px, 2.4vh, 32px);
+  right: clamp(28px, 2.4vw, 48px);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: clamp(11px, 1.2vh, 14px);
   color: var(--text-dim);
   letter-spacing: 0.15em;
 }
 
 .slide-tag {
   position: absolute;
-  top: 24px;
-  left: 32px;
+  top: clamp(20px, 2.4vh, 32px);
+  left: clamp(28px, 2.4vw, 48px);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: clamp(11px, 1.2vh, 14px);
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  padding: 4px 10px;
+  padding: clamp(4px, 0.6vh, 8px) clamp(10px, 1.2vh, 16px);
   border: 1px solid var(--accent-soft);
   border-radius: 2px;
 }
 
 .slide h1 {
-  font-size: clamp(34px, 4.4vh, 56px);
+  font-size: clamp(40px, 5.4vh, 76px);
   font-weight: 600;
-  letter-spacing: -0.01em;
-  margin-bottom: clamp(6px, 1vh, 18px);
-  line-height: 1.1;
+  letter-spacing: -0.012em;
+  margin-bottom: clamp(14px, 2vh, 28px);
+  line-height: 1.08;
 }
 
 .slide h1 .accent { color: var(--accent); }
 
 .slide h2 {
-  font-size: clamp(24px, 3vh, 38px);
+  font-size: clamp(28px, 3.6vh, 48px);
   font-weight: 600;
-  margin-bottom: clamp(12px, 1.8vh, 24px);
+  margin-bottom: clamp(14px, 2vh, 28px);
   letter-spacing: -0.005em;
 }
 
 .slide h2 .accent { color: var(--accent); }
 
 .slide h3 {
-  font-size: clamp(14px, 1.65vh, 20px);
+  font-size: clamp(15px, 1.8vh, 22px);
   font-weight: 500;
   color: var(--text-soft);
-  margin-bottom: clamp(8px, 1.2vh, 18px);
+  margin-bottom: clamp(12px, 1.7vh, 22px);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
 }
 
 .slide p {
-  font-size: clamp(15px, 1.85vh, 22px);
-  line-height: 1.5;
+  font-size: clamp(16px, 2.05vh, 26px);
+  line-height: 1.55;
   color: var(--text-soft);
-  margin-bottom: clamp(8px, 1.2vh, 16px);
+  margin-bottom: clamp(12px, 1.7vh, 22px);
   max-width: 1100px;
 }
 
@@ -161,11 +161,11 @@ body::after {
 }
 
 .slide li {
-  font-size: clamp(15px, 1.85vh, 22px);
-  line-height: 1.5;
+  font-size: clamp(16px, 2.05vh, 26px);
+  line-height: 1.55;
   color: var(--text-soft);
-  margin-bottom: clamp(7px, 1.05vh, 14px);
-  padding-left: clamp(20px, 1.4vw, 26px);
+  margin-bottom: clamp(10px, 1.5vh, 20px);
+  padding-left: clamp(22px, 1.5vw, 30px);
   position: relative;
 }
 
@@ -173,9 +173,9 @@ body::after {
   content: "";
   position: absolute;
   left: 0;
-  top: 12px;
-  width: 8px;
-  height: 8px;
+  top: clamp(10px, 1.4vh, 16px);
+  width: clamp(8px, 0.95vh, 12px);
+  height: clamp(8px, 0.95vh, 12px);
   border-radius: 50%;
   background: radial-gradient(circle, var(--halo) 30%, var(--accent) 70%, transparent 90%);
   box-shadow: 0 0 6px rgba(255,184,74,0.35);
@@ -202,43 +202,53 @@ body::after {
 
 .title-slide .super {
   font-family: var(--mono);
-  font-size: clamp(11px, 1.3vh, 16px);
+  font-size: clamp(12px, 1.45vh, 18px);
   color: var(--accent);
-  letter-spacing: 0.25em;
-  margin-bottom: clamp(18px, 2.5vh, 32px);
+  letter-spacing: 0.28em;
+  margin-bottom: clamp(20px, 2.8vh, 38px);
 }
 
 .title-slide .title {
-  font-size: clamp(60px, 9vh, 120px);
+  font-size: clamp(76px, 11vh, 156px);
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.035em;
   line-height: 0.95;
-  margin-bottom: clamp(16px, 2.5vh, 32px);
+  margin-bottom: clamp(20px, 2.8vh, 38px);
 }
 
 .title-slide .subtitle {
-  font-size: clamp(18px, 2.4vh, 32px);
+  font-size: clamp(22px, 2.8vh, 40px);
   color: var(--text-soft);
-  margin-bottom: clamp(28px, 5vh, 64px);
-  max-width: 900px;
+  margin-bottom: clamp(32px, 5.5vh, 80px);
+  max-width: 1000px;
   line-height: 1.3;
 }
 
 .title-slide .meta {
   font-family: var(--mono);
-  font-size: clamp(12px, 1.4vh, 18px);
+  font-size: clamp(13px, 1.55vh, 20px);
   color: var(--text-dim);
-  line-height: 1.85;
+  line-height: 1.95;
 }
 
 .title-slide .meta .label { color: var(--accent); display: inline-block; min-width: 110px; }
 
 .split {
   display: flex;
-  gap: clamp(28px, 3vw, 56px);
+  gap: clamp(40px, 4vw, 80px);
   flex: 1;
-  margin-top: clamp(4px, 0.6vh, 12px);
+  margin-top: clamp(8px, 1vh, 18px);
   min-height: 0;
+}
+
+/* For single-column slides without .split — fills remaining viewport, content centered */
+.slide-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  margin-top: clamp(8px, 1vh, 18px);
 }
 
 .split > .col {
@@ -248,10 +258,12 @@ body::after {
   flex: 1;
   min-width: 0;
   justify-content: center;  /* short columns center vertically — kills single-side whitespace */
+  gap: clamp(8px, 1.1vh, 16px);
 }
 
-.split > .col-narrow { flex: 0 0 clamp(320px, 28vw, 480px); }
-.split > .col-wide   { flex: 1.4; }
+.split > .col-wide   { flex: 1.35; }
+/* col-narrow class retained for backward compat but no longer narrows; equal-width by default unifies image widths across slides */
+.split > .col-narrow { flex: 1; }
 
 .image-frame {
   background: var(--bg-card);
@@ -260,25 +272,25 @@ body::after {
   overflow: hidden;
   width: 100%;
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  flex: 0 0 auto;
 }
 
 .image-frame img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
   display: block;
 }
 
-/* Image height policy:
-   - default (multiple image-frame siblings stacked): 32vh — keeps two-image stacks balanced
-   - :only-of-type (single image alongside text): 42vh — image is the anchor, text is supplementary
-   - :only-child (image fills the entire col, no other content): 60vh — feature image */
-.split .col > .image-frame img                   { max-height: clamp(180px, 32vh, 380px); object-fit: cover; width: 100%; }
-.split .col > .image-frame:only-of-type img      { max-height: clamp(240px, 42vh, 520px); object-fit: cover; width: 100%; }
-.split .col > .image-frame:only-child img        { max-height: clamp(280px, 56vh, 680px); object-fit: cover; width: 100%; }
-.split .col > * + .image-frame                   { margin-top: clamp(10px, 1.5vh, 20px); }
+/* Image-frame fixed-height policy — tier picked by selector to unify visual size across slides.
+     · default (multiple image-frame siblings stacked):   30vh  · two stacked images
+     · :only-of-type (one image alongside h3+ul text):   42vh  · single image with text
+     · :only-child (image is sole child of col):         54vh  · feature image  */
+.split .col > .image-frame                 { height: clamp(180px, 30vh, 360px); }
+.split .col > .image-frame:only-of-type    { height: clamp(280px, 42vh, 520px); }
+.split .col > .image-frame:only-child      { height: clamp(360px, 54vh, 660px); }
+.split .col > * + .image-frame             { margin-top: clamp(12px, 1.8vh, 24px); }
 
 .image-frame .caption {
   position: absolute;
@@ -309,13 +321,13 @@ pre.code {
   border: 1px solid var(--grid-strong);
   border-left: 3px solid var(--accent);
   font-family: var(--mono);
-  font-size: clamp(12px, 1.4vh, 16px);
+  font-size: clamp(13px, 1.55vh, 19px);
   line-height: 1.55;
-  padding: clamp(10px, 1.5vh, 22px) clamp(14px, 1.9vh, 26px);
+  padding: clamp(14px, 1.9vh, 26px) clamp(18px, 2.2vh, 30px);
   border-radius: 4px;
   color: var(--pillar-1);
   overflow-x: auto;
-  margin: clamp(4px, 0.6vh, 10px) 0;
+  margin: clamp(8px, 1.2vh, 18px) 0;
   max-width: 100%;
 }
 
@@ -327,39 +339,39 @@ pre.code .fn  { color: var(--pillar-2); }
 .callout {
   background: var(--bg-soft);
   border-left: 3px solid var(--pillar-1);
-  padding: clamp(10px, 1.5vh, 20px) clamp(14px, 1.9vh, 26px);
-  margin: clamp(8px, 1.2vh, 18px) 0;
-  font-size: clamp(14px, 1.65vh, 20px);
+  padding: clamp(14px, 1.9vh, 28px) clamp(18px, 2.4vh, 32px);
+  margin: clamp(12px, 1.7vh, 24px) 0;
+  font-size: clamp(15px, 1.85vh, 24px);
   color: var(--text-soft);
   font-style: italic;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 .callout strong { font-style: normal; color: var(--text); }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: clamp(10px, 1.4vh, 18px);
-  margin: clamp(10px, 1.4vh, 20px) 0;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: clamp(12px, 1.7vh, 22px);
+  margin: clamp(14px, 1.9vh, 26px) 0;
 }
 
 .metric {
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
   border-radius: 6px;
-  padding: clamp(10px, 1.4vh, 18px) clamp(14px, 1.8vh, 22px);
+  padding: clamp(14px, 1.9vh, 26px) clamp(18px, 2.2vh, 30px);
   position: relative;
 }
 .metric .num {
   font-family: var(--mono);
-  font-size: clamp(22px, 2.6vh, 36px);
+  font-size: clamp(26px, 3.4vh, 48px);
   color: var(--accent);
   font-weight: 600;
   line-height: 1;
-  margin-bottom: clamp(4px, 0.6vh, 8px);
+  margin-bottom: clamp(6px, 0.9vh, 12px);
 }
 .metric .lbl {
-  font-size: clamp(10px, 1.1vh, 13px);
+  font-size: clamp(11px, 1.25vh, 16px);
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -367,14 +379,14 @@ pre.code .fn  { color: var(--pillar-2); }
 
 .diagram {
   font-family: var(--mono);
-  font-size: clamp(11px, 1.4vh, 16px);
-  line-height: 1.6;
+  font-size: clamp(12px, 1.55vh, 18px);
+  line-height: 1.65;
   color: var(--text-soft);
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
-  padding: clamp(12px, 1.7vh, 24px) clamp(16px, 2.2vh, 28px);
+  padding: clamp(16px, 2.2vh, 30px) clamp(20px, 2.6vh, 36px);
   border-radius: 4px;
-  margin: clamp(6px, 0.9vh, 14px) 0;
+  margin: clamp(10px, 1.4vh, 20px) 0;
   white-space: pre;
 }
 .diagram .accent { color: var(--accent); }
@@ -399,12 +411,12 @@ pre.code .fn  { color: var(--pillar-2); }
 .status {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: clamp(11px, 1.2vh, 14px);
   letter-spacing: 0.1em;
-  padding: 2px 8px;
+  padding: clamp(2px, 0.4vh, 5px) clamp(8px, 1vh, 12px);
   border-radius: 2px;
   text-transform: uppercase;
-  margin-right: 6px;
+  margin-right: clamp(6px, 0.8vh, 10px);
 }
 .status.ok    { color: var(--healthy);  border: 1px solid var(--healthy); }
 .status.warn  { color: var(--accent);   border: 1px solid var(--accent); }
@@ -500,7 +512,7 @@ pre.code .fn  { color: var(--pillar-2); }
   <div class="slide-num">02 / 11</div>
   <h1>What it is.</h1>
   <div class="split">
-    <div class="col col-wide">
+    <div class="col">
       <h3>Premise</h3>
       <ul>
         <li>Player builds <strong>infrastructure</strong> + sets <strong>priorities</strong></li>
@@ -784,7 +796,8 @@ pre.code .fn  { color: var(--pillar-2); }
   <div class="slide-tag">§ 3.5 · integration</div>
   <div class="slide-num">09 / 11</div>
   <h1>The pillars compose — <span class="accent">one system, two angles</span>.</h1>
-  <div class="diagram" style="font-size:13px;line-height:1.55;text-align:left">
+  <div class="slide-body">
+  <div class="diagram" style="text-align:left">
 <span class="pillar1">①</span>  <span class="accent">LLM</span> decides — "build a quarry near the stone cluster"                       <span class="com">[ pillar 1 ]</span>
 
 <span class="pillar2">②</span>  <span class="accent">BuildProposer</span> checks visibility · stone is fogged                       <span class="com">[ pillar 2 ]</span>
@@ -806,7 +819,8 @@ pre.code .fn  { color: var(--pillar-2); }
 
 <span class="pillar1">⑧</span>  Combat resolved · FSM returns to BUILDING · resume A* path             <span class="com">[ pillar 1+2 ]</span>
   </div>
-  <div class="callout" style="margin-top:24px"><strong>The pillars aren't separate features.</strong> They are the same system <em>seen from two angles</em> — the LLM-driven strategy layer and the autonomous-execution layer pull on the same FSM/path/Boids rope.</div>
+  <div class="callout"><strong>The pillars aren't separate features.</strong> They are the same system <em>seen from two angles</em> — the LLM-driven strategy layer and the autonomous-execution layer pull on the same FSM/path/Boids rope.</div>
+  </div>
 </section>
 
 <!-- ============================================================ -->
