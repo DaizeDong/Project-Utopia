@@ -509,6 +509,17 @@ export const BALANCE = Object.freeze({
   // doubles the area and prevents `pickSpawnTile` from returning null,
   // which previously dropped silently to under-target spawn counts.
   wildlifeSpawnRadiusBonus: 6,
+  // R13 Plan-R13-wildlife-hunt (P1) — three knobs governing spawn cadence,
+  // species mix, and worker-hunt economic feedback. (a) interval mult scales
+  // herbivore/predator recovery cooldowns (0.5 = 2x faster spawn); (b) round-
+  // robin flag in WildlifePopulationSystem.spawnAnimals picks the least-
+  // represented predator species so bear+raider_beast actually appear in
+  // normal play instead of the weighted ~55% wolf bias; (c) hunt food reward
+  // drops N units of food into the killer's carry (overflow → stockpile)
+  // when a worker downs a wildlife predator.
+  wildlifeSpawnIntervalMult: 0.5,
+  wildlifeSpeciesRoundRobin: true,
+  wildlifeHuntFoodReward: 4,
   // v0.8.8 B2 — leash radius (Manhattan) for animals that fail to find a
   // valid in-zone target. Pre-fix the fallback used randomPassableTile()
   // which could teleport animals across the entire map, breaking the

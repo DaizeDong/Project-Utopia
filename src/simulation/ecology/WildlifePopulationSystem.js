@@ -1,10 +1,36 @@
-import { ANIMAL_KIND, TILE } from "../../config/constants.js";
+import { BALANCE } from "../../config/balance.js";
+import { ANIMAL_KIND, ANIMAL_SPECIES, TILE } from "../../config/constants.js";
 import { getLongRunWildlifeTuning, getWildlifeZoneLimits } from "../../config/longRunProfile.js";
 import {
   createAnimal,
   createDefaultWildlifeRuntime,
 } from "../../entities/EntityFactory.js";
 import { getTile, inBounds, tileToWorld, worldToTile } from "../../world/grid/Grid.js";
+
+// R13 Plan-R13-wildlife-hunt (P1) — predator species pool for round-robin pick
+// (Step b). Inverse-frequency: we sort live counts ascending and spawn the
+// least-represented species first so bear and raider_beast actually appear
+// instead of being starved by the 55%/30%/15% weighted random in
+// EntityFactory.pickPredatorSpecies.
+const PREDATOR_SPECIES_POOL = Object.freeze([
+  ANIMAL_SPECIES.WOLF,
+  ANIMAL_SPECIES.BEAR,
+  ANIMAL_SPECIES.RAIDER_BEAST,
+]);
+
+function pickRoundRobinPredatorSpecies(state) {
+  const counts = state?.metrics?.ecology?.predatorsBySpecies ?? {};
+  let best = PREDATOR_SPECIES_POOL[0];
+  let bestCount = Infinity;
+  for (const species of PREDATOR_SPECIES_POOL) {
+    const count = Number(counts[species] ?? 0);
+    if (count < bestCount) {
+      bestCount = count;
+      best = species;
+    }
+  }
+  return best;
+}
 
 const HERBIVORE_SPAWN_TILES = Object.freeze([TILE.GRASS, TILE.FARM, TILE.LUMBER, TILE.RUINS]);
 const PREDATOR_SPAWN_TILES = Object.freeze([TILE.GRASS, TILE.FARM, TILE.LUMBER, TILE.RUINS]);
@@ -185,12 +211,19 @@ function pickSpawnTile(state, zone, kind, tuning, rng) {
 
 function spawnAnimals(state, zone, kind, count, runtime, eventKey, rng, tuning) {
   const anchor = getZoneAnchor(state, zone);
+  const useRoundRobin = Boolean(BALANCE.wildlifeSpeciesRoundRobin)
+    && kind === ANIMAL_KIND.PREDATOR;
   let spawned = 0;
   for (let i = 0; i < count; i += 1) {
     const tile = pickSpawnTile(state, zone, kind, tuning, rng);
     if (!tile) break;
     const pos = tileToWorld(tile.ix, tile.iz, state.grid);
-    const animal = createAnimal(pos.x, pos.z, kind, rng);
+    // R13 Plan-R13-wildlife-hunt (P1) Step b — when round-robin is on, pick
+    // the least-represented predator species and pass it to createAnimal so
+    // bear+raider_beast actually appear instead of EntityFactory's weighted
+    // random favoring wolf 55% of spawns.
+    const forcedSpecies = useRoundRobin ? pickRoundRobinPredatorSpecies(state) : null;
+    const animal = createAnimal(pos.x, pos.z, kind, rng, forcedSpecies);
     assignAnimalHabitat(animal, zone, anchor, tile);
     animal.hunger = kind === ANIMAL_KIND.PREDATOR ? 0.72 : 0.78;
     animal.blackboard = {
@@ -312,6 +345,10 @@ function updateZonePopulation(state, runtime, bucket, tuning, rng, dt) {
   const nowSec = Number(state.metrics?.timeSec ?? 0);
   const { zone, herbivores, predators } = bucket;
   const anchor = getZoneAnchor(state, zone);
+  // R13 Plan-R13-wildlife-hunt (P1) Step a — wildlifeSpawnIntervalMult scales
+  // every cooldown gate so a 0.5 mult halves the wait between spawns,
+  // doubling the effective wildlife spawn cadence per zone.
+  const intervalMult = Number(BALANCE.wildlifeSpawnIntervalMult ?? 1);
   const herbivoreLimits = getWildlifeZoneLimits(state.world?.mapTemplateId, "herbivores", tuning);
   const predatorLimits = getWildlifeZoneLimits(state.world?.mapTemplateId, "predators", tuning);
   const control = ensureZoneControl(runtime, zone.id);
@@ -362,7 +399,7 @@ function updateZonePopulation(state, runtime, bucket, tuning, rng, dt) {
       herbivoreCount += spawned;
       control.herbivoreLowSec = 0;
       control.extinctionSec = 0;
-      control.nextRecoveryAtSec = nowSec + Number(tuning.herbivoreRecoveryCooldownSec ?? 75);
+      control.nextRecoveryAtSec = nowSec + Number(tuning.herbivoreRecoveryCooldownSec ?? 75) * intervalMult;
     }
   }
 
@@ -385,7 +422,7 @@ function updateZonePopulation(state, runtime, bucket, tuning, rng, dt) {
     if (spawned > 0) {
       herbivoreCount += spawned;
       control.stableSec = 0;
-      control.nextBreedAtSec = nowSec + Number(tuning.herbivoreBreedCooldownSec ?? 120);
+      control.nextBreedAtSec = nowSec + Number(tuning.herbivoreBreedCooldownSec ?? 120) * intervalMult;
     }
   }
 
@@ -410,7 +447,7 @@ function updateZonePopulation(state, runtime, bucket, tuning, rng, dt) {
     if (spawned > 0) {
       predatorCount += spawned;
       control.predatorAbsentSec = 0;
-      control.nextPredatorRecoveryAtSec = nowSec + Number(tuning.predatorRecoveryCooldownSec ?? 120);
+      control.nextPredatorRecoveryAtSec = nowSec + Number(tuning.predatorRecoveryCooldownSec ?? 120) * intervalMult;
     }
   }
 
