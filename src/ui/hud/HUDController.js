@@ -43,6 +43,21 @@ function formatDevDimLabel(key) {
   return String(key);
 }
 
+// Plan-R13-chip-label (R13 #3, P1) — capitalize the chip name for display
+// (e.g. "farms" → "Farms", "herb_garden" → "Herb Garden") so the top scenario
+// goal chips read "Farms 3/8" instead of bare "3/8" / lowercase "farms 3/8".
+// Underlying chip.name stays lowercase so chip.label / title= / dev-mode plain
+// text and existing case-sensitive matchers in WorldExplain remain unchanged.
+function capitalizeChipName(name) {
+  const raw = String(name ?? "").trim();
+  if (!raw) return "";
+  return raw
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function buildDevIndexTooltip(state, casualMode) {
   if (casualMode) return explainTerm("dev");
   const dims = state.gameplay?.devIndexDims ?? {};
@@ -757,7 +772,11 @@ export class HUDController {
       if (chip.name && chip.count && doc?.createElement) {
         const nameSpan = doc.createElement("span");
         nameSpan.className = "hud-goal-chip-name";
-        nameSpan.textContent = `${chip.name} `;
+        // Plan-R13-chip-label (R13 #3, P1) — capitalize for human-readable
+        // display ("Farms 3/8" instead of "farms 3/8"). The chip.label /
+        // title= keeps the lowercase form so legacy plain-text consumers
+        // (dev-mode scenario string, hover tooltip parsers) stay green.
+        nameSpan.textContent = `${capitalizeChipName(chip.name)} `;
         const countSpan = doc.createElement("span");
         countSpan.className = "hud-goal-chip-count";
         countSpan.textContent = chip.count;

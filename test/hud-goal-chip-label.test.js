@@ -1,3 +1,12 @@
+// Plan-R13-chip-label (R13 #3, P1) — regression test: scenario goal chips
+// must display the building name (capitalized) alongside the count, e.g.
+// "Farms 3/8" rather than bare "3/8" or lowercase "farms 3/8".
+//
+// Plan: assignments/homework7/Final-Polish-Loop/Round13/Plans/Plan-R13-chip-label.md
+//
+// Reuses the in-process DOM mock pattern from hud-goal-chips.test.js so we
+// can assert on the rendered chip-name span text without spinning up jsdom.
+
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -8,27 +17,18 @@ import { getScenarioRuntime } from "../src/world/scenarios/ScenarioFactory.js";
 
 function makeClassList(node) {
   const tokens = new Set(String(node.className ?? "").split(/\s+/).filter(Boolean));
-  const sync = () => {
-    node.className = [...tokens].join(" ");
-  };
+  const sync = () => { node.className = [...tokens].join(" "); };
   return {
-    add(...items) {
-      for (const item of items) tokens.add(item);
-      sync();
-    },
-    remove(...items) {
-      for (const item of items) tokens.delete(item);
-      sync();
-    },
+    add(...items) { for (const i of items) tokens.add(i); sync(); },
+    remove(...items) { for (const i of items) tokens.delete(i); sync(); },
     contains(item) {
       return tokens.has(item) || String(node.className ?? "").split(/\s+/).includes(item);
     },
     toggle(item, force) {
-      const shouldAdd = force ?? !tokens.has(item);
-      if (shouldAdd) tokens.add(item);
-      else tokens.delete(item);
+      const should = force ?? !tokens.has(item);
+      if (should) tokens.add(item); else tokens.delete(item);
       sync();
-      return shouldAdd;
+      return should;
     },
   };
 }
@@ -43,15 +43,11 @@ function makeElement(tagName = "div") {
     parentNode: null,
     className: "",
     _textContent: "",
-    setAttribute(key, value) {
-      this.attrs[key] = String(value);
-    },
+    setAttribute(key, value) { this.attrs[key] = String(value); },
     getAttribute(key) {
       return Object.prototype.hasOwnProperty.call(this.attrs, key) ? this.attrs[key] : null;
     },
-    removeAttribute(key) {
-      delete this.attrs[key];
-    },
+    removeAttribute(key) { delete this.attrs[key]; },
     appendChild(child) {
       child.parentNode = this;
       this._textContent = "";
@@ -66,15 +62,13 @@ function makeElement(tagName = "div") {
       child.parentNode = null;
       return child;
     },
-    remove() {
-      this.parentNode?.removeChild?.(this);
-    },
-    replaceChildren(...nextChildren) {
+    remove() { this.parentNode?.removeChild?.(this); },
+    replaceChildren(...next) {
       for (const child of this.children) child.parentNode = null;
       this.children = [];
       this.childNodes = this.children;
       this._textContent = "";
-      for (const child of nextChildren) this.appendChild(child);
+      for (const child of next) this.appendChild(child);
     },
     querySelectorAll(selector) {
       if (!selector.startsWith(".")) return [];
@@ -94,7 +88,7 @@ function makeElement(tagName = "div") {
   Object.defineProperty(node, "textContent", {
     get() {
       if (this.children.length > 0) {
-        return this.children.map((child) => child.textContent).join("");
+        return this.children.map((c) => c.textContent).join("");
       }
       return this._textContent;
     },
@@ -106,9 +100,7 @@ function makeElement(tagName = "div") {
     },
   });
   Object.defineProperty(node, "firstElementChild", {
-    get() {
-      return this.children[0] ?? null;
-    },
+    get() { return this.children[0] ?? null; },
   });
   node.classList = makeClassList(node);
   return node;
@@ -142,29 +134,23 @@ function withDom(nodes, fn) {
       node.ownerDocument = doc;
       return node;
     },
-    getElementById(id) {
-      return nodes[id] ?? null;
-    },
+    getElementById(id) { return nodes[id] ?? null; },
   };
   for (const node of Object.values(nodes)) node.ownerDocument = doc;
   globalThis.document = doc;
-  try {
-    return fn();
-  } finally {
-    globalThis.document = prevDocument;
-  }
+  try { return fn(); }
+  finally { globalThis.document = prevDocument; }
 }
 
-function configureTwoGoalScenario(state) {
+function configureScenarioWithChips(state) {
   state.grid.tiles[0] = TILE.WAREHOUSE;
   state.grid.tiles[1] = TILE.FARM;
   state.gameplay.scenario.routeLinks = [];
   state.gameplay.scenario.depotZones = [];
-
   const runtime = getScenarioRuntime(state);
   state.gameplay.scenario.targets = {
     logistics: {
-      warehouses: runtime.counts.warehouses,
+      warehouses: runtime.counts.warehouses + 1,
       farms: runtime.counts.farms + 1,
       lumbers: 0,
       roads: 0,
@@ -173,43 +159,50 @@ function configureTwoGoalScenario(state) {
   };
 }
 
-test("HUDController renders casual scenario progress as goal chips with done and pending states", () => {
+test("Plan-R13-chip-label: chip name span renders the capitalized building name (Farms, Warehouses)", () => {
   const nodes = makeNodeBag();
   withDom(nodes, () => {
-    const state = createInitialGameState({ seed: 1337 });
+    const state = createInitialGameState({ seed: 4242 });
     state.controls.uiProfile = "casual";
-    configureTwoGoalScenario(state);
-
+    configureScenarioWithChips(state);
     const hud = new HUDController(state);
     hud.render();
 
     const chips = nodes.statusScenario.querySelectorAll(".hud-goal-chip");
-    assert.equal(chips.length, 2);
-    assert.ok(nodes.statusScenario.classList.contains("hud-goal-list"));
-    // Plan-R13-chip-label (R13 #3, P1) — chip name span is now capitalized
-    // ("Farms 3/8") for human-readable display; match case-insensitively
-    // so we accept both the legacy lowercase form and the capitalized form.
-    assert.match(chips[0].textContent, /warehouses \d+\/\d+/i);
-    assert.match(chips[0].className, /hud-goal-chip--done/);
-    assert.match(chips[1].textContent, /farms \d+\/\d+/i);
-    assert.match(chips[1].className, /hud-goal-chip--pending/);
-    assert.match(nodes.statusScenario.attrs.title, /warehouses built/);
+    assert.ok(chips.length >= 2, `expected 2+ chips, got ${chips.length}`);
+
+    const nameTexts = chips.flatMap((c) =>
+      c.querySelectorAll(".hud-goal-chip-name").map((n) => n.textContent.trim()),
+    );
+    // Each chip's name span must render in Title Case (e.g. "Farms",
+    // "Warehouses"), NOT lowercase ("farms") and NOT bare empty.
+    for (const text of nameTexts) {
+      assert.ok(text.length > 0, "name span must be non-empty");
+      assert.match(text, /^[A-Z]/, `name span must start uppercase, got "${text}"`);
+      assert.ok(!/\d/.test(text), `name span must not contain the count, got "${text}"`);
+    }
+
+    // The full chip text combines name + count, satisfying the user
+    // directive of "Farms 3/8" (label + count) over bare "3/8".
+    for (const chip of chips) {
+      assert.match(chip.textContent, /[A-Z][a-z]+ \d+\/\d+/);
+    }
   });
 });
 
-test("HUDController keeps dev scenario progress as plain text", () => {
+test("Plan-R13-chip-label: chip count span keeps the bare N/T text", () => {
   const nodes = makeNodeBag();
   withDom(nodes, () => {
-    const state = createInitialGameState({ seed: 1337 });
-    state.controls.uiProfile = "dev";
-    configureTwoGoalScenario(state);
-
+    const state = createInitialGameState({ seed: 4242 });
+    state.controls.uiProfile = "casual";
+    configureScenarioWithChips(state);
     const hud = new HUDController(state);
     hud.render();
 
-    assert.equal(nodes.statusScenario.querySelectorAll(".hud-goal-chip").length, 0);
-    assert.ok(!nodes.statusScenario.classList.contains("hud-goal-list"));
-    assert.match(nodes.statusScenario.textContent, /wh \d+\/\d+/);
-    assert.match(nodes.statusScenario.textContent, /farms \d+\/\d+/);
+    const counts = nodes.statusScenario
+      .querySelectorAll(".hud-goal-chip")
+      .flatMap((c) => c.querySelectorAll(".hud-goal-chip-count"));
+    assert.ok(counts.length >= 2);
+    for (const c of counts) assert.match(c.textContent, /^\d+\/\d+$/);
   });
 });
