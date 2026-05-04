@@ -903,16 +903,11 @@ pre.code .fn  { color: var(--pillar-2); }
   <h1>What I learned.</h1>
   <div class="split">
     <div class="col col-wide">
-      <h3>Three lessons</h3>
+      <h3>Three takeaways</h3>
       <ul>
-        <li><strong>Spec fidelity is not the goal; design fidelity is.</strong> The original proposal said Behavior Tree, what shipped is a Priority State Machine. Same intent, better fit. The intent of "autonomous, interpretable agents" is what mattered; the data structure followed.</li>
-        <li><strong>Telemetry first, optimization second.</strong> I lost two rounds chasing performance bugs that turned out to be a measurement quirk in the headless test browser. <em>Measure your measurement</em> before measuring your subject.</li>
-        <li><strong>AI agents need hard guardrails, not clever prompts.</strong> Across thirteen rounds and 140 commits, what made agents trustworthy was constraints (frozen scope, rollback points, per-track file ownership), not prompt cleverness.</li>
-      </ul>
-      <h3 style="margin-top:clamp(8px,1.2vh,20px)">Insights from AI-assisted development</h3>
-      <ul>
-        <li>The Large Language Model was best as a <strong>reviewer</strong>, not a writer. Letting one agent design, another implement, and a third audit caught issues a single agent would have rationalized away.</li>
-        <li>Most surprising: an agent <strong>bisected a four-commit regression</strong>. It ran benchmarks at every commit between rounds eight and ten, found a 60% drop in our composite metric, and traced it to a single line of phase-offset math.</li>
+        <li><strong>AI-assisted development is now strong enough for complex projects.</strong> The reviewer / implementer iteration loop (one agent designs, another implements, a third audits, a fourth runs the tests) reliably drove progress. Across thirteen rounds and roughly 140 commits, hard guardrails (frozen scope, rollback points, per-track file ownership) made the agents trustworthy collaborators.</li>
+        <li><strong>Game development is genuinely complex; everything is coupled.</strong> A colony simulation is not one system but many at once: economy, behavior, pathfinding, lifecycle, combat, rendering, persistence. Touching one tends to ripple through several others. The cost of every change is paid in cross-system testing.</li>
+        <li><strong>A Large Language Model gives a game some "intelligence", but it is not the right tool for fine-grained decisions.</strong> It is not fast or precise enough for tick-by-tick control; that belongs to rule-based code. Its sweet spot is the opposite end: <em>strategic intent</em> and <em>random event generation</em>. Choosing the next raid, narrating an obituary, picking the next milestone are exactly where the language model shines.</li>
       </ul>
     </div>
     <div class="col">
@@ -925,14 +920,14 @@ pre.code .fn  { color: var(--pillar-2); }
         <div class="metric"><div class="num">+93.7%</div><div class="lbl">composite metric</div></div>
         <div class="metric"><div class="num">4 of 7</div><div class="lbl">stop conditions met</div></div>
       </div>
-      <h3>Stop conditions</h3>
+      <h3>Where the language model shone</h3>
       <p style="line-height:1.75;margin-bottom:0">
-        <span class="status ok">met</span> stability: 8 rounds, zero P0<br/>
-        <span class="status ok">met</span> performance: 2 green runs<br/>
-        <span class="status ok">met</span> action items: all closed<br/>
-        <span class="status ok">met</span> validator: 2 green streaks<br/>
-        <span class="status warn">pend</span> two large legacy systems<br/>
-        <span class="status warn">pend</span> four author-fill items
+        <span class="status ok">best</span> reviewer of agent-written code<br/>
+        <span class="status ok">best</span> bisector of cross-round regressions<br/>
+        <span class="status ok">best</span> strategic intent emitter<br/>
+        <span class="status ok">best</span> random event generator<br/>
+        <span class="status warn">weak</span> tick-by-tick control<br/>
+        <span class="status warn">weak</span> deterministic state transitions
       </p>
     </div>
   </div>
