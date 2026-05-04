@@ -133,6 +133,16 @@ export function recordAiDecisionResult(state, channel, result, nowSec = Number(s
       const unrecoveredSec = stats.lastLiveSec > -998 ? nowSec - stats.lastLiveSec : 0;
       stats.maxUnrecoveredFallbackSec = Math.max(stats.maxUnrecoveredFallbackSec, clampNonNegative(unrecoveredSec));
     }
+    // R13 Plan-R13-autopilot-wait-llm (#6 P1) — fallback responses also
+    // satisfy the autopilot readiness gate so an offline / no-key run isn't
+    // stalled forever. The 10-sec timeout in ColonyDirectorSystem provides
+    // the absolute safety floor; this branch flips the gate sooner whenever
+    // any AI tick (env or policy) actually runs through fallback.
+    if (state?.ai && state.ai.autopilotReady !== true) {
+      state.ai.autopilotReady = true;
+      state.ai.fallbackMode = true;
+      state.ai.autopilotReadyReason = "fallback";
+    }
   } else {
     stats.llmResponseCount += 1;
     if (coverageTarget === "llm" && stats.consecutiveFallbackResponses > 0) {
@@ -141,6 +151,15 @@ export function recordAiDecisionResult(state, channel, result, nowSec = Number(s
     stats.consecutiveFallbackResponses = 0;
     stats.lastLiveSec = nowSec;
     stats.liveCoverageSatisfied = true;
+    // R13 Plan-R13-autopilot-wait-llm (#6 P1) — first valid LLM response
+    // unlocks the autopilot startup gate. Subsequent responses are no-ops
+    // because the flag is already true. firstPlanReceivedSec is captured
+    // exactly once for HUD/inspector telemetry.
+    if (state?.ai && state.ai.autopilotReady !== true) {
+      state.ai.autopilotReady = true;
+      state.ai.firstPlanReceivedSec = nowSec;
+      state.ai.autopilotReadyReason = "first-plan";
+    }
   }
 
   if (coverageTarget !== "llm") {

@@ -1,4 +1,4 @@
-import { BUILD_COST } from "../../config/balance.js";
+import { BALANCE, BUILD_COST } from "../../config/balance.js";
 import { emitEvent, EVENT_TYPES } from "./GameEventBus.js";
 import { TILE } from "../../config/constants.js";
 import { inBounds, getTile, listTilesByType, rebuildBuildingStats } from "../../world/grid/Grid.js";
@@ -835,12 +835,48 @@ export class ColonyDirectorSystem {
     // Update phase
     director.phase = determinePhase(state.buildings ?? {});
     const autopilotEnabled = Boolean(state.ai?.enabled);
+
+    // R13 Plan-R13-autopilot-wait-llm (#6 P1) — startup readiness gate.
+    // Hold off phase-builder placement when autopilot is ON until either
+    // a first /api/ai/plan response (LLM or fallback) flipped
+    // state.ai.autopilotReady (handled in app/aiRuntimeStats.js) OR the
+    // safety timeout (BALANCE.autopilotReadyTimeoutSec, sim-sec from
+    // session start) fires here. Without the timeout a silent network
+    // hang would stall autopilot indefinitely. Scenario repair below
+    // honours the same gate so the colony's first placement on tick 1
+    // (warehouse, road) does not race the LLM's strategic guidance.
+    //
+    // Back-compat: only the explicit `false` (set by EntityFactory's
+    // initial state) gates. Tests / older saves that never wrote the
+    // field (undefined) are treated as ready, matching the legacy
+    // immediate-build behaviour they were written against.
+    if (autopilotEnabled && state.ai && state.ai.autopilotReady === false) {
+      const timeoutSec = Number(BALANCE.autopilotReadyTimeoutSec ?? 10);
+      if (nowSec >= timeoutSec) {
+        state.ai.autopilotReady = true;
+        state.ai.fallbackMode = true;
+        state.ai.autopilotReadyReason = "timeout";
+      } else {
+        // Awaiting first plan response — return early so no proposers
+        // run. director.lastEvalSec already advanced so we don't tighten
+        // the cadence after the gate clears.
+        director.automation = {
+          autopilotEnabled,
+          scenarioRepairAllowed: false,
+          phaseBuilder: "awaiting-first-plan",
+          connectorBuilder: "awaiting-first-plan",
+          autopilotReady: false,
+        };
+        return;
+      }
+    }
     const scenarioRepairAllowed = autopilotEnabled || Boolean(state.ai?.allowScenarioRepairWhenAutopilotOff);
     director.automation = {
       autopilotEnabled,
       scenarioRepairAllowed,
       phaseBuilder: autopilotEnabled ? "active" : "off",
       connectorBuilder: autopilotEnabled ? "active" : "off",
+      autopilotReady: state.ai?.autopilotReady !== false,
     };
 
     // Priority 1: fulfill scenario objectives (routes, depots)
