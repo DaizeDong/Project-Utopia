@@ -12,6 +12,7 @@
 import { clamp } from "../../../app/math.js";
 import { BALANCE } from "../../../config/balance.js";
 import { ROLE, TILE } from "../../../config/constants.js";
+import { recordResourceFlow } from "../../economy/ResourceSystem.js";
 import {
   applyConstructionWork,
   findOrReserveBuilderSite,
@@ -294,6 +295,32 @@ const FIGHTING = Object.freeze({
         target.alive = false;
         target.deathReason = "killed-by-worker";
         target.deathSec = state.metrics.timeSec;
+        // R13 Plan-R13-wildlife-hunt (P1) Step c — wildlife hunt food reward.
+        // When the worker downs an ANIMAL (predator), drop N food: into the
+        // killer's carry first (up to capacity), overflow into the colony
+        // food stockpile. Counted as a 'food/produced/wildlife-hunt' flow so
+        // the hunt loop has positive economic feedback alongside the
+        // existing hostilesSlain metric.
+        if (target.type === "ANIMAL" && target.kind === "PREDATOR") {
+          const reward = Number(BALANCE.wildlifeHuntFoodReward ?? 0);
+          if (reward > 0) {
+            // Carry soft-cap mirrors WorkerConditions.isCarryFull
+            // (workerDeliverThreshold × 2). Above the cap we overflow into
+            // state.resources.food directly so the kill never silently drops
+            // food on the ground.
+            const cap = Number(BALANCE.workerDeliverThreshold ?? 2.5) * 2;
+            worker.carry ??= { food: 0, wood: 0, stone: 0, herbs: 0 };
+            const carryFood = Number(worker.carry.food ?? 0);
+            const intoCarry = Math.max(0, Math.min(reward, cap - carryFood));
+            const overflow = reward - intoCarry;
+            if (intoCarry > 0) worker.carry.food = carryFood + intoCarry;
+            if (overflow > 0) {
+              state.resources ??= {};
+              state.resources.food = Number(state.resources.food ?? 0) + overflow;
+            }
+            recordResourceFlow(state, "food", "produced", reward);
+          }
+        }
       }
     }
   },
