@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-n (R13 Plan-R13-build-reorder, P1)
+
+### Plan-R13-build-reorder — Build bar regrouped by category; hotkeys renumbered 1-9/-/= to match visual order
+
+Implements the P1 user-directive UX fix from `assignments/homework7/Final-Polish-Loop/Round13/Plans/Plan-R13-build-reorder.md` (R13 user issue #4). User report: "Reorder build bar in index.html data-tool array: Bridge next to Road; Quarry + Herbs into Resource category next to Farm + Lumber; renumber hotkeys 1-12; update Help text." Pre-fix the bar was grouped Foundation (Demolish, Road, Farm, Lumber, Warehouse) → Defense (Wall, Bridge) → Processing (Quarry, Herbs, Kitchen, Smithy, Clinic), which split the resource category (Quarry+Herbs sat in the advanced/processing band despite being primary extractors) and separated Bridge from Road (both pathing infrastructure). Players had to jump across the bar to find related buildings.
+
+**Files changed:** 1 source modified — `index.html` (~22 LOC: rebuilt the 12-button block in `.tool-grid` per the R13 canonical order — Infrastructure: Road=1, Bridge=2, Wall=3, Demolish=4 → Resource: Farm=5, Lumber=6, Quarry=7, Herbs=8, Warehouse=9 → Processing: Kitchen=no-hotkey [0 reserved for select], Smithy=-, Clinic==. Each `data-hotkey` and parenthetical `(N)` inside `title=` updated in tandem; category headings renamed `Foundation` → `Infrastructure`, `Defense` → (folded into Infrastructure), `Processing` retained for the cooked-goods band). 1 existing test rewritten — `test/ui/build-bar-order.test.js` (~118 LOC: SUPERSEDES the v0.10.1-r6-PI Demolish-at-slot-2 invariant; new test pins the full 12-tool DOM order AND the hotkey mapping with a `extractToolHotkeyMap` helper, plus a "no two tools share the same hotkey" sanity check). No source-code edits beyond `index.html` — `BuildToolbar.js` iterates `[data-tool]` from the DOM at construction time, so reordering the DOM is sufficient. The `.hint` strip already advertises "1–9/-/=: tools" generically and needs no edit; the `.hotkey-grid` keybindings panel similarly references the digit range generically.
+
+**Acceptance:** DOM order in `index.html` matches the R13 canonical order from the plan's Suggestion A. Each tool's `data-hotkey` matches the table. Tooltip `(N)` parenthetical inside each `title=` matches the new hotkey. The kitchen retains its no-hotkey state (button-only access) because digit `0` is reserved for the runtime-injected Select tool. New ordering test (14 cases incl. order pin + 9 digit asserts + kitchen-no-hotkey + smithy/clinic + uniqueness check) passes; existing `test/index-html-tool-cost-consistency.test.js` continues to pass since it greps tooltips by tool name not by position. Test baseline preserved — 2 pre-existing fails (`exploit-regression: exploit-degradation` latent since v0.8.7, and `HUDController gives Score and Dev independent numeric tooltips` flake-on-full-suite that passes in isolation) are unrelated to this commit.
+
 ## [Unreleased] — v0.10.1-n (R13 Plan-R13-chip-label, P1)
 
 ### Plan-R13-chip-label — Scenario goal chips show "Farms 3/8" (label + count) instead of bare "3/8"
