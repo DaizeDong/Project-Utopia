@@ -120,38 +120,38 @@ body::after {
 }
 
 .slide h1 {
-  font-size: 40px;
+  font-size: clamp(34px, 4.4vh, 56px);
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin-bottom: 8px;
+  margin-bottom: clamp(6px, 1vh, 18px);
   line-height: 1.1;
 }
 
 .slide h1 .accent { color: var(--accent); }
 
 .slide h2 {
-  font-size: 28px;
+  font-size: clamp(24px, 3vh, 38px);
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: clamp(12px, 1.8vh, 24px);
   letter-spacing: -0.005em;
 }
 
 .slide h2 .accent { color: var(--accent); }
 
 .slide h3 {
-  font-size: 17px;
+  font-size: clamp(14px, 1.65vh, 20px);
   font-weight: 500;
   color: var(--text-soft);
-  margin-bottom: 10px;
+  margin-bottom: clamp(8px, 1.2vh, 18px);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .slide p {
-  font-size: 17px;
+  font-size: clamp(15px, 1.85vh, 22px);
   line-height: 1.5;
   color: var(--text-soft);
-  margin-bottom: 10px;
+  margin-bottom: clamp(8px, 1.2vh, 16px);
   max-width: 1100px;
 }
 
@@ -161,11 +161,11 @@ body::after {
 }
 
 .slide li {
-  font-size: 17px;
-  line-height: 1.45;
+  font-size: clamp(15px, 1.85vh, 22px);
+  line-height: 1.5;
   color: var(--text-soft);
-  margin-bottom: 8px;
-  padding-left: 22px;
+  margin-bottom: clamp(7px, 1.05vh, 14px);
+  padding-left: clamp(20px, 1.4vw, 26px);
   position: relative;
 }
 
@@ -202,49 +202,55 @@ body::after {
 
 .title-slide .super {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: clamp(11px, 1.3vh, 16px);
   color: var(--accent);
   letter-spacing: 0.25em;
-  margin-bottom: 24px;
+  margin-bottom: clamp(18px, 2.5vh, 32px);
 }
 
 .title-slide .title {
-  font-size: 80px;
+  font-size: clamp(60px, 9vh, 120px);
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 0.95;
-  margin-bottom: 20px;
+  margin-bottom: clamp(16px, 2.5vh, 32px);
 }
 
 .title-slide .subtitle {
-  font-size: 22px;
+  font-size: clamp(18px, 2.4vh, 32px);
   color: var(--text-soft);
-  margin-bottom: 36px;
+  margin-bottom: clamp(28px, 5vh, 64px);
   max-width: 900px;
   line-height: 1.3;
 }
 
 .title-slide .meta {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: clamp(12px, 1.4vh, 18px);
   color: var(--text-dim);
-  line-height: 1.8;
+  line-height: 1.85;
 }
 
 .title-slide .meta .label { color: var(--accent); display: inline-block; min-width: 110px; }
 
 .split {
   display: flex;
-  gap: 36px;
+  gap: clamp(28px, 3vw, 56px);
   flex: 1;
-  margin-top: 4px;
+  margin-top: clamp(4px, 0.6vh, 12px);
   min-height: 0;
 }
 
-.split > .col { display: flex; flex-direction: column; min-height: 0; }
+.split > .col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;  /* short columns center vertically — kills single-side whitespace */
+}
 
-.split > .col { flex: 1; min-width: 0; }
-.split > .col-narrow { flex: 0 0 380px; }
+.split > .col-narrow { flex: 0 0 clamp(320px, 28vw, 480px); }
 .split > .col-wide   { flex: 1.4; }
 
 .image-frame {
@@ -265,11 +271,14 @@ body::after {
   display: block;
 }
 
-/* Constrain images inside split columns so two stacked frames fit in viewport.
-   Default (multiple stacked): each image small enough so 2 fit in 1080px viewport.
-   :only-child override: single image gets more breathing room. */
-.split .col > .image-frame img            { max-height: 32vh; object-fit: cover; }
-.split .col > .image-frame:only-child img { max-height: 60vh; object-fit: cover; }
+/* Image height policy:
+   - default (multiple image-frame siblings stacked): 32vh — keeps two-image stacks balanced
+   - :only-of-type (single image alongside text): 42vh — image is the anchor, text is supplementary
+   - :only-child (image fills the entire col, no other content): 60vh — feature image */
+.split .col > .image-frame img                   { max-height: clamp(180px, 32vh, 380px); object-fit: cover; width: 100%; }
+.split .col > .image-frame:only-of-type img      { max-height: clamp(240px, 42vh, 520px); object-fit: cover; width: 100%; }
+.split .col > .image-frame:only-child img        { max-height: clamp(280px, 56vh, 680px); object-fit: cover; width: 100%; }
+.split .col > * + .image-frame                   { margin-top: clamp(10px, 1.5vh, 20px); }
 
 .image-frame .caption {
   position: absolute;
@@ -300,13 +309,13 @@ pre.code {
   border: 1px solid var(--grid-strong);
   border-left: 3px solid var(--accent);
   font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.5;
-  padding: 12px 18px;
+  font-size: clamp(12px, 1.4vh, 16px);
+  line-height: 1.55;
+  padding: clamp(10px, 1.5vh, 22px) clamp(14px, 1.9vh, 26px);
   border-radius: 4px;
   color: var(--pillar-1);
   overflow-x: auto;
-  margin: 6px 0;
+  margin: clamp(4px, 0.6vh, 10px) 0;
   max-width: 100%;
 }
 
@@ -318,39 +327,39 @@ pre.code .fn  { color: var(--pillar-2); }
 .callout {
   background: var(--bg-soft);
   border-left: 3px solid var(--pillar-1);
-  padding: 12px 18px;
-  margin: 12px 0;
-  font-size: 15px;
+  padding: clamp(10px, 1.5vh, 20px) clamp(14px, 1.9vh, 26px);
+  margin: clamp(8px, 1.2vh, 18px) 0;
+  font-size: clamp(14px, 1.65vh, 20px);
   color: var(--text-soft);
   font-style: italic;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 .callout strong { font-style: normal; color: var(--text); }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  margin: 12px 0;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: clamp(10px, 1.4vh, 18px);
+  margin: clamp(10px, 1.4vh, 20px) 0;
 }
 
 .metric {
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
   border-radius: 6px;
-  padding: 12px 16px;
+  padding: clamp(10px, 1.4vh, 18px) clamp(14px, 1.8vh, 22px);
   position: relative;
 }
 .metric .num {
   font-family: var(--mono);
-  font-size: 24px;
+  font-size: clamp(22px, 2.6vh, 36px);
   color: var(--accent);
   font-weight: 600;
   line-height: 1;
-  margin-bottom: 4px;
+  margin-bottom: clamp(4px, 0.6vh, 8px);
 }
 .metric .lbl {
-  font-size: 11px;
+  font-size: clamp(10px, 1.1vh, 13px);
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -358,14 +367,14 @@ pre.code .fn  { color: var(--pillar-2); }
 
 .diagram {
   font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: clamp(11px, 1.4vh, 16px);
+  line-height: 1.6;
   color: var(--text-soft);
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
-  padding: 14px 20px;
+  padding: clamp(12px, 1.7vh, 24px) clamp(16px, 2.2vh, 28px);
   border-radius: 4px;
-  margin: 8px 0;
+  margin: clamp(6px, 0.9vh, 14px) 0;
   white-space: pre;
 }
 .diagram .accent { color: var(--accent); }
@@ -507,7 +516,7 @@ pre.code .fn  { color: var(--pillar-2); }
         <img src="img/02-game-overview.png" alt="game overview" />
         <div class="caption">temperate plains · 12 workers</div>
       </div>
-      <div class="image-frame" style="margin-top:14px">
+      <div class="image-frame">
         <img src="img/09-build-bar.png" alt="build tools palette" />
         <div class="caption">build tools — infra · resource · processing</div>
       </div>
@@ -542,7 +551,7 @@ pre.code .fn  { color: var(--pillar-2); }
         <img src="img/03-inspector-fsm.png" alt="inspector showing FSM state" />
         <div class="caption">inspector — backstory · FSM state · intent · hunger</div>
       </div>
-      <div class="image-frame" style="margin-top:14px">
+      <div class="image-frame">
         <img src="img/07-combat.png" alt="combat preempt" />
         <div class="caption">combat preempt — workers fight predators · priority 1</div>
       </div>
@@ -642,7 +651,7 @@ pre.code .fn  { color: var(--pillar-2); }
         <li>Game runs cleanly without network — <strong>no degradation</strong></li>
         <li>Sim is fully <em>deterministic</em>: seeded RNG + fixed system order — 2060+ tests cover the AI surface without LLM calls</li>
       </ul>
-      <div class="image-frame" style="margin-top:16px">
+      <div class="image-frame">
         <img src="img/06-ai-log.png" alt="ai log director timeline" />
         <div class="caption">ai log · director timeline · llm + fallback mix</div>
       </div>
@@ -674,7 +683,7 @@ pre.code .fn  { color: var(--pillar-2); }
         <img src="img/04-archipelago-bridges.png" alt="archipelago with bridges" />
         <div class="caption">archipelago isles · bridge interleave</div>
       </div>
-      <div class="image-frame" style="margin-top:14px">
+      <div class="image-frame">
         <img src="img/08-fog-edge.png" alt="fog of war edge" />
         <div class="caption">fog of war — autopilot can't build on hidden tiles</div>
       </div>
@@ -831,8 +840,8 @@ pre.code .fn  { color: var(--pillar-2); }
         <div class="metric"><div class="num">+93.7%</div><div class="lbl">DevIndex vs HW6</div></div>
         <div class="metric"><div class="num">4 / 7</div><div class="lbl">stop-conditions met</div></div>
       </div>
-      <h3 style="margin-top:14px">Stop conditions</h3>
-      <p style="font-size:13px;line-height:1.85">
+      <h3>Stop conditions</h3>
+      <p style="line-height:1.9;margin-bottom:0">
         <span class="status ok">met</span> A1 stability · 8 rounds 0 P0<br/>
         <span class="status ok">met</span> A2 perf · 2 consecutive GREEN<br/>
         <span class="status ok">met</span> B1 action items closed<br/>
