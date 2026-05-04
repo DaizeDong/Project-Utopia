@@ -84,7 +84,7 @@ body::after {
 .slide {
   position: absolute;
   inset: 0;
-  padding: 56px 80px 80px;
+  padding: 36px 64px 56px;
   display: none;
   flex-direction: column;
   overflow: hidden;
@@ -120,38 +120,38 @@ body::after {
 }
 
 .slide h1 {
-  font-size: 48px;
+  font-size: 40px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   line-height: 1.1;
 }
 
 .slide h1 .accent { color: var(--accent); }
 
 .slide h2 {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   letter-spacing: -0.005em;
 }
 
 .slide h2 .accent { color: var(--accent); }
 
 .slide h3 {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 500;
   color: var(--text-soft);
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .slide p {
-  font-size: 19px;
-  line-height: 1.55;
+  font-size: 17px;
+  line-height: 1.5;
   color: var(--text-soft);
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   max-width: 1100px;
 }
 
@@ -161,11 +161,11 @@ body::after {
 }
 
 .slide li {
-  font-size: 19px;
-  line-height: 1.5;
+  font-size: 17px;
+  line-height: 1.45;
   color: var(--text-soft);
-  margin-bottom: 12px;
-  padding-left: 24px;
+  margin-bottom: 8px;
+  padding-left: 22px;
   position: relative;
 }
 
@@ -209,17 +209,17 @@ body::after {
 }
 
 .title-slide .title {
-  font-size: 88px;
+  font-size: 80px;
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 0.95;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .title-slide .subtitle {
-  font-size: 26px;
+  font-size: 22px;
   color: var(--text-soft);
-  margin-bottom: 56px;
+  margin-bottom: 36px;
   max-width: 900px;
   line-height: 1.3;
 }
@@ -235,10 +235,13 @@ body::after {
 
 .split {
   display: flex;
-  gap: 56px;
+  gap: 36px;
   flex: 1;
-  margin-top: 12px;
+  margin-top: 4px;
+  min-height: 0;
 }
+
+.split > .col { display: flex; flex-direction: column; min-height: 0; }
 
 .split > .col { flex: 1; min-width: 0; }
 .split > .col-narrow { flex: 0 0 380px; }
@@ -265,8 +268,8 @@ body::after {
 /* Constrain images inside split columns so two stacked frames fit in viewport.
    Default (multiple stacked): each image small enough so 2 fit in 1080px viewport.
    :only-child override: single image gets more breathing room. */
-.split .col > .image-frame img            { max-height: 36vh; object-fit: cover; }
-.split .col > .image-frame:only-child img { max-height: 64vh; object-fit: cover; }
+.split .col > .image-frame img            { max-height: 32vh; object-fit: cover; }
+.split .col > .image-frame:only-child img { max-height: 60vh; object-fit: cover; }
 
 .image-frame .caption {
   position: absolute;
@@ -297,13 +300,13 @@ pre.code {
   border: 1px solid var(--grid-strong);
   border-left: 3px solid var(--accent);
   font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.55;
-  padding: 18px 22px;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px 18px;
   border-radius: 4px;
   color: var(--pillar-1);
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 6px 0;
   max-width: 100%;
 }
 
@@ -315,39 +318,39 @@ pre.code .fn  { color: var(--pillar-2); }
 .callout {
   background: var(--bg-soft);
   border-left: 3px solid var(--pillar-1);
-  padding: 16px 24px;
-  margin: 16px 0;
-  font-size: 17px;
+  padding: 12px 18px;
+  margin: 12px 0;
+  font-size: 15px;
   color: var(--text-soft);
   font-style: italic;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 .callout strong { font-style: normal; color: var(--text); }
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 18px;
-  margin: 20px 0;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
 }
 
 .metric {
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
   border-radius: 6px;
-  padding: 16px 20px;
+  padding: 12px 16px;
   position: relative;
 }
 .metric .num {
   font-family: var(--mono);
-  font-size: 28px;
+  font-size: 24px;
   color: var(--accent);
   font-weight: 600;
   line-height: 1;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .metric .lbl {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -355,14 +358,14 @@ pre.code .fn  { color: var(--pillar-2); }
 
 .diagram {
   font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text-soft);
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
-  padding: 18px 24px;
+  padding: 14px 20px;
   border-radius: 4px;
-  margin: 12px 0;
+  margin: 8px 0;
   white-space: pre;
 }
 .diagram .accent { color: var(--accent); }
@@ -753,7 +756,7 @@ pre.code .fn  { color: var(--pillar-2); }
     <div class="col">
       <div class="image-frame">
         <img src="img/05-heat-lens.png" alt="heat lens convoy visualization" />
-        <div class="caption">heat lens · L · pressure visualization</div>
+        <div class="caption">heat lens · L · worker traffic pattern</div>
       </div>
       <h3 style="margin-top:24px">Bonus — fog-aware planning</h3>
       <ul>
@@ -808,39 +811,35 @@ pre.code .fn  { color: var(--pillar-2); }
     <div class="col col-wide">
       <h3>Three lessons</h3>
       <ul>
-        <li><strong>Spec fidelity isn't the goal — design fidelity is.</strong> a1 said Behavior Trees; I shipped FSM. Same intent, better fit. The "autonomous interpretable agents" intent is what mattered — the data structure followed.</li>
-        <li><strong>Telemetry first, optimization second.</strong> Lost 2 rounds chasing FPS bugs that turned out to be Playwright headless RAF capping `requestAnimationFrame` at 1 Hz. The sim was running at 200+ fps the whole time. <em>Measure your measurement</em> before measuring your subject.</li>
-        <li><strong>AI agents need hard guardrails, not clever prompts.</strong> Across 13 review-plan-implement-validate rounds and 140+ commits, what made the agents trustworthy was constraints — frozen feature scope, named rollback anchors, file-ownership tracks — <em>not</em> prompt cleverness.</li>
+        <li><strong>Spec fidelity isn't the goal — design fidelity is.</strong> a1 said Behavior Trees; I shipped FSM. Same intent, better fit — the "autonomous interpretable agents" intent is what mattered.</li>
+        <li><strong>Telemetry first, optimization second.</strong> Lost 2 rounds chasing FPS bugs that turned out to be Playwright headless RAF capping at 1&nbsp;Hz. <em>Measure your measurement</em> before measuring your subject.</li>
+        <li><strong>AI agents need hard guardrails, not clever prompts.</strong> Across 13 rounds + 140 commits — frozen scope, rollback anchors, file-ownership tracks made agents trustworthy. Constraints &gt; cleverness.</li>
       </ul>
-      <h3 style="margin-top:28px">AI-coding insights</h3>
+      <h3 style="margin-top:18px">AI-coding insights</h3>
       <ul>
-        <li>The LLM was best as a <strong>reviewer</strong> — even more than as a coder. Letting one subagent design, another implement, a third audit caught issues a single agent would have rationalized away.</li>
-        <li>Most surprising: an LLM agent <strong>bisected a 4-commit regression</strong> by running benchmarks at every commit between R8 and R10 — found a 60% DevIndex drop, traced it to a single line of phase-offset math.</li>
+        <li>LLM was best as a <strong>reviewer</strong> — one designs, another implements, a third audits. Caught issues single-agent runs would rationalize away.</li>
+        <li>Most surprising: an agent <strong>bisected a 4-commit regression</strong> — ran benchmarks at every commit between R8 and R10, found a 60% DevIndex drop, traced it to one line of phase-offset math.</li>
       </ul>
     </div>
     <div class="col">
       <h3>By the numbers</h3>
-      <div class="metrics">
+      <div class="metrics" style="grid-template-columns:repeat(2,1fr)">
         <div class="metric"><div class="num">13</div><div class="lbl">review rounds</div></div>
         <div class="metric"><div class="num">~140</div><div class="lbl">commits</div></div>
-        <div class="metric"><div class="num">2060</div><div class="lbl">tests passing</div></div>
-        <div class="metric"><div class="num">0</div><div class="lbl">tests failing</div></div>
-        <div class="metric"><div class="num">7</div><div class="lbl">consecutive 0-fail rounds</div></div>
-        <div class="metric"><div class="num">+93.7%</div><div class="lbl">DevIndex vs HW6 baseline</div></div>
+        <div class="metric"><div class="num">2060</div><div class="lbl">tests pass · 0 fail</div></div>
+        <div class="metric"><div class="num">7</div><div class="lbl">rounds 0-fail streak</div></div>
+        <div class="metric"><div class="num">+93.7%</div><div class="lbl">DevIndex vs HW6</div></div>
+        <div class="metric"><div class="num">4 / 7</div><div class="lbl">stop-conditions met</div></div>
       </div>
-      <h3 style="margin-top:24px">Stop conditions</h3>
-      <p style="font-size:15px">
-        <span class="status ok">met</span> A1 stability (8 rounds 0 P0)<br/>
-        <span class="status ok">met</span> A2 perf (2 consecutive GREEN)<br/>
+      <h3 style="margin-top:14px">Stop conditions</h3>
+      <p style="font-size:13px;line-height:1.85">
+        <span class="status ok">met</span> A1 stability · 8 rounds 0 P0<br/>
+        <span class="status ok">met</span> A2 perf · 2 consecutive GREEN<br/>
         <span class="status ok">met</span> B1 action items closed<br/>
         <span class="status ok">met</span> validator 2 GREEN streak<br/>
-        <span class="status warn">pend</span> 2 D-grade systems pending<br/>
+        <span class="status warn">pend</span> 2 D-grade systems · HW8<br/>
         <span class="status warn">pend</span> 4 author-fill items
       </p>
-      <div class="image-frame" style="margin-top:20px">
-        <img src="img/10-game-over-tier.png" alt="game over panel R12 fix" />
-        <div class="caption">honest game-over copy · r12 fix</div>
-      </div>
     </div>
   </div>
 </section>
