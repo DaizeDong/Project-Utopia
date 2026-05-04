@@ -489,6 +489,13 @@ export const BALANCE = Object.freeze({
   // director thrash (most events run 20-30s).
   environmentDecisionIntervalSec: 22,
   policyDecisionIntervalSec: 10,
+  // R13 Plan-R13-autopilot-wait-llm (#6 P1) — safety timeout (sim-sec) for
+  // the autopilot startup gate. ColonyDirectorSystem flips
+  // state.ai.fallbackMode + state.ai.autopilotReady true when this many
+  // sim-seconds elapse without either a successful LLM plan response or an
+  // explicit fallback response. Prevents indefinite startup stall when
+  // /api/ai/plan silently hangs (no response, no error).
+  autopilotReadyTimeoutSec: 10,
   // v0.8.5 Tier 3: 24 → 30. Eliminate overlap with refresh interval so
   // policy churn doesn't compound the director thrash.
   policyTtlDefaultSec: 30,

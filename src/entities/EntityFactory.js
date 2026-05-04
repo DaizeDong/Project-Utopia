@@ -978,6 +978,17 @@ export function createInitialGameState(options = {}) {
       runtimeProfile: "default",
       manualModeLocked: false,
       mode: "fallback",
+      // R13 Plan-R13-autopilot-wait-llm (#6 P1) — startup gate. Holds off
+      // BuildAdvisor / phase-builder placement when autopilot is ON until
+      // the first LLM /api/ai/plan response is received OR fallback mode
+      // is active OR the safety timeout (BALANCE.autopilotReadyTimeoutSec)
+      // fires. Driven by recordAiResponse on the first non-fallback
+      // result, by the same recorder when a fallback result lands while
+      // gating, and by ColonyDirectorSystem when the timeout elapses.
+      autopilotReady: false,
+      firstPlanReceivedSec: null,
+      autopilotReadyReason: null,
+      fallbackMode: false,
       lastError: "",
       lastEnvironmentError: "",
       lastPolicyError: "",
