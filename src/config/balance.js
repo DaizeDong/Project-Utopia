@@ -1238,6 +1238,18 @@ export const BALANCE = Object.freeze({
   // blocked once farms are online. Reviewer's PC log showed 3/3 recruits
   // at drainRate −12/-24 food/s; this gate would have blocked all three.
   recruitMinFoodHeadroomSec: 60,
+  // R13 user issue #1 Plan-R13-recruit-prob (P1) — fast-track recruit cooldown
+  // when the colony is simultaneously food-surplus AND labor-deficit (pending
+  // build backlog). Player observed colonies sit at low population while
+  // building queue grows because the recruit cooldown is fixed regardless of
+  // context. When `foodHeadroomSec >= recruitFastTrackHeadroomSec` AND
+  // `state.constructionSites.length >= recruitFastTrackPendingJobs`, the
+  // cooldown drains at `1 / recruitFastTrackCooldownMult` (i.e. 0.5 → 2× speed,
+  // shrinking the effective 9s cooldown to ~4.5s). Both gates re-checked every
+  // tick — drain reverts to 1× the moment either condition fails.
+  recruitFastTrackHeadroomSec: 120,
+  recruitFastTrackPendingJobs: 3,
+  recruitFastTrackCooldownMult: 0.5,
 });
 
 // v0.8.2 Round-5b (02b-casual Step 1) — Casual UX timing constants.
