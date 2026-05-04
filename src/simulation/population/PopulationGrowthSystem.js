@@ -115,9 +115,32 @@ export class RecruitmentSystem {
     // (1) Cooldown ticks down every frame regardless of 1Hz cadence so the
     // recruit cap honors wall-clock pacing rather than tick rate.
     const dtNum = Math.max(0, Number(dt) || 0);
+
+    // R13 #1 Plan-R13-recruit-prob (P1): fast-track cooldown drain when food
+    // surplus AND build backlog. Both gates re-checked every frame so drain
+    // reverts to 1× the moment either condition fails. We model the runway
+    // for the CURRENT population (not workers+1) — purpose here is "are we
+    // currently comfortable enough to fast-track", not "would a new mouth
+    // tip us over". The PC-recruit-flow-rate-gate at the spawn branch still
+    // models workers+1.
+    const workersForHeadroom = Array.isArray(state.agents)
+      ? state.agents.reduce((n, a) => n + (a?.type === "WORKER" && a.alive !== false ? 1 : 0), 0)
+      : 0;
+    const fastTrackHeadroomSec = computeFoodHeadroomSec(state, workersForHeadroom);
+    const pendingBuildJobs = Array.isArray(state.constructionSites)
+      ? state.constructionSites.length
+      : 0;
+    const fastTrackArmed =
+      fastTrackHeadroomSec >= Number(BALANCE.recruitFastTrackHeadroomSec ?? 120)
+      && pendingBuildJobs >= Number(BALANCE.recruitFastTrackPendingJobs ?? 3);
+    const drainMult = fastTrackArmed
+      ? 1 / Math.max(0.05, Number(BALANCE.recruitFastTrackCooldownMult ?? 0.5))
+      : 1;
+    state.metrics.recruitFastTrackArmed = fastTrackArmed;
+
     state.controls.recruitCooldownSec = Math.max(
       0,
-      Number(state.controls.recruitCooldownSec ?? 0) - dtNum,
+      Number(state.controls.recruitCooldownSec ?? 0) - dtNum * drainMult,
     );
 
     // 1Hz cadence for the queue-fill / spawn loop.

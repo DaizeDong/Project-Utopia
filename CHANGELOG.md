@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — v0.10.1-o (R13 Plan-R13-recruit-prob, P1)
+
+### Plan-R13-recruit-prob — Fast-track recruit cooldown (2× drain) when food surplus AND build backlog ≥ 3
+
+Implements the P1 user-directive pacing fix from `assignments/homework7/Final-Polish-Loop/Round13/Plans/Plan-R13-recruit-prob.md` (R13 user issue #1). User report: "When food surplus AND pending build backlog is large, increase recruit probability/cooldown — colony sits at low population while building queue grows because the recruit cooldown is fixed regardless of context." Pre-fix `PopulationGrowthSystem` drained `state.controls.recruitCooldownSec` at a fixed 1× rate (currently 9 sim-sec between auto-spawns). When `foodHeadroomSec` is comfortably positive AND the build queue is deep, the colony is simultaneously food-surplus AND labor-deficit — the textbook condition to ramp recruitment, but the fixed cooldown was the bottleneck.
+
+**Files changed:** 2 source modified — `src/config/balance.js` (+12 LOC: 3 new constants `recruitFastTrackHeadroomSec=120`, `recruitFastTrackPendingJobs=3`, `recruitFastTrackCooldownMult=0.5` + commentary citing this plan), `src/simulation/population/PopulationGrowthSystem.js` (+~22 LOC: pre-tick computation of the fast-track gate using existing `computeFoodHeadroomSec` helper + `state.constructionSites.length` + multiplier on the dt drain). 1 new test — `test/recruit-fast-track.test.js` (+~110 LOC, 5 cases: baseline 1× drain, headroom-only 1× (AND gate), jobs-only 1× (AND gate), both-armed 2× drain, mid-tick toggle reverts to 1×). Telemetry: `state.metrics.recruitFastTrackArmed` (boolean) exposes the gate state for HUD/inspector consumers. Hard-freeze compliant: zero new mechanics, zero new RNG dependency — purely additive constants and a single multiplier branch on the existing dt drain. Effective cooldown shrinks from 9s → ~4.5s when both gates fire; reverts to 9s the moment either condition fails.
+
+**Acceptance:** Cooldown drains at 2× the wall-clock rate exactly when `foodHeadroomSec >= 120` AND `state.constructionSites.length >= 3`; reverts to 1× the moment either gate fails. No change to `effectiveCap`, food cost, queue limits, or PC-recruit-flow-rate-gate (the spawn-branch headroom check still models workers+1). Test baseline preserved — 1 pre-existing fail (`exploit-regression: exploit-degradation`, latent since v0.8.7) is unrelated to this commit and reproduces at parent commit `5115e14`.
+
 ## [Unreleased] — v0.10.1-n (R13 Plan-R13-build-reorder, P1)
 
 ### Plan-R13-build-reorder — Build bar regrouped by category; hotkeys renumbered 1-9/-/= to match visual order
