@@ -54,4 +54,7 @@ node --test test/*.test.js
 
 ## Confirm `git log --oneline -2`
 
-(Run after commit; populated below)
+```
+06f1745 feat(chip-label r13): Plan-R13-chip-label (P1) — capitalize scenario goal chip name
+54cb911 feat(fog-aware-build r13): Plan-R13-fog-aware-build (P0) — autopilot scoutNeeded latch + IDLE worker fog-edge bias
+```

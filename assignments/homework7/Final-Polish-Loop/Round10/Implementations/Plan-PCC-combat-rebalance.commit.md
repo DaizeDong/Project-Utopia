@@ -30,11 +30,11 @@ Restored GUARD vs non-GUARD damage hierarchy (R5 PB collapsed it by sharing `gua
 ## CONFIRM `git log --oneline -2`
 
 ```
-<post-commit>
+57fa7a9 balance(combat r10): Plan-PCC-combat-rebalance — restore GUARD identity + close kite gap + saboteurs sting back
 fb44dda fix(ux r10): Plan-PAA-game-over-copy — disambiguate end-screen tier titles + promote session.reason to hero
 ```
 
-(Updated below after commit.)
+Parent → head: `fb44dda` → `57fa7a9`.
 
 ## Hard-freeze compliance
 

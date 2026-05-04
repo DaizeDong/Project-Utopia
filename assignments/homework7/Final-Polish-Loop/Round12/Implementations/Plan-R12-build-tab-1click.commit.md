@@ -48,4 +48,7 @@ Full-suite: **2001 pass / 0 fail / 4 skip** (120 suites, 75s) — baseline prese
 
 ## `git log --oneline -2` confirmation
 
-Run after commit; see commit footer below.
+```
+a67c6f1 fix(ui-onboarding r12): Plan-R12-build-tab-1click — first click on Build tab opens palette directly
+925c340 fix(ui-rationality r12): Plan-R12-stable-tier-fix — colony health tier on real food runway
+```

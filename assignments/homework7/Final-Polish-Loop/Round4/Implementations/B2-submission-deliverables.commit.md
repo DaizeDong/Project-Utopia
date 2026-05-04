@@ -4,10 +4,10 @@ round: 4
 date: 2026-05-01
 track: docs
 parent_commit: 813ee1e
-head_commit: TBD
+head_commit: c2be8cf
 plan_rollback_anchor: f749184
 status: committed
-loc_delta: TBD
+loc_delta: +109 / -0
 files_changed: 1
 new_tests: 0
 fps_impact: none

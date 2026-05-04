@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] — HW7 Final Submission deliverables (a7.md + Final-Polish-Loop audit + final-crit deck)
+
+### docs(submission) — Consolidate HW7 final-submission deliverables for grading
+
+Adds the final HW7 submission report (`assignments/homework7/a7.md`) following the same format as `assignments/homework6/a6.md`, plus checks in the complete 13-round audit trail under `assignments/homework7/Final-Polish-Loop/` (Reviewers/Enhancers/Coders prompts; Round0–Round13 Feedbacks/Plans/Implementations/Validation; Hotfix iter1–iter5 closeouts; ORCHESTRATOR.md). Also adds `assignments/final-crit/` with the 10-slide self-contained HTML deck (`slides.html`), the speaker script, two-pillar deep-dive, demo plan, Q&A prep, and key-metrics cheat sheet that match the in-game dark-monospace aesthetic. Cleans up local debug artefacts: `.gitignore` now excludes `.playwright-cli/` and `output/debug/` so per-machine launcher logs and Playwright CLI scratch don't pollute the working tree.
+
+**Files:** `assignments/homework7/a7.md` (new, ~150 LOC, mirrors a6.md format with Final Build / Source Code / Demo Video / Engineering Retrospective covering Pillars overview, Playtest Resolution table mapping HW6 R9 P1/P2/AI-1..10 findings to HW7 ship-rounds, Technical Post-Mortem on BT→FSM pivot + deferred D-grade refactors + freeze deferrals + headless-RAF lesson, AI Tool Evaluation in honest first-person prose per Post-Mortem TA §1.5 anti-LLM-polish guidance); `assignments/homework7/Final-Polish-Loop/` (~70 new files, Round0–Round13 audit trail + Reviewer/Enhancer/Coder prompts); `assignments/final-crit/` (~10 files, 10-slide HTML deck + companion docs); `.gitignore` (M, +2 lines: `.playwright-cli/` + `output/debug/`); 19 *.commit.md files (M, prior-round deliverable closeouts); 1 file deleted (`output/debug/dev-full.log` — now ignored).
+
+**Acceptance:** `assignments/homework7/a7.md` is the grader-facing submission entry-point. Demo video status remains pending — `Demo-Video-Plan.md` carries the shot-list and post-upload checklist (replace `status: pending` with `published` + add `url:` field; mirror into README + Post-Mortem in same commit). No source code or test changes in this commit; test baseline preserved at 2060 pass / 0 fail / 4 skip from prior commit `9c7ed5a`.
+
 ## [Unreleased] — v0.10.1-q (R13 Plan-R13-wildlife-hunt, P1)
 
 ### Plan-R13-wildlife-hunt — Wildlife spawn cadence 2× faster, predator round-robin, hunt food reward

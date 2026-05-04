@@ -43,8 +43,12 @@ Total source/test delta: ~+30 / -1 LOC (excluding the new-test boilerplate, whic
 7. Test baseline 1993 → 1997 (+4 net), 0 fail, 4 skip — preserved.
 
 ## Commit
-HEAD: ${HEAD_HASH} — `fix(ui-debug r12): Plan-R12-debug-leak-gate — gate aiModeVal corner chip behind isDevMode`
+HEAD: `ef4c29e` — `fix(ui-debug r12): Plan-R12-debug-leak-gate — gate aiModeVal corner chip behind isDevMode`
 Parent: `4cfc3b8` (R12 Plan-R12-glued-tokens)
 
 ## Confirmation
-See `git log --oneline -2` output appended below after commit.
+```
+$ git log --oneline -2
+ef4c29e fix(ui-debug r12): Plan-R12-debug-leak-gate — gate aiModeVal corner chip behind isDevMode
+4cfc3b8 fix(ui-narrative r12): Plan-R12-glued-tokens — Title-Case + colon-space AI summary
+```

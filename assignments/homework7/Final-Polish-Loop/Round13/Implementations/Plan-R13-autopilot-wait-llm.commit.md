@@ -64,4 +64,9 @@ When autopilot is ON and not-yet-ready, we early-return before the fog gate ever
 
 ## `git log --oneline -2` (post-commit)
 
-(See block at bottom of file after commit.)
+```
+30f28a0 feat(autopilot-wait-llm r13): Plan-R13-autopilot-wait-llm (P1) — gate ColonyDirector phase-builder until first /api/ai/plan response or fallback or 10s timeout
+17af3cb feat(recruit-prob r13): Plan-R13-recruit-prob (P1) — fast-track recruit cooldown 2x when foodHeadroom>=120s AND pendingBuildJobs>=3
+```
+
+Parent `17af3cb` immediately precedes head `30f28a0`. Commit landed as expected.

@@ -16,7 +16,7 @@ COMPLETE — all 3 plan acceptance gates met, 4 plan steps executed (Steps 1–6
 ## Parent → Head
 
 - parent: `652220f` (R10 Plan-PEE-goal-attribution)
-- head: `0a44a35` (R11 Plan-PFF-revert-cascade-regression — see CONFIRM block below)
+- head: `36a1f9e` (R11 Plan-PFF-revert-cascade-regression — see CONFIRM block below)
 
 ## Files changed
 
@@ -44,4 +44,7 @@ All three plan acceptance gates met; post-fix numbers actually slightly exceed `
 
 ## CONFIRM `git log --oneline -2`
 
-(See command output appended after the commit step.)
+```
+36a1f9e fix(lifecycle r11): Plan-PFF-revert-cascade-regression — clamp starvation phase-offset to -10..0
+652220f ux(milestone r10): Plan-PEE-goal-attribution — depot-aware "first warehouse" toast (drop "first extra" misnomer)
+```

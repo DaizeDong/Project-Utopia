@@ -9,6 +9,8 @@ docs/assignment4/release-manifest.json
 output/playwright/
 artifacts/
 .playwright-mcp/
+.playwright-cli/
+output/debug/
 results/
 screenshot-*
 snapshot-*.md

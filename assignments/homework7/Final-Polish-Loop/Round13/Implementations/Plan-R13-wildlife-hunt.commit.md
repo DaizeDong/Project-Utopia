@@ -33,4 +33,7 @@ Total: ~62 production LOC + ~110 test LOC. Within plan's ~60 production LOC scop
 
 ## Confirm `git log --oneline -2`
 
-(captured after commit)
+```
+74da308 feat(wildlife-hunt r13): Plan-R13-wildlife-hunt (P1) — wildlife spawn cadence 2x faster + predator round-robin + worker hunt food reward
+30f28a0 feat(autopilot-wait-llm r13): Plan-R13-autopilot-wait-llm (P1) — gate ColonyDirector phase-builder until first /api/ai/plan response or fallback or 10s timeout
+```

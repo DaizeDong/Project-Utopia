@@ -4,7 +4,7 @@
 **Track:** code (P1, R10 implementer 5/5 — final)
 **Status:** SHIPPED
 **Parent commit:** `30eeec3` (Plan-PDD-smart-pathing)
-**Head commit:** see `git log --oneline -2` below
+**Head commit:** `652220f`
 
 ---
 
@@ -39,5 +39,6 @@ Approx +20/-7 source LOC, well within plan's ~40 LOC budget. Hard-freeze complia
 
 ```
 $ git log --oneline -2
-<filled in after commit>
+652220f ux(milestone r10): Plan-PEE-goal-attribution — depot-aware "first warehouse" toast (drop "first extra" misnomer)
+30eeec3 fix(pathing r10): Plan-PDD-smart-pathing — dual-search road planning + multi-tile bridge sequences
 ```

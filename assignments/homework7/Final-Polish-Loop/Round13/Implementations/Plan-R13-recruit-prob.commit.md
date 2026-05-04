@@ -46,4 +46,9 @@ One micro-deviation from plan Step 2 wording: plan suggested checking `state?.co
 
 ## `git log --oneline -2` (post-commit)
 
-See terminal output appended at end of session by orchestrator. Confirmed the head commit message `feat(recruit-prob r13): Plan-R13-recruit-prob (P1) ...` precedes parent `5115e14 feat(build-reorder r13): ...`.
+```
+17af3cb feat(recruit-prob r13): Plan-R13-recruit-prob (P1) — fast-track recruit cooldown 2x when foodHeadroom>=120s AND pendingBuildJobs>=3
+5115e14 feat(build-reorder r13): Plan-R13-build-reorder (P1) — regroup build bar by category, renumber hotkeys 1-9/-/=
+```
+
+Parent `5115e14` immediately precedes head `17af3cb`. Commit landed as expected.

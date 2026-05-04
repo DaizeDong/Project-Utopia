@@ -39,8 +39,12 @@ Total source/test delta: +85 / -2 LOC. Plan target ~20 LOC for code; the plan's 
 6. Substring `saboteursstrike` does not appear in rendered HUD — negative regression in `world-explain-ai-summary` test 2.
 
 ## Commit
-HEAD: `<see git log --oneline -2 below>`
+HEAD: `4cfc3b8` — `fix(ui-narrative r12): Plan-R12-glued-tokens — Title-Case + colon-space AI summary`
 Parent: `fa6cda1` (R11 Plan-A1-regenerate-return)
 
 ## Confirmation
-`git log --oneline -2` output captured in commit step.
+```
+$ git log --oneline -2
+4cfc3b8 fix(ui-narrative r12): Plan-R12-glued-tokens — Title-Case + colon-space AI summary
+fa6cda1 api(launcher r11): Plan-A1-regenerate-return — {ok:true,...} return contract
+```
