@@ -4,7 +4,7 @@ import { getLongRunEventTuning } from "../../config/longRunProfile.js";
 import { getScenarioEventCandidates, getScenarioRuntime } from "../scenarios/ScenarioFactory.js";
 import { emitEvent, EVENT_TYPES } from "../../simulation/meta/GameEventBus.js";
 import { mutateTile } from "../../simulation/lifecycle/TileMutationHooks.js";
-import { pushWarning } from "../../app/warnings.js";
+import { pushWarning, pushToastWithCooldown } from "../../app/warnings.js";
 
 function tileKey(ix, iz) {
   return `${ix},${iz}`;
@@ -1173,11 +1173,15 @@ export class WorldEventSystem {
         event._warningEmitted = true;
         event._spawnAtSec ??= currentSec + leadSec;
         if (leadSec > 0) {
-          pushWarning(
+          // R13 sanity Plan-R13-sanity-toast-dedup — route through cooldown
+          // helper so back-to-back raids in the same minute don't double-fire
+          // the warning. dedupKey is per-event so a *different* raid still
+          // warns; cooldownSec=60 covers the 30s lead + 30s buffer.
+          pushToastWithCooldown(
             state,
             `Bandit raid incoming in ${leadSec}s — build walls or draft guards`,
             "warning",
-            "WorldEventSystem",
+            { dedupKey: `raid-warning-${event.id ?? event.type}`, cooldownSec: 60, source: "WorldEventSystem" },
           );
         }
       }

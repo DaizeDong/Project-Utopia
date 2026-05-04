@@ -65,7 +65,7 @@ import {
   applyUiProfile,
 } from "./devModeGate.js";
 import { randomPassableTile, tileToWorld, createInitialGrid, countTilesByType, MAP_TEMPLATES, validateGeneratedGrid, pickBootSeed } from "../world/grid/Grid.js";
-import { pushWarning } from "./warnings.js";
+import { pushWarning, pushToastWithCooldown } from "./warnings.js";
 import { buildLongRunTelemetry } from "./longRunTelemetry.js";
 import { resetAiRuntimeStats } from "./aiRuntimeStats.js";
 import { evaluateRunOutcomeState, maybeRecordFamineChronicle } from "./runOutcome.js";
@@ -1451,16 +1451,19 @@ export class GameApp {
     // per session).
     const requestedTemplateId = options.templateId ?? options.template ?? null;
     if (options.template !== undefined && options.templateId === undefined) {
+      // R13 sanity Plan-R13-sanity-toast-dedup — route through cooldown
+      // helper. cooldownSec=9999 → effectively once-per-session (matches
+      // the original __deprecationWarned.template intent). The state-side
+      // flag is retained for back-compat readers but the helper is the
+      // single source of dedup.
       this.state.__deprecationWarned ??= {};
-      if (!this.state.__deprecationWarned.template) {
-        this.state.__deprecationWarned.template = true;
-        pushWarning(
-          this.state,
-          "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
-          "warn",
-          "GameApp",
-        );
-      }
+      this.state.__deprecationWarned.template = true;
+      pushToastWithCooldown(
+        this.state,
+        "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
+        "warn",
+        { dedupKey: "deprecated-template-key", cooldownSec: 9999, source: "GameApp" },
+      );
     }
     if (requestedTemplateId) {
       this.regenerateWorld({
@@ -2527,16 +2530,19 @@ export class GameApp {
     // they take precedence over the menu's pending selection.
     const overrideTemplateId = options.templateId ?? options.template ?? null;
     if (options.template !== undefined && options.templateId === undefined) {
+      // R13 sanity Plan-R13-sanity-toast-dedup — route through cooldown
+      // helper. cooldownSec=9999 → effectively once-per-session (matches
+      // the original __deprecationWarned.template intent). The state-side
+      // flag is retained for back-compat readers but the helper is the
+      // single source of dedup.
       this.state.__deprecationWarned ??= {};
-      if (!this.state.__deprecationWarned.template) {
-        this.state.__deprecationWarned.template = true;
-        pushWarning(
-          this.state,
-          "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
-          "warn",
-          "GameApp",
-        );
-      }
+      this.state.__deprecationWarned.template = true;
+      pushToastWithCooldown(
+        this.state,
+        "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
+        "warn",
+        { dedupKey: "deprecated-template-key", cooldownSec: 9999, source: "GameApp" },
+      );
     }
     // Apply the menu's pending template selection before entering active play.
     const selectedId = overrideTemplateId ?? this.state?.controls?.mapTemplateId;
