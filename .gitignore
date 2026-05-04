@@ -26,6 +26,8 @@ docs/benchmarks/nightly/
 # Agent-Feedback-Loop reviewer screenshots (Playwright artefacts)
 assignments/homework6/Agent-Feedback-Loop/Round*/screenshots/
 assignments/homework6/Agent-Feedback-Loop/Round*/Feedbacks/screenshots/
+assignments/homework7/Final-Polish-Loop/Round*/Feedbacks/screenshots/
+assignments/homework7/Final-Polish-Loop/Round*/screenshots/
 /*.png
 /*.jpeg
 /*.jpg
