@@ -1444,6 +1444,30 @@ export class GameApp {
     const runKind = options.runKind === "operator" ? "operator" : "idle";
     const aiMode = options.aiMode === "llm" ? "llm" : "fallback";
     const resetRuntimeStats = options.resetRuntimeStats !== false;
+    // R13 #9 (i+ii) Plan-R13-A1-P2-cleanup — accept `templateId` as canonical
+    // and forward to regenerateWorld so fresh-boot template overrides actually
+    // land. Back-compat: `template` still accepted with one-time deprecation
+    // warning routed through pushToastWithCooldown (cooldownSec=9999 → once
+    // per session).
+    const requestedTemplateId = options.templateId ?? options.template ?? null;
+    if (options.template !== undefined && options.templateId === undefined) {
+      this.state.__deprecationWarned ??= {};
+      if (!this.state.__deprecationWarned.template) {
+        this.state.__deprecationWarned.template = true;
+        pushWarning(
+          this.state,
+          "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
+          "warn",
+          "GameApp",
+        );
+      }
+    }
+    if (requestedTemplateId) {
+      this.regenerateWorld({
+        templateId: requestedTemplateId,
+        seed: options.seed,
+      }, { phase: "menu" });
+    }
     this.state.ai.runtimeProfile = "long_run";
     this.state.controls.timeScale = 1;
     this.state.controls.stepFramesPending = 0;
@@ -2497,9 +2521,25 @@ export class GameApp {
     return mode;
   }
 
-  startSession() {
+  startSession(options = {}) {
+    // R13 #9 (i+ii) Plan-R13-A1-P2-cleanup — accept `templateId` (canonical)
+    // and `template` (deprecated) as fresh-boot overrides. When provided,
+    // they take precedence over the menu's pending selection.
+    const overrideTemplateId = options.templateId ?? options.template ?? null;
+    if (options.template !== undefined && options.templateId === undefined) {
+      this.state.__deprecationWarned ??= {};
+      if (!this.state.__deprecationWarned.template) {
+        this.state.__deprecationWarned.template = true;
+        pushWarning(
+          this.state,
+          "configureLongRunMode/startRun: 'template' key is deprecated, use 'templateId'",
+          "warn",
+          "GameApp",
+        );
+      }
+    }
     // Apply the menu's pending template selection before entering active play.
-    const selectedId = this.state?.controls?.mapTemplateId;
+    const selectedId = overrideTemplateId ?? this.state?.controls?.mapTemplateId;
     const selectedWidth = Number(this.state?.controls?.mapWidth);
     const selectedHeight = Number(this.state?.controls?.mapHeight);
     const loadedId = this.state?.world?.mapTemplateId;
@@ -2511,7 +2551,7 @@ export class GameApp {
     if (needsTemplateChange || needsWidthChange || needsHeightChange) {
       this.regenerateWorld({
         templateId: selectedId ?? loadedId,
-        seed: this.state.world.mapSeed,
+        seed: options.seed ?? this.state.world.mapSeed,
         terrainTuning: this.state.controls.terrainTuning,
         width: Number.isFinite(selectedWidth) && selectedWidth >= 24 ? Math.floor(selectedWidth) : loadedWidth,
         height: Number.isFinite(selectedHeight) && selectedHeight >= 24 ? Math.floor(selectedHeight) : loadedHeight,

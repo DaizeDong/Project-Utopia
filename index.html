@@ -1267,6 +1267,11 @@
     #actionVal[data-kind="success"], #warningVal[data-kind="success"] { color: #66bb6a; font-weight: 700; }
     #actionVal[data-kind="error"], #warningVal[data-kind="error"] { color: #ef5350; font-weight: 700; }
     #actionVal[data-kind="info"], #warningVal[data-kind="info"] { color: var(--text); }
+    /* R13 #9 (iv) Plan-R13-A1-P2-cleanup — warnings count pill (amber, hidden when zero) */
+    .hud-warn-pill { display: inline-block; min-width: 14px; padding: 0 5px; margin-left: 4px;
+      font-size: 10px; font-weight: 700; line-height: 14px; text-align: center;
+      color: #1a1a1a; background: #ffb300; border-radius: 7px; vertical-align: 1px; }
+    .hud-warn-pill[hidden] { display: none; }
 
     /* === GRIDS === */
     .management-grid, .benchmark-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 6px; }
@@ -3314,7 +3319,7 @@
             <div class="kv"><div>Frame</div><div id="frameVal">0.00 ms</div></div>
             <div class="kv"><div>Entities</div><div id="agentVal">0</div></div>
             <div class="kv"><div>Workers</div><div id="workerCountVal">0</div></div>
-            <div class="kv" title="Latest critical warning. Red = error, amber = info"><div>Warning</div><div id="warningVal">none</div></div>
+            <div class="kv" title="Latest critical warning. Red = error, amber = info"><div>Warning <span id="hudWarningsCountPill" class="hud-warn-pill" hidden title="Warnings since last clear">0</span></div><div id="warningVal">none</div></div>
           </div>
         </details>
 

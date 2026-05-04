@@ -242,6 +242,10 @@ export class HUDController {
     this.eventVal = document.getElementById("eventVal");
     this.timeVal = document.getElementById("timeVal");
     this.warningVal = document.getElementById("warningVal");
+    // R13 #9 (iv) Plan-R13-A1-P2-cleanup — warnings count pill in the
+    // Warning row label. Shows `state.metrics.warnings.length` (capped to 99+
+    // for display) and hides when zero. Cleared by clearWarnings(state).
+    this.warningsCountPill = document.getElementById("hudWarningsCountPill");
     this.actionVal = document.getElementById("actionVal");
     this.toolVal = document.getElementById("toolVal");
     this.simVal = document.getElementById("simVal");
@@ -2123,6 +2127,17 @@ export class HUDController {
     } else {
       this.warningVal.textContent = digest.warning || logistics || frontier.summary;
       this.warningVal.setAttribute("data-kind", digest.severity === "error" ? "error" : "info");
+    }
+
+    // R13 #9 (iv) Plan-R13-A1-P2-cleanup — warnings count pill.
+    if (this.warningsCountPill) {
+      const wcount = Array.isArray(state.metrics?.warnings) ? state.metrics.warnings.length : 0;
+      if (wcount > 0) {
+        this.warningsCountPill.hidden = false;
+        this.warningsCountPill.textContent = wcount > 99 ? "99+" : String(wcount);
+      } else {
+        this.warningsCountPill.hidden = true;
+      }
     }
 
     if (this.gameTimer) {
