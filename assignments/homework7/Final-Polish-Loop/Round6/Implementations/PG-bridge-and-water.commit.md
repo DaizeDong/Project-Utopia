@@ -3,7 +3,7 @@
 **Status:** completed.
 **Track:** code only.
 **Parent commit:** `351bff6` (refactor(arch round-5): C1-build-proposer …)
-**Head commit (will be):** populated after `git commit` lands.
+**Head commit:** `d62cdf0` (fix(playability r6): PG-bridge-and-water — workers complete bridges from shore + roadAStar interleaves bridge steps)
 
 ## Summary
 
@@ -47,5 +47,6 @@ Total src delta: **+194 / -26 LOC = 168 net**. Plan estimated ~75; over-delivere
 
 ```
 $ git log --oneline -2
-<populated below after commit>
+d62cdf0 fix(playability r6): PG-bridge-and-water — workers complete bridges from shore + roadAStar interleaves bridge steps
+351bff6 refactor(arch round-5): C1-build-proposer — extract BuildProposer interface + port 4 priority-95+ safety nets
 ```

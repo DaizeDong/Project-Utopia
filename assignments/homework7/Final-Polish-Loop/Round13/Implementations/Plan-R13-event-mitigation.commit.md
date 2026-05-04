@@ -42,4 +42,9 @@ Full suite: **2012 pass / 0 fail / 4 skip** (parent baseline 2008 / 0 / 4; +4 fr
 
 ## CONFIRM `git log --oneline -2`
 
-See post-commit verification at the end of this log (filled after `git commit`).
+```
+8918bb1 feat(events r13): Plan-R13-event-mitigation (P0) — 30s pre-event warning + preparedness-capped intensity
+a1a501f fix(fog-reset r13): Plan-R13-fog-reset (P0) — clear fog state on regenerate
+```
+
+Head: `8918bb1`. Parent: `a1a501f` (matches plan rollback anchor's chain).

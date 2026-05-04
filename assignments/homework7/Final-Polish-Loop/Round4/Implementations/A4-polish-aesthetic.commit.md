@@ -4,7 +4,7 @@ plan_source: Round4/Plans/A4-polish-aesthetic.md
 round: 4
 date: 2026-05-01
 parent_commit: c2be8cf
-head_commit: _filled by orchestrator after commit_
+head_commit: ba5b969
 status: COMMITTED
 track: code
 freeze_check: PASS

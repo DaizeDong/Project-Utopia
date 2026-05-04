@@ -113,4 +113,10 @@ M  CHANGELOG.md                                 (new top section)
 
 ## Confirm
 
-See attached `git log --oneline -2` output below the commit step.
+```
+$ git log --oneline -2
+cad38c3 v0.10.1-r4-A5: zero-lumber safety net + Recovery food-floor gate + per-map starting wood
+ba5b969 v0.10.1-A4 (R4 V5 hotfix triplet): BuildToolbar Math.floor + PressureLens dedup + EntityFocus stale hint
+```
+
+Parent (ba5b969) → head (cad38c3). Single commit, track=code. 8 files changed / +421 / -14.

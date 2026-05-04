@@ -46,4 +46,7 @@ Identical to pre-fix counts. The `@media` rule fires only at 1025-1440 px viewpo
 
 ## CONFIRM `git log --oneline -2`
 
-(emitted by post-commit step; see report)
+```
+0fe2b9c ux(responsive r11): Plan-PGG-responsive-collapse — <1440px sidebar 60px rail + entity-focus blur + topbar Run-timer demote
+474c50f ux(render r11): Plan-PGG-sphere-dominance — sphere 0.42 + halo + glyph 0.75 + grid hairlines
+```

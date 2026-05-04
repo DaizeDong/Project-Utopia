@@ -2,7 +2,7 @@
 
 **Status:** SHIPPED
 **Parent commit:** `e1977c0`
-**Head commit:** (filled after commit)
+**Head commit:** `d2b864e`
 **Plan:** `Round7/Plans/Plan-PL-terrain-min-guarantee.md`
 **Track:** code
 
