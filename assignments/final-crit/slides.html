@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Project Utopia — Final Crit · Daize Dong dd1376</title>
+<title>Project Utopia · Final Crit · Daize Dong dd1376</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
 /* ============================================================
@@ -23,8 +23,9 @@
   --accent:         #ffb84a;     /* warm amber — road foot-traffic tint (R11 PHH) */
   --accent-soft:    rgba(255,184,74,0.18);
   --halo:           #ffffff;     /* sphere halo (R11 PGG) */
-  --pillar-1:       #5dd6d6;     /* AI cyan */
-  --pillar-2:       #b8e1ff;     /* path light-blue */
+  --pillar-1:       #5dd6d6;     /* NPC AI · cyan */
+  --pillar-2:       #c39bff;     /* Swarm & Boids · violet */
+  --pillar-3:       #b8e1ff;     /* Pathfinding · light-blue */
   --critical:       #ff6b6b;
   --healthy:        #6ed098;
   --mono:           "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
@@ -84,7 +85,7 @@ body::after {
 .slide {
   position: absolute;
   inset: 0;
-  padding: clamp(40px, 4.5vh, 64px) clamp(56px, 5vw, 96px) clamp(48px, 5vh, 72px);
+  padding: clamp(34px, 4.2vh, 64px) clamp(54px, 5vw, 100px) clamp(40px, 4.4vh, 72px);
   display: none;
   flex-direction: column;
   overflow: hidden;
@@ -120,39 +121,39 @@ body::after {
 }
 
 .slide h1 {
-  font-size: clamp(40px, 5.4vh, 76px);
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  margin-bottom: clamp(14px, 2vh, 28px);
-  line-height: 1.08;
+  font-size: clamp(48px, 6.4vh, 96px);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin-bottom: clamp(18px, 2.4vh, 34px);
+  line-height: 1.05;
 }
 
 .slide h1 .accent { color: var(--accent); }
 
 .slide h2 {
-  font-size: clamp(28px, 3.6vh, 48px);
-  font-weight: 600;
-  margin-bottom: clamp(14px, 2vh, 28px);
-  letter-spacing: -0.005em;
+  font-size: clamp(32px, 4.2vh, 60px);
+  font-weight: 700;
+  margin-bottom: clamp(16px, 2.4vh, 32px);
+  letter-spacing: -0.01em;
 }
 
 .slide h2 .accent { color: var(--accent); }
 
 .slide h3 {
-  font-size: clamp(15px, 1.8vh, 22px);
+  font-size: clamp(16px, 2vh, 26px);
   font-weight: 500;
   color: var(--text-soft);
-  margin-bottom: clamp(12px, 1.7vh, 22px);
+  margin-bottom: clamp(14px, 2vh, 26px);
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.1em;
 }
 
 .slide p {
-  font-size: clamp(16px, 2.05vh, 26px);
+  font-size: clamp(18px, 2.3vh, 30px);
   line-height: 1.55;
   color: var(--text-soft);
-  margin-bottom: clamp(12px, 1.7vh, 22px);
-  max-width: 1100px;
+  margin-bottom: clamp(14px, 2vh, 26px);
+  max-width: 1200px;
 }
 
 .slide ul, .slide ol {
@@ -161,11 +162,11 @@ body::after {
 }
 
 .slide li {
-  font-size: clamp(16px, 2.05vh, 26px);
+  font-size: clamp(18px, 2.3vh, 30px);
   line-height: 1.55;
   color: var(--text-soft);
-  margin-bottom: clamp(10px, 1.5vh, 20px);
-  padding-left: clamp(22px, 1.5vw, 30px);
+  margin-bottom: clamp(12px, 1.8vh, 24px);
+  padding-left: clamp(24px, 1.6vw, 34px);
   position: relative;
 }
 
@@ -202,34 +203,36 @@ body::after {
 
 .title-slide .super {
   font-family: var(--mono);
-  font-size: clamp(12px, 1.45vh, 18px);
+  font-size: clamp(13px, 1.6vh, 22px);
   color: var(--accent);
-  letter-spacing: 0.28em;
-  margin-bottom: clamp(20px, 2.8vh, 38px);
+  letter-spacing: 0.3em;
+  margin-bottom: clamp(24px, 3vh, 44px);
 }
 
 .title-slide .title {
-  font-size: clamp(76px, 11vh, 156px);
+  font-size: clamp(96px, 13vh, 200px);
   font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 0.95;
-  margin-bottom: clamp(20px, 2.8vh, 38px);
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  margin-bottom: clamp(24px, 3vh, 44px);
 }
 
 .title-slide .subtitle {
-  font-size: clamp(22px, 2.8vh, 40px);
+  font-size: clamp(26px, 3.2vh, 48px);
   color: var(--text-soft);
-  margin-bottom: clamp(32px, 5.5vh, 80px);
-  max-width: 1000px;
+  margin-bottom: clamp(36px, 6vh, 96px);
+  max-width: 1100px;
   line-height: 1.3;
 }
 
 .title-slide .meta {
   font-family: var(--mono);
-  font-size: clamp(13px, 1.55vh, 20px);
+  font-size: clamp(15px, 1.75vh, 24px);
   color: var(--text-dim);
-  line-height: 1.95;
+  line-height: 2;
 }
+
+.title-slide .meta .label { min-width: clamp(110px, 9vw, 160px); }
 
 .title-slide .meta .label { color: var(--accent); display: inline-block; min-width: 110px; }
 
@@ -321,13 +324,13 @@ pre.code {
   border: 1px solid var(--grid-strong);
   border-left: 3px solid var(--accent);
   font-family: var(--mono);
-  font-size: clamp(13px, 1.55vh, 19px);
+  font-size: clamp(14px, 1.7vh, 22px);
   line-height: 1.55;
-  padding: clamp(14px, 1.9vh, 26px) clamp(18px, 2.2vh, 30px);
+  padding: clamp(16px, 2.1vh, 30px) clamp(20px, 2.4vh, 34px);
   border-radius: 4px;
   color: var(--pillar-1);
   overflow-x: auto;
-  margin: clamp(8px, 1.2vh, 18px) 0;
+  margin: clamp(10px, 1.4vh, 22px) 0;
   max-width: 100%;
 }
 
@@ -339,9 +342,9 @@ pre.code .fn  { color: var(--pillar-2); }
 .callout {
   background: var(--bg-soft);
   border-left: 3px solid var(--pillar-1);
-  padding: clamp(14px, 1.9vh, 28px) clamp(18px, 2.4vh, 32px);
-  margin: clamp(12px, 1.7vh, 24px) 0;
-  font-size: clamp(15px, 1.85vh, 24px);
+  padding: clamp(16px, 2.1vh, 30px) clamp(20px, 2.6vh, 36px);
+  margin: clamp(14px, 1.9vh, 26px) 0;
+  font-size: clamp(17px, 2.1vh, 28px);
   color: var(--text-soft);
   font-style: italic;
   line-height: 1.55;
@@ -364,14 +367,14 @@ pre.code .fn  { color: var(--pillar-2); }
 }
 .metric .num {
   font-family: var(--mono);
-  font-size: clamp(26px, 3.4vh, 48px);
+  font-size: clamp(30px, 4vh, 60px);
   color: var(--accent);
   font-weight: 600;
   line-height: 1;
-  margin-bottom: clamp(6px, 0.9vh, 12px);
+  margin-bottom: clamp(8px, 1vh, 14px);
 }
 .metric .lbl {
-  font-size: clamp(11px, 1.25vh, 16px);
+  font-size: clamp(13px, 1.45vh, 20px);
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -379,44 +382,92 @@ pre.code .fn  { color: var(--pillar-2); }
 
 .diagram {
   font-family: var(--mono);
-  font-size: clamp(12px, 1.55vh, 18px);
-  line-height: 1.65;
+  font-size: clamp(13px, 1.65vh, 22px);
+  line-height: 1.7;
   color: var(--text-soft);
   background: var(--bg-card);
   border: 1px solid var(--grid-strong);
-  padding: clamp(16px, 2.2vh, 30px) clamp(20px, 2.6vh, 36px);
+  padding: clamp(18px, 2.5vh, 36px) clamp(24px, 3vh, 44px);
   border-radius: 4px;
-  margin: clamp(10px, 1.4vh, 20px) 0;
+  margin: clamp(12px, 1.6vh, 22px) 0;
   white-space: pre;
 }
 .diagram .accent { color: var(--accent); }
 .diagram .pillar1 { color: var(--pillar-1); }
 .diagram .pillar2 { color: var(--pillar-2); }
+.diagram .pillar3 { color: var(--pillar-3); }
 .diagram .crit { color: var(--critical); }
 
 .pillar-tag {
   display: inline-block;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: clamp(11px, 1.3vh, 18px);
   letter-spacing: 0.18em;
-  padding: 3px 10px;
+  padding: clamp(3px, 0.5vh, 6px) clamp(10px, 1.2vh, 16px);
   border-radius: 2px;
   text-transform: uppercase;
-  margin-right: 8px;
+  margin-right: clamp(8px, 1vh, 14px);
 }
 .pillar-tag.p1 { color: var(--pillar-1); border: 1px solid var(--pillar-1); }
 .pillar-tag.p2 { color: var(--pillar-2); border: 1px solid var(--pillar-2); }
+.pillar-tag.p3 { color: var(--pillar-3); border: 1px solid var(--pillar-3); }
+
+/* large pillar cards used on the three-pillars overview slide */
+.pillar-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--grid-strong);
+  border-top: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: clamp(18px, 2.6vh, 38px) clamp(20px, 2.8vh, 40px);
+  flex: 1;
+  min-width: 0;
+}
+.pillar-card.p1 { border-top-color: var(--pillar-1); }
+.pillar-card.p2 { border-top-color: var(--pillar-2); }
+.pillar-card.p3 { border-top-color: var(--pillar-3); }
+.pillar-card .num {
+  font-family: var(--mono);
+  font-size: clamp(14px, 1.65vh, 22px);
+  letter-spacing: 0.2em;
+  margin-bottom: clamp(10px, 1.4vh, 18px);
+}
+.pillar-card.p1 .num { color: var(--pillar-1); }
+.pillar-card.p2 .num { color: var(--pillar-2); }
+.pillar-card.p3 .num { color: var(--pillar-3); }
+.pillar-card .name {
+  font-size: clamp(22px, 2.8vh, 38px);
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.15;
+  margin-bottom: clamp(10px, 1.4vh, 18px);
+}
+.pillar-card .desc {
+  font-size: clamp(15px, 1.85vh, 24px);
+  color: var(--text-soft);
+  line-height: 1.5;
+  margin-bottom: clamp(12px, 1.6vh, 22px);
+}
+.pillar-card .qa {
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.4vh, 18px);
+  color: var(--text-dim);
+  margin-top: auto;
+  line-height: 1.5;
+}
+.pillar-card .qa strong { color: var(--accent); font-weight: 500; display: block; margin-bottom: 4px; }
 
 /* status pills */
 .status {
   display: inline-block;
   font-family: var(--mono);
-  font-size: clamp(11px, 1.2vh, 14px);
+  font-size: clamp(12px, 1.35vh, 18px);
   letter-spacing: 0.1em;
-  padding: clamp(2px, 0.4vh, 5px) clamp(8px, 1vh, 12px);
+  padding: clamp(3px, 0.5vh, 6px) clamp(10px, 1.2vh, 16px);
   border-radius: 2px;
   text-transform: uppercase;
-  margin-right: clamp(6px, 0.8vh, 10px);
+  margin-right: clamp(8px, 1vh, 14px);
 }
 .status.ok    { color: var(--healthy);  border: 1px solid var(--healthy); }
 .status.warn  { color: var(--accent);   border: 1px solid var(--accent); }
@@ -484,7 +535,7 @@ pre.code .fn  { color: var(--pillar-2); }
 <!-- 01 · TITLE                                                    -->
 <!-- ============================================================ -->
 <section class="slide title-slide active" data-slide="1">
-  <div class="slide-num">01 / 11</div>
+  <div class="slide-num">01 / 12</div>
   <div class="title-bg" style="
     position:absolute;inset:0;
     background-image:url('img/01-splash-hero.png');
@@ -495,11 +546,11 @@ pre.code .fn  { color: var(--pillar-2); }
     z-index:-1;"></div>
   <div class="super">CG Project · Final Crit · 2026-05-04</div>
   <div class="title">Project<br/>Utopia.</div>
-  <div class="subtitle">A minimalist colony simulation where you don't<br/>micromanage individuals — autonomous agents do.</div>
+  <div class="subtitle">A minimalist colony simulation. You don't<br/>micromanage individuals; autonomous agents do.</div>
   <div class="meta">
     <div><span class="label">AUTHOR</span> Daize Dong · NetID dd1376 · Solo</div>
-    <div><span class="label">PILLARS</span> NPC AI · Pathfinding & Navigation</div>
-    <div><span class="label">STACK</span> Three.js + Vite · vanilla JS · LLM-augmented</div>
+    <div><span class="label">PILLARS</span> Behavior · Swarm · Navigation</div>
+    <div><span class="label">STACK</span> Three.js + Vite · vanilla JavaScript · LLM-augmented</div>
     <div><span class="label">REPO</span> github.com/DaizeDong/Project-Utopia</div>
   </div>
 </section>
@@ -509,339 +560,359 @@ pre.code .fn  { color: var(--pillar-2); }
 <!-- ============================================================ -->
 <section class="slide" data-slide="2">
   <div class="slide-tag">§ 1 · INTRO</div>
-  <div class="slide-num">02 / 11</div>
+  <div class="slide-num">02 / 12</div>
   <h1>What it is.</h1>
   <div class="split">
     <div class="col">
       <h3>Premise</h3>
       <ul>
-        <li>Player builds <strong>infrastructure</strong> + sets <strong>priorities</strong></li>
-        <li>Agents — workers, visitors, predators, herds — execute autonomously on a <strong>96 × 72 tile grid</strong></li>
-        <li>Every living entity is a <em>simple sphere</em>; the world is tile-based; aesthetic is intentionally <em>minimalist</em></li>
+        <li>Player builds <strong>infrastructure</strong> and sets <strong>priorities</strong></li>
+        <li>Workers, visitors, predators and herds execute autonomously on a <strong>96 by 72 tile grid</strong> (about 6900 tiles)</li>
+        <li>Every living entity is a <em>simple sphere</em>; the world is tile-based; the aesthetic is intentionally <em>minimalist</em></li>
         <li>The system reacts; <strong>you steer</strong></li>
       </ul>
-      <h3 style="margin-top:32px">Why simple spheres?</h3>
-      <p>From the original spec (a1.md): the goal is to make the AI <strong>visible and interpretable</strong>. Reducing visual complexity lets you watch <em>flowing convoys</em>, <em>scattering herds</em>, <em>traffic patterns reshaping</em> as you build.</p>
+      <h3 style="margin-top:clamp(20px,2.6vh,40px)">Why simple spheres?</h3>
+      <p>The goal is to make autonomous behavior <strong>visible and interpretable</strong>. Reducing visual complexity lets you watch <em>flowing convoys</em>, <em>scattering herds</em>, and <em>traffic patterns reshaping</em> as you build.</p>
     </div>
-    <div class="col col-narrow">
+    <div class="col">
       <div class="image-frame">
         <img src="img/02-game-overview.png" alt="game overview" />
         <div class="caption">temperate plains · 12 workers</div>
       </div>
       <div class="image-frame">
         <img src="img/09-build-bar.png" alt="build tools palette" />
-        <div class="caption">build tools — infra · resource · processing</div>
+        <div class="caption">build tools · infrastructure, resource, processing</div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 03 · PILLAR 1 · CHALLENGE                                     -->
+<!-- 03 · THREE PILLARS OVERVIEW                                   -->
 <!-- ============================================================ -->
 <section class="slide" data-slide="3">
-  <div class="slide-tag">§ 2 · pillar 1 · npc ai</div>
-  <div class="slide-num">03 / 11</div>
-  <h1>The challenge — autonomous &amp; <span class="accent">interpretable</span>.</h1>
+  <div class="slide-tag">§ 1 · INTRO</div>
+  <div class="slide-num">03 / 12</div>
+  <h1>The <span class="accent">three core pillars</span>.</h1>
+  <div class="slide-body">
+  <p style="text-align:center;max-width:1500px;margin:0 auto clamp(20px,2.6vh,36px) auto">From the original project proposal: three challenges from <strong>computer graphics</strong> and <strong>game AI</strong>, each addressing a different question about running a colony where the player does not control individuals.</p>
+  <div class="split" style="gap:clamp(24px,2.4vw,44px);margin-top:0">
+    <div class="pillar-card p1">
+      <div class="num">01 · BEHAVIOR</div>
+      <div class="name">NPC AI &amp;<br/>Behavior</div>
+      <div class="desc">Each agent decides every tick what to do: harvest, deliver, build, eat, fight, or rest. Players can click any agent to see why.</div>
+      <div class="qa"><strong>Question</strong>How does an individual agent decide?</div>
+    </div>
+    <div class="pillar-card p2">
+      <div class="num">02 · SWARM</div>
+      <div class="name">Swarm &amp;<br/>Boids</div>
+      <div class="desc">Crowds and herds form emergent group motion. Convoys flow on roads, herds scatter from predators, traffic patterns shift as you build.</div>
+      <div class="qa"><strong>Question</strong>How do groups move together?</div>
+    </div>
+    <div class="pillar-card p3">
+      <div class="num">03 · NAVIGATION</div>
+      <div class="name">Pathfinding &amp;<br/>Navigation</div>
+      <div class="desc">Agents walk a 6900-tile world full of water, walls, predators and other agents. Paths must adapt to terrain, threats, and unrevealed land.</div>
+      <div class="qa"><strong>Question</strong>How does an agent get from A to B?</div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- 04 · PILLAR 1 · BEHAVIOR · CHALLENGE                          -->
+<!-- ============================================================ -->
+<section class="slide" data-slide="4">
+  <div class="slide-tag">§ 2 · pillar 1 · behavior</div>
+  <div class="slide-num">04 / 12</div>
+  <h1><span class="accent">Pillar 1</span>: how an agent decides.</h1>
   <div class="split">
     <div class="col">
-      <p>Each agent must:</p>
+      <h3>The challenge</h3>
+      <p>Each agent in the world (workers, visitors, animals) must:</p>
       <ul>
-        <li>Continuously evaluate state <em>(hunger, carry, role, surroundings)</em></li>
+        <li>Continuously evaluate its own state <em>(hunger, carry, role, surroundings)</em></li>
         <li>Choose among many behaviors <em>(harvest, deliver, build, eat, fight, rest)</em></li>
         <li>React to global colony state <em>(food shortage, raid, blueprint placed)</em></li>
-        <li>Be <strong>interpretable</strong> — click any agent → know <em>why</em></li>
+        <li>Be <strong>interpretable</strong>: click any agent and see <em>why</em> it is doing what it is doing</li>
       </ul>
       <div class="callout">
-        <strong>a1.md committed to:</strong> Behavior Trees with a shared blackboard.<br/>
-        <strong>I shipped:</strong> a flat priority FSM dispatcher.<br/>
-        Same intent. Better fit. Why? — next slide.
+        <strong>Original proposal</strong>: a Behavior Tree, a tree of conditional checks with a shared blackboard.<br/>
+        <strong>What shipped</strong>: a flat Priority State Machine, a small set of named states with priority-ordered transitions.<br/>
+        Same intent, better fit. Reasoning on the next slide.
       </div>
     </div>
     <div class="col">
       <div class="image-frame">
-        <img src="img/03-inspector-fsm.png" alt="inspector showing FSM state" />
-        <div class="caption">inspector — backstory · FSM state · intent · hunger</div>
+        <img src="img/03-inspector-fsm.png" alt="inspector showing agent state" />
+        <div class="caption">inspector · backstory, state, intent, hunger</div>
       </div>
       <div class="image-frame">
         <img src="img/07-combat.png" alt="combat preempt" />
-        <div class="caption">combat preempt — workers fight predators · priority 1</div>
+        <div class="caption">a worker preempts harvest to fight a predator</div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 04 · PILLAR 1 · PRIORITY-FSM                                  -->
+<!-- 05 · PILLAR 1 · BEHAVIOR · SOLUTION                           -->
 <!-- ============================================================ -->
-<section class="slide" data-slide="4">
-  <div class="slide-tag">§ 2 · pillar 1 · npc ai</div>
-  <div class="slide-num">04 / 11</div>
-  <h1><span class="accent">PriorityFSM</span> — flat, priority-ordered, preemptable.</h1>
+<section class="slide" data-slide="5">
+  <div class="slide-tag">§ 2 · pillar 1 · behavior</div>
+  <div class="slide-num">05 / 12</div>
+  <h1><span class="accent">Priority State Machine</span>, plus a Large Language Model on top.</h1>
   <div class="split">
     <div class="col">
-      <h3>BT vs FSM — why FSM won</h3>
+      <h3>Why a state machine, not a tree</h3>
       <ul>
-        <li>BT asks <em>"what to do given conditions?"</em></li>
-        <li>FSM asks <em>"what transitions can fire from current state?"</em></li>
-        <li>Our problem is <strong>transition-driven</strong>: a HARVESTING worker who sees a saboteur 2 tiles away needs to <em>preempt</em> instantly</li>
-        <li>FSM expresses preemption as a <strong>priority-1 transition</strong> — one line</li>
+        <li>A Behavior Tree asks: <em>"what action under these conditions?"</em></li>
+        <li>A state machine asks: <em>"what transitions can fire from this state?"</em></li>
+        <li>Our problem is <strong>transition-driven</strong>. A worker harvesting wood must <em>preempt instantly</em> when a saboteur appears two tiles away.</li>
+        <li>The state machine expresses preemption as one priority-1 transition: a single line. A tree would need an interrupt check at every node.</li>
       </ul>
-      <h3 style="margin-top:24px">12 worker states</h3>
+      <h3 style="margin-top:clamp(16px,2vh,28px)">Twelve named worker states</h3>
 <pre class="code">
-<span class="com">// the entire transition table fits on one screen</span>
 <span class="kw">IDLE</span> → SEEKING_HARVEST | SEEKING_BUILD | FIGHTING | RESTING
 <span class="kw">SEEKING_HARVEST</span> → HARVESTING | <span class="kw">FIGHTING</span> (preempt)
 <span class="kw">HARVESTING</span> → DELIVERING | <span class="kw">FIGHTING</span> (preempt)
 <span class="kw">DELIVERING</span> → DEPOSITING | IDLE
 <span class="kw">SEEKING_BUILD</span> → BUILDING | IDLE
 <span class="kw">BUILDING</span> → IDLE | <span class="kw">FIGHTING</span> (preempt)
-<span class="kw">FIGHTING</span> → IDLE  <span class="com">// always settles back</span>
-</pre>
+<span class="kw">FIGHTING</span> → IDLE  <span class="com">// always settles back</span></pre>
     </div>
     <div class="col">
-      <h3>The dispatcher — 125 LOC</h3>
-<pre class="code">
-<span class="kw">tick</span>(entity, state, services) {
-  <span class="kw">const</span> fsm = entity.fsm;
-  <span class="kw">for</span> (<span class="kw">const</span> t <span class="kw">of</span> transitions[fsm.state]) {
-    <span class="com">// priority-ordered; first match wins</span>
-    <span class="kw">if</span> (t.<span class="fn">when</span>(entity, state, services)) {
-      this.<span class="fn">#exit</span>(entity, state);
-      fsm.state = t.to;
-      this.<span class="fn">#enter</span>(entity, state);
-      <span class="kw">break</span>;
-    }
-  }
-  states[fsm.state].<span class="fn">tick</span>(entity, state);
-}
-</pre>
-      <div class="metrics">
-        <div class="metric"><div class="num">125</div><div class="lbl">LOC dispatcher</div></div>
-        <div class="metric"><div class="num">12 + 9</div><div class="lbl">worker + visitor states</div></div>
-        <div class="metric"><div class="num">38</div><div class="lbl">priority-ordered transitions</div></div>
-        <div class="metric"><div class="num">60+</div><div class="lbl">FSM tests</div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ -->
-<!-- 05 · PILLAR 1 · LLM INTEGRATION                               -->
-<!-- ============================================================ -->
-<section class="slide" data-slide="5">
-  <div class="slide-tag">§ 2 · pillar 1 · npc ai</div>
-  <div class="slide-num">05 / 11</div>
-  <h1>Two-layer AI — <span class="accent">LLM strategy</span> over FSM execution.</h1>
-  <div class="split">
-    <div class="col col-wide">
-      <div class="diagram"><span class="pillar1">┌──────────────────────────────────────────┐</span>
-<span class="pillar1">│</span>  <span class="accent">strategic director</span> · gpt-5.4-nano       <span class="pillar1">│</span>
-<span class="pillar1">│</span>     reads world state (JSON summary)      <span class="pillar1">│</span>
-<span class="pillar1">│</span>     emits structured plan:                <span class="pillar1">│</span>
-<span class="pillar1">│</span>     [ build quarry @90,                    <span class="pillar1">│</span>
-<span class="pillar1">│</span>       recruit BUILDER,                     <span class="pillar1">│</span>
-<span class="pillar1">│</span>       reassign role X to GUARD ]           <span class="pillar1">│</span>
-<span class="pillar1">└──────────────┬───────────────────────────┘</span>
-               <span class="accent">│</span> intents · 0.5s sim-time gate
-<span class="pillar1">┌──────────────▼───────────────────────────┐</span>
-<span class="pillar1">│</span>  <span class="accent">build proposer</span> · per-system registry    <span class="pillar1">│</span>
-<span class="pillar1">│</span>  → enqueues blueprints                    <span class="pillar1">│</span>
-<span class="pillar1">└──────────────┬───────────────────────────┘</span>
-               <span class="accent">│</span>
-<span class="pillar1">┌──────────────▼───────────────────────────┐</span>
-<span class="pillar1">│</span>  <span class="accent">priority FSM</span> · per-worker execution     <span class="pillar1">│</span>
-<span class="pillar1">│</span>     workers pick up nearest available     <span class="pillar1">│</span>
-<span class="pillar1">│</span>     blueprint via SEEKING_BUILD state     <span class="pillar1">│</span>
-<span class="pillar1">└──────────────────────────────────────────┘</span></div>
-    </div>
-    <div class="col">
-      <h3>Why this works</h3>
+      <h3>Two-layer architecture</h3>
+      <div class="diagram">
+<span class="pillar1">┌──────────────────────────────────────┐</span>
+<span class="pillar1">│</span>  <span class="accent">strategic director</span>                  <span class="pillar1">│</span>
+<span class="pillar1">│</span>  · uses a <span class="accent">Large Language Model</span>      <span class="pillar1">│</span>
+<span class="pillar1">│</span>  · reads world state                 <span class="pillar1">│</span>
+<span class="pillar1">│</span>  · emits a high-level plan           <span class="pillar1">│</span>
+<span class="pillar1">└────────────────┬─────────────────────┘</span>
+                 <span class="accent">│</span>  intents
+<span class="pillar1">┌────────────────▼─────────────────────┐</span>
+<span class="pillar1">│</span>  <span class="accent">priority state machine</span>              <span class="pillar1">│</span>
+<span class="pillar1">│</span>  · per-worker execution              <span class="pillar1">│</span>
+<span class="pillar1">│</span>  · picks nearest available task      <span class="pillar1">│</span>
+<span class="pillar1">└──────────────────────────────────────┘</span></div>
       <ul>
-        <li>LLM <em>never</em> moves a worker directly — it just <strong>changes priorities</strong></li>
-        <li>If LLM offline, a <strong>deterministic fallback director</strong> emits the same plan-shape from rule-based heuristics</li>
-        <li>Game runs cleanly without network — <strong>no degradation</strong></li>
-        <li>Sim is fully <em>deterministic</em>: seeded RNG + fixed system order — 2060+ tests cover the AI surface without LLM calls</li>
+        <li>The language model <em>never moves a worker directly</em>. It only changes priorities.</li>
+        <li>When the language model is offline, a <strong>deterministic fallback director</strong> emits the same plan shape from rule heuristics. The game runs cleanly without network.</li>
+        <li>Over <strong>2000 automated tests</strong> cover the AI without any language model calls.</li>
       </ul>
-      <div class="image-frame">
-        <img src="img/06-ai-log.png" alt="ai log director timeline" />
-        <div class="caption">ai log · director timeline · llm + fallback mix</div>
-      </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 06 · PILLAR 2 · CHALLENGE                                     -->
+<!-- 06 · PILLAR 2 · SWARM · CHALLENGE                             -->
 <!-- ============================================================ -->
 <section class="slide" data-slide="6">
-  <div class="slide-tag">§ 3 · pillar 2 · pathfinding</div>
-  <div class="slide-num">06 / 11</div>
-  <h1>The challenge — paths through a <span class="accent">living world</span>.</h1>
+  <div class="slide-tag">§ 3 · pillar 2 · swarm</div>
+  <div class="slide-num">06 / 12</div>
+  <h1><span class="accent">Pillar 2</span>: how groups move together.</h1>
   <div class="split">
     <div class="col">
-      <p>Workers walk on a 96 × 72 = <strong>6912-tile grid</strong>. The path must:</p>
+      <h3>The challenge</h3>
+      <p>Living things move in groups, all on the same map at the same time:</p>
       <ul>
-        <li>Avoid impassable terrain (water · walls · mountains)</li>
-        <li>Honor realistic costs (mountains slow · roads fast · bridges expensive but valuable)</li>
-        <li>Avoid collision with other workers and animals — <em>without breaking the path</em></li>
-        <li>Adapt to <em>fog of war</em> — autopilot can't build on tiles it hasn't revealed</li>
+        <li>Dozens of workers walk the roads carrying resources</li>
+        <li>Herds of deer roam the fields</li>
+        <li>Packs of wolves stalk the herds</li>
+        <li>Visitors and traders enter and leave the colony daily</li>
       </ul>
-      <div class="callout"><strong>Two layers, classical:</strong> A* for the global route + Boids for local steering.<br/>
-        The interesting work is <em>where they meet</em>.</div>
+      <h3 style="margin-top:clamp(16px,2vh,28px)">The motion must be</h3>
+      <ul>
+        <li><strong>Locally avoidant</strong>: agents do not bump into each other</li>
+        <li><strong>Globally coherent</strong>: a herd stays a herd</li>
+        <li><strong>Reactive</strong>: predators chase, prey flees, workers form convoys</li>
+      </ul>
     </div>
     <div class="col">
       <div class="image-frame">
-        <img src="img/04-archipelago-bridges.png" alt="archipelago with bridges" />
-        <div class="caption">archipelago isles · bridge interleave</div>
+        <img src="img/02-game-overview.png" alt="workers and herds share the map" />
+        <div class="caption">workers, herds and predators share one map</div>
+      </div>
+      <div class="image-frame">
+        <img src="img/07-combat.png" alt="predator attacks worker" />
+        <div class="caption">predators chase, workers form a defensive cluster</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- 07 · PILLAR 2 · SWARM · SOLUTION                              -->
+<!-- ============================================================ -->
+<section class="slide" data-slide="7">
+  <div class="slide-tag">§ 3 · pillar 2 · swarm</div>
+  <div class="slide-num">07 / 12</div>
+  <h1><span class="accent">Boids</span>: three simple rules, one weight per context.</h1>
+  <div class="split">
+    <div class="col">
+      <h3>The three Boids rules</h3>
+      <p>Boids is a classic flocking simulation introduced by Craig Reynolds in 1986. Each agent follows three local rules:</p>
+      <ul>
+        <li><strong>Separation</strong>: steer away from the closest neighbors so agents do not collide</li>
+        <li><strong>Alignment</strong>: match heading with neighbors so a flock points the same way</li>
+        <li><strong>Cohesion</strong>: drift toward the average position so a flock stays together</li>
+        <li>Plus a fourth pull: <em>path-following</em> toward the next tile of a planned route</li>
+      </ul>
+      <div class="callout"><strong>The wrinkle</strong>: pure Boids on a worker convoy fights the planned route. Separation pushes workers apart; path-following snaps them back. The visible result is jitter.</div>
+    </div>
+    <div class="col">
+      <h3>Fix: context-aware separation weight</h3>
+<pre class="code">
+<span class="kw">const</span> sepWeight =
+  (entity.path && entity.pathIndex &lt; entity.path.length)
+    ? <span class="str">0.35</span>  <span class="com">// worker on a path: dampen separation</span>
+    : <span class="str">1.0</span>;  <span class="com">// animal or no path: full Boids</span></pre>
+      <ul>
+        <li>Workers in transit form <strong>flowing convoys</strong>, visibly single-file along roads</li>
+        <li>Animals such as deer and wolves keep full Boids and <em>scatter organically</em></li>
+        <li>Same Boids implementation hosts both behaviors. <strong>One weight switches between them.</strong></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- 08 · PILLAR 3 · NAVIGATION · CHALLENGE                        -->
+<!-- ============================================================ -->
+<section class="slide" data-slide="8">
+  <div class="slide-tag">§ 4 · pillar 3 · navigation</div>
+  <div class="slide-num">08 / 12</div>
+  <h1><span class="accent">Pillar 3</span>: getting from A to B.</h1>
+  <div class="split">
+    <div class="col">
+      <h3>The challenge</h3>
+      <p>Workers walk on a 96 by 72 grid (about 6900 tiles). The path must:</p>
+      <ul>
+        <li>Avoid impassable terrain (water without a bridge, walls)</li>
+        <li>Honor realistic costs (mountains slow, roads fast, bridges expensive but valuable)</li>
+        <li>Avoid collisions with workers and animals <em>without breaking the path</em></li>
+        <li>Adapt to <em>fog of war</em>: the colony cannot build on tiles it has not yet revealed</li>
+      </ul>
+      <div class="callout"><strong>Two layers, classical</strong>: A-star (a global pathfinding algorithm) for the route, plus Boids for local steering. The interesting work is where the two layers meet.</div>
+    </div>
+    <div class="col">
+      <div class="image-frame">
+        <img src="img/04-archipelago-bridges.png" alt="archipelago islands with bridges" />
+        <div class="caption">archipelago: islands joined by bridges</div>
       </div>
       <div class="image-frame">
         <img src="img/08-fog-edge.png" alt="fog of war edge" />
-        <div class="caption">fog of war — autopilot can't build on hidden tiles</div>
+        <div class="caption">fog of war: hidden tiles cannot host blueprints</div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 07 · PILLAR 2 · DUAL-SEARCH                                   -->
+<!-- 09 · PILLAR 3 · NAVIGATION · SOLUTION                         -->
 <!-- ============================================================ -->
-<section class="slide" data-slide="7">
-  <div class="slide-tag">§ 3 · pillar 2 · pathfinding</div>
-  <div class="slide-num">07 / 11</div>
-  <h1>Dual-search A* — <span class="accent">amortized</span> bridge interleave.</h1>
+<section class="slide" data-slide="9">
+  <div class="slide-tag">§ 4 · pillar 3 · navigation</div>
+  <div class="slide-num">09 / 12</div>
+  <h1><span class="accent">Dual-search A-star</span> with amortized bridge cost.</h1>
   <div class="split">
     <div class="col">
-      <h3>Problem</h3>
+      <h3>The bridge problem</h3>
       <ul>
-        <li><strong>WATER impassable</strong> → planner refuses to cross rivers, even when bridges would save 20 detour-tiles</li>
-        <li><strong>WATER low-cost</strong> → planner routes through water everywhere, oblivious that bridges aren't built yet</li>
+        <li>If water is impassable, the planner refuses to cross rivers, even when a 3-tile bridge would save 20 tiles of detour</li>
+        <li>If water is just a low cost, the planner routes through water everywhere, oblivious that bridges are not built yet</li>
       </ul>
-      <h3 style="margin-top:20px">Solution</h3>
-      <p>Run A* twice. Score by <em>cost amortized over expected traffic</em>.</p>
+      <h3 style="margin-top:clamp(16px,2vh,28px)">Solution: run A-star twice</h3>
+      <p>Once disallowing bridges, once allowing them. Score by cost amortized over expected traffic. Each route is assumed to see roughly 50 round trips before becoming obsolete.</p>
 <pre class="code">
-<span class="kw">function</span> <span class="fn">planRoadConnections</span>(grid, from, to) {
-  <span class="kw">const</span> noBridge   = <span class="fn">roadAStar</span>({ allowBridge: <span class="kw">false</span> });
-  <span class="kw">const</span> withBridge = <span class="fn">roadAStar</span>({ allowBridge: <span class="kw">true</span>  });
+<span class="kw">const</span> noBridge   = <span class="fn">aStar</span>({ allowBridge: <span class="kw">false</span> });
+<span class="kw">const</span> withBridge = <span class="fn">aStar</span>({ allowBridge: <span class="kw">true</span>  });
 
-  <span class="kw">const</span> AMORT = <span class="str">50</span>;  <span class="com">// expected round trips/route lifetime</span>
-  <span class="kw">const</span> sNo   = noBridge.length;
-  <span class="kw">const</span> sWith = withBridge.length +
-                (withBridge.bridgeCount × BRIDGE_COST) / AMORT;
+<span class="kw">const</span> TRIPS = <span class="str">50</span>;  <span class="com">// expected round trips</span>
+<span class="kw">const</span> sNo   = noBridge.length;
+<span class="kw">const</span> sWith = withBridge.length +
+              (withBridge.bridgeCount × BRIDGE_COST) / TRIPS;
 
-  <span class="kw">return</span> sWith &lt; sNo ? withBridge : noBridge;
-}</pre>
+<span class="kw">return</span> sWith &lt; sNo ? withBridge : noBridge;</pre>
     </div>
     <div class="col">
       <h3>Result</h3>
       <ul>
-        <li>3-tile bridge that saves 20 detour-tiles × 50 trips = <em>clear win</em> → build</li>
-        <li>1-tile bridge that saves 2 detour-tiles → <em>not worth</em>, walk around</li>
-        <li><strong>BridgeProposer</strong> scans 8-tile shoreline pairs, can propose <em>multi-tile</em> bridge sequences (not just 1-tile pinch points)</li>
+        <li>A 3-tile bridge that saves 20 detour tiles times 50 trips: <em>clear win</em>, build it</li>
+        <li>A 1-tile bridge that saves 2 detour tiles: <em>not worth it</em>, walk around</li>
+        <li>The bridge proposer scans 8-tile shoreline pairs and can propose <strong>multi-tile bridge sequences</strong>, not just 1-tile pinch points</li>
       </ul>
-      <div class="metrics">
-        <div class="metric"><div class="num">96 × 72</div><div class="lbl">grid · 6912 tiles</div></div>
+      <h3 style="margin-top:clamp(16px,2vh,28px)">Plus: fog-aware planning</h3>
+      <ul>
+        <li>The colony director rejects fogged tiles for new blueprints</li>
+        <li>Idle workers <strong>bias their wander</strong> toward fog edges to scout</li>
+        <li>"Build a quarry near stone" cannot succeed until workers reveal where stone <em>is</em></li>
+      </ul>
+      <div class="metrics" style="grid-template-columns:repeat(2,1fr)">
+        <div class="metric"><div class="num">96 × 72</div><div class="lbl">grid · 6900 tiles</div></div>
         <div class="metric"><div class="num">14</div><div class="lbl">tile types</div></div>
-        <div class="metric"><div class="num">8-nbr</div><div class="lbl">A* heuristic</div></div>
-        <div class="metric"><div class="num">×50</div><div class="lbl">traffic amortization</div></div>
+        <div class="metric"><div class="num">8 nbr</div><div class="lbl">A-star heuristic</div></div>
+        <div class="metric"><div class="num">× 50</div><div class="lbl">traffic amortization</div></div>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 08 · PILLAR 2 · BOIDS DAMPENING                               -->
-<!-- ============================================================ -->
-<section class="slide" data-slide="8">
-  <div class="slide-tag">§ 3 · pillar 2 · pathfinding</div>
-  <div class="slide-num">08 / 11</div>
-  <h1>Boids on path — <span class="accent">dampened</span> for convoys.</h1>
-  <div class="split">
-    <div class="col">
-      <h3>Problem</h3>
-      <p>Pure Boids around a moving convoy fights A*: <em>separation pushes</em>, then <em>path-following snaps back</em>. Visible result: jitter.</p>
-
-      <h3 style="margin-top:20px">Fix — context-aware separation weight</h3>
-<pre class="code">
-<span class="kw">const</span> sepWeight =
-  (entity.path && entity.pathIndex &lt; entity.path.length)
-    ? <span class="str">0.35</span>   <span class="com">// worker on path: dampen, A* dominates</span>
-    : <span class="str">1.0</span>;   <span class="com">// animal/no path: full Boids</span>
-</pre>
-      <ul>
-        <li>Workers in transit form <em>flowing convoys</em> — visible single-file along roads</li>
-        <li>Animals (deer, predators) keep full Boids → <em>scatter organically</em></li>
-        <li>Same Boids implementation; <strong>one weight does both</strong></li>
-      </ul>
-    </div>
-    <div class="col">
-      <div class="image-frame">
-        <img src="img/05-heat-lens.png" alt="heat lens convoy visualization" />
-        <div class="caption">heat lens · L · worker traffic pattern</div>
-      </div>
-      <h3 style="margin-top:24px">Bonus — fog-aware planning</h3>
-      <ul>
-        <li>BuildProposer rejects fogged tiles → sets <code style="color:var(--accent);font-family:var(--mono)">scoutNeeded</code></li>
-        <li>IDLE workers <strong>bias their wander</strong> toward fog edges to scout</li>
-        <li>LLM saying "build a quarry near stone" can't succeed until workers reveal where stone <em>is</em></li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ -->
-<!-- 09 · CROSS-PILLAR INTEGRATION                                 -->
-<!-- ============================================================ -->
-<section class="slide" data-slide="9">
-  <div class="slide-tag">§ 3.5 · integration</div>
-  <div class="slide-num">09 / 11</div>
-  <h1>The pillars compose — <span class="accent">one system, two angles</span>.</h1>
-  <div class="slide-body">
-  <div class="diagram" style="text-align:left">
-<span class="pillar1">①</span>  <span class="accent">LLM</span> decides — "build a quarry near the stone cluster"                       <span class="com">[ pillar 1 ]</span>
-
-<span class="pillar2">②</span>  <span class="accent">BuildProposer</span> checks visibility · stone is fogged                       <span class="com">[ pillar 2 ]</span>
-   → sets <span class="accent">state.ai.scoutNeeded = true</span>
-
-<span class="pillar1">③</span>  Worker <span class="accent">FSM</span>'s IDLE.tick reads scoutNeeded                            <span class="com">[ pillar 1 ]</span>
-   → calls <span class="accent">pickFogEdgeTileNear()</span>                                       <span class="com">[ pillar 2 ]</span>
-
-<span class="pillar2">④</span>  Workers reveal stone tiles by walking through fog                       <span class="com">[ pillar 2 ]</span>
-   → BuildProposer queues quarry blueprint
-
-<span class="pillar1">⑤</span>  BUILDER's <span class="accent">SEEKING_BUILD</span> state                                       <span class="com">[ pillar 1 ]</span>
-   → runs <span class="accent">A*</span> for path to site                                            <span class="com">[ pillar 2 ]</span>
-
-<span class="pillar2">⑥</span>  On the road · <span class="accent">Boids separation = 0.35×</span> · convoy flows           <span class="com">[ pillar 2 ]</span>
-
-<span class="pillar1">⑦</span>  Predator appears mid-walk · <span class="crit">COMBAT_PREEMPT</span> fires (priority 1)      <span class="com">[ pillar 1 ]</span>
-   → FSM transitions to <span class="crit">FIGHTING</span> immediately
-
-<span class="pillar1">⑧</span>  Combat resolved · FSM returns to BUILDING · resume A* path             <span class="com">[ pillar 1+2 ]</span>
-  </div>
-  <div class="callout"><strong>The pillars aren't separate features.</strong> They are the same system <em>seen from two angles</em> — the LLM-driven strategy layer and the autonomous-execution layer pull on the same FSM/path/Boids rope.</div>
-  </div>
-</section>
-
-<!-- ============================================================ -->
-<!-- 10 · TAKEAWAYS                                                -->
+<!-- 10 · CROSS-PILLAR INTEGRATION                                 -->
 <!-- ============================================================ -->
 <section class="slide" data-slide="10">
-  <div class="slide-tag">§ 4 · takeaways</div>
-  <div class="slide-num">10 / 11</div>
+  <div class="slide-tag">§ 5 · integration</div>
+  <div class="slide-num">10 / 12</div>
+  <h1>The pillars compose: <span class="accent">one system, three angles</span>.</h1>
+  <div class="slide-body">
+  <div class="diagram" style="text-align:left">
+<span class="pillar1">①</span>  <span class="accent">Strategic director</span> (Large Language Model) decides:                  <span class="com">[ behavior ]</span>
+   "build a quarry near the stone cluster"
+
+<span class="pillar3">②</span>  <span class="accent">Build proposer</span> checks visibility · stone is fogged                  <span class="com">[ navigation ]</span>
+   sets <span class="accent">scoutNeeded = true</span>
+
+<span class="pillar1">③</span>  Worker state machine reads scoutNeeded                                  <span class="com">[ behavior ]</span>
+   biases wander toward fog edges                                          <span class="com">[ navigation ]</span>
+
+<span class="pillar3">④</span>  Workers reveal stone tiles by walking through fog                       <span class="com">[ navigation ]</span>
+   build proposer queues the quarry blueprint
+
+<span class="pillar1">⑤</span>  BUILDER state machine seeks the site                                    <span class="com">[ behavior ]</span>
+   runs A-star for the path                                                <span class="com">[ navigation ]</span>
+
+<span class="pillar2">⑥</span>  On the road · Boids separation = 0.35× · convoy flows                  <span class="com">[ swarm ]</span>
+
+<span class="pillar1">⑦</span>  Predator appears · combat preempt fires at priority 1                   <span class="com">[ behavior ]</span>
+   state machine transitions to FIGHTING immediately
+
+<span class="pillar1">⑧</span>  Combat resolved · resume the BUILDING state · resume the path           <span class="com">[ all three ]</span>
+  </div>
+  <div class="callout"><strong>The pillars are not separate features.</strong> They are the same system seen from <em>three angles</em>: the strategy layer, the autonomous execution layer, and the navigation layer all pull on the same rope.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- 11 · TAKEAWAYS                                                -->
+<!-- ============================================================ -->
+<section class="slide" data-slide="11">
+  <div class="slide-tag">§ 6 · takeaways</div>
+  <div class="slide-num">11 / 12</div>
   <h1>What I learned.</h1>
   <div class="split">
     <div class="col col-wide">
       <h3>Three lessons</h3>
       <ul>
-        <li><strong>Spec fidelity isn't the goal — design fidelity is.</strong> a1 said Behavior Trees; I shipped FSM. Same intent, better fit — the "autonomous interpretable agents" intent is what mattered.</li>
-        <li><strong>Telemetry first, optimization second.</strong> Lost 2 rounds chasing FPS bugs that turned out to be Playwright headless RAF capping at 1&nbsp;Hz. <em>Measure your measurement</em> before measuring your subject.</li>
-        <li><strong>AI agents need hard guardrails, not clever prompts.</strong> Across 13 rounds + 140 commits — frozen scope, rollback anchors, file-ownership tracks made agents trustworthy. Constraints &gt; cleverness.</li>
+        <li><strong>Spec fidelity is not the goal; design fidelity is.</strong> The original proposal said Behavior Tree, what shipped is a Priority State Machine. Same intent, better fit. The intent of "autonomous, interpretable agents" is what mattered; the data structure followed.</li>
+        <li><strong>Telemetry first, optimization second.</strong> I lost two rounds chasing performance bugs that turned out to be a measurement quirk in the headless test browser. <em>Measure your measurement</em> before measuring your subject.</li>
+        <li><strong>AI agents need hard guardrails, not clever prompts.</strong> Across thirteen rounds and 140 commits, what made agents trustworthy was constraints (frozen scope, rollback points, per-track file ownership), not prompt cleverness.</li>
       </ul>
-      <h3 style="margin-top:18px">AI-coding insights</h3>
+      <h3 style="margin-top:clamp(8px,1.2vh,20px)">Insights from AI-assisted development</h3>
       <ul>
-        <li>LLM was best as a <strong>reviewer</strong> — one designs, another implements, a third audits. Caught issues single-agent runs would rationalize away.</li>
-        <li>Most surprising: an agent <strong>bisected a 4-commit regression</strong> — ran benchmarks at every commit between R8 and R10, found a 60% DevIndex drop, traced it to one line of phase-offset math.</li>
+        <li>The Large Language Model was best as a <strong>reviewer</strong>, not a writer. Letting one agent design, another implement, and a third audit caught issues a single agent would have rationalized away.</li>
+        <li>Most surprising: an agent <strong>bisected a four-commit regression</strong>. It ran benchmarks at every commit between rounds eight and ten, found a 60% drop in our composite metric, and traced it to a single line of phase-offset math.</li>
       </ul>
     </div>
     <div class="col">
@@ -851,35 +922,33 @@ pre.code .fn  { color: var(--pillar-2); }
         <div class="metric"><div class="num">~140</div><div class="lbl">commits</div></div>
         <div class="metric"><div class="num">2060</div><div class="lbl">tests pass · 0 fail</div></div>
         <div class="metric"><div class="num">7</div><div class="lbl">rounds 0-fail streak</div></div>
-        <div class="metric"><div class="num">+93.7%</div><div class="lbl">DevIndex vs HW6</div></div>
-        <div class="metric"><div class="num">4 / 7</div><div class="lbl">stop-conditions met</div></div>
+        <div class="metric"><div class="num">+93.7%</div><div class="lbl">composite metric</div></div>
+        <div class="metric"><div class="num">4 of 7</div><div class="lbl">stop conditions met</div></div>
       </div>
       <h3>Stop conditions</h3>
-      <p style="line-height:1.9;margin-bottom:0">
-        <span class="status ok">met</span> A1 stability · 8 rounds 0 P0<br/>
-        <span class="status ok">met</span> A2 perf · 2 consecutive GREEN<br/>
-        <span class="status ok">met</span> B1 action items closed<br/>
-        <span class="status ok">met</span> validator 2 GREEN streak<br/>
-        <span class="status warn">pend</span> 2 D-grade systems · HW8<br/>
-        <span class="status warn">pend</span> 4 author-fill items
+      <p style="line-height:1.75;margin-bottom:0">
+        <span class="status ok">met</span> stability: 8 rounds, zero P0<br/>
+        <span class="status ok">met</span> performance: 2 green runs<br/>
+        <span class="status ok">met</span> action items: all closed<br/>
+        <span class="status ok">met</span> validator: 2 green streaks<br/>
+        <span class="status warn">pend</span> two large legacy systems<br/>
+        <span class="status warn">pend</span> four author-fill items
       </p>
     </div>
   </div>
 </section>
 
 <!-- ============================================================ -->
-<!-- 11 · THANK YOU / Q&A                                          -->
+<!-- 12 · THANK YOU / Q&A                                          -->
 <!-- ============================================================ -->
-<section class="slide title-slide" data-slide="11">
-  <div class="slide-num">11 / 11</div>
+<section class="slide title-slide" data-slide="12">
+  <div class="slide-num">12 / 12</div>
   <div class="super">questions?</div>
   <div class="title">Thanks for<br/>watching.</div>
-  <div class="subtitle">Live Q&amp;A — 2 minutes.<br/>Demo and AI Log on screen.</div>
-  <div class="meta" style="margin-top:48px">
+  <div class="subtitle">Live questions and answers, two minutes.<br/>Demo and AI Log are on screen.</div>
+  <div class="meta" style="margin-top:clamp(36px,4vh,72px)">
     <div><span class="label">REPO</span> github.com/DaizeDong/Project-Utopia</div>
     <div><span class="label">CONTACT</span> dd1376@scarletmail.rutgers.edu</div>
-    <div><span class="label">PROCESS</span> assignments/homework7/Final-Polish-Loop/PROCESS-LOG.md</div>
-    <div><span class="label">POSTMORTEM</span> assignments/homework7/Post-Mortem.md</div>
   </div>
 </section>
 
@@ -894,7 +963,7 @@ pre.code .fn  { color: var(--pillar-2); }
     <div><kbd>↑ ↓</kbd> jump 5 slides</div>
     <div><kbd>Home / End</kbd> first / last slide</div>
     <div><kbd>F</kbd> fullscreen</div>
-    <div><kbd>1-9</kbd> jump to slide n</div>
+    <div><kbd>1-9</kbd> jump to slide 1 through 9</div>
     <div><kbd>?</kbd> toggle this help</div>
     <div><kbd>Esc</kbd> close help / exit fullscreen</div>
   </div>
