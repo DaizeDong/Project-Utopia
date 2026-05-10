@@ -6,7 +6,6 @@ import { pushWarning } from "../../app/warnings.js";
 import { worldToTile } from "../../world/grid/Grid.js";
 import { emitEvent, EVENT_TYPES } from "../meta/GameEventBus.js";
 import { recordResourceFlow } from "../economy/ResourceSystem.js";
-import { audioSystem } from "../../audio/AudioSystem.js";
 
 // v0.8.12 F3 — NEARBY_FARM_SUPPLY_MAX_PATH_LEN removed; the FARM probe in
 // hasReachableNutritionSource was dropped because workers don't actually eat
@@ -722,10 +721,6 @@ function recordDeath(state, entity, reachableFood, nutritionSourceType, deathEve
   entity.deathRecorded = true;
   if (!entity.deathContext) {
     entity.deathContext = buildDeathContext(entity, state, entity.deathReason || "event", reachableFood, nutritionSourceType);
-  }
-  // Audio: play death tone for colonist deaths only (not animals — too frequent).
-  if (entity.type === ENTITY_TYPE.WORKER || entity.type === ENTITY_TYPE.VISITOR) {
-    audioSystem.onWorkerDeath();
   }
   const eventType = entity.deathReason === "starvation" ? EVENT_TYPES.WORKER_STARVED : EVENT_TYPES.WORKER_DIED;
   const fallbackTile = worldToTile(Number(entity.x ?? 0), Number(entity.z ?? 0), state.grid);

@@ -3,8 +3,6 @@ import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balanc
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
 import { createDefaultAiRuntimeStats } from "../app/aiRuntimeStats.js";
-import { getActiveUiProfile } from "../app/uiProfileState.js";
-import { DEFAULT_DISPLAY_SETTINGS } from "../app/controlSanitizers.js";
 import {
   createInitialGrid,
   randomTileOfTypes,
@@ -272,11 +270,7 @@ export function createWorker(x, z, random = Math.random, options = null) {
   // pass `excludeSet=null` (the colony rarely re-enters initial-pop pressure).
   const excludeSet = options?.excludeSet ?? null;
   const workerName = pickWorkerName(random, excludeSet);
-  const uiProfile = getActiveUiProfile();
-  const surname = uiProfile === "casual" ? pickSurname(random) : null;
-  const displayName = uiProfile === "casual"
-    ? `${workerName} ${surname}`
-    : `${workerName}-${seqFromId(id)}`;
+  const displayName = `${workerName}-${seqFromId(id)}`;
   const hungerSeekThreshold = 0.12 + random() * 0.08;
   const eatRecoveryTarget = 0.62 + random() * 0.12;
   const traits = pickTraits(random);
@@ -1250,7 +1244,7 @@ export function createInitialGameState(options = {}) {
       visualPreset: "flat_worldsim",
       showTileIcons: true,
       showUnitSprites: true,
-      display: { ...DEFAULT_DISPLAY_SETTINGS },
+      display: {},
       mapTemplateId: grid.templateId,
       mapSeed: grid.seed,
       terrainTuning: { ...(grid.terrainTuning ?? {}) },

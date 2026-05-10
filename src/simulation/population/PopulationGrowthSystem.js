@@ -331,9 +331,3 @@ export class RecruitmentSystem {
 // without touching unrelated files.
 export { RecruitmentSystem as PopulationGrowthSystem };
 
-// v0.10.1 HW7 Final-Polish-Loop Round 1 wave-2 (C1-code-architect) —
-// debt-pop-2: `__devForceSpawnWorkers` (dev-only stress helper) was moved
-// out of this production simulation module to `src/dev/forceSpawn.js`.
-// This re-export shim keeps the existing import path stable for
-// `src/app/GameApp.js` and `test/long-run-api-shim.test.js`.
-export { __devForceSpawnWorkers } from "../../dev/forceSpawn.js";
