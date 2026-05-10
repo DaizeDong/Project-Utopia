@@ -814,6 +814,16 @@ export class ColonyDirectorSystem {
   update(dt, state, services) {
     if (state.session?.phase !== "active") return;
 
+    // D5 runMode gate. When the SimHarness has been booted with
+    // `runMode: "llm"`, the LLM colony-agent channel owns the decision
+    // surface and this scripted auto-pilot must NOT pollute the colony
+    // state. Default ("fallback" or undefined) keeps legacy behaviour
+    // so existing callers / tests continue to tick the rule-based path.
+    // This gates the always-scripted tick only; the AgentAdapter's
+    // fallback safety net (used when an LLM call fails / times out) is
+    // routed through AgentDirectorSystem and is unaffected by this flag.
+    if (state.ai?.runMode === "llm") return;
+
     const director = ensureDirectorState(state);
     const nowSec = Number(state.metrics?.timeSec ?? 0);
     const highLoad = getHighLoadPressure(state);

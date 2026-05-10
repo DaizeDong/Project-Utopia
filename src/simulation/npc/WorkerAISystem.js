@@ -1260,7 +1260,12 @@ export function pickFogEdgeTileNear(worker, state, services) {
   if (w <= 0 || h <= 0) return null;
   const origin = worldToTile(Number(worker.x ?? 0), Number(worker.z ?? 0), grid);
   const radius = Math.max(2, Number(BALANCE.workerExploreFogEdgeScanRadius ?? 12));
-  const random = () => (services?.rng?.next ? services.rng.next() : Math.random());
+  // Determinism contract: the academic harness always threads `services.rng`
+  // through every system call. The 0.5 fallback exists only as a defensive
+  // path for ad-hoc callers that omit `services` — it is never expected to
+  // execute under SimHarness, and using a constant (rather than Math.random)
+  // means even that defensive path stays bit-reproducible.
+  const random = () => (services?.rng?.next ? services.rng.next() : 0.5);
   // FOG_STATE values: 0=HIDDEN, 1=EXPLORED, 2=VISIBLE — see config/constants.js.
   // Avoid importing the constant here to keep the helper self-contained;
   // we only need the HIDDEN check and the not-HIDDEN check (== 0 / != 0).

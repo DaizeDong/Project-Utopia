@@ -954,6 +954,15 @@ export function createInitialGameState(options = {}) {
       runtimeProfile: "default",
       manualModeLocked: false,
       mode: "fallback",
+      // D5 runMode gate. When set to "llm" by SimHarness option, scripted
+      // "auto-pilot" decision systems (ColonyDirectorSystem) are silenced
+      // so the LLM colony-agent channel owns that decision surface alone.
+      // Default "fallback" preserves legacy behaviour (rule-based director
+      // ticks normally). This is the gate between scripted control-arm
+      // baselines and LLM-in-the-loop runs for clean E1-E9 ablations.
+      // It does NOT gate AgentAdapter's fallback safety net — that path
+      // still runs when an LLM call fails / times out.
+      runMode: "fallback",
       // R13 Plan-R13-autopilot-wait-llm (#6 P1) — startup gate. Holds off
       // BuildAdvisor / phase-builder placement when autopilot is ON until
       // the first LLM /api/ai/plan response is received OR fallback mode

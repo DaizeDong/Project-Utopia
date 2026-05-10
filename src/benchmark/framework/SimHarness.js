@@ -70,6 +70,14 @@ export class SimHarness {
    *   systems calling `services.llmClient.requestXxx(...)` route through
    *   this adapter's `request(channel, payload)`. Without it, the harness
    *   uses the offline-fallback LLMClient (deterministic).
+   * @param {"fallback"|"llm"} [opts.runMode="fallback"] — D5 runMode gate.
+   *   "fallback" (default) ticks scripted auto-pilot systems (e.g.
+   *   ColonyDirectorSystem) so existing tests stay green and the harness
+   *   matches legacy behaviour. "llm" silences those scripted decision
+   *   sites so the LLM colony-agent channel owns that surface alone —
+   *   required for clean E1-E9 ablations where scripted directives must
+   *   not pollute the colony state. The AgentAdapter's fallback safety
+   *   net (LLM-call failure / timeout) is unaffected by this flag.
    */
   constructor(opts) {
     const {
@@ -80,6 +88,7 @@ export class SimHarness {
       runtimeProfile = "long_run",
       buildSystemsOverride,
       agentAdapter,
+      runMode = "fallback",
     } = opts;
 
     this.state = createInitialGameState({ templateId, seed });
@@ -89,6 +98,7 @@ export class SimHarness {
     this.state.ai.enabled = Boolean(aiEnabled);
     this.state.ai.coverageTarget = "fallback";
     this.state.ai.runtimeProfile = runtimeProfile;
+    this.state.ai.runMode = runMode === "llm" ? "llm" : "fallback";
 
     this.memoryStore = new MemoryStore();
     this.memoryObserver = new MemoryObserver(this.memoryStore);

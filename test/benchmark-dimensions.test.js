@@ -110,3 +110,95 @@ test("GroupDynamics + HierarchicalCoordination plugins do not throw on minimal r
     assert.equal(Number.isFinite(hScore[dim]), true, `${dim} non-finite`);
   }
 });
+
+// ── W3 placeholder-wiring assertions ──────────────────────────────────
+// Each previously-zero key must (a) be in valid range and (b) respond
+// to constructed inputs rather than always returning 0.
+
+test("GroupDynamics.coalition_coupling is in [-1,1] and reflects synthetic identical groups", () => {
+  // Two groups with identical targetPriorities → Pearson r = 1 → coupling = 1.
+  const samples = [{
+    t: 0,
+    groupPolicies: [
+      { groupId: "workers", intentWeights: { farm: 1, deliver: 1 }, targetPriorities: { warehouse: 1.5, farm: 1.0, road: 1.0 } },
+      { groupId: "traders", intentWeights: { trade: 1.6 },          targetPriorities: { warehouse: 1.5, farm: 1.0, road: 1.0 } },
+    ],
+    groupStateTargets: {},
+    fsmCounts: {},
+    hostileCount: 0,
+    factionTension: 0,
+    threat: 0,
+  }];
+  const score = GroupDynamicsPlugin.selfScore(samples);
+  assert.equal(score.coalition_coupling >= -1 && score.coalition_coupling <= 1, true);
+  // Identical priority vectors → coupling near 1.
+  assert.equal(score.coalition_coupling, 1);
+});
+
+test("GroupDynamics.state_target_obedience reports realized fsm vs target match", () => {
+  // 4 workers; 3 in 'farm' state, 1 in 'eat'; group target = 'farm' → 3/4 = 0.75.
+  const samples = [{
+    t: 0,
+    groupPolicies: [],
+    groupStateTargets: { workers: "farm" },
+    fsmCounts: { workers: { farm: 3, eat: 1 } },
+    hostileCount: 0,
+    factionTension: 0,
+    threat: 0,
+  }];
+  const score = GroupDynamicsPlugin.selfScore(samples);
+  assert.equal(score.state_target_obedience, 0.75);
+});
+
+test("GroupDynamics.faction_responsiveness Pearsons tension vs hostile count", () => {
+  // Perfectly correlated rising tension and hostile count → r = 1.
+  const samples = [
+    { t: 0, groupPolicies: [], groupStateTargets: {}, fsmCounts: {}, hostileCount: 0, factionTension: 0, threat: 0 },
+    { t: 1, groupPolicies: [], groupStateTargets: {}, fsmCounts: {}, hostileCount: 1, factionTension: 0.2, threat: 0 },
+    { t: 2, groupPolicies: [], groupStateTargets: {}, fsmCounts: {}, hostileCount: 2, factionTension: 0.4, threat: 0 },
+    { t: 3, groupPolicies: [], groupStateTargets: {}, fsmCounts: {}, hostileCount: 3, factionTension: 0.6, threat: 0 },
+  ];
+  const score = GroupDynamicsPlugin.selfScore(samples);
+  assert.equal(score.faction_responsiveness, 1);
+});
+
+test("HierarchicalCoordination.plan_policy_alignment matches when plan tokens cover directive", () => {
+  // Strategy: priority=defend (→ safety token), workerFocus=farm (→ farm).
+  // Workers directive: targetPriorities.safety=1.2 + intentWeights.farm=1.0 → both present → alignment 2/2.
+  const samples = [{
+    t: 0,
+    factionTension: 0,
+    threat: 0,
+    prosperity: 0,
+    strategySnapshot: {
+      priority: "defend",
+      resourceFocus: "balanced",
+      workerFocus: "farm",
+      phase: "growth",
+      defensePosture: "neutral",
+    },
+    workerPolicySnapshot: {
+      intentWeights: { farm: 1.0, deliver: 1.2 },
+      targetPriorities: { warehouse: 1.5, safety: 1.2 },
+      focus: "depot throughput",
+    },
+  }];
+  samples._colonyIntervals = [];
+  const score = HierarchicalCoordinationPlugin.selfScore(samples);
+  // Plan tokens = {safety, farm}; both in directive → 2/2 = 1.
+  assert.equal(score.plan_policy_alignment, 1);
+});
+
+test("HierarchicalCoordination.plan_policy_alignment reports 0 when no plan tokens are testable", () => {
+  // priority=grow (no token), workerFocus=balanced (skipped), no resource/phase token.
+  const samples = [{
+    t: 0,
+    factionTension: 0, threat: 0, prosperity: 0,
+    strategySnapshot: { priority: "grow", resourceFocus: "balanced", workerFocus: "balanced" },
+    workerPolicySnapshot: { intentWeights: { farm: 1.0 }, targetPriorities: {}, focus: "" },
+  }];
+  samples._colonyIntervals = [];
+  const score = HierarchicalCoordinationPlugin.selfScore(samples);
+  // No testable plan tokens → alignment is 0 by convention (never NaN).
+  assert.equal(score.plan_policy_alignment, 0);
+});

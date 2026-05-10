@@ -132,7 +132,17 @@ export const ResourceAllocationEfficiencyPlugin = {
       rae_sufficiency: Number(sufficiency.toFixed(4)),
       rae_distribution_gini: Number(distributionGini.toFixed(4)),
       rae_idle_capacity: Number(idleAvg.toFixed(4)),
-      // Path overhead requires PathCache hooks; placeholder until S6 wave-2.
+      // TODO(rae_path_overhead): wire when PathCache exposes per-call
+      // observed-vs-Manhattan ratios. The required telemetry is the
+      // mean(actual_path_len / manhattan_dist) over completed worker paths;
+      // PathCache currently emits hit/miss counters but not path-length
+      // stats. Either (a) extend PathCache.recordResult() to log
+      // {manhattan, computed} and ProbeCollector to expose a rolling mean,
+      // or (b) walk all worker `e.blackboard.lastPath` entries during
+      // collectSamples — both require new telemetry hooks not present in
+      // the current sampling surface. Returning 1.0 (= optimal) means the
+      // DimensionNormalizer maps it to 1.0 (best), so this acts as a
+      // neutral input until wired.
       rae_path_overhead: 1.0,
     };
   },

@@ -62,7 +62,7 @@ Companion docs: `docs/ai-research/benchmark_proposal.md` (research framing), `do
 | 3-tier reproducibility (fallback / LayerCast / production) | **DONE** — all 3 tiers verified (Tier 1 e360b76, Tier 2 473d1b9, Tier 3 c2d86a6) |
 | Paper run entrypoint `scripts/benchmark-paper.mjs` | **DONE** (W2 batch X; CLI verified, NDJSON output) |
 | `src/simulation/ai/colony/{SkillLibrary, LearnedSkillLibrary}` (D1) | **DEFERRED** to v0.11.1 |
-| `runMode` gate (D5) | **DEFERRED** |
+| `runMode` gate (D5) | **DONE** (W2 — `state.ai.runMode = "llm" \| "fallback"`; SimHarness option; gates `ColonyDirectorSystem` only; default "fallback" preserves legacy behaviour; AgentAdapter fallback safety net unaffected) |
 
 ## Development
 

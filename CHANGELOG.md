@@ -1,6 +1,24 @@
 # Changelog
 
-## [Unreleased] — refactor/academic-benchmark — W2 batch X (V3.1 + V6.1)
+## [Unreleased] — refactor/academic-benchmark — RC3 design audit
+
+### Audit-driven P0 fixes (2026-05-10)
+- **B1 critical bug**: `SeedMatrix.js:124` was reading `state?.ai?.runtime` (path doesn't exist). All DTE/E6 cells were silently returning 0 for aiRuntime telemetry. Fixed to read `state.metrics.aiRuntime`, remap field names (`requestCount→totalCalls`, `fallbackResponseCount→fallbackCalls`, `errorCount→schemaErrors`), and pass through 7 S5 token-telemetry fields. New test: `test/seed-matrix-aiRuntime-passthrough.test.js`.
+- **G1 D5 runMode gate**: ColonyDirectorSystem was ticking even with LLM in the loop, polluting E1/E3 ablations. Added `state.ai.runMode = "fallback" | "llm"`, SimHarness option `runMode`, gate at top of update(). New test: `test/run-mode-gate.test.js` (8 cases). Default behavior preserved.
+- **G2 HELM Mean Win Rate**: paper §4.4b had no implementation. Added `ScoringEngine.computeHelmMwr(perAgentDimensionScores)` with strict-`>` ties + per-pair joint-dim handling. New test: `test/scoring-engine-helm-mwr.test.js` (7 cases).
+- **G3 dimension wiring**: 4 of 5 placeholder dimension keys now compute from existing telemetry — `coalition_coupling` (Pearson over targetPriorities), `state_target_obedience` (pooled Σ in-target / Σ all), `faction_responsiveness` (Pearson factionTension vs hostile-group count), `plan_policy_alignment` (token overlap strategic plan ↔ workers directive). `rae_path_overhead` deferred (T1 — needs PathCache instrumentation).
+- **B2-B8 nondeterminism**: 7 `Math.random()` fallback paths replaced with constant `0.5` or seeded RNG; `navigator.hardwareConcurrency` short-circuited in deterministic mode. `npm run audit:rng` now clean. Tier 1/2 hashes preserved bit-identically.
+
+### Decisions documented
+- New: `docs/ai-research/design-audit-decisions.md` — Round 1+2+3 findings consolidated, KEEP/REMOVE/REFACTOR markings, follow-up tickets T1-T7.
+- CLAUDE.md "Refactor State" table updated: D5 runMode gate `DEFERRED → DONE`.
+
+### Verified
+- `node --test test/*.test.js` — **815 pass / 0 fail / 1 skipped** (no regressions; 7 new test cases added)
+- `npm run audit:determinism` — Tier 1 `e360b76…` PASS, Tier 2 `473d1b9…` PASS (bit-identical to RC2)
+- `npm run audit:rng` — OK, no leaks
+
+## [Unreleased prior] — refactor/academic-benchmark — W2 batch X (V3.1 + V6.1)
 
 ### V3.1 — DimensionNormalizer transform layer
 - Why: Round-1 reviewer flagged that the 5 dimension plugins (RAE / GroupDynamics / Memory / DTE / Hierarchical) emit on incompatible scales — some [0,1] benefit-form, some cost-form, some symmetric in [-1,1], some unbounded ms / token-rates. ScoringEngine.bayesianScore + sandwichNormalize + HELM MWR all assume comparable [0,1] benefit-form inputs. Without a transform layer, raw scores were silently fed to scoring → garbage out.

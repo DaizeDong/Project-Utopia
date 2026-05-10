@@ -255,3 +255,78 @@ function round(v, d = 2) {
   const s = Number(v);
   return Number.isFinite(s) ? Number(s.toFixed(d)) : s;
 }
+
+/**
+ * HELM Mean Win Rate (Liang et al. 2022 / TMLR 2023, §F.4 of survey).
+ *
+ *   MWR_m = (1 / (|M| − 1)) · mean_d [ Σ_{m' ≠ m} 1{S_{m,d} > S_{m',d}} ] / |D|
+ *         = (1 / (|D| · (|M| − 1))) · Σ_d Σ_{m' ≠ m} 1{S_{m,d} > S_{m',d}}
+ *
+ * In paper §4.4b we describe MWR as: "for each pair (m_i, m_j) compute the
+ * fraction of dimensions where m_i beats m_j, then average across j ≠ i".
+ * The two definitions are algebraically equivalent — we implement the
+ * pairwise form because it cleanly handles per-pair missing dimensions
+ * (skip the dim for that pair only) and exposes the per-pair win rate
+ * for downstream non-transitivity / α-rank analysis.
+ *
+ * Tie handling: a strict `>` is used, matching HELM's convention. Ties
+ * contribute 0 to the winner's count for that dim/pair (i.e., neither
+ * model wins). Use a small ε in pre-processing if integer-equal ties
+ * are expected.
+ *
+ * Missing dim handling: a dim is counted only for pairs where BOTH
+ * agents have a finite score. The pair's denominator is the number of
+ * jointly-present dims (so two agents that share zero dims contribute
+ * NaN, which we surface as 0 for the MWR sum and a 0 pair contribution).
+ *
+ * @param {Object<string, Object<string, number>>} perAgentDimensionScores
+ *   Shape: { [agentId]: { [dimKey]: score, … }, … }.
+ *   All scores should already be normalized to a comparable benefit-form
+ *   scale (use DimensionNormalizer first if not).
+ * @returns {Object<string, number>} { [agentId]: mwr ∈ [0,1] }
+ *   Single-agent input → returns { [agentId]: 0 } (no opponents).
+ */
+export function computeHelmMwr(perAgentDimensionScores) {
+  const agentIds = Object.keys(perAgentDimensionScores ?? {});
+  const out = {};
+  if (agentIds.length === 0) return out;
+  if (agentIds.length === 1) {
+    // No opponents → MWR is undefined; report 0 for downstream pipeline safety.
+    out[agentIds[0]] = 0;
+    return out;
+  }
+
+  for (const i of agentIds) {
+    let pairWinRateSum = 0;
+    let pairCount = 0;
+    const scoresI = perAgentDimensionScores[i] ?? {};
+    for (const j of agentIds) {
+      if (j === i) continue;
+      const scoresJ = perAgentDimensionScores[j] ?? {};
+      // Joint-dim set: dims where both agents have a finite score.
+      const dims = new Set(Object.keys(scoresI));
+      for (const d of Object.keys(scoresJ)) dims.add(d);
+      let wins = 0;
+      let jointDims = 0;
+      for (const d of dims) {
+        const a = Number(scoresI[d]);
+        const b = Number(scoresJ[d]);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+        jointDims++;
+        if (a > b) wins++;
+      }
+      if (jointDims === 0) {
+        // No comparable dims → contribute 0 fraction (and the pair counts
+        // toward the denominator, matching HELM's "always |M|−1 opponents"
+        // convention; a dropped pair would inflate winners that simply
+        // happen to share no dims with one opponent).
+        pairWinRateSum += 0;
+      } else {
+        pairWinRateSum += wins / jointDims;
+      }
+      pairCount++;
+    }
+    out[i] = pairCount > 0 ? round(pairWinRateSum / pairCount, 4) : 0;
+  }
+  return out;
+}

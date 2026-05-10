@@ -150,9 +150,12 @@ export class EventDirectorSystem {
     }
     if (nowSec - lastDispatch < effectiveIntervalSec) return;
 
+    // Determinism contract: when services is missing we fall back to a
+    // constant 0.5 rather than Math.random so the defensive path stays
+    // bit-reproducible for the academic benchmark.
     const rng = typeof services?.rng?.next === "function"
       ? () => services.rng.next()
-      : Math.random;
+      : () => 0.5;
 
     let chosen = rollEventType(rng);
     if (chosen === EVENT_TYPE.BANDIT_RAID && isRaidOnCooldown(state)) {

@@ -37,7 +37,9 @@ import { NoopAgentAdapter } from "../../simulation/ai/llm/AgentAdapter.js";
  * @property {string} scenario
  * @property {string} agentId
  * @property {Record<string, number>} perDimensionScores
- * @property {object} aiRuntime — { totalCalls, fallbackCalls, schemaErrors }
+ * @property {object} aiRuntime — { totalCalls, fallbackCalls, schemaErrors,
+ *   promptTokens, completionTokens, cachedTokens, firstTokenLatencyMs,
+ *   tokensPerSec, kvCacheHits, prefixHits }
  * @property {object|null} outcome
  * @property {number} wallclockMs
  * @property {string} [error]
@@ -91,7 +93,20 @@ export async function runOneCell(seed, scenario, opts) {
 
   const startMs = nowMs();
   const perDimensionScores = {};
-  let aiRuntime = { totalCalls: 0, fallbackCalls: 0, schemaErrors: 0 };
+  let aiRuntime = {
+    totalCalls: 0,
+    fallbackCalls: 0,
+    schemaErrors: 0,
+    // Token telemetry (S5) — propagated from state.metrics.aiRuntime so
+    // DecisionTokenEfficiency / E6 cells can consume them downstream.
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    kvCacheHits: 0,
+    prefixHits: 0,
+    firstTokenLatencyMs: 0,
+    tokensPerSec: 0,
+  };
   let outcome = null;
   let lastErr = "";
 
@@ -121,12 +136,24 @@ export async function runOneCell(seed, scenario, opts) {
 
       // Pull aiRuntime from the LAST plugin run's state — these are
       // additive counters maintained by adapters / fallback systems.
-      const rt = harness.state?.ai?.runtime;
+      // Canonical schema lives at `state.metrics.aiRuntime` (see
+      // src/app/aiRuntimeStats.js). Field names are remapped to preserve
+      // the SeedMatrix public API (totalCalls / fallbackCalls / schemaErrors).
+      const rt = harness.state?.metrics?.aiRuntime;
       if (rt) {
         aiRuntime = {
-          totalCalls: Number(rt.totalCalls ?? aiRuntime.totalCalls),
-          fallbackCalls: Number(rt.fallbackCalls ?? aiRuntime.fallbackCalls),
-          schemaErrors: Number(rt.schemaErrors ?? aiRuntime.schemaErrors),
+          // requestCount = total LLM calls dispatched (mark on request).
+          totalCalls: Number(rt.requestCount ?? aiRuntime.totalCalls),
+          fallbackCalls: Number(rt.fallbackResponseCount ?? aiRuntime.fallbackCalls),
+          schemaErrors: Number(rt.errorCount ?? aiRuntime.schemaErrors),
+          // S5 token telemetry passthrough.
+          promptTokens: Number(rt.promptTokens ?? aiRuntime.promptTokens),
+          completionTokens: Number(rt.completionTokens ?? aiRuntime.completionTokens),
+          cachedTokens: Number(rt.cachedTokens ?? aiRuntime.cachedTokens),
+          kvCacheHits: Number(rt.kvCacheHits ?? aiRuntime.kvCacheHits),
+          prefixHits: Number(rt.prefixHits ?? aiRuntime.prefixHits),
+          firstTokenLatencyMs: Number(rt.firstTokenLatencyMs ?? aiRuntime.firstTokenLatencyMs),
+          tokensPerSec: Number(rt.tokensPerSec ?? aiRuntime.tokensPerSec),
         };
       }
       outcome = evaluateRunOutcomeState(harness.state) ?? outcome;

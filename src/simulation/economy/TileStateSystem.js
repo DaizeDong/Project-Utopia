@@ -56,10 +56,12 @@ export class TileStateSystem {
     const weatherMult = isStorm ? WEAR_STORM_MULTIPLIER : 1;
     const elapsed = UPDATE_INTERVAL_SEC;
     // Fire RNG: prefer seeded services.rng for benchmark determinism
-    // (silent-failure C2); fall back to Math.random when unavailable.
+    // (silent-failure C2). Fall back to a constant 0.5 — never Math.random —
+    // when services are missing so the defensive path also stays
+    // bit-reproducible.
     const rngFn = (typeof services?.rng?.next === "function")
       ? () => services.rng.next()
-      : Math.random;
+      : () => 0.5;
 
     for (let iz = 0; iz < grid.height; iz++) {
       for (let ix = 0; ix < grid.width; ix++) {

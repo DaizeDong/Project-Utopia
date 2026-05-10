@@ -153,11 +153,12 @@ export class RecruitmentSystem {
     if (warehouses.length === 0) return;
 
     // v0.8.0 Phase 4 silent-failure C1: seeded RNG is required so benchmark
-    // runs stay reproducible. services.rng.next is the deterministic source;
-    // fall back to Math.random only when no services are threaded.
+    // runs stay reproducible. services.rng.next is the deterministic source.
+    // Fall back to a constant 0.5 (not Math.random) when no services are
+    // threaded so determinism is preserved even on the defensive path.
     const rngNext = typeof services?.rng?.next === "function"
       ? () => services.rng.next()
-      : Math.random;
+      : () => 0.5;
 
     const food = Number(state.resources?.food ?? 0);
     const recruitFoodCost = Number(BALANCE.recruitFoodCost ?? 25);
