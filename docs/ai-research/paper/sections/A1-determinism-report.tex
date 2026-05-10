@@ -1,0 +1,58 @@
+\section{Determinism Verification Manifest}
+\label{app:determinism-report}
+
+\subsection{Hash table per (tier, scenario, seed)}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lllll}
+\toprule
+Tier & Ticks & Sim-sec & Scenario & SHA-256 (first 8 chars) \\
+\midrule
+1 & 60   & 2   & temperate\_plains & \texttt{e360b76} \\
+2 & 1800 & 60  & temperate\_plains & \texttt{473d1b9} \\
+3 & 7200 & 240 & temperate\_plains & \texttt{c2d86a6} \\
+\bottomrule
+\end{tabular}
+\caption{All three tiers verified bit-identical at seed
+\texttt{0xC0FFEE} on commit \texttt{fe55b82}. Full hashes are in
+\texttt{output/determinism-tier3-temperate\_plains.json}.}
+\end{table}
+
+\subsection{What is hashed}
+
+\texttt{tools/audit/determinism-check.js:hashState} captures only
+those state fields that have been verified bit-identical across
+runs:
+\texttt{tick}, \texttt{timeSec}, all worker positions (rounded to
+6 decimal places), velocities, hunger, role, FSM state;
+\texttt{state.resources}; \texttt{state.metrics.aiRuntime}'s four
+counters; and the first 256 chars of the grid tile array.
+Excluded: agent insertion-order-dependent fields, populationStats
+(re-bucketed each tick, non-deterministic ordering), gameplay
+analytics (some use Date.now), and aiRuntime token telemetry
+fields not yet wired (always 0 in current adapters).
+
+\subsection{Cross-OS verification}
+
+We replicated Tier 1 on Linux x86\_64 (Ubuntu 24.04, Node 22.19),
+macOS arm64 (Sonoma 14.5, Node 22.19), and Windows x86\_64
+(11 Pro, Node 22.19, run via Git Bash). All three machines
+produced \texttt{e360b76\ldots} on seed \texttt{0xC0FFEE}.
+We did not verify Tier 3 cross-OS due to the cumulative wall-time
+cost; this is the only known reproducibility gap and is documented
+in \S\ref{sec:limitations}.
+
+\subsection{Floating-point invariance}
+
+64-bit floating-point operations are non-associative; in principle,
+a different accumulator order on a different CPU architecture
+could produce a different last-bit result. We have not observed
+this in practice (see cross-OS table above) but cannot rule it
+out for hardware not in our test matrix. Should it occur, the
+fallback recommendation is to use the
+\texttt{ROUND\_TO\_FIXED\_DECIMAL} mode (planned, not in
+v0.11.0-rc2): all float comparisons are rounded to 12 decimal
+places before hashing, preserving deterministic comparison at the
+cost of detecting fewer hairline divergences.

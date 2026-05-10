@@ -1,0 +1,164 @@
+\section{Metric Stack}
+\label{sec:metrics}
+
+Project-Utopia reports scores at four layers, each grounded in prior
+art (Figure~\ref{fig:metric-stack}).
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 2 placeholder]
+4-layer metric stack:
+Per-tick raw signal $\to$ Sandwich norm + Geometric mean
+$\to$ Bayesian per-dimension $\to$ HELM MWR cross-model leaderboard.}}}
+\caption{Four-layer metric stack. Per-tick dimension plugins emit raw
+signal; per-dimension transforms project onto $[0,1]$ benefit form;
+sandwich normalization gives per-scenario relative scores; Bayesian
+Beta-Binomial gives per-dimension cross-seed posteriors; HELM Mean
+Win Rate aggregates across dimensions for the cross-model leaderboard.}
+\label{fig:metric-stack}
+\end{figure}
+
+\subsection{Layer 1: Per-Tick Dimension Plugins}
+
+Five plugins (\texttt{src/benchmark/dimensions/}) emit a per-cell
+score row of 19 keys:
+
+\paragraph{ResourceAllocationEfficiency} ($N$=5):
+\texttt{rae\_composite}, \texttt{rae\_sufficiency},
+\texttt{rae\_distribution\_gini},
+\texttt{rae\_idle\_capacity},
+\texttt{rae\_path\_overhead}.
+\texttt{rae\_composite} is the Crafter geometric mean
+\citep{Hafner2022Crafter} over per-resource sufficiency:
+$$
+S_{\text{RAE}} = \exp\!\Bigg(\frac{1}{4}\sum_{i \in \{f,w,s,h\}}
+\ln(1 + s_i)\Bigg) - 1, \quad s_i \in [0,1]
+$$
+where $s_f, s_w, s_s, s_h$ are food/wood/stone/herbs per-capita
+sufficiencies. Geometric mean punishes single-resource starvation:
+$s_f = 0$ collapses the composite to 0 even if $s_w = s_s = s_h = 1$.
+
+\paragraph{GroupDynamics} ($N$=4): \texttt{intent\_entropy},
+\texttt{coalition\_coupling}, \texttt{state\_target\_obedience},
+\texttt{faction\_responsiveness}.
+
+\paragraph{MemoryDegradation} ($N$=4):
+\texttt{anchored\_fact\_recall} (verbal),
+\texttt{action\_grounded\_recall} (does the directive distribution
+still reflect the anchor's implicit goal),
+\texttt{behavioral\_drift} (Jaccard distance of action-token sets
+between now and $t = 0$),
+\texttt{performance\_at\_t} (task signal).
+The three-axis decoupling of recall is novel; see \S\ref{sec:exp:e5}.
+
+\paragraph{DecisionTokenEfficiency} ($N$=3):
+\texttt{dte\_per\_completion\_token},
+\texttt{dte\_per\_decision},
+\texttt{first\_token\_latency\_p50}.
+Following the BATS cost-aware Pareto convention~\citep{Liu2025BATS}.
+
+\paragraph{HierarchicalCoordination} ($N$=3):
+\texttt{plan\_policy\_alignment},
+\texttt{env\_threat\_responsiveness},
+\texttt{colony\_cadence\_health}.
+
+\subsection{Layer 2: Dimension Normalizer}
+
+Plugin outputs are heterogeneous: some are already $[0,1]$ benefit
+form (e.g., \texttt{rae\_sufficiency}), others are inverted (Gini,
+idle-capacity, drift), unbounded (cadence-stddev), symmetric
+(correlations $\in$ [-1, 1]), or rates with a natural decay scale
+(token-throughput, latency).
+Our \texttt{DimensionNormalizer} applies one of six transforms per key:
+
+{\small
+\begin{verbatim}
+identity:       x
+invert:         1 - x        (clip to [0,1])
+reciprocal:     1 / x        (for x in [1, ∞), 1 = best)
+clipScale:      x / scale    (then clip to [0,1])
+rescaleSymmetric: (x + 1) / 2
+exponentialDecay: 1 - exp(-x / scale)  for "fromZero=true" benefit
+                  exp(-x / scale)       for cost (lower = better)
+\end{verbatim}
+}
+
+\noindent
+A reflective unit test enforces that every plugin's
+\texttt{scoreDimensions} key is registered exactly once in the
+normalizer table, blocking silent drift between plugin and pipeline.
+
+\subsection{Layer 3: Sandwich Normalization}
+
+Following MeltingPot 2.0~\citep{Agapiou2022MeltingPot}, each
+normalized score is paired with a fallback (no-LLM) and oracle
+(scripted hand-tuned policy) reference run on the
+\emph{same seed and scenario}, then projected:
+$$
+S_{\text{sandwich}}(\text{cell}) = \frac{
+  S_{\text{LLM}} - S_{\text{fallback}}
+}{
+  S_{\text{oracle}} - S_{\text{fallback}}
+}.
+$$
+We do not clip the upper bound: $S > 1$ flags a "superhuman"
+LLM run that exceeded our hand-tuned oracle ceiling; this is rare
+but informative.
+
+The fallback policy is \texttt{Guardrails}'s production-grade
+state-adaptive default (with full clamping but no LLM), not a
+random baseline. The oracle is \texttt{ScriptedOraclePolicy.js},
+hand-tuned per scenario such that it is both schema-valid and
+guardrail-idempotent, with verified $\geq +20\%$ RAE over
+fallback in pre-pilot runs across all six scenarios.
+
+\subsection{Layer 4a: Bayesian Beta-Binomial Per-Dimension}
+
+Following~\citet{Bowyer2025DontUseClt} (ICML 2025 Spotlight), we
+report Bayesian credible intervals rather than central-limit-theorem
+Wald intervals (which under-cover at $N < 300$). For each (cell,
+scenario, dimension) cube cell with $N$ seed runs producing scores
+$x_1, \ldots, x_N \in [0,1]$:
+$$
+\alpha = 2 + \sum x_i, \qquad
+\beta = 2 + N - \sum x_i, \qquad
+\text{posterior} \sim \text{Beta}(\alpha, \beta).
+$$
+We report posterior mean, $[\text{p2.5}, \text{p97.5}]$ credible
+interval, and median. The Beta(2, 2) prior is mildly informative
+toward 0.5; we report sensitivity to alternative priors
+(Jeffreys (0.5, 0.5), uniform (1, 1)) in
+Appendix~\ref{app:prior-sensitivity}.
+
+\paragraph{Variance reduction.}
+Following Pluribus AIVAT~\citep{Brown2019Pluribus}, we additionally
+report a PolicyValue Baseline (PVB) corrected score:
+$$
+S_{\text{PVB}} = S_{\text{realized}} - V_{F}(s_0) +
+\sum_t \big[V_{F}(s_t \mid \text{after } F) - V_{F}(s_t \mid \text{after } A)\big]
+$$
+where $V_F$ is the fallback policy's expected DevIndex contribution.
+We measure $\sim$\,2--3$\times$ variance reduction across E1--E7,
+which is equivalent to $\sim$\,3--5$\times$ fewer seeds for the same
+statistical power (see \S\ref{sec:exp:e8} for the post-hoc analysis).
+We name this estimator \emph{PolicyValue Baseline} rather than
+AIVAT because our $V_F$ is an EMA proxy of past values rather than
+true action-value sampling; we cite AIVAT as inspiration but do not
+claim full unbiasedness in the strict CFR sense.
+
+\subsection{Layer 4b: HELM Mean Win Rate Across Dimensions}
+
+For the cross-model leaderboard, we follow HELM's Mean Win Rate
+\citep{Liang2023HELM}: for each pair of models $(m, m')$ and each
+(scenario, dimension) pair, compute
+$W_{m,m',s,d} = \mathbf{1}[S_{m,s,d} > S_{m',s,d}]$. Then
+$$
+\text{MWR}_m = \frac{1}{|S| \cdot |D|} \cdot \frac{1}{|M|-1}
+\sum_{s,d} \sum_{m' \neq m} W_{m,m',s,d}.
+$$
+MWR side-steps the unit-incompatibility of the 19 dimension keys
+(some $[0,1]$, some unbounded latency, some signed correlations)
+that direct averaging would corrupt. When the per-cell payoff
+matrix shows non-transitivity (rock-paper-scissor cycles), we
+additionally report $\alpha$-rank
+\citep{Lanctot2019OpenSpiel}.

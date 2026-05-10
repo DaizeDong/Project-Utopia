@@ -1,0 +1,66 @@
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+\paragraph{Limitations.}
+(1) \textbf{Domain.} Project-Utopia is a colony simulation in a
+2-D tile world. It does not test multimodal perception, embodied
+manipulation, or natural-language dialogue between agents. Domain
+generalization to other simulators (city traffic, hospital
+scheduling, supply-chain) is left as future work.
+(2) \textbf{Sample size.} The full 9-experiment matrix uses 5--10
+seeds per cell, which is at the low end of statistical
+justifiability. We adopt~\citet{Bowyer2025DontUseClt}'s
+Beta-Binomial methodology and pair it with PVB variance reduction
+(\S\ref{sec:metrics}), but acknowledge that doubling seed count
+would tighten credible intervals and may reveal effects below
+our current detection threshold.
+(3) \textbf{LLM API stationarity.} Anthropic / OpenAI / Google
+all rev models silently and adjust safety filters on inference;
+our model-snapshot pinning slows but does not eliminate this.
+The RecordReplayCache lets reviewers replay our exact
+prompts-and-responses transcript bit-identically, but
+re-running with the latest production endpoint is not guaranteed
+to reproduce.
+(4) \textbf{Partial observability.} Project-Utopia exposes the
+full world summary to all four channels. A more realistic
+deployment would give each channel only its proper observation
+slice. We support this via a \texttt{VisibilitySystem} but have
+not yet wired it into the experimental matrix; this is the most
+important deferred ablation.
+(5) \textbf{Multi-LLM negotiation.} Channels currently
+communicate only through state, not through inter-LLM
+text traffic. Concordia~\citep{Vezhnevets2023Concordia}'s
+Game-Master-as-broker pattern would be a natural extension.
+(6) \textbf{Sample-efficient learning under directive
+constraints.} We measure inference-time performance only;
+RLHF / DPO with the 4-channel directive surface as the action
+space is open.
+
+\paragraph{Future work.}
+Beyond closing the limitations above, the natural next
+extensions are:
+\textbf{(a)} multi-LLM-as-judge \emph{within} a Project-Utopia
+run, e.g., environment-director and strategic-plan channels
+verifying each other's directives before both reach Guardrails;
+\textbf{(b)} domain transfer evaluation, freezing the schema
+contract and re-skinning the simulation as a hospital triage
+or disaster response benchmark, testing whether the
+4-channel hierarchy generalizes;
+\textbf{(c)} prompt-injection robustness following
+KAIROS~\citep{Kairos2026AgentSecurityArena}, with adversarial
+NPCs (saboteur tile) able to inject text into the prompt
+context;
+\textbf{(d)} 24-hour E5 long-horizon runs, deferred
+to camera-ready due to the $\sim$\,240 GPU-hour cost of
+the full 4 lengths $\times$ 3 models $\times$ 5 seeds matrix.
+
+\paragraph{What we explicitly do \emph{not} promise.}
+Project-Utopia does not claim to test "general intelligence,"
+linguistic competence, or commonsense reasoning. It tests
+\emph{hierarchical decision-making under
+schema-validated long-horizon resource pressure}. Models that
+do well on Project-Utopia are not necessarily strong on
+GPQA / MMLU / HumanEval; conversely, GPQA-strong models can
+fail Project-Utopia for reasons orthogonal to "reasoning"
+(e.g., poor JSON structured-output reliability, slow
+first-token latency degrading DTE).

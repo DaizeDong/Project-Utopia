@@ -1,0 +1,71 @@
+\section{Scenario Blueprints and Oracle Policies}
+\label{app:scenarios}
+
+\subsection{Six Scenarios}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+Scenario & Tier & Initial workers & Primary stressor \\
+\midrule
+\texttt{temperate\_plains} & L1 & 8  & balanced (baseline) \\
+\texttt{fertile\_riverlands} & L1 & 8  & high food, low threat \\
+\texttt{rugged\_highlands} & L2 & 8  & stone-rich, food-tight \\
+\texttt{coastal\_ocean} & L2 & 8  & inland-water mix, fog \\
+\texttt{archipelago\_isles} & L3 & 8  & water + bridges + low explore \\
+\texttt{fortified\_basin} & L3 & 8  & high raid + chokepoint \\
+\bottomrule
+\end{tabular}
+\caption{Project-Utopia's six scenarios, ordered by difficulty
+tier. All six have hand-tuned \texttt{ScriptedOraclePolicy}
+blueprints (\S\ref{sec:metrics}); all six pass the
+\texttt{ResponseSchema} + \texttt{Guardrails} idempotency test
+(directive equals its own guard-clamp).}
+\end{table}
+
+\subsection{Oracle Policy Sample (\texttt{fortified\_basin})}
+
+\begin{lstlisting}[caption={Excerpt from ScriptedOraclePolicy.js},language=javascript]
+fortified_basin: {
+  environment: {
+    weather: "clear",
+    durationSec: 90,
+    factionTension: 0.6,        // raid-imminent posture
+    eventSpawns: [{ type: "raid_signal", intensity: 0.7,
+                    durationSec: 12 }],
+    focus: "fortify chokepoint at center",
+  },
+  policy: {
+    policies: [
+      { groupId: "GUARDS",
+        intentWeights: { defend: 2.0, patrol: 1.5, eat: 0.5 },
+        riskTolerance: 0.3,
+        targetPriorities: { center: 2.5, gate: 2.0 },
+        ttlSec: 28800 },
+      // ...
+    ],
+  },
+  strategic: { primaryGoal: "fortify chokepoint, maintain 4 guards" },
+  colony: { plan: [
+    { action: "build", args: { type: "wall", count: 8 } },
+    { action: "build", args: { type: "gate", count: 1 } },
+    { action: "build", args: { type: "smithy", count: 1 } },
+  ]},
+}
+\end{lstlisting}
+
+\subsection{Oracle Validation}
+
+For each oracle, the test
+\texttt{benchmark-oracle-policy-idempotent.test.js} verifies that:
+(a) \texttt{validateEnvironmentDirective} / \texttt{validateGroupPolicy}
+succeed without modifying any field;
+(b) \texttt{guardEnvironmentDirective} / \texttt{guardGroupPolicies}
+return a deep-equal copy of the input (no clamping has any effect);
+(c) calling guard twice produces the same result as calling once
+(idempotent fixed point).
+This ensures that "oracle" is a meaningful upper bound for the
+sandwich-norm: the scripted policy operates exactly within the
+schema's allowed values, neither under nor over.

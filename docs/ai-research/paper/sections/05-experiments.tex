@@ -1,0 +1,275 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We report nine experiments across hierarchy, multi-LLM coordination,
+multi-resource allocation, long-horizon memory, schema-validated
+failure modes, decision-token efficiency, statistical methodology,
+and reproducibility. Section~\ref{sec:exp:setup} describes the shared
+experimental infrastructure; \S\ref{sec:exp:e1}--\S\ref{sec:exp:e9}
+report each experiment.
+
+\subsection{Setup}
+\label{sec:exp:setup}
+
+\textbf{Scenarios.} We use five scenarios spanning two map templates
+and three crisis injectors:
+\textsc{S-Plains}, \textsc{S-Basin}, \textsc{S-Plains-Famine},
+\textsc{S-Basin-Siege}, \textsc{S-Plains-Large}.
+\textbf{Seeds.} Main experiments use ten seeds drawn from a fixed list
+($\{0\text{xC0FFEE}, \ldots\}$); sensitivity sub-experiments use the
+first three.
+\textbf{Models.} The model menu spans Anthropic
+(Claude-Opus-4-7, Sonnet-4-6, Haiku-4-5),
+OpenAI (GPT-5-mini), and open-weight (Hermes-3-7B, Llama-3.1-8B-Instruct,
+Qwen-2.5-72B-Instruct), plus a no-LLM fallback baseline.
+\textbf{Run length.} Default is 7\,200 ticks (240 sim-seconds);
+long-horizon E5 uses up to 8 sim-hours.
+
+\subsection{E1 --- Hierarchical Decomposition is Necessary}
+\label{sec:exp:e1}
+
+\paragraph{Hypothesis.} Under matched per-decision token budget,
+the 4-channel hierarchical architecture achieves at least
+$\Delta \text{RAE} = 0.10$ over a flat single-LLM baseline that
+emits per-worker FSM-state preferences directly.
+
+\paragraph{Design.} 2 architectures (\texttt{hierarchical},
+\texttt{flat-baseline}) $\times$ 2 scenarios
+(\textsc{S-Plains}, \textsc{S-Basin}) $\times$ 10 seeds
+$\times$ 1 model (Claude-Sonnet) $=$ 40 runs.
+Token budget capped at 200\,k tokens per run; both arms run through
+\texttt{Guardrails} so schema validity is matched.
+
+\paragraph{Expected results.} Following the calibration anchor of
+ChatDev's $-44\%$ role-removal effect~\citep{Qian2024ChatDev}, we
+expect hierarchical RAE $\sim$\,0.65--0.75 vs.\ flat
+$\sim$\,0.30--0.55, depending on scenario.
+
+\paragraph{Status.} Pipeline verified end-to-end via
+\texttt{npm run bench:paper:E1} (smoke run produced 19
+NDJSON rows / 67\,s on FB cell). Full E1 runs pending a one-week
+dedicated GPU window.
+
+\subsection{E2 --- Token Cost is Decoupled from World Size}
+\label{sec:exp:e2}
+
+\paragraph{Hypothesis.} Pearson correlation between
+\texttt{prompt\_tokens / decision} and entity count is
+$\rho < 0.20$ --- i.e., the \texttt{pickHighlights}-truncated
+PromptPayload effectively decouples token cost from world load.
+
+\paragraph{Design.} World size $\in \{4, 8, 16, 24, 36\}$ initial
+workers $\times$ 5 seeds $\times$ 1 scenario (\textsc{S-Plains})
+$=$ 25 runs.
+
+\paragraph{Expected result.} Slope of
+$\text{tokens/decision} \sim a + b \cdot \text{entityCount}$
+with $|b| / a < 0.10$ across all four channels (Figure~\ref{fig:e2}).
+
+\subsection{E3 --- Cross-Vendor Channel-Axis Heterogeneous LLM Mix}
+\label{sec:exp:e3}
+
+This is the highest-risk, highest-novelty experiment. Following
+X-MAS~\citep{Ma2025XMAS} and Anthropic's Multi-Agent Research
+System~\citep{AnthropicMultiAgent2025}, we extend per-task and
+intra-family heterogeneity to the previously-unexplored
+\emph{cross-vendor channel-axis long-horizon survival} regime.
+
+\paragraph{Hypotheses.}
+\textbf{H3a:} Mixed cells (\texttt{XV-DIVERSE-LIGHT})
+exceed homogeneous-weak (\texttt{WW}) by at least $\Delta \text{RAE} = 0.15$
+(absolute), matching X-MAS's per-domain effect sizes.
+\textbf{H3b:} Mixed cells perform within $\Delta \text{RAE} = 0.05$
+of homogeneous-strong (\texttt{SS}) at $\sim$\,1/3 the cost
+(matching ChatDev's $-44\%$ role-removal as the upper bound on
+plausible savings).
+\textbf{H3c:} Specialization gradient: \emph{environment-director}
+benefits most from a strong model (long-tail decisions);
+\emph{npc-policy} benefits least (routine clamps dominate).
+
+\paragraph{Design.} Nine cells (\texttt{FB} fallback,
+\texttt{WW}, \texttt{SW}, \texttt{WS}, \texttt{SS},
+\texttt{XV-OPUS-SONNET} intra-family,
+\texttt{XV-DIVERSE-LIGHT}, \texttt{XV-DIVERSE-STRONG},
+\texttt{XV-OPENWEIGHT-ONLY}) $\times$ 2 scenarios $\times$ 10 seeds
+$=$ 180 runs. Each cell's per-channel routing is configured in
+\texttt{server/config/agent-routing.js}.
+
+\paragraph{Expected results.} Table~\ref{tab:e3-cells} summarizes
+the predicted cell ranking by sandwich-normalized RAE composite
+and DTE-per-completion-token.
+
+\begin{table}[t]
+\caption{E3 expected cell ranking (placeholder).}
+\label{tab:e3-cells}
+\centering
+\small
+\begin{tabular}{lrrrr}
+\toprule
+Cell & Sandwich-RAE & Survival & Cost (USD/run) & DTE \\
+\midrule
+\texttt{FB} fallback     & 0.00 & 0.62 & 0.00 & --- \\
+\texttt{WW}              & 0.18 & 0.74 & 0.04 & 0.31 \\
+\texttt{SW}              & \textbf{0.62} & \textbf{0.88} & 0.18 & 0.39 \\
+\texttt{WS}              & 0.51 & 0.83 & 0.21 & 0.32 \\
+\texttt{SS}              & 0.71 & 0.90 & 0.62 & 0.12 \\
+\texttt{XV-OPUS-SONNET}  & 0.69 & 0.91 & 0.45 & 0.18 \\
+\texttt{XV-DIVERSE-LIGHT}& \textbf{0.65} & 0.86 & \textbf{0.16} & \textbf{0.42} \\
+\texttt{XV-DIVERSE-STRONG}& 0.78 & 0.93 & 0.71 & 0.13 \\
+\texttt{XV-OPENWEIGHT-ONLY}& 0.41 & 0.78 & 0.05 & 0.36 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Threats to validity.} (a) prompt leakage --- the strong
+model's environment-director output enters the prompt context for
+the weak npc-policy channel; we control via a \texttt{SW-blind}
+ablation that strips the env-summary from the policy prompt.
+(b) Cross-vendor adapter compatibility --- Anthropic and Llama
+APIs do not natively speak OpenAI Chat Completions; we route all
+non-OpenAI traffic through OpenRouter / LiteLLM proxies and
+verify equivalence on a held-out test prompt set.
+(c) Token-counter normalization --- different tokenizers yield
+different counts; we re-tokenize all prompts with \texttt{tiktoken}
+post-hoc to align across vendors.
+
+\subsection{E4 --- Multi-Resource RAE Gini $\times$ Sufficiency}
+\label{sec:exp:e4}
+
+\paragraph{Hypothesis.} At matched RAE-sufficiency, stronger models
+produce flatter per-resource Gini (more even allocation) than
+weaker models, controlling for total throughput.
+
+\paragraph{Design.} 4 model tiers $\times$ 3 scenarios
+$\times$ 10 seeds $=$ 120 runs.
+Scatter plot: $x = $ \texttt{rae\_sufficiency}, $y =
+$ \texttt{rae\_distribution\_gini}, color $= $ tier.
+
+\paragraph{Expected result.} Strong-tier models cluster in the
+upper-left (high sufficiency, low Gini); weak tiers in upper-right
+("starve to feed only food"). Mann--Whitney $U$ on Gini between
+top and bottom tiers, with binned sufficiency, gives $p < 0.01$.
+
+\subsection{E5 --- Three-Axis Joint Memory Analysis}
+\label{sec:exp:e5}
+
+This is the methodologically novel experiment: the first joint
+analysis of $\text{Recall}(t) \times \text{Drift}(t) \times
+\text{Performance}(t)$ on continuous tick-level naturally-accumulated
+context.
+
+\paragraph{Hypotheses.}
+\textbf{H5a:} Verbal recall decreases monotonically with sim time.
+\textbf{H5b:} Drift becomes pronounced (Jaccard $\geq 0.5$) by
+$t = 2$\,h.
+\textbf{H5c:} Performance lag $\geq 30$ sim-min after recall starts
+declining; the LLM continues to act effectively on current
+observations even when memory of past directives has decayed,
+\emph{until} the decision involves a non-currently-visible
+constraint.
+\textbf{H5d:} Lost-in-the-middle U-shape replicates: positioning
+anchors in the middle of the prompt context produces $\geq 30\%$
+extra recall drop vs.\ head/tail positioning, matching
+\citet{Liu2024LostInMiddle}.
+\textbf{H5e:} Action-grounded recall decays faster than verbal
+recall (the LLM's strategic-summary may still mention the anchor
+even after directives have stopped reflecting it).
+\textbf{H5f:} Tick-continuous recall decay is at least $2\times$
+session-discrete recall decay, matched on absolute sim-time.
+
+\paragraph{Design.} 4 run lengths (30\,min, 2\,h, 8\,h, 24\,h)
+$\times$ 3 models $\times$ 5 seeds $=$ 60 runs (24\,h tier reduced
+to 3 seeds for $\sim$\,80 GPU-hour budget).
+Each run pre-injects 5 anchor observations at $t = 0$ via
+\texttt{AnchorInjector} (importance-weighted MemoryStore eviction
+ensures anchors survive routine observation floods).
+Anchors carry both verbal tokens (e.g., "warehouse at (12,8)")
+and \texttt{implicitGoals} (e.g., \{deliver, warehouse\}) for the
+action-grounded probe.
+
+\paragraph{Expected curves.} Figure~\ref{fig:e5} shows three
+plots over sim time: \texttt{anchored\_fact\_recall},
+\texttt{action\_grounded\_recall} (decaying $\sim$\,30\,min ahead
+of verbal), and \texttt{performance\_at\_t}.
+Figure~\ref{fig:e5d} replicates the U-shape on
+\texttt{Recall}(position).
+
+\paragraph{Differentiation from concurrent work.}
+MemoryArena~\citep{He2026MemoryArena} measures action-grounded
+recall in session-discrete agent loops; our continuous
+tick-level setting captures gradient decay rather than step
+boundaries.
+MemoryAgentBench~\citep{Hu2026MemoryAgentBench} includes a
+Selective Forgetting axis but no environment loop, so it cannot
+report a Performance curve.
+LongMemEval~\citep{Wu2025LongMemEval} measures verbal recall
+only.
+
+\subsection{E6 --- Schema-Validated Failure Mode Profile}
+\label{sec:exp:e6}
+
+\paragraph{Hypothesis.} Different LLM families exhibit
+\emph{distinct} failure-mode fingerprints (schema reject rate,
+timeout rate, parse-fail rate, fallback occupancy) that
+correlate with their training data and JSON-mode robustness.
+7B-tier open-weight models exhibit at least $5\times$ higher
+schema reject rate than Claude-Opus-4.7.
+
+\paragraph{Design.} 7 models $\times$ 2 scenarios $\times$ 5 seeds
+$\times$ 1 sim hour $=$ 70 runs. Per-channel schema-rejection
+rates are emitted as side-channel telemetry on
+\texttt{state.metrics.aiRuntime.schemaErrors}.
+
+\paragraph{Failure-mode matrix.} Reported in
+Table~\ref{tab:e6-failure} as a $7 \times 4$ matrix
+(\{schema, timeout, 429, parse\-fail\}$\times$ models).
+
+\subsection{E7 --- Decision Token Efficiency}
+\label{sec:exp:e7}
+
+\paragraph{Hypothesis.} Spearman rank correlation
+$\rho(\text{RAE-rank}, \text{DTE-rank}) < 0.7$, demonstrating
+that token efficiency adds ranking information beyond pure
+task performance. Specifically, 7B-tier models with frequent
+short directives can outrank 70B-tier models with rare rich
+directives on the DTE axis.
+
+\paragraph{Design.} Reuses E6 logs for the cross-model comparison;
+adds 15 cadence-ablation runs (1 model $\times$ 3 cadence levels
+$\times$ 5 seeds) to test whether DTE is robust to the
+LLM's call frequency knob.
+
+\subsection{E8 --- Bayesian Beta-Binomial vs.\ Frequentist (post-hoc)}
+\label{sec:exp:e8}
+
+Post-hoc analysis on E1--E7 logs.
+\textbf{Hypothesis.} Bayesian Beta-Binomial ranking stability at
+$N = 5$ seeds is at least 30\% better than frequentist Wald-CI
+ranking, measured as Kendall's $\tau$ across bootstrap subsamples.
+
+\paragraph{Status.} No additional runs needed. Result will appear
+as Figure~\ref{fig:e8}, line chart of ranking stability vs.\ $N$
+for the two methods.
+
+\subsection{E9 --- Three-Tier Reproducibility Verification}
+\label{sec:exp:e9}
+
+We report four reproducibility gates, each verified empirically:
+
+\begin{enumerate}[leftmargin=*]
+\item \textbf{Tier 1 (smoke, 60 ticks)}:
+\verb|node tools/audit/determinism-check.js --tier 1| produces
+hash \texttt{e360b76\ldots} on two consecutive runs (\textsc{Pass}).
+\item \textbf{Tier 2 (medium, 1\,800 ticks)}:
+hash \texttt{473d1b9\ldots} (\textsc{Pass}).
+\item \textbf{Tier 3 (long, 7\,200 ticks)}:
+hash \texttt{c2d86a6\ldots} (\textsc{Pass}, $\sim$\,3-min wall).
+\item \textbf{Cross-machine}: same seed produces the same Tier-1
+hash on Linux x86\_64, macOS arm64, and Windows x86\_64
+(verified manually; documented in
+Appendix~\ref{app:determinism-report}).
+\end{enumerate}
+
+The full reproducibility manifest, including container build
+commands and the seed-to-hash table, is given in
+\S\ref{sec:reproducibility} and Appendix~\ref{app:determinism-report}.

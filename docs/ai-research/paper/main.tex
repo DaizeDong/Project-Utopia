@@ -1,0 +1,90 @@
+% main.tex — Project-Utopia paper draft (RC2 baseline, 2026-05-10).
+%
+% Target venue: NeurIPS 2026 Datasets & Benchmarks Track (deadline 2026-06-07).
+% Backup: EMNLP 2026 R&E (2026-06-15) — see emnlp-readiness-assessment.md.
+%
+% Build:
+%   cd docs/ai-research/paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
+% Or:
+%   latexmk -pdf -shell-escape main.tex
+
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ─────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=green!50!black,
+  urlcolor=blue!60!black,
+}
+\usepackage[numbers, sort&compress]{natbib}
+\usepackage{enumitem}
+\usepackage{authblk}
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  showstringspaces=false,
+}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ── Title / authors ───────────────────────────────────────────────────
+\title{
+  Project-Utopia: A Deterministic Colony-Simulation Benchmark for\\
+  LLM Long-Horizon Planning, Multi-Channel Hierarchical Decision-Making,\\
+  and Naturally-Accumulated Memory Stress
+}
+
+\author[1]{Daize Dong}
+\affil[1]{(Affiliation pending)}
+
+\date{2026-05-10 — Draft RC2}
+
+\renewcommand{\Authands}{ and }
+
+% ── Document ──────────────────────────────────────────────────────────
+\begin{document}
+\maketitle
+
+\input{abstract}
+
+\input{sections/01-intro}
+
+\input{sections/02-related-work}
+
+\input{sections/03-architecture}
+
+\input{sections/04-metrics}
+
+\input{sections/05-experiments}
+
+\input{sections/06-discussion}
+
+\input{sections/07-limitations}
+
+\input{sections/08-reproducibility}
+
+% ── References ────────────────────────────────────────────────────────
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+
+\appendix
+\input{sections/A1-determinism-report}
+\input{sections/A2-prompt-templates}
+\input{sections/A3-scenario-blueprints}
+
+\end{document}

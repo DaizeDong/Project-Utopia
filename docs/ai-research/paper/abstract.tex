@@ -1,0 +1,56 @@
+\begin{abstract}
+
+Existing LLM-agent benchmarks evaluate single agents in episodic
+tool-use tasks~\citep{Liu2024AgentBench, Mialon2023GAIA, Zhou2024WebArena}
+or flat MARL policies in stateless games~\citep{Agapiou2022MeltingPot,
+Hafner2022Crafter, Paglieri2025BALROG}, leaving the regime where LLMs
+operate as \textbf{hierarchical decision-makers above a deterministic
+substrate} largely under-evaluated --- despite this being the canonical
+pattern in production agent systems
+\citep{FAIR2022Cicero, Vinyals2019AlphaStar, AnthropicMultiAgent2025}.
+We introduce \textbf{Project-Utopia}, a deterministic colony-simulation
+benchmark exposing four hierarchical LLM decision channels
+(\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
+\emph{colony-agent}) above an A* / Boids / seeded-RNG substrate, with
+schema validation and numerical guardrails ensuring \textbf{three-tier
+reproducibility}: (i) bit-identical fallback mode (verified at 7\,200
+ticks), (ii) hardware-independent LLM-on mode via
+LayerCast~\citep{Yuan2025LayerCast}, (iii) statistically stationary
+production-LLM mode.
+
+We propose a four-layer metric stack combining per-tick dimension
+plugins (Resource-Allocation Efficiency, Group Dynamics, Memory
+Degradation, Decision Token Efficiency, Hierarchical Coordination)
+with MeltingPot-style sandwich
+normalization~\citep{Agapiou2022MeltingPot}, Crafter geometric
+mean~\citep{Hafner2022Crafter}, HELM Mean Win Rate~\citep{Liang2023HELM},
+and Pluribus-style PolicyValue Baseline~\citep{Brown2019Pluribus} for
+$\sim$\,2--3$\times$ seed-variance reduction. Statistical inference
+follows~\citet{Bowyer2025DontUseClt}'s ICML 2025 Spotlight
+recommendation of Beta-Binomial credible intervals for small-$N$.
+
+Across nine experiments evaluating seven LLM families on five scenarios
+with ten seeds each ($\sim$\,2\,250 runs total), we demonstrate
+\textbf{(i)} hierarchical decomposition outperforms a matched-budget
+flat baseline by $\sim$\,0.10 RAE (matching ChatDev's
+$-44\%$ role-removal effect size~\citep{Qian2024ChatDev}); \textbf{(ii)}
+\textbf{cross-vendor channel-axis} heterogeneous LLM mixes
+(Anthropic + OpenAI + open-weight) achieve near-strong-on-all RAE at
+$\sim$\,1/3 the cost --- going beyond X-MAS~\citep{Ma2025XMAS}'s
+per-task routing and Anthropic's intra-family
+mix~\citep{AnthropicMultiAgent2025}; \textbf{(iii)} the first
+\textbf{three-axis joint memory analysis}
+($\text{Recall}(t) \times \text{Drift}(t) \times \text{Performance}(t)$)
+on continuous tick-level naturally-accumulated context, dissociating
+verbal recall from action-grounded recall in ways
+LongMemEval~\citep{Wu2025LongMemEval} and
+MemoryArena~\citep{He2026MemoryArena} cannot.
+
+Project-Utopia is released as a self-contained Node.js benchmark
+(zero npm dependencies, $\sim$\,55\,k LOC) with a four-line Docker
+reproducibility command, a record-replay LLM cache, and full
+JSON-NDJSON paper-run pipeline. Code, prompts, and 7\,200-tick
+determinism manifests are at
+\url{https://github.com/DaizeDong/Project-Utopia/tree/refactor/academic-benchmark}.
+
+\end{abstract}

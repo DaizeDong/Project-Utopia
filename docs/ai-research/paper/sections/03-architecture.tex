@@ -1,0 +1,140 @@
+\section{Project-Utopia Architecture}
+\label{sec:architecture}
+
+\subsection{Overview}
+
+Project-Utopia is a headless deterministic colony simulation in which
+20--50 NPC workers harvest resources, construct buildings, defend against
+periodic raids, and pursue long-horizon objectives across 60--240 sim
+seconds (configurable up to 24 hours). Each tick advances at
+$\Delta t = 1/30$\,s through a fixed 17-system pipeline (perception
+$\rightarrow$ LLM gates $\rightarrow$ policy applier $\rightarrow$
+per-entity FSM $\rightarrow$ A* over a versioned grid $\rightarrow$ Boids
+steering $\rightarrow$ integration $\rightarrow$ telemetry write-back).
+The LLM is consulted at three nested cadences:
+strategic decisions every 90\,s, environment / npc-policy decisions every
+5--15\,s, and colony-agent decisions on event triggers.
+
+Crucially, \emph{the LLM never controls individual entities}. It produces
+low-rank, schema-validated, clamped \emph{directives} that flow through
+the deterministic stack: a 4-channel directive stream
+$\to$ group policy applier $\to$ per-NPC FSM $\to$ A* target $\to$ Boids
+\texttt{desiredVel} $\to$ integrated position. This handoff is the
+deterministic boundary that makes bit-identical reproducibility
+possible at every channel even when the LLM itself is non-deterministic
+(see \S\ref{sec:reproducibility}).
+
+Figure~\ref{fig:architecture} illustrates the architecture.
+
+% TODO Fig 1: Architecture diagram showing 4 LLM channels above
+% deterministic substrate; place box for each system in the tick pipeline.
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 1 placeholder]
+4-channel LLM action surface above the deterministic substrate; tick
+pipeline; schema/guardrail boundary at \texttt{entity.desiredVel}.
+See \texttt{docs/ai-research/refactor-plan.md \S 1.3} for the
+ASCII version this figure replaces.}}}
+\caption{Project-Utopia architecture: four LLM decision channels
+(\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
+\emph{colony-agent}) operate at three nested cadences above a
+deterministic A* / Boids / seeded-RNG substrate. Schema validation
+and numerical guardrails ensure that LLM directives never violate
+hard physical or accounting invariants.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{The Four LLM Decision Channels}
+\label{sec:channels}
+
+\paragraph{Environment-director} (\emph{cadence}: 5--15\,s, throttled by
+\texttt{tuning.environmentDecisionIntervalSec}). Produces:
+weather (enum), \texttt{durationSec} (clamped 8--180\,s),
+\texttt{factionTension} ($\in$ [0, 1]), \texttt{eventSpawns}
+(at most 3, each with intensity $\geq$ 0.4 and clamped duration).
+Used to inject naturalistic stressors --- droughts, storms, faction
+buildups --- that the policy channel must adapt to.
+
+\paragraph{NPC-policy} (\emph{cadence}: 5--15\,s, additionally
+gated by threat $\leq 14$ tiles, guard deficit, or active worker
+strikes). Produces a per-group policy directive:
+$\{\text{groupId}, \text{intentWeights} \in [0,3]^{\sim 10},
+\text{riskTolerance} \in [0,1], \text{targetPriorities} \in [0,3]^{|\mathcal{T}|},
+\text{ttlSec} \in [8, 24\,\text{h}]\}$.
+Each group's intent weights map through
+\texttt{POLICY\_INTENT\_TO\_STATE} into per-NPC FSM state preferences.
+
+\paragraph{Strategic-plan} (\emph{cadence}: 90\,s heartbeat plus
+crisis triggers --- workers $\to 0$, food/wood $\leq 5$, threat $\geq 85$
+--- with 15\,s cooldown). Produces a free-text colony-level objective
+plus structured \texttt{primaryGoal} / \texttt{constraints} /
+\texttt{resourceBudget} fields. Strategic plans are advisory; lower
+channels can override under raid posture clamps.
+
+\paragraph{Colony-agent} (\emph{cadence}: sim-time gated, additionally
+triggered by plan stalls). Produces multi-step plans
+$[(\text{action}, \text{args}, \text{depends\_on})]$ that
+\texttt{PlanExecutor} grounds tile-by-tile via the existing
+\texttt{BuildSystem}. Wraps a Perceive $\to$ Plan $\to$ Ground $\to$
+Execute $\to$ Evaluate $\to$ Reflect loop.
+
+\subsection{Schema Validation and Guardrails}
+
+All four channels share two filters before directives reach the
+simulation. \textbf{ResponseSchema} performs JSON-Schema validation:
+unknown enum values are dropped, NaN values are rejected,
+field types are coerced. \textbf{Guardrails} clamps numeric ranges
+($\text{weights} \in [0,3]$, $\text{risk} \in [0,1]$, TTL
+$\in$ [8\,h, 24\,h]) and applies \emph{raid-posture clamps}:
+when threat is imminent, intent weights for combat-relevant
+intents are forcibly raised regardless of LLM output.
+This boundary is essential: it makes the action space precisely
+$\sim$\,10$^2$--10$^3$ continuous axes per directive, decoupled from
+entity count, and it ensures the simulation never enters an invalid
+state even when the LLM emits adversarial or malformed JSON.
+
+\subsection{Determinism and the AgentAdapter Seam}
+\label{sec:adapter-seam}
+
+The substrate is deterministic given a seed. RNG flows through
+\texttt{src/app/rng.js}; A* paths are cached by
+$(\text{faction}, \text{gridVersion}, \text{costVersion})$;
+Boids accumulators run in fixed order; \texttt{PathWorkerPool} is
+disabled in \texttt{deterministic: true} mode. Verifying determinism
+empirically is non-trivial: we built
+\texttt{tools/audit/determinism-check.js} which runs the harness
+twice with the same seed and compares SHA-256 hashes of slim state
+snapshots. Three tiers are gated: 60 ticks, 1\,800 ticks, and
+7\,200 ticks (240 sim-seconds). All three pass with bit-identical
+hashes (\texttt{e360b76\ldots}, \texttt{473d1b9\ldots},
+\texttt{c2d86a6\ldots}; see Appendix~\ref{app:determinism-report}).
+
+The \textbf{AgentAdapter} is the interface that any LLM (or
+fallback policy, or scripted oracle) must implement to drive
+the four channels:
+
+\begin{lstlisting}[language=javascript, caption={AgentAdapter contract}]
+async request(channel, payload, options): Promise<DecisionResponse>
+// channel ∈ {environment-director, npc-policy, strategic-plan, colony-agent}
+// returns: {data, fallback, usage, latencyMs, model, error, debug}
+// MUST not throw; on failure return fallback DecisionResponse
+\end{lstlisting}
+
+Concrete adapters in our suite include:
+(1) \texttt{LLMClient} (OpenAI-compatible HTTP proxy);
+(2) \texttt{NoopAgentAdapter} / \texttt{ScriptedOraclePolicy} (used for
+the sandwich-norm fallback and oracle terms);
+(3) \texttt{HTTPAgentClient} dispatching to a 9-cell cross-vendor routing
+\texttt{agent-bridge.js};
+(4) \texttt{LayerCastAdapter} wrapping any inner adapter with
+deterministic-inference headers;
+(5) \texttt{RecordReplayCache} (VCR-cassette-style) for offline
+re-execution from a previous run's transcript.
+
+\texttt{AdapterToLLMClient} bridges any \texttt{AgentAdapter} into the
+existing simulation systems by exposing the four legacy method
+signatures (\texttt{requestEnvironment}, \texttt{requestPolicies},
+\texttt{requestStrategic}, \texttt{requestPlan}) that the existing
+strategic / environment / brain / colony-director systems call.
+This single seam is what makes E3's 9-cell cross-vendor matrix possible
+without modifying any simulation system.

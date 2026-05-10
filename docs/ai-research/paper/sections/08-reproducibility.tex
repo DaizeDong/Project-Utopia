@@ -1,0 +1,126 @@
+\section{Reproducibility}
+\label{sec:reproducibility}
+
+We follow~\citet{Siddiq2025SoftwareReproducibility}'s Reproducibility
+Maturity Model (RMM) and target Tier 4+ across all seven smell
+categories.
+
+\subsection{Three-Tier Reproducibility Model}
+
+Project-Utopia distinguishes three levels of reproducibility,
+following~\citet{Yuan2025LayerCast}:
+
+\begin{description}[leftmargin=*]
+\item[\textbf{Tier 1 — Fallback bit-identical.}]
+Runs in deterministic fallback mode (no LLM in the loop)
+produce \emph{bit-identical SHA-256 hashes} across multiple
+runs of the same seed and scenario. We verify this at three
+sub-tiers:
+60 ticks (hash \texttt{e360b76\ldots}, $\sim$1\,s wall),
+1\,800 ticks (\texttt{473d1b9\ldots}, $\sim$30\,s wall), and
+7\,200 ticks (\texttt{c2d86a6\ldots}, $\sim$2\,m wall).
+Re-running \verb|npm run audit:determinism| in our
+released container reproduces all three hashes.
+\item[\textbf{Tier 2 — LLM-on bit-identical via LayerCast.}]
+With LayerCast~\citep{Yuan2025LayerCast} inference (16-bit
+weights, FP32 compute, \texttt{deterministic: true}), the same
+seed plus the same model snapshot produces bit-identical
+hashes across hardware. We provide a
+\texttt{LayerCastAdapter} that injects the required
+\texttt{X-LayerCast-Weights / Compute / Deterministic} headers and
+\texttt{inference\_config} body block. Falls back to
+RecordReplayCache (Tier 2 stationary) when the upstream
+proxy does not advertise LayerCast support.
+\item[\textbf{Tier 3 — Production-LLM stationary.}]
+With temperature $= 0$ and pinned model snapshot ID, the
+\emph{distribution} of directives is statistically stationary
+(KL divergence $< 0.05$ across same-prompt repetitions); raw
+hashes need not match. This is the realistic ceiling for
+production LLM APIs without LayerCast.
+\end{description}
+
+\subsection{RMM Compliance Mapping}
+
+\begin{table}[t]
+\caption{RMM Tier 4+ compliance per~\citet{Siddiq2025SoftwareReproducibility}.}
+\label{tab:rmm}
+\centering
+\small
+\begin{tabularx}{\columnwidth}{lXc}
+\toprule
+Smell category & Project-Utopia compliance & Tier \\
+\midrule
+Code/Execution & \texttt{git tag v0.11.0-rc2} + commit-pinned Dockerfile & 4 \\
+Data & Scenario-template hash committed; seed list fixed in repo & 4 \\
+Documentation & \texttt{CLAUDE.md} + 9 \texttt{ai-research/} docs ($\sim$3\,800 LOC) & 5 \\
+Environment-tooling & Pin Node 22.x; LayerCast version; CUDA matrix in Dockerfile & 4 \\
+Versioning & Git tags per release; \texttt{package.json} version pinned & 5 \\
+Model & LLM snapshot ID pinned; LayerCast inference; record-replay cache & 4 \\
+Access-Legal & All datasets + code Apache 2.0 / MIT; no proprietary data & 5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Quick-Start Reproducibility}
+
+Reviewers can verify our Tier-1 reproducibility claim with a
+4-line container command:
+
+\begin{lstlisting}[caption={Reproducibility verification},language=bash]
+git clone https://github.com/DaizeDong/Project-Utopia.git
+cd Project-Utopia
+git checkout refactor/academic-benchmark-v0.11.0-rc2
+npm test && npm run audit:determinism
+\end{lstlisting}
+
+\noindent
+This runs the full 795-test suite ($\sim$\,38\,s) and the Tier-1
+60-tick determinism check ($\sim$\,2\,s), both gated to PASS.
+For Tier 3 (7\,200-tick) verification, append \texttt{--tier 3}
+to the audit command (3-min wall-time).
+
+\subsection{Anti-Contamination Safeguards}
+
+Following PeerBench~\citep{Cheng2025PeerBench}, we deliberately
+avoid agent-as-judge for capability evaluation; all metrics
+are simulator-objective (DevIndex, deaths, sim-tick survival).
+Three additional safeguards reduce the risk that Project-Utopia
+ends up in pre-training corpora:
+(1) procedurally generated maps per seed --- there is no fixed
+"target answer" to memorize;
+(2) structured JSON action space --- LLMs cannot game the
+benchmark by producing free text that happens to match a known
+answer;
+(3) multi-tick trajectory required --- a single output cannot
+"win" the benchmark; the LLM must emit a sequence of valid
+directives over hundreds to thousands of ticks.
+
+\subsection{Released Artifacts}
+
+Our release contains the following artifacts, all under
+\texttt{Apache 2.0 / MIT}:
+
+\begin{itemize}[leftmargin=*]
+\item \texttt{src/} --- $\sim$\,55\,k LOC simulation core, 4 LLM
+channels, AgentAdapter contract (Node.js, zero npm dependencies
+for the test runner).
+\item \texttt{src/benchmark/} --- SimHarness, 5 dimension plugins,
+ScoringEngine, DimensionNormalizer, PVB tracker, MultiBackendAdapter.
+\item \texttt{src/data/prompts/} --- the 4 verbatim system prompts
+defining the LLM contract surface; this \emph{is} the action-space
+specification.
+\item \texttt{tools/audit/} --- determinism-check (3 tiers) +
+RNG-coverage report.
+\item \texttt{server/} --- \texttt{ai-proxy.js} (OpenAI-compatible)
+and \texttt{agent-bridge.js} (cross-vendor 9-cell routing).
+\item \texttt{scripts/benchmark-paper.mjs} --- one-line CLI to
+reproduce any Project-Utopia experiment.
+\item \texttt{output/determinism-tier3-temperate\_plains.json} ---
+the full Tier-3 hash manifest verifying our claim.
+\item \texttt{docs/ai-research/} --- $\sim$\,3\,800 LOC of
+research-method documentation including this paper's source.
+\end{itemize}
+
+\paragraph{Datasheet.} A complete Datasheet for Datasets entry
+following the Gebru et al.\ template appears in
+Appendix~\ref{app:datasheet}.
