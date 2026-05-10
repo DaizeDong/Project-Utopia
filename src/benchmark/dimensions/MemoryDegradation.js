@@ -48,11 +48,27 @@ const DEFAULT_IMPLICIT_GOAL_KEYS = ["deliver", "build", "guard", "farm"];
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
 /** Extract the union of all weighted intent / target tokens from a group policies
- *  directive (`state.ai.groupPolicies` shape) for the action-grounded recall test. */
+ *  directive (`state.ai.groupPolicies` shape) for the action-grounded recall test.
+ *
+ *  Bug fix (P0): NPCBrainSystem stores groupPolicies as a Map, with each entry
+ *  shaped as `{ expiresAtSec, data: <policyObject> }`. The previous
+ *  `Object.values(policies)` walk returned [] on a Map and missed the `.data`
+ *  unwrap on plain-object inputs. Result: action_grounded_recall was
+ *  identically zero on every run, regardless of directive content.
+ */
 function extractActionTokens(state) {
   const tokens = new Set();
-  const policies = state?.ai?.groupPolicies ?? {};
-  for (const pol of Object.values(policies)) {
+  const policiesRaw = state?.ai?.groupPolicies;
+  // groupPolicies may be a Map (live runtime) OR a plain object (test
+  // fixtures / older snapshots) — handle both.
+  const entries = policiesRaw instanceof Map
+    ? Array.from(policiesRaw.values())
+    : Object.values(policiesRaw ?? {});
+  for (const wrap of entries) {
+    // Each entry might be `{ expiresAtSec, data: {intentWeights, ...} }`
+    // (NPCBrainSystem.set shape) or directly `{intentWeights, ...}`
+    // (test fixture shape). Try `.data` first, fall back to the entry itself.
+    const pol = wrap?.data ?? wrap;
     for (const [intent, w] of Object.entries(pol?.intentWeights ?? {})) {
       if (Number(w) > 0) tokens.add(String(intent).toLowerCase());
     }
@@ -138,6 +154,11 @@ export const MemoryDegradationPlugin = {
       });
       if (s.session?.phase === "end") break;
     }
+    // NOTE: `samples._meta` is an ad-hoc property on an Array. JSON.stringify
+    // does NOT preserve non-index properties on arrays (it serializes the
+    // numeric indices only and drops `_meta`). Callers that need to
+    // round-trip metadata should pull it off in-process before serialising,
+    // or read it directly from selfScore via ctx (`anchors`, etc).
     samples._meta = { sessionDiscrete, sessionResetSec, anchorsCount: anchors.length };
     return samples;
   },

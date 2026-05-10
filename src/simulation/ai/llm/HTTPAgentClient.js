@@ -115,13 +115,25 @@ export class HTTPAgentClient extends AgentAdapter {
 
     const ctrl = new AbortController();
     const externalSignal = options.signal;
+    let externalAbortHandler = null;
     if (externalSignal) {
       if (externalSignal.aborted) ctrl.abort(externalSignal.reason);
-      else externalSignal.addEventListener("abort", () => ctrl.abort(externalSignal.reason), { once: true });
+      else {
+        externalAbortHandler = () => ctrl.abort(externalSignal.reason);
+        externalSignal.addEventListener("abort", externalAbortHandler, { once: true });
+      }
     }
     const timeoutMs = Math.max(100, Number(options.timeoutMs ?? this.timeoutMs) || this.timeoutMs);
     const timer = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
     const started = nowMs();
+    // P1 fix (reviewer B H-1): always remove the external-abort listener in
+    // finally so a long-lived externalSignal doesn't accumulate one listener
+    // per HTTP call.
+    const cleanupListener = () => {
+      if (externalSignal && externalAbortHandler) {
+        externalSignal.removeEventListener("abort", externalAbortHandler);
+      }
+    };
 
     try {
       const resp = await this.fetchImpl(url, {
@@ -179,6 +191,7 @@ export class HTTPAgentClient extends AgentAdapter {
       return fallbackResponse(channel, this.lastError, nowMs() - started);
     } finally {
       clearTimeout(timer);
+      cleanupListener();
     }
   }
 

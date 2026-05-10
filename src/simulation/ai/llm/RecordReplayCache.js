@@ -256,10 +256,31 @@ class CachedAdapter extends AgentAdapter {
       cached = await this._cache.get(cacheReq);
     } catch (err) {
       if (err instanceof RecordReplayCacheMiss) {
-        // Strict replay mode and miss — surface the miss.
-        throw err;
+        // P1 fix (reviewer B R-1): AgentAdapter contract requires never throw.
+        // Return a fallback DecisionResponse instead of bubbling the miss up
+        // to sim systems that aren't prepared for it. Caller can inspect
+        // `error` to detect strict-replay miss.
+        return {
+          data: null,
+          fallback: true,
+          usage: { promptTokens: 0, completionTokens: 0, cachedTokens: 0 },
+          latencyMs: 0,
+          model: "record-replay-miss",
+          error: `record-replay miss: ${err.message ?? "no cached entry"}`,
+          debug: { channel, cacheKey: this._cache.computeKey?.(cacheReq) ?? null },
+        };
       }
-      throw err;
+      // Other errors (file-system / corruption) — also degrade to fallback
+      // rather than throwing into the sim systems.
+      return {
+        data: null,
+        fallback: true,
+        usage: { promptTokens: 0, completionTokens: 0, cachedTokens: 0 },
+        latencyMs: 0,
+        model: "record-replay-error",
+        error: `record-replay error: ${err?.message ?? String(err)}`,
+        debug: { channel },
+      };
     }
     if (cached) return cached;
 

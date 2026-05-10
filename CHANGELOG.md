@@ -1,5 +1,36 @@
 # Changelog
 
+## [Unreleased] — refactor/academic-benchmark — P0 reviewer-blocker fixes
+
+### P0 fix — wire AgentAdapter through SimHarness (Critical Bug 1)
+- Why: 3 reviewer reports converged on the same finding — `SeedMatrix.runOneCell` was setting `harness.state.ai.adapter = adapter`, but no sim system reads that field. The 4-channel decision sites (`StrategicDirector`, `EnvironmentDirectorSystem`, `NPCBrainSystem`, `AgentDirectorSystem`) all call `services.llmClient.requestXxx(...)` directly. Net effect: every alternate adapter (`FlatBaselineAdapter`, `ScriptedOraclePolicy`, `HTTPAgentClient`, `LayerCastAdapter`, `NoopAgentAdapter`) was dead code; the entire P0 P-batch was a dead seam.
+- New file: `src/simulation/ai/llm/AdapterToLLMClient.js` — drop-in LLMClient shim wrapping any `AgentAdapter` (`requestEnvironment` / `requestPolicies` / `requestStrategic` / `requestPlan` + `lastStatus` / `lastModel` / `lastLatencyMs` / `lastError`). Validates + guards adapter responses through the same `validateEnvironmentDirective` / `validateGroupPolicy` / `validatePlanResponse` + `guardEnvironmentDirective` / `guardGroupPolicies` paths LLMClient uses on proxy responses.
+- Modified `src/app/createServices.js` — accepts `options.agentAdapter`; precedence is `agentAdapter` → `offlineAiFallback` → raw `LLMClient`. Default browser/game path unchanged.
+- Modified `src/benchmark/framework/SimHarness.js` — accepts `opts.agentAdapter` and forwards it to `createServices`.
+- Modified `src/benchmark/framework/SeedMatrix.js` — `runOneCell` now passes the adapter at SimHarness construction time instead of the old `harness.state.ai.adapter = adapter` post-hoc mutation.
+- New test `test/seed-matrix-adapter-integration.test.js` — three-cell e2e: `NoopAgentAdapter` (sanity), `ScriptedOraclePolicy` (real directives), `FlatBaselineAdapter` w/ stubbed inner `LLMClient` (verifies the fused-call path is actually invoked). Includes a `CountingAdapter` wrapper that asserts non-zero per-channel call counts.
+
+### P0 fix — MemoryDegradation extractActionTokens Map vs Object (Critical Bug 2)
+- Why: `state.ai.groupPolicies` is a `Map` (NPCBrainSystem uses `.set()`), with each entry shaped `{ expiresAtSec, data: <policyObject> }`. `Object.values(policies)` returns `[]` on a Map, and even with object input never unwrapped `.data`. Result: `action_grounded_recall` was identically zero on every benchmark run — H5e couldn't distinguish verbal vs action-grounded recall.
+- Modified `src/benchmark/dimensions/MemoryDegradation.js` `extractActionTokens` to handle both `Map` and plain-object inputs and to unwrap `.data` (live shape) or accept a flat policy (test-fixture shape). Added a comment noting that `samples._meta` is non-enumerable on `JSON.stringify` (arrays drop ad-hoc properties); callers should pull `_meta` off in-process or read via `selfScore` ctx.
+- New test `test/benchmark-memory-action-recall.test.js` — 4 cases: Map-with-data wrap, plain-object-with-data wrap, flat policy without wrap, zero-weight exclusion.
+
+### P0 fix — Anchor Injection Protocol (Critical Bug 3)
+- Why: `MemoryDegradation.collectSamples` accepts `opts.anchors` and `selfScore` accepts `ctx.anchors`, but no plumbing wrote those tokens into `harness.memoryStore`. Every E5 (anchor decay) experiment ran on an empty memoryStore.
+- New file: `src/benchmark/anchors/AnchorInjector.js` — `injectAnchors(harness, anchors, opts)` writes through `MemoryStore.addObservation(timeSec, text, category, importance)` with category `"anchor"` and importance 5; falls back to direct `observations.push` if the API ever changes; returns `{ injected, skipped }` counts.
+- New test `test/benchmark-anchor-injector.test.js` — 6 cases incl. empty/string-form anchor handling, formatForPrompt round-trip, fallback push path, no-memoryStore graceful skip, anchored_fact_recall ≥ 0 after injection.
+
+### Verified
+- `node --test test/benchmark-memory-action-recall.test.js test/benchmark-anchor-injector.test.js` — 10/10 pass
+- `node --test test/seed-matrix-adapter-integration.test.js` — 3/3 pass (~30 s)
+- `node --test test/*.test.js` (full suite) — **754 tests / 753 pass / 0 fail / 1 skip** (pre-existing skip preserved)
+
+### LOC delta
+- New: 298 (AdapterToLLMClient) + 95 (AnchorInjector) + 185 + 132 + 100 (3 tests) = **810 LOC across 5 new files**
+- Modified: ~65 lines net across 4 files (createServices, SimHarness, SeedMatrix, MemoryDegradation)
+
+---
+
 ## [0.11.0-rc1] — 2026-05-09 — Academic-benchmark refactor
 
 Branch: `refactor/academic-benchmark` (from baseline tag `pre-academic-refactor-v0.10.0` = commit `16a593d`).

@@ -65,6 +65,11 @@ export class SimHarness {
    * @param {object} [opts.preset]
    * @param {string} [opts.runtimeProfile="long_run"]
    * @param {Function} [opts.buildSystemsOverride]
+   * @param {object} [opts.agentAdapter] — AgentAdapter instance to wire into
+   *   `services.llmClient` (via AdapterToLLMClient). When supplied, all sim
+   *   systems calling `services.llmClient.requestXxx(...)` route through
+   *   this adapter's `request(channel, payload)`. Without it, the harness
+   *   uses the offline-fallback LLMClient (deterministic).
    */
   constructor(opts) {
     const {
@@ -74,6 +79,7 @@ export class SimHarness {
       preset,
       runtimeProfile = "long_run",
       buildSystemsOverride,
+      agentAdapter,
     } = opts;
 
     this.state = createInitialGameState({ templateId, seed });
@@ -88,9 +94,20 @@ export class SimHarness {
     this.memoryObserver = new MemoryObserver(this.memoryStore);
 
     this.services = createServices(seed, {
+      // When an adapter is provided, the offlineAiFallback wrapper is bypassed
+      // (createServices sees agentAdapter first). Otherwise, default to the
+      // offline-fallback path so headless runs are deterministic.
       offlineAiFallback: !aiEnabled,
       deterministic: true,
+      agentAdapter: agentAdapter ?? null,
     });
+    // Expose adapter on state for any system / probe that wants to inspect
+    // it. AdapterToLLMClient is the actual wiring; this property is purely
+    // informational.
+    if (agentAdapter) {
+      this.state.ai = this.state.ai ?? {};
+      this.state.ai.adapter = agentAdapter;
+    }
 
     // applyPreset after services exist so preset position jitter can draw
     // from the seeded RNG (determinism — otherwise Math.random pollutes the

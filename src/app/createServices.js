@@ -1,6 +1,7 @@
 import { PathCache } from "../simulation/navigation/PathCache.js";
 import { PathWorkerPool } from "../simulation/navigation/PathWorkerPool.js";
 import { LLMClient } from "../simulation/ai/llm/LLMClient.js";
+import { AdapterToLLMClient } from "../simulation/ai/llm/AdapterToLLMClient.js";
 import { buildEnvironmentFallback, buildPolicyFallback } from "../simulation/ai/llm/PromptBuilder.js";
 import { ReachabilityCache } from "../simulation/services/ReachabilityCache.js";
 import { PathFailBlacklist } from "../simulation/services/PathFailBlacklist.js";
@@ -93,9 +94,22 @@ function createOfflineFallbackClient(baseClient) {
 
 export function createServices(seed = 1337, options = {}) {
   const rng = new SeededRng(deriveRngSeed(seed, "simulation"));
-  const llmClient = options.offlineAiFallback
-    ? createOfflineFallbackClient(new LLMClient({ baseUrl: options.baseUrl ?? "" }))
-    : new LLMClient({ baseUrl: options.baseUrl ?? "" });
+  // Adapter precedence: when an `agentAdapter` is supplied (benchmark
+  // harness path) we wrap it in AdapterToLLMClient so all
+  // `services.llmClient.requestXxx(...)` callers transparently route to the
+  // adapter's `request(channel, ...)`. This is the seam that makes
+  // FlatBaselineAdapter / ScriptedOraclePolicy / HTTPAgentClient /
+  // LayerCastAdapter actually drive the simulation. The default browser /
+  // game path keeps the existing LLMClient (proxy-routed) and the
+  // offlineAiFallback wrapper exactly as before — no behaviour change.
+  let llmClient;
+  if (options.agentAdapter) {
+    llmClient = new AdapterToLLMClient(options.agentAdapter);
+  } else if (options.offlineAiFallback) {
+    llmClient = createOfflineFallbackClient(new LLMClient({ baseUrl: options.baseUrl ?? "" }));
+  } else {
+    llmClient = new LLMClient({ baseUrl: options.baseUrl ?? "" });
+  }
   // `deterministic: true` disables the wall-clock path budget so long-horizon
   // benchmarks produce reproducible results. Headless harness defaults to
   // deterministic; the in-browser game (now removed in S1) used 3ms.

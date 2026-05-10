@@ -103,11 +103,14 @@ export async function runOneCell(seed, scenario, opts) {
         seed,
         aiEnabled,
         runtimeProfile,
+        // Wire the adapter at construction so AdapterToLLMClient becomes
+        // services.llmClient and the per-channel sim systems
+        // (StrategicDirector / EnvironmentDirectorSystem / NPCBrainSystem /
+        // AgentDirectorSystem) actually invoke the adapter. Bug fix: prior
+        // to this we only set state.ai.adapter, which no system reads —
+        // every alternate adapter was dead code.
+        agentAdapter: adapter,
       });
-      // Adapter wiring point — store on state for downstream systems that
-      // honor it. NoopAdapter is a no-op so this stays safe.
-      harness.state.ai = harness.state.ai ?? {};
-      harness.state.ai.adapter = adapter;
 
       const samples = await plugin.collectSamples(harness, dimensionOpts);
       const score = plugin.selfScore(samples ?? [], { agentId, seed, scenario });

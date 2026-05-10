@@ -136,7 +136,17 @@ export function sandwichNormalize(agentScores, fallbackScores, oracleScores, opt
   for (let i = 0; i < n; i++) {
     const range = oracleScores[i] - fallbackScores[i];
     let s;
-    if (!Number.isFinite(range) || range <= 0) {
+    if (!Number.isFinite(range)) {
+      // Non-finite oracle/fallback (NaN / Infinity) — return NaN to signal
+      // upstream pipeline error rather than silently mask it.
+      s = NaN;
+    } else if (range < 0) {
+      // Oracle is WORSE than fallback — this is an oracle blueprint bug.
+      // Return NaN so caller can detect; do not silently produce a score.
+      // (Reviewer B SC-1: collapsing this into "above-baseline binary" was wrong.)
+      s = NaN;
+    } else if (range === 0) {
+      // Degenerate (oracle == fallback): binary above-baseline.
       s = agentScores[i] > fallbackScores[i] ? 1 : 0;
     } else {
       s = (agentScores[i] - fallbackScores[i]) / range;
@@ -144,7 +154,7 @@ export function sandwichNormalize(agentScores, fallbackScores, oracleScores, opt
       if (s < 0) s = 0;
       if (clipUpper && s > 1) s = 1;
     }
-    out[i] = round(s, 4);
+    out[i] = Number.isFinite(s) ? round(s, 4) : s;
   }
   return out;
 }
