@@ -113,9 +113,9 @@ The \textbf{AgentAdapter} is the interface that any LLM (or
 fallback policy, or scripted oracle) must implement to drive
 the four channels:
 
-\begin{lstlisting}[language=javascript, caption={AgentAdapter contract}]
+\begin{lstlisting}[language=Java, caption={AgentAdapter contract}]
 async request(channel, payload, options): Promise<DecisionResponse>
-// channel ∈ {environment-director, npc-policy, strategic-plan, colony-agent}
+// channel in {environment-director, npc-policy, strategic-plan, colony-agent}
 // returns: {data, fallback, usage, latencyMs, model, error, debug}
 // MUST not throw; on failure return fallback DecisionResponse
 \end{lstlisting}
