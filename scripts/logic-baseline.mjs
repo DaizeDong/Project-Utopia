@@ -14,7 +14,7 @@ import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 const OUT_ARG = process.argv.find((arg) => arg.startsWith("--out="));
 const outPath = OUT_ARG
   ? OUT_ARG.slice("--out=".length)
-  : path.resolve("docs/logic-baseline-2026-03.json");
+  : path.resolve("output/logic-baseline.json");
 
 const seedArg = process.argv.find((arg) => arg.startsWith("--seed="));
 const seed = seedArg ? Number(seedArg.slice("--seed=".length)) : 1337;

@@ -134,8 +134,7 @@ export function resolveOptions(args) {
   const softValidation = parseBool(args["soft-validation"], false, "soft-validation");
 
   // Default output lands under output/benchmark-runs/long-horizon/ (gitignored
-  // via the existing output/ entry). Callers may override via --out-dir;
-  // docs/benchmarks/ is reserved for committed baselines, not run artefacts.
+  // via the existing output/ entry). Callers may override via --out-dir.
   const outDir = path.resolve(
     args["out-dir"] ?? "output/benchmark-runs/long-horizon",
   );
