@@ -53,8 +53,8 @@ async function runOnce() {
     seed: SEED,
     aiEnabled: false,
   });
-  await harness.boot();
-  for (let i = 0; i < TICKS; i++) harness.tick(DT_SEC);
+  // SimHarness boots in the constructor; tick() is async and drives one DT_SEC step.
+  for (let i = 0; i < TICKS; i++) await harness.tick();
   return hashState(harness.state);
 }
 

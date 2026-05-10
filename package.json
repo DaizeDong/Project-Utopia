@@ -13,6 +13,7 @@
     "bench:long": "node scripts/long-horizon-bench.mjs",
     "bench:long:smoke": "node scripts/long-horizon-bench.mjs --seed 1 --max-days 90 --tick-rate 2 --stop-on-death false --soft-validation true",
     "bench:long:matrix": "node scripts/long-horizon-matrix.mjs",
+    "bench:dimensions": "node --test test/benchmark-dimensions.test.js",
     "audit:rng": "node tools/audit/rng-coverage-report.js",
     "audit:determinism": "node tools/audit/determinism-check.js"
   },

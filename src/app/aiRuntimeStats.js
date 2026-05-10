@@ -30,6 +30,18 @@ export function createDefaultAiRuntimeStats() {
     lastResultSource: "none",
     coverageTarget: "fallback",
     liveCoverageSatisfied: false,
+    // Academic-benchmark token telemetry (S5).
+    // Populated by AgentAdapter implementations from upstream `usage`
+    // block. OpenAI-compatible proxies (vLLM, llama.cpp, Ollama, TGI)
+    // all expose at least promptTokens + completionTokens; SGLang/vLLM
+    // additionally expose prefix-cache hits.
+    promptTokens: 0,
+    completionTokens: 0,
+    cachedTokens: 0,
+    firstTokenLatencyMs: 0,
+    tokensPerSec: 0,
+    kvCacheHits: 0,
+    prefixHits: 0,
   };
 }
 
@@ -61,6 +73,14 @@ export function ensureAiRuntimeStats(state) {
   stats.lastFallbackSec = Number.isFinite(Number(stats.lastFallbackSec)) ? Number(stats.lastFallbackSec) : -999;
   stats.maxUnrecoveredFallbackSec = clampNonNegative(stats.maxUnrecoveredFallbackSec);
   stats.consecutiveFallbackResponses = clampNonNegative(stats.consecutiveFallbackResponses);
+  // Token telemetry (S5).
+  stats.promptTokens = clampNonNegative(stats.promptTokens);
+  stats.completionTokens = clampNonNegative(stats.completionTokens);
+  stats.cachedTokens = clampNonNegative(stats.cachedTokens);
+  stats.firstTokenLatencyMs = clampNonNegative(stats.firstTokenLatencyMs);
+  stats.tokensPerSec = clampNonNegative(stats.tokensPerSec);
+  stats.kvCacheHits = clampNonNegative(stats.kvCacheHits);
+  stats.prefixHits = clampNonNegative(stats.prefixHits);
   stats.lastErrorKind = String(stats.lastErrorKind ?? "none");
   stats.lastErrorMessage = String(stats.lastErrorMessage ?? "");
   stats.lastResultSource = String(stats.lastResultSource ?? "none");

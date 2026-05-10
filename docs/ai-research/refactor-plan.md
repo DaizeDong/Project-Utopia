@@ -217,18 +217,26 @@ vite.config.js             45
 
 ### 4.11 Decision matrix（拍板表）
 
-| ID | 决策项 | 建议 | 拍板 |
-|---|---|---|---|
-| D1 | SkillLibrary | CUT + tag archive | _待定_ |
-| D2 | ProcessingSystem | CUT | _待定_ |
-| D3 | TileStateSystem | KEEP | _待定_ |
-| D4 | Wildlife + Trader | CUT (raider stays) | _待定_ |
-| D5 | Algorithmic baseline + runMode | KEEP+gate | _待定_ |
-| D6 | Construction (progressive) | KEEP | _待定_ |
-| D7 | Visibility + Faction | KEEP+toggle | _待定_ |
-| D8 | Progression / EventDirector / RaidEscalator | CUT / SIMPLIFY / KEEP | _待定_ |
-| D9 | 地图模板 | 保留 2 + 1 可选 | _待定_ |
-| D10 | ScenarioFactory | CUT 剧情，保 80 LOC helper | _待定_ |
+| ID | 决策项 | 建议 | 拍板 | 实际状态 (2026-05-09) |
+|---|---|---|---|---|
+| D1 | SkillLibrary | CUT + tag archive | DEFERRED | 文件保留；ColonyPlanner / PlanExecutor / AgentDirectorSystem 重度依赖；tag `feature/skill-library-archive` 待启动后续切除 |
+| D2 | ProcessingSystem | CUT | DONE (S3) | `economy/ProcessingSystem.js` + `proposers/ProcessingProposer.js` 删；BuildProposer.WAVE_2 + SimHarness + long-horizon-helpers 同步移除 |
+| D3 | TileStateSystem | KEEP | DONE | 保留（24h harness 时间压力源）|
+| D4 | Wildlife + Trader | CUT (raider stays) | DONE (S3) | `ecology/` 整删 + `npc/AnimalAISystem` 删；VisitorAISystem 保留（含 raider）|
+| D5 | runMode gate | KEEP+gate | DEFERRED | 暂未引入 `state.ai.runMode`；S6 minimal 只创建了 dimension plugin 骨架，runMode 闸门留待后续 |
+| D6 | Construction (progressive) | KEEP | DONE | 保留 |
+| D7 | Visibility + Faction | KEEP+toggle | DONE | 保留；toggle flag 暂未挂出 |
+| D8 | Progression / EventDirector / RaidEscalator | CUT / SIMPLIFY / KEEP | PARTIAL (S3) | ProgressionSystem 从 SimHarness tick 序列摘除（文件保留作 isRecoveryEssential 工具）；EventDirectorSystem 保留未简化；RaidEscalator 保留 |
+| D9 | 地图模板 6→2+1 | 保留 2+1 | DEFERRED | Grid.js 6 个生成器代码未删；运行时仍可生成 6 模板，benchmark 选择哪个由 scenario 控制 |
+| D10 | ScenarioFactory 剧情 CUT | CUT 剧情，保 80 LOC helper | DEFERRED | 文件保留（11 个 simulation 模块依赖 getScenarioRuntime/Focus 等）；故事内容 dead-at-runtime 但未单独清理 |
+
+**Deferred 项的明确路径：**
+- **D1 SkillLibrary**：在 `feature/skill-library-archive` tag 上隔离三个 caller（ColonyPlanner、PlanExecutor、AgentDirectorSystem）的 SKILL_LIBRARY 引用，替换为 no-op，再删 SkillLibrary.js
+- **D5 runMode**：`state.ai.runMode = "llm" | "algorithmic" | "hybrid"`，在 SimHarness boot 时设置；LLM-on 模式静音 ColonyDirectorSystem + RoleAssignmentSystem
+- **D9 6→2 templates**：在 `BenchmarkPresets.js` 暴露允许列表，仅展示 temperate_plains + fortified_basin（可选 archipelago_isles）
+- **D10 ScenarioFactory 故事内容**：把 `buildFrontierRepairScenario` / `buildGateChokepointScenario` / `buildIslandRelayScenario` 这 3 个 ~600 LOC 的剧情 + voice 表迁到 `_legacy/` 子目录或直接删，但保留 runtime helpers
+- **S5 ai-proxy / LLMClient / PromptBuilder 瘦身**：剥离 retry/timeout/model-normalization 复杂分支，让 paper 复现脚本在干净的 100-150 LOC 上跑
+- **S7 长程 harness**：先做 30m → 2h × 5 seed × 3 repeat 灵敏度试跑
 
 ---
 
