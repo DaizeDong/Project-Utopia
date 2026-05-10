@@ -39,6 +39,11 @@ import {
 
 const DEFAULT_PORT = Number(process.env.AGENT_BRIDGE_PORT ?? 8788) || 8788;
 
+// Defaults for AgentRegistry stale-eviction (P1 reviewer-fix B-1).
+// Tunable via AgentRegistry constructor opts in tests.
+export const DEFAULT_MAX_IDLE_MS = 60 * 60 * 1000; // 1 hour
+export const DEFAULT_MAX_AGENTS = 256;
+
 function sendJson(res, code, payload) {
   res.writeHead(code, {
     "Content-Type": "application/json; charset=utf-8",
@@ -108,13 +113,29 @@ function makeNoopChannelMap() {
  */
 
 class AgentRegistry {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {number} [opts.maxIdleMs] — eviction window for `evictStale()`. Default 1h.
+   * @param {number} [opts.maxAgents] — hard cap; `register` throws RegistryFullError beyond it. Default 256.
+   */
+  constructor(opts = {}) {
     /** @type {Map<string, AgentEntry>} */
     this.agents = new Map();
+    this.maxIdleMs = Number.isFinite(opts.maxIdleMs) ? Number(opts.maxIdleMs) : DEFAULT_MAX_IDLE_MS;
+    this.maxAgents = Number.isFinite(opts.maxAgents) ? Number(opts.maxAgents) : DEFAULT_MAX_AGENTS;
   }
 
   register({ agentId, mode = "push", channels = null, pushUrl = null, cellId = "FB", adapters = null }) {
     if (!agentId || typeof agentId !== "string") throw new Error("agentId required");
+    // Opportunistic eviction on every register. O(N) walk, N << maxAgents in
+    // practice. Keeps the registry from growing unbounded across long
+    // benchmark runs (B-1 fix).
+    this.evictStale();
+    if (!this.agents.has(agentId) && this.agents.size >= this.maxAgents) {
+      const err = new Error(`agent registry full (cap=${this.maxAgents})`);
+      err.code = "REGISTRY_FULL";
+      throw err;
+    }
     const channelMap = adapters instanceof Map
       ? adapters
       : (adaptersForCell(cellId) ?? makeNoopChannelMap());
@@ -142,6 +163,37 @@ class AgentRegistry {
     const entry = this.agents.get(agentId);
     if (entry) entry.lastSeen = Date.now();
     return entry ?? null;
+  }
+
+  /**
+   * Remove the named agent. Returns `true` if an entry was removed.
+   * @param {string} agentId
+   * @returns {boolean}
+   */
+  unregister(agentId) {
+    if (!agentId || typeof agentId !== "string") return false;
+    return this.agents.delete(agentId);
+  }
+
+  /**
+   * Drop entries whose `lastSeen` is older than `maxIdleMs` (default
+   * `this.maxIdleMs`). Returns the count of removed agents. Cheap O(N) walk
+   * — invoked opportunistically by `register` and `decision` handlers so the
+   * map self-prunes without a background timer.
+   *
+   * @param {number} [maxIdleMs]
+   * @returns {number}
+   */
+  evictStale(maxIdleMs) {
+    const cutoff = Date.now() - (Number.isFinite(maxIdleMs) ? Number(maxIdleMs) : this.maxIdleMs);
+    let removed = 0;
+    for (const [id, entry] of this.agents) {
+      if (!entry || !Number.isFinite(entry.lastSeen) || entry.lastSeen < cutoff) {
+        this.agents.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   size() { return this.agents.size; }
@@ -206,10 +258,11 @@ async function handleDecision(entry, body) {
 }
 
 function matchAgentRoute(url, method) {
-  // /api/agent/register     POST
-  // /api/agent/:id/poll     GET
-  // /api/agent/:id/decision POST
-  // /api/agent/:id/health   GET
+  // /api/agent/register          POST
+  // /api/agent/:id/poll          GET
+  // /api/agent/:id/decision      POST
+  // /api/agent/:id/health        GET
+  // /api/agent/:id/unregister    DELETE | POST  (B-1 fix)
   if (!url.startsWith("/api/agent/")) return null;
   const tail = url.slice("/api/agent/".length);
   if (tail === "register" && method === "POST") return { kind: "register" };
@@ -221,6 +274,9 @@ function matchAgentRoute(url, method) {
   if (sub === "poll" && method === "GET") return { kind: "poll", agentId: id };
   if (sub === "decision" && method === "POST") return { kind: "decision", agentId: id };
   if (sub === "health" && method === "GET") return { kind: "health", agentId: id };
+  if (sub === "unregister" && (method === "DELETE" || method === "POST")) {
+    return { kind: "unregister", agentId: id };
+  }
   return null;
 }
 
@@ -264,13 +320,28 @@ export function createAgentBridgeServer(opts = {}) {
     try {
       if (route.kind === "register") {
         const body = await readBody(req);
-        const entry = registry.register({
-          agentId: String(body?.agentId ?? ""),
-          mode: body?.mode,
-          channels: body?.channels,
-          pushUrl: body?.pushUrl,
-          cellId: body?.cellId,
-        });
+        let entry;
+        try {
+          entry = registry.register({
+            agentId: String(body?.agentId ?? ""),
+            mode: body?.mode,
+            channels: body?.channels,
+            pushUrl: body?.pushUrl,
+            cellId: body?.cellId,
+          });
+        } catch (err) {
+          if (err && err.code === "REGISTRY_FULL") {
+            sendJson(res, 503, {
+              ok: false,
+              error: compactError(err),
+              code: "REGISTRY_FULL",
+              agentCount: registry.size(),
+              maxAgents: registry.maxAgents,
+            });
+            return;
+          }
+          throw err;
+        }
         sendJson(res, 200, {
           ok: true,
           agentId: entry.agentId,
@@ -278,6 +349,16 @@ export function createAgentBridgeServer(opts = {}) {
           mode: entry.mode,
           cellId: entry.cellId,
         });
+        return;
+      }
+
+      if (route.kind === "unregister") {
+        const removed = registry.unregister(route.agentId);
+        if (!removed) {
+          sendJson(res, 404, { ok: false, error: `agent not registered: ${route.agentId}` });
+          return;
+        }
+        sendJson(res, 200, { ok: true, agentId: route.agentId, removed: true });
         return;
       }
 
@@ -314,6 +395,9 @@ export function createAgentBridgeServer(opts = {}) {
       if (route.kind === "decision") {
         const body = await readBody(req);
         const payload = await handleDecision(entry, body);
+        // Opportunistic stale-eviction. Cheap O(N) walk; keeps long
+        // benchmark runs from leaking dead-agent entries.
+        registry.evictStale();
         sendJson(res, 200, payload);
         return;
       }

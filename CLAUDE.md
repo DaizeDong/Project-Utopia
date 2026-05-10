@@ -38,22 +38,31 @@ Companion docs: `docs/ai-research/benchmark_proposal.md` (research framing), `do
 - `docs/ai-research/` — paper proposal + refactor plan + determinism report
 - `server/` — `ai-proxy.js` (Node `http` server, OpenAI-compatible)
 
-## Refactor State
+## Refactor State (post-W2 — RC2 cut)
 
 | Surface | Status |
 |---|---|
 | Browser shell (`src/render`, `src/ui`, `src/audio`, `src/dev`, `index.html`, `main.js`, `vite.config.js`) | **CUT** (~30k LOC) |
-| `src/app/` player services (GameApp, snapshot, leaderboard, devMode, shortcut, replay, perfCap, simStepper, GameLoop, uiProfileState, controlSanitizers) | **CUT** (~5k LOC) |
-| `src/simulation/economy/ProcessingSystem` (D2) | **CUT** |
-| `src/simulation/ecology/`, `src/simulation/npc/AnimalAISystem` (D4) | **CUT** |
-| `src/simulation/meta/ProgressionSystem` system tick (D8) | **DISABLED**; file kept as utility |
-| `src/simulation/ai/colony/{SkillLibrary, LearnedSkillLibrary}` (D1) | **DEFERRED** to v0.11.1 (tag `feature/skill-library-archive` standby) |
-| Map templates 6→2+1 (D9) | **DEFERRED** (Grid.js 6 generators preserved, runtime gate not yet wired) |
-| `ScenarioFactory.js` story bundles (D10) | **DEFERRED** (file kept; 11 simulation modules still need its runtime helpers) |
-| balance.js neutralize | **MINIMAL** (header banner; values unchanged to preserve test contracts) |
-| AgentAdapter abstraction (S5) | **MINIMAL** (interface + token telemetry; ai-proxy/LLMClient slimming deferred) |
-| 5 Dimension plugins (S6) | **DONE** (skeletons; advanced metrics like coalition_coupling marked deferred) |
-| `runMode` gate, multi-LLM agent-bridge, long-horizon harness (S7) | **DEFERRED** |
+| `src/app/` player services | **CUT** (~5k LOC) |
+| ProcessingSystem (D2) / Wildlife (D4) / Progression tick (D8) | **CUT / DISABLED** |
+| Map templates 6→2+1 (D9) / ScenarioFactory story bundles (D10) | **DEFERRED** |
+| balance.js neutralize | **MINIMAL** (header banner) |
+| AgentAdapter 4-channel + AdapterToLLMClient | **DONE** (W1 P0; bridges any AgentAdapter into SimHarness) |
+| Multi-seed runner (SeedMatrix) + per-seed-then-aggregate ordering | **DONE** (W1 P0) |
+| Sandwich normalization (MeltingPot) + Crafter geometric mean | **DONE** (W1 P0 + ScoringEngine) |
+| PolicyValue Baseline (Pluribus AIVAT-style) | **DONE** (W1 P0) |
+| ScriptedOraclePolicy (sandwich norm upper bound) | **DONE** — 6/6 scenarios (W2 batch Y, all idempotent through Guardrails) |
+| FlatBaselineAdapter (E1 control) + LayerCastAdapter + RecordReplayCache | **DONE** (W1 P0) |
+| HTTPAgentClient + agent-bridge + 9-cell cross-vendor routing | **DONE** (W1 P0; AgentRegistry stale-eviction + cap added W2) |
+| LLMClient.options 4th arg (LayerCast inference_config bridge) | **DONE** (W2 batch Z) |
+| 5 Dimension plugins (S6) | **DONE** + dimension normalizer layer (W2 batch X — covers all 19 dim keys with 6 transform types) |
+| Anchor injection protocol (E5 inputs) | **DONE** (W1 critical fix) |
+| Action-grounded recall + session-discrete ablation | **DONE** (W1 P0-12 + P0-13) |
+| Importance-aware MemoryStore eviction (E5 anchor durability) | **DONE** (W2 round-2 fix) |
+| 3-tier reproducibility (fallback / LayerCast / production) | **DONE** — all 3 tiers verified (Tier 1 e360b76, Tier 2 473d1b9, Tier 3 c2d86a6) |
+| Paper run entrypoint `scripts/benchmark-paper.mjs` | **DONE** (W2 batch X; CLI verified, NDJSON output) |
+| `src/simulation/ai/colony/{SkillLibrary, LearnedSkillLibrary}` (D1) | **DEFERRED** to v0.11.1 |
+| `runMode` gate (D5) | **DEFERRED** |
 
 ## Development
 

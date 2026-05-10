@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] — refactor/academic-benchmark — W2 batch X (V3.1 + V6.1)
+
+### V3.1 — DimensionNormalizer transform layer
+- Why: Round-1 reviewer flagged that the 5 dimension plugins (RAE / GroupDynamics / Memory / DTE / Hierarchical) emit on incompatible scales — some [0,1] benefit-form, some cost-form, some symmetric in [-1,1], some unbounded ms / token-rates. ScoringEngine.bayesianScore + sandwichNormalize + HELM MWR all assume comparable [0,1] benefit-form inputs. Without a transform layer, raw scores were silently fed to scoring → garbage out.
+- New file: `src/benchmark/framework/DimensionNormalizer.js` (~245 LOC)
+  - `DIMENSION_NORMALIZERS` — frozen registry covering all 19 dim keys emitted by the 5 plugins (verified by reflective test against `ACADEMIC_BENCHMARK_DIMENSIONS`)
+  - 6 transforms: identity / invert / reciprocal / clipScale / rescaleSymmetric / exponentialDecay (with `fromZero` flag for benefit-form unbounded)
+  - `normalizeDimension(dimKey, value)` — single-key normalisation; NaN/Infinity → 0 with warn; unknown key → NaN with warn
+  - `normalizeRow(scores)` — bulk; preserves unknown keys verbatim (no row-shape corruption)
+  - `gatherDimensionAcrossCells(cells, dimKey)` — pulls (seed,scenario,value) triples from SeedMatrix cells
+  - `buildSandwichTriple(agentCells, fallbackCells, oracleCells, dimKey)` — paired-by-(seed,scenario) alignment for sandwichNormalize; throws on misalignment instead of silent garbage
+- New test `test/benchmark-dimension-normalizer.test.js` (~190 LOC, 14 cases) — every transform branch + NaN/Infinity + unknown-key + reflective coverage check + buildSandwichTriple alignment + misalignment-throws.
+
+### V6.1 — paper-run entrypoint
+- Why: paper-framework.md lists 13 figures + 3 tables but had no script to drive the NDJSON pipeline. E1/E3/E5/E6 had no driver — the figures were aspirational only.
+- New file: `scripts/benchmark-paper.mjs` (~290 LOC) — CLI driver
+  - 3 experiment presets: `E1` (hierarchical vs flat), `E3` (9-cell cross-vendor), `E6` (schema failure)
+  - Wires fallback (NoopAgentAdapter) + oracle (ScriptedOraclePolicy) reference cells + per-cell agent cells
+  - Per-dim normalize + sandwichNormalize + bayesianScore → emits one NDJSON row per (cellId, scenario, seed, dim)
+  - `parseDriverArgs` (uses `node:util.parseArgs`) supports custom seeds (decimal / 0x-hex), scenarios, cells, duration, output path, concurrency
+  - Validates cell labels against `DEFAULT_AGENT_ROUTING` so typos fail fast
+- New file: `src/benchmark/baselines/MultiBackendAdapter.js` (~95 LOC) — cross-vendor channel router; wraps `Map<channel, AgentAdapter>` so a SeedMatrix sees one adapter while requests dispatch by channel string. Tags response.debug.multiBackend with sub-adapter name; never throws on unknown channel (returns synthetic fallback DecisionResponse + bumps `unknownChannelCount`).
+- New test `test/benchmark-paper-driver.test.js` (~115 LOC, 7 cases) — parseSeedToken / parseDriverArgs (defaults, custom, validation, unknown-cell rejection) + buildAgentConfigForCell + E1 smoke run on FB cell × 1 seed × 1 scenario × 4-sec duration verifying every registered dim emits a row, NDJSON round-trip works, all rows have `experiment / cellId / scenario / seed / dim / raw / normalized / sandwichNorm / bayesianMean / bayesianCi95 / agentId`.
+- New `package.json` scripts: `bench:paper` (generic) + `bench:paper:E1` (smoke).
+
+### Verified
+- `node --test test/benchmark-dimension-normalizer.test.js test/benchmark-paper-driver.test.js` — **21/21 pass** (smoke run ~27 s)
+- `node --test test/benchmark-flat-baseline.test.js test/benchmark-seed-matrix.test.js test/benchmark-dimensions.test.js test/benchmark-dimension-normalizer.test.js` — **31/31 pass** (no regression)
+
+### LOC delta
+- New: 245 (DimensionNormalizer) + 95 (MultiBackendAdapter) + 290 (benchmark-paper.mjs) + 190 + 115 (2 tests) = **935 LOC across 5 new files**
+- Modified: 2 lines in `package.json` (added `bench:paper` + `bench:paper:E1` scripts).
+
+### Surprises / notes
+- Plugin dim-key audit confirmed every key matches its source-of-truth string in the plugin files exactly (no aliasing): RAE emits `rae_composite / rae_sufficiency / rae_distribution_gini / rae_idle_capacity / rae_path_overhead`, GroupDynamics emits `intent_entropy / coalition_coupling / state_target_obedience / faction_responsiveness`, Memory emits `anchored_fact_recall / action_grounded_recall / behavioral_drift / performance_at_t`, DTE emits `dte_per_completion_token / dte_per_decision / first_token_latency_p50`, Hierarchical emits `plan_policy_alignment / env_threat_responsiveness / colony_cadence_health`. The reflective coverage test in the normalizer suite locks this against future drift.
+- `intent_entropy` cap chosen as `log2(20) ≈ 4.32` rather than the strict `log2(5) ≈ 2.32` from the canonical 5-intent set, because plugins commonly broaden to ≥10 intents in practice (see ScriptedOraclePolicy's WORKERS policy with 10+ intent weights).
+- Driver intentionally handles oracle == fallback (range==0) and oracle < fallback (range<0) by short-circuiting to ScoringEngine's `sandwichNormalize` semantics — that function already returns the binary above-baseline branch / NaN respectively. The driver does NOT mask either case; downstream NDJSON consumers can detect both via `sandwichNorm` value.
+- `MultiBackendAdapter` adapterClass factory stores the channel map in a closure to dodge SeedMatrix's `new adapterClass(adapterOpts)` instantiation contract — building the channel map once per cell rather than once per cell × dim plugin.
+
+---
+
 ## [Unreleased] — refactor/academic-benchmark — P0 reviewer-blocker fixes
 
 ### P0 fix — wire AgentAdapter through SimHarness (Critical Bug 1)
