@@ -106,6 +106,67 @@ export function relativeScore(agentScore, baselineScore, ceilingScore) {
 }
 
 /**
+ * Sandwich normalization (MeltingPot 2 / Agapiou et al. 2022) — array form.
+ *
+ *     score_norm(s) = (R_agent(s) − R_random(s)) / (R_exploiter(s) − R_random(s))
+ *
+ * R_random  ≡ deterministic-fallback policy (= Project-Utopia's `Guardrails` default).
+ * R_exploiter ≡ scripted oracle policy (`ScriptedOraclePolicy.js`).
+ *
+ * Allows score > 1 to flag "superhuman LLM" runs without breaking math
+ * (clip-on-output is the caller's choice). NaN-safe; range==0 short-circuits
+ * to the binary above-baseline check.
+ *
+ * @param {number[]} agentScores
+ * @param {number[]} fallbackScores  same length as agentScores (per-seed pairing)
+ * @param {number[]} oracleScores    same length as agentScores
+ * @param {{ clipUpperBound?: boolean }} [opts]  default: do NOT clip > 1 (paper convention)
+ * @returns {number[]} normalized scores
+ */
+export function sandwichNormalize(agentScores, fallbackScores, oracleScores, opts = {}) {
+  const n = agentScores.length;
+  if (n === 0) return [];
+  if (fallbackScores.length !== n || oracleScores.length !== n) {
+    throw new Error(
+      `sandwichNormalize: array length mismatch (agent=${n}, fb=${fallbackScores.length}, oracle=${oracleScores.length})`,
+    );
+  }
+  const clipUpper = opts.clipUpperBound === true;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const range = oracleScores[i] - fallbackScores[i];
+    let s;
+    if (!Number.isFinite(range) || range <= 0) {
+      s = agentScores[i] > fallbackScores[i] ? 1 : 0;
+    } else {
+      s = (agentScores[i] - fallbackScores[i]) / range;
+      // Lower bound at 0 always; upper bound at 1 only if explicitly requested.
+      if (s < 0) s = 0;
+      if (clipUpper && s > 1) s = 1;
+    }
+    out[i] = round(s, 4);
+  }
+  return out;
+}
+
+/**
+ * Crafter geometric mean (Hafner 2021 — re-exported here for ScoringEngine consumers).
+ * Punishes single-axis collapse.
+ *
+ *     S = exp((1/N) Σ ln(1 + sᵢ)) − 1
+ */
+export function geometricMean(scores) {
+  if (!scores?.length) return 0;
+  const N = scores.length;
+  let logSum = 0;
+  for (const s of scores) {
+    const clipped = Math.max(0, Math.min(1, Number(s) || 0));
+    logSum += Math.log(1 + clipped);
+  }
+  return round(Math.exp(logSum / N) - 1, 6);
+}
+
+/**
  * Apply consistency penalty: penalize high variance across scenarios.
  * finalScore = mean - lambda * std
  *

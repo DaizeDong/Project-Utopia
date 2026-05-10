@@ -1,21 +1,25 @@
-// ResourceAllocationEfficiency — RAE dimension plugin (S6).
+// ResourceAllocationEfficiency — RAE dimension plugin (S6, P0-3 v2).
 //
 // Operations-research style metric family for the academic benchmark.
 // Pure read-only over harness samples; conforms to DimensionPlugin protocol
 // (see src/benchmark/framework/DimensionPlugin.js).
 //
-// Score families produced (all in [0,1] except path_overhead):
-//   - rae_sufficiency       ∈ [0,1]  higher is better; clamp(food/demand) × clamp(wood/demand)
-//   - rae_distribution_gini ∈ [0,1]  lower is better; Gini over per-zone resource availability
+// Score families produced (P0-3 v2 — Crafter geometric mean composite):
+//   - rae_sufficiency       ∈ [0,1]  higher is better; backward-compat (food×wood product)
+//   - rae_composite         ∈ [0,1]  higher is better; Crafter geometric mean over
+//                                     4-resource per-capita sufficiency (food/wood/stone/herbs).
+//                                     Punishes single-resource starvation; recommended primary.
+//   - rae_distribution_gini ∈ [0,1]  lower is better; Gini over resource vector
 //   - rae_idle_capacity     ∈ [0,1]  lower is better; fraction of idle workers
-//   - rae_path_overhead     ∈ [1,∞)  lower is better; placeholder=1.0 until S6 wave-2 wires PathCache hooks
+//   - rae_path_overhead     ∈ [1,∞)  lower is better; placeholder=1.0 until S6 wave-2
 //
-// ScoringEngine consumers MUST normalize: pass `rae_sufficiency` directly,
-// invert `(1 - rae_distribution_gini)` and `(1 - rae_idle_capacity)`, and
-// transform `1 / rae_path_overhead` before feeding bayesianScore (which
-// expects [0,1] benefit scores).
+// Crafter geometric mean (Hafner 2021): S = exp((1/N) Σ ln(1 + sᵢ)) − 1
+//   - +1 / −1 shift handles sᵢ = 0 in log-space without losing rare-resource amplification
+//   - score per seed first, then average across seeds (Crafter ordering)
 //
-// All four are time-weighted means across the sample window.
+// ScoringEngine consumers MUST normalize: pass `rae_composite` or `rae_sufficiency`
+// directly; invert `(1 - rae_distribution_gini)` and `(1 - rae_idle_capacity)`;
+// transform `1 / rae_path_overhead` before feeding bayesianScore.
 
 import { computeTaskScore } from "../BenchmarkMetrics.js";
 
@@ -35,10 +39,22 @@ function gini(values) {
   return (2 * cumulative) / (n * sum) - (n + 1) / n;
 }
 
+/**
+ * Crafter geometric mean (Hafner 2021):
+ *   S = exp((1/N) Σ ln(1 + sᵢ)) − 1
+ * for sᵢ ∈ [0,1]. Punishes single-axis failure: any sᵢ=0 collapses S toward 0.
+ */
+export function crafterGeometricMean(scores) {
+  if (!scores?.length) return 0;
+  const N = scores.length;
+  const logSum = scores.reduce((acc, s) => acc + Math.log(1 + clamp01(s)), 0);
+  return Math.exp(logSum / N) - 1;
+}
+
 export const ResourceAllocationEfficiencyPlugin = {
   id: "rae",
   label: "Resource Allocation Efficiency",
-  scoreDimensions: ["rae_sufficiency", "rae_distribution_gini", "rae_idle_capacity", "rae_path_overhead"],
+  scoreDimensions: ["rae_composite", "rae_sufficiency", "rae_distribution_gini", "rae_idle_capacity", "rae_path_overhead"],
 
   /**
    * @param {object} harness
@@ -79,12 +95,31 @@ export const ResourceAllocationEfficiencyPlugin = {
    */
   selfScore(samples, _ctx = {}) {
     if (!samples?.length) {
-      return { rae_sufficiency: 0, rae_distribution_gini: 0, rae_idle_capacity: 0, rae_path_overhead: 1 };
+      return {
+        rae_composite: 0,
+        rae_sufficiency: 0,
+        rae_distribution_gini: 0,
+        rae_idle_capacity: 0,
+        rae_path_overhead: 1,
+      };
     }
     const last = samples[samples.length - 1];
-    const foodDemand = Math.max(1, last.workers * 1.0);
-    const woodDemand = Math.max(1, last.workers * 0.4);
-    const sufficiency = clamp01(last.food / foodDemand) * clamp01(last.wood / woodDemand);
+    const w = Math.max(1, last.workers);
+
+    // Per-resource per-capita sufficiency [0,1]. Demand coefficients chosen to
+    // align with worker carry capacity (~1.0 food, 0.4 wood, 0.1 stone, 0.05 herbs
+    // per worker per cycle). Tunable as scenario parameters.
+    const foodSuf  = clamp01(last.food  / (w * 1.0));
+    const woodSuf  = clamp01(last.wood  / (w * 0.4));
+    const stoneSuf = clamp01(last.stone / Math.max(1, w * 0.1));
+    const herbsSuf = clamp01(last.herbs / Math.max(1, w * 0.05));
+
+    // Backward-compat (v1) — food × wood product
+    const sufficiency = foodSuf * woodSuf;
+
+    // P0-3 (v2): Crafter geometric mean over all 4 resource axes.
+    // Punishes single-resource starvation more strongly than the v1 product.
+    const composite = crafterGeometricMean([foodSuf, woodSuf, stoneSuf, herbsSuf]);
 
     const idleFracs = samples.map(s => s.workers > 0 ? s.idleWorkers / s.workers : 0);
     const idleAvg = idleFracs.reduce((a, b) => a + b, 0) / idleFracs.length;
@@ -93,6 +128,7 @@ export const ResourceAllocationEfficiencyPlugin = {
     const distributionGini = gini(resourceVec);
 
     return {
+      rae_composite: Number(composite.toFixed(4)),
       rae_sufficiency: Number(sufficiency.toFixed(4)),
       rae_distribution_gini: Number(distributionGini.toFixed(4)),
       rae_idle_capacity: Number(idleAvg.toFixed(4)),
