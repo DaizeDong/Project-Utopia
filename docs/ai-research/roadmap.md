@@ -1,8 +1,10 @@
-# Execution Roadmap — 4-Week Sprint to NeurIPS D&B Submission
+# Execution Roadmap — Submission Sprint
 
-**Status:** Draft v1 (2026-05-10)
-**Target:** NeurIPS Datasets & Benchmarks Track (deadline ~2026-06-07)
-**Companion to:** `paper-framework.md` (paper structure), `experimental-design.md` (E1–E9), `refactor-plan.md` (phase log)
+**Status:** Draft v2 (2026-05-10, post-frontier-survey)
+**Primary Target:** NeurIPS Datasets & Benchmarks Track (deadline ~2026-06-07)
+**Secondary Target:** ICLR 2027 main track (deadline ~2026-09-30)
+**Tertiary Target:** EMNLP 2026 Resources & Evaluation track (deadline ~2026-06-15) — see `emnlp-readiness-assessment.md` for fit analysis
+**Companion to:** `paper-framework.md` v2, `experimental-design.md` v2, `literature-frontier-2025-2026.md`, `refactor-plan.md`
 
 > 这是从今天起到投稿日的具体执行 roadmap。每天颗粒度的工作清单 + 阻塞列表 + 决策门 + 退路方案。
 
@@ -24,33 +26,43 @@
 
 ## 1. P0 / P1 / P2 优先级清单
 
-### P0 — 必须做（blocking E 系列实验）
+### P0 — 必须做（blocking E 系列实验）— v2 expanded
 
 | # | 任务 | LOC | 估时 | 阻塞哪个 E |
 |---|---|---|---|---|
-| P0-1 | Multi-seed SimHarness runner（`runSeedMatrix({ seeds, scenarios, model })` 并行 N runs，输出 NDJSON） | ~150 | 0.5d | 全部 E |
-| P0-2 | Sandwich normalization layer in `ScoringEngine.js`（`(LLM−fb)/(oracle−fb)`） | ~80 | 0.3d | E1/E4/E5/E7 |
-| P0-3 | Crafter geometric mean for `RAE_composite`（替换 product） | ~30 | 0.1d | E1/E4 |
-| P0-4 | PolicyValue Baseline (PVB) — 每 tick 算 fallback policy 期望并 bookkeeping | ~120 | 1d | E1/E3/E4/E7 (variance reduction) |
-| P0-5 | HTTPAgentClient + agent-bridge.js + agent-routing.js（4 channel routing） | ~400 | 2d | **E3 multi-LLM** |
-| P0-6 | ScriptedOraclePolicy.js per scenario（hand-tuned 上界） | ~250 | 1d | E1/E4/E7 (sandwich 上界) |
-| P0-7 | 7200-tick long determinism gate（取代 60-tick smoke） | ~30 | 0.2d | E5/E9 |
-| P0-8 | FlatBaselineAdapter.js（E1 控对照组）| ~150 | 0.5d | E1 |
+| P0-1 | Multi-seed SimHarness runner | ~150 | 0.5d | 全部 E |
+| P0-2 | Sandwich normalization layer in `ScoringEngine.js` | ~80 | 0.3d | E1/E4/E5/E7 |
+| P0-3 | Crafter geometric mean for `RAE_composite` | ~30 | 0.1d | E1/E4 |
+| P0-4 | PolicyValue Baseline (PVB) — Pluribus AIVAT-style variance reduction | ~120 | 1d | E1/E3/E4/E7 |
+| P0-5 | HTTPAgentClient + agent-bridge.js + agent-routing.js（4 channel routing） | ~400 | 2d | **E3 multi-LLM (Phase A + B)** |
+| P0-6 | ScriptedOraclePolicy.js per scenario | ~250 | 1d | E1/E4/E7 |
+| P0-7 | 7200-tick long determinism gate | ~30 | 0.2d | E5/E9 |
+| P0-8 | FlatBaselineAdapter.js | ~150 | 0.5d | E1 |
+| **P0-9 (NEW v2)** | **LayerCast inference adapter** wrap around LLMClient (16-bit weights + FP32 compute) — 实现 Yuan et al. NeurIPS 2025 Oral 的 hardware-independent bit-identical | ~150 | 1d | **E9 Tier 2** |
+| **P0-10 (NEW v2, promoted from P1)** | **Record-replay LLM cache** (VCR-cassette style; cache prompt→response pairs for offline replay) | ~200 | 1d | E9 Tier 2 fallback path |
+| **P0-11 (NEW v2)** | **Cross-vendor `OPENAI_BASE_URL` per-channel routing**（agent-routing.js 增强）— 4 个 ai-proxy 进程切不同 vendor | ~80 | 0.5d | **E3 Phase B cross-vendor cells** |
+| **P0-12 (NEW v2)** | **Action-grounded recall probe** in MemoryDegradation plugin — 不只测 verbal recall，还测 directive distribution 是否反映 anchor (E5 H5e) | ~120 | 0.5d | E5 |
+| **P0-13 (NEW v2)** | **Session-discrete ablation mode**（每 30 min reset prompt context 模拟 MemoryArena） — E5 H5f 对照 | ~50 | 0.3d | E5 |
 
-**总计：~1210 LOC，~5.6 dev-day** ← 适合 Week 1 完成。
+**总计 v2: ~1810 LOC，~8.4 dev-day** (v1 是 1210 LOC / 5.6d)，加 P0-9~P0-13 共 +600 LOC + 3.3 dev-day
 
-### P1 — 强烈建议（实验质量）
+**W1 安排调整**: 原 W1 7 天，v2 P0 总量 8.4 天 → 把 P0-12/P0-13 推到 W2 D8 一并完成（不阻塞 E1/E2/E6/E7 启动）。
+
+### P1 — 强烈建议（实验质量）— v2
 
 | # | 任务 | LOC | 估时 | 改善哪 |
 |---|---|---|---|---|
-| P1-1 | Record-replay LLM cache（VCR-cassette） | ~200 | 1d | E9 reproducibility novel |
-| P1-2 | Dockerfile 双 container（utopia-eval + utopia-agent） | ~80 + Dockerfile | 0.5d | E9 reproducibility |
+| ~~P1-1~~ | ~~Record-replay LLM cache~~ → **promoted to P0-10** | — | — | — |
+| P1-2 | **Dockerfile 双 container** (utopia-eval + utopia-agent-base) per MLE-Bench 模板 | ~80 + Dockerfile | 0.5d | E9 reproducibility |
 | P1-3 | TrueSkill (μ, σ) reporting in ScoringEngine | ~100 | 0.5d | E3 multi-LLM 排名 |
 | P1-4 | α-rank for non-transitive cells | ~80 | 0.5d | E3 |
-| P1-5 | Filling 4 placeholder dimension scores（coalition_coupling / state_target_obedience / plan_policy_alignment / behavioral_drift） | ~200 | 1d | E3/E4/E5 完整 |
-| P1-6 | Token-counter normalization（cross-tokenizer using tiktoken） | ~50 | 0.3d | E7 fairness |
+| P1-5 | Filling 4 placeholder dimension scores | ~200 | 1d | E3/E4/E5 完整 |
+| P1-6 | Token-counter normalization (cross-tokenizer using tiktoken) | ~50 | 0.3d | E7 fairness |
 | P1-7 | Anchor-fact protocol with semantic anchors（5 anchors per run） | ~80 | 0.5d | E5 |
 | P1-8 | Progress Rate (AgentBoard) for endless survival | ~50 | 0.3d | §3 metrics |
+| **P1-9 (NEW v2)** | **VitaBench-style rubric sliding-window LLM judge** for 4-channel scoring | ~150 | 1d | §4 contamination resistance |
+| **P1-10 (NEW v2)** | **BATS cost-aware Pareto reporter** `α·tokens + β·tool_calls` | ~80 | 0.3d | §3.3 cost axis |
+| **P1-11 (NEW v2)** | **FAQ active querying** (Wu/Nair/Candès 2026-01) — 5× sample efficient | ~250 | 1.5d | E8 wave-2 |
 
 **总计：~840 LOC，~4.6 dev-day** ← 见缝插针进 W2/W3。
 
@@ -240,19 +252,42 @@
 **Plan B**: drop E5 24h、E4 缩到 60 runs（4 model × 3 scenario × 5 seeds）
 - 仍可投 NeurIPS D&B；workshop 是最终 fallback
 
+### 4.7 (NEW v2) Reviewer cite X-MAS 反驳 §2.3 first heterogeneous claim
+
+**Plan B**: §2.3 重 framing **已锁定**为 channel-axis × cross-vendor × long-horizon-survival 三-way（见 paper-framework.md §1.2 C3）。E3 Phase B 的 cross-vendor cells (XV-DIVERSE-LIGHT / XV-DIVERSE-STRONG / XV-OPENWEIGHT-ONLY) 是 defend 这个 claim 的核心证据 — **必跑**。
+
+### 4.8 (NEW v2) Reviewer cite MemoryArena/MemoryAgentBench 反驳 §2.5 三曲线 first
+
+**Plan B**: §2.5 重 framing **已锁定**为 三轴联合 + 连续 tick + 自然累积 三-way（见 paper-framework.md §1.2 C3）。E5 H5e (action-grounded vs verbal recall) + H5f (session-vs-tick ablation) 是 defend 的核心证据 — **必跑**。
+
+### 4.9 (NEW v2) LayerCast adapter 实现失败
+
+**Plan B**: P0-9 降级 P2，§2.9 退回 2-tier (fallback + production stationary) 比 MLE-Bench 仍强。论文 §7 Limitations 标 "Tier 2 LayerCast verification deferred to camera-ready upon hardware availability"。
+
+### 4.10 (NEW v2) Cross-vendor agent-bridge 复杂度爆炸
+
+**Plan B**: P0-11 是设计为 P0-5 的 simplified fallback — 4 个独立 ai-proxy 进程 × `OPENAI_BASE_URL_ENV / NPC / STRATEGIC / COLONY` 4 环境变量。1 day 实现量。如 P0-5 W1 完不成，P0-11 仍可独立跑 E3 Phase A + B。
+
+### 4.11 (NEW v2) Orak (ICLR 2026) 同 venue 撞车
+
+**Risk**: ICLR 2026 已 accept Orak，如 Project-Utopia 也投 ICLR 2027 main，reviewer 可能视为重复。
+**Plan B**: 主投 NeurIPS D&B 2026 (D&B 与 ICLR main 重叠率低)；§2 显式 differentiate depth-first vs breadth-first；如 D&B 拒，转 ICLR 2027 时强化 differentiation segment.
+
 ---
 
-## 5. 关键决策（项目所有者拍板）
+## 5. 关键决策（项目所有者拍板）— v2
 
-下列 5 项必须在 W1 D1 前定下，否则后续工作有歧义：
+下列 7 项必须在 W1 D1 前定下，否则后续工作有歧义：
 
 | ID | 决策 | 默认建议 | 拍板 |
 |---|---|---|---|
-| K1 | 主投目标：NeurIPS D&B 2026 / ICLR 2027 / workshop | **NeurIPS D&B 2026** | _待定_ |
-| K2 | E3 multi-LLM matrix 包含哪 4 个 model？建议 `M-CLAUDE-SONNET / M-CLAUDE-HAIKU / M-HERMES7B / M-GPT5` | 按 `experimental-design.md §0.3` | _待定_ |
-| K3 | LLM API budget 上限：默认 $300，超过则 drop E3 部分 cells | $300 | _待定_ |
-| K4 | 24-hour E5 是否在 v1 必须有？默认否（camera-ready 再补） | 否 | _待定_ |
-| K5 | 论文协作者数与角色：1 dev only / 1 dev + 1 PI / 多人？ | 1 dev only（保守估时）| _待定_ |
+| K1 | 主投目标 | **NeurIPS D&B 2026** (deadline 2026-06-07)；备 ICLR 2027 (2026-09); EMNLP 2026 R&E (2026-06-15, 见 emnlp-readiness-assessment.md) | _待定_ |
+| K2 | E3 cross-vendor cells 选哪些 4 vendor？建议 (a) Anthropic + OpenAI + 本地 vLLM Hermes/Llama + Qwen | 按 `experimental-design.md §E3 v2` | _待定_ |
+| K3 | LLM API budget 上限：v2 估 $340 | $400 (含 buffer) | _待定_ |
+| K4 | 24-hour E5 是否在 v1 必须有？ | 否（camera-ready 再补） | _待定_ |
+| K5 | 论文协作者数与角色 | 1 dev only（保守估时）| _待定_ |
+| **K6 (NEW v2)** | **RMM Tier 目标** (Siddiq 2025-11)：Tier 4 (强 reproducibility) / Tier 5 (顶级，需要持续维护)？ | Tier 4 | _待定_ |
+| **K7 (NEW v2)** | **LayerCast adapter 是否 P0**？依赖：能否拿到 LayerCast inference 配置（NVIDIA H100 + bf16 weights + FP32 ops）？如硬件不支持 → P0-9 降级 P2 | P0 if hardware permit, else P2 | _待定_ |
 
 ---
 

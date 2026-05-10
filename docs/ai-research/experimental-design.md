@@ -1,10 +1,10 @@
 # Experimental Design — Project-Utopia Academic Benchmark
 
-**Status:** Draft v1 (2026-05-10)
-**Companion to:** `benchmark_proposal.md` (research framing), `refactor-plan.md` (cut list), `determinism-report.md` (S0 audit)
+**Status:** Draft v2 (2026-05-10, post-frontier-survey update)
+**Companion to:** `benchmark_proposal.md`, `refactor-plan.md`, `determinism-report.md` (S0 audit), `paper-framework.md` (v2), `literature-frontier-2025-2026.md`, `roadmap.md`
 **Branch:** `refactor/academic-benchmark` (tag `refactor/academic-benchmark-v0.11.0-rc1`)
 
-> 这份文档把 §2.1–§2.9 的 9 个创新点逐个落到**可执行的实验设计**：每个实验有研究问题、假设、因子结构、seeds、模型选型、采集指标、期望结果形状、算力预算、有效性威胁。论文的实验章 (§4–§5) 应该按这份逐节展开。
+> 这份文档把 §2.1–§2.9 的 9 个创新点落到**可执行的实验设计**。**v2 update**: 已根据 32 篇 2025 H2 - 2026 H1 frontier paper 反向修订 E3 / E5 / E8 / E9，加入 cross-vendor channel-axis、3-tier reproducibility (LayerCast)、Bowyer 引用、RMM 7-smell mapping 等。
 
 ---
 
@@ -153,21 +153,25 @@ n=10 seeds × 2 scenarios per arm = 20 obs/arm. 假设 σ=0.10，δ=0.10 → pow
 
 ---
 
-## E3 — Director vs Policy Multi-LLM Adversarial Decomposition (§2.3)
+## E3 — Cross-Vendor Channel-Axis Heterogeneous LLM Mix in Long-Horizon Survival (§2.3)
+
+> **v2 重 framing (THREAT-1 应对)**: X-MAS (Ma et al. 2025-05) 已证明 heterogeneous>homogeneous on 27 LLMs × 5 domains × 5 functions 的 per-task routing；Anthropic Multi-Agent Research System (2025-06) 在 production 用 intra-family Opus+Sonnet。Project-Utopia E3 的 contribution **收窄到 cross-vendor × channel-axis × long-horizon-survival 三-way 限定**——这个组合在所有 frontier paper 里仍空。
 
 ### Research question
-**让不同 LLM 各占 1 个 channel 是否优于"single LLM 全包"，且总成本更低？**
+**让不同 vendor 的 LLM 各占 4 个 channel 中的一个 (cross-vendor channel-axis routing) 是否优于 single-vendor-all-channels，在 long-horizon 殖民地 survival sim 下？**
 
-这是论文最有 wow-factor 的实验。在文献里**没人做过**。
+**与 X-MAS 的差异化**: X-MAS routes per (domain, function)，每个 task 是 isolated；Project-Utopia routes per **channel within one continuous long-horizon task**。
+**与 Anthropic Multi-Agent 的差异化**: Anthropic 用 Opus + Sonnet **intra-family** 的 lead-worker；Project-Utopia 测 **cross-vendor** (Anthropic + OpenAI + open-weight) **per-channel**。
 
 ### Hypothesis
-**H3a**: `mix(strong-env, weak-policy)` 在 RAE 上 ≥ `weak(env+policy+both other channels)` 但成本仅高 +20%。
-**H3b**: `mix(strong-env, weak-policy)` 在 RAE 上落后 `strong(env+policy+others)` 不超过 0.05，但成本低 50%+。
-**H3c**: 4 通道之间存在 **specialization gradient** —— environment-director 对 strong model 的边际收益 > npc-policy（直觉：env 决策长尾，policy 多是 routine clamp）。
+**H3a**: `mix(strong-env, weak-policy)` 在 RAE 上 ≥ `weak-on-all` 至少 +0.15 (matched X-MAS 的 +47% AIME 数量级)。
+**H3b**: `mix(strong-env, weak-policy)` 在 RAE 上落后 `strong-on-all` 不超过 0.05，但成本低 50%+ (matched ChatDev's −44% role-removal effect size as ablation strength benchmark)。
+**H3c**: 4 通道存在 **specialization gradient**——environment-director 对 strong model 的边际收益 > npc-policy（直觉：env 决策长尾，policy 多 routine clamp）。
+**H3d (NEW v2)**: **跨 vendor mix > 同 vendor mix** at matched per-channel capability level——例如 (Claude env + GPT-5 policy + Hermes strategic + Llama colony) 优于 (Claude × 4)，因为 vendor diversification 减少 mode collapse。
 
-### Design
+### Design (v2 expanded — 含 cross-vendor cells)
 
-2 × 2 multi-LLM matrix（先做 env × policy，strategic + colony 固定为 weak）：
+**Phase A: 同 vendor SS/SW/WS/WW matrix (2×2)**——baseline 比较
 
 | Cell | environment-director | npc-policy | strategic-plan | colony-agent |
 |---|---|---|---|---|
@@ -176,9 +180,18 @@ n=10 seeds × 2 scenarios per arm = 20 obs/arm. 假设 σ=0.10，δ=0.10 → pow
 | `WS` | M-HERMES7B | M-CLAUDE-SONNET | M-HERMES7B | M-HERMES7B |
 | `SS` | M-CLAUDE-SONNET | M-CLAUDE-SONNET | M-CLAUDE-SONNET | M-CLAUDE-SONNET |
 
+**Phase B (NEW v2): Cross-vendor cells**——core novelty
+
+| Cell | environment | npc-policy | strategic | colony | Rationale |
+|---|---|---|---|---|---|
+| `XV-OPUS-SONNET` | Claude-Opus | Claude-Sonnet | Claude-Sonnet | Claude-Sonnet | intra-family ladder (Anthropic Multi-Agent style) |
+| `XV-DIVERSE-LIGHT` | Claude-Sonnet | GPT-5-mini | Hermes-7B | Llama-8B | 4 vendor mix lightweight |
+| `XV-DIVERSE-STRONG` | Claude-Opus | GPT-5 | Claude-Sonnet | Qwen-72B | 4 vendor mix premium |
+| `XV-OPENWEIGHT-ONLY` | Hermes-7B | Llama-8B | Qwen-72B | Hermes-7B | open-weight only (论文 reproducibility 价值)|
+
 参考点：`FB` (M-FALLBACK 全包，免费对照)。
 
-总 cells: 5 × 2 scenarios × 10 seeds = **100 runs**
+总 cells: 4 (Phase A) + 4 (Phase B) + 1 (FB) = **9 cells × 2 scenarios × 10 seeds = 180 runs** (v1 是 100 runs；v2 增加 80 runs 覆盖 cross-vendor)
 
 ### Implementation prerequisite
 **当前阻塞**：`HTTPAgentClient` + `agent-bridge.js` 是 S5 wave-2 deferred。需要先实现 channel→adapter 路由（plan 估 2-3 天）。在此之前可用 Plan B：4 个独立 ai-proxy 进程，每个绑定一个模型，通过 `OPENAI_BASE_URL` env var 在 sim 启动时按 channel 切换（hacky 但能跑）。
@@ -190,17 +203,25 @@ n=10 seeds × 2 scenarios per arm = 20 obs/arm. 假设 σ=0.10，δ=0.10 → pow
 - **Total tokens × token-price-table → cost in USD**
 - **DTE-per-decision** (单独每 channel 拆)
 
-### Expected table (RAE-composite mean across seeds × scenarios)
+### Expected table v2 (sandwich-normalized score = `(LLM − fallback) / (oracle − fallback)`)
 
-| Cell | RAE | Survival | Cost (USD/run) | DTE (Δscore/k-tokens) |
-|---|---|---|---|---|
-| FB (no LLM) | 0.45 | 0.62 | 0.00 | — |
-| WW | 0.52 | 0.74 | 0.04 | 0.31 |
-| SW | **0.71** | **0.88** | 0.18 | **0.39** |
-| WS | 0.66 | 0.83 | 0.21 | 0.32 |
-| SS | 0.74 | 0.90 | 0.62 | 0.12 |
+| Cell | RAE_norm | Survival | Cost (USD/run) | DTE (Δscore/k-tokens) | Diversity index |
+|---|---|---|---|---|---|
+| FB (no LLM)             | 0.00 | 0.62 | 0.00  | — | — |
+| WW                      | 0.18 | 0.74 | 0.04  | 0.31 | 1.0 |
+| SW                      | **0.62** | **0.88** | 0.18  | **0.39** | 1.0 |
+| WS                      | 0.51 | 0.83 | 0.21  | 0.32 | 1.0 |
+| SS                      | 0.71 | 0.90 | 0.62  | 0.12 | 1.0 |
+| XV-OPUS-SONNET (intra)  | 0.69 | 0.91 | 0.45  | 0.18 | 2.0 |
+| **XV-DIVERSE-LIGHT**    | **0.65** | 0.86 | **0.16**  | **0.42** | **4.0** |
+| XV-DIVERSE-STRONG       | 0.78 | 0.93 | 0.71  | 0.13 | 4.0 |
+| XV-OPENWEIGHT-ONLY      | 0.41 | 0.78 | 0.05  | 0.36 | 3.0 |
 
-**Key claim**：`SW`（strong-env + weak-policy）在 95% CrI 上与 `SS`（strong-all）不可区分，但成本差 3.4×。
+**Key claims (v2)**:
+1. **SW ≈ SS at 1/3 cost** (Phase A): replicates ChatDev-scale role-removal effect
+2. **XV-DIVERSE-LIGHT ≥ SW at lower cost (Phase B core finding)**: cross-vendor mix outperforms single-family mix at matched cost — first evidence in literature
+3. **XV-DIVERSE-STRONG ≈ SS at +14% cost**: cross-vendor strong ≈ single-vendor strong → no penalty for diversification
+4. **XV-OPENWEIGHT-ONLY ≥ WW**: open-weight mix > single open-weight model → reproducibility-friendly path
 
 ### Threats to validity
 1. **Communication cost between channels**：当前 channel 间通过 state 共享，无 direct LLM-to-LLM 传话；这弱化了"adversarial" claim。建议在论文中诚实写为 "loose coupling"。
@@ -254,18 +275,24 @@ n=10 seeds × 2 scenarios per arm = 20 obs/arm. 假设 σ=0.10，δ=0.10 → pow
 
 ---
 
-## E5 — Long-Horizon Memory Degradation (§2.5)
+## E5 — Three-Axis Joint Memory Analysis on Continuous Tick-Level Naturally-Accumulated Context (§2.5)
+
+> **v2 重 framing (THREAT-2 应对)**: MemoryArena (2026) 已做 action-grounded recall in agent loop (但 session-discrete 不连续)；MemoryAgentBench (Hu et al. ICLR 2026) 已含 Selective Forgetting 轴 (但 no env loop)。Project-Utopia E5 的 contribution **收窄到 三轴联合 + 连续 tick + 自然累积 三-way combo**——这个组合在所有 frontier paper 里仍空。
 
 ### Research question
-**Recall(t), Drift(t), Performance(t) 三条曲线在长程模拟下如何分化？是否能自然复现 "lost-in-the-middle"？**
+**Recall(t), Drift(t), Performance(t) 三条曲线在 *naturally-accumulated continuous tick-level* sim history 下如何分化？是否能复现 "lost-in-the-middle" U-shape？**
 
-这是论文最有方法论新意的实验。
+**与 MemoryArena 的差异化**: MemoryArena 是 session-discrete 任务（task A 完成 → task B 开始）；Project-Utopia 是 tick-continuous (1/30s 粒度 × 多小时)，记忆衰减是 *gradient* 而非 *step*。
+**与 MemoryAgentBench 的差异化**: MemoryAgentBench 测 Selective Forgetting on chat sessions；Project-Utopia 测 forgetting under environment-loop pressure (forget warehouse location → 下次决策错误 → DevIndex 下降)。
+**与 Lost-in-the-Middle 的差异化**: LiM 用合成 distractor + verbal QA recall；Project-Utopia 用自然累积 sim trace + action-grounded recall。
 
-### Hypothesis
+### Hypothesis (v2 — 加 vs MemoryArena 显式对照)
 **H5a**: Recall(t) 随 sim-time 单调下降（模型 forget 早期 anchor）。
-**H5b**: Drift(t) 在 t=2h 后明显（KL > 0.5）。
+**H5b**: Drift(t) 在 t=2h 后明显 (KL > 0.5)。
 **H5c**: Performance(t) 的下降**滞后**于 Recall(t) ≥ 30 sim-min，即 LLM 不需要"记得过去"也能维持当前任务，**直到记忆涉及非当前观察可见的资源约束**。
 **H5d**: 把 anchor 注入位置从 prompt 头移到中间，观察 Recall(t) 在中间 anchor 上的额外下降 ≥ 30%（lost-in-the-middle 复现）。
+**H5e (NEW v2)**: **action-grounded recall 衰减比 verbal recall 衰减快**——LLM 可能在 strategic-summary 里仍提到 anchor (verbal recall) 但下游 directive 已不反映 anchor 影响 (action-grounded recall lost first)。这点 MemoryArena 暗示但未量化。
+**H5f (NEW v2)**: **session-discrete (MemoryArena style) vs tick-continuous (Project-Utopia)** 跑同一 model 同一 anchor，tick-continuous 衰减 ≥ 2× session-discrete (因为 prompt context 在每个 tick 都被刷新)。这是 ablation：把 Project-Utopia 模拟成"每 30 min 一个 session reset"对照 vs 默认连续模式。
 
 ### Anchor 协议
 
@@ -406,10 +433,14 @@ M-QWEN72B       0.06    0.03     0.00  0.02
 
 ## E8 — Bayesian Beta-Binomial Scoring vs Frequentist (§2.8)
 
-### Research question
-**Beta-Binomial scoring 是否在 small-N (5–10 seeds) 下给出比 `passRate × N + M` 更稳定的模型排序？**
+> **v2 重 framing (GOOD-1 应对)**: Bowyer/Aitchison/Ivanova "Don't Use the CLT in LLM Evals With Fewer Than a Few Hundred Datapoints" (ICML 2025 Spotlight) 已直接推荐 Beta-Binomial 作为 small-N 默认。Project-Utopia §2.8 不再 claim novel method choice，**改 framing 为 "applying community best practice (Bowyer ICML 2025) to long-horizon colony sim with PVB variance reduction novelty"**。
 
-这是方法论 defense，不是新实验，复用 E1–E7 的 logs。
+### Research question (v2)
+- **Q8a (defending)**: Beta-Binomial scoring 在 small-N (5–10 seeds) 下是否如 Bowyer (ICML 2025 Spotlight) 所言稳定 ≥ frequentist Wald CIs？(post-hoc 验证)
+- **Q8b (NEW v2 contribution)**: 在 PVB 加持下 (Pluribus AIVAT-style variance reduction)，Beta-Binomial CIs 是否能进一步收紧 ≥ 2×？(unique contribution beyond Bowyer)
+- **Q8c (NEW v2 advanced)**: FAQ (Wu/Nair/Candès 2026-01) 的 Factorized Active Querying 是否能在保 frequentist coverage 的前提下进一步 5× sample efficient？(wave-2 enhancement)
+
+这是方法论 defense + 1 个 unique contribution (PVB-augmented Bayesian)，复用 E1–E7 的 logs。
 
 ### Analysis
 对 E1–E7 的所有 RAE results：
@@ -430,15 +461,80 @@ M-QWEN72B       0.06    0.03     0.00  0.02
 
 ---
 
-## E9 — Reproducibility Verification (§2.9)
+## E9 — 3-Tier Reproducibility Verification (§2.9, v2 upgrade)
 
-### Research question
-**论文公布的 final figures 是否可由 reviewer 在自己机器 / Docker 容器中 bit-identical 复现？**
+> **v2 重 framing (GOOD-2 应对)**: LayerCast (Yuan et al. NeurIPS 2025 Oral) 让 LLM-on 也能 hardware-independent bit-identical (bf16 inference 跨 GPU 可产生 9 percentage points accuracy 差异 — LayerCast 通过 16-bit 存 weight + FP32 计算 解决)。Project-Utopia §2.9 **从 1 tier (fallback bit-identical) 升级到 3 tier**——这是 v2 强化项。
+>
+> **v2 加 RMM mapping (Siddiq 2025-11)**: 7-smell taxonomy (Code/Execution / Data / Documentation / Environment-Tooling / Versioning / Model / Access-Legal) — 论文 §2.9 显式声明 RMM Tier 4+ 合规。
+
+### Research question (v2)
+**论文公布的 final figures 是否可由 reviewer 在自己机器 / Docker 容器中按 3 个 tier reproducibility 复现？**
+
+### 3-Tier Protocol
+
+#### Tier 1: Fallback bit-identical (P0 baseline)
+
+```bash
+node tools/audit/determinism-check.js --seed 0xC0FFEE --ticks 7200 --scenario temperate_plains  # × 2 runs
+# Expected: identical SHA-256 hash on both runs
+```
+
+- ✓ verified at 60 ticks (`e360b76...`)
+- ⏳ TODO: 7200-tick verification before camera-ready
+- 可复现保证：100% bit-identical given same seed × same scenario × fallback mode
+
+#### Tier 2: LLM + LayerCast bit-identical (P1 upgrade, NEW v2)
+
+```bash
+# Pin LLM provider model snapshot ID + LayerCast inference adapter
+LAYERCAST_MODE=on \
+LLM_MODEL_SNAPSHOT_ID=claude-opus-4-7-20260101 \
+node tools/audit/determinism-check.js --seed 0xC0FFEE --ticks 1800 --aiEnabled true  # × 2 runs
+# Expected: identical SHA-256 hash on both runs IF LayerCast inference is used
+```
+
+- 依赖 LayerCast adapter wrap around LLMClient（P0-9 任务，~150 LOC）
+- 跨 GPU 类型仍 bit-identical（这是 LayerCast 的核心承诺）
+- Record-replay LLM cache 作 fallback：cached prompt→response 重放保证 100% reproducibility 即使 provider snapshot 漂移
+
+#### Tier 3: Production LLM stationary (P2 acceptance)
+
+```bash
+# No LayerCast, just temperature=0
+node tools/audit/distribution-stationary-check.js --seed 0xC0FFEE --runs 5
+# Expected: KL divergence between same-prompt response distributions < 0.05
+```
+
+- 用于评测 production LLM API（无法控制 provider 内部硬件）
+- 可接受弱化保证：directive distribution stationary 而非 bit-identical
+
+### Cross-machine + Cross-OS verification
+
+3 台不同硬件（Linux x86_64, macOS arm64, Windows x86_64）跑同 seed、同 scenario、Tier 1（fallback bit-identical mode）→ 三机器 hash 必须相同。
+
+Floating-point 实现差异是已知风险（accumulator 顺序）；如不修，**降级 documenting** "partial reproducibility on architectures with same FP unit ordering"。
+
+### RMM 7-Smell Compliance Mapping (NEW v2)
+
+按 Siddiq et al. (2025-11) 7-smell taxonomy：
+
+| Smell | Project-Utopia 对应措施 | Tier |
+|---|---|---|
+| **Code/Execution** | Git tag `v0.11.0-rc1` + commit-pinned Dockerfile build | RMM 4 |
+| **Data** | Scenario template hash committed; seed range fixed | RMM 4 |
+| **Documentation** | `CLAUDE.md` + `README.md` + 8 ai-research/ docs + LaTeX paper | RMM 5 |
+| **Environment-Tooling** | Pin Node 22.x; pin LayerCast version; pin GPU/CUDA matrix in Dockerfile | RMM 4 |
+| **Versioning** | Git tags for every release; `package.json` version + lock | RMM 5 |
+| **Model** | LLM snapshot ID pinned; LayerCast inference adapter; record-replay cache | RMM 4 |
+| **Access-Legal** | All datasets + code Apache 2.0 / MIT; no proprietary data | RMM 5 |
+
+**Overall**: Project-Utopia 目标 **RMM Tier 4+** 全部 7 smell 合规——比 MLE-Bench (Tier 3) 高一档。
 
 ### Protocol
-1. **Determinism gate**: `node tools/audit/determinism-check.js --seed 0xC0FFEE --ticks 7200 --scenario temperate_plains` × 2 → exit 0 + same hash. ✓ verified at 60 ticks; **TODO: 7200 tick run before camera-ready**.
-2. **Cross-machine reproducibility**: 在 3 台不同硬件（Linux x86_64, macOS arm64, Windows x86_64）跑同 seed、同 scenario、fallback mode → 三机器 hash 必须相同。Floating-point 实现差异是已知风险。
-3. **Container reproducibility**: 提供 Dockerfile：
+
+1. **Determinism gate**: Tier 1 + Tier 2 + Tier 3 全部 pass
+2. **Cross-machine reproducibility**: 3 OS × Tier 1 hash equality
+3. **Container reproducibility**: 双 container (utopia-eval + utopia-agent-base) per MLE-Bench 模板：
    ```dockerfile
    FROM node:20-alpine
    WORKDIR /app
@@ -484,22 +580,27 @@ E6 ─┴── E7 (DTE shares E6 logs)        E9 (cross-cutting reproducibility
 
 ---
 
-## 总算力 / 时间预算
+## 总算力 / 时间预算 (v2 — 含 cross-vendor cells + LayerCast)
 
-| 实验 | GPU-hours | API-USD（如用 API 模型） |
-|---|---|---|
-| E1 hierarchical vs flat | 16 | $30 |
-| E2 token-vs-world | 10 | $15 |
-| E3 multi-LLM matrix | 50 + dev (2-3d) | $60 |
-| E4 multi-resource RAE | 50 | $80 |
-| E5 long-horizon | 80 | $40 |
-| E6 failure modes | 14 | $25 |
-| E7 DTE | +3 | +$5 |
-| E8 Bayesian post-hoc | 0 | $0 |
-| E9 reproducibility | 0.5 | $0 |
-| **Total** | **~225 GPU-hr** | **~$255** |
+| 实验 | GPU-hours v1 | GPU-hours v2 | API-USD v2 |
+|---|---|---|---|
+| E1 hierarchical vs flat | 16 | 16 | $30 |
+| E2 token-vs-world | 10 | 10 | $15 |
+| **E3 multi-LLM matrix (cross-vendor extended)** | **50 + 2-3d dev** | **90 + 4d dev** | **$120** |
+| E4 multi-resource RAE | 50 | 50 | $80 |
+| **E5 long-horizon (含 H5e/H5f ablation)** | **80** | **100** | **$60** |
+| E6 failure modes | 14 | 14 | $25 |
+| E7 DTE | +3 | +3 | +$5 |
+| E8 Bayesian post-hoc + FAQ wave-2 | 0 | 2 | $0 |
+| **E9 3-tier reproducibility** | **0.5** | **5** (Tier 2 LayerCast verification) | $5 |
+| **Total v2** | — | **~290 GPU-hr** | **~$340** |
 
-折算单 A100：约 1 周连续跑 + 半周 dev work for E3。
+折算单 A100：约 12 天连续跑 + 1 周 dev work（含 LayerCast adapter + cross-vendor agent-bridge）。
+
+**Cost increase rationale**: v1 → v2 增加 ~65 GPU-hours + $85 API 主要来自：
+- E3 cross-vendor cells (+80 runs)
+- E5 H5e action-grounded recall ablation + H5f session-vs-tick comparison
+- E9 LayerCast Tier 2 verification (1800 ticks × multiple runs)
 
 ---
 
