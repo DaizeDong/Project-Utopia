@@ -1,7 +1,6 @@
 import { createInitialGameState } from "../../entities/EntityFactory.js";
 import { createServices } from "../../app/createServices.js";
 import { SimulationClock } from "../../app/SimulationClock.js";
-import { ProgressionSystem } from "../../simulation/meta/ProgressionSystem.js";
 import { RoleAssignmentSystem } from "../../simulation/population/RoleAssignmentSystem.js";
 import { MemoryStore } from "../../simulation/ai/memory/MemoryStore.js";
 import { MemoryObserver } from "../../simulation/ai/memory/MemoryObserver.js";
@@ -12,12 +11,9 @@ import { WorldEventSystem } from "../../world/events/WorldEventSystem.js";
 import { NPCBrainSystem } from "../../simulation/ai/brains/NPCBrainSystem.js";
 import { WorkerAISystem } from "../../simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../../simulation/npc/VisitorAISystem.js";
-import { AnimalAISystem } from "../../simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../../simulation/lifecycle/MortalitySystem.js";
-import { WildlifePopulationSystem } from "../../simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../../simulation/economy/ResourceSystem.js";
-import { ProcessingSystem } from "../../simulation/economy/ProcessingSystem.js";
 import { PopulationGrowthSystem } from "../../simulation/population/PopulationGrowthSystem.js";
 import { TileStateSystem } from "../../simulation/economy/TileStateSystem.js";
 import { ColonyDirectorSystem } from "../../simulation/meta/ColonyDirectorSystem.js";
@@ -41,7 +37,6 @@ export const DT_SEC = 1 / 30;
 function buildDefaultSystems(memoryStore) {
   return [
     new SimulationClock(),
-    new ProgressionSystem(),
     new RoleAssignmentSystem(),
     new PopulationGrowthSystem(),
     new StrategicDirector(memoryStore),
@@ -54,12 +49,9 @@ function buildDefaultSystems(memoryStore) {
     new WorkerAISystem(),
     new ConstructionSystem(),
     new VisitorAISystem(),
-    new AnimalAISystem(),
     new MortalitySystem(),
-    new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
-    new ProcessingSystem(),
     new ColonyDirectorSystem(),
   ];
 }

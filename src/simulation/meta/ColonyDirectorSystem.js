@@ -13,7 +13,6 @@ import {
   isRecoveryMode,
 } from "../ai/colony/BuildProposer.js";
 import { proposeBridgesForReachability } from "../ai/colony/proposers/BridgeProposer.js";
-import { proposeScoutRoadTowardFoggedStone } from "../ai/colony/proposers/ScoutRoadProposer.js";
 
 const EVAL_INTERVAL_SEC = 2;
 const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
@@ -908,13 +907,6 @@ export class ColonyDirectorSystem {
     // toward the closest fog-hidden STONE node when stone is critical and
     // no visible STONE exists; the worker walking that road reveals the
     // fog as a side-effect, so the next director tick can land the quarry.
-    const scoutBuilds = proposeScoutRoadTowardFoggedStone(state, this._buildSystem, director, services);
-    if (scoutBuilds > 0) {
-      director.blueprintsSubmitted = Number(director.blueprintsSubmitted ?? 0) + scoutBuilds;
-      director.lastBuildSource = "fallback";
-      director.lastBuildTimeSec = nowSec;
-    }
-
     // Priority 2: phase-based colony development (including expansion after complete)
     // Scale build rate with colony resources — build faster when resources are abundant
     const wood = state.resources?.wood ?? 0;

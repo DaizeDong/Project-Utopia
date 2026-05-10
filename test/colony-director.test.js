@@ -94,28 +94,11 @@ test("assessColonyNeeds returns processing needs when logistics is complete", ()
   assert.ok(types.includes("kitchen"), "should need kitchen in processing phase");
 });
 
-test("assessColonyNeeds returns fortification needs when processing is complete", () => {
-  const state = makeMinimalState({
-    buildings: { farms: 4, lumbers: 3, roads: 20, warehouses: 2, walls: 0, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 0, clinics: 0 },
-    resources: { food: 80, wood: 70, stone: 10, herbs: 5 },
-  });
-  const needs = assessColonyNeeds(state);
-  const types = needs.map((n) => n.type);
-  assert.ok(types.includes("wall"), "should need walls in fortification phase");
-  assert.ok(types.includes("smithy"), "should need smithy in fortification phase");
-  assert.ok(types.includes("clinic"), "should need clinic in fortification phase");
-});
-
-test("assessColonyNeeds returns only expansion or accessibility items when all phases complete", () => {
-  const state = makeMinimalState({
-    buildings: { farms: 4, lumbers: 3, roads: 30, warehouses: 2, walls: 12, quarries: 1, herbGardens: 1, kitchens: 1, smithies: 1, clinics: 1 },
-    resources: { food: 80, wood: 70, stone: 10, herbs: 5 },
-  });
-  const needs = assessColonyNeeds(state);
-  // All needs should be either expansion or accessibility-driven (processing: need accessible ...)
-  assert.ok(needs.every((n) => n.reason.startsWith("expansion:") || n.reason.includes("accessible") || n.reason.includes("bridge") || n.reason.includes("logistics:")),
-    "only expansion, accessibility, logistics, or bridge needs when all phase counts are met");
-});
+// (Two phase-completion tests removed in S3 D2 — multi-tier processing chain
+// was cut, so the "fortification after processing" and "all phases complete"
+// branches in assessColonyNeeds are no longer reachable on the academic
+// benchmark surface. Pre-fortification phase tests above still exercise the
+// core branching.)
 
 // ── selectNextBuild tests ─────────────────────────────────────────────
 

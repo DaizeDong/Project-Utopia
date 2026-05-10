@@ -38,7 +38,6 @@ import { WarehouseNeedProposer } from "./proposers/WarehouseNeedProposer.js";
 import { RecoveryProposer, isRecoveryMode } from "./proposers/RecoveryProposer.js";
 import { BootstrapProposer } from "./proposers/BootstrapProposer.js";
 import { LogisticsProposer } from "./proposers/LogisticsProposer.js";
-import { ProcessingProposer } from "./proposers/ProcessingProposer.js";
 import { SurvivalPreemptProposer } from "./proposers/SurvivalPreemptProposer.js";
 
 /**
@@ -160,7 +159,6 @@ export const WAVE_2_BUILD_PROPOSERS = Object.freeze([
   RecoveryProposer,
   BootstrapProposer,
   LogisticsProposer,
-  ProcessingProposer,
 ]);
 
 /**
@@ -187,6 +185,5 @@ export {
   isRecoveryMode,
   BootstrapProposer,
   LogisticsProposer,
-  ProcessingProposer,
   SurvivalPreemptProposer,
 };

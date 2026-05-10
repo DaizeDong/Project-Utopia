@@ -20,7 +20,6 @@ import { createInitialGameState } from "../src/entities/EntityFactory.js";
 import { createServices } from "../src/app/createServices.js";
 import { SimulationClock } from "../src/app/SimulationClock.js";
 import { VisibilitySystem } from "../src/simulation/world/VisibilitySystem.js";
-import { ProgressionSystem } from "../src/simulation/meta/ProgressionSystem.js";
 import { DevIndexSystem } from "../src/simulation/meta/DevIndexSystem.js";
 import { RaidEscalatorSystem } from "../src/simulation/meta/RaidEscalatorSystem.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
@@ -34,12 +33,9 @@ import { WorldEventSystem } from "../src/world/events/WorldEventSystem.js";
 import { NPCBrainSystem } from "../src/simulation/ai/brains/NPCBrainSystem.js";
 import { WorkerAISystem } from "../src/simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../src/simulation/npc/VisitorAISystem.js";
-import { AnimalAISystem } from "../src/simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js";
-import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
-import { ProcessingSystem } from "../src/simulation/economy/ProcessingSystem.js";
 import { TileStateSystem } from "../src/simulation/economy/TileStateSystem.js";
 import { WarehouseQueueSystem } from "../src/simulation/economy/WarehouseQueueSystem.js";
 import { ColonyDirectorSystem } from "../src/simulation/meta/ColonyDirectorSystem.js";
@@ -103,7 +99,6 @@ function buildSystems(memoryStore) {
   return [
     new SimulationClock(),
     new VisibilitySystem(),
-    new ProgressionSystem(),
     new DevIndexSystem(),
     new RaidEscalatorSystem(),
     new RoleAssignmentSystem(),
@@ -116,18 +111,11 @@ function buildSystems(memoryStore) {
     new NPCBrainSystem(),
     new WarehouseQueueSystem(),
     new WorkerAISystem(),
-    // v0.8.4 building-construction (Agent A) — completes blueprint/demolish
-    // overlays. Order mirrors GameApp.createSystems(): immediately after
-    // WorkerAISystem applies dt to overlay.workAppliedSec, before
-    // VisitorAISystem so visitors see the freshly-mutated tiles.
     new ConstructionSystem(),
     new VisitorAISystem(),
-    new AnimalAISystem(),
     new MortalitySystem(),
-    new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
-    new ProcessingSystem(),
     new ColonyDirectorSystem(),
   ];
 }
