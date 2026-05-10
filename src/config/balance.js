@@ -1,5 +1,30 @@
 ﻿import { WEATHER } from "./constants.js";
 
+// ─────────────────────────────────────────────────────────────────────────
+// NEUTRALIZED — academic benchmark frontier.
+//
+// This file accumulated as gameplay-tuning surface across v0.8 – v0.10
+// patches (spoilage curves, recruit cooldowns, escalator caps, fatigue
+// rates, wildlife leash radii, raid pressure curves, etc.). After S3
+// the consumers of those tuning values are either deleted (Wildlife,
+// Processing, Progression) or running headless through SimHarness only.
+//
+// Policy for this file:
+//   • Constant *names* are preserved to avoid null-deref in 50+ remaining
+//     read sites (S4 plan §4 — "neutralize, don't delete").
+//   • Values that ride directly on the LLM action space (clamps, cadences,
+//     resource costs, group policy weight ranges) are LOAD-BEARING and
+//     must not be changed without re-baselining the benchmark.
+//   • Values that were tuned for player feel (visual spawn jitter,
+//     casual-difficulty cushions, narrative pacing) are dead in headless
+//     and may be neutralized in a follow-up audit pass without breaking
+//     any current contract test.
+//
+// If you are adding a new field, prefer wiring it through the AgentAdapter
+// schema (src/simulation/ai/llm/ResponseSchema.js) rather than expanding
+// this surface — every BALANCE.* value ends up in the bench manifest.
+// ─────────────────────────────────────────────────────────────────────────
+
 export const BUILD_COST = Object.freeze({
   road: { wood: 1 },
   farm: { wood: 5 },

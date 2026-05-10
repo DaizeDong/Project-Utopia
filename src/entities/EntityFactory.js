@@ -101,24 +101,6 @@ function pickWorkerName(random, excludeSet = null) {
   return baseName;
 }
 
-// v0.8.2 Round-5b (02e Step 4) — 40 ASCII neutral surnames for casual profile.
-// Source: Dwarf Fortress / Crusader Kings naming cadence; all ≤ 8 letters.
-// Only consumed in casual uiProfile — full/dev profile preserves old RNG seq.
-export const SURNAME_BANK = Object.freeze([
-  "Hollowbrook", "Riven", "Marsh", "Cole", "Orr", "Vesper", "Pale",
-  "Thorn", "Brannt", "Ashford", "Keane", "Drift", "Hale", "Fenn",
-  "Lowe", "Grove", "Stoker", "Reeve", "Moss", "Quinn",
-  "Ward", "Tull", "Orrow", "Sable", "Rook", "Venn", "Coll", "Pike",
-  "Arden", "Bower", "Cray", "Dane", "Elm", "Foss", "Glade", "Hearn",
-  "Inge", "Jorvik", "Lark", "Mend",
-]);
-
-function pickSurname(random) {
-  const idx = Math.floor(random() * SURNAME_BANK.length);
-  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < SURNAME_BANK.length ? idx : 0;
-  return SURNAME_BANK[safeIdx];
-}
-
 // v0.8.2 Round-0 02d-roleplayer (Step 1) — Visitor name banks. 01e introduced
 // WORKER_NAME_BANK; we extend the same pattern to visitors so traders and
 // saboteurs stop reading as "Trader-217" / "Saboteur-218" in EntityFocusPanel
