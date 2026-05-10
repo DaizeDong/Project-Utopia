@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.11.0-rc1] — 2026-05-09 — Academic-benchmark refactor
+
+Branch: `refactor/academic-benchmark` (from baseline tag `pre-academic-refactor-v0.10.0` = commit `16a593d`).
+Tag: `refactor/academic-benchmark-v0.11.0-rc1`.
+
+Cumulative delta vs v0.10.0: **~78 k LOC removed across 370+ files, 2064 tests / 1 fail → 684 tests / 0 fail, full-suite 84 s → 18 s**.
+
+### S0 — baseline + determinism audit
+- Established baseline 2064 / 2059 pass / 1 fail / 4 skip on `pre-academic-refactor-v0.10.0`
+- Added `tools/audit/{rng-coverage-report,determinism-check}.js` — RNG-leak grep + same-seed × fallback hash equality verifier
+- Output `docs/ai-research/determinism-report.md` answering Appendix-B Q1–Q4
+
+### S1 — browser shell removal (~30 k LOC, 119 test files)
+- CUT `src/render/`, `src/ui/`, `src/audio/`, `src/dev/`, `index.html`, `src/main.js`, `vite.config.js`, `desktop/`
+- CUT `src/app/{GameApp,GameLoop,snapshotService,leaderboardService,devModeGate,shortcutResolver,replayService,perfCapHonest,simStepper,uiProfileState}.js`
+- CUT 14 browser/desktop/release scripts in `scripts/`
+- Patched 3 reverse imports (`MortalitySystem` audio, `PopulationGrowthSystem` dev re-export, `EntityFactory` uiProfile/display)
+- Slimmed `createServices.js`, dropped `electron`/`vite`/`playwright`/`three` deps from `package.json`
+
+### S2 — test bucket cleanup (~17.7 k LOC, 127 test files)
+- Buckets per refactor-plan §3.3: ui-hud-render, progression-score, building-economy regressions, worker-npc balance/hotfix, ai-llm tone/balance-tune, navigation road-*, wildlife, scenarios
+- KEEP ~89 contract tests: ai-llm core (26), worker minimal contract (10), navigation core (8), benchmark/harness/long-run (20), build-system + build-proposer (4), schema/run-outcome/rng-determ
+
+### S3 — decision points (~13.8 k LOC)
+- **D2** ProcessingSystem CUT (`economy/ProcessingSystem.js` + `proposers/ProcessingProposer.js` + WAVE_2_BUILD_PROPOSERS membership + SimHarness/long-horizon-helpers wiring)
+- **D4** Wildlife + Trader CUT (`ecology/WildlifePopulationSystem`, `npc/AnimalAISystem`; raider path inside VisitorAISystem retained)
+- **D8** ProgressionSystem disabled (file kept as `isRecoveryEssential` library, removed from system tick)
+- **D1** SkillLibrary DEFERRED — too tightly coupled to ColonyPlanner / PlanExecutor / AgentDirectorSystem; tag `feature/skill-library-archive` reserved for v0.11.1
+- **D9 / D10** templates 6→2 + ScenarioFactory story content DEFERRED — many simulation modules still need the runtime helpers
+
+### S4 — `balance.js` neutralize header
+- Add policy banner at top of `src/config/balance.js` documenting neutralize-don't-delete strategy (preserves 50+ inbound reads)
+- No value changes (would risk breaking behavioural contracts)
+
+### S5 — AgentAdapter skeleton + token telemetry
+- New `src/simulation/ai/llm/AgentAdapter.js` — 4-channel interface (CHANNELS, AgentAdapter base class, NoopAgentAdapter, SCHEMA_VERSION="1.0")
+- Extend `src/app/aiRuntimeStats.js` with token fields (promptTokens, completionTokens, cachedTokens, firstTokenLatencyMs, tokensPerSec, kvCacheHits, prefixHits)
+- AI proxy / LLMClient / PromptBuilder slimming **deferred** to wave-2 (would risk breaking the existing test surface)
+
+### S6 — 5 dimension plugins
+- New `src/benchmark/dimensions/{ResourceAllocationEfficiency,GroupDynamics,MemoryDegradation,DecisionTokenEfficiency,HierarchicalCoordination,index}.js`
+- Each conforms to `DimensionPlugin.js` protocol; output documented as `[0,1]` for sufficiency / drift / recall, raw scalar for cadence-stddev + latency-p50 (consumers normalize before bayesianScore)
+- New `test/benchmark-dimensions.test.js` — 8 tests cover protocol + per-plugin smoke run
+
+### Review rounds
+- Round 1 (orphans): deleted dead `src/app/controlSanitizers.js` (96 LOC, 0 inbound), `SURNAME_BANK + pickSurname` in `EntityFactory.js`, dead SYSTEM_ORDER strings (`AnimalAISystem`, `ProcessingSystem`, `ProgressionSystem`)
+- Round 2 (docs): full rewrite of `CLAUDE.md` for academic-benchmark architecture, full rewrite of `README.md`, refactor-plan §4.11 Decision Matrix status filled in
+- Round 3 (closeout): identified ScoringEngine ↔ plugin scale mismatch (deferred normalization layer to wave-2), removed broken Playwright-tied `scripts/long-run-{support,report}.mjs`
+
+### Verified
+- `npm test` — 684 / 683 pass / 0 fail / 1 skip / 18.4 s
+- `npm run audit:rng` — 3 leaks remain (was 12 pre-S0; the 9 in deleted files self-resolved)
+- `npm run audit:determinism --ticks 60 --scenario temperate_plains` — same hash on two runs (fallback mode)
+- `npm run bench:dimensions` — 8/8 dimension-plugin smoke tests green
+
+### Deferred (see `docs/ai-research/refactor-plan.md` §4.11 + §5)
+- **D1** SkillLibrary cut + caller refactor
+- **D5** runMode gate (`state.ai.runMode = "llm" | "algorithmic" | "hybrid"`)
+- **D9** scenario template allowlist (6→2+1)
+- **D10** ScenarioFactory story-content deletion
+- **S5 wave-2** ai-proxy / LLMClient / PromptBuilder slimming + HTTPAgentClient + agent-bridge
+- **S6 wave-2** ScoringEngine normalization layer; populate placeholder dimensions (coalition_coupling, state_target_obedience, plan_policy_alignment, behavioral_drift)
+- **S7** long-horizon memory harness (30 m → 2 h × 5 seed × 3 repeat → 8 h → 24 h)
+
+---
+
 ## [Unreleased] — HW7 Final Submission deliverables (a7.md + Final-Polish-Loop audit + final-crit deck)
 
 ### docs(submission) — Consolidate HW7 final-submission deliverables for grading

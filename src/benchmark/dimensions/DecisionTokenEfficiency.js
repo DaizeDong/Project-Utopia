@@ -1,12 +1,15 @@
 // DecisionTokenEfficiency — DTE dimension plugin (S6).
 //
-// Score families:
-//   - dte_per_completion_token — Δ(taskScore) / completionTokens
-//   - dte_per_decision         — Δ(taskScore) / decision count
-//   - first_token_latency_p50  — median firstTokenLatencyMs
+// Score families (all unbounded — consumers normalize before bayesianScore):
+//   - dte_per_completion_token ∈ ℝ      higher is better (more task progress per token)
+//   - dte_per_decision         ∈ ℝ      higher is better (more task progress per LLM call)
+//   - first_token_latency_p50  ∈ [0,∞)  ms; lower is better
 //
-// Reads token telemetry from state.metrics.aiRuntime (extended in S5)
-// and harness's task score over time.
+// IMPORTANT: until S5 wave-2 wires AgentAdapter implementations to populate
+// state.metrics.aiRuntime.{prompt,completion,cached}Tokens + firstTokenLatencyMs,
+// these fields are zero in fallback mode and DTE returns 0 across the board.
+// Plugin runs successfully (no NaN) but downstream comparisons are vacuous;
+// a `bench:long` with `aiEnabled=true` is required for meaningful values.
 
 export const DecisionTokenEfficiencyPlugin = {
   id: "dte",

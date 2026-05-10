@@ -1,12 +1,14 @@
 // HierarchicalCoordination — cross-channel agreement dimension plugin (S6).
 //
-// Score families:
-//   - plan_policy_alignment    — fraction of npc-policy directives whose
-//                                 intentWeights are consistent with the
-//                                 strategic-plan goals
-//   - env_threat_responsiveness — env factionTension vs strategic threat
-//                                  (lag-corrected cross-correlation)
-//   - colony_cadence_health    — std-dev of colony-agent decision intervals
+// Score families (mixed scales — DO NOT pipe directly into bayesianScore):
+//   - plan_policy_alignment    ∈ [0,1]  higher is better; fraction of policy
+//                                       directives consistent with plan goals
+//                                       (placeholder=0 until S6 wave-2)
+//   - env_threat_responsiveness ∈ [-1,1] higher is better; Pearson corr of
+//                                        factionTension vs threat
+//   - colony_cadence_health     ∈ [0,∞) std-dev of decision intervals (sec);
+//                                        lower is better; needs scenario-relative
+//                                        normalization before bayesianScore
 //
 // Tests whether the 4 LLM channels behave coherently.
 

@@ -4,12 +4,16 @@
 // Pure read-only over harness samples; conforms to DimensionPlugin protocol
 // (see src/benchmark/framework/DimensionPlugin.js).
 //
-// Score families produced:
-//   - rae_sufficiency       — clamp(food/demand) × clamp(wood/demand) ∈ [0,1]
-//   - rae_distribution_gini — Gini over per-zone resource availability
-//                              (lower = more even allocation)
-//   - rae_idle_capacity     — fraction of workers idle / unused depot slots
-//   - rae_path_overhead     — mean(A* path length / Manhattan-optimal)
+// Score families produced (all in [0,1] except path_overhead):
+//   - rae_sufficiency       ∈ [0,1]  higher is better; clamp(food/demand) × clamp(wood/demand)
+//   - rae_distribution_gini ∈ [0,1]  lower is better; Gini over per-zone resource availability
+//   - rae_idle_capacity     ∈ [0,1]  lower is better; fraction of idle workers
+//   - rae_path_overhead     ∈ [1,∞)  lower is better; placeholder=1.0 until S6 wave-2 wires PathCache hooks
+//
+// ScoringEngine consumers MUST normalize: pass `rae_sufficiency` directly,
+// invert `(1 - rae_distribution_gini)` and `(1 - rae_idle_capacity)`, and
+// transform `1 / rae_path_overhead` before feeding bayesianScore (which
+// expects [0,1] benefit scores).
 //
 // All four are time-weighted means across the sample window.
 
