@@ -81,9 +81,7 @@ def _plan_tokens(strategy: dict[str, Any] | None) -> list[str]:
     # phase
     phase = str(strategy.get("phase", "") or "").lower()
     if phase == "industrialize":
-        tokens.extend(("quarry", "smith"))
-    elif phase == "process":
-        tokens.append("cook")
+        tokens.append("quarry")
     elif phase == "fortify":
         tokens.append("safety")
     elif phase == "optimize":

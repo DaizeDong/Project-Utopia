@@ -7,9 +7,9 @@ protocol.
 
 Score families (all rounded to 4 decimals to match the JS port):
 
-- ``rae_composite`` ∈ [0, 1] — Crafter geometric mean over 4-resource
-  per-capita sufficiency (food / wood / stone / herbs). Punishes
-  single-resource starvation: any sᵢ=0 collapses the composite toward 0.
+- ``rae_composite`` ∈ [0, 1] — Crafter geometric mean over 3-resource
+  per-capita sufficiency (food / wood / stone). Punishes single-resource
+  starvation: any sᵢ=0 collapses the composite toward 0.
 - ``rae_sufficiency`` ∈ [0, 1] — backward-compat scalar (food × wood).
 - ``rae_distribution_gini`` ∈ [0, 1] — Gini coefficient of the per-resource
   carry vector (lower is better — downstream consumers invert).
@@ -129,7 +129,6 @@ class ResourceAllocationEfficiencyPlugin(DimensionPlugin):
                 "food": float(resources.get("food", 0) or 0),
                 "wood": float(resources.get("wood", 0) or 0),
                 "stone": float(resources.get("stone", 0) or 0),
-                "herbs": float(resources.get("herbs", 0) or 0),
                 "workers": len(workers),
                 "idle_workers": idle_count,
                 "prosperity": float(gameplay.get("prosperity", 0) or 0),
@@ -156,18 +155,17 @@ class ResourceAllocationEfficiencyPlugin(DimensionPlugin):
         w = max(1, int(last.get("workers", 0)))
 
         # Per-resource per-capita sufficiency [0,1]. Demand coefficients picked
-        # to align with worker carry capacity (~1.0 food, 0.4 wood, 0.1 stone,
-        # 0.05 herbs per worker per cycle).
+        # to align with worker carry capacity (~1.0 food, 0.4 wood, 0.1 stone
+        # per worker per cycle).
         food_suf = _clamp01(float(last.get("food", 0.0)) / (w * 1.0))
         wood_suf = _clamp01(float(last.get("wood", 0.0)) / (w * 0.4))
         stone_suf = _clamp01(float(last.get("stone", 0.0)) / max(1.0, w * 0.1))
-        herbs_suf = _clamp01(float(last.get("herbs", 0.0)) / max(1.0, w * 0.05))
 
         # Backward-compat (v1) — food × wood product
         sufficiency = food_suf * wood_suf
 
-        # P0-3 (v2): Crafter geometric mean over all 4 resource axes.
-        composite = crafter_geometric_mean([food_suf, wood_suf, stone_suf, herbs_suf])
+        # P0-3 (v2): Crafter geometric mean over all 3 resource axes.
+        composite = crafter_geometric_mean([food_suf, wood_suf, stone_suf])
 
         idle_fracs = [
             (s.get("idle_workers", 0) / s["workers"]) if s.get("workers", 0) > 0 else 0.0
@@ -179,7 +177,6 @@ class ResourceAllocationEfficiencyPlugin(DimensionPlugin):
             float(last.get("food", 0.0)),
             float(last.get("wood", 0.0)),
             float(last.get("stone", 0.0)),
-            float(last.get("herbs", 0.0)),
         ]
         distribution_gini = _gini(resource_vec)
 

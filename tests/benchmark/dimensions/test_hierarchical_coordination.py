@@ -24,10 +24,9 @@ class TestPlanTokens:
         assert "wood" in toks
         assert "lumber" in toks
 
-    def test_phase_industrialize_emits_quarry_and_smith(self) -> None:
+    def test_phase_industrialize_emits_quarry(self) -> None:
         toks = _plan_tokens({"phase": "industrialize"})
         assert "quarry" in toks
-        assert "smith" in toks
 
     def test_dedup_preserves_order(self) -> None:
         # priority=defend AND defense_posture=defensive both add 'safety'.

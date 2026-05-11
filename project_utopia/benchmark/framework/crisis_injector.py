@@ -14,19 +14,6 @@ from typing import Any, Callable
 __all__ = ["CRISIS_TYPES", "CrisisInjector"]
 
 
-def _apply_drought(state: dict[str, Any]) -> None:
-    weather = state.setdefault("weather", {})
-    weather["current"] = "drought"
-    weather["timeLeftSec"] = 60
-
-
-def _detect_drought(out: Any) -> bool:
-    if not isinstance(out, dict):
-        return False
-    env = out.get("environment") or {}
-    return env.get("weather") == "drought" or env.get("weatherType") == "drought"
-
-
 def _apply_predator_surge(state: dict[str, Any]) -> None:
     animals = state.setdefault("animals", [])
     template = next((a for a in animals if isinstance(a, dict) and a.get("kind") == "PREDATOR"), None)
@@ -72,25 +59,7 @@ def _detect_resource_crash(out: Any) -> bool:
     return (food.get("stock", 100) < 10) or (food.get("projectedZeroSec") is not None)
 
 
-def _apply_epidemic(state: dict[str, Any]) -> None:
-    state.setdefault("resources", {})["herbs"] = 0
-    for agent in state.get("agents") or []:
-        if isinstance(agent, dict) and agent.get("type") == "WORKER" and agent.get("alive", True) is not False:
-            agent["hunger"] = max(0.0, float(agent.get("hunger", 0.8)) - 0.3)
-
-
-def _detect_epidemic(out: Any) -> bool:
-    if not isinstance(out, dict):
-        return False
-    herbs = (out.get("economy") or {}).get("herbs") or {}
-    if herbs.get("stock", 10) < 2:
-        return True
-    blockers = (out.get("workforce") or {}).get("growthBlockers") or []
-    return any(("herb" in b or "hunger" in b) for b in blockers if isinstance(b, str))
-
-
 CRISIS_TYPES: dict[str, dict[str, Any]] = {
-    "drought": {"label": "Drought", "apply": _apply_drought, "detect": _detect_drought},
     "predator_surge": {
         "label": "Predator Surge",
         "apply": _apply_predator_surge,
@@ -100,11 +69,6 @@ CRISIS_TYPES: dict[str, dict[str, Any]] = {
         "label": "Resource Crash",
         "apply": _apply_resource_crash,
         "detect": _detect_resource_crash,
-    },
-    "epidemic": {
-        "label": "Epidemic (herbs drain)",
-        "apply": _apply_epidemic,
-        "detect": _detect_epidemic,
     },
 }
 

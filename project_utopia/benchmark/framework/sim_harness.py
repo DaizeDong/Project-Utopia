@@ -195,7 +195,7 @@ def _create_initial_state(template_id: str, seed: int) -> dict[str, Any]:
         "controls": {"isPaused": False, "timeScale": 1},
         "ai": {"enabled": False, "coverageTarget": "fallback", "runtimeProfile": "long_run", "runMode": "fallback"},
         "metrics": {"timeSec": 0.0, "deathsTotal": 0, "populationStats": {"workers": 0, "totalEntities": 0}},
-        "resources": {"food": 50.0, "wood": 50.0, "stone": 0.0, "herbs": 0.0},
+        "resources": {"food": 50.0, "wood": 50.0, "stone": 0.0},
         "agents": [],
         "animals": [],
         "buildings": {},
@@ -295,7 +295,6 @@ class SimHarness:
                 ir = scenario_state.initial_resources
                 self.state["resources"] = {
                     "food": float(ir.get("food", 50.0)),
-                    "herbs": float(ir.get("herbs", 0.0)),
                     "stone": float(ir.get("stone", 0.0)),
                     "wood": float(ir.get("wood", 50.0)),
                 }
@@ -490,7 +489,6 @@ class SimHarness:
             "food": (s.get("resources") or {}).get("food", 0),
             "wood": (s.get("resources") or {}).get("wood", 0),
             "stone": (s.get("resources") or {}).get("stone", 0),
-            "herbs": (s.get("resources") or {}).get("herbs", 0),
             "workers": len(self.alive_workers),
             "prosperity": (s.get("gameplay") or {}).get("prosperity", 0),
             "threat": (s.get("gameplay") or {}).get("threat", 0),

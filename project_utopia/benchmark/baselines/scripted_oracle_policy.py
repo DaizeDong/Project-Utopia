@@ -75,10 +75,6 @@ def _temperate_plains_policy() -> dict[str, Any]:
                     "eat": 1.4,
                     "wander": 0.2,
                     "quarry": 0.6,
-                    "gather_herbs": 0.6,
-                    "cook": 1.2,
-                    "smith": 0.4,
-                    "heal": 0.6,
                 },
                 "risk_tolerance": 0.4,
                 "target_priorities": {
@@ -90,10 +86,6 @@ def _temperate_plains_policy() -> dict[str, Any]:
                     "frontier": 0.7,
                     "safety": 1.2,
                     "quarry": 0.7,
-                    "herb_garden": 0.7,
-                    "kitchen": 1.1,
-                    "smithy": 0.5,
-                    "clinic": 0.7,
                     "bridge": 0.6,
                 },
                 "ttl_sec": 60,
@@ -130,11 +122,10 @@ def _temperate_plains_colony() -> dict[str, Any]:
             {"type": "farm", "priority": 3},
             {"type": "lumber", "priority": 2},
             {"type": "warehouse", "priority": 3},
-            {"type": "kitchen", "priority": 1},
         ],
-        "summary": "Order: farm → lumber → warehouse → kitchen; defer combat infra until food buffer exists.",
+        "summary": "Order: farm → lumber → warehouse; defer combat infra until food buffer exists.",
         "steering_notes": [
-            "Scale farms first, then storage, then processing.",
+            "Scale farms first, then storage.",
         ],
     }
 
@@ -168,10 +159,6 @@ def _fortified_basin_policy() -> dict[str, Any]:
                     "eat": 1.2,
                     "wander": 0.2,
                     "quarry": 1.5,
-                    "gather_herbs": 0.8,
-                    "cook": 0.8,
-                    "smith": 1.6,
-                    "heal": 1.0,
                 },
                 "risk_tolerance": 0.3,
                 "target_priorities": {
@@ -183,15 +170,11 @@ def _fortified_basin_policy() -> dict[str, Any]:
                     "frontier": 0.8,
                     "safety": 1.5,
                     "quarry": 1.4,
-                    "herb_garden": 0.7,
-                    "kitchen": 0.9,
-                    "smithy": 1.4,
-                    "clinic": 1.0,
                     "bridge": 0.6,
                 },
                 "ttl_sec": 60,
                 "focus": "fortify chokepoint",
-                "summary": "Push stone and tools into the chokepoint while keeping food intake steady.",
+                "summary": "Push stone into the chokepoint while keeping food intake steady.",
                 "steering_notes": [
                     "Maintain four guards minimum on the central chokepoint.",
                     "Prioritize defensive infra over expansion during raid windows.",
@@ -225,12 +208,12 @@ def _fortified_basin_strategic() -> dict[str, Any]:
         "directive": {
             "focus": "fortify chokepoint at center, maintain 4 guards minimum",
             "horizon_sec": 180,
-            "priority_chain": ["wall", "gate", "smithy", "clinic"],
+            "priority_chain": ["wall", "stone", "warehouse"],
         },
         "summary": "Defense first; expansion second. Hold the center until raid pressure breaks.",
         "steering_notes": [
-            "Wall and gate before any new farm.",
-            "Keep clinic adjacent to barracks for fast triage.",
+            "Wall before any new farm.",
+            "Keep warehouse adjacent to barracks for fast supply.",
         ],
     }
 
@@ -239,11 +222,10 @@ def _fortified_basin_colony() -> dict[str, Any]:
     return {
         "build_plan": [
             {"type": "wall", "priority": 3},
-            {"type": "gate", "priority": 3},
-            {"type": "smithy", "priority": 2},
-            {"type": "clinic", "priority": 2},
+            {"type": "warehouse", "priority": 2},
+            {"type": "quarry", "priority": 2},
         ],
-        "summary": "Order: wall → gate → smithy → clinic; defer expansion until defended.",
+        "summary": "Order: wall → warehouse → quarry; defer expansion until defended.",
         "steering_notes": [
             "Lock the chokepoint before scaling farms.",
         ],
@@ -279,10 +261,6 @@ def _rugged_highlands_policy() -> dict[str, Any]:
                     "eat": 1.4,
                     "wander": 0.2,
                     "quarry": 2.5,
-                    "gather_herbs": 0.6,
-                    "cook": 1.0,
-                    "smith": 1.4,
-                    "heal": 0.8,
                 },
                 "risk_tolerance": 0.3,
                 "target_priorities": {
@@ -294,10 +272,6 @@ def _rugged_highlands_policy() -> dict[str, Any]:
                     "frontier": 0.8,
                     "safety": 1.3,
                     "quarry": 1.7,
-                    "herb_garden": 0.6,
-                    "kitchen": 1.0,
-                    "smithy": 1.3,
-                    "clinic": 0.9,
                     "bridge": 0.7,
                 },
                 "ttl_sec": 60,
@@ -318,12 +292,11 @@ def _rugged_highlands_strategic() -> dict[str, Any]:
         "directive": {
             "focus": "stone-rich highland exploitation, reinforce against rockfall",
             "horizon_sec": 180,
-            "priority_chain": ["stone", "wood", "food", "tools"],
+            "priority_chain": ["stone", "wood", "food"],
         },
         "summary": "Lean into stone advantage; reinforce highland routes before food shortages compound.",
         "steering_notes": [
             "Quarry first, then storage, then food.",
-            "Smithy unlocks tool throughput before scaling further.",
         ],
     }
 
@@ -334,11 +307,10 @@ def _rugged_highlands_colony() -> dict[str, Any]:
             {"type": "quarry", "priority": 3},
             {"type": "lumber", "priority": 2},
             {"type": "warehouse", "priority": 3},
-            {"type": "smithy", "priority": 2},
         ],
-        "summary": "Order: quarry → lumber → warehouse → smithy; food belt scales after stone tools land.",
+        "summary": "Order: quarry → lumber → warehouse; food belt scales after stone is stockpiled.",
         "steering_notes": [
-            "Lean into stone advantage; defer farms until tools exist.",
+            "Lean into stone advantage; defer farms until stockpiles exist.",
         ],
     }
 
@@ -348,9 +320,7 @@ def _archipelago_isles_env() -> dict[str, Any]:
         "weather": WEATHER["CLEAR"],
         "duration_sec": 50,
         "faction_tension": 0.4,
-        "event_spawns": [
-            {"type": EVENT_TYPE["WILDFIRE"], "intensity": 0.5, "duration_sec": 14},
-        ],
+        "event_spawns": [],
         "focus": "bridge network across isles",
         "summary": "Calm windows between storms; pressure rises on isolated isles cut off from the central hub.",
         "steering_notes": [
@@ -372,10 +342,6 @@ def _archipelago_isles_policy() -> dict[str, Any]:
                     "eat": 1.3,
                     "wander": 1.0,
                     "quarry": 1.2,
-                    "gather_herbs": 0.8,
-                    "cook": 1.0,
-                    "smith": 0.8,
-                    "heal": 0.7,
                 },
                 "risk_tolerance": 0.5,
                 "target_priorities": {
@@ -387,10 +353,6 @@ def _archipelago_isles_policy() -> dict[str, Any]:
                     "frontier": 1.1,
                     "safety": 1.1,
                     "quarry": 0.9,
-                    "herb_garden": 0.7,
-                    "kitchen": 1.0,
-                    "smithy": 0.7,
-                    "clinic": 0.7,
                     "bridge": 1.7,
                 },
                 "ttl_sec": 60,
@@ -426,10 +388,9 @@ def _archipelago_isles_colony() -> dict[str, Any]:
         "build_plan": [
             {"type": "bridge", "priority": 3},
             {"type": "warehouse", "priority": 3},
-            {"type": "kitchen", "priority": 2},
             {"type": "lumber", "priority": 2},
         ],
-        "summary": "Order: bridge → warehouse → kitchen → lumber; food network depends on connection first.",
+        "summary": "Order: bridge → warehouse → lumber; food network depends on connection first.",
         "steering_notes": [
             "Bridge before farm; isolated farms starve carriers.",
         ],
@@ -463,10 +424,6 @@ def _coastal_ocean_policy() -> dict[str, Any]:
                     "eat": 1.4,
                     "wander": 0.3,
                     "quarry": 0.8,
-                    "gather_herbs": 0.7,
-                    "cook": 1.2,
-                    "smith": 0.6,
-                    "heal": 0.7,
                 },
                 "risk_tolerance": 0.4,
                 "target_priorities": {
@@ -478,10 +435,6 @@ def _coastal_ocean_policy() -> dict[str, Any]:
                     "frontier": 0.9,
                     "safety": 1.2,
                     "quarry": 0.8,
-                    "herb_garden": 0.7,
-                    "kitchen": 1.1,
-                    "smithy": 0.6,
-                    "clinic": 0.8,
                     "bridge": 0.9,
                 },
                 "ttl_sec": 60,
@@ -502,7 +455,7 @@ def _coastal_ocean_strategic() -> dict[str, Any]:
         "directive": {
             "focus": "secure coastal supply line, expand inland farms",
             "horizon_sec": 180,
-            "priority_chain": ["food", "storage", "wood", "tools"],
+            "priority_chain": ["food", "storage", "wood"],
         },
         "summary": "Secure the coastal lane first; once warehouses are saturated, push farms inland.",
         "steering_notes": [
@@ -518,9 +471,8 @@ def _coastal_ocean_colony() -> dict[str, Any]:
             {"type": "farm", "priority": 3},
             {"type": "lumber", "priority": 2},
             {"type": "warehouse", "priority": 3},
-            {"type": "kitchen", "priority": 2},
         ],
-        "summary": "Order: farm → lumber → warehouse → kitchen; coastal storage before any combat infra.",
+        "summary": "Order: farm → lumber → warehouse; coastal storage before any combat infra.",
         "steering_notes": [
             "Anchor farms inland; depot adjacent to coast.",
         ],
@@ -554,10 +506,6 @@ def _fertile_riverlands_policy() -> dict[str, Any]:
                     "eat": 1.4,
                     "wander": 0.2,
                     "quarry": 0.8,
-                    "gather_herbs": 0.7,
-                    "cook": 1.4,
-                    "smith": 0.6,
-                    "heal": 0.6,
                 },
                 "risk_tolerance": 0.5,
                 "target_priorities": {
@@ -569,17 +517,13 @@ def _fertile_riverlands_policy() -> dict[str, Any]:
                     "frontier": 0.8,
                     "safety": 1.0,
                     "quarry": 0.7,
-                    "herb_garden": 0.7,
-                    "kitchen": 1.2,
-                    "smithy": 0.6,
-                    "clinic": 0.7,
                     "bridge": 0.8,
                 },
                 "ttl_sec": 60,
                 "focus": "fertile river plain harvest",
-                "summary": "Run farms at maximum cadence; warehouses absorb harvest before kitchens scale meals.",
+                "summary": "Run farms at maximum cadence; warehouses absorb harvest before any combat infra.",
                 "steering_notes": [
-                    "Farms first, then storage, then processing.",
+                    "Farms first, then storage.",
                     "Avoid worker idle by routing to nearest unfilled depot.",
                 ],
             },
@@ -593,12 +537,11 @@ def _fertile_riverlands_strategic() -> dict[str, Any]:
         "directive": {
             "focus": "exploit fertile river plains, scale food production",
             "horizon_sec": 180,
-            "priority_chain": ["food", "storage", "wood", "tools"],
+            "priority_chain": ["food", "storage", "wood"],
         },
         "summary": "River plains let farms outscale storage; build warehouses ahead of the harvest cliff.",
         "steering_notes": [
             "Stay ahead of the harvest cliff with warehouse builds.",
-            "Smithy only after kitchen meal throughput stabilizes.",
         ],
     }
 
@@ -609,10 +552,9 @@ def _fertile_riverlands_colony() -> dict[str, Any]:
             {"type": "farm", "priority": 3},
             {"type": "farm", "priority": 3},
             {"type": "warehouse", "priority": 3},
-            {"type": "kitchen", "priority": 2},
-            {"type": "smithy", "priority": 1},
+            {"type": "lumber", "priority": 2},
         ],
-        "summary": "Order: farm → farm → warehouse → kitchen → smithy; double farms before any combat infra.",
+        "summary": "Order: farm → farm → warehouse → lumber; double farms before any combat infra.",
         "steering_notes": [
             "Double farms before any combat infra.",
         ],

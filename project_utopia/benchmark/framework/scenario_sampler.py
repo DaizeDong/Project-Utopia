@@ -40,11 +40,10 @@ SCENARIO_SPACE: MappingProxyType[str, dict[str, Any]] = MappingProxyType(
         "food": {"type": "log_uniform", "min": 5, "max": 200},
         "wood": {"type": "log_uniform", "min": 3, "max": 150},
         "stone": {"type": "uniform", "min": 0, "max": 40},
-        "herbs": {"type": "uniform", "min": 0, "max": 25},
         "workerDelta": {"type": "uniform_int", "min": -8, "max": 10},
         "threat": {"type": "uniform", "min": 0, "max": 100},
         "predators": {"type": "uniform_int", "min": 0, "max": 6},
-        "weather": {"type": "categorical", "values": ("clear", "storm", "drought")},
+        "weather": {"type": "categorical", "values": ("clear", "rain", "storm")},
         "weatherDuration": {"type": "uniform_int", "min": 10, "max": 40},
     }
 )
@@ -88,7 +87,7 @@ def compute_difficulty(scenario: dict[str, Any]) -> float:
     worker_delta = scenario.get("workerDelta", 0)
     population_stress = min(1, -worker_delta / 8) if worker_delta < 0 else 0
     weather = scenario.get("weather", "clear")
-    weather_penalty = 0.3 if weather == "storm" else 0.2 if weather == "drought" else 0
+    weather_penalty = 0.3 if weather == "storm" else 0.15 if weather == "rain" else 0
     return min(
         1.0,
         0.35 * scarcity
@@ -108,7 +107,6 @@ def scenario_to_preset(scenario: dict[str, Any]) -> dict[str, Any]:
             "food": round(scenario["food"]),
             "wood": round(scenario["wood"]),
             "stone": round(scenario["stone"]),
-            "herbs": round(scenario["herbs"]),
         },
     }
     if scenario.get("threat", 0) > 0:
