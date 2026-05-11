@@ -48,7 +48,22 @@ $\sim$\,0.30--0.55, depending on scenario.
 \paragraph{Status.} Pipeline verified end-to-end via
 \texttt{npm run bench:paper:E1} (smoke run produced 19
 NDJSON rows / 67\,s on FB cell). Full E1 runs pending a one-week
-dedicated GPU window.
+dedicated GPU window. Figure~\ref{fig:e1} previews the bar-chart
+layout populated from the fallback-only smoke run.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/fig_e1_hierarchical.pdf}
+  \caption{E1 placeholder: per-cell mean RAE composite for the
+  fallback baseline (\texttt{FB}) versus the hierarchical 4-channel
+  contract (\texttt{SS}), with paired bars for \textsc{S-Plains} and
+  \textsc{S-Basin}. Error bars are the mean Bayesian 95\% CI half-width
+  on \texttt{bayesianMean}. Bars are currently flat because the smoke
+  run is fallback-only; the figure structure (axes, legend, paired-bar
+  layout) is what reviewers should evaluate. Re-populated by
+  \texttt{tools/audit/generate\_figures.py} when the full E1 run lands.}
+  \label{fig:e1}
+\end{figure}
 
 \subsection{E2 --- Token Cost is Decoupled from World Size}
 \label{sec:exp:e2}
@@ -65,6 +80,17 @@ $=$ 25 runs.
 \paragraph{Expected result.} Slope of
 $\text{tokens/decision} \sim a + b \cdot \text{entityCount}$
 with $|b| / a < 0.10$ across all four channels (Figure~\ref{fig:e2}).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/fig_e2_token_decoupling.pdf}
+  \caption{E2 placeholder: \texttt{prompt\_tokens / decision} vs.\ initial
+  worker count across the four decision channels. Curves are synthetic
+  (calibrated to the per-channel prompt budgets in
+  \texttt{src/data/prompts/}); the figure exists to confirm the
+  axis ranges and channel-stratified rendering. Pending real-LLM run.}
+  \label{fig:e2}
+\end{figure}
 
 \subsection{E3 --- Cross-Vendor Channel-Axis Heterogeneous LLM Mix}
 \label{sec:exp:e3}
@@ -190,9 +216,31 @@ action-grounded probe.
 \paragraph{Expected curves.} Figure~\ref{fig:e5} shows three
 plots over sim time: \texttt{anchored\_fact\_recall},
 \texttt{action\_grounded\_recall} (decaying $\sim$\,30\,min ahead
-of verbal), and \texttt{performance\_at\_t}.
-Figure~\ref{fig:e5d} replicates the U-shape on
-\texttt{Recall}(position).
+of verbal), and \texttt{behavioral\_drift} (Jaccard saturating as
+recall collapses). The fourth axis (\texttt{performance\_at\_t})
+and the lost-in-the-middle U-shape ($\text{Recall}$ vs.\ context
+position) are figure stubs --- populated when the real-LLM
+long-horizon E5 run lands (see ``Lost-in-the-middle'' below).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_e5_memory_three_axis.pdf}
+  \caption{E5 placeholder: three-axis joint memory analysis over sim
+  time. \textbf{Left:} \texttt{anchored\_fact\_recall} (verbal). \textbf{Center:}
+  \texttt{action\_grounded\_recall} (decays earlier --- H5e). \textbf{Right:}
+  \texttt{behavioral\_drift} (Jaccard, saturating). The $r_0$ anchor
+  on the verbal panels is calibrated to the fallback NDJSON's prior
+  mean for each dimension. Figure stub --- populated when real-LLM E5
+  run lands.}
+  \label{fig:e5}
+\end{figure}
+
+\paragraph{Lost-in-the-middle (companion plot).}
+The companion U-shape figure replicating
+\citet{Liu2024LostInMiddle} on $\text{Recall}(\text{position})$
+requires controlled anchor-position runs not present in the current
+fallback NDJSON. It is reserved for the real-LLM E5 batch; see
+hypothesis H5d above.
 
 \paragraph{Differentiation from concurrent work.}
 MemoryArena~\citep{He2026MemoryArena} measures action-grounded
@@ -220,9 +268,23 @@ $\times$ 1 sim hour $=$ 70 runs. Per-channel schema-rejection
 rates are emitted as side-channel telemetry on
 \texttt{state.metrics.aiRuntime.schemaErrors}.
 
-\paragraph{Failure-mode matrix.} Reported in
-Table~\ref{tab:e6-failure} as a $7 \times 4$ matrix
-(\{schema, timeout, 429, parse\-fail\}$\times$ models).
+\paragraph{Failure-mode matrix.} Reported in Figure~\ref{fig:e6} as
+a cell $\times$ failure-mode heatmap (\{schema reject, timeout,
+parse fail, fallback occupancy\}); a numeric companion table will
+accompany the camera-ready version once the full 7-model sweep lands.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/fig_e6_failure_matrix.pdf}
+  \caption{E6 placeholder: schema-validated failure-mode profile per
+  experimental cell. \texttt{FB}, \texttt{SS}, and \texttt{WW} cell
+  rows reflect actually-observed fallback NDJSON; remaining rows use
+  prior anchors so reviewers can assess the heatmap structure. The
+  predicted $5\times$ schema-reject gap between open-weight and
+  Claude-Opus rows is visible. Re-populated when the 7-model sweep
+  lands.}
+  \label{fig:e6}
+\end{figure}
 
 \subsection{E7 --- Decision Token Efficiency}
 \label{sec:exp:e7}
@@ -247,9 +309,22 @@ Post-hoc analysis on E1--E7 logs.
 $N = 5$ seeds is at least 30\% better than frequentist Wald-CI
 ranking, measured as Kendall's $\tau$ across bootstrap subsamples.
 
-\paragraph{Status.} No additional runs needed. Result will appear
-as Figure~\ref{fig:e8}, line chart of ranking stability vs.\ $N$
-for the two methods.
+\paragraph{Status.} No additional runs needed. Figure~\ref{fig:e8}
+previews the ranking-stability line chart vs.\ $N$ for the two
+methods; the final curves come from bootstrap on E1--E7 NDJSON logs.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/fig_e8_bayes_vs_clt.pdf}
+  \caption{E8 placeholder: ranking stability (Kendall's $\tau$ across
+  bootstrap subsamples) vs.\ number of seeds $N$. Two curves: the
+  Beta-Binomial Bayesian posterior with prior pooling vs.\ the
+  frequentist Wald CI. Both approach $\tau \to 1$ as $N \to \infty$;
+  the Bayesian curve converges faster at small $N$ (the $+0.30$
+  Kendall-$\tau$ gap at $N = 5$ is the paper's headline claim).
+  Synthetic curves; final numbers from bootstrap on E1--E7 logs.}
+  \label{fig:e8}
+\end{figure}
 
 \subsection{E9 --- Three-Tier Reproducibility Verification}
 \label{sec:exp:e9}
