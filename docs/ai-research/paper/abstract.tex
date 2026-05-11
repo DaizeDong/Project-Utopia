@@ -35,16 +35,18 @@ follows~\citet{Bowyer2025DontUseClt}'s ICML 2025 Spotlight
 recommendation of Beta-Binomial credible intervals for small-$N$.
 
 We design a nine-experiment matrix (E1--E9) over seven LLM families,
-five scenarios, ten seeds (\(\sim\)\,2\,250 runs total) targeting three
-empirical findings: \textbf{(i)} hierarchical decomposition outperforming
-a matched-budget flat baseline by \(\sim\)\,0.10 RAE (calibrated against
-ChatDev's \(-44\%\) role-removal effect size~\citep{Qian2024ChatDev});
-\textbf{(ii)} cross-vendor channel-axis heterogeneous LLM mixes
-(Anthropic + OpenAI + open-weight) approaching strong-on-all RAE at
-\(\sim\)\,1/3 the cost --- going beyond X-MAS~\citep{Ma2025XMAS}'s
-per-task routing and Anthropic's intra-family
-mix~\citep{AnthropicMultiAgent2025}; \textbf{(iii)} the first
-\textbf{three-axis joint memory analysis}
+five scenarios, ten seeds (\(\sim\)\,2\,250 runs total) with three
+\emph{target hypotheses} and pre-registered effect sizes:
+\textbf{(H1)} hierarchical decomposition versus a matched-budget
+flat baseline, with target detectable effect \(\Delta\text{RAE} \geq 0.10\)
+anchored on ChatDev's \(-44\%\) role-removal effect size~\citep{Qian2024ChatDev};
+\textbf{(H2)} cross-vendor channel-axis heterogeneous LLM mixes
+(Anthropic + OpenAI + open-weight), with target Pareto improvement
+of strong-on-all RAE at \(\sim\)\,1/3 the cost --- testing whether
+the regime extends X-MAS~\citep{Ma2025XMAS}'s per-task routing and
+Anthropic's intra-family mix~\citep{AnthropicMultiAgent2025} to
+long-horizon survival;
+\textbf{(H3)} the first \textbf{three-axis joint memory analysis}
 (\(\text{Recall}(t) \times \text{Drift}(t) \times \text{Performance}(t)\))
 on continuous tick-level naturally-accumulated context, designed to
 dissociate verbal recall from action-grounded recall in ways
