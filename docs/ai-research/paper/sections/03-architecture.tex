@@ -26,8 +26,8 @@ A seeded RNG and a fixed system order tie these tools into a
 reproducible per-tick pipeline.
 
 Concretely, the per-tick pipeline runs at $\Delta t = 1/30$\,s through
-17 systems (perception $\rightarrow$ LLM gates $\rightarrow$ policy
-applier $\rightarrow$ FSM $\rightarrow$ A* $\rightarrow$ Boids
+13 ordered systems (perception $\rightarrow$ LLM gates $\rightarrow$
+policy applier $\rightarrow$ FSM $\rightarrow$ A* $\rightarrow$ Boids
 $\rightarrow$ integration $\rightarrow$ telemetry). The simulation
 hosts 20--50 NPC workers harvesting resources, building, and
 defending against periodic raids over 60--240 sim seconds
