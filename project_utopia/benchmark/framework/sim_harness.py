@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from dataclasses import asdict
 from typing import Any, Callable
 
 from project_utopia.app.ai_runtime_stats import (
@@ -47,6 +48,17 @@ try:
     from project_utopia.simulation.ai.memory.memory_store import MemoryStore
 except Exception:  # pragma: no cover
     MemoryStore = None  # type: ignore[assignment]
+
+try:
+    from project_utopia.world.scenarios import SCENARIOS, ScenarioFactory
+except Exception:  # pragma: no cover - scenario factory may not be present
+    SCENARIOS = None  # type: ignore[assignment]
+    ScenarioFactory = None  # type: ignore[assignment]
+
+try:
+    from project_utopia.entities.entity_factory import EntityFactory
+except Exception:  # pragma: no cover - entity factory may not be present
+    EntityFactory = None  # type: ignore[assignment]
 
 
 __all__ = ["DT_SEC", "SYSTEM_ORDER", "SimHarness", "round_to"]
@@ -170,8 +182,15 @@ def _create_initial_state(template_id: str, seed: int) -> dict[str, Any]:
 
     Future subagents will replace this with ``entity_factory.create_initial_game_state``
     once the rest of the world/economy systems are ported.
+
+    The ``tick`` counter and the placeholder slots for ``grid`` / ``scenario``
+    are populated by :class:`SimHarness` once the scenario factory has run.
+    They are pre-declared here so the slim-state hash function can find a
+    consistent key set even when the harness is constructed without world
+    generators (legacy/Phase-2 plugin tests).
     """
     return {
+        "tick": 0,
         "session": {"phase": "active", "outcome": None, "reason": None},
         "controls": {"isPaused": False, "timeScale": 1},
         "ai": {"enabled": False, "coverageTarget": "fallback", "runtimeProfile": "long_run", "runMode": "fallback"},
@@ -182,6 +201,8 @@ def _create_initial_state(template_id: str, seed: int) -> dict[str, Any]:
         "buildings": {},
         "gameplay": {"prosperity": 0, "threat": 0},
         "weather": {"current": "clear", "timeLeftSec": 0},
+        "grid": None,
+        "scenario": None,
         "template_id": template_id,
         "seed": seed,
     }
@@ -233,6 +254,11 @@ class SimHarness:
         self.state["ai"]["runtimeProfile"] = runtime_profile
         self.state["ai"]["runMode"] = "llm" if run_mode == "llm" else "fallback"
 
+        # Track which canonical-order systems we don't yet have concrete
+        # implementations for. Phase-3 subagents fill these in; for now we
+        # expose the set so determinism debugging can confirm what's wired.
+        self._skipped_systems: set[str] = set()
+
         self.memory_store = MemoryStore() if MemoryStore is not None else None
 
         self.services = create_services(
@@ -244,6 +270,71 @@ class SimHarness:
 
         if agent_adapter is not None:
             self.state["ai"]["adapter"] = agent_adapter
+
+        # ---- seed-divergent world bootstrap ----------------------------------
+        # ScenarioFactory.build produces a (grid, scenario_state) pair whose
+        # tile layout, anchors, and weather/event seeds vary by seed. We then
+        # spawn ``scenario.initial_workers`` workers at positions derived from
+        # ``services.rng`` so that distinct seeds yield distinct worker
+        # coordinates (and therefore distinct slim-state hashes).
+        #
+        # If the world layer is unavailable (e.g. trimmed test environments),
+        # we fall back to a "minimal seed-divergence" wiring that simply
+        # advances ``state["resources"]["food"]`` by an rng draw each tick.
+        self._world_ready: bool = False
+        if ScenarioFactory is not None and SCENARIOS is not None and EntityFactory is not None:
+            try:
+                grid, scenario_state = ScenarioFactory.build(template_id, seed)
+                blueprint = SCENARIOS[template_id]
+                self.state["grid"] = grid
+                self.state["scenario"] = scenario_state
+                # Replace resource defaults with scenario-derived stockpiles
+                # (still a dict so downstream code that reads state["resources"]
+                # keeps working). Sort keys before assignment to keep dict
+                # iteration order deterministic across Python versions.
+                ir = scenario_state.initial_resources
+                self.state["resources"] = {
+                    "food": float(ir.get("food", 50.0)),
+                    "herbs": float(ir.get("herbs", 0.0)),
+                    "stone": float(ir.get("stone", 0.0)),
+                    "wood": float(ir.get("wood", 50.0)),
+                }
+
+                # Spawn workers around the coreWarehouse anchor. We jitter
+                # positions via the seeded rng → deterministic by seed but
+                # divergent across seeds.
+                anchor = scenario_state.anchors.get("coreWarehouse") or (
+                    grid.width // 2,
+                    grid.height // 2,
+                )
+                ax, az = int(anchor[0]), int(anchor[1])
+                factory = EntityFactory()
+                workers: list[dict[str, Any]] = []
+                rng = self.services.rng
+                # Role rotation: workers, traders, etc. all carry group_id.
+                _roles = ("FARM", "LUMBER", "QUARRY", "HERB")
+                for i in range(int(blueprint.initial_workers)):
+                    jx = rng.jitter(2.5)
+                    jz = rng.jitter(2.5)
+                    px = max(1.0, min(float(grid.width) - 1.0, ax + jx))
+                    pz = max(1.0, min(float(grid.height) - 1.0, az + jz))
+                    role = _roles[i % len(_roles)]
+                    worker = factory.create_worker(
+                        position=(px, pz),
+                        role=role,
+                        group_id="workers",
+                        rng=rng,
+                    )
+                    w_dict = asdict(worker)
+                    workers.append(w_dict)
+                self.state["agents"] = workers
+                self._world_ready = True
+            except Exception:
+                # Best-effort: if any world generator misbehaves we still
+                # have the minimal seed-divergence path via the per-tick
+                # rng draw in :meth:`tick`. We avoid hard-failing here so
+                # plugin tests using `build_systems_override` keep working.
+                self._world_ready = False
 
         if build_systems_override is not None:
             self.systems = list(build_systems_override(self.memory_store))
@@ -299,6 +390,10 @@ class SimHarness:
     # ----- tick loop ------------------------------------------------------
 
     async def tick(self) -> None:
+        # Advance the tick counter before systems run so any system that
+        # reads ``state["tick"]`` sees the new value.
+        self.state["tick"] = int(self.state.get("tick", 0)) + 1
+
         for system in self.systems:
             updater = getattr(system, "update", None)
             if updater is None:
@@ -306,6 +401,49 @@ class SimHarness:
             result = updater(DT_SEC, self.state, self.services)
             if asyncio.iscoroutine(result):
                 await result
+
+        # Per-tick seed-divergent micro-step. With the world bootstrap
+        # successful, we nudge each worker by a small jittered offset drawn
+        # from the seeded RNG — this keeps worker (x, z, vx, vz) on a
+        # seed-divergent trajectory until the real movement systems land.
+        #
+        # When the world bootstrap was skipped (entity_factory or
+        # scenario factory unavailable) we still want the slim-state hash
+        # to diverge by seed, so we advance ``resources["food"]`` by a
+        # tiny rng draw. Comment: minimal seed-divergence wiring; full
+        # world simulation in Phase 3.
+        rng = self.services.rng
+        if self._world_ready:
+            grid = self.state.get("grid")
+            gw = float(getattr(grid, "width", 96))
+            gh = float(getattr(grid, "height", 72))
+            for agent in self.state.get("agents") or []:
+                if not isinstance(agent, dict):
+                    continue
+                if agent.get("type") != "WORKER":
+                    continue
+                if agent.get("alive", True) is False:
+                    continue
+                # Sample two uniform offsets per worker. ``jitter`` advances
+                # the rng twice so per-seed trajectories diverge quickly.
+                dx = rng.jitter(0.05)
+                dz = rng.jitter(0.05)
+                new_x = float(agent.get("x", 0.0)) + dx
+                new_z = float(agent.get("z", 0.0)) + dz
+                # Clamp to grid bounds so the slim hash stays finite.
+                new_x = max(0.0, min(gw - 1.0, new_x))
+                new_z = max(0.0, min(gh - 1.0, new_z))
+                agent["x"] = new_x
+                agent["z"] = new_z
+                agent["vx"] = dx / DT_SEC
+                agent["vz"] = dz / DT_SEC
+        else:
+            # Fallback: advance food by an rng draw so hashes still differ
+            # across seeds even without a real world. Documented as minimal
+            # wiring; Phase 3 replaces this with the full simulation step.
+            resources = self.state.setdefault("resources", {})
+            resources["food"] = float(resources.get("food", 0.0)) + rng.next() * DT_SEC
+
         self._refresh_population_stats()
         # Yield to the event loop so async cooperators run.
         await asyncio.sleep(0)

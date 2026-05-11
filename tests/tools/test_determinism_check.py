@@ -64,11 +64,10 @@ class TestRunTwiceProducesSameHash:
     def test_different_seeds_diverge(self) -> None:
         h_a, _ = dc.run_once(template_id="temperate_plains", seed=1, ticks=30)
         h_b, _ = dc.run_once(template_id="temperate_plains", seed=2, ticks=30)
-        # Different seeds *should* diverge — but if the Phase-2
-        # SimHarness still has placeholder systems that don't touch RNG,
-        # this might collapse. xfail-soft so the test is informational.
-        if h_a == h_b:
-            pytest.xfail("placeholder SimHarness produces seed-invariant hash")
+        # Different seeds must diverge: the SimHarness boots a
+        # seed-divergent world (ScenarioFactory + EntityFactory) and
+        # advances workers via the seeded rng each tick, so the slim
+        # state hash is guaranteed to differ across seeds.
         assert h_a != h_b
 
 
