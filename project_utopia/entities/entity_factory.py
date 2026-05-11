@@ -96,7 +96,7 @@ class Worker:
     hp: float = 100.0
     max_hp: float = 100.0
     carry: dict[str, float] = field(
-        default_factory=lambda: {"food": 0.0, "wood": 0.0, "stone": 0.0, "herbs": 0.0}
+        default_factory=lambda: {"food": 0.0, "wood": 0.0, "stone": 0.0}
     )
     target_tile: tuple[int, int] | None = None
     path: list[tuple[int, int]] | None = None

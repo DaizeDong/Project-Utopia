@@ -24,18 +24,14 @@ __all__ = ["EventDirectorSystem", "EVENT_DIRECTOR_BALANCE"]
 EVENT_DIRECTOR_BALANCE: dict[str, Any] = {
     "base_interval_sec": 240.0,
     "weights": {
-        EventType.BANDIT_RAID: 0.20,
-        EventType.ANIMAL_MIGRATION: 0.25,
-        EventType.TRADE_CARAVAN: 0.25,
-        EventType.DISEASE_OUTBREAK: 0.10,
-        EventType.WILDFIRE: 0.10,
+        EventType.BANDIT_RAID: 0.30,
+        EventType.ANIMAL_MIGRATION: 0.35,
+        EventType.TRADE_CARAVAN: 0.35,
     },
     "tuning": {
         EventType.BANDIT_RAID: {"duration_sec": 24.0, "intensity": 1.0},
         EventType.ANIMAL_MIGRATION: {"duration_sec": 24.0, "intensity": 1.0},
         EventType.TRADE_CARAVAN: {"duration_sec": 24.0, "intensity": 1.0},
-        EventType.DISEASE_OUTBREAK: {"duration_sec": 24.0, "intensity": 1.0},
-        EventType.WILDFIRE: {"duration_sec": 24.0, "intensity": 1.0},
     },
     "raid_interval_base_ticks": 3600,
     "history_cap": 32,
@@ -44,8 +40,6 @@ EVENT_DIRECTOR_BALANCE: dict[str, Any] = {
 _NON_RAID_FALLBACK_ORDER: tuple[EventType, ...] = (
     EventType.ANIMAL_MIGRATION,
     EventType.TRADE_CARAVAN,
-    EventType.DISEASE_OUTBREAK,
-    EventType.WILDFIRE,
 )
 
 

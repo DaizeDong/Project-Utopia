@@ -93,24 +93,6 @@ def test_water_is_impassable() -> None:
     assert (3, 1) not in path
 
 
-def test_gate_blocked_for_hostile() -> None:
-    """A hostile-faction A* must refuse to cross GATE tiles."""
-    g = Grid(width=5, height=3, fill=TILE["WALL"])
-    # Open corridor row z=1 except for a GATE at x=2.
-    for x in range(5):
-        g.set_tile(x, 1, TILE["GRASS"])
-    g.set_tile(2, 1, TILE["GATE"])
-
-    # Colony can cross gate.
-    colony = a_star(g, (0, 1), (4, 1), options={"faction": "colony"})
-    assert colony is not None
-    assert (2, 1) in colony
-
-    # Hostile cannot cross gate → no path (corridor blocked by gate).
-    hostile = a_star(g, (0, 1), (4, 1), options={"faction": "hostile"})
-    assert hostile is None
-
-
 def test_max_nodes_early_stop(open_grid: Grid) -> None:
     """A tight ``max_nodes`` budget must short-circuit the search."""
     path = a_star(open_grid, (0, 0), (9, 9), options={"max_nodes": 3})

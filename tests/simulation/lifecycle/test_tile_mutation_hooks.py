@@ -73,15 +73,6 @@ class TestCascade:
         idx = 4 * grid.width + 4
         assert grid.tile_state[idx]["wallHp"] == 50.0
 
-    def test_wall_hp_seeded_for_gate(self) -> None:
-        state = _make_state()
-        grid: Grid = state["grid"]
-        grid.set_tile(1, 1, TILE["GATE"])
-        on_tile_mutated(state, 1, 1, TILE["GRASS"], TILE["GATE"])
-        idx = 1 * grid.width + 1
-        assert grid.tile_state[idx]["wallHp"] == 75.0
-
-
 class TestHookRegistration:
     def setup_method(self) -> None:
         clear_mutation_hooks()
@@ -115,13 +106,6 @@ class TestWorldEventImpact:
         state["grid"].set_tile(2, 2, TILE["FARM"])
         apply_world_event_impact(state, "banditRaid", (2, 2))
         assert int(state["grid"].get_tile(2, 2)) == TILE["RUINS"]
-
-    def test_wildfire_turns_to_grass(self) -> None:
-        state = _make_state()
-        state["grid"].set_tile(3, 3, TILE["FARM"])
-        apply_world_event_impact(state, "wildfire", (3, 3))
-        assert int(state["grid"].get_tile(3, 3)) == TILE["GRASS"]
-
 
 class TestBlockingTilesContract:
     def test_blocking_set_membership(self) -> None:

@@ -20,16 +20,36 @@ __all__ = ["RoleAssignmentSystem", "set_worker_role", "default_role_quota"]
 # Default role-quota distribution; matches the JS Wave-1 perWorker × floor
 # formula at low population. Used when no LLM directive is supplied.
 def default_role_quota(worker_count: int) -> dict[str, int]:
-    """Return a rough ``{role: count}`` distribution for ``worker_count`` workers."""
+    """Return a rough ``{role: count}`` distribution for ``worker_count`` workers.
+
+    Six remaining roles after Round-1 simplification: FARM/WOOD/STONE/HAUL/
+    GUARD/BUILDER. Quotas always sum to ``worker_count`` exactly (BUILDER
+    absorbs the rounding slack)."""
     n = max(0, int(worker_count))
     if n == 0:
-        return {"FARM": 0, "WOOD": 0, "HAUL": 0, "STONE": 0, "BUILDER": 0}
+        return {
+            "FARM": 0,
+            "WOOD": 0,
+            "STONE": 0,
+            "HAUL": 0,
+            "GUARD": 0,
+            "BUILDER": 0,
+        }
     farm = max(2, int(n * 0.35))
     wood = max(1, int(n * 0.20))
-    haul = max(1, int(n * 0.20))
+    haul = max(1, int(n * 0.15))
     stone = max(1, int(n * 0.10))
-    builder = max(0, n - farm - wood - haul - stone)
-    return {"FARM": farm, "WOOD": wood, "HAUL": haul, "STONE": stone, "BUILDER": builder}
+    guard = max(0, int(n * 0.10))
+    # BUILDER absorbs whatever's left so the dict sums to n exactly.
+    builder = max(0, n - farm - wood - haul - stone - guard)
+    return {
+        "FARM": farm,
+        "WOOD": wood,
+        "STONE": stone,
+        "HAUL": haul,
+        "GUARD": guard,
+        "BUILDER": builder,
+    }
 
 
 def set_worker_role(

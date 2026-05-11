@@ -141,10 +141,6 @@ GROUP_POLICY_CONTRACTS: MappingProxyType[str, MappingProxyType[str, object]] = M
                 "eat",
                 "wander",
                 "quarry",
-                "gather_herbs",
-                "cook",
-                "smith",
-                "heal",
             ),
             (
                 "warehouse",
@@ -155,10 +151,6 @@ GROUP_POLICY_CONTRACTS: MappingProxyType[str, MappingProxyType[str, object]] = M
                 "frontier",
                 "safety",
                 "quarry",
-                "herb_garden",
-                "kitchen",
-                "smithy",
-                "clinic",
                 "bridge",
             ),
             (

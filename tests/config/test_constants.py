@@ -54,9 +54,10 @@ class TestTileTable:
 
     def test_known_ids(self) -> None:
         assert C.TILE["GRASS"] == 0
-        assert C.TILE["GATE"] == 14
-        # Tile IDs are contiguous from 0..14.
-        assert set(C.TILE.values()) == set(range(15))
+        assert C.TILE["BRIDGE"] == 9
+        # Tile IDs are contiguous from 0..9 (post Round-1 simplification:
+        # HERB_GARDEN, KITCHEN, SMITHY, CLINIC, GATE dropped; BRIDGE renumbered).
+        assert set(C.TILE.values()) == set(range(10))
 
     def test_tile_info_covers_every_tile(self) -> None:
         assert set(C.TILE_INFO.keys()) == set(C.TILE.values())
@@ -86,7 +87,7 @@ class TestEnumTables:
 
     def test_resource_types_is_tuple(self) -> None:
         assert isinstance(C.RESOURCE_TYPES, tuple)
-        assert C.RESOURCE_TYPES == ("food", "wood", "stone", "herbs")
+        assert C.RESOURCE_TYPES == ("food", "wood", "stone")
 
     def test_move_directions_is_tuple(self) -> None:
         assert isinstance(C.MOVE_DIRECTIONS_4, tuple)

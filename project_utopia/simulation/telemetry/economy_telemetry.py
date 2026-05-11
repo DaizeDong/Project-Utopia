@@ -34,10 +34,6 @@ _ECON_WANTED_TILES: tuple[int, ...] = (
     TILE["FARM"],
     TILE["LUMBER"],
     TILE["QUARRY"],
-    TILE["HERB_GARDEN"],
-    TILE["KITCHEN"],
-    TILE["SMITHY"],
-    TILE["CLINIC"],
 )
 
 
@@ -121,10 +117,6 @@ def collect_economy_snapshot(state: dict[str, Any]) -> dict[str, Any]:
         "farm": tally.get(TILE["FARM"], 0),
         "lumber": tally.get(TILE["LUMBER"], 0),
         "quarry": tally.get(TILE["QUARRY"], 0),
-        "herbGarden": tally.get(TILE["HERB_GARDEN"], 0),
-        "kitchen": tally.get(TILE["KITCHEN"], 0),
-        "smithy": tally.get(TILE["SMITHY"], 0),
-        "clinic": tally.get(TILE["CLINIC"], 0),
     }
 
     return {
@@ -186,10 +178,6 @@ def score_production(snapshot: dict[str, Any], target: float = 24.0) -> float:
         int(tc.get("farm", 0))
         + int(tc.get("lumber", 0))
         + int(tc.get("quarry", 0))
-        + int(tc.get("herbGarden", 0))
-        + int(tc.get("kitchen", 0))
-        + int(tc.get("smithy", 0))
-        + int(tc.get("clinic", 0))
     )
     return _clamp_0_100((producers / target) * 80.0)
 

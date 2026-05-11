@@ -56,8 +56,6 @@ class TestEventDispatchCadence:
                     EventType.BANDIT_RAID: 1.0,
                     EventType.ANIMAL_MIGRATION: 0.01,
                     EventType.TRADE_CARAVAN: 0.0,
-                    EventType.DISEASE_OUTBREAK: 0.0,
-                    EventType.WILDFIRE: 0.0,
                 },
             }
         )

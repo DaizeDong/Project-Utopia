@@ -51,13 +51,8 @@ BUILT_STRUCTURE_TILES: frozenset[int] = frozenset(
         TILE["WAREHOUSE"],
         TILE["WALL"],
         TILE["QUARRY"],
-        TILE["HERB_GARDEN"],
-        TILE["KITCHEN"],
-        TILE["SMITHY"],
-        TILE["CLINIC"],
         TILE["BRIDGE"],
         TILE["ROAD"],
-        TILE["GATE"],
     }
 )
 
@@ -117,7 +112,7 @@ class BuildSystem:
             spend(resources, preview.get("cost") or {})
         if tool == "erase" and any(
             float((preview.get("refund") or {}).get(k, 0.0)) > 0
-            for k in ("food", "wood", "stone", "herbs")
+            for k in ("food", "wood", "stone")
         ):
             refund(resources, preview.get("refund") or {})
 

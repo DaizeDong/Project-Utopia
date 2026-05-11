@@ -46,10 +46,6 @@ TRACKED_FLOW_RESOURCES: tuple[str, ...] = (
     "food",
     "wood",
     "stone",
-    "herbs",
-    "meals",
-    "medicine",
-    "tools",
 )
 
 
@@ -120,8 +116,7 @@ class ResourceSystem:
 
     State contract (read+write):
 
-    * ``state["resources"]`` — dict of ``{food, wood, stone, herbs, meals,
-      medicine, tools}`` floats.
+    * ``state["resources"]`` — dict of ``{food, wood, stone}`` floats.
     * ``state["metrics"]["timeSec"]`` — seconds of simulated time.
     * ``state["_resourceFlowAccum"]`` — per-resource per-kind float dict,
       flushed every ``RESOURCE_FLOW_WINDOW_SEC``.
@@ -232,7 +227,7 @@ class ResourceSystem:
                 {"resource": "wood", "amount": resources["wood"]},
             )
 
-        for res in ("food", "wood", "stone", "herbs"):
+        for res in ("food", "wood", "stone"):
             key = f"_{res}Depleted"
             val = resources.get(res, 0.0)
             if val <= 0.0 and not state.get(key, False):
@@ -255,7 +250,7 @@ class ResourceSystem:
             metrics["foodProducedPerMin"] = round(accum["food"].get("produced", 0.0) * scale, 2)
             metrics["foodConsumedPerMin"] = round(accum["food"].get("consumed", 0.0) * scale, 2)
             metrics["foodSpoiledPerMin"] = round(accum["food"].get("spoiled", 0.0) * scale, 2)
-            for r in ("wood", "stone", "herbs", "meals", "medicine", "tools"):
+            for r in ("wood", "stone"):
                 bucket = accum.get(r, {})
                 metrics[f"{r}ProducedPerMin"] = round(float(bucket.get("produced", 0.0)) * scale, 2)
                 metrics[f"{r}ConsumedPerMin"] = round(float(bucket.get("consumed", 0.0)) * scale, 2)

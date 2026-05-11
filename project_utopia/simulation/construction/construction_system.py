@@ -112,7 +112,7 @@ class ConstructionSystem:
                 )
             elif is_demolish:
                 r = overlay.get("refund") or {}
-                positive = any(float(r.get(k, 0.0)) > 0 for k in ("food", "wood", "stone", "herbs"))
+                positive = any(float(r.get(k, 0.0)) > 0 for k in ("food", "wood", "stone"))
                 if positive:
                     refund_resources(state.setdefault("resources", {}), r)
                     emit_event(
@@ -121,7 +121,7 @@ class ConstructionSystem:
                         {
                             "ix": ix,
                             "iz": iz,
-                            "refund": {k: float(r.get(k, 0.0)) for k in ("wood", "stone", "food", "herbs") if float(r.get(k, 0.0)) > 0},
+                            "refund": {k: float(r.get(k, 0.0)) for k in ("wood", "stone", "food") if float(r.get(k, 0.0)) > 0},
                             "oldType": original_tile,
                         },
                     )
@@ -157,7 +157,6 @@ class ConstructionSystem:
             return
         regen_per_sec = 0.1
         wall_max = 50.0
-        gate_max = 75.0
         if dt <= 0:
             return
         for idx in sorted(grid.tile_state.keys()):
@@ -167,8 +166,6 @@ class ConstructionSystem:
             hp = entry.get("wallHp")
             if hp is None:
                 continue
-            tile_id = int(grid.tiles.ravel()[idx])
-            mx = gate_max if tile_id == TILE["GATE"] else wall_max
-            if float(hp) >= mx:
+            if float(hp) >= wall_max:
                 continue
-            entry["wallHp"] = min(mx, float(hp) + regen_per_sec * dt)
+            entry["wallHp"] = min(wall_max, float(hp) + regen_per_sec * dt)

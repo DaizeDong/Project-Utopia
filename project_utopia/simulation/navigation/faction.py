@@ -1,8 +1,7 @@
 """Faction-aware tile passability (port of ``src/simulation/navigation/Faction.js``).
 
-Walls block everyone; gates are passable for the ``COLONY`` faction only.
-All other faction filters delegate to ``TILE_INFO.passable`` (handled in
-the A* neighbour loop).
+Walls block everyone. All other faction filters delegate to
+``TILE_INFO.passable`` (handled in the A* neighbour loop).
 
 Faction tags:
     COLONY   — workers, traders
@@ -69,13 +68,11 @@ def is_tile_passable_for_faction(tile_type: int, faction: str) -> bool:
 
     Layered semantics: callers should consult ``TILE_INFO.passable`` first
     (which already blocks WATER, WALL for everyone). This helper only
-    encodes the faction-specific delta — i.e. gates close to non-colony
-    factions and walls are double-checked as a safety net.
+    re-asserts the WALL block as a safety net.
     """
+    del faction  # currently unused after the GATE branch was removed
     if tile_type == TILE["WALL"]:
         return False
-    if tile_type == TILE["GATE"]:
-        return faction == FACTION["COLONY"]
     return True
 
 

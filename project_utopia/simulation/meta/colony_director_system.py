@@ -68,9 +68,9 @@ def _determine_phase(buildings: dict[str, int]) -> str:
         return "bootstrap"
     if get("warehouses") < 4 or get("farms") < 6 or get("lumbers") < 5:
         return "logistics"
-    if get("quarries") < 2 or get("kitchens") < 1 or get("smithies") < 1:
-        return "processing"
-    if get("walls") < 12 or get("clinics") < 1:
+    if get("quarries") < 2:
+        return "extraction"
+    if get("walls") < 12:
         return "fortification"
     if get("farms") < 12 or get("warehouses") < 6:
         return "expansion"
@@ -113,9 +113,8 @@ def assess_colony_needs(state: dict[str, Any]) -> list[dict[str, Any]]:
     elif phase == "logistics":
         needs.append({"type": "warehouse", "priority": 65, "reason": "logistics coverage"})
         needs.append({"type": "road", "priority": 45, "reason": "logistics roads"})
-    elif phase == "processing":
-        needs.append({"type": "kitchen", "priority": 55, "reason": "processing"})
-        needs.append({"type": "smithy", "priority": 53, "reason": "processing"})
+    elif phase == "extraction":
+        needs.append({"type": "quarry", "priority": 55, "reason": "extraction"})
 
     # Recovery-mode filter: only essential types survive when the colony is
     # in a runway crisis. The flag is set externally by the resource layer.

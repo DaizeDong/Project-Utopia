@@ -47,8 +47,8 @@ def test_create_worker_returns_valid_entity() -> None:
     assert worker.role == "FARM"
     assert worker.type == "WORKER"
     assert worker.fsm_state == "IDLE"
-    # Carry shape matches the JS 4-tuple resource space.
-    assert set(worker.carry.keys()) == {"food", "wood", "stone", "herbs"}
+    # Carry shape matches the 3-tuple resource space (post Round-1 simplification).
+    assert set(worker.carry.keys()) == {"food", "wood", "stone"}
 
 
 def test_sequential_workers_have_monotonic_ids() -> None:

@@ -39,7 +39,7 @@ __all__ = [
 
 
 class WorkerState(str, enum.Enum):
-    """12-entry FSM matching the JS ``STATE`` constant."""
+    """10-entry FSM (post-Round-1 simplification: dropped processing chain)."""
 
     IDLE = "IDLE"
     SEEKING_REST = "SEEKING_REST"
@@ -51,8 +51,6 @@ class WorkerState(str, enum.Enum):
     DEPOSITING = "DEPOSITING"
     SEEKING_BUILD = "SEEKING_BUILD"
     BUILDING = "BUILDING"
-    SEEKING_PROCESS = "SEEKING_PROCESS"
-    PROCESSING = "PROCESSING"
 
 
 # A "trigger" is a stringly-typed predicate name (e.g. ``"carry_full"``).
@@ -75,8 +73,6 @@ DISPLAY_LABEL: MappingProxyType[WorkerState, str] = MappingProxyType(
         WorkerState.DEPOSITING: "Deliver",
         WorkerState.SEEKING_BUILD: "Seek Construct",
         WorkerState.BUILDING: "Construct",
-        WorkerState.SEEKING_PROCESS: "Seek Process",
-        WorkerState.PROCESSING: "Process",
     }
 )
 
@@ -118,8 +114,7 @@ STATE_TRANSITIONS: MappingProxyType[WorkerState, tuple[TransitionEntry, ...]] = 
             TransitionEntry(2, "too_tired", WorkerState.SEEKING_REST),
             TransitionEntry(3, "should_deliver_carry", WorkerState.DELIVERING),
             TransitionEntry(4, "build_available_for_role", WorkerState.SEEKING_BUILD),
-            TransitionEntry(5, "process_available_for_role", WorkerState.SEEKING_PROCESS),
-            TransitionEntry(6, "harvest_available_for_role", WorkerState.SEEKING_HARVEST),
+            TransitionEntry(5, "harvest_available_for_role", WorkerState.SEEKING_HARVEST),
         ),
         WorkerState.SEEKING_REST: (
             TransitionEntry(0, "hostile_in_aggro_radius", WorkerState.FIGHTING),
@@ -169,17 +164,6 @@ STATE_TRANSITIONS: MappingProxyType[WorkerState, tuple[TransitionEntry, ...]] = 
             TransitionEntry(0, "hostile_in_aggro_radius", WorkerState.FIGHTING),
             TransitionEntry(5, "fsm_target_gone", WorkerState.IDLE),
         ),
-        WorkerState.SEEKING_PROCESS: (
-            TransitionEntry(0, "hostile_in_aggro_radius", WorkerState.FIGHTING),
-            TransitionEntry(2, "too_tired", WorkerState.SEEKING_REST),
-            TransitionEntry(3, "arrived_at_fsm_target", WorkerState.PROCESSING),
-            TransitionEntry(7, "fsm_target_null", WorkerState.IDLE),
-            TransitionEntry(9, "path_failed_recently", WorkerState.IDLE),
-        ),
-        WorkerState.PROCESSING: (
-            TransitionEntry(0, "hostile_in_aggro_radius", WorkerState.FIGHTING),
-            TransitionEntry(5, "process_input_depleted", WorkerState.IDLE),
-        ),
     }
 )
 
@@ -204,9 +188,6 @@ POLICY_INTENT_TO_STATE: MappingProxyType[str, WorkerState] = MappingProxyType(
         "construct": WorkerState.SEEKING_BUILD,
         "seek_construct": WorkerState.SEEKING_BUILD,
         "build": WorkerState.SEEKING_BUILD,
-        "process": WorkerState.SEEKING_PROCESS,
-        "cook": WorkerState.SEEKING_PROCESS,
-        "craft": WorkerState.SEEKING_PROCESS,
     }
 )
 

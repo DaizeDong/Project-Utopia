@@ -54,14 +54,7 @@ TILE: MappingProxyType[str, int] = MappingProxyType(
         "RUINS": 6,
         "WATER": 7,
         "QUARRY": 8,
-        "HERB_GARDEN": 9,
-        "KITCHEN": 10,
-        "SMITHY": 11,
-        "CLINIC": 12,
-        "BRIDGE": 13,
-        # v0.8.4 strategic walls + faction-aware gate. See
-        # ``project_utopia.simulation.navigation.faction``.
-        "GATE": 14,
+        "BRIDGE": 9,
     }
 )
 
@@ -95,7 +88,6 @@ ANIMAL_SPECIES: MappingProxyType[str, str] = MappingProxyType(
         "DEER": "deer",
         "WOLF": "wolf",
         "BEAR": "bear",
-        "RAIDER_BEAST": "raider_beast",
     }
 )
 
@@ -103,12 +95,8 @@ ROLE: MappingProxyType[str, str] = MappingProxyType(
     {
         "FARM": "FARM",
         "WOOD": "WOOD",
-        "HAUL": "HAUL",
         "STONE": "STONE",
-        "HERBS": "HERBS",
-        "COOK": "COOK",
-        "SMITH": "SMITH",
-        "HERBALIST": "HERBALIST",
+        "HAUL": "HAUL",
         "GUARD": "GUARD",
         "BUILDER": "BUILDER",
     }
@@ -119,8 +107,6 @@ WEATHER: MappingProxyType[str, str] = MappingProxyType(
         "CLEAR": "clear",
         "RAIN": "rain",
         "STORM": "storm",
-        "DROUGHT": "drought",
-        "WINTER": "winter",
     }
 )
 
@@ -129,9 +115,6 @@ EVENT_TYPE: MappingProxyType[str, str] = MappingProxyType(
         "ANIMAL_MIGRATION": "animalMigration",
         "BANDIT_RAID": "banditRaid",
         "TRADE_CARAVAN": "tradeCaravan",
-        "MORALE_BREAK": "moraleBreak",
-        "DISEASE_OUTBREAK": "diseaseOutbreak",
-        "WILDFIRE": "wildfire",
     }
 )
 
@@ -143,7 +126,6 @@ NODE_FLAGS: MappingProxyType[str, int] = MappingProxyType(
         "NONE": 0,
         "FOREST": 1,
         "STONE": 2,
-        "HERB": 4,
     }
 )
 
@@ -191,12 +173,7 @@ TILE_INFO: MappingProxyType[int, MappingProxyType[str, object]] = MappingProxyTy
         TILE["RUINS"]: _tile_info_entry(True, 1.6, 0.07, 0xB98B73),
         TILE["WATER"]: _tile_info_entry(False, 1000.0, 0.018, 0x69B4EA),
         TILE["QUARRY"]: _tile_info_entry(True, 1.2, 0.13, 0xA0896E),
-        TILE["HERB_GARDEN"]: _tile_info_entry(True, 1.0, 0.08, 0x7BB86A),
-        TILE["KITCHEN"]: _tile_info_entry(True, 1.0, 0.22, 0xD4A65A),
-        TILE["SMITHY"]: _tile_info_entry(True, 1.0, 0.25, 0x8C7A6B),
-        TILE["CLINIC"]: _tile_info_entry(True, 1.0, 0.22, 0xC4D8C0),
         TILE["BRIDGE"]: _tile_info_entry(True, 0.65, 0.04, 0x8B7D6B),
-        TILE["GATE"]: _tile_info_entry(True, 0.85, 0.45, 0x8B6F47),
     }
 )
 
@@ -279,7 +256,7 @@ def _test_set_feature_flag(name: str, value: bool) -> None:
 # without a single canonical constant; we expose it explicitly so the
 # Python port has one source of truth.
 
-RESOURCE_TYPES: tuple[str, ...] = ("food", "wood", "stone", "herbs")
+RESOURCE_TYPES: tuple[str, ...] = ("food", "wood", "stone")
 
 
 WORKER_DEFAULTS: MappingProxyType[str, object] = MappingProxyType(

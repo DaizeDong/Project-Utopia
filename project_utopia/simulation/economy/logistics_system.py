@@ -29,10 +29,6 @@ _PRODUCTION_TILES: tuple[int, ...] = (
     TILE["FARM"],
     TILE["LUMBER"],
     TILE["QUARRY"],
-    TILE["HERB_GARDEN"],
-    TILE["KITCHEN"],
-    TILE["SMITHY"],
-    TILE["CLINIC"],
     TILE["WAREHOUSE"],
 )
 

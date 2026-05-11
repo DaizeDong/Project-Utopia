@@ -35,19 +35,13 @@ _CONSTRUCTION_WORK_SEC: dict[str, float] = {
     "warehouse": 6.0,
     "wall": 5.0,
     "quarry": 5.0,
-    "herb_garden": 4.0,
-    "kitchen": 6.0,
-    "smithy": 6.0,
-    "clinic": 6.0,
     "bridge": 5.0,
-    "gate": 5.0,
     "default": 4.0,
 }
 
 _DEMOLISH_WORK_SEC: dict[str, float] = {
     "ruins": 1.5,
     "wall": 2.5,
-    "gate": 2.5,
     "default": 3.0,
 }
 
@@ -64,8 +58,6 @@ def get_demolish_work_sec(old_tile: int) -> float:
         return float(_DEMOLISH_WORK_SEC["ruins"])
     if int(old_tile) == TILE["WALL"]:
         return float(_DEMOLISH_WORK_SEC["wall"])
-    if int(old_tile) == TILE["GATE"]:
-        return float(_DEMOLISH_WORK_SEC["gate"])
     return float(_DEMOLISH_WORK_SEC["default"])
 
 

@@ -5,7 +5,7 @@ demolition salvage rolls, anchor-radius placement, infrastructure tests,
 and a full preview/eval surface. For the academic benchmark we only need
 the resource-economy primitives + a minimal preview check:
 
-* :data:`BUILD_COST` — per-tool resource cost (food/wood/stone/herbs).
+* :data:`BUILD_COST` — per-tool resource cost (food/wood/stone).
 * :func:`can_afford` / :func:`spend` / :func:`refund` — pure resource ops.
 * :func:`tool_to_tile` — mapping from tool name to ``TILE`` constant.
 * :func:`evaluate_build_preview` — minimal placement validity check
@@ -31,7 +31,7 @@ __all__ = [
 ]
 
 
-_RESOURCE_KEYS: tuple[str, ...] = ("food", "wood", "stone", "herbs")
+_RESOURCE_KEYS: tuple[str, ...] = ("food", "wood", "stone")
 
 
 BUILD_COST: MappingProxyType[str, MappingProxyType[str, float]] = MappingProxyType(
@@ -42,12 +42,7 @@ BUILD_COST: MappingProxyType[str, MappingProxyType[str, float]] = MappingProxyTy
         "warehouse": MappingProxyType({"wood": 6.0, "stone": 2.0}),
         "wall": MappingProxyType({"wood": 2.0, "stone": 1.0}),
         "quarry": MappingProxyType({"wood": 3.0, "stone": 1.0}),
-        "herb_garden": MappingProxyType({"wood": 2.0}),
-        "kitchen": MappingProxyType({"wood": 5.0, "stone": 1.0}),
-        "smithy": MappingProxyType({"wood": 4.0, "stone": 3.0}),
-        "clinic": MappingProxyType({"wood": 4.0, "stone": 1.0, "herbs": 2.0}),
         "bridge": MappingProxyType({"wood": 4.0, "stone": 2.0}),
-        "gate": MappingProxyType({"wood": 4.0, "stone": 1.0}),
     }
 )
 
@@ -60,12 +55,7 @@ TOOL_TO_TILE: MappingProxyType[str, int] = MappingProxyType(
         "warehouse": TILE["WAREHOUSE"],
         "wall": TILE["WALL"],
         "quarry": TILE["QUARRY"],
-        "herb_garden": TILE["HERB_GARDEN"],
-        "kitchen": TILE["KITCHEN"],
-        "smithy": TILE["SMITHY"],
-        "clinic": TILE["CLINIC"],
         "bridge": TILE["BRIDGE"],
-        "gate": TILE["GATE"],
     }
 )
 
@@ -77,12 +67,7 @@ _ALLOWED_OLD_TILES: dict[str, frozenset[int]] = {
     "warehouse": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
     "wall": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
     "quarry": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
-    "herb_garden": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
-    "kitchen": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
-    "smithy": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
-    "clinic": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
     "bridge": frozenset({TILE["WATER"]}),
-    "gate": frozenset({TILE["GRASS"], TILE["ROAD"], TILE["RUINS"]}),
 }
 
 

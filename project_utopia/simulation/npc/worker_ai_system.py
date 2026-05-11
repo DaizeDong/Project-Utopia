@@ -1,11 +1,11 @@
 """Worker FSM driver (lean port of ``src/simulation/npc/WorkerAISystem.js``).
 
 Only the **FSM core driver** is ported. The JS source carries ~400 LOC of
-player-game flavor (chronicle events, intent-mismatch logging, custom
-priorities for cooks/smiths/herbalists, biome-specific harvest helpers,
-worker-vs-raider combat reward bookkeeping, etc.) that the RC3 audit
-flagged as removable. None of those paths exercise the substrate
-algorithms the academic benchmark cares about; we drop them.
+player-game flavor (chronicle events, intent-mismatch logging,
+biome-specific harvest helpers, worker-vs-raider combat reward
+bookkeeping, etc.) that the RC3 audit flagged as removable. None of
+those paths exercise the substrate algorithms the academic benchmark
+cares about; we drop them.
 
 What stays:
 - Priority-FSM dispatcher (one tick per worker per harness step).
@@ -45,7 +45,6 @@ def _carry_full(worker: Any, _state: Any) -> bool:
             float(getattr(carry, "food", 0))
             + float(getattr(carry, "wood", 0))
             + float(getattr(carry, "stone", 0))
-            + float(getattr(carry, "herbs", 0))
         )
     return total >= threshold * 2.0
 
@@ -58,7 +57,6 @@ def _carry_empty(worker: Any, _state: Any) -> bool:
         float(getattr(carry, "food", 0)) <= 0
         and float(getattr(carry, "wood", 0)) <= 0
         and float(getattr(carry, "stone", 0)) <= 0
-        and float(getattr(carry, "herbs", 0)) <= 0
     )
 
 
@@ -72,7 +70,6 @@ def _should_deliver_carry(worker: Any, _state: Any) -> bool:
             float(getattr(carry, "food", 0))
             + float(getattr(carry, "wood", 0))
             + float(getattr(carry, "stone", 0))
-            + float(getattr(carry, "herbs", 0))
         )
     return total >= threshold
 
@@ -129,12 +126,7 @@ def _build_available_for_role(worker: Any, state: Any) -> bool:
 
 def _harvest_available_for_role(worker: Any, _state: Any) -> bool:
     role = getattr(worker, "role", "")
-    return role in ("FARM", "WOOD", "STONE", "HERBS", "HAUL")
-
-
-def _process_available_for_role(worker: Any, _state: Any) -> bool:
-    role = getattr(worker, "role", "")
-    return role in ("COOK", "SMITH", "HERBALIST")
+    return role in ("FARM", "WOOD", "STONE", "HAUL")
 
 
 def _always_false(_worker: Any, _state: Any) -> bool:
@@ -161,8 +153,6 @@ def default_triggers() -> dict[str, Callable[[Any, Any], bool]]:
         "path_failed_recently": _path_failed_recently,
         "build_available_for_role": _build_available_for_role,
         "harvest_available_for_role": _harvest_available_for_role,
-        "process_available_for_role": _process_available_for_role,
-        "process_input_depleted": _always_false,
     }
 
 

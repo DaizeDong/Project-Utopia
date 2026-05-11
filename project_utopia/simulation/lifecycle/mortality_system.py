@@ -9,7 +9,7 @@ LOC trim. This module keeps only the load-bearing logic:
 * recovery-grace period (no death triggers for the first
   ``RECOVERY_GRACE_SEC`` seconds after the colony entered recovery mode)
 * emit ``WORKER_DIED`` / ``WORKER_STARVED`` events
-* resource-carry refund (food/wood/stone/herbs) routed through the
+* resource-carry refund (food/wood/stone) routed through the
   resource layer's ``recordResourceFlow`` shim
 * deathsTotal / deathsByReason counters used by metrics
 
@@ -73,12 +73,12 @@ def _refund_carry(state: dict[str, Any], entity: dict[str, Any]) -> None:
     if not isinstance(carry, dict):
         return
     resources = state.setdefault("resources", {})
-    for resource_key in ("food", "wood", "stone", "herbs"):
+    for resource_key in ("food", "wood", "stone"):
         amount = float(carry.get(resource_key, 0.0))
         if amount <= 0.0:
             continue
         resources[resource_key] = float(resources.get(resource_key, 0.0)) + amount
-    entity["carry"] = {"food": 0.0, "wood": 0.0, "stone": 0.0, "herbs": 0.0}
+    entity["carry"] = {"food": 0.0, "wood": 0.0, "stone": 0.0}
 
 
 def _increment_death_counters(

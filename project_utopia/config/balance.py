@@ -56,12 +56,7 @@ BUILD_COST: MappingProxyType[str, MappingProxyType[str, int]] = MappingProxyType
         "wall": MappingProxyType({"wood": 2}),
         "erase": MappingProxyType({"wood": 0}),
         "quarry": MappingProxyType({"wood": 6}),
-        "herb_garden": MappingProxyType({"wood": 4}),
-        "kitchen": MappingProxyType({"wood": 8, "stone": 3}),
-        "smithy": MappingProxyType({"wood": 6, "stone": 5}),
-        "clinic": MappingProxyType({"wood": 6, "herbs": 2}),
         "bridge": MappingProxyType({"wood": 3, "stone": 1}),
-        "gate": MappingProxyType({"wood": 4, "stone": 1}),
     }
 )
 
@@ -81,14 +76,9 @@ BUILD_COST_ESCALATOR: MappingProxyType[str, MappingProxyType[str, float]] = Mapp
     {
         "warehouse": _esc(2, 0.3, 2.5, 0.25),
         "wall": _esc(8, 0.1, 2.0, 0.18),
-        "kitchen": _esc(1, 0.25, 3.0, 0.2),
-        "smithy": _esc(1, 0.35, 3.0, 0.2),
-        "clinic": _esc(1, 0.35, 3.0, 0.2),
         "farm": _esc(5, 0.1, 1.8, 0.05),
         "lumber": _esc(3, 0.1, 1.8, 0.05),
         "quarry": _esc(3, 0.15, 1.8, 0.05),
-        "herb_garden": _esc(2, 0.15, 2.0, 0.05),
-        "gate": _esc(4, 0.15, 2.0, 0.05),
     }
 )
 
@@ -110,7 +100,6 @@ INITIAL_RESOURCES: MappingProxyType[str, int] = MappingProxyType(
         "food": 320,
         "wood": 35,
         "stone": 15,
-        "herbs": 8,
     }
 )
 
@@ -147,20 +136,6 @@ WEATHER_MODIFIERS: MappingProxyType[str, MappingProxyType[str, float]] = Mapping
                 "moveCostMultiplier": 1.3,
                 "farmProductionMultiplier": 0.8,
                 "lumberProductionMultiplier": 0.95,
-            }
-        ),
-        WEATHER["DROUGHT"]: MappingProxyType(
-            {
-                "moveCostMultiplier": 1.0,
-                "farmProductionMultiplier": 0.55,
-                "lumberProductionMultiplier": 1.05,
-            }
-        ),
-        WEATHER["WINTER"]: MappingProxyType(
-            {
-                "moveCostMultiplier": 1.25,
-                "farmProductionMultiplier": 0.65,
-                "lumberProductionMultiplier": 0.9,
             }
         ),
     }

@@ -168,7 +168,6 @@ class RecruitmentSystem:
             + int(buildings.get("farms", 0)) // 2
             + int(buildings.get("lumbers", 0)) // 2
             + int(buildings.get("quarries", 0)) * 2
-            + int(buildings.get("kitchens", 0)) * 2
         )
         effective_cap = min(recruit_target_raw, infra_cap)
         metrics["populationInfraCap"] = infra_cap
@@ -238,7 +237,7 @@ class RecruitmentSystem:
             "x": float(wx),
             "z": float(wz),
             "hunger": 1.0,
-            "carry": {"food": 0.0, "wood": 0.0, "stone": 0.0, "herbs": 0.0},
+            "carry": {"food": 0.0, "wood": 0.0, "stone": 0.0},
             "lineage": {"parents": [], "children": [], "deathSec": -1},
         }
         state.setdefault("agents", []).append(new_worker)

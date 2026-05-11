@@ -9,7 +9,7 @@ Whenever a tile changes type mid-simulation we must:
    ``GRASS → ROAD`` keep the path valid).
 4. Mark the tile key dirty for downstream caches.
 5. Optionally seed / clear wall HP when the tile becomes / ceases to be a
-   ``WALL`` or ``GATE``.
+   ``WALL``.
 
 The Python port also exposes a hook registry so :mod:`world.events` can
 wire ``raid → RUINS`` mutations without touching this module directly.
@@ -79,12 +79,7 @@ def _rebuild_building_stats(grid: Grid) -> dict[str, int]:
         "walls": 0,
         "roads": 0,
         "quarries": 0,
-        "herbGardens": 0,
-        "kitchens": 0,
-        "smithies": 0,
-        "clinics": 0,
         "bridges": 0,
-        "gates": 0,
         "ruins": 0,
     }
     # ``grid.tiles`` is a numpy array (z, x). Flatten with .ravel() so
@@ -103,18 +98,8 @@ def _rebuild_building_stats(grid: Grid) -> dict[str, int]:
             counts["roads"] += 1
         elif v == TILE["QUARRY"]:
             counts["quarries"] += 1
-        elif v == TILE["HERB_GARDEN"]:
-            counts["herbGardens"] += 1
-        elif v == TILE["KITCHEN"]:
-            counts["kitchens"] += 1
-        elif v == TILE["SMITHY"]:
-            counts["smithies"] += 1
-        elif v == TILE["CLINIC"]:
-            counts["clinics"] += 1
         elif v == TILE["BRIDGE"]:
             counts["bridges"] += 1
-        elif v == TILE["GATE"]:
-            counts["gates"] += 1
         elif v == TILE["RUINS"]:
             counts["ruins"] += 1
     return counts
@@ -213,12 +198,12 @@ def on_tile_mutated(
         state["_tileMutationDirtyKeys"] = dirty
     dirty.add(f"{ix},{iz}")
 
-    # 5. Wall / gate HP lifecycle.
+    # 5. Wall HP lifecycle.
     if isinstance(grid, Grid):
         tile_state = getattr(grid, "tile_state", None)
         if tile_state is not None:
             idx = iz * grid.width + ix
-            if new_tile in (TILE["WALL"], TILE["GATE"]):
+            if new_tile == TILE["WALL"]:
                 entry = tile_state.get(idx)
                 if entry is None:
                     entry = {
@@ -232,10 +217,8 @@ def on_tile_mutated(
                         "lastHarvestTick": -1,
                     }
                     tile_state[idx] = entry
-                entry["wallHp"] = (
-                    75.0 if new_tile == TILE["GATE"] else 50.0
-                )
-            elif old_tile in (TILE["WALL"], TILE["GATE"]):
+                entry["wallHp"] = 50.0
+            elif old_tile == TILE["WALL"]:
                 entry = tile_state.get(idx)
                 if isinstance(entry, dict):
                     entry.pop("wallHp", None)
@@ -283,6 +266,3 @@ def apply_world_event_impact(
     ix, iz = int(impact_tile[0]), int(impact_tile[1])
     if event_type in ("banditRaid", "bandit_raid"):
         mutate_tile(state, ix, iz, TILE["RUINS"])
-    elif event_type == "wildfire":
-        # Wildfire burns flammable production tiles down to GRASS.
-        mutate_tile(state, ix, iz, TILE["GRASS"])
