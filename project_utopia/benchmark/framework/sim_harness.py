@@ -437,6 +437,20 @@ class SimHarness:
                 agent["z"] = new_z
                 agent["vx"] = dx / DT_SEC
                 agent["vz"] = dz / DT_SEC
+
+            # Minimal-economy stub: workers consume food at a flat per-tick
+            # rate so DTE / RAE plugins produce non-zero deltas in the
+            # fallback smoke. Phase-3 replaces this with the real
+            # ResourceSystem (already ported, just not yet ticked by the
+            # harness). The flat rate is deterministic given (seed, tick).
+            workers_alive = sum(
+                1 for a in self.state.get("agents") or []
+                if isinstance(a, dict) and a.get("type") == "WORKER" and a.get("alive", True) is not False
+            )
+            resources = self.state.setdefault("resources", {})
+            resources["food"] = max(
+                0.0, float(resources.get("food", 0.0)) - workers_alive * 0.05 * DT_SEC
+            )
         else:
             # Fallback: advance food by an rng draw so hashes still differ
             # across seeds even without a real world. Documented as minimal
