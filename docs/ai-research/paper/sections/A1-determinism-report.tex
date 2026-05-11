@@ -14,16 +14,19 @@ JS & 1 & 60   & 2   & temperate\_plains & \texttt{e360b76} \\
 JS & 2 & 1800 & 60  & temperate\_plains & \texttt{473d1b9} \\
 JS & 3 & 7200 & 240 & temperate\_plains & \texttt{c2d86a6} \\
 Py & 1 & 30   & 1   & temperate\_plains & \texttt{e006ea96} \\
-Py & 2 & 1800 & 60  & temperate\_plains & (pending) \\
-Py & 3 & 7200 & 240 & temperate\_plains & (pending) \\
+Py & 2 & 1800 & 60  & temperate\_plains & \texttt{e99d4fcb} \\
+Py & 3 & 7200 & 240 & temperate\_plains & \texttt{87ecd82b} \\
 Py & 1 & 30   & 1   & temperate\_plains (cross-OS) & (pending) \\
 \bottomrule
 \end{tabular}
 \caption{All three JS tiers verified bit-identical at seed
-\texttt{0xC0FFEE} on commit \texttt{fe55b82}. Python Tier 1
-verified on branch \texttt{python-migration}; Python Tier 2/3
-and cross-OS rows are pending future runs. Full JS hashes are
-in \texttt{output/determinism-tier3-temperate\_plains.json}.}
+\texttt{0xC0FFEE} on commit \texttt{fe55b82}; all three Python tiers
+verified at the same seed on tag
+\texttt{refactor/academic-benchmark-py-rc1}. Cross-OS row pending.
+Full JS hashes are in
+\texttt{output/determinism-tier3-temperate\_plains.json}; Python
+hashes are reproduced via
+\texttt{python -m project\_utopia.tools.audit.determinism\_check --tier \{1,2,3\}}.}
 \end{table}
 
 \subsection{What is hashed}
