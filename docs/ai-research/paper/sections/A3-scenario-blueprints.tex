@@ -27,31 +27,31 @@ blueprints (\S\ref{sec:metrics}); all six pass the
 
 \subsection{Oracle Policy Sample (\texttt{fortified\_basin})}
 
-\begin{lstlisting}[caption={Excerpt from ScriptedOraclePolicy.js},language=Java]
-fortified_basin: {
-  environment: {
-    weather: "clear",
-    durationSec: 90,
-    factionTension: 0.6,        // raid-imminent posture
-    eventSpawns: [{ type: "raid_signal", intensity: 0.7,
-                    durationSec: 12 }],
-    focus: "fortify chokepoint at center",
+\begin{lstlisting}[caption={Excerpt from scripted\_oracle\_policy.py},language=Python]
+"fortified_basin": {
+  "environment": {
+    "weather": "clear",
+    "duration_sec": 90,
+    "faction_tension": 0.6,        # raid-imminent posture
+    "event_spawns": [{"type": "raid_signal", "intensity": 0.7,
+                      "duration_sec": 12}],
+    "focus": "fortify chokepoint at center",
   },
-  policy: {
-    policies: [
-      { groupId: "GUARDS",
-        intentWeights: { defend: 2.0, patrol: 1.5, eat: 0.5 },
-        riskTolerance: 0.3,
-        targetPriorities: { center: 2.5, gate: 2.0 },
-        ttlSec: 28800 },
-      // ...
+  "policy": {
+    "policies": [
+      {"group_id": "GUARDS",
+       "intent_weights": {"defend": 2.0, "patrol": 1.5, "eat": 0.5},
+       "risk_tolerance": 0.3,
+       "target_priorities": {"center": 2.5, "gate": 2.0},
+       "ttl_sec": 28800},
+      # ...
     ],
   },
-  strategic: { primaryGoal: "fortify chokepoint, maintain 4 guards" },
-  colony: { plan: [
-    { action: "build", args: { type: "wall", count: 8 } },
-    { action: "build", args: { type: "gate", count: 1 } },
-    { action: "build", args: { type: "smithy", count: 1 } },
+  "strategic": {"primary_goal": "fortify chokepoint, maintain 4 guards"},
+  "colony": {"plan": [
+    {"action": "build", "args": {"type": "wall", "count": 8}},
+    {"action": "build", "args": {"type": "gate", "count": 1}},
+    {"action": "build", "args": {"type": "smithy", "count": 1}},
   ]},
 }
 \end{lstlisting}
@@ -59,10 +59,10 @@ fortified_basin: {
 \subsection{Oracle Validation}
 
 For each oracle, the test
-\texttt{benchmark-oracle-policy-idempotent.test.js} verifies that:
-(a) \texttt{validateEnvironmentDirective} / \texttt{validateGroupPolicy}
+\texttt{test\_benchmark\_oracle\_policy\_idempotent.py} verifies that:
+(a) \texttt{validate\_environment\_directive} / \texttt{validate\_group\_policy}
 succeed without modifying any field;
-(b) \texttt{guardEnvironmentDirective} / \texttt{guardGroupPolicies}
+(b) \texttt{guard\_environment\_directive} / \texttt{guard\_group\_policies}
 return a deep-equal copy of the input (no clamping has any effect);
 (c) calling guard twice produces the same result as calling once
 (idempotent fixed point).

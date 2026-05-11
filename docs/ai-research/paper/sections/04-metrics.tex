@@ -107,7 +107,8 @@ but informative.
 
 The fallback policy is \texttt{Guardrails}'s production-grade
 state-adaptive default (with full clamping but no LLM), not a
-random baseline. The oracle is \texttt{ScriptedOraclePolicy.js},
+random baseline. The oracle is \texttt{ScriptedOraclePolicy}
+(\texttt{project\_utopia.benchmark.baselines.scripted\_oracle\_policy}),
 hand-tuned per scenario such that it is both schema-valid and
 guardrail-idempotent, with verified $\geq +20\%$ RAE over
 fallback in pre-pilot runs across all six scenarios.

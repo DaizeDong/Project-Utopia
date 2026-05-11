@@ -44,11 +44,11 @@ or targets outside the allowlist; they will be silently dropped.
 
 \subsection{Schema and Guardrails}
 
-The full JSON-Schema definition is in
-\texttt{src/simulation/ai/llm/ResponseSchema.js}. The numerical
-clamping rules are in
-\texttt{src/simulation/ai/llm/Guardrails.js}. Together they
-enforce:
+The full pydantic schema definition is in
+\texttt{project\_utopia.simulation.ai.llm.response\_schema}. The
+numerical clamping rules are in
+\texttt{project\_utopia.simulation.ai.llm.guardrails}. Together
+they enforce:
 \begin{itemize}[leftmargin=*]
 \item all numeric fields finite (NaN dropped)
 \item enum values from a fixed allowlist (unknowns dropped)

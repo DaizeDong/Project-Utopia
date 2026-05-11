@@ -12,7 +12,7 @@ LaTeX source for the Project-Utopia academic-benchmark paper.
 
 ## Build
 
-**Option A (Node.js + LaTeX)** — pdflatex + bibtex pipeline:
+LaTeX build via pdflatex + bibtex (or latexmk):
 
 ```bash
 cd docs/ai-research/paper
@@ -20,39 +20,24 @@ pdflatex main && bibtex main && pdflatex main && pdflatex main
 # or: latexmk -pdf main.tex
 ```
 
-To re-verify the Node.js reproducibility claims cited in §8:
-
-```bash
-npm test && npm run audit:determinism
-```
-
-**Option B (Python + LaTeX)** — same LaTeX build, plus Python
-verification of the new bilingual reproducibility claim:
+To re-verify the reproducibility claims cited in §8:
 
 ```bash
 pip install project-utopia[dev]
-pytest -q                            # 619 tests, ~3.2 s
-project-utopia-determinism --tier 1  # Python Tier-1 hash
-latexmk -pdf main.tex
+pytest -q                            # 621 tests, ~3.2 s
+project-utopia-determinism --tier 1  # Tier-1 hash check
 ```
 
-## Companion implementations
+## Implementation
 
-This paper documents two independent implementations of the
-Project-Utopia benchmark, both reproducing the Tier-1
-determinism claim within their respective RNG backends:
-
-- **Node.js core** (~55k LOC) — canonical implementation on
-  branch `refactor/academic-benchmark-v0.11.0-rc3`; JS Tier-1
-  hash `e360b76…` for 60 ticks @ seed `0xC0FFEE`.
-- **Python SDK** (~5.5k LOC, 619 tests) — PyPI package
-  `project-utopia` on branch `python-migration`; Py Tier-1
-  hash `e006ea96…` for 30 ticks @ seed `0xC0FFEE`.
-
-Cross-language bit-identical reproduction is not a goal
-(mulberry32 vs. PCG64 RNGs); within-each-language
-bit-identical is. See `sections/08-reproducibility.tex` §8.6
-for the full rationale.
+The paper documents a single Python implementation:
+**`project-utopia`** (~5,500 LOC, 621 tests) — PyPI package on
+branch `refactor/academic-benchmark-py-rc1`; Tier-1 hash
+`e006ea96…` for 30 ticks @ seed `0xC0FFEE`. PCG64 RNG backend
+with sorted-key JSON serialization gives bit-identical
+reproduction within a fixed Python version. See
+`sections/08-reproducibility.tex` for the full Three-Tier
+reproducibility model.
 
 ## File map
 
@@ -82,21 +67,21 @@ paper/
 
 | Claim | Section | Anchored figures |
 |---|---|---|
-| C1 Architectural — 4-channel × deterministic × 3-tier reproducibility | §3, §8 | Fig 1, Tier table |
+| C1 Architectural — 4-channel x deterministic x 3-tier reproducibility | §3, §8 | Fig 1, Tier table |
 | C2 Methodological — 4-layer metric stack | §4 | Fig 2 |
-| C3 Empirical — 9 experiments × 3 findings | §5 | Fig 4–10 |
+| C3 Empirical — 9 experiments x 3 findings | §5 | Fig 4–10 |
 | C4 Position-defining — 5-way unique combination | §1.3, §2 | Position table |
 
 ## Status (2026-05-10)
 
 | Item | Status |
 |---|---|
-| Section drafts | ✓ all 8 sections + 3 appendices |
-| BibTeX | ✓ 79 entries (5 placeholders need follow-up) |
-| Figures | ⏳ all 13 are placeholders pending experiment runs |
-| Tables | ⏳ E3 cells (placeholder data), E6 / E9 pending runs |
-| LaTeX compile-clean | ⏳ build verification on next pass |
-| NeurIPS D&B template port | ⏳ when official 2026 .sty available |
+| Section drafts | done — all 8 sections + 3 appendices |
+| BibTeX | done — 79 entries (5 placeholders need follow-up) |
+| Figures | pending — all 13 are placeholders pending experiment runs |
+| Tables | pending — E3 cells (placeholder data), E6 / E9 pending runs |
+| LaTeX compile-clean | pending — build verification on next pass |
+| NeurIPS D&B template port | pending — when official 2026 .sty available |
 
 ## Pre-submission checklist
 
@@ -128,4 +113,4 @@ This paper draws on the following research-state documents
 - `determinism-report.md` — Tier 1–3 verification
 
 All committed to branch `refactor/academic-benchmark`,
-tagged `refactor/academic-benchmark-v0.11.0-rc2`.
+tagged `refactor/academic-benchmark-py-rc1`.
