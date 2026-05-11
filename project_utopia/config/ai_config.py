@@ -2,10 +2,8 @@
 
 Frozen mappings exposing the LLM-channel tuning surface:
 
-* :data:`AI_CONFIG` — request timeouts, decision cadences, hard rate-limits.
 * :data:`GROUP_IDS` — canonical group keys.
 * :data:`GROUP_POLICY_CONTRACTS` — per-group allowed intents / targets.
-* :data:`STRATEGY_CONFIG` — strategic-plan channel cadence + memory caps.
 * :data:`DEFAULT_GROUP_POLICIES` — fallback policy values returned by
   :class:`~project_utopia.simulation.ai.llm.agent_adapter.NoopAgentAdapter`.
 
@@ -15,6 +13,11 @@ Plus helper functions ported VERBATIM (test parity):
 * :func:`canonicalize_ai_group_id` — fuzzy match → canonical group ID.
 * :func:`get_group_policy_contract`, :func:`list_allowed_policy_intents`,
   :func:`list_allowed_target_priorities` — contract lookup helpers.
+
+Round 3 removed ``AI_CONFIG`` and ``STRATEGY_CONFIG`` — every field in both
+mappings had zero readers in project_utopia/ and tests/. The clamp ranges
+those values were meant to gate live in
+:mod:`project_utopia.simulation.ai.llm.guardrails` as plain Python constants.
 """
 
 from __future__ import annotations
@@ -23,38 +26,15 @@ import re
 from types import MappingProxyType
 
 __all__ = [
-    "AI_CONFIG",
     "DEFAULT_GROUP_POLICIES",
     "GROUP_IDS",
     "GROUP_POLICY_CONTRACTS",
-    "POLICY_TEXT_LIMITS",
-    "STRATEGY_CONFIG",
     "canonicalize_ai_group_id",
     "get_group_policy_contract",
     "list_allowed_policy_intents",
     "list_allowed_target_priorities",
     "normalize_ai_token",
 ]
-
-
-AI_CONFIG: MappingProxyType[str, object] = MappingProxyType(
-    {
-        "environmentEndpoint": "/api/ai/environment",
-        "policyEndpoint": "/api/ai/policy",
-        "planEndpoint": "/api/ai/plan",
-        # v0.8.5 Tier 3: 30s LLM timeout — 120s ties up the request slot
-        # past any reasonable "do useful work" window.
-        "requestTimeoutMs": 30000,
-        "maxDirectiveDurationSec": 180,
-        "maxPolicyTtlSec": 120,
-        "minDecisionIntervalSec": 8,
-        "enableByDefault": False,
-        "retryAfterFailureSec": 8,
-        # v0.8.5 Tier 3: cap LLM calls per hour at 240 so a runaway loop
-        # cannot burn budget.
-        "maxLLMCallsPerHour": 240,
-    }
-)
 
 
 GROUP_IDS: MappingProxyType[str, str] = MappingProxyType(
@@ -66,16 +46,6 @@ GROUP_IDS: MappingProxyType[str, str] = MappingProxyType(
         "PREDATORS": "predators",
     }
 )
-
-POLICY_TEXT_LIMITS: MappingProxyType[str, int] = MappingProxyType(
-    {
-        "summary": 140,
-        "focus": 72,
-        "note": 120,
-        "maxNotes": 4,
-    }
-)
-
 
 # ── Token helpers (verbatim port of normalizeAiToken / canonicalizeAiGroupId) ─
 
@@ -209,16 +179,7 @@ def list_allowed_target_priorities(group_id: object) -> list[str]:
     return list(targets)  # type: ignore[arg-type]
 
 
-# ── Strategy + default group policy fallbacks ───────────────────────
-
-STRATEGY_CONFIG: MappingProxyType[str, int] = MappingProxyType(
-    {
-        "heartbeatSec": 90,
-        "cooldownSec": 15,
-        "maxObservations": 50,
-        "maxReflections": 20,
-    }
-)
+# ── Default group policy fallbacks ──────────────────────────────────
 
 
 def _freeze_policy(p: dict[str, object]) -> MappingProxyType[str, object]:

@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased] — refactor/academic-benchmark — Round 3 simplification
+
+### Round 3 simplification (2026-05-10)
+- **Cut 1 — `FOG_STATE` deleted**: dropped the `HIDDEN/EXPLORED/VISIBLE` mapping from `project_utopia/config/constants.py` (+ `__all__` entry, + parametrize case in `tests/config/test_constants.py`). `VisibilitySystem` was already removed in Round 2, leaving the enum with zero live consumers.
+- **Cut 2 — `POLICY_TEXT_LIMITS` deleted**: removed the redundant `summary/focus/note/maxNotes` mapping from `project_utopia/config/ai_config.py`. The four limits live as plain Python constants in `simulation/ai/llm/guardrails.py` (`MAX_SUMMARY_LEN=140`, `MAX_FOCUS_LEN=72`, `MAX_NOTE_LEN=120`, `MAX_STEERING_NOTES=4`); zero readers depended on the mapping form.
+- **Cut 3 — `balance.BUILD_COST` deleted**: removed the divergent mirror from `project_utopia/config/balance.py` (+ `__all__` entry). The canonical per-tool table lives in `simulation/construction/build_advisor.py`. The dead `_ = BUILD_COST` suppress-unused-import line + the import itself were also dropped from `build_system.py`. Test `tests/config/test_constants.py::TestBalance::test_imports_cleanly` updated to drop the now-stale `isinstance(B.BUILD_COST, …)` assert.
+- **Cut 4 — `SYSTEM_ORDER` placeholder-only systems**: dropped 5 string-only entries with no Python implementation from `project_utopia/config/constants.py`: `DevIndexSystem`, `RaidEscalatorSystem`, `AgentDirectorSystem`, `NPCBrainSystem`, `VisitorAISystem`. The 13 entries that remain all have backing classes (`SimulationClock`, `EventDirectorSystem`, `RoleAssignmentSystem`, `PopulationGrowthSystem`, `EnvironmentDirectorSystem`, `WeatherSystem`, `WorldEventSystem`, `TileStateSystem`, `WorkerAISystem`, `ConstructionSystem`, `MortalitySystem`, `BoidsSystem`, `ResourceSystem`). The `removed` set in `test_no_removed_systems` was extended to cover the 5 dropped names. Audit finding: `constants.SYSTEM_ORDER` is documentation-only — nothing iterates it; the runtime path uses `SystemRegistry` registration order through `SimHarness._build_default_systems`. The local `SYSTEM_ORDER` in `sim_harness.py` is also documentary and was left untouched (it gates nothing).
+- **Cut 5 — `AI_CONFIG` + `STRATEGY_CONFIG` deleted**: every field in both mappings had zero readers in `project_utopia/` and `tests/`. `AI_CONFIG` (10 fields: `environmentEndpoint`, `policyEndpoint`, `planEndpoint`, `requestTimeoutMs`, `maxDirectiveDurationSec`, `maxPolicyTtlSec`, `minDecisionIntervalSec`, `enableByDefault`, `retryAfterFailureSec`, `maxLLMCallsPerHour`) and `STRATEGY_CONFIG` (4 fields: `heartbeatSec`, `cooldownSec`, `maxObservations`, `maxReflections`) both removed wholesale from `project_utopia/config/ai_config.py` (+ `__all__` entries, + module docstring updated). The clamp values those configs were meant to gate already live in `simulation/ai/llm/guardrails.py` as plain Python constants (e.g. `MAX_DIRECTIVE_DURATION_SEC`, `MAX_POLICY_TTL_SEC`). Test `tests/config/test_constants.py::TestAiConfig::test_imports_cleanly` updated to drop the `isinstance(AC.AI_CONFIG, …)` assert.
+
+### Verified
+- `pytest tests/ -q` — **616 pass / 0 fail** (was 617; one parametrized `FOG_STATE` case removed).
+- `python -m project_utopia.tools.audit.determinism_check --tier 1 --ticks 30 --seed 0xC0FFEE` — Tier 1 hash `be19781c…` PASS (unchanged).
+- Default-ticks tiers: Tier 1 `4f5d4d22…`, Tier 2 `f7a099a4…`, Tier 3 `43cb6aec…` — all PASS, all bit-identical to pre-Round-3 baseline.
+- No paper updates needed — all documented hashes preserved.
+
 ## [Unreleased] — refactor/academic-benchmark — Round 2 simplification
 
 ### Round 2 simplification (2026-05-10)

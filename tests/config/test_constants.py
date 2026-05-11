@@ -33,7 +33,7 @@ class TestSystemOrder:
         assert expected.issubset(set(C.SYSTEM_ORDER))
 
     def test_no_removed_systems(self) -> None:
-        """S3 / Round-2 removed systems must NOT appear in SYSTEM_ORDER."""
+        """S3 / Round-2 / Round-3 removed systems must NOT appear in SYSTEM_ORDER."""
         removed = {
             "AnimalAISystem",
             "WildlifePopulationSystem",
@@ -41,6 +41,12 @@ class TestSystemOrder:
             "ProgressionSystem",
             "WarehouseQueueSystem",
             "VisibilitySystem",
+            # Round 3: placeholder-only strings with no Python implementation.
+            "DevIndexSystem",
+            "RaidEscalatorSystem",
+            "AgentDirectorSystem",
+            "NPCBrainSystem",
+            "VisitorAISystem",
         }
         intersection = set(C.SYSTEM_ORDER) & removed
         assert intersection == set(), f"removed systems still present: {intersection}"
@@ -76,7 +82,6 @@ class TestEnumTables:
             "WEATHER",
             "EVENT_TYPE",
             "NODE_FLAGS",
-            "FOG_STATE",
             "DEFAULT_GRID",
             "TILE_INFO",
             "WORKER_DEFAULTS",
@@ -119,7 +124,6 @@ class TestBalance:
         from project_utopia.config import balance as B
 
         assert isinstance(B.BALANCE, MappingProxyType)
-        assert isinstance(B.BUILD_COST, MappingProxyType)
         assert isinstance(B.INITIAL_RESOURCES, MappingProxyType)
         # Load-bearing LLM clamp ranges.
         assert B.BALANCE["intentWeightMin"] == 0.0
@@ -132,7 +136,6 @@ class TestAiConfig:
     def test_imports_cleanly(self) -> None:
         from project_utopia.config import ai_config as AC
 
-        assert isinstance(AC.AI_CONFIG, MappingProxyType)
         assert isinstance(AC.GROUP_IDS, MappingProxyType)
         assert AC.GROUP_IDS["WORKERS"] == "workers"
 

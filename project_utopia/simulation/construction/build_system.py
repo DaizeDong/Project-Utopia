@@ -24,7 +24,6 @@ from project_utopia.simulation.meta.game_event_bus import EVENT_TYPES, emit_even
 from project_utopia.world.grid import TILE, Grid
 
 from .build_advisor import (
-    BUILD_COST,
     can_afford,
     evaluate_build_preview,
     explain_build_reason,
@@ -371,8 +370,3 @@ class BuildSystem:
             "owner": owner,
             "phase": "blueprint-cancel",
         }
-
-
-# Keep import so static analyzers see it is used (`BUILD_COST` exposed
-# via build_advisor and referenced by callers).
-_ = BUILD_COST

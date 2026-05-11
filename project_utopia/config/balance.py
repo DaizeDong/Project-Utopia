@@ -36,7 +36,6 @@ from .constants import WEATHER
 
 __all__ = [
     "BALANCE",
-    "BUILD_COST",
     "BUILD_COST_ESCALATOR",
     "CONSTRUCTION_BALANCE",
     "INITIAL_POPULATION",
@@ -46,18 +45,10 @@ __all__ = [
 
 
 # ── Build cost tables ────────────────────────────────────────────────
-
-BUILD_COST: MappingProxyType[str, MappingProxyType[str, int]] = MappingProxyType(
-    {
-        "road": MappingProxyType({"wood": 1}),
-        "farm": MappingProxyType({"wood": 5}),
-        "lumber": MappingProxyType({"wood": 5}),
-        "warehouse": MappingProxyType({"wood": 10}),
-        "wall": MappingProxyType({"wood": 2}),
-        "quarry": MappingProxyType({"wood": 6}),
-        "bridge": MappingProxyType({"wood": 3, "stone": 1}),
-    }
-)
+# NOTE: The canonical per-tool build cost table lives in
+# ``project_utopia/simulation/construction/build_advisor.py``. The
+# ``balance.BUILD_COST`` mirror was removed in Round 3 — it had zero
+# non-test consumers and diverged from the build_advisor truth.
 
 
 def _esc(soft: int, per: float, cap: float, beyond: float) -> MappingProxyType[str, float]:

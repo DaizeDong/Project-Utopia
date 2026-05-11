@@ -25,7 +25,6 @@ __all__ = [
     "ENTITY_TYPE",
     "EVENT_TYPE",
     "FEATURE_FLAGS",
-    "FOG_STATE",
     "MOVE_DIRECTIONS_4",
     "NODE_FLAGS",
     "RESOURCE_TYPES",
@@ -120,14 +119,6 @@ NODE_FLAGS: MappingProxyType[str, int] = MappingProxyType(
     }
 )
 
-FOG_STATE: MappingProxyType[str, int] = MappingProxyType(
-    {
-        "HIDDEN": 0,
-        "EXPLORED": 1,
-        "VISIBLE": 2,
-    }
-)
-
 
 # ── Grid + tile-info defaults ────────────────────────────────────────
 
@@ -186,20 +177,15 @@ MOVE_DIRECTIONS_4: tuple[tuple[int, int], ...] = (
 
 SYSTEM_ORDER: tuple[str, ...] = (
     "SimulationClock",
-    "DevIndexSystem",
-    "RaidEscalatorSystem",
     "EventDirectorSystem",
-    "AgentDirectorSystem",
     "RoleAssignmentSystem",
     "PopulationGrowthSystem",
     "EnvironmentDirectorSystem",
     "WeatherSystem",
     "WorldEventSystem",
     "TileStateSystem",
-    "NPCBrainSystem",
     "WorkerAISystem",
     "ConstructionSystem",
-    "VisitorAISystem",
     "MortalitySystem",
     "BoidsSystem",
     "ResourceSystem",
