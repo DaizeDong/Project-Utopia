@@ -55,7 +55,7 @@ released CLI.
 defining the LLM contract surface;
 (2) six hand-tuned scenario blueprints (\S\ref{app:scenarios});
 (3) the deterministic simulator core
-($\sim$55\,k LOC Node.js, $\sim$5\,500 LOC Python);
+($\sim$5\,500 LOC Python);
 (4) the scoring pipeline (5 dimension plugins + ScoringEngine +
 DimensionNormalizer);
 (5) two reference adapters (\texttt{ScriptedOraclePolicy},
@@ -126,10 +126,10 @@ None for prompts or scenarios (released verbatim from their
 authoring repo). On the output side, every NDJSON row is
 validated against a pydantic schema and every numeric
 directive emitted by an LLM is clamped through
-\texttt{Guardrails.js} / \texttt{guardrails.py} before being
-forwarded to the substrate (weights $\in [0,3]$, risk $\in
-[0,1]$, TTL $\in$ [8\,h, 24\,h]; full table in
-Appendix~\ref{app:prompts}).
+\texttt{project\_utopia.simulation.ai.llm.guardrails}
+before being forwarded to the substrate
+(weights $\in [0,3]$, risk $\in [0,1]$, TTL $\in$
+[8\,h, 24\,h]; full table in Appendix~\ref{app:prompts}).
 \item \textbf{Was the raw data saved?}
 Yes. The unguarded LLM response (verbatim JSON text and
 guard-clamping deltas) is preserved per row in
@@ -137,10 +137,12 @@ guard-clamping deltas) is preserved per row in
 \texttt{response\_clamped}, enabling ex-post analysis of
 schema-violation patterns.
 \item \textbf{Is the preprocessing software available?}
-Yes: pydantic schema, JSON-Schema definition
-(\texttt{src/simulation/ai/llm/ResponseSchema.js}),
-\texttt{Guardrails.js}, and the 5-dimension plugin code are all
-in the release tree under Apache 2.0 / MIT.
+Yes: pydantic schemas
+(\texttt{project\_utopia.simulation.ai.llm.response\_schema}),
+guard-clamping rules
+(\texttt{project\_utopia.simulation.ai.llm.guardrails}), and the
+5-dimension plugin code are all in the release tree under
+Apache 2.0 / MIT.
 \end{itemize}
 
 \subsection{Uses}
@@ -185,14 +187,14 @@ look elsewhere.
 
 \begin{itemize}[leftmargin=*]
 \item \textbf{Will the dataset be distributed to third parties?}
-Yes, publicly. The Node.js implementation is on GitHub at
-\texttt{[ANONYMIZED-REPO-URL]} (de-anonymized for camera-ready).
-The Python SDK is on PyPI as \texttt{project-utopia}.
+Yes, publicly. The source tree is on GitHub at
+\texttt{[ANONYMIZED-REPO-URL]} (de-anonymized for camera-ready);
+the installable package is on PyPI as \texttt{project-utopia}.
 \item \textbf{How will it be distributed?}
-Git tag \texttt{refactor/academic-benchmark-py-rc1} for the
-Node.js core; \texttt{pip install project-utopia} for the
-Python SDK. A Docker image pinned to commit \texttt{fe55b82}
-is published alongside.
+\texttt{pip install project-utopia}; the source tree is also
+checkout-able at git tag
+\texttt{refactor/academic-benchmark-py-rc1}. A Docker image
+pinned to commit \texttt{fe55b82} is published alongside.
 \item \textbf{When will it be distributed?}
 Pre-print release coincides with paper submission
 (2026-06-07 NeurIPS D\&B deadline). The repository has been
@@ -210,8 +212,8 @@ None.
 
 \begin{itemize}[leftmargin=*]
 \item \textbf{Who will support, host, and maintain the dataset?}
-The author, via the GitHub repository above. The Python
-SDK is auto-published from the same source tree on tag.
+The author, via the GitHub repository above. The PyPI
+package is auto-published from the same source tree on tag.
 \item \textbf{How can the owner be contacted?}
 Via GitHub issues or the email on the de-anonymized
 repository.

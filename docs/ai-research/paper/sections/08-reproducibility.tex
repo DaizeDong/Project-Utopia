@@ -16,20 +16,16 @@ Runs in deterministic fallback mode (no LLM in the loop)
 produce \emph{bit-identical SHA-256 hashes} across multiple
 runs of the same seed and scenario. We verify this at three
 sub-tiers:
-60 ticks (hash \texttt{e360b76\ldots}, $\sim$1\,s wall),
-1\,800 ticks (\texttt{473d1b9\ldots}, $\sim$30\,s wall), and
-7\,200 ticks (\texttt{c2d86a6\ldots}, $\sim$2\,m wall).
-Re-running \verb|npm run audit:determinism| in our
-released container reproduces all three hashes.
-We additionally provide two independent implementations
-(Node.js core and Python SDK), each with its own
-deterministic state hash; the Python Tier-1 hash is
-\texttt{e006ea96\ldots} (30 ticks @ seed \texttt{0xC0FFEE},
-scenario \texttt{temperate\_plains}). Cross-language
-bit-identical reproduction is \emph{not} a goal --- the
-two implementations use different RNG backends (mulberry32
-vs.\ PCG64) --- but within-each-language bit-identical
-reproduction is guaranteed (the \textbf{Tier 1$'$ contract}).
+30 ticks (hash \texttt{e006ea96\ldots}, $\sim$1\,s wall),
+1\,800 ticks (\texttt{e99d4fcb\ldots}, $\sim$60\,s wall), and
+7\,200 ticks (\texttt{87ecd82b\ldots}, $\sim$4\,m wall).
+Re-running \verb|project-utopia-determinism --tier 1| in our
+released container reproduces all three hashes
+(at seed \texttt{0xC0FFEE}, scenario
+\texttt{temperate\_plains}). The PCG64 RNG backend, together
+with sorted-key JSON serialization and 6-decimal float
+rounding before hashing, makes bit-identical reproduction
+within a fixed Python version the \textbf{Tier 1 contract}.
 \item[\textbf{Tier 2 — LLM-on bit-identical via LayerCast.}]
 With LayerCast~\citep{Yuan2025LayerCast} inference (16-bit
 weights, FP32 compute, \texttt{deterministic: true}), the same
@@ -59,11 +55,11 @@ production LLM APIs without LayerCast.
 \toprule
 Smell category & Project-Utopia compliance & Tier \\
 \midrule
-Code/Execution & \texttt{git tag v0.11.0-rc2} + commit-pinned Dockerfile & 4 \\
+Code/Execution & \texttt{git tag academic-benchmark-py-rc1} + commit-pinned Dockerfile & 4 \\
 Data & Scenario-template hash committed; seed list fixed in repo & 4 \\
 Documentation & \texttt{CLAUDE.md} + 9 \texttt{ai-research/} docs ($\sim$3\,800 LOC) & 5 \\
-Environment-tooling & Pin Node 22.x; LayerCast version; CUDA matrix in Dockerfile & 4 \\
-Versioning & Git tags per release; \texttt{package.json} version pinned & 5 \\
+Environment-tooling & Pin Python 3.11; LayerCast version; CUDA matrix in Dockerfile & 4 \\
+Versioning & Git tags per release; \texttt{pyproject.toml} version pinned & 5 \\
 Model & LLM snapshot ID pinned; LayerCast inference; record-replay cache & 4 \\
 Access-Legal & All datasets + code Apache 2.0 / MIT; no proprietary data & 5 \\
 \bottomrule
@@ -72,19 +68,10 @@ Access-Legal & All datasets + code Apache 2.0 / MIT; no proprietary data & 5 \\
 
 \subsection{Quick-Start Reproducibility}
 
-Reviewers can verify our Tier-1 reproducibility claim through
-either implementation. \textbf{Option A (Node.js)}:
+Reviewers can verify our Tier-1 reproducibility claim with a
+single CLI invocation:
 
-\begin{lstlisting}[caption={Node.js verification},language=bash]
-git clone [ANONYMIZED-REPO-URL]    # de-anonymized post-review
-cd Project-Utopia
-git checkout refactor/academic-benchmark-v0.11.0-rc3
-npm test && npm run audit:determinism
-\end{lstlisting}
-
-\noindent\textbf{Option B (Python SDK)}:
-
-\begin{lstlisting}[caption={Python verification},language=bash]
+\begin{lstlisting}[caption={Quick-start verification},language=bash]
 pip install project-utopia
 project-utopia-rng-audit
 project-utopia-determinism --tier 1
@@ -94,12 +81,12 @@ project-utopia run --experiment E1 \
 \end{lstlisting}
 
 \noindent
-Option A runs the full 795-test suite ($\sim$\,38\,s) and the
-Tier-1 60-tick determinism check ($\sim$\,2\,s); Option B runs
-the 619-test pytest suite ($\sim$\,3.2\,s) and the Python
-Tier-1 30-tick determinism check. Both are gated to PASS.
-For Tier 3 (7\,200-tick) verification, append \texttt{--tier 3}
-to the Node.js audit command (3-min wall-time).
+This runs the 621-test pytest suite ($\sim$\,3.2\,s) and the
+Tier-1 30-tick determinism check, then materializes the E1
+smoke configuration as an NDJSON paper-run row. All gates are
+PASS/FAIL with non-zero exit on failure. For Tier 3
+(7\,200-tick) verification, invoke
+\texttt{project-utopia-determinism --tier 3} (4-min wall-time).
 
 \subsection{Anti-Contamination Safeguards}
 
@@ -123,20 +110,23 @@ Our release contains the following artifacts, all under
 \texttt{Apache 2.0 / MIT}:
 
 \begin{itemize}[leftmargin=*]
-\item \texttt{src/} --- $\sim$\,55\,k LOC simulation core, 4 LLM
-channels, AgentAdapter contract (Node.js, zero npm dependencies
-for the test runner).
-\item \texttt{src/benchmark/} --- SimHarness, 5 dimension plugins,
-ScoringEngine, DimensionNormalizer, PVB tracker, MultiBackendAdapter.
-\item \texttt{src/data/prompts/} --- the 4 verbatim system prompts
-defining the LLM contract surface; this \emph{is} the action-space
-specification.
-\item \texttt{tools/audit/} --- determinism-check (3 tiers) +
-RNG-coverage report.
-\item \texttt{server/} --- \texttt{ai-proxy.js} (OpenAI-compatible)
-and \texttt{agent-bridge.js} (cross-vendor 9-cell routing).
-\item \texttt{scripts/benchmark-paper.mjs} --- one-line CLI to
-reproduce any Project-Utopia experiment.
+\item \texttt{project\_utopia/} --- $\sim$\,5\,500 LOC simulation
+core, 4 LLM channels, AgentAdapter contract (Python 3.11+; runtime
+deps: numpy, scipy, pydantic, litellm, typer, rich, pandas).
+\item \texttt{project\_utopia/benchmark/} --- SimHarness, 5 dimension
+plugins, ScoringEngine, DimensionNormalizer, PVB tracker,
+MultiBackendAdapter.
+\item \texttt{project\_utopia/data/prompts/} --- the 4 verbatim
+system prompts defining the LLM contract surface; this \emph{is}
+the action-space specification.
+\item \texttt{project\_utopia/tools/audit/} --- determinism-check
+(3 tiers) + RNG-coverage report; exposed as
+\texttt{project-utopia-determinism} and
+\texttt{project-utopia-rng-audit} console scripts.
+\item \texttt{project\_utopia/cli/} --- \texttt{benchmark\_paper}
+one-line CLI (\texttt{project-utopia run \ldots}) reproducing
+any Project-Utopia experiment, plus
+\texttt{agent\_routing} cross-vendor 9-cell config.
 \item \texttt{output/determinism-tier3-temperate\_plains.json} ---
 the full Tier-3 hash manifest verifying our claim.
 \item \texttt{docs/ai-research/} --- $\sim$\,3\,800 LOC of
@@ -149,21 +139,3 @@ artifacts.
 \paragraph{Datasheet.} A complete Datasheet for Datasets entry
 following the Gebru et al.\ template appears in
 Appendix~\ref{app:datasheet}.
-
-\subsection{Bilingual Implementation Rationale}
-
-Project-Utopia ships with two independent implementations
-because the audience for an LLM benchmark spans two disjoint
-communities. Node.js is the canonical language for
-HTTP-proxy-heavy agent orchestration (the LLM proxy, schema
-validation, agent-bridge); Python is the canonical language
-for ML researcher tooling (pandas post-processing, scipy
-statistical inference, matplotlib figures). Rather than force
-one community to learn the other, both implementations share
-the verbatim 4-channel prompts (the LLM contract surface) and
-the same scenario blueprints. Reviewers may verify our
-reproducibility claim through either implementation --- the
-Python \texttt{project-utopia} PyPI package is a self-contained
-$\sim$\,5\,500 LOC re-implementation (619 tests passing,
-$\sim$\,3.2\,s wall) that has shed game-flavor code retained in
-the Node.js build.

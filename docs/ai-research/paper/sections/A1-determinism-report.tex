@@ -6,56 +6,55 @@
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{llllll}
+\begin{tabular}{lllll}
 \toprule
-Lang & Tier & Ticks & Sim-sec & Scenario & SHA-256 (first 8 chars) \\
+Tier & Ticks & Sim-sec & Scenario & SHA-256 (first 8 chars) \\
 \midrule
-JS & 1 & 60   & 2   & temperate\_plains & \texttt{e360b76} \\
-JS & 2 & 1800 & 60  & temperate\_plains & \texttt{473d1b9} \\
-JS & 3 & 7200 & 240 & temperate\_plains & \texttt{c2d86a6} \\
-Py & 1 & 30   & 1   & temperate\_plains & \texttt{e006ea96} \\
-Py & 2 & 1800 & 60  & temperate\_plains & \texttt{e99d4fcb} \\
-Py & 3 & 7200 & 240 & temperate\_plains & \texttt{87ecd82b} \\
-Py & 1 & 30   & 1   & temperate\_plains (cross-OS) & (pending) \\
+1 & 30   & 1   & temperate\_plains & \texttt{e006ea96} \\
+2 & 1800 & 60  & temperate\_plains & \texttt{e99d4fcb} \\
+3 & 7200 & 240 & temperate\_plains & \texttt{87ecd82b} \\
+1 & 30   & 1   & temperate\_plains (cross-OS) & (pending) \\
 \bottomrule
 \end{tabular}
-\caption{All three JS tiers verified bit-identical at seed
-\texttt{0xC0FFEE} on commit \texttt{fe55b82}; all three Python tiers
-verified at the same seed on tag
+\caption{All three tiers verified bit-identical at seed
+\texttt{0xC0FFEE} on tag
 \texttt{refactor/academic-benchmark-py-rc1}. Cross-OS row pending.
-Full JS hashes are in
-\texttt{output/determinism-tier3-temperate\_plains.json}; Python
-hashes are reproduced via
-\texttt{python -m project\_utopia.tools.audit.determinism\_check --tier \{1,2,3\}}.}
+Hashes are reproduced via
+\texttt{python -m project\_utopia.tools.audit.determinism\_check --tier \{1,2,3\}}
+(or equivalently the
+\texttt{project-utopia-determinism --tier \{1,2,3\}} console script).
+The full Tier-3 manifest is shipped at
+\texttt{output/determinism-tier3-temperate\_plains.json}.}
 \end{table}
 
 \subsection{What is hashed}
 
-\texttt{tools/audit/determinism-check.js:hashState} (JS) and
-\texttt{project\_utopia.tools.audit.determinism\_check} (Python)
-capture only those state fields that have been verified
+\texttt{project\_utopia.tools.audit.determinism\_check:hash\_state}
+captures only those state fields that have been verified
 bit-identical across runs:
-\texttt{tick}, \texttt{timeSec}, all worker positions (rounded to
+\texttt{tick}, \texttt{time\_sec}, all worker positions (rounded to
 6 decimal places), velocities, hunger, role, FSM state;
-\texttt{state.resources}; \texttt{state.metrics.aiRuntime}'s four
+\texttt{state.resources}; \texttt{state.metrics.ai\_runtime}'s four
 counters; and the first 256 chars of the grid tile array.
-The Python \texttt{hash\_state} is a port of the JS function with
-the same slim-view fields (sorted-key JSON, SHA-256), differing
-only in the underlying RNG backend (PCG64 vs.\ mulberry32).
+The hash uses sorted-key JSON serialization with SHA-256 over a
+slim state view (PCG64 RNG backend).
 Excluded: agent insertion-order-dependent fields, populationStats
 (re-bucketed each tick, non-deterministic ordering), gameplay
-analytics (some use Date.now), and aiRuntime token telemetry
-fields not yet wired (always 0 in current adapters).
+analytics (any wall-clock-derived field), and
+\texttt{ai\_runtime} token telemetry fields not yet wired
+(always 0 in current adapters).
 
 \subsection{Cross-OS verification}
 
-We replicated Tier 1 on Linux x86\_64 (Ubuntu 24.04, Node 22.19),
-macOS arm64 (Sonoma 14.5, Node 22.19), and Windows x86\_64
-(11 Pro, Node 22.19, run via Git Bash). All three machines
-produced \texttt{e360b76\ldots} on seed \texttt{0xC0FFEE}.
-We did not verify Tier 3 cross-OS due to the cumulative wall-time
-cost; this is the only known reproducibility gap and is documented
-in \S\ref{sec:limitations}.
+The current release was verified on Windows x86\_64
+(11 Pro, Python 3.11.x, executed via Git Bash) and produces
+\texttt{e006ea96\ldots} on seed \texttt{0xC0FFEE}. Cross-OS
+replication on Linux x86\_64 and macOS arm64 with Python 3.11 is
+\emph{pending}: the PCG64 RNG backend and sorted-key JSON
+serialization remove the dominant non-determinism sources, but
+we have not yet executed the test matrix on a second OS at
+submission time. This gap is documented in \S\ref{sec:limitations}
+and is one of the named camera-ready items.
 
 \subsection{Floating-point invariance}
 
@@ -65,7 +64,7 @@ could produce a different last-bit result. We have not observed
 this in practice (see cross-OS table above) but cannot rule it
 out for hardware not in our test matrix. Should it occur, the
 fallback recommendation is to use the
-\texttt{ROUND\_TO\_FIXED\_DECIMAL} mode (planned, not in
-v0.11.0-rc2): all float comparisons are rounded to 12 decimal
+\texttt{ROUND\_TO\_FIXED\_DECIMAL} mode (planned, not in the
+current release): all float comparisons are rounded to 12 decimal
 places before hashing, preserving deterministic comparison at the
 cost of detecting fewer hairline divergences.

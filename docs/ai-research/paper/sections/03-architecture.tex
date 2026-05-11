@@ -131,35 +131,40 @@ state even when the LLM emits adversarial or malformed JSON.
 \label{sec:adapter-seam}
 
 The tool layer is deterministic given a seed. RNG flows through
-\texttt{src/app/rng.js}; A* paths are cached by
+\texttt{project\_utopia.app.rng}; A* paths are cached by
 $(\text{faction}, \text{gridVersion}, \text{costVersion})$;
 Boids accumulators run in fixed order; \texttt{PathWorkerPool} is
-disabled in \texttt{deterministic: true} mode. Verifying determinism
+disabled in \texttt{deterministic=True} mode. Verifying determinism
 empirically is non-trivial: we built
-\texttt{tools/audit/determinism-check.js} which runs the harness
-twice with the same seed and compares SHA-256 hashes of slim state
-snapshots. Three tiers are gated: 60 ticks, 1\,800 ticks, and
-7\,200 ticks (240 sim-seconds). All three pass with bit-identical
-hashes (\texttt{e360b76\ldots}, \texttt{473d1b9\ldots},
-\texttt{c2d86a6\ldots}; see Appendix~\ref{app:determinism-report}).
+\texttt{project\_utopia.tools.audit.determinism\_check} which runs
+the harness twice with the same seed and compares SHA-256 hashes
+of slim state snapshots. Three tiers are gated: 30 ticks,
+1\,800 ticks, and 7\,200 ticks (240 sim-seconds). All three pass
+with bit-identical hashes (\texttt{e006ea96\ldots},
+\texttt{e99d4fcb\ldots}, \texttt{87ecd82b\ldots};
+see Appendix~\ref{app:determinism-report}).
 
 The \textbf{AgentAdapter} is the interface that any LLM (or
 fallback policy, or scripted oracle) must implement to drive
 the four channels:
 
-\begin{lstlisting}[language=Java, caption={AgentAdapter contract}]
-async request(channel, payload, options): Promise<DecisionResponse>
-// channel in {environment-director, npc-policy, strategic-plan, colony-agent}
-// returns: {data, fallback, usage, latencyMs, model, error, debug}
-// MUST not throw; on failure return fallback DecisionResponse
+\begin{lstlisting}[language=Python, caption={AgentAdapter contract}]
+async def request(self, channel: str, payload: Any,
+                  options: dict | None = None) -> DecisionResponse:
+    # channel in {environment-director, npc-policy,
+    #             strategic-plan, colony-agent}
+    # returns DecisionResponse(data, fallback, usage,
+    #                          latency_ms, model, error, debug)
+    # MUST NOT raise; on failure return a fallback DecisionResponse
+    ...
 \end{lstlisting}
 
 Concrete adapters in our suite include:
-(1) \texttt{LLMClient} (OpenAI-compatible HTTP proxy);
+(1) \texttt{LLMClient} (OpenAI-compatible HTTP via litellm);
 (2) \texttt{NoopAgentAdapter} / \texttt{ScriptedOraclePolicy} (used for
 the sandwich-norm fallback and oracle terms);
-(3) \texttt{HTTPAgentClient} dispatching to a 9-cell cross-vendor routing
-\texttt{agent-bridge.js};
+(3) \texttt{HTTPAgentClient} dispatching to a 9-cell cross-vendor
+routing config (\texttt{project\_utopia.cli.agent\_routing});
 (4) \texttt{LayerCastAdapter} wrapping any inner adapter with
 deterministic-inference headers;
 (5) \texttt{RecordReplayCache} (VCR-cassette-style) for offline
@@ -167,8 +172,8 @@ re-execution from a previous run's transcript.
 
 \texttt{AdapterToLLMClient} bridges any \texttt{AgentAdapter} into the
 existing simulation systems by exposing the four legacy method
-signatures (\texttt{requestEnvironment}, \texttt{requestPolicies},
-\texttt{requestStrategic}, \texttt{requestPlan}) that the existing
+signatures (\texttt{request\_environment}, \texttt{request\_policies},
+\texttt{request\_strategic}, \texttt{request\_plan}) that the existing
 strategic / environment / brain / colony-director systems call.
 This single seam is what makes E3's 9-cell cross-vendor matrix possible
 without modifying any simulation system.

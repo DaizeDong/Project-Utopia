@@ -46,8 +46,8 @@ expect hierarchical RAE $\sim$\,0.65--0.75 vs.\ flat
 $\sim$\,0.30--0.55, depending on scenario.
 
 \paragraph{Status.} Pipeline verified end-to-end via
-\texttt{npm run bench:paper:E1} (smoke run produced 19
-NDJSON rows / 67\,s on FB cell). Full E1 runs pending a one-week
+\texttt{project-utopia run --experiment E1} (smoke run
+produced 19 NDJSON rows / $\sim$3\,s on FB cell). Full E1 runs pending a one-week
 dedicated GPU window. Figure~\ref{fig:e1} previews the bar-chart
 layout populated from the fallback-only smoke run.
 
@@ -119,7 +119,7 @@ benefits most from a strong model (long-tail decisions);
 \texttt{XV-DIVERSE-LIGHT}, \texttt{XV-DIVERSE-STRONG},
 \texttt{XV-OPENWEIGHT-ONLY}) $\times$ 2 scenarios $\times$ 10 seeds
 $=$ 180 runs. Each cell's per-channel routing is configured in
-\texttt{server/config/agent-routing.js}.
+\texttt{project\_utopia.cli.agent\_routing}.
 
 \paragraph{Expected results.} Table~\ref{tab:e3-cells} summarizes
 the predicted cell ranking by sandwich-normalized RAE composite
@@ -332,17 +332,17 @@ methods; the final curves come from bootstrap on E1--E7 NDJSON logs.
 We report four reproducibility gates, each verified empirically:
 
 \begin{enumerate}[leftmargin=*]
-\item \textbf{Tier 1 (smoke, 60 ticks)}:
-\verb|node tools/audit/determinism-check.js --tier 1| produces
-hash \texttt{e360b76\ldots} on two consecutive runs (\textsc{Pass}).
+\item \textbf{Tier 1 (smoke, 30 ticks)}:
+\verb|project-utopia-determinism --tier 1| produces
+hash \texttt{e006ea96\ldots} on two consecutive runs (\textsc{Pass}).
 \item \textbf{Tier 2 (medium, 1\,800 ticks)}:
-hash \texttt{473d1b9\ldots} (\textsc{Pass}).
+hash \texttt{e99d4fcb\ldots} (\textsc{Pass}).
 \item \textbf{Tier 3 (long, 7\,200 ticks)}:
-hash \texttt{c2d86a6\ldots} (\textsc{Pass}, $\sim$\,3-min wall).
-\item \textbf{Cross-machine}: same seed produces the same Tier-1
-hash on Linux x86\_64, macOS arm64, and Windows x86\_64
-(verified manually; documented in
-Appendix~\ref{app:determinism-report}).
+hash \texttt{87ecd82b\ldots} (\textsc{Pass}, $\sim$\,4-min wall).
+\item \textbf{Cross-machine}: the Tier-1 hash is verified on
+Windows x86\_64 (Python 3.11); Linux x86\_64 and macOS arm64
+replication is pending and documented in
+Appendix~\ref{app:determinism-report}.
 \end{enumerate}
 
 The full reproducibility manifest, including container build

@@ -51,9 +51,10 @@ verbal recall from action-grounded recall in ways
 LongMemEval~\citep{Wu2025LongMemEval} and
 MemoryArena~\citep{He2026MemoryArena} cannot.
 
-Project-Utopia is released as a self-contained Node.js benchmark
-(zero npm dependencies, $\sim$\,55\,k LOC) with a four-line Docker
-reproducibility command, a record-replay LLM cache, and full
+Project-Utopia is released as a self-contained Python package
+(\texttt{pip install project-utopia}, 621 tests passing,
+$\sim$\,5\,500 LOC) with one-line CLI reproducibility, a
+record-replay LLM cache via pydantic schemas, and full
 JSON-NDJSON paper-run pipeline. Code, prompts, and 7\,200-tick
 determinism manifests are at
 [ANONYMIZED-REPO-URL] (de-anonymized for camera-ready).
