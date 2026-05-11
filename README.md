@@ -1,53 +1,61 @@
 # Project Utopia — Academic Benchmark for LLM Long-Horizon Planning
 
-A **headless, deterministic, multi-resource simulation harness** for evaluating large language models on long-horizon planning and resource-allocation tasks. Forked from a real-time colony-simulation game (v0.10.0) and stripped of its rendering, audio, and player-facing surface across a 7-phase refactor (~78 k LOC removed). The remaining substrate exposes **four LLM decision channels** above an A* / Boids / seeded-RNG core, scored by **five academic dimension plugins**.
+A **headless, deterministic, multi-resource simulation harness** for evaluating large language models on long-horizon planning and resource-allocation tasks. The harness exposes **four LLM decision channels** that orchestrate a fixed deterministic tool surface (A\*, Boids, FSM intent applier, build planner), scored by **five academic dimension plugins** through a 4-layer metric stack (per-tick → DimensionNormalizer → MeltingPot sandwich + Crafter geometric mean → Bayesian Beta-Binomial + HELM Mean Win Rate).
 
-> Companion docs: [`docs/ai-research/benchmark_proposal.md`](docs/ai-research/benchmark_proposal.md) (research framing), [`docs/ai-research/refactor-plan.md`](docs/ai-research/refactor-plan.md) (cut list + phase log), [`docs/ai-research/determinism-report.md`](docs/ai-research/determinism-report.md) (S0 audit).
+> Companion docs:
+> [`docs/ai-research/paper-framework.md`](docs/ai-research/paper-framework.md) (paper structure + C1-C4 claims) ·
+> [`docs/ai-research/python-migration-conventions.md`](docs/ai-research/python-migration-conventions.md) (design rationale) ·
+> [`docs/ai-research/design-audit-decisions.md`](docs/ai-research/design-audit-decisions.md) (RC3 audit findings)
 
 ## Why this benchmark
 
-Existing LLM-agent benchmarks are mostly single-agent web/coding tasks (AgentBench, GAIA, WebArena) or flat MARL grids (MeltingPot, SMAC). Neither captures the **hierarchical, low-rank, schema-validated directive surface** that real production agent systems actually emit. Project-Utopia operates the LLM strictly above a deterministic substrate at three nested cadences (~5–90 s), with token cost decoupled from world size. After the academic-benchmark refactor it adds:
+Existing LLM-agent benchmarks are mostly single-agent web/coding tasks (AgentBench, GAIA, WebArena, TheAgentCompany) or single-tool-choice agents (Toolformer, Gorilla, ToolLLM). Neither captures **multi-channel orchestration of a fixed tool surface under stale long-horizon context** — the failure mode of production agent systems. Project-Utopia operates the LLM strictly above a deterministic tool layer at three nested cadences (~5–90 s), with token cost decoupled from world size, schema-validated directives, and three-tier reproducibility.
 
-- A 4-channel `AgentAdapter` plumbing seam (any local or remote LLM)
-- Token / first-token-latency / KV-cache telemetry
-- 5 dimension plugins (Resource-Allocation Efficiency, Group Dynamics, Memory Degradation, Decision Token Efficiency, Hierarchical Coordination)
-- Bayesian Beta-Binomial scoring engine
-- Seeded determinism (verified — same seed × fallback mode → identical state hash)
+Highlights:
+
+- 4-channel `AgentAdapter` contract (any LLM via `litellm`)
+- Schema-validated tool-grounded directives (pydantic v2 + idempotent Guardrails)
+- Token / first-token-latency / KV-cache telemetry (S5)
+- 5 dimension plugins → 19 score keys
+- `scipy.stats.beta` Beta-Binomial scoring + sandwich normalization + HELM MWR
+- Seeded determinism (verified bit-identical at 30 / 1800 / 7200 ticks)
 
 ## Quick start
 
 ```bash
-git clone https://github.com/DaizeDong/Project-Utopia.git
-cd Project-Utopia
-git checkout refactor/academic-benchmark      # or tag refactor/academic-benchmark-v0.11.0-rc1
-npm test                                       # 684 tests / ~18 s, no deps required
+pip install -e .[dev]
+pytest tests/ -q                                 # 621 tests / ~5 s
 ```
-
-The repo declares **zero npm dependencies** in `package.json` — Node ≥ 20 with the built-in test runner is enough.
 
 ### Reproducibility check
 
 ```bash
-npm run audit:rng                              # Greps src/ for Math.random() leaks
-npm run audit:determinism                      # Same seed × 60 ticks × 2 runs → equal state hash
-npm run bench:dimensions                       # Runs the 5 dimension plugins on a short scenario
+project-utopia-rng-audit                         # Asserts zero unmanaged RNG calls
+project-utopia-determinism --tier 1              # Tier 1 (30 ticks, ~1 s)
+project-utopia-determinism --tier 2              # Tier 2 (1800 ticks, ~2 s)
+project-utopia-determinism --tier 3              # Tier 3 (7200 ticks, ~2 m)
 ```
 
-### Long-horizon paper run (deferred — see refactor-plan.md S7)
+Expected hashes (seed `0xC0FFEE`, scenario `temperate_plains`):
+- Tier 1 → `e006ea96…`
+- Tier 2 → `e99d4fcb…`
+- Tier 3 → `87ecd82b…`
+
+### Paper experiment runs
 
 ```bash
-npm run bench:long:smoke                       # 90-day smoke (90 s sim time)
-npm run bench:long:matrix                      # multi-seed × multi-scenario sweep
+project-utopia run --experiment E1 \
+  --scenarios temperate_plains,fortified_basin \
+  --seeds 0xC0FFEE,0xBEEF \
+  --duration-sec 30 \
+  --out output/paper-py/E1.ndjson
 ```
 
-### Optional: live LLM through the AI proxy
+Available experiments: `E1` (hierarchical vs flat baseline), `E3` (9-cell cross-vendor matrix), `E6` (schema failure profile). Output schema: one row per (experiment, cellId, scenario, seed, dim) with raw / normalized / sandwichNorm / bayesianMean / bayesianCi95.
 
-```bash
-cp .env.example .env                           # set OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL
-npm run ai-proxy                               # node:http server on :8787, OpenAI-compatible
-```
+### Optional: live LLM
 
-The AI proxy speaks the OpenAI completions API, so vLLM / llama.cpp-server / Ollama / TGI / Anthropic-via-bridge all work as drop-in agent backends — set `OPENAI_BASE_URL` accordingly.
+Configure an LLM via `litellm` env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.) and wire the `LLMClient` adapter into the harness. See `project_utopia/simulation/ai/llm/llm_client.py` for the `litellm.acompletion` wrapper.
 
 ## Architecture (one screen)
 
@@ -59,83 +67,89 @@ The AI proxy speaks the OpenAI completions API, so vLLM / llama.cpp-server / Oll
          events)          weights +      goals)           Ground→Execute→
                           targets)                        Evaluate→Reflect)
                    │                                                       │
-                   └────────── AgentAdapter (schema + guardrails) ─────────┘
+                   └────── AgentAdapter (pydantic schema + guardrails) ────┘
                                             │
                                   ┌─────────┴──────────┐
                                   │  PromptPayload      │  observation envelope
-                                  │  ResponseSchema.js  │  contract
-                                  │  Guardrails.js      │  weight clamps
+                                  │  ResponseSchema     │  pydantic v2 validate
+                                  │  Guardrails         │  idempotent clamps
                                   └─────────┬──────────┘
                                             │
                                 ┌───────────┴────────────┐
-                                │  Deterministic substrate │
-                                │  rng.js (seeded PRNG)    │
-                                │  Grid (96×72 Uint8Array) │
+                                │  Deterministic tools     │
+                                │  rng (PCG64)             │
+                                │  Grid (96×72 uint8)      │
                                 │  A* + PathCache + Faction│
-                                │  BoidsSystem + Spatial   │
-                                │  Worker priority FSM     │
+                                │  Boids + SpatialHash     │
+                                │  FSM intent applier      │
+                                │  Build planner           │
                                 └─────────────────────────┘
                                             │
                                 ┌───────────┴────────────────┐
-                                │  src/benchmark/            │
-                                │   framework/ (Sim Harness, │
-                                │     ScoringEngine,         │
-                                │     ProbeCollector,        │
-                                │     DecisionTracer)        │
-                                │   dimensions/ (5 plugins)  │
+                                │  benchmark/                  │
+                                │   framework/ (SimHarness,    │
+                                │     ScoringEngine,           │
+                                │     DimensionNormalizer,     │
+                                │     SeedMatrix, PVB,         │
+                                │     ProbeCollector, Tracer)  │
+                                │   dimensions/ (5 plugins)    │
+                                │   baselines/ (Flat / Multi / │
+                                │     ScriptedOracle)          │
                                 └────────────────────────────┘
 ```
-
-## Refactor highlights (vs upstream v0.10.0)
-
-| Surface | Status |
-|---|---|
-| Three.js renderer, HUD, audio, save/load, replay, leaderboard, devmode, browser bootstrap | **Removed** (~30 k LOC, S1) |
-| Pre-refactor test surface (UI, balance regressions, hotfixes, achievements) | **Removed** (~17.7 k LOC, S2; 1646 → 684 tests, 84 s → 18 s) |
-| Multi-tier processing chain (meals/medicine/tools), wildlife (predators/herbivores/biomes), traders, progression/achievements | **Removed** (~13.8 k LOC, S3) |
-| `balance.js` (1346 LOC) | Header-banner neutralized, values frozen to preserve test contracts |
-| `AgentAdapter` 4-channel interface, token telemetry on `aiRuntimeStats` | **Added** (S5 minimal) |
-| 5 dimension plugins + 8-test smoke suite | **Added** (S6 minimal) |
-
-See `docs/ai-research/refactor-plan.md` for the complete phase log + decision matrix.
 
 ## Layout
 
 ```
-src/
-├── app/                 SimulationClock, rng, runOutcome, longRunTelemetry, aiRuntimeStats, warnings, math
-├── benchmark/
-│   ├── framework/       SimHarness, ScoringEngine (Bayesian), ProbeCollector, DecisionTracer, ScenarioSampler, CrisisInjector
-│   └── dimensions/      RAE, GroupDynamics, MemoryDegradation, DTE, HierarchicalCoordination
-├── config/              constants (SYSTEM_ORDER), balance.js (neutralized), aiConfig.js, longRunProfile.js
-├── data/prompts/        4 LLM channel prompt files (the action-space contract)
-├── entities/            EntityFactory (initial state)
+project_utopia/
+├── app/                     rng (PCG64), math_utils, types, ai_runtime_stats, services, sim_clock, id, telemetry
+├── world/                   grid (numpy uint8), scenarios (6 blueprints), weather, events
 ├── simulation/
-│   ├── ai/{brains,colony,director,strategic,memory,llm}/
-│   ├── construction/    ConstructionSystem, BuildSystem, BuildAdvisor
-│   ├── economy/         ResourceSystem, LogisticsSystem, WarehouseQueue, TileStateSystem
-│   ├── lifecycle/       MortalitySystem, TileMutationHooks
-│   ├── meta/            ColonyDirectorSystem, DevIndexSystem, GameEventBus, RaidEscalatorSystem, EventDirectorSystem
-│   ├── movement/        BoidsSystem, SpatialHash
-│   ├── navigation/      AStar, Navigation, PathCache, PathWorkerPool, RoadNetwork, Faction
-│   ├── npc/             WorkerAISystem, VisitorAISystem, fsm/* (priority FSM)
-│   ├── population/      PopulationGrowthSystem, RoleAssignmentSystem
-│   ├── services/        ReachabilityCache, PathFailBlacklist
-│   ├── telemetry/       EconomyTelemetry
-│   └── world/           VisibilitySystem
-└── world/
-    ├── grid/            Grid (6 templates), pickBootSeed
-    ├── scenarios/       ScenarioFactory (runtime helpers; story bundles deferred-deletable)
-    ├── weather/         WeatherSystem
-    └── events/          WorldEventSystem
+│   ├── ai/
+│   │   ├── director/        environment-director system
+│   │   ├── brains/          npc-policy system
+│   │   ├── strategic/       strategic-plan system + decision scheduler
+│   │   ├── colony/          colony-agent system (Perceive→Plan→Ground→Execute→Evaluate→Reflect)
+│   │   ├── llm/             AgentAdapter contract + 5 adapter impls + Guardrails + ResponseSchema + PromptPayload
+│   │   └── memory/          MemoryStore (importance-aware eviction), MemoryObserver, WorldSummary
+│   ├── navigation/          a_star, path_cache, faction, road_network, navigation_system, path_worker_pool
+│   ├── movement/            boids_system, spatial_hash
+│   ├── npc/                 worker_states (FSM), worker_ai_system, role_assignment_system
+│   ├── economy/             resource_system, tile_state_system, logistics_system
+│   ├── lifecycle/           mortality_system, tile_mutation_hooks
+│   ├── meta/                colony_director_system (D5 gate), event_director_system, game_event_bus, progression_helper
+│   ├── population/          population_growth_system, population_stats_system
+│   ├── services/            path_fail_blacklist, reachability_cache, system_registry
+│   ├── telemetry/           economy_telemetry
+│   └── construction/        build_system, plan_executor, construction_system, construction_sites, build_advisor
+├── entities/                entity_factory (Worker / Visitor / Animal dataclasses)
+├── benchmark/
+│   ├── framework/           SimHarness, SeedMatrix, ScoringEngine, DimensionNormalizer, PVB, ProbeCollector, DecisionTracer, ScenarioSampler, CrisisInjector
+│   ├── dimensions/          5 plugins (RAE / GroupDynamics / MemoryDegradation / DTE / HierarchicalCoordination)
+│   ├── baselines/           FlatBaselineAdapter, MultiBackendAdapter, ScriptedOraclePolicy (6 scenarios)
+│   └── anchors/             AnchorInjector (E5)
+├── config/                  constants (SYSTEM_ORDER), balance, ai_config, long_run_profile
+├── data/prompts/            4 verbatim LLM channel prompts
+├── cli/                     Typer CLI (project-utopia run)
+└── tools/audit/             determinism_check, rng_coverage_report
 
-tools/audit/             rng-coverage-report.js, determinism-check.js
-scripts/                 bench-perf, logic-baseline, long-horizon-{bench,helpers,matrix}, env-loader
-server/                  ai-proxy.js (OpenAI-compatible)
-test/                    89 files, ~684 tests
-docs/ai-research/        benchmark_proposal.md, refactor-plan.md, determinism-report.md
+tests/                       621 tests across 59 files, ~5 s wall (pytest)
+tools/audit/                 generate_figures (matplotlib), validate_croissant, js_vs_py_correlation (historical)
+metadata/                    croissant.json (NeurIPS D&B 1.0)
+docs/ai-research/            paper source (LaTeX), framework, design-audit, conventions, surveys
+```
+
+## Citation
+
+```
+@misc{ProjectUtopia2026,
+  title  = {Project-Utopia: A Tool-Grounded Multi-Channel Benchmark for LLM Hierarchical Decision-Making, Stale-Coherence Memory Failures, and Cross-Vendor Channel Routing},
+  author = {Anonymous Authors},
+  year   = {2026},
+  note   = {NeurIPS 2026 Datasets and Benchmarks Track submission}
+}
 ```
 
 ## License
 
-See repository root.
+Apache 2.0 / MIT. See `LICENSE`.
