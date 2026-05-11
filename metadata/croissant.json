@@ -1,0 +1,257 @@
+{
+  "@context": {
+    "@language": "en",
+    "@vocab": "https://schema.org/",
+    "sc": "https://schema.org/",
+    "cr": "http://mlcommons.org/croissant/",
+    "rai": "http://mlcommons.org/croissant/RAI/",
+    "dct": "http://purl.org/dc/terms/",
+    "citeAs": "cr:citeAs",
+    "column": "cr:column",
+    "conformsTo": "dct:conformsTo",
+    "data": {
+      "@id": "cr:data",
+      "@type": "@json"
+    },
+    "dataType": {
+      "@id": "cr:dataType",
+      "@type": "@vocab"
+    },
+    "examples": {
+      "@id": "cr:examples",
+      "@type": "@json"
+    },
+    "extract": "cr:extract",
+    "field": "cr:field",
+    "fileProperty": "cr:fileProperty",
+    "fileObject": "cr:fileObject",
+    "fileSet": "cr:fileSet",
+    "format": "cr:format",
+    "includes": "cr:includes",
+    "isLiveDataset": "cr:isLiveDataset",
+    "jsonPath": "cr:jsonPath",
+    "key": "cr:key",
+    "md5": "cr:md5",
+    "parentField": "cr:parentField",
+    "path": "cr:path",
+    "recordSet": "cr:recordSet",
+    "references": "cr:references",
+    "regex": "cr:regex",
+    "repeated": "cr:repeated",
+    "replace": "cr:replace",
+    "separator": "cr:separator",
+    "source": "cr:source",
+    "subField": "cr:subField",
+    "transform": "cr:transform",
+    "enumerations": "cr:enumerations"
+  },
+  "@type": "sc:Dataset",
+  "@id": "project-utopia",
+  "conformsTo": "http://mlcommons.org/croissant/1.0",
+  "name": "Project-Utopia",
+  "description": "Tool-grounded multi-channel benchmark for LLM hierarchical decision-making, stale-coherence memory failures, and cross-vendor channel routing. Released as a deterministic simulator + 6 procedurally-generated scenarios + 4 verbatim LLM prompts + scoring code.",
+  "url": "https://github.com/DaizeDong/Project-Utopia",
+  "comment": "Repository URL anonymized for double-blind review; replace post-acceptance.",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "version": "0.11.0-py-rc1",
+  "datePublished": "2026-05-10",
+  "citeAs": "@inproceedings{projectutopia2026, title={Project-Utopia: A Tool-Grounded Multi-Channel Benchmark for LLM Hierarchical Decision-Making}, author={Anonymous Authors}, booktitle={NeurIPS Datasets and Benchmarks Track}, year={2026}}",
+  "keywords": [
+    "LLM benchmark",
+    "long-horizon planning",
+    "tool use",
+    "multi-channel agent",
+    "deterministic simulation",
+    "reproducibility",
+    "schema-validated actions"
+  ],
+  "creator": [
+    {
+      "@type": "sc:Person",
+      "name": "Anonymous Author",
+      "description": "Anonymized for double-blind submission."
+    },
+    {
+      "@type": "sc:Organization",
+      "name": "Anonymous Institution",
+      "description": "Anonymized for double-blind submission."
+    }
+  ],
+  "distribution": [
+    {
+      "@type": "cr:FileObject",
+      "@id": "github-tarball",
+      "name": "github-tarball",
+      "description": "GitHub source tarball at tag v0.11.0-rc2 (anonymized for review).",
+      "contentUrl": "https://github.com/DaizeDong/Project-Utopia/archive/refs/tags/v0.11.0-rc2.tar.gz",
+      "encodingFormat": "application/gzip",
+      "sha256": "placeholder-sha256-set-at-release-tag"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "pypi-package",
+      "name": "pypi-package",
+      "description": "PyPI wheel distribution of the Python port (0.11.0-py-rc1).",
+      "contentUrl": "https://pypi.org/project/project-utopia/0.11.0rc1/",
+      "encodingFormat": "application/zip",
+      "sha256": "placeholder-sha256-set-at-release-tag"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "determinism-tier3-manifest",
+      "name": "determinism-tier3-manifest",
+      "description": "Tier-3 (7200-tick) deterministic state-hash manifest for scenario=temperate_plains; verifies bit-identical reproduction in the Node.js implementation.",
+      "contentUrl": "output/determinism-tier3-temperate_plains.json",
+      "encodingFormat": "application/json"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "prompt-environment-director",
+      "name": "prompt-environment-director",
+      "description": "Verbatim system prompt for the environment-director channel (weather, events, faction tension).",
+      "contentUrl": "src/data/prompts/environment-director.md",
+      "encodingFormat": "text/markdown"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "prompt-npc-brain",
+      "name": "prompt-npc-brain",
+      "description": "Verbatim system prompt for the npc-policy channel (group intent weights + target priorities).",
+      "contentUrl": "src/data/prompts/npc-brain.md",
+      "encodingFormat": "text/markdown"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "prompt-npc-colony-planner",
+      "name": "prompt-npc-colony-planner",
+      "description": "Verbatim system prompt for the colony-agent channel (Perceive-Plan-Ground-Execute-Evaluate-Reflect).",
+      "contentUrl": "src/data/prompts/npc-colony-planner.md",
+      "encodingFormat": "text/markdown"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "prompt-strategic-director",
+      "name": "prompt-strategic-director",
+      "description": "Verbatim system prompt for the strategic-plan channel (colony long-horizon goals).",
+      "contentUrl": "src/data/prompts/strategic-director.md",
+      "encodingFormat": "text/markdown"
+    },
+    {
+      "@type": "cr:FileObject",
+      "@id": "scenario-blueprints",
+      "name": "scenario-blueprints",
+      "description": "Procedural blueprint generator covering the 6 scenarios: temperate_plains, fortified_basin, fragile_coast, arid_canyon, alpine_pass, river_delta.",
+      "contentUrl": "src/world/scenarios/ScenarioFactory.js",
+      "encodingFormat": "application/javascript"
+    }
+  ],
+  "recordSet": [
+    {
+      "@type": "cr:RecordSet",
+      "@id": "BenchmarkRows",
+      "name": "BenchmarkRows",
+      "description": "Per-(cell, scenario, seed, dim) row in the NDJSON output emitted by scripts/benchmark-paper.mjs (Node) or `project-utopia run` (Python). Each row records one dimension score for one experiment cell.",
+      "field": [
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/experiment",
+          "name": "experiment",
+          "description": "Experiment identifier (E1=control, E2=memory ablation, etc.).",
+          "dataType": "sc:Text"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/cellId",
+          "name": "cellId",
+          "description": "9-cell cross-vendor routing matrix cell ID (e.g. FB=Fallback-Baseline, SS=Single-Snapshot, LC=LayerCast).",
+          "dataType": "sc:Text"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/scenario",
+          "name": "scenario",
+          "description": "One of the 6 scenario blueprints used for procedural map generation.",
+          "dataType": "sc:Text"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/seed",
+          "name": "seed",
+          "description": "Seeded RNG value (often a hex literal like 0xC0FFEE = 12648430).",
+          "dataType": "sc:Integer"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/dim",
+          "name": "dim",
+          "description": "Dimension key; one of the 19 normalizer-registered keys across the 5 dimension plugins.",
+          "dataType": "sc:Text",
+          "enumerations": [
+            "rae_composite",
+            "rae_sufficiency",
+            "rae_distribution_gini",
+            "rae_idle_capacity",
+            "rae_path_overhead",
+            "intent_entropy",
+            "coalition_coupling",
+            "state_target_obedience",
+            "faction_responsiveness",
+            "anchored_fact_recall",
+            "action_grounded_recall",
+            "behavioral_drift",
+            "performance_at_t",
+            "dte_per_completion_token",
+            "dte_per_decision",
+            "first_token_latency_p50",
+            "plan_policy_alignment",
+            "env_threat_responsiveness",
+            "colony_cadence_health"
+          ]
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/raw",
+          "name": "raw",
+          "description": "Raw plugin-emitted score (native units; may be cost-form, symmetric, or unbounded depending on dim).",
+          "dataType": "sc:Float"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/normalized",
+          "name": "normalized",
+          "description": "DimensionNormalizer output in [0,1] benefit-form (higher = better).",
+          "dataType": "sc:Float"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/sandwichNorm",
+          "name": "sandwichNorm",
+          "description": "MeltingPot-style sandwich-normalized score: (agent - fallback) / (oracle - fallback), where fallback is FlatBaselineAdapter and oracle is ScriptedOraclePolicy.",
+          "dataType": "sc:Float"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/bayesianMean",
+          "name": "bayesianMean",
+          "description": "Beta-Binomial posterior mean from ScoringEngine; bounded to [0,1].",
+          "dataType": "sc:Float"
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/bayesianCi95",
+          "name": "bayesianCi95",
+          "description": "Bayesian 95% credible interval bounds (2-element array: [lower, upper]).",
+          "dataType": "sc:Float",
+          "repeated": true
+        },
+        {
+          "@type": "cr:Field",
+          "@id": "BenchmarkRows/agentId",
+          "name": "agentId",
+          "description": "AgentAdapter implementation identifier (e.g. MultiBackendAdapter, FlatBaselineAdapter, LayerCastAdapter, NoopAgentAdapter).",
+          "dataType": "sc:Text"
+        }
+      ]
+    }
+  ]
+}
