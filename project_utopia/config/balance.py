@@ -36,8 +36,6 @@ from .constants import WEATHER
 
 __all__ = [
     "BALANCE",
-    "BUILD_COST_ESCALATOR",
-    "CONSTRUCTION_BALANCE",
     "INITIAL_POPULATION",
     "INITIAL_RESOURCES",
     "WEATHER_MODIFIERS",
@@ -47,40 +45,10 @@ __all__ = [
 # ── Build cost tables ────────────────────────────────────────────────
 # NOTE: The canonical per-tool build cost table lives in
 # ``project_utopia/simulation/construction/build_advisor.py``. The
-# ``balance.BUILD_COST`` mirror was removed in Round 3 — it had zero
-# non-test consumers and diverged from the build_advisor truth.
-
-
-def _esc(soft: int, per: float, cap: float, beyond: float) -> MappingProxyType[str, float]:
-    return MappingProxyType(
-        {
-            "softTarget": float(soft),
-            "perExtra": per,
-            "cap": cap,
-            "perExtraBeyondCap": beyond,
-        }
-    )
-
-
-BUILD_COST_ESCALATOR: MappingProxyType[str, MappingProxyType[str, float]] = MappingProxyType(
-    {
-        "warehouse": _esc(2, 0.3, 2.5, 0.25),
-        "wall": _esc(8, 0.1, 2.0, 0.18),
-        "farm": _esc(5, 0.1, 1.8, 0.05),
-        "lumber": _esc(3, 0.1, 1.8, 0.05),
-        "quarry": _esc(3, 0.15, 1.8, 0.05),
-    }
-)
-
-
-CONSTRUCTION_BALANCE: MappingProxyType[str, float] = MappingProxyType(
-    {
-        "salvageRefundRatio": 0.5,
-        "worksiteAccessRadius": 2.0,
-        "warehouseRoadRadius": 1.0,
-        "warehouseSpacingRadius": 5.0,
-    }
-)
+# ``balance.BUILD_COST`` mirror was removed in Round 3, the
+# ``BUILD_COST_ESCALATOR`` doc-mirror and the ``CONSTRUCTION_BALANCE``
+# salvage/worksite/warehouse-radius dict were removed in Round 4 — all
+# had zero non-test consumers and diverged from runtime truth.
 
 
 # ── Starting state ───────────────────────────────────────────────────

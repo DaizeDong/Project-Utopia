@@ -39,7 +39,7 @@ from .seed_matrix import (
     run_seed_matrix,
     write_ndjson,
 )
-from .sim_harness import DT_SEC, SYSTEM_ORDER, SimHarness
+from .sim_harness import DT_SEC, SimHarness
 
 __all__ = [
     "CRISIS_TYPES",
@@ -53,7 +53,6 @@ __all__ = [
     "PROBES",
     "PVBTracker",
     "SCENARIO_SPACE",
-    "SYSTEM_ORDER",
     "SimHarness",
     "aggregate_per_seed_then_average",
     "bayes_factor",

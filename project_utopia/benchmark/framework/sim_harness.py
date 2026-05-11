@@ -4,8 +4,10 @@ The JS SimHarness instantiates ~17 sim systems in a fixed order. Most of
 those systems belong to other subagents in the Phase-2 migration; rather
 than block on their completion, the Python port exposes:
 
-* ``DT_SEC`` and the system-order constant ``SYSTEM_ORDER`` so callers can
-  reason about tick cadence and ordering.
+* ``DT_SEC`` so callers can reason about tick cadence. The canonical
+  ``SYSTEM_ORDER`` tuple lives in
+  :mod:`project_utopia.config.constants` — SimHarness itself wires
+  systems through :class:`SystemRegistry` rather than reading the tuple.
 * A ``SimHarness`` class with the same public surface as JS — ``state``,
   ``services``, ``memory_store``, ``alive_workers``, ``snapshot``,
   ``tick``, ``advance_to``, ``advance_ticks`` — and a
@@ -61,33 +63,15 @@ except Exception:  # pragma: no cover - entity factory may not be present
     EntityFactory = None  # type: ignore[assignment]
 
 
-__all__ = ["DT_SEC", "SYSTEM_ORDER", "SimHarness", "round_to"]
+__all__ = ["DT_SEC", "SimHarness", "round_to"]
 
 
 DT_SEC: float = 1 / 30
 
 
-# Canonical 17-system order from JS SimHarness.buildDefaultSystems(). Kept as
-# a tuple for inspection — the Python harness only ships the first 2
-# defaults inline; the rest are placeholders that future subagents fill in.
-SYSTEM_ORDER: tuple[str, ...] = (
-    "SimulationClock",
-    "RoleAssignmentSystem",
-    "PopulationGrowthSystem",
-    "StrategicDirector",
-    "EnvironmentDirectorSystem",
-    "WeatherSystem",
-    "WorldEventSystem",
-    "TileStateSystem",
-    "NPCBrainSystem",
-    "WorkerAISystem",
-    "ConstructionSystem",
-    "VisitorAISystem",
-    "MortalitySystem",
-    "BoidsSystem",
-    "ResourceSystem",
-    "ColonyDirectorSystem",
-)
+# Round 4: the local ``SYSTEM_ORDER`` tuple (a documentation-only mirror
+# of the JS buildDefaultSystems() list) was removed. The canonical tick
+# order now lives only in ``project_utopia.config.constants.SYSTEM_ORDER``.
 
 
 # ---------------------------------------------------------------------------

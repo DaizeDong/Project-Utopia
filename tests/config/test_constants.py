@@ -84,7 +84,6 @@ class TestEnumTables:
             "NODE_FLAGS",
             "DEFAULT_GRID",
             "TILE_INFO",
-            "WORKER_DEFAULTS",
         ],
     )
     def test_is_mapping_proxy(self, table: str) -> None:

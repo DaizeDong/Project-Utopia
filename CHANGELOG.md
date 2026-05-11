@@ -1,5 +1,24 @@
 # Changelog
 
+## [Unreleased] — refactor/academic-benchmark — Round 4 simplification
+
+### Round 4 simplification (2026-05-10)
+- **Cut 1 — `BUILD_COST_ESCALATOR` deleted**: removed the 5-building escalator mirror (warehouse/wall/farm/lumber/quarry × softTarget/perExtra/cap/perExtraBeyondCap) plus the `_esc` helper from `project_utopia/config/balance.py` (+ `__all__` entry). Audit showed zero readers in `project_utopia/` or `tests/`; only `CHANGELOG.md` historical mentions and the doc itself. Pure doc-mirror with no runtime path.
+- **Cut 2 — `CONSTRUCTION_BALANCE` deleted**: removed the whole 4-key dict (`salvageRefundRatio`, `worksiteAccessRadius`, `warehouseRoadRadius`, `warehouseSpacingRadius`) from `project_utopia/config/balance.py` (+ `__all__` entry). Zero non-doc readers; the corresponding runtime logic in `simulation/construction/*` uses inline literals or doesn't exist in the Python port.
+- **Cut 3 — `WORKER_DEFAULTS` deleted**: removed the 4-key default mapping (`carryCapacity`, `moveSpeed`, `hungerStart`, `maxHp`) from `project_utopia/config/constants.py` (+ `__all__` entry). Audit confirmed `EntityFactory.create_worker` does not read it — `Worker` dataclass uses inline field defaults (`max_hp: float = 100.0`, etc.). The single test reference (parametrize case in `tests/config/test_constants.py::TestEnumTables::test_is_mapping_proxy`) was dropped (615 tests; was 616).
+- **Cut 4 — local `SYSTEM_ORDER` in `sim_harness.py` deleted**: the 16-string documentation-only tuple (divergent from the canonical 13-entry tuple in `project_utopia/config/constants.py`) was removed along with the `SYSTEM_ORDER` re-export from `project_utopia/benchmark/framework/__init__.py` and the entry in `sim_harness.__all__`. SimHarness wires systems through `SystemRegistry`, not by reading the tuple. No tests imported `SYSTEM_ORDER` from `benchmark.framework`.
+- **Cut 5 — docs archive**: moved `docs/superpowers/plans/2026-04-30-fsm-rewrite-retrospective.md` and `docs/superpowers/plans/2026-04-30-worker-fsm-rewrite-plan.md` to `docs/_archive/superpowers/` (preserving history via `git mv`). Both are v0.10 JS-era FSM rewrite plans referring to `src/...` paths that no longer exist; they retain historical value but are not part of the Python architecture. The now-empty `docs/superpowers/plans/` + `docs/superpowers/` directories were removed. `docs/benchmarks/` does not exist in this tree (CLAUDE.md note was stale).
+- **Cut 6 — `progression_helper.py` audit (no change)**: confirmed `is_recovery_essential` has 2 live callers (`simulation/meta/colony_director_system.py:123`, `simulation/lifecycle/mortality_system.py:188`). File retained as-is.
+- **Cut 7 — `docs/systems/` audit (no change)**: all 6 system docs mix references to live systems (Worker FSM, economy, grid, mortality, boids, logistics) with deleted ones (Visibility, Wildlife, Processing, Progression). Per scope: leave alone — semantic cleanup of intra-doc references is out of round 4.
+- **Cut 8 — LLM prompts final scan (no change)**: re-ran the regex hunt for removed enum/state/role/tile names across `project_utopia/data/prompts/*.txt`. Only matches were `IDLE` (still a live `WorkerState`), `HAUL` (still a live ROLE), `STONE/FARM/WOOD/GUARD/BUILD` (live ROLE set), and `construction`/`extraction` (legitimate strategy vocabulary). No residue.
+
+### Verified
+- `pytest tests/ -q` — **615 pass / 0 fail** (was 616; one parametrized `WORKER_DEFAULTS` case removed per Cut 3).
+- `python -m project_utopia.tools.audit.determinism_check --tier 1 --ticks 30 --seed 0xC0FFEE` — Tier 1 hash `be19781c…` PASS (unchanged).
+- Default-ticks tiers: Tier 1 `4f5d4d22…`, Tier 2 `f7a099a4…`, Tier 3 `43cb6aec…` — all PASS, all bit-identical to pre-Round-4 baseline.
+- `python -m project_utopia.cli.benchmark_paper run --experiment E1 --scenarios temperate_plains --seeds 0xC0FFEE --cells FB --duration-sec 5 --out /tmp/r4-smoke.ndjson` — clean run, NDJSON written.
+- No paper updates needed — all documented hashes preserved.
+
 ## [Unreleased] — refactor/academic-benchmark — Round 3 simplification
 
 ### Round 3 simplification (2026-05-10)

@@ -34,7 +34,6 @@ __all__ = [
     "TILE_INFO",
     "VISITOR_KIND",
     "WEATHER",
-    "WORKER_DEFAULTS",
     "_test_set_feature_flag",
 ]
 
@@ -234,11 +233,8 @@ def _test_set_feature_flag(name: str, value: bool) -> None:
 RESOURCE_TYPES: tuple[str, ...] = ("food", "wood", "stone")
 
 
-WORKER_DEFAULTS: MappingProxyType[str, object] = MappingProxyType(
-    {
-        "carryCapacity": 8,
-        "moveSpeed": 1.0,
-        "hungerStart": 1.0,
-        "maxHp": 100,
-    }
-)
+# NOTE: A ``WORKER_DEFAULTS`` mapping (carryCapacity/moveSpeed/
+# hungerStart/maxHp) lived here through Round 3 as a doc-mirror of the
+# JS source. It was removed in Round 4 — no production code consumed
+# it; entity defaults are encoded as dataclass field defaults on
+# ``Worker`` / ``Visitor`` / ``Animal`` in ``entities/entity_factory.py``.
