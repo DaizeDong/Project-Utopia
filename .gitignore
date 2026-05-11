@@ -25,3 +25,21 @@ snapshot-*.md
 /*.png
 /*.jpeg
 /*.jpg
+
+# Python artifacts (python-migration branch)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
