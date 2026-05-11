@@ -33,7 +33,7 @@ project-utopia-determinism --tier 1  # Tier-1 hash check
 The paper documents a single Python implementation:
 **`project-utopia`** (~5,500 LOC, 621 tests) — PyPI package on
 branch `refactor/academic-benchmark-py-rc1`; Tier-1 hash
-`e006ea96…` for 30 ticks @ seed `0xC0FFEE`. PCG64 RNG backend
+`be19781c…` for 30 ticks @ seed `0xC0FFEE`. PCG64 RNG backend
 with sorted-key JSON serialization gives bit-identical
 reproduction within a fixed Python version. See
 `sections/08-reproducibility.tex` for the full Three-Tier

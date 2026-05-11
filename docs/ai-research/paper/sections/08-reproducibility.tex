@@ -16,9 +16,9 @@ Runs in deterministic fallback mode (no LLM in the loop)
 produce \emph{bit-identical SHA-256 hashes} across multiple
 runs of the same seed and scenario. We verify this at three
 sub-tiers:
-30 ticks (hash \texttt{e006ea96\ldots}, $\sim$1\,s wall),
-1\,800 ticks (\texttt{e99d4fcb\ldots}, $\sim$60\,s wall), and
-7\,200 ticks (\texttt{87ecd82b\ldots}, $\sim$4\,m wall).
+30 ticks (hash \texttt{be19781c\ldots}, $\sim$1\,s wall),
+1\,800 ticks (\texttt{f7a099a4\ldots}, $\sim$60\,s wall), and
+7\,200 ticks (\texttt{43cb6aec\ldots}, $\sim$4\,m wall).
 Re-running \verb|project-utopia-determinism --tier 1| in our
 released container reproduces all three hashes
 (at seed \texttt{0xC0FFEE}, scenario
