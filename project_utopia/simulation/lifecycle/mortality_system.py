@@ -22,7 +22,6 @@ from __future__ import annotations
 from typing import Any
 
 from project_utopia.simulation.meta.game_event_bus import EVENT_TYPES, emit_event
-from project_utopia.simulation.meta.progression_helper import is_recovery_essential
 
 __all__ = [
     "MortalitySystem",
@@ -180,9 +179,3 @@ class MortalitySystem:
                         "atSec": now_sec,
                     },
                 )
-
-        # Re-export `is_recovery_essential` indirectly: ColonyDirector
-        # imports it, MortalitySystem doesn't need it but the migration
-        # brief mentions wiring the shared module here. Touch a no-op
-        # reference so the import is preserved.
-        _ = is_recovery_essential
