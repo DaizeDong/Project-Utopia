@@ -1,0 +1,240 @@
+\section{Datasheet for Datasets}
+\label{app:datasheet}
+
+This appendix follows the Datasheets for Datasets template
+of~\citet{Gebru2018Datasheets}. Project-Utopia is not a static
+text/image corpus: the released artifact is a \emph{deterministic
+simulator plus six procedurally generated scenarios plus four
+verbatim LLM prompts}. Instances are \texttt{(seed, scenario, tick)}
+trajectories generated on demand, not pre-materialized rows. We
+answer the Gebru template questions under that framing.
+
+\subsection{Motivation}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{For what purpose was the dataset created?}
+To evaluate LLM long-horizon hierarchical decision-making and
+multi-resource allocation across a fixed 4-channel schema-validated
+tool surface. Existing benchmarks evaluate single agents picking
+single tools (AgentBench, GAIA, ToolLLM) or flat MARL on stateless
+games (MeltingPot, Crafter, BALROG); the orchestration-of-fixed-tools
+regime that dominates production agent systems is under-evaluated.
+\item \textbf{Who created the dataset and on behalf of which
+entity?}
+Daize Dong, as an independent academic submission. No corporate or
+institutional sponsorship. Affiliation pending.
+\item \textbf{Who funded the dataset's creation?}
+Self-funded. All LLM API costs for the 9-experiment matrix
+($\sim$2\,250 runs) were paid out of pocket. No grant identifiers.
+\item \textbf{Any other comments?}
+The benchmark is forked from a public v0.10.0 colony-simulation
+game ($\sim$78\,k LOC player-facing surface), stripped across six
+refactor stages (S1--S6) to a headless deterministic harness. The
+original game code is MIT-licensed and authored by the same
+individual; no third-party code with incompatible licenses was
+incorporated.
+\end{itemize}
+
+\subsection{Composition}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{What do the instances represent?}
+Each instance is a simulator trajectory parameterized by
+\texttt{(seed, scenario, tick-budget, adapter)}. A trajectory is
+the deterministic sequence of states the substrate produces when
+ticked under a specific LLM adapter responding to the four channel
+prompts. Trajectories are generated on demand, not stored.
+\item \textbf{How many instances are there in total?}
+Unbounded by construction: 6 scenarios $\times$ $2^{32}$ seeds
+$\times$ arbitrary tick budgets. The paper-run matrix
+materializes $\sim$2\,250 trajectories (9 experiments
+$\times$ 5--10 seeds $\times$ 5 scenarios) on demand from the
+released CLI.
+\item \textbf{What does the released artifact contain?}
+(1) Four verbatim system prompts in \texttt{src/data/prompts/}
+defining the LLM contract surface;
+(2) six hand-tuned scenario blueprints (\S\ref{app:scenarios});
+(3) the deterministic simulator core
+($\sim$55\,k LOC Node.js, $\sim$5\,500 LOC Python);
+(4) the scoring pipeline (5 dimension plugins + ScoringEngine +
+DimensionNormalizer);
+(5) two reference adapters (\texttt{ScriptedOraclePolicy},
+\texttt{FlatBaselineAdapter}) bracketing the sandwich-norm;
+(6) the determinism manifest hashing every Tier-1 state
+slice (Appendix~\ref{app:determinism-report});
+(7) the NDJSON paper-run output schema (one row per
+\texttt{(seed, scenario, tick-window)}) with pydantic validation;
+(8) a Docker image pinned to commit
+\texttt{fe55b82}.
+\item \textbf{Is any information missing from individual
+instances?}
+No. Each NDJSON row is fully self-describing: schema version,
+seed, scenario, tick window, dimension scores, dimension
+inputs, adapter ID, and proxy / LLM snapshot ID (if applicable).
+\item \textbf{Are there recommended data splits?}
+The 9 experiments (E1--E9) define the evaluation cells; within
+each, seeds 0--9 are the canonical splits. Held-out seeds 10--19
+are reserved for replication and not used in any reported
+finding.
+\item \textbf{Are there any errors, sources of noise, or
+redundancies?}
+The substrate is deterministic: any seed produces a single
+trajectory bit-identically (Tier 1; \S\ref{sec:reproducibility}).
+The only stochasticity above the substrate is the LLM itself; we
+isolate this via the three-tier model. No deduplication is
+required.
+\item \textbf{Does it contain confidential, sensitive, or
+personal data?}
+No. The benchmark contains no human-subject data, no scraped
+web content, no PII, and no copyrighted material beyond
+self-authored code.
+\end{itemize}
+
+\subsection{Collection Process}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{How was the data acquired?}
+Nothing was scraped or licensed. Scenarios were hand-designed
+to span a (resource-scarcity $\times$ threat-profile $\times$
+terrain-difficulty) coverage matrix; each was independently
+validated for guard-idempotency
+(\S\ref{app:scenarios}). The four prompts were iteratively
+refined across the S1--S6 academic refactor stages, with each
+revision logged in
+\texttt{docs/ai-research/refactor-plan.md}. The final
+prompts are released verbatim with the simulator.
+\item \textbf{Who was involved in data collection?}
+The single author. No crowdworkers, no external annotators,
+no human subjects.
+\item \textbf{Over what timeframe was the data collected?}
+The scenario blueprints and prompts were authored between
+2025-12 and 2026-04. The deterministic substrate was forked
+from the v0.10.0 game (tag \texttt{pre-academic-refactor-v0.10.0},
+commit \texttt{16a593d}).
+\item \textbf{Were any ethical review processes conducted?}
+No IRB review was required: no human subjects, no
+behavioral data, no PII.
+\item \textbf{Was consent obtained?}
+N/A (no data collected from people).
+\end{itemize}
+
+\subsection{Preprocessing, Cleaning, and Labeling}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Was any preprocessing done?}
+None for prompts or scenarios (released verbatim from their
+authoring repo). On the output side, every NDJSON row is
+validated against a pydantic schema and every numeric
+directive emitted by an LLM is clamped through
+\texttt{Guardrails.js} / \texttt{guardrails.py} before being
+forwarded to the substrate (weights $\in [0,3]$, risk $\in
+[0,1]$, TTL $\in$ [8\,h, 24\,h]; full table in
+Appendix~\ref{app:prompts}).
+\item \textbf{Was the raw data saved?}
+Yes. The unguarded LLM response (verbatim JSON text and
+guard-clamping deltas) is preserved per row in
+\texttt{response\_raw} alongside the validated
+\texttt{response\_clamped}, enabling ex-post analysis of
+schema-violation patterns.
+\item \textbf{Is the preprocessing software available?}
+Yes: pydantic schema, JSON-Schema definition
+(\texttt{src/simulation/ai/llm/ResponseSchema.js}),
+\texttt{Guardrails.js}, and the 5-dimension plugin code are all
+in the release tree under Apache 2.0 / MIT.
+\end{itemize}
+
+\subsection{Uses}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Has the dataset been used for any tasks already?}
+The 9-experiment paper-run matrix in this submission
+(\S\ref{sec:experiments}). No external uses to date.
+\item \textbf{What other tasks could this be used for?}
+Evaluating (i) hierarchical decision-making across a fixed
+tool surface; (ii) cross-vendor channel routing; (iii)
+memory degradation under stale long-horizon context;
+(iv) reproducibility-aware LLM evaluation methodology
+(LayerCast, RecordReplayCache); (v) RLHF / DPO with the
+4-channel directive surface as the action space (future
+work, \S\ref{sec:limitations}).
+\item \textbf{Is there anything that should not be done with
+this dataset?}
+The prompts and scenarios should \textbf{not} be used as
+LLM pre-training or fine-tuning corpora. Doing so would
+contaminate any subsequent capability claim. The
+verbatim-release-as-action-space design assumes the prompts
+remain outside training distributions; we ask downstream
+users to honor this contract.
+The benchmark is also \emph{not} a substitute for:
+single-task tool-call accuracy benchmarks (use AgentBench,
+GAIA, ToolBench); long-context language QA (use LongBench,
+$\infty$Bench); or general-knowledge / reasoning capability
+batteries (use MMLU, GPQA, HumanEval). Project-Utopia tests
+hierarchical decision-making under schema-validated
+long-horizon resource pressure, nothing broader
+(\S\ref{sec:limitations}).
+\item \textbf{Any tasks for which the dataset is unsuitable?}
+Multimodal perception, embodied manipulation, free-form
+linguistic dialogue, and open-world tool discovery are all
+out of scope. The action space is fixed at 4 channels by
+design; benchmarks of tool-\emph{selection} quality should
+look elsewhere.
+\end{itemize}
+
+\subsection{Distribution}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Will the dataset be distributed to third parties?}
+Yes, publicly. The Node.js implementation is on GitHub at
+\texttt{[ANONYMIZED URL]} (de-anonymized to
+\texttt{https://github.com/DaizeDong/Project-Utopia} post-review).
+The Python SDK is on PyPI as \texttt{project-utopia}.
+\item \textbf{How will it be distributed?}
+Git tag \texttt{refactor/academic-benchmark-py-rc1} for the
+Node.js core; \texttt{pip install project-utopia} for the
+Python SDK. A Docker image pinned to commit \texttt{fe55b82}
+is published alongside.
+\item \textbf{When will it be distributed?}
+Pre-print release coincides with paper submission
+(2026-06-07 NeurIPS D\&B deadline). The repository has been
+public throughout the refactor.
+\item \textbf{Under what license?}
+Apache 2.0 for the simulator core and benchmark framework;
+MIT for the prompts and scenario blueprints. All artifacts
+are open and freely re-distributable. No proprietary data,
+no third-party data, no copyright restrictions.
+\item \textbf{Are there fees or access restrictions?}
+None.
+\end{itemize}
+
+\subsection{Maintenance}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Who will support, host, and maintain the dataset?}
+The author, via the GitHub repository above. The Python
+SDK is auto-published from the same source tree on tag.
+\item \textbf{How can the owner be contacted?}
+Via GitHub issues or the email on the de-anonymized
+repository.
+\item \textbf{Is there an erratum?}
+Yes: \texttt{CHANGELOG.md} in the repository root tracks
+every release. Datasheet revisions are stamped under the
+current refactor section heading.
+\item \textbf{Will the dataset be updated?}
+Yes. Versions are pinned via git tags
+(\texttt{refactor/academic-benchmark-py-rc1}, etc.). Reviewers
+who wish to replicate the exact paper-run matrix should
+check out the tagged commit. Subsequent minor releases
+(e.g., scenario additions) will be tagged separately and
+will not retroactively change paper-reported numbers.
+\item \textbf{Will older versions remain available?}
+Yes. Every tagged version remains on GitHub and PyPI
+indefinitely.
+\item \textbf{Can others extend / build on the dataset?}
+Yes. The \texttt{AgentAdapter} contract is the documented
+extension surface for new LLM backends; new scenarios
+plug into \texttt{ScenarioSampler}; new dimensions
+implement the \texttt{DimensionPlugin} protocol. We
+encourage forks and pull requests but do not require
+attribution beyond the license.
+\end{itemize}
