@@ -54,7 +54,7 @@ Rules:
 - `steeringNotes` should be short, concrete, and operational.
 - Adjust intent weights according to legal transition paths:
   - if dominant state indicates hunger, bias toward `seek_food/eat` compatible intents
-  - if dominant state indicates production/harvest, bias toward gather/trade/hunt compatible intents
+  - if dominant state indicates production/harvest, bias toward farm/wood/quarry/trade/hunt compatible intents
   - if dominant state indicates danger (`flee`/`evade`), increase defensive/escape-compatible intents
 - Respect hard gameplay constraints:
   - workers carrying cargo must still be able to deliver

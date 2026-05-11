@@ -7,7 +7,7 @@ Input context includes:
 
 JSON schema:
 {
-  "weather": "clear|rain|storm|drought|winter",
+  "weather": "clear|rain|storm",
   "durationSec": number,
   "factionTension": number,
   "eventSpawns": [

@@ -71,18 +71,19 @@ directives never violate hard physical or accounting invariants.}
 
 \paragraph{Environment-director} (\emph{cadence}: 5--15\,s, throttled by
 \texttt{tuning.environmentDecisionIntervalSec}). Emits directives
---- weather (enum), \texttt{durationSec} (clamped 8--180\,s),
-\texttt{factionTension} ($\in$ [0, 1]), \texttt{eventSpawns} (at most
-3, each with intensity $\geq$ 0.4 and clamped duration) --- that the
-\emph{event scheduler tool} grounds into naturalistic stressors
-(droughts, storms, faction buildups). Functions as the environmental
-state-perturbation tool to which the policy channel must adapt.
+--- weather (enum: \texttt{clear|rain|storm}), \texttt{durationSec}
+(clamped 8--180\,s), \texttt{factionTension} ($\in$ [0, 1]),
+\texttt{eventSpawns} (at most 3, each with intensity $\geq$ 0.4 and
+clamped duration) --- that the \emph{event scheduler tool} grounds
+into naturalistic stressors (storms, faction buildups, raid
+caravans). Functions as the environmental state-perturbation tool
+to which the policy channel must adapt.
 
 \paragraph{NPC-policy} (\emph{cadence}: 5--15\,s, additionally
 gated by threat $\leq 14$ tiles, guard deficit, or active worker
 strikes). Emits per-group policy directives
-$\{\text{groupId}, \text{intentWeights} \in [0,3]^{\sim 10},
-\text{riskTolerance} \in [0,1], \text{targetPriorities} \in [0,3]^{|\mathcal{T}|},
+$\{\text{groupId}, \text{intentWeights} \in [0,3]^{|\mathcal{I}_g|},
+\text{riskTolerance} \in [0,1], \text{targetPriorities} \in [0,3]^{|\mathcal{T}_g|},
 \text{ttlSec} \in [8, 24\,\text{h}]\}$
 that the \emph{group steering (T2) + FSM intent applier (T3) tools}
 then ground: intent weights flow through
@@ -201,10 +202,10 @@ environment-director
 & \{weather: enum, durationSec $\in$ [8,180], factionTension $\in$ [0,1], eventSpawns: $\leq$3\}
 & Event scheduler $\to$ weather \& faction state perturbation \\
 npc-policy
-& \{groupId, intentWeights $\in$ [0,3]$^{10}$, risk $\in$ [0,1], targetPriorities, ttl $\in$ [8h,24h]\}
+& \{groupId, intentWeights $\in$ [0,3]$^{|\mathcal{I}_g|}$, risk $\in$ [0,1], targetPriorities, ttl $\in$ [8h,24h]\}
 & Group steering (Boids) + FSM intent applier + A* target selection \\
 strategic-plan
-& \{primaryGoal: str, constraints: str[], resourceBudget: \{food, wood, stone, herbs\}\}
+& \{primaryGoal: str, constraints: str[], resourceBudget: \{food, wood, stone\}\}
 & Plan-arbitration $\to$ adjusts downstream channel budgets \\
 colony-agent
 & [(action: enum, args: obj, depends\_on: int[])]

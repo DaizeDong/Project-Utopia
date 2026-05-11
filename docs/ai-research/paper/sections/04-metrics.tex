@@ -20,7 +20,7 @@ Win Rate aggregates across dimensions for the cross-model leaderboard.}
 
 \subsection{Layer 1: Per-Tick Dimension Plugins}
 
-Five plugins (\texttt{src/benchmark/dimensions/}) emit a per-cell
+Five plugins (\texttt{project\_utopia/benchmark/dimensions/}) emit a per-cell
 score row of 19 keys:
 
 \paragraph{ResourceAllocationEfficiency} ($N$=5):
@@ -31,12 +31,12 @@ score row of 19 keys:
 \texttt{rae\_composite} is the Crafter geometric mean
 \citep{Hafner2022Crafter} over per-resource sufficiency:
 $$
-S_{\text{RAE}} = \exp\!\Bigg(\frac{1}{4}\sum_{i \in \{f,w,s,h\}}
+S_{\text{RAE}} = \exp\!\Bigg(\frac{1}{3}\sum_{i \in \{f,w,s\}}
 \ln(1 + s_i)\Bigg) - 1, \quad s_i \in [0,1]
 $$
-where $s_f, s_w, s_s, s_h$ are food/wood/stone/herbs per-capita
+where $s_f, s_w, s_s$ are food/wood/stone per-capita
 sufficiencies. Geometric mean punishes single-resource starvation:
-$s_f = 0$ collapses the composite to 0 even if $s_w = s_s = s_h = 1$.
+$s_f = 0$ collapses the composite to 0 even if $s_w = s_s = 1$.
 
 \paragraph{GroupDynamics} ($N$=4): \texttt{intent\_entropy},
 \texttt{coalition\_coupling}, \texttt{state\_target\_obedience},

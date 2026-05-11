@@ -100,7 +100,7 @@
       "@type": "cr:FileObject",
       "@id": "determinism-tier3-manifest",
       "name": "determinism-tier3-manifest",
-      "description": "Tier-3 (7200-tick) deterministic state-hash manifest for scenario=temperate_plains; verifies bit-identical reproduction in the Node.js implementation.",
+      "description": "Tier-3 (7200-tick) deterministic state-hash manifest for scenario=temperate_plains; verifies bit-identical reproduction of the Python harness.",
       "contentUrl": "output/determinism-tier3-temperate_plains.json",
       "encodingFormat": "application/json"
     },
@@ -109,40 +109,40 @@
       "@id": "prompt-environment-director",
       "name": "prompt-environment-director",
       "description": "Verbatim system prompt for the environment-director channel (weather, events, faction tension).",
-      "contentUrl": "src/data/prompts/environment-director.md",
-      "encodingFormat": "text/markdown"
+      "contentUrl": "project_utopia/data/prompts/environment_director.txt",
+      "encodingFormat": "text/plain"
     },
     {
       "@type": "cr:FileObject",
       "@id": "prompt-npc-brain",
       "name": "prompt-npc-brain",
       "description": "Verbatim system prompt for the npc-policy channel (group intent weights + target priorities).",
-      "contentUrl": "src/data/prompts/npc-brain.md",
-      "encodingFormat": "text/markdown"
+      "contentUrl": "project_utopia/data/prompts/npc_policy.txt",
+      "encodingFormat": "text/plain"
     },
     {
       "@type": "cr:FileObject",
       "@id": "prompt-npc-colony-planner",
       "name": "prompt-npc-colony-planner",
       "description": "Verbatim system prompt for the colony-agent channel (Perceive-Plan-Ground-Execute-Evaluate-Reflect).",
-      "contentUrl": "src/data/prompts/npc-colony-planner.md",
-      "encodingFormat": "text/markdown"
+      "contentUrl": "project_utopia/data/prompts/colony_agent.txt",
+      "encodingFormat": "text/plain"
     },
     {
       "@type": "cr:FileObject",
       "@id": "prompt-strategic-director",
       "name": "prompt-strategic-director",
       "description": "Verbatim system prompt for the strategic-plan channel (colony long-horizon goals).",
-      "contentUrl": "src/data/prompts/strategic-director.md",
-      "encodingFormat": "text/markdown"
+      "contentUrl": "project_utopia/data/prompts/strategic_plan.txt",
+      "encodingFormat": "text/plain"
     },
     {
       "@type": "cr:FileObject",
       "@id": "scenario-blueprints",
       "name": "scenario-blueprints",
-      "description": "Procedural blueprint generator covering the 6 scenarios: temperate_plains, fortified_basin, fragile_coast, arid_canyon, alpine_pass, river_delta.",
-      "contentUrl": "src/world/scenarios/ScenarioFactory.js",
-      "encodingFormat": "application/javascript"
+      "description": "Procedural blueprint generator covering the 6 scenarios: temperate_plains, fertile_riverlands, rugged_highlands, coastal_ocean, archipelago_isles, fortified_basin.",
+      "contentUrl": "project_utopia/world/scenarios.py",
+      "encodingFormat": "text/x-python"
     }
   ],
   "recordSet": [

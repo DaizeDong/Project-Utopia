@@ -42,7 +42,7 @@ blueprints (\S\ref{sec:metrics}); all six pass the
       {"group_id": "GUARDS",
        "intent_weights": {"defend": 2.0, "patrol": 1.5, "eat": 0.5},
        "risk_tolerance": 0.3,
-       "target_priorities": {"center": 2.5, "gate": 2.0},
+       "target_priorities": {"safety": 2.5, "choke": 2.0},
        "ttl_sec": 28800},
       # ...
     ],
@@ -50,8 +50,8 @@ blueprints (\S\ref{sec:metrics}); all six pass the
   "strategic": {"primary_goal": "fortify chokepoint, maintain 4 guards"},
   "colony": {"plan": [
     {"action": "build", "args": {"type": "wall", "count": 8}},
-    {"action": "build", "args": {"type": "gate", "count": 1}},
-    {"action": "build", "args": {"type": "smithy", "count": 1}},
+    {"action": "build", "args": {"type": "warehouse", "count": 1}},
+    {"action": "build", "args": {"type": "quarry", "count": 1}},
   ]},
 }
 \end{lstlisting}

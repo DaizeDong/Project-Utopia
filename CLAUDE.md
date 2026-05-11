@@ -90,7 +90,7 @@ Companion docs:
 - Frozen config: `dataclass(frozen=True, slots=True)` for value types; `types.MappingProxyType` for read-only mappings.
 - Sorted dict iteration where order matters for hash/state.
 - Manhattan distance for tile adjacency.
-- Worker carry: `{ food, wood, stone, herbs }` (4-tuple resource space).
+- Worker carry: `{ food, wood, stone }` (3-tuple resource space; herbs dropped in Round-1 simplification 2026-05-10).
 - Schema versioning: `SCHEMA_VERSION = "1.0"` in `agent_adapter.py`.
 - Every commit pairs with a `CHANGELOG.md` entry under the current phase section.
 
@@ -100,3 +100,4 @@ Companion docs:
 - `project_utopia/simulation/meta/progression_helper.py` — only `is_recovery_essential` is live; the JS-side `ProgressionSystem.js` (920 LOC) was dropped during the port.
 - `tools/audit/js_vs_py_correlation.py` is historical — kept as evidence of the JS↔Py parity validation done before the JS removal. The `output/paper/*.ndjson` JS fixtures are gitignored; regenerate is no longer possible since the JS implementation is gone.
 - `assignments/final-crit/` is a course-assignment slide deck unrelated to the benchmark.
+- **Round-1 game-mechanics simplification (2026-05-10)**: `TILE` 15→10 (dropped HERB_GARDEN, KITCHEN, SMITHY, CLINIC, GATE), `RESOURCE_TYPES` 4→3 (dropped `herbs`), `WEATHER` dropped DROUGHT/WINTER, `EVENT_TYPE` dropped MORALE_BREAK/DISEASE_OUTBREAK/WILDFIRE, `ROLE` dropped HERBS/COOK/SMITH/HERBALIST, `ANIMAL_SPECIES` dropped RAIDER_BEAST, `WorkerState` 12→10 (dropped SEEKING_PROCESS/PROCESSING). Comments referencing dropped surfaces may linger but the runtime enums are authoritative.
