@@ -47,7 +47,7 @@ determinism claim within their respective RNG backends:
   hash `e360b76…` for 60 ticks @ seed `0xC0FFEE`.
 - **Python SDK** (~5.5k LOC, 619 tests) — PyPI package
   `project-utopia` on branch `python-migration`; Py Tier-1
-  hash `00f02b78…` for 30 ticks @ seed `0xC0FFEE`.
+  hash `f9364a77…` for 30 ticks @ seed `0xC0FFEE`.
 
 Cross-language bit-identical reproduction is not a goal
 (mulberry32 vs. PCG64 RNGs); within-each-language
