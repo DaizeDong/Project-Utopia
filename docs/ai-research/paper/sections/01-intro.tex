@@ -1,26 +1,39 @@
 \section{Introduction}
 \label{sec:intro}
 
-Large language models are increasingly deployed as hierarchical
-decision-makers: a strategic planner emits high-level intents, a tactical
-controller refines them into role-specific policies, and a per-entity
-runtime grounds those policies into individual actions. This pattern is
-canonical in production agent
-systems~\citep{FAIR2022Cicero, AnthropicMultiAgent2025},
-in robotics~\citep{Vinyals2019AlphaStar, Berner2019OpenAIFive}, and in
-multi-agent collaboration frameworks~\citep{Hong2024MetaGPT,
-Qian2024ChatDev, Vezhnevets2023Concordia}.
+Production LLM agents rarely fail at single tool-call accuracy:
+AgentBench~\citep{Liu2024AgentBench}, GAIA~\citep{Mialon2023GAIA},
+Toolformer~\citep{Schick2023Toolformer},
+Gorilla~\citep{Patil2023Gorilla}, and
+ToolLLM~\citep{Qin2024ToolLLM} all establish that current frontier
+models pick and parameterize individual tools competently. The mode
+that actually breaks deployments is \emph{coherent multi-channel
+tool orchestration under stale long-horizon context}: an agent that
+emits a structurally valid build directive, a structurally valid
+group-steering directive, and a structurally valid environment update
+--- each correct in isolation, jointly inconsistent because some
+channel still references a directive evicted from working memory hours
+ago.
 
-Yet existing LLM-agent benchmarks evaluate a substantially narrower
-slice of this design space:
+This pattern --- one agent, several parallel decision channels, a
+fixed schema-validated tool surface --- is canonical in production
+systems~\citep{FAIR2022Cicero, AnthropicMultiAgent2025,
+Shen2023HuggingGPT, Hong2024MetaGPT, Qian2024ChatDev}, in
+robotics~\citep{Vinyals2019AlphaStar, Berner2019OpenAIFive}, and in
+ReAct-style~\citep{Yao2023ReAct} reasoning loops scaled up to
+multi-channel orchestration. Yet existing LLM-agent benchmarks
+evaluate a substantially narrower slice of this design space:
 
 \begin{itemize}[leftmargin=*]
-\item \textbf{Single-agent tool-use benchmarks}
+\item \textbf{Single-agent tool-use \& tool-selection benchmarks}
 (AgentBench~\citep{Liu2024AgentBench}, GAIA~\citep{Mialon2023GAIA},
 WebArena~\citep{Zhou2024WebArena}, AgentBoard~\citep{Ma2024AgentBoard},
-TheAgentCompany~\citep{Xu2025TheAgentCompany}) measure success on
-episodic tasks with single-LLM dispatch and no parallel decision
-channels.
+TheAgentCompany~\citep{Xu2025TheAgentCompany},
+Toolformer~\citep{Schick2023Toolformer},
+Gorilla~\citep{Patil2023Gorilla}, ToolLLM~\citep{Qin2024ToolLLM},
+MINT~\citep{Wang2024MINT}) measure success on
+episodic tasks with single-LLM dispatch over an open or learned tool
+set, with no parallel decision channels.
 \item \textbf{Flat MARL benchmarks}
 (MeltingPot~\citep{Agapiou2022MeltingPot},
 Crafter~\citep{Hafner2022Crafter}, BALROG~\citep{Paglieri2025BALROG})
@@ -28,10 +41,12 @@ test policies that emit primitive actions, with no natural-language
 directive surface.
 \item \textbf{Multi-agent LLM frameworks}
 (ChatDev~\citep{Qian2024ChatDev}, MetaGPT~\citep{Hong2024MetaGPT},
-AgentVerse~\citep{Chen2024AgentVerse}, X-MAS~\citep{Ma2025XMAS}) explore
+AgentVerse~\citep{Chen2024AgentVerse}, X-MAS~\citep{Ma2025XMAS},
+HuggingGPT~\citep{Shen2023HuggingGPT}) explore
 agent collaboration but seldom combine \emph{cross-vendor heterogeneity}
-with \emph{long-horizon} survival, structured \emph{schema-validated}
-output, and \emph{deterministic substrate}.
+with \emph{long-horizon} orchestration, structured
+\emph{schema-validated} tool-grounded directives, and a
+\emph{deterministic tool surface}.
 \item \textbf{Long-context / memory benchmarks}
 (LongMemEval~\citep{Wu2025LongMemEval}, RULER~\citep{Hsieh2024RULER},
 MemoryArena~\citep{He2026MemoryArena}, MemoryAgentBench~\citep{Hu2026MemoryAgentBench})
@@ -49,19 +64,22 @@ contradicts the environment-director's just-issued threat update.
 Detecting this failure mode requires (a) parallel decision channels
 running at distinct cadences, (b) a long horizon where directives
 cumulate and decay naturally rather than being injected as synthetic
-distractors, and (c) a deterministic substrate so that
+distractors, and (c) a deterministic tool surface so that
 hardware/timing variance does not mask reasoning failures.
 
 \paragraph{Contributions.}
-We introduce \textbf{Project-Utopia}, a deterministic
-colony-simulation benchmark that closes this gap with four
-contributions:
+We introduce \textbf{Project-Utopia}, a tool-grounded multi-channel
+LLM-agent benchmark that closes this gap with four contributions:
 
 \begin{description}[leftmargin=*]
-\item[C1 — Architectural.] A 4-channel LLM action surface
+\item[C1 — Action-Space Contract.] A 4-channel LLM action surface
 (environment-director, npc-policy, strategic-plan, colony-agent)
-operating above an A* + Boids + seeded-RNG substrate. Schema validation
-and numerical guardrails ensure \textbf{three-tier reproducibility}:
+emitting schema-validated, tool-grounded directives. The agent has
+\emph{no syscall-level tool choice}; instead, each channel's
+directive is deterministically grounded by a fixed, queryable tool
+(path query over a versioned grid, group-steering policy, FSM intent
+applier, build planner). Schema validation and numerical guardrails
+ensure \textbf{three-tier reproducibility}:
 (i) bit-identical fallback mode (verified at 60, 1\,800, and 7\,200
 ticks; hashes \texttt{e360b76\ldots}, \texttt{473d1b9\ldots},
 \texttt{c2d86a6\ldots}), (ii) hardware-independent LLM-on mode via
@@ -102,6 +120,31 @@ LLM mix evaluation. Each ingredient has prior art individually; the
 5-way combination has none.
 \end{description}
 
+\paragraph{Differentiation from prior tool-use frameworks.}
+\textbf{ReAct}~\citep{Yao2023ReAct} interleaves reasoning and acting
+for a \emph{single} agent emitting free-form action strings; we keep
+the reasoning--acting loop but split it across four parallel channels
+with schema-validated directives.
+\textbf{Toolformer}~\citep{Schick2023Toolformer} learns when to invoke
+a small set of tools from self-supervision; we fix the tool set a
+priori and evaluate orchestration quality rather than tool selection.
+\textbf{Gorilla}~\citep{Patil2023Gorilla} and
+\textbf{ToolLLM}~\citep{Qin2024ToolLLM} score API-call accuracy on
+1\,000s of REST endpoints; we score long-horizon outcomes downstream
+of a fixed 4-tool surface, so the failure mode of interest is
+\emph{coherence across channels} rather than picking the right
+endpoint.
+\textbf{MINT}~\citep{Wang2024MINT} evaluates multi-turn tool use with
+user feedback; we evaluate multi-channel tool orchestration with no
+human-in-the-loop and per-tick deterministic grounding.
+\textbf{HuggingGPT}~\citep{Shen2023HuggingGPT} dispatches tasks to
+model-zoo tools through a planner LLM; like us, it routes per task,
+but it has no parallel-channel cadence and no long-horizon memory
+axis.
+\textbf{Voyager}~\citep{Wang2023Voyager} discovers skills in Minecraft
+through self-generated code; we keep the tool surface fixed and
+measure orchestration under stale context rather than skill discovery.
+
 \paragraph{Relation to concurrent work.}
 Three concurrent benchmarks deserve specific differentiation.
 \textbf{Orak}~\citep{Krafton2026Orak} evaluates LLMs on 12 video
@@ -121,7 +164,7 @@ against drift and task performance.
 
 \paragraph{Roadmap.} Section~\ref{sec:related-work} surveys
 related work. Section~\ref{sec:architecture} describes the
-substrate and 4-channel decision surface.
+tool surface and 4-channel decision contract.
 Section~\ref{sec:metrics} presents the four-layer metric stack.
 Section~\ref{sec:experiments} reports the nine experiments.
 Section~\ref{sec:discussion} discusses cross-experiment findings,

@@ -35,6 +35,19 @@ Game-Master-as-broker pattern would be a natural extension.
 constraints.} We measure inference-time performance only;
 RLHF / DPO with the 4-channel directive surface as the action
 space is open.
+(7) \textbf{Fixed tool set.} Unlike
+Toolformer~\citep{Schick2023Toolformer},
+Gorilla~\citep{Patil2023Gorilla}, and
+ToolLLM~\citep{Qin2024ToolLLM} --- which evaluate agents that
+\emph{choose} tools from a large inventory --- Project-Utopia
+evaluates agents that \emph{orchestrate a fixed 4-tool surface}.
+This is intentional: it controls the confound between
+tool-selection quality and tool-use quality, isolating the
+multi-channel coherence signal we want to measure. The cost is
+that domain-transfer claims are limited to settings where the
+tool surface is known a priori (e.g., industrial workflow
+orchestration, robotics primitives, scripted enterprise APIs);
+open-world tool discovery is out of scope.
 
 \paragraph{Future work.}
 Beyond closing the limitations above, the natural next

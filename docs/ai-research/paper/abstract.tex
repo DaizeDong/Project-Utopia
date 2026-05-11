@@ -1,18 +1,23 @@
 \begin{abstract}
 
-Existing LLM-agent benchmarks evaluate single agents in episodic
-tool-use tasks~\citep{Liu2024AgentBench, Mialon2023GAIA, Zhou2024WebArena}
-or flat MARL policies in stateless games~\citep{Agapiou2022MeltingPot,
-Hafner2022Crafter, Paglieri2025BALROG}, leaving the regime where LLMs
-operate as \textbf{hierarchical decision-makers above a deterministic
-substrate} largely under-evaluated --- despite this being the canonical
-pattern in production agent systems
-\citep{FAIR2022Cicero, Vinyals2019AlphaStar, AnthropicMultiAgent2025}.
-We introduce \textbf{Project-Utopia}, a deterministic colony-simulation
-benchmark exposing four hierarchical LLM decision channels
+Existing LLM-agent benchmarks evaluate single agents picking single
+tools~\citep{Liu2024AgentBench, Mialon2023GAIA, Zhou2024WebArena,
+Schick2023Toolformer, Patil2023Gorilla, Qin2024ToolLLM} or flat MARL
+policies emitting primitive actions in stateless
+games~\citep{Agapiou2022MeltingPot, Hafner2022Crafter,
+Paglieri2025BALROG}, leaving the regime where an LLM agent
+\textbf{orchestrates a fixed, schema-validated tool surface across
+multiple parallel decision channels} largely under-evaluated --- despite
+this being the canonical pattern in production agent systems
+\citep{FAIR2022Cicero, Vinyals2019AlphaStar, AnthropicMultiAgent2025,
+Shen2023HuggingGPT}.
+We introduce \textbf{Project-Utopia}, a tool-grounded benchmark
+exposing four hierarchical LLM decision channels
 (\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
-\emph{colony-agent}) above an A* / Boids / seeded-RNG substrate, with
-schema validation and numerical guardrails ensuring \textbf{three-tier
+\emph{colony-agent}) that orchestrate a deterministic,
+schema-validated tool surface (path queries over a versioned grid,
+group steering, FSM intent application, build planning).
+Schema validation and numerical guardrails ensure \textbf{three-tier
 reproducibility}: (i) bit-identical fallback mode (verified at 7\,200
 ticks), (ii) hardware-independent LLM-on mode via
 LayerCast~\citep{Yuan2025LayerCast}, (iii) statistically stationary

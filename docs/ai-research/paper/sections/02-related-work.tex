@@ -6,6 +6,31 @@ contribution claims (C1--C4) of \S\ref{sec:intro}. A complete prior-art
 table for the 75+ benchmarks reviewed appears in
 Appendix~\ref{app:prior-art-table}.
 
+\subsection{LLM Tool-Use and Tool-Augmented Agents}
+\label{sec:rw-tool-use}
+
+The closest immediate neighbours of Project-Utopia are agent
+frameworks that pair an LLM with a tool surface.
+\textbf{ReAct}~\citep{Yao2023ReAct} formalized interleaved reasoning
+and acting for a single agent; subsequent work scaled the action
+side: \textbf{Toolformer}~\citep{Schick2023Toolformer} taught models
+to self-invoke a small tool inventory;
+\textbf{Gorilla}~\citep{Patil2023Gorilla} and
+\textbf{ToolLLM}~\citep{Qin2024ToolLLM} pushed the inventory to
+$10^3$--$10^4$ real APIs and scored selection accuracy;
+\textbf{MINT}~\citep{Wang2024MINT} added multi-turn user feedback;
+\textbf{HuggingGPT}~\citep{Shen2023HuggingGPT} used an LLM planner to
+dispatch sub-tasks to model-zoo tools. These works converge on a
+shared methodology: \emph{measure single-channel selection or
+single-turn invocation accuracy}. Project-Utopia is complementary:
+it fixes the tool surface (4 tools $\times$ 4 channels) and
+measures \emph{cross-channel orchestration coherence under stale
+long-horizon context}.
+\textbf{Reflexion}~\citep{Shinn2023Reflexion} adds verbal
+self-improvement to ReAct loops; our colony-agent channel implements
+an analogous reflect step but uses simulator-objective feedback
+rather than the agent's own critique.
+
 \subsection{Single-Agent Tool-Use and Web Benchmarks}
 
 AgentBench~\citep{Liu2024AgentBench} ($N$=8 environments),
@@ -18,8 +43,9 @@ OdysseyBench~\citep{Wang2025OdysseyBench},
 HeroBench~\citep{Anokhin2025HeroBench} all evaluate \emph{single}
 agents on \emph{episodic} tasks. We share their commitment to
 programmatic state-based oracles (rather than LLM-as-judge); we
-differ in dispatching \emph{four} parallel decision channels at
-distinct cadences within a single continuous task.
+differ in dispatching \emph{four} parallel decision channels over a
+fixed schema-validated tool surface at distinct cadences within a
+single continuous task.
 
 \subsection{LLM-in-Game Benchmarks}
 
@@ -84,24 +110,21 @@ mostly single-vendor scoring), \emph{per-channel} routing
 (vs.\ per-task), and \emph{long-horizon survival} (vs.\ per-task
 isolated runs).
 
-\subsection{MARL and Game-Playing AI Evaluation Methodology}
+\subsection{RL Evaluation Methodology (Borrowed)}
 
-Although Project-Utopia is not an RL benchmark, our metric stack
-draws heavily from RL game-playing AI methodology:
-\textbf{Crafter}~\citep{Hafner2022Crafter}'s
-geometric-mean composite that punishes single-axis collapse;
-\textbf{MeltingPot 2.0}~\citep{Agapiou2022MeltingPot}'s
-$(\text{focal} - \text{random}) / (\text{exploiter} - \text{random})$
-sandwich normalization; \textbf{Pluribus AIVAT}~\citep{Brown2019Pluribus}'s
-variance reduction via PolicyValue Baseline (we report a
-2--3$\times$ reduction in Project-Utopia, see \S\ref{sec:exp:e8});
-\textbf{OpenAI Five}~\citep{Berner2019OpenAIFive}'s TrueSkill
-$(\mu, \sigma)$ for low-sample multi-LLM cells;
-\textbf{AlphaStar}~\citep{Vinyals2019AlphaStar}'s league-learning
-robustness check; \textbf{OpenSpiel}~\citep{Lanctot2019OpenSpiel}'s
-$\alpha$-rank for non-transitive payoff matrices;
-\textbf{FTW Capture-the-Flag}~\citep{Jaderberg2019FTW}'s
-reaction-time-matched fairness convention.
+Although Project-Utopia is not an RL benchmark, the metric stack
+borrows four ingredients from RL game-playing AI methodology:
+Crafter~\citep{Hafner2022Crafter}'s geometric-mean composite (punishes
+single-axis collapse);
+MeltingPot~2.0~\citep{Agapiou2022MeltingPot}'s sandwich normalization
+$(\text{focal} - \text{random}) / (\text{exploiter} - \text{random})$;
+Pluribus AIVAT~\citep{Brown2019Pluribus}'s PolicyValue Baseline
+(2--3$\times$ variance reduction, \S\ref{sec:exp:e8}); and
+TrueSkill~\citep{Berner2019OpenAIFive} / $\alpha$-rank
+\citep{Lanctot2019OpenSpiel} for low-sample multi-LLM cells.
+AlphaStar~\citep{Vinyals2019AlphaStar} and FTW
+Capture-the-Flag~\citep{Jaderberg2019FTW} inspire our
+matched-budget fairness convention.
 
 \subsection{Reproducibility and Methodology}
 

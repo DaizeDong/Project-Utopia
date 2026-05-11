@@ -16,15 +16,15 @@ anchor in summaries while its directives stop reflecting it.
 
 \paragraph{The central architectural lesson.}
 Across E1, E3, and E5, a single pattern emerges: \emph{the
-boundary between LLM symbol manipulation and deterministic
-substrate is the design lever}. Schemas at this boundary
+boundary between agent symbol manipulation and the deterministic
+tool surface is the design lever}. Schemas at this boundary
 ($\text{environment-director} \to \text{factionTension} \in [0,1]$,
 \texttt{npc-policy} $\to$ intent weights $\in [0,3]^{10}$)
 are simultaneously the safety mechanism and the evaluation
 contract. Production agent designers can use Project-Utopia's
 sandwich-normalized RAE composite as a hill-climbing target
 without worrying that an LLM regression will catastrophically
-break the simulation.
+break downstream tool grounding.
 
 \paragraph{Cost vs.\ performance Pareto.}
 Following BATS~\citep{Liu2025BATS}, we report cost as
@@ -62,13 +62,17 @@ as a generalizable diagnostic for any hierarchical agent system,
 not just Project-Utopia.
 
 \paragraph{Implications for deployment.}
-Three concrete recommendations for production agent designers:
+Four concrete recommendations for production agent designers:
 (i) Always run a no-LLM fallback baseline; it is free and gives
 a real ceiling for "is the LLM even helping?"
 (ii) Cross-vendor heterogeneous mixes are cheaper than they
 look: the LayerCast~\citep{Yuan2025LayerCast} +
 RecordReplayCache pipeline lets you swap any channel's backend
-without touching the simulation. (iii) Memory failure is not
+without touching the tool layer. (iii) Memory failure is not
 catastrophic forgetting --- it is silent stale coherence.
 Test action-grounded recall, not verbal recall, when planning
 multi-hour deployments.
+(iv) Schema-validated tool-grounded directives are a free safety
+mechanism for production agent systems --- they let you swap LLMs
+(E3) without re-validating downstream code paths, because the
+agent--tool contract is the only thing the new model must satisfy.
