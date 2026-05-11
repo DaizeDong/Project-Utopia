@@ -12,21 +12,47 @@ LaTeX source for the Project-Utopia academic-benchmark paper.
 
 ## Build
 
-Standard pdflatex + bibtex pipeline:
+**Option A (Node.js + LaTeX)** — pdflatex + bibtex pipeline:
 
 ```bash
 cd docs/ai-research/paper
-pdflatex main
-bibtex main
-pdflatex main
-pdflatex main
+pdflatex main && bibtex main && pdflatex main && pdflatex main
+# or: latexmk -pdf main.tex
 ```
 
-Or with `latexmk`:
+To re-verify the Node.js reproducibility claims cited in §8:
 
 ```bash
+npm test && npm run audit:determinism
+```
+
+**Option B (Python + LaTeX)** — same LaTeX build, plus Python
+verification of the new bilingual reproducibility claim:
+
+```bash
+pip install project-utopia[dev]
+pytest -q                            # 619 tests, ~3.2 s
+project-utopia-determinism --tier 1  # Python Tier-1 hash
 latexmk -pdf main.tex
 ```
+
+## Companion implementations
+
+This paper documents two independent implementations of the
+Project-Utopia benchmark, both reproducing the Tier-1
+determinism claim within their respective RNG backends:
+
+- **Node.js core** (~55k LOC) — canonical implementation on
+  branch `refactor/academic-benchmark-v0.11.0-rc3`; JS Tier-1
+  hash `e360b76…` for 60 ticks @ seed `0xC0FFEE`.
+- **Python SDK** (~5.5k LOC, 619 tests) — PyPI package
+  `project-utopia` on branch `python-migration`; Py Tier-1
+  hash `00f02b78…` for 30 ticks @ seed `0xC0FFEE`.
+
+Cross-language bit-identical reproduction is not a goal
+(mulberry32 vs. PCG64 RNGs); within-each-language
+bit-identical is. See `sections/08-reproducibility.tex` §8.6
+for the full rationale.
 
 ## File map
 

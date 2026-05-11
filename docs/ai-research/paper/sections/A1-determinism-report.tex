@@ -6,29 +6,39 @@
 \begin{table}[h]
 \centering
 \small
-\begin{tabular}{lllll}
+\begin{tabular}{llllll}
 \toprule
-Tier & Ticks & Sim-sec & Scenario & SHA-256 (first 8 chars) \\
+Lang & Tier & Ticks & Sim-sec & Scenario & SHA-256 (first 8 chars) \\
 \midrule
-1 & 60   & 2   & temperate\_plains & \texttt{e360b76} \\
-2 & 1800 & 60  & temperate\_plains & \texttt{473d1b9} \\
-3 & 7200 & 240 & temperate\_plains & \texttt{c2d86a6} \\
+JS & 1 & 60   & 2   & temperate\_plains & \texttt{e360b76} \\
+JS & 2 & 1800 & 60  & temperate\_plains & \texttt{473d1b9} \\
+JS & 3 & 7200 & 240 & temperate\_plains & \texttt{c2d86a6} \\
+Py & 1 & 30   & 1   & temperate\_plains & \texttt{00f02b78} \\
+Py & 2 & 1800 & 60  & temperate\_plains & (pending) \\
+Py & 3 & 7200 & 240 & temperate\_plains & (pending) \\
+Py & 1 & 30   & 1   & temperate\_plains (cross-OS) & (pending) \\
 \bottomrule
 \end{tabular}
-\caption{All three tiers verified bit-identical at seed
-\texttt{0xC0FFEE} on commit \texttt{fe55b82}. Full hashes are in
-\texttt{output/determinism-tier3-temperate\_plains.json}.}
+\caption{All three JS tiers verified bit-identical at seed
+\texttt{0xC0FFEE} on commit \texttt{fe55b82}. Python Tier 1
+verified on branch \texttt{python-migration}; Python Tier 2/3
+and cross-OS rows are pending future runs. Full JS hashes are
+in \texttt{output/determinism-tier3-temperate\_plains.json}.}
 \end{table}
 
 \subsection{What is hashed}
 
-\texttt{tools/audit/determinism-check.js:hashState} captures only
-those state fields that have been verified bit-identical across
-runs:
+\texttt{tools/audit/determinism-check.js:hashState} (JS) and
+\texttt{project\_utopia.tools.audit.determinism\_check} (Python)
+capture only those state fields that have been verified
+bit-identical across runs:
 \texttt{tick}, \texttt{timeSec}, all worker positions (rounded to
 6 decimal places), velocities, hunger, role, FSM state;
 \texttt{state.resources}; \texttt{state.metrics.aiRuntime}'s four
 counters; and the first 256 chars of the grid tile array.
+The Python \texttt{hash\_state} is a port of the JS function with
+the same slim-view fields (sorted-key JSON, SHA-256), differing
+only in the underlying RNG backend (PCG64 vs.\ mulberry32).
 Excluded: agent insertion-order-dependent fields, populationStats
 (re-bucketed each tick, non-deterministic ordering), gameplay
 analytics (some use Date.now), and aiRuntime token telemetry
