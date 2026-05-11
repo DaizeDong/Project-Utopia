@@ -54,13 +54,16 @@ __all__ = [
 
 
 class EventType(str, Enum):
-    """Mirror of JS ``EVENT_TYPE`` (academic-benchmark subset)."""
+    """Mirror of JS ``EVENT_TYPE`` (Round-1 simplified subset).
+
+    The Round-1 game-mechanics cut dropped ``moraleBreak`` /
+    ``diseaseOutbreak`` / ``wildfire``; this enum now mirrors the three
+    surviving event kinds in ``project_utopia/config/constants.py#EVENT_TYPE``.
+    """
 
     BANDIT_RAID = "banditRaid"
     ANIMAL_MIGRATION = "animalMigration"
     TRADE_CARAVAN = "tradeCaravan"
-    DISEASE_OUTBREAK = "diseaseOutbreak"
-    WILDFIRE = "wildfire"
 
 
 # Default per-type concurrency caps. Mirrors
@@ -70,8 +73,6 @@ _DEFAULT_MAX_CONCURRENT: dict[EventType, int] = {
     EventType.BANDIT_RAID: 1,
     EventType.ANIMAL_MIGRATION: 2,
     EventType.TRADE_CARAVAN: 2,
-    EventType.DISEASE_OUTBREAK: 1,
-    EventType.WILDFIRE: 1,
 }
 
 
@@ -153,17 +154,11 @@ def enqueue_event(
 
 
 def _hazard_penalty_for_weather(weather: Weather) -> float:
-    """JS ``hazardPenaltyForWeather`` — verbatim values."""
+    """JS ``hazardPenaltyForWeather`` — surviving Round-1 weathers only."""
     if weather == Weather.RAIN:
         return 1.35
     if weather == Weather.STORM:
         return 1.85
-    if weather == Weather.BLIZZARD:
-        return 1.55
-    if weather == Weather.DROUGHT:
-        return 1.20
-    if weather == Weather.FOG:
-        return 1.10
     return 1.0
 
 

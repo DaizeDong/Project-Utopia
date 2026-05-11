@@ -74,7 +74,7 @@ _ISLAND_PALETTE: tuple[int, ...] = (
 _BASIN_PALETTE: tuple[int, ...] = (
     TILE["GRASS"],
     TILE["WALL"],
-    TILE["GATE"],
+    TILE["ROAD"],
     TILE["RUINS"],
 )
 
@@ -349,7 +349,12 @@ def _carve_highland_walls(grid: Grid, rng: SeededRng, *, density: float = 0.04) 
 
 
 def _carve_basin_walls(grid: Grid, rng: SeededRng) -> None:
-    """Stamp a fortified perimeter with two gates."""
+    """Stamp a fortified perimeter with two road openings.
+
+    Round-1 simplification dropped the ``GATE`` tile; openings now use
+    plain ``ROAD`` tiles, which are passable and visually distinct from
+    the surrounding ``WALL``.
+    """
     margin = 4
     # Top and bottom walls
     for x in range(margin, grid.width - margin):
@@ -359,11 +364,12 @@ def _carve_basin_walls(grid: Grid, rng: SeededRng) -> None:
     for z in range(margin, grid.height - margin):
         grid.tiles[z, margin] = TILE["WALL"]
         grid.tiles[z, grid.width - margin - 1] = TILE["WALL"]
-    # Two gates (north and south)
-    north_gate_x = grid.width // 2 + rng.next_int(-2, 2)
-    south_gate_x = grid.width // 2 + rng.next_int(-2, 2)
-    grid.tiles[margin, north_gate_x] = TILE["GATE"]
-    grid.tiles[grid.height - margin - 1, south_gate_x] = TILE["GATE"]
+    # Two openings (north and south) — plain road tiles after GATE was
+    # dropped in the Round-1 mechanics cut.
+    north_opening_x = grid.width // 2 + rng.next_int(-2, 2)
+    south_opening_x = grid.width // 2 + rng.next_int(-2, 2)
+    grid.tiles[margin, north_opening_x] = TILE["ROAD"]
+    grid.tiles[grid.height - margin - 1, south_opening_x] = TILE["ROAD"]
     grid.bump_version()
 
 

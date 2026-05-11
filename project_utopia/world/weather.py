@@ -8,18 +8,17 @@ overlay is deferred to a later phase since it cross-cuts with
 ``ScenarioState.weather_focus`` which is intentionally minimal in the
 Python port.
 
-Weather enum
-------------
+Weather enum (Round-1 simplification — 3 values)
+-------------------------------------------------
 * ``clear`` — baseline
-* ``rain``    — mild slowdown
-* ``storm``   — severe slowdown, raid-friendly
-* ``fog``     — minor slowdown, scout penalty (new Python-only state)
-* ``drought`` — farm penalty
-* ``blizzard`` — winter analogue, severe slowdown + farm penalty
+* ``rain``  — mild slowdown
+* ``storm`` — severe slowdown, raid-friendly
 
-JS used 5 weathers (``CLEAR / RAIN / STORM / DROUGHT / WINTER``); the
-spec for this port asks for 6 (`fog` / `blizzard`). We map ``winter`` →
-``blizzard`` and add ``fog`` as a new value.
+JS originally exposed 5 weathers (``CLEAR / RAIN / STORM / DROUGHT /
+WINTER``) and an earlier Python port added ``fog`` / ``blizzard``. The
+Round-1 game-mechanics cut drops ``DROUGHT`` / ``WINTER`` (JS) and the
+Python-only ``FOG`` / ``BLIZZARD`` so the model collapses to three
+discrete weather states aligned with ``project_utopia/config/constants.py``.
 """
 
 from __future__ import annotations
@@ -40,32 +39,20 @@ __all__ = [
 
 
 class Weather(str, Enum):
-    """The 6 weather types tracked by the Python port.
-
-    The string values match the JS source where possible (``clear``,
-    ``rain``, ``storm``, ``drought``) and rename ``winter`` →
-    ``blizzard``. ``fog`` is new (no JS counterpart).
-    """
+    """The 3 weather types tracked by the Python port (Round-1 cut)."""
 
     CLEAR = "clear"
     RAIN = "rain"
     STORM = "storm"
-    FOG = "fog"
-    DROUGHT = "drought"
-    BLIZZARD = "blizzard"
 
 
 # Per-weather move-cost multiplier. Mirrors the ``WEATHER_MODIFIERS`` table
-# in JS ``src/config/balance.js`` (values copied verbatim where the weather
-# enum overlaps; ``fog`` is new and uses ``1.05``).
+# in JS ``src/config/balance.js``.
 WEATHER_MOVE_COST: MappingProxyType[Weather, float] = MappingProxyType(
     {
         Weather.CLEAR: 1.0,
         Weather.RAIN: 1.22,
         Weather.STORM: 1.52,
-        Weather.FOG: 1.05,
-        Weather.DROUGHT: 1.18,
-        Weather.BLIZZARD: 1.38,
     }
 )
 
@@ -80,9 +67,11 @@ def weather_move_cost_multiplier(weather: Weather) -> float:
 
 
 # Seasonal weights — order: spring, summer, autumn, winter.
-# Each season is a frozen mapping of ``Weather -> int weight``. Numbers
-# match the JS ``SEASONS`` table verbatim; ``winter`` weight is reassigned
-# to ``Weather.BLIZZARD``.
+# Each season is a frozen mapping of ``Weather -> int weight``. Round-1
+# simplification collapsed the table to ``clear / rain / storm`` only;
+# the weight previously carried by drought / fog / blizzard / winter has
+# been folded into the remaining three rows so the seasonal flavour
+# (storm-heavy summer, rainy spring/autumn, calm winter) is preserved.
 _SEASONS: tuple[dict[str, int | dict[Weather, int]], ...] = (
     {
         "name": "spring",
@@ -91,21 +80,15 @@ _SEASONS: tuple[dict[str, int | dict[Weather, int]], ...] = (
             Weather.CLEAR: 50,
             Weather.RAIN: 40,
             Weather.STORM: 10,
-            Weather.FOG: 5,
-            Weather.DROUGHT: 0,
-            Weather.BLIZZARD: 0,
         },
     },
     {
         "name": "summer",
         "duration_sec": 60,
         "weights": {
-            Weather.CLEAR: 40,
-            Weather.RAIN: 0,
+            Weather.CLEAR: 60,
+            Weather.RAIN: 20,
             Weather.STORM: 20,
-            Weather.FOG: 0,
-            Weather.DROUGHT: 40,
-            Weather.BLIZZARD: 0,
         },
     },
     {
@@ -113,23 +96,17 @@ _SEASONS: tuple[dict[str, int | dict[Weather, int]], ...] = (
         "duration_sec": 50,
         "weights": {
             Weather.CLEAR: 50,
-            Weather.RAIN: 30,
+            Weather.RAIN: 40,
             Weather.STORM: 10,
-            Weather.FOG: 10,
-            Weather.DROUGHT: 0,
-            Weather.BLIZZARD: 0,
         },
     },
     {
         "name": "winter",
         "duration_sec": 50,
         "weights": {
-            Weather.CLEAR: 20,
-            Weather.RAIN: 0,
-            Weather.STORM: 20,
-            Weather.FOG: 0,
-            Weather.DROUGHT: 0,
-            Weather.BLIZZARD: 60,
+            Weather.CLEAR: 40,
+            Weather.RAIN: 20,
+            Weather.STORM: 40,
         },
     },
 )
@@ -140,9 +117,6 @@ _WEATHER_DURATION: dict[Weather, tuple[int, int]] = {
     Weather.CLEAR: (36, 70),
     Weather.RAIN: (24, 44),
     Weather.STORM: (16, 32),
-    Weather.FOG: (20, 36),
-    Weather.DROUGHT: (24, 40),
-    Weather.BLIZZARD: (28, 48),
 }
 
 

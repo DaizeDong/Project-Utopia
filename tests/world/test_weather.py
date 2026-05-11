@@ -14,10 +14,10 @@ from project_utopia.world.weather import (
 
 
 class TestWeatherEnum:
-    def test_six_weather_types(self) -> None:
-        # The Python port adds `fog` and renames `winter` → `blizzard`.
+    def test_three_weather_types(self) -> None:
+        # Round-1 simplification collapsed the weather model to 3 states.
         names = {w.value for w in Weather}
-        assert names == {"clear", "rain", "storm", "fog", "drought", "blizzard"}
+        assert names == {"clear", "rain", "storm"}
 
     def test_move_cost_table_covers_all_weathers(self) -> None:
         for w in Weather:
@@ -26,8 +26,8 @@ class TestWeatherEnum:
 
     def test_move_cost_helper(self) -> None:
         assert weather_move_cost_multiplier(Weather.CLEAR) == 1.0
+        assert weather_move_cost_multiplier(Weather.RAIN) == pytest.approx(1.22)
         assert weather_move_cost_multiplier(Weather.STORM) == pytest.approx(1.52)
-        assert weather_move_cost_multiplier(Weather.BLIZZARD) == pytest.approx(1.38)
 
 
 class TestWeatherSystemDeterminism:

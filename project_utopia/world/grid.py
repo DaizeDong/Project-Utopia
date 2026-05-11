@@ -59,6 +59,10 @@ __all__ = [
 # Mirror of ``src/config/constants.js#TILE`` — kept here rather than in
 # ``project_utopia/config/constants.py`` to keep the world subpackage
 # importable without pulling the (yet-to-be-ported) constants module.
+#
+# Round-1 simplification: dropped HERB_GARDEN / KITCHEN / SMITHY / CLINIC /
+# GATE. BRIDGE renumbered 13 → 9. Numbering kept in sync with
+# ``project_utopia/config/constants.py#TILE``.
 TILE: MappingProxyType[str, int] = MappingProxyType(
     {
         "GRASS": 0,
@@ -70,12 +74,7 @@ TILE: MappingProxyType[str, int] = MappingProxyType(
         "RUINS": 6,
         "WATER": 7,
         "QUARRY": 8,
-        "HERB_GARDEN": 9,
-        "KITCHEN": 10,
-        "SMITHY": 11,
-        "CLINIC": 12,
-        "BRIDGE": 13,
-        "GATE": 14,
+        "BRIDGE": 9,
     }
 )
 
@@ -93,12 +92,7 @@ TILE_INFO: MappingProxyType[int, MappingProxyType[str, Any]] = MappingProxyType(
         TILE["RUINS"]: MappingProxyType({"passable": True, "base_cost": 1.6}),
         TILE["WATER"]: MappingProxyType({"passable": False, "base_cost": 1000.0}),
         TILE["QUARRY"]: MappingProxyType({"passable": True, "base_cost": 1.2}),
-        TILE["HERB_GARDEN"]: MappingProxyType({"passable": True, "base_cost": 1.0}),
-        TILE["KITCHEN"]: MappingProxyType({"passable": True, "base_cost": 1.0}),
-        TILE["SMITHY"]: MappingProxyType({"passable": True, "base_cost": 1.0}),
-        TILE["CLINIC"]: MappingProxyType({"passable": True, "base_cost": 1.0}),
         TILE["BRIDGE"]: MappingProxyType({"passable": True, "base_cost": 0.65}),
-        TILE["GATE"]: MappingProxyType({"passable": True, "base_cost": 0.85}),
     }
 )
 
@@ -334,18 +328,14 @@ class Grid:
         Parameters
         ----------
         faction
-            Reserved for the ``GATE`` faction-aware passability rules; not
-            consulted in this minimal port (the navigation system will
-            override it once
-            :mod:`project_utopia.simulation.navigation.faction` ships).
+            Reserved for future faction-aware passability rules; not
+            consulted in the current tile palette (Round-1 simplification
+            removed the only faction-gated tile, ``GATE``).
         """
         tile_id = self.get_tile(x, z)
         info = TILE_INFO.get(tile_id)
         if info is None:
             return False
-        # JS-port hook: GATE is colony-passable but hostile-blocked. The
-        # faction-aware override is planned for the navigation subagent's
-        # ``faction.is_tile_passable_for_faction`` helper.
         _ = faction
         return bool(info["passable"])
 
