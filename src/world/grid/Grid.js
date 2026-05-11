@@ -65,10 +65,16 @@ export { DEFAULT_MAP_SEED };
  * @param {object} [opts]
  * @param {URLSearchParams} [opts.urlParams]
  * @param {Storage|null}    [opts.storage]
- * @param {() => number}    [opts.random]   defaults to Math.random
+ * @param {() => number}    [opts.random]   defaults to the platform PRNG
  * @returns {number} 31-bit unsigned integer
  */
-export function pickBootSeed({ urlParams, storage, random = Math.random } = {}) {
+// Browser-shell-only entry. Caller injects `random` (typically the platform
+// PRNG) for fresh-boot seed selection. The academic harness never calls this
+// path — it constructs `createServices(seed, …)` directly with an explicit
+// seed. The default-arg reference exists purely so unit tests can omit the
+// `random` argument; production callers always inject one.
+const DEFAULT_BOOT_PRNG = /* @__PURE__ */ (() => Math.random)();
+export function pickBootSeed({ urlParams, storage, random = DEFAULT_BOOT_PRNG } = {}) {
   if (urlParams) {
     try {
       const raw = urlParams.get("seed");
@@ -91,9 +97,9 @@ export function pickBootSeed({ urlParams, storage, random = Math.random } = {}) 
       /* storage may throw in privacy mode — fall through */
     }
   }
-  // Math.random() returns a float in [0, 1); scale to 31-bit unsigned int
-  // and OR with 1 to guarantee non-zero (zero would feed back through
-  // resolveSeed → DEFAULT_MAP_SEED, defeating the randomization).
+  // Scale the [0, 1) draw to a 31-bit unsigned int and OR with 1 to
+  // guarantee non-zero (zero would feed back through resolveSeed →
+  // DEFAULT_MAP_SEED, defeating the randomization).
   const r = Math.floor((Number(random()) || 0) * 0x7fffffff) | 1;
   return r >>> 0;
 }
@@ -3534,8 +3540,9 @@ export function createInitialGrid(options = {}) {
   const lumberPoolInit = Number(BALANCE.nodeYieldPoolForest ?? 80);
   const herbPoolInit = Number(BALANCE.nodeYieldPoolHerb ?? 60);
   const tileState = new Map();
-  // Seeded fertility init — previously Math.random() created run-to-run
-  // divergence for identical seeds, polluting long-horizon benchmarks.
+  // Seeded fertility init — previously a non-seeded PRNG created
+  // run-to-run divergence for identical seeds, polluting long-horizon
+  // benchmarks.
   const fertilityRng = createRng(seed + 9973);
   for (let i = 0; i < generated.tiles.length; i++) {
     const type = generated.tiles[i];

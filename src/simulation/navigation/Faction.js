@@ -33,9 +33,6 @@
 //     searches never collide.
 //   - PathWorkerPool.js / pathWorker.js: faction propagated through
 //     payloads.
-//
-// See docs/superpowers/plans/2026-04-28-building-construction-walls-recruit.md
-// § 4 for the full design contract.
 import { TILE } from "../../config/constants.js";
 
 export const FACTION = Object.freeze({

@@ -7,16 +7,14 @@ import { DEFAULT_GROUP_POLICIES } from "../src/config/aiConfig.js";
 import { RoleAssignmentSystem } from "../src/simulation/population/RoleAssignmentSystem.js";
 import { WorkerAISystem } from "../src/simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../src/simulation/npc/VisitorAISystem.js";
-import { AnimalAISystem } from "../src/simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../src/simulation/lifecycle/MortalitySystem.js";
-import { WildlifePopulationSystem } from "../src/simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../src/simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../src/simulation/economy/ResourceSystem.js";
 
 const OUT_ARG = process.argv.find((arg) => arg.startsWith("--out="));
 const outPath = OUT_ARG
   ? OUT_ARG.slice("--out=".length)
-  : path.resolve("docs/logic-baseline-2026-03.json");
+  : path.resolve("output/logic-baseline.json");
 
 const seedArg = process.argv.find((arg) => arg.startsWith("--seed="));
 const seed = seedArg ? Number(seedArg.slice("--seed=".length)) : 1337;
@@ -37,9 +35,7 @@ const systems = [
   new RoleAssignmentSystem(),
   new WorkerAISystem(),
   new VisitorAISystem(),
-  new AnimalAISystem(),
   new MortalitySystem(),
-  new WildlifePopulationSystem(),
   new BoidsSystem(),
   new ResourceSystem(),
 ];

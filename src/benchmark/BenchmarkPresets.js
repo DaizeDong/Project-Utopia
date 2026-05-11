@@ -336,11 +336,12 @@ function placeBuildingsOnGrid(state, buildings) {
 export function applyPreset(state, preset, services) {
   if (!preset) return;
   // Seeded RNG is authoritative when services is present (bench harness
-  // contract). Fall back to Math.random only for ad-hoc callers that
-  // predate Phase 10.
+  // contract). When services is missing (legacy callers that predate
+  // Phase 10) we fall back to a constant 0.5 rather than Math.random so
+  // the defensive path stays bit-reproducible.
   const rngFn = typeof services?.rng?.next === "function"
     ? () => services.rng.next()
-    : Math.random;
+    : () => 0.5;
 
   // Resources
   if (preset.resources) {

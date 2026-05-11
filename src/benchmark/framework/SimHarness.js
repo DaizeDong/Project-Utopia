@@ -1,7 +1,6 @@
 import { createInitialGameState } from "../../entities/EntityFactory.js";
 import { createServices } from "../../app/createServices.js";
 import { SimulationClock } from "../../app/SimulationClock.js";
-import { ProgressionSystem } from "../../simulation/meta/ProgressionSystem.js";
 import { RoleAssignmentSystem } from "../../simulation/population/RoleAssignmentSystem.js";
 import { MemoryStore } from "../../simulation/ai/memory/MemoryStore.js";
 import { MemoryObserver } from "../../simulation/ai/memory/MemoryObserver.js";
@@ -12,12 +11,9 @@ import { WorldEventSystem } from "../../world/events/WorldEventSystem.js";
 import { NPCBrainSystem } from "../../simulation/ai/brains/NPCBrainSystem.js";
 import { WorkerAISystem } from "../../simulation/npc/WorkerAISystem.js";
 import { VisitorAISystem } from "../../simulation/npc/VisitorAISystem.js";
-import { AnimalAISystem } from "../../simulation/npc/AnimalAISystem.js";
 import { MortalitySystem } from "../../simulation/lifecycle/MortalitySystem.js";
-import { WildlifePopulationSystem } from "../../simulation/ecology/WildlifePopulationSystem.js";
 import { BoidsSystem } from "../../simulation/movement/BoidsSystem.js";
 import { ResourceSystem } from "../../simulation/economy/ResourceSystem.js";
-import { ProcessingSystem } from "../../simulation/economy/ProcessingSystem.js";
 import { PopulationGrowthSystem } from "../../simulation/population/PopulationGrowthSystem.js";
 import { TileStateSystem } from "../../simulation/economy/TileStateSystem.js";
 import { ColonyDirectorSystem } from "../../simulation/meta/ColonyDirectorSystem.js";
@@ -41,7 +37,6 @@ export const DT_SEC = 1 / 30;
 function buildDefaultSystems(memoryStore) {
   return [
     new SimulationClock(),
-    new ProgressionSystem(),
     new RoleAssignmentSystem(),
     new PopulationGrowthSystem(),
     new StrategicDirector(memoryStore),
@@ -54,12 +49,9 @@ function buildDefaultSystems(memoryStore) {
     new WorkerAISystem(),
     new ConstructionSystem(),
     new VisitorAISystem(),
-    new AnimalAISystem(),
     new MortalitySystem(),
-    new WildlifePopulationSystem(),
     new BoidsSystem(),
     new ResourceSystem(),
-    new ProcessingSystem(),
     new ColonyDirectorSystem(),
   ];
 }
@@ -73,6 +65,19 @@ export class SimHarness {
    * @param {object} [opts.preset]
    * @param {string} [opts.runtimeProfile="long_run"]
    * @param {Function} [opts.buildSystemsOverride]
+   * @param {object} [opts.agentAdapter] — AgentAdapter instance to wire into
+   *   `services.llmClient` (via AdapterToLLMClient). When supplied, all sim
+   *   systems calling `services.llmClient.requestXxx(...)` route through
+   *   this adapter's `request(channel, payload)`. Without it, the harness
+   *   uses the offline-fallback LLMClient (deterministic).
+   * @param {"fallback"|"llm"} [opts.runMode="fallback"] — D5 runMode gate.
+   *   "fallback" (default) ticks scripted auto-pilot systems (e.g.
+   *   ColonyDirectorSystem) so existing tests stay green and the harness
+   *   matches legacy behaviour. "llm" silences those scripted decision
+   *   sites so the LLM colony-agent channel owns that surface alone —
+   *   required for clean E1-E9 ablations where scripted directives must
+   *   not pollute the colony state. The AgentAdapter's fallback safety
+   *   net (LLM-call failure / timeout) is unaffected by this flag.
    */
   constructor(opts) {
     const {
@@ -82,6 +87,8 @@ export class SimHarness {
       preset,
       runtimeProfile = "long_run",
       buildSystemsOverride,
+      agentAdapter,
+      runMode = "fallback",
     } = opts;
 
     this.state = createInitialGameState({ templateId, seed });
@@ -91,14 +98,26 @@ export class SimHarness {
     this.state.ai.enabled = Boolean(aiEnabled);
     this.state.ai.coverageTarget = "fallback";
     this.state.ai.runtimeProfile = runtimeProfile;
+    this.state.ai.runMode = runMode === "llm" ? "llm" : "fallback";
 
     this.memoryStore = new MemoryStore();
     this.memoryObserver = new MemoryObserver(this.memoryStore);
 
     this.services = createServices(seed, {
+      // When an adapter is provided, the offlineAiFallback wrapper is bypassed
+      // (createServices sees agentAdapter first). Otherwise, default to the
+      // offline-fallback path so headless runs are deterministic.
       offlineAiFallback: !aiEnabled,
       deterministic: true,
+      agentAdapter: agentAdapter ?? null,
     });
+    // Expose adapter on state for any system / probe that wants to inspect
+    // it. AdapterToLLMClient is the actual wiring; this property is purely
+    // informational.
+    if (agentAdapter) {
+      this.state.ai = this.state.ai ?? {};
+      this.state.ai.adapter = agentAdapter;
+    }
 
     // applyPreset after services exist so preset position jitter can draw
     // from the seeded RNG (determinism — otherwise Math.random pollutes the

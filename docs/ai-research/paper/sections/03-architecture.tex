@@ -1,0 +1,209 @@
+\section{Project-Utopia Architecture}
+\label{sec:architecture}
+
+\subsection{Overview: A Tool-Grounded 4-Channel Action Surface}
+
+Project-Utopia exposes a 4-channel LLM action surface above a fixed,
+queryable tool layer. The agent has \emph{no syscall-level tool
+choice}: it emits structured directives, and the tool layer
+deterministically grounds them to per-entity actions via fixed tool
+implementations. This is the language convention of
+ReAct~\citep{Yao2023ReAct} and Toolformer~\citep{Schick2023Toolformer}
+extended to a multi-channel setting: each channel binds to one tool,
+and the schema is the agent--tool interface contract.
+
+The tool layer offers four deterministic, queryable implementations
+that LLM channels indirectly invoke through directives:
+\textbf{(T1) path query tool} — A* over a versioned grid, cached by
+$(\text{faction}, \text{gridVersion}, \text{costVersion})$;
+\textbf{(T2) group steering tool} — Boids with per-group profiles
+applying \texttt{intentWeights} to NPC steering;
+\textbf{(T3) FSM intent application tool} — per-NPC finite-state
+machine driven by \texttt{POLICY\_INTENT\_TO\_STATE} mapping;
+\textbf{(T4) build planner tool} — PlanExecutor over BuildSystem,
+grounding multi-step plans tile-by-tile.
+A seeded RNG and a fixed system order tie these tools into a
+reproducible per-tick pipeline.
+
+Concretely, the per-tick pipeline runs at $\Delta t = 1/30$\,s through
+17 systems (perception $\rightarrow$ LLM gates $\rightarrow$ policy
+applier $\rightarrow$ FSM $\rightarrow$ A* $\rightarrow$ Boids
+$\rightarrow$ integration $\rightarrow$ telemetry). The simulation
+hosts 20--50 NPC workers harvesting resources, building, and
+defending against periodic raids over 60--240 sim seconds
+(configurable up to 24 hours). The LLM is consulted at three nested
+cadences: strategic every 90\,s, environment / npc-policy every
+5--15\,s, colony-agent on event triggers.
+
+Crucially, \emph{the LLM never controls individual entities}. It
+produces low-rank, schema-validated, clamped \emph{directives} that
+flow through the deterministic tool layer: a 4-channel directive
+stream $\to$ group policy applier (T3) $\to$ per-NPC FSM
+$\to$ A* target (T1) $\to$ Boids \texttt{desiredVel} (T2)
+$\to$ integrated position. This handoff is the deterministic
+boundary that makes bit-identical reproducibility possible at every
+channel even when the LLM itself is non-deterministic
+(see \S\ref{sec:reproducibility}).
+
+Figure~\ref{fig:architecture} illustrates the architecture.
+
+% TODO Fig 1: Architecture diagram showing 4 LLM channels invoking
+% a fixed 4-tool surface; place box for each system in the tick pipeline.
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 1 placeholder]
+4-channel LLM action surface bound to a deterministic 4-tool layer;
+tick pipeline; schema/guardrail boundary at \texttt{entity.desiredVel}.
+See \texttt{docs/ai-research/refactor-plan.md \S 1.3} for the
+ASCII version this figure replaces.}}}
+\caption{Project-Utopia architecture: four LLM decision channels
+(\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
+\emph{colony-agent}) emit schema-validated directives that
+deterministically ground onto a fixed 4-tool surface
+(path query, group steering, FSM intent applier, build planner).
+Schema validation and numerical guardrails ensure that LLM
+directives never violate hard physical or accounting invariants.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{The Four LLM Decision Channels}
+\label{sec:channels}
+
+\paragraph{Environment-director} (\emph{cadence}: 5--15\,s, throttled by
+\texttt{tuning.environmentDecisionIntervalSec}). Emits directives
+--- weather (enum), \texttt{durationSec} (clamped 8--180\,s),
+\texttt{factionTension} ($\in$ [0, 1]), \texttt{eventSpawns} (at most
+3, each with intensity $\geq$ 0.4 and clamped duration) --- that the
+\emph{event scheduler tool} grounds into naturalistic stressors
+(droughts, storms, faction buildups). Functions as the environmental
+state-perturbation tool to which the policy channel must adapt.
+
+\paragraph{NPC-policy} (\emph{cadence}: 5--15\,s, additionally
+gated by threat $\leq 14$ tiles, guard deficit, or active worker
+strikes). Emits per-group policy directives
+$\{\text{groupId}, \text{intentWeights} \in [0,3]^{\sim 10},
+\text{riskTolerance} \in [0,1], \text{targetPriorities} \in [0,3]^{|\mathcal{T}|},
+\text{ttlSec} \in [8, 24\,\text{h}]\}$
+that the \emph{group steering (T2) + FSM intent applier (T3) tools}
+then ground: intent weights flow through
+\texttt{POLICY\_INTENT\_TO\_STATE} into per-NPC FSM state
+preferences, while target priorities are interpreted by the A* path
+query tool (T1).
+
+\paragraph{Strategic-plan} (\emph{cadence}: 90\,s heartbeat plus
+crisis triggers --- workers $\to 0$, food/wood $\leq 5$, threat $\geq 85$
+--- with 15\,s cooldown). Emits free-text colony-level objectives
+plus structured \texttt{primaryGoal} / \texttt{constraints} /
+\texttt{resourceBudget} directives that the \emph{plan-arbitration
+tool} grounds by adjusting downstream channel budgets. Strategic
+plans are advisory; lower channels can override under raid posture
+clamps.
+
+\paragraph{Colony-agent} (\emph{cadence}: sim-time gated, additionally
+triggered by plan stalls). Emits multi-step plan directives
+$[(\text{action}, \text{args}, \text{depends\_on})]$ that the
+\emph{build planner tool (T4)} (\texttt{PlanExecutor} over
+\texttt{BuildSystem}) grounds tile-by-tile. Wraps a Perceive $\to$
+Plan $\to$ Ground $\to$ Execute $\to$ Evaluate $\to$ Reflect
+loop~\citep{Yao2023ReAct, Shinn2023Reflexion}, where Ground is the
+tool-invocation step.
+
+\subsection{Schema Validation and Guardrails: the Agent$\leftrightarrow$Tool Contract}
+
+Schemas and guardrails are not safety bolt-ons; they \emph{are} the
+agent--tool interface contract --- the same role as the typed JSON
+signatures of ToolLLM~\citep{Qin2024ToolLLM} and the function-call
+schemas of Gorilla~\citep{Patil2023Gorilla}, generalized to four
+parallel channels. All four channels share two filters before
+directives reach the tool layer.
+\textbf{ResponseSchema} performs JSON-Schema validation: unknown enum
+values are dropped, NaN values are rejected, field types are coerced.
+\textbf{Guardrails} clamps numeric ranges ($\text{weights} \in [0,3]$,
+$\text{risk} \in [0,1]$, TTL $\in$ [8\,h, 24\,h]) and applies
+\emph{raid-posture clamps}: when threat is imminent, intent weights
+for combat-relevant intents are forcibly raised regardless of LLM
+output. This contract makes the action space precisely
+$\sim$\,10$^2$--10$^3$ continuous axes per directive, decoupled from
+entity count, and it ensures the tool layer never enters an invalid
+state even when the LLM emits adversarial or malformed JSON.
+
+\subsection{Determinism and the AgentAdapter Seam}
+\label{sec:adapter-seam}
+
+The tool layer is deterministic given a seed. RNG flows through
+\texttt{src/app/rng.js}; A* paths are cached by
+$(\text{faction}, \text{gridVersion}, \text{costVersion})$;
+Boids accumulators run in fixed order; \texttt{PathWorkerPool} is
+disabled in \texttt{deterministic: true} mode. Verifying determinism
+empirically is non-trivial: we built
+\texttt{tools/audit/determinism-check.js} which runs the harness
+twice with the same seed and compares SHA-256 hashes of slim state
+snapshots. Three tiers are gated: 60 ticks, 1\,800 ticks, and
+7\,200 ticks (240 sim-seconds). All three pass with bit-identical
+hashes (\texttt{e360b76\ldots}, \texttt{473d1b9\ldots},
+\texttt{c2d86a6\ldots}; see Appendix~\ref{app:determinism-report}).
+
+The \textbf{AgentAdapter} is the interface that any LLM (or
+fallback policy, or scripted oracle) must implement to drive
+the four channels:
+
+\begin{lstlisting}[language=Java, caption={AgentAdapter contract}]
+async request(channel, payload, options): Promise<DecisionResponse>
+// channel in {environment-director, npc-policy, strategic-plan, colony-agent}
+// returns: {data, fallback, usage, latencyMs, model, error, debug}
+// MUST not throw; on failure return fallback DecisionResponse
+\end{lstlisting}
+
+Concrete adapters in our suite include:
+(1) \texttt{LLMClient} (OpenAI-compatible HTTP proxy);
+(2) \texttt{NoopAgentAdapter} / \texttt{ScriptedOraclePolicy} (used for
+the sandwich-norm fallback and oracle terms);
+(3) \texttt{HTTPAgentClient} dispatching to a 9-cell cross-vendor routing
+\texttt{agent-bridge.js};
+(4) \texttt{LayerCastAdapter} wrapping any inner adapter with
+deterministic-inference headers;
+(5) \texttt{RecordReplayCache} (VCR-cassette-style) for offline
+re-execution from a previous run's transcript.
+
+\texttt{AdapterToLLMClient} bridges any \texttt{AgentAdapter} into the
+existing simulation systems by exposing the four legacy method
+signatures (\texttt{requestEnvironment}, \texttt{requestPolicies},
+\texttt{requestStrategic}, \texttt{requestPlan}) that the existing
+strategic / environment / brain / colony-director systems call.
+This single seam is what makes E3's 9-cell cross-vendor matrix possible
+without modifying any simulation system.
+
+\subsection{Tool-Interface Contract}
+\label{sec:tool-contract}
+
+Table~\ref{tab:tool-contract} tabulates the four channels, their
+directive schemas, and the deterministic tool implementation that
+grounds each directive into per-tick state changes. This is the
+\emph{action-space contract} of contribution C1: the agent's surface
+is exactly four typed channels into four named tools, and nothing
+else is reachable.
+
+\begin{table}[t]
+\caption{Channel $\to$ directive schema $\to$ tool implementation.}
+\label{tab:tool-contract}
+\centering
+\small
+\begin{tabularx}{\linewidth}{lXX}
+\toprule
+\textbf{Channel} & \textbf{Directive schema (clamped)} & \textbf{Tool implementation} \\
+\midrule
+environment-director
+& \{weather: enum, durationSec $\in$ [8,180], factionTension $\in$ [0,1], eventSpawns: $\leq$3\}
+& Event scheduler $\to$ weather \& faction state perturbation \\
+npc-policy
+& \{groupId, intentWeights $\in$ [0,3]$^{10}$, risk $\in$ [0,1], targetPriorities, ttl $\in$ [8h,24h]\}
+& Group steering (Boids) + FSM intent applier + A* target selection \\
+strategic-plan
+& \{primaryGoal: str, constraints: str[], resourceBudget: \{food, wood, stone, herbs\}\}
+& Plan-arbitration $\to$ adjusts downstream channel budgets \\
+colony-agent
+& [(action: enum, args: obj, depends\_on: int[])]
+& PlanExecutor $\to$ BuildSystem (tile-by-tile grounding) \\
+\bottomrule
+\end{tabularx}
+\end{table}

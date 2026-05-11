@@ -13,7 +13,6 @@ import {
   isRecoveryMode,
 } from "../ai/colony/BuildProposer.js";
 import { proposeBridgesForReachability } from "../ai/colony/proposers/BridgeProposer.js";
-import { proposeScoutRoadTowardFoggedStone } from "../ai/colony/proposers/ScoutRoadProposer.js";
 
 const EVAL_INTERVAL_SEC = 2;
 const HIGH_LOAD_WALL_EVAL_INTERVAL_SEC = 1.5;
@@ -815,6 +814,16 @@ export class ColonyDirectorSystem {
   update(dt, state, services) {
     if (state.session?.phase !== "active") return;
 
+    // D5 runMode gate. When the SimHarness has been booted with
+    // `runMode: "llm"`, the LLM colony-agent channel owns the decision
+    // surface and this scripted auto-pilot must NOT pollute the colony
+    // state. Default ("fallback" or undefined) keeps legacy behaviour
+    // so existing callers / tests continue to tick the rule-based path.
+    // This gates the always-scripted tick only; the AgentAdapter's
+    // fallback safety net (used when an LLM call fails / times out) is
+    // routed through AgentDirectorSystem and is unaffected by this flag.
+    if (state.ai?.runMode === "llm") return;
+
     const director = ensureDirectorState(state);
     const nowSec = Number(state.metrics?.timeSec ?? 0);
     const highLoad = getHighLoadPressure(state);
@@ -908,13 +917,6 @@ export class ColonyDirectorSystem {
     // toward the closest fog-hidden STONE node when stone is critical and
     // no visible STONE exists; the worker walking that road reveals the
     // fog as a side-effect, so the next director tick can land the quarry.
-    const scoutBuilds = proposeScoutRoadTowardFoggedStone(state, this._buildSystem, director, services);
-    if (scoutBuilds > 0) {
-      director.blueprintsSubmitted = Number(director.blueprintsSubmitted ?? 0) + scoutBuilds;
-      director.lastBuildSource = "fallback";
-      director.lastBuildTimeSec = nowSec;
-    }
-
     // Priority 2: phase-based colony development (including expansion after complete)
     // Scale build rate with colony resources — build faster when resources are abundant
     const wood = state.resources?.wood ?? 0;

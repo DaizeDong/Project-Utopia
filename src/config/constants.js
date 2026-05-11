@@ -147,22 +147,18 @@ export const MOVE_DIRECTIONS_4 = Object.freeze([
   { dx: 0, dz: -1 },
 ]);
 
+// SYSTEM_ORDER — academic-benchmark canonical tick order.
+// AnimalAISystem / WildlifePopulationSystem / ProcessingSystem / ProgressionSystem
+// were removed in S3 (D2/D4/D8) and are no longer in this list.
+// AgentDirectorSystem and EventDirectorSystem are kept as optional drop-ins
+// (instantiated by tests + AgentAdapter route in S5) but not in the
+// SimHarness default tick order.
 export const SYSTEM_ORDER = Object.freeze([
   "SimulationClock",
   "VisibilitySystem",
-  "ProgressionSystem",
   "DevIndexSystem",
   "RaidEscalatorSystem",
-  // v0.8.2 Round-6 Wave-2 (01d-mechanics-content Step 2) — EventDirector
-  // sits after RaidEscalator (so it can read raidEscalation.intervalTicks for
-  // the bandit-raid cooldown downgrade) and before ColonyDirector (so its
-  // queued events are visible to the same-tick building snapshot).
   "EventDirectorSystem",
-  // Phase A LLM Colony Planner wiring: AgentDirectorSystem replaces
-  // ColonyDirectorSystem in the order. AgentDirectorSystem internally wraps
-  // ColonyDirectorSystem as `_fallback` and delegates to it when
-  // `state.ai.coverageTarget === "fallback"` (Autopilot OFF) so behaviour is
-  // unchanged for non-LLM runs.
   "AgentDirectorSystem",
   "RoleAssignmentSystem",
   "PopulationGrowthSystem",
@@ -173,17 +169,11 @@ export const SYSTEM_ORDER = Object.freeze([
   "NPCBrainSystem",
   "WarehouseQueueSystem",
   "WorkerAISystem",
-  // v0.8.4 building-construction (Agent A) — sits AFTER WorkerAISystem so
-  // any builder workAppliedSec increment from this same tick is reflected
-  // before completion is checked, and BEFORE VisitorAISystem so the
-  // post-mutation tile is already visible to other agents this tick.
   "ConstructionSystem",
   "VisitorAISystem",
-  "AnimalAISystem",
   "MortalitySystem",
   "BoidsSystem",
   "ResourceSystem",
-  "ProcessingSystem",
 ]);
 
 // v0.9.0-a — Feature flags. Object.freeze with a getter so the surface is

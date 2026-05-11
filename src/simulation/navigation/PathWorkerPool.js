@@ -5,11 +5,19 @@ function canCreateWorkers() {
   return typeof Worker !== "undefined" && typeof URL !== "undefined";
 }
 
+// Deterministic worker count for the academic harness path. PathWorkerPool
+// is only instantiated when `createServices(seed, { deterministic: false })`
+// (the player game / non-academic path). When `options.deterministic` is
+// explicitly set we ignore `navigator.hardwareConcurrency` (host-dependent,
+// non-reproducible) and use a fixed default of 4. Same fallback applies in
+// Node where `navigator` is undefined, so academic CI runs match laptops.
+const DETERMINISTIC_WORKER_COUNT = 4;
 function resolveWorkerCount(options = {}) {
   const requested = Number(options.workerCount);
   if (Number.isFinite(requested) && requested > 0) return Math.max(1, Math.min(32, Math.floor(requested)));
-  const cores = Number(globalThis.navigator?.hardwareConcurrency ?? 4);
-  return Math.max(2, Math.min(32, Number.isFinite(cores) ? Math.floor(cores) : 4));
+  if (options.deterministic) return DETERMINISTIC_WORKER_COUNT;
+  const cores = Number(globalThis.navigator?.hardwareConcurrency ?? DETERMINISTIC_WORKER_COUNT);
+  return Math.max(2, Math.min(32, Number.isFinite(cores) ? Math.floor(cores) : DETERMINISTIC_WORKER_COUNT));
 }
 
 function cloneTiles(tiles = []) {

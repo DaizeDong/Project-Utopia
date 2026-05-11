@@ -3,8 +3,6 @@ import { BALANCE, INITIAL_POPULATION, INITIAL_RESOURCES } from "../config/balanc
 import { GROUP_IDS } from "../config/aiConfig.js";
 import { nextId } from "../app/id.js";
 import { createDefaultAiRuntimeStats } from "../app/aiRuntimeStats.js";
-import { getActiveUiProfile } from "../app/uiProfileState.js";
-import { DEFAULT_DISPLAY_SETTINGS } from "../app/controlSanitizers.js";
 import {
   createInitialGrid,
   randomTileOfTypes,
@@ -101,24 +99,6 @@ function pickWorkerName(random, excludeSet = null) {
     if (!excludeSet.has(candidate)) return candidate;
   }
   return baseName;
-}
-
-// v0.8.2 Round-5b (02e Step 4) — 40 ASCII neutral surnames for casual profile.
-// Source: Dwarf Fortress / Crusader Kings naming cadence; all ≤ 8 letters.
-// Only consumed in casual uiProfile — full/dev profile preserves old RNG seq.
-export const SURNAME_BANK = Object.freeze([
-  "Hollowbrook", "Riven", "Marsh", "Cole", "Orr", "Vesper", "Pale",
-  "Thorn", "Brannt", "Ashford", "Keane", "Drift", "Hale", "Fenn",
-  "Lowe", "Grove", "Stoker", "Reeve", "Moss", "Quinn",
-  "Ward", "Tull", "Orrow", "Sable", "Rook", "Venn", "Coll", "Pike",
-  "Arden", "Bower", "Cray", "Dane", "Elm", "Foss", "Glade", "Hearn",
-  "Inge", "Jorvik", "Lark", "Mend",
-]);
-
-function pickSurname(random) {
-  const idx = Math.floor(random() * SURNAME_BANK.length);
-  const safeIdx = Number.isFinite(idx) && idx >= 0 && idx < SURNAME_BANK.length ? idx : 0;
-  return SURNAME_BANK[safeIdx];
 }
 
 // v0.8.2 Round-0 02d-roleplayer (Step 1) — Visitor name banks. 01e introduced
@@ -272,11 +252,7 @@ export function createWorker(x, z, random = Math.random, options = null) {
   // pass `excludeSet=null` (the colony rarely re-enters initial-pop pressure).
   const excludeSet = options?.excludeSet ?? null;
   const workerName = pickWorkerName(random, excludeSet);
-  const uiProfile = getActiveUiProfile();
-  const surname = uiProfile === "casual" ? pickSurname(random) : null;
-  const displayName = uiProfile === "casual"
-    ? `${workerName} ${surname}`
-    : `${workerName}-${seqFromId(id)}`;
+  const displayName = `${workerName}-${seqFromId(id)}`;
   const hungerSeekThreshold = 0.12 + random() * 0.08;
   const eatRecoveryTarget = 0.62 + random() * 0.12;
   const traits = pickTraits(random);
@@ -978,6 +954,15 @@ export function createInitialGameState(options = {}) {
       runtimeProfile: "default",
       manualModeLocked: false,
       mode: "fallback",
+      // D5 runMode gate. When set to "llm" by SimHarness option, scripted
+      // "auto-pilot" decision systems (ColonyDirectorSystem) are silenced
+      // so the LLM colony-agent channel owns that decision surface alone.
+      // Default "fallback" preserves legacy behaviour (rule-based director
+      // ticks normally). This is the gate between scripted control-arm
+      // baselines and LLM-in-the-loop runs for clean E1-E9 ablations.
+      // It does NOT gate AgentAdapter's fallback safety net — that path
+      // still runs when an LLM call fails / times out.
+      runMode: "fallback",
       // R13 Plan-R13-autopilot-wait-llm (#6 P1) — startup gate. Holds off
       // BuildAdvisor / phase-builder placement when autopilot is ON until
       // the first LLM /api/ai/plan response is received OR fallback mode
@@ -1250,7 +1235,7 @@ export function createInitialGameState(options = {}) {
       visualPreset: "flat_worldsim",
       showTileIcons: true,
       showUnitSprites: true,
-      display: { ...DEFAULT_DISPLAY_SETTINGS },
+      display: {},
       mapTemplateId: grid.templateId,
       mapSeed: grid.seed,
       terrainTuning: { ...(grid.terrainTuning ?? {}) },

@@ -1,5 +1,161 @@
 # Changelog
 
+## [Unreleased] — refactor/academic-benchmark — RC3 design audit
+
+### Audit-driven P0 fixes (2026-05-10)
+- **B1 critical bug**: `SeedMatrix.js:124` was reading `state?.ai?.runtime` (path doesn't exist). All DTE/E6 cells were silently returning 0 for aiRuntime telemetry. Fixed to read `state.metrics.aiRuntime`, remap field names (`requestCount→totalCalls`, `fallbackResponseCount→fallbackCalls`, `errorCount→schemaErrors`), and pass through 7 S5 token-telemetry fields. New test: `test/seed-matrix-aiRuntime-passthrough.test.js`.
+- **G1 D5 runMode gate**: ColonyDirectorSystem was ticking even with LLM in the loop, polluting E1/E3 ablations. Added `state.ai.runMode = "fallback" | "llm"`, SimHarness option `runMode`, gate at top of update(). New test: `test/run-mode-gate.test.js` (8 cases). Default behavior preserved.
+- **G2 HELM Mean Win Rate**: paper §4.4b had no implementation. Added `ScoringEngine.computeHelmMwr(perAgentDimensionScores)` with strict-`>` ties + per-pair joint-dim handling. New test: `test/scoring-engine-helm-mwr.test.js` (7 cases).
+- **G3 dimension wiring**: 4 of 5 placeholder dimension keys now compute from existing telemetry — `coalition_coupling` (Pearson over targetPriorities), `state_target_obedience` (pooled Σ in-target / Σ all), `faction_responsiveness` (Pearson factionTension vs hostile-group count), `plan_policy_alignment` (token overlap strategic plan ↔ workers directive). `rae_path_overhead` deferred (T1 — needs PathCache instrumentation).
+- **B2-B8 nondeterminism**: 7 `Math.random()` fallback paths replaced with constant `0.5` or seeded RNG; `navigator.hardwareConcurrency` short-circuited in deterministic mode. `npm run audit:rng` now clean. Tier 1/2 hashes preserved bit-identically.
+
+### Decisions documented
+- New: `docs/ai-research/design-audit-decisions.md` — Round 1+2+3 findings consolidated, KEEP/REMOVE/REFACTOR markings, follow-up tickets T1-T7.
+- CLAUDE.md "Refactor State" table updated: D5 runMode gate `DEFERRED → DONE`.
+
+### Verified
+- `node --test test/*.test.js` — **815 pass / 0 fail / 1 skipped** (no regressions; 7 new test cases added)
+- `npm run audit:determinism` — Tier 1 `e360b76…` PASS, Tier 2 `473d1b9…` PASS (bit-identical to RC2)
+- `npm run audit:rng` — OK, no leaks
+
+## [Unreleased prior] — refactor/academic-benchmark — W2 batch X (V3.1 + V6.1)
+
+### V3.1 — DimensionNormalizer transform layer
+- Why: Round-1 reviewer flagged that the 5 dimension plugins (RAE / GroupDynamics / Memory / DTE / Hierarchical) emit on incompatible scales — some [0,1] benefit-form, some cost-form, some symmetric in [-1,1], some unbounded ms / token-rates. ScoringEngine.bayesianScore + sandwichNormalize + HELM MWR all assume comparable [0,1] benefit-form inputs. Without a transform layer, raw scores were silently fed to scoring → garbage out.
+- New file: `src/benchmark/framework/DimensionNormalizer.js` (~245 LOC)
+  - `DIMENSION_NORMALIZERS` — frozen registry covering all 19 dim keys emitted by the 5 plugins (verified by reflective test against `ACADEMIC_BENCHMARK_DIMENSIONS`)
+  - 6 transforms: identity / invert / reciprocal / clipScale / rescaleSymmetric / exponentialDecay (with `fromZero` flag for benefit-form unbounded)
+  - `normalizeDimension(dimKey, value)` — single-key normalisation; NaN/Infinity → 0 with warn; unknown key → NaN with warn
+  - `normalizeRow(scores)` — bulk; preserves unknown keys verbatim (no row-shape corruption)
+  - `gatherDimensionAcrossCells(cells, dimKey)` — pulls (seed,scenario,value) triples from SeedMatrix cells
+  - `buildSandwichTriple(agentCells, fallbackCells, oracleCells, dimKey)` — paired-by-(seed,scenario) alignment for sandwichNormalize; throws on misalignment instead of silent garbage
+- New test `test/benchmark-dimension-normalizer.test.js` (~190 LOC, 14 cases) — every transform branch + NaN/Infinity + unknown-key + reflective coverage check + buildSandwichTriple alignment + misalignment-throws.
+
+### V6.1 — paper-run entrypoint
+- Why: paper-framework.md lists 13 figures + 3 tables but had no script to drive the NDJSON pipeline. E1/E3/E5/E6 had no driver — the figures were aspirational only.
+- New file: `scripts/benchmark-paper.mjs` (~290 LOC) — CLI driver
+  - 3 experiment presets: `E1` (hierarchical vs flat), `E3` (9-cell cross-vendor), `E6` (schema failure)
+  - Wires fallback (NoopAgentAdapter) + oracle (ScriptedOraclePolicy) reference cells + per-cell agent cells
+  - Per-dim normalize + sandwichNormalize + bayesianScore → emits one NDJSON row per (cellId, scenario, seed, dim)
+  - `parseDriverArgs` (uses `node:util.parseArgs`) supports custom seeds (decimal / 0x-hex), scenarios, cells, duration, output path, concurrency
+  - Validates cell labels against `DEFAULT_AGENT_ROUTING` so typos fail fast
+- New file: `src/benchmark/baselines/MultiBackendAdapter.js` (~95 LOC) — cross-vendor channel router; wraps `Map<channel, AgentAdapter>` so a SeedMatrix sees one adapter while requests dispatch by channel string. Tags response.debug.multiBackend with sub-adapter name; never throws on unknown channel (returns synthetic fallback DecisionResponse + bumps `unknownChannelCount`).
+- New test `test/benchmark-paper-driver.test.js` (~115 LOC, 7 cases) — parseSeedToken / parseDriverArgs (defaults, custom, validation, unknown-cell rejection) + buildAgentConfigForCell + E1 smoke run on FB cell × 1 seed × 1 scenario × 4-sec duration verifying every registered dim emits a row, NDJSON round-trip works, all rows have `experiment / cellId / scenario / seed / dim / raw / normalized / sandwichNorm / bayesianMean / bayesianCi95 / agentId`.
+- New `package.json` scripts: `bench:paper` (generic) + `bench:paper:E1` (smoke).
+
+### Verified
+- `node --test test/benchmark-dimension-normalizer.test.js test/benchmark-paper-driver.test.js` — **21/21 pass** (smoke run ~27 s)
+- `node --test test/benchmark-flat-baseline.test.js test/benchmark-seed-matrix.test.js test/benchmark-dimensions.test.js test/benchmark-dimension-normalizer.test.js` — **31/31 pass** (no regression)
+
+### LOC delta
+- New: 245 (DimensionNormalizer) + 95 (MultiBackendAdapter) + 290 (benchmark-paper.mjs) + 190 + 115 (2 tests) = **935 LOC across 5 new files**
+- Modified: 2 lines in `package.json` (added `bench:paper` + `bench:paper:E1` scripts).
+
+### Surprises / notes
+- Plugin dim-key audit confirmed every key matches its source-of-truth string in the plugin files exactly (no aliasing): RAE emits `rae_composite / rae_sufficiency / rae_distribution_gini / rae_idle_capacity / rae_path_overhead`, GroupDynamics emits `intent_entropy / coalition_coupling / state_target_obedience / faction_responsiveness`, Memory emits `anchored_fact_recall / action_grounded_recall / behavioral_drift / performance_at_t`, DTE emits `dte_per_completion_token / dte_per_decision / first_token_latency_p50`, Hierarchical emits `plan_policy_alignment / env_threat_responsiveness / colony_cadence_health`. The reflective coverage test in the normalizer suite locks this against future drift.
+- `intent_entropy` cap chosen as `log2(20) ≈ 4.32` rather than the strict `log2(5) ≈ 2.32` from the canonical 5-intent set, because plugins commonly broaden to ≥10 intents in practice (see ScriptedOraclePolicy's WORKERS policy with 10+ intent weights).
+- Driver intentionally handles oracle == fallback (range==0) and oracle < fallback (range<0) by short-circuiting to ScoringEngine's `sandwichNormalize` semantics — that function already returns the binary above-baseline branch / NaN respectively. The driver does NOT mask either case; downstream NDJSON consumers can detect both via `sandwichNorm` value.
+- `MultiBackendAdapter` adapterClass factory stores the channel map in a closure to dodge SeedMatrix's `new adapterClass(adapterOpts)` instantiation contract — building the channel map once per cell rather than once per cell × dim plugin.
+
+---
+
+## [Unreleased] — refactor/academic-benchmark — P0 reviewer-blocker fixes
+
+### P0 fix — wire AgentAdapter through SimHarness (Critical Bug 1)
+- Why: 3 reviewer reports converged on the same finding — `SeedMatrix.runOneCell` was setting `harness.state.ai.adapter = adapter`, but no sim system reads that field. The 4-channel decision sites (`StrategicDirector`, `EnvironmentDirectorSystem`, `NPCBrainSystem`, `AgentDirectorSystem`) all call `services.llmClient.requestXxx(...)` directly. Net effect: every alternate adapter (`FlatBaselineAdapter`, `ScriptedOraclePolicy`, `HTTPAgentClient`, `LayerCastAdapter`, `NoopAgentAdapter`) was dead code; the entire P0 P-batch was a dead seam.
+- New file: `src/simulation/ai/llm/AdapterToLLMClient.js` — drop-in LLMClient shim wrapping any `AgentAdapter` (`requestEnvironment` / `requestPolicies` / `requestStrategic` / `requestPlan` + `lastStatus` / `lastModel` / `lastLatencyMs` / `lastError`). Validates + guards adapter responses through the same `validateEnvironmentDirective` / `validateGroupPolicy` / `validatePlanResponse` + `guardEnvironmentDirective` / `guardGroupPolicies` paths LLMClient uses on proxy responses.
+- Modified `src/app/createServices.js` — accepts `options.agentAdapter`; precedence is `agentAdapter` → `offlineAiFallback` → raw `LLMClient`. Default browser/game path unchanged.
+- Modified `src/benchmark/framework/SimHarness.js` — accepts `opts.agentAdapter` and forwards it to `createServices`.
+- Modified `src/benchmark/framework/SeedMatrix.js` — `runOneCell` now passes the adapter at SimHarness construction time instead of the old `harness.state.ai.adapter = adapter` post-hoc mutation.
+- New test `test/seed-matrix-adapter-integration.test.js` — three-cell e2e: `NoopAgentAdapter` (sanity), `ScriptedOraclePolicy` (real directives), `FlatBaselineAdapter` w/ stubbed inner `LLMClient` (verifies the fused-call path is actually invoked). Includes a `CountingAdapter` wrapper that asserts non-zero per-channel call counts.
+
+### P0 fix — MemoryDegradation extractActionTokens Map vs Object (Critical Bug 2)
+- Why: `state.ai.groupPolicies` is a `Map` (NPCBrainSystem uses `.set()`), with each entry shaped `{ expiresAtSec, data: <policyObject> }`. `Object.values(policies)` returns `[]` on a Map, and even with object input never unwrapped `.data`. Result: `action_grounded_recall` was identically zero on every benchmark run — H5e couldn't distinguish verbal vs action-grounded recall.
+- Modified `src/benchmark/dimensions/MemoryDegradation.js` `extractActionTokens` to handle both `Map` and plain-object inputs and to unwrap `.data` (live shape) or accept a flat policy (test-fixture shape). Added a comment noting that `samples._meta` is non-enumerable on `JSON.stringify` (arrays drop ad-hoc properties); callers should pull `_meta` off in-process or read via `selfScore` ctx.
+- New test `test/benchmark-memory-action-recall.test.js` — 4 cases: Map-with-data wrap, plain-object-with-data wrap, flat policy without wrap, zero-weight exclusion.
+
+### P0 fix — Anchor Injection Protocol (Critical Bug 3)
+- Why: `MemoryDegradation.collectSamples` accepts `opts.anchors` and `selfScore` accepts `ctx.anchors`, but no plumbing wrote those tokens into `harness.memoryStore`. Every E5 (anchor decay) experiment ran on an empty memoryStore.
+- New file: `src/benchmark/anchors/AnchorInjector.js` — `injectAnchors(harness, anchors, opts)` writes through `MemoryStore.addObservation(timeSec, text, category, importance)` with category `"anchor"` and importance 5; falls back to direct `observations.push` if the API ever changes; returns `{ injected, skipped }` counts.
+- New test `test/benchmark-anchor-injector.test.js` — 6 cases incl. empty/string-form anchor handling, formatForPrompt round-trip, fallback push path, no-memoryStore graceful skip, anchored_fact_recall ≥ 0 after injection.
+
+### Verified
+- `node --test test/benchmark-memory-action-recall.test.js test/benchmark-anchor-injector.test.js` — 10/10 pass
+- `node --test test/seed-matrix-adapter-integration.test.js` — 3/3 pass (~30 s)
+- `node --test test/*.test.js` (full suite) — **754 tests / 753 pass / 0 fail / 1 skip** (pre-existing skip preserved)
+
+### LOC delta
+- New: 298 (AdapterToLLMClient) + 95 (AnchorInjector) + 185 + 132 + 100 (3 tests) = **810 LOC across 5 new files**
+- Modified: ~65 lines net across 4 files (createServices, SimHarness, SeedMatrix, MemoryDegradation)
+
+---
+
+## [0.11.0-rc1] — 2026-05-09 — Academic-benchmark refactor
+
+Branch: `refactor/academic-benchmark` (from baseline tag `pre-academic-refactor-v0.10.0` = commit `16a593d`).
+Tag: `refactor/academic-benchmark-v0.11.0-rc1`.
+
+Cumulative delta vs v0.10.0: **~78 k LOC removed across 370+ files, 2064 tests / 1 fail → 684 tests / 0 fail, full-suite 84 s → 18 s**.
+
+### S0 — baseline + determinism audit
+- Established baseline 2064 / 2059 pass / 1 fail / 4 skip on `pre-academic-refactor-v0.10.0`
+- Added `tools/audit/{rng-coverage-report,determinism-check}.js` — RNG-leak grep + same-seed × fallback hash equality verifier
+- Output `docs/ai-research/determinism-report.md` answering Appendix-B Q1–Q4
+
+### S1 — browser shell removal (~30 k LOC, 119 test files)
+- CUT `src/render/`, `src/ui/`, `src/audio/`, `src/dev/`, `index.html`, `src/main.js`, `vite.config.js`, `desktop/`
+- CUT `src/app/{GameApp,GameLoop,snapshotService,leaderboardService,devModeGate,shortcutResolver,replayService,perfCapHonest,simStepper,uiProfileState}.js`
+- CUT 14 browser/desktop/release scripts in `scripts/`
+- Patched 3 reverse imports (`MortalitySystem` audio, `PopulationGrowthSystem` dev re-export, `EntityFactory` uiProfile/display)
+- Slimmed `createServices.js`, dropped `electron`/`vite`/`playwright`/`three` deps from `package.json`
+
+### S2 — test bucket cleanup (~17.7 k LOC, 127 test files)
+- Buckets per refactor-plan §3.3: ui-hud-render, progression-score, building-economy regressions, worker-npc balance/hotfix, ai-llm tone/balance-tune, navigation road-*, wildlife, scenarios
+- KEEP ~89 contract tests: ai-llm core (26), worker minimal contract (10), navigation core (8), benchmark/harness/long-run (20), build-system + build-proposer (4), schema/run-outcome/rng-determ
+
+### S3 — decision points (~13.8 k LOC)
+- **D2** ProcessingSystem CUT (`economy/ProcessingSystem.js` + `proposers/ProcessingProposer.js` + WAVE_2_BUILD_PROPOSERS membership + SimHarness/long-horizon-helpers wiring)
+- **D4** Wildlife + Trader CUT (`ecology/WildlifePopulationSystem`, `npc/AnimalAISystem`; raider path inside VisitorAISystem retained)
+- **D8** ProgressionSystem disabled (file kept as `isRecoveryEssential` library, removed from system tick)
+- **D1** SkillLibrary DEFERRED — too tightly coupled to ColonyPlanner / PlanExecutor / AgentDirectorSystem; tag `feature/skill-library-archive` reserved for v0.11.1
+- **D9 / D10** templates 6→2 + ScenarioFactory story content DEFERRED — many simulation modules still need the runtime helpers
+
+### S4 — `balance.js` neutralize header
+- Add policy banner at top of `src/config/balance.js` documenting neutralize-don't-delete strategy (preserves 50+ inbound reads)
+- No value changes (would risk breaking behavioural contracts)
+
+### S5 — AgentAdapter skeleton + token telemetry
+- New `src/simulation/ai/llm/AgentAdapter.js` — 4-channel interface (CHANNELS, AgentAdapter base class, NoopAgentAdapter, SCHEMA_VERSION="1.0")
+- Extend `src/app/aiRuntimeStats.js` with token fields (promptTokens, completionTokens, cachedTokens, firstTokenLatencyMs, tokensPerSec, kvCacheHits, prefixHits)
+- AI proxy / LLMClient / PromptBuilder slimming **deferred** to wave-2 (would risk breaking the existing test surface)
+
+### S6 — 5 dimension plugins
+- New `src/benchmark/dimensions/{ResourceAllocationEfficiency,GroupDynamics,MemoryDegradation,DecisionTokenEfficiency,HierarchicalCoordination,index}.js`
+- Each conforms to `DimensionPlugin.js` protocol; output documented as `[0,1]` for sufficiency / drift / recall, raw scalar for cadence-stddev + latency-p50 (consumers normalize before bayesianScore)
+- New `test/benchmark-dimensions.test.js` — 8 tests cover protocol + per-plugin smoke run
+
+### Review rounds
+- Round 1 (orphans): deleted dead `src/app/controlSanitizers.js` (96 LOC, 0 inbound), `SURNAME_BANK + pickSurname` in `EntityFactory.js`, dead SYSTEM_ORDER strings (`AnimalAISystem`, `ProcessingSystem`, `ProgressionSystem`)
+- Round 2 (docs): full rewrite of `CLAUDE.md` for academic-benchmark architecture, full rewrite of `README.md`, refactor-plan §4.11 Decision Matrix status filled in
+- Round 3 (closeout): identified ScoringEngine ↔ plugin scale mismatch (deferred normalization layer to wave-2), removed broken Playwright-tied `scripts/long-run-{support,report}.mjs`
+
+### Verified
+- `npm test` — 684 / 683 pass / 0 fail / 1 skip / 18.4 s
+- `npm run audit:rng` — 3 leaks remain (was 12 pre-S0; the 9 in deleted files self-resolved)
+- `npm run audit:determinism --ticks 60 --scenario temperate_plains` — same hash on two runs (fallback mode)
+- `npm run bench:dimensions` — 8/8 dimension-plugin smoke tests green
+
+### Deferred (see `docs/ai-research/refactor-plan.md` §4.11 + §5)
+- **D1** SkillLibrary cut + caller refactor
+- **D5** runMode gate (`state.ai.runMode = "llm" | "algorithmic" | "hybrid"`)
+- **D9** scenario template allowlist (6→2+1)
+- **D10** ScenarioFactory story-content deletion
+- **S5 wave-2** ai-proxy / LLMClient / PromptBuilder slimming + HTTPAgentClient + agent-bridge
+- **S6 wave-2** ScoringEngine normalization layer; populate placeholder dimensions (coalition_coupling, state_target_obedience, plan_policy_alignment, behavioral_drift)
+- **S7** long-horizon memory harness (30 m → 2 h × 5 seed × 3 repeat → 8 h → 24 h)
+
+---
+
 ## [Unreleased] — HW7 Final Submission deliverables (a7.md + Final-Polish-Loop audit + final-crit deck)
 
 ### docs(submission) — Consolidate HW7 final-submission deliverables for grading

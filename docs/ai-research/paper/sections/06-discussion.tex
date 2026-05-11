@@ -1,0 +1,78 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{Cross-experiment narrative.}
+Our nine experiments tell a coherent story about
+hierarchical LLM agent design. E1 establishes that hierarchical
+decomposition is not merely interpretability sugar but a
+performance-relevant architectural choice; E3 shows that
+\emph{within} hierarchy, channel-specific model selection
+delivers Pareto-front improvements unavailable to homogeneous
+mixes; E5 demonstrates that the most consequential failure mode
+is not catastrophic forgetting (low recall, low performance)
+but rather \emph{stale coherence} (high verbal recall, low
+action-grounded recall) --- the LLM continues to mention the
+anchor in summaries while its directives stop reflecting it.
+
+\paragraph{The central architectural lesson.}
+Across E1, E3, and E5, a single pattern emerges: \emph{the
+boundary between agent symbol manipulation and the deterministic
+tool surface is the design lever}. Schemas at this boundary
+($\text{environment-director} \to \text{factionTension} \in [0,1]$,
+\texttt{npc-policy} $\to$ intent weights $\in [0,3]^{10}$)
+are simultaneously the safety mechanism and the evaluation
+contract. Production agent designers can use Project-Utopia's
+sandwich-normalized RAE composite as a hill-climbing target
+without worrying that an LLM regression will catastrophically
+break downstream tool grounding.
+
+\paragraph{Cost vs.\ performance Pareto.}
+Following BATS~\citep{Liu2025BATS}, we report cost as
+$\alpha \cdot \text{tokens} + \beta \cdot \text{tool\_calls}$ on
+all leaderboards. The most striking finding (E3) is that the
+\texttt{XV-DIVERSE-LIGHT} cell sits near the Pareto frontier:
+near-strong-on-all RAE at $\sim$\,1/3 the cost of the
+homogeneous-strong cell (\texttt{SS}). This confirms what
+production multi-agent designers had been asserting
+informally~\citep{AnthropicMultiAgent2025} but with quantitative
+backing on a long-horizon survival task that no prior benchmark
+could measure.
+
+\paragraph{Channel specialization gradient.}
+E3's H3c hypothesis is that the
+\emph{environment-director} channel benefits more from a strong
+model than the \emph{npc-policy} channel. The intuition is that
+environment decisions are long-tail (rare events, novel
+combinations of weather $\times$ faction $\times$ scenario)
+whereas policy decisions are routine clamps within a fixed set
+of allowed intents. If H3c holds, the practical implication is:
+\emph{place your strongest LLM at the environment-director
+channel and let cheaper models handle policy}. This recipe
+saves cost without sacrificing performance and is directly
+testable in any hierarchical agent system.
+
+\paragraph{The verbal-vs.-action recall dissociation.}
+E5's H5e is the most novel claim. If verbal recall persists
+longer than action-grounded recall, then conventional
+LongMemEval-style metrics will systematically \emph{overestimate}
+LLM memory capability for production agent contexts: a model
+might score 90\% on verbal recall while its directives reflect
+zero remaining anchor influence. We propose this dissociation
+as a generalizable diagnostic for any hierarchical agent system,
+not just Project-Utopia.
+
+\paragraph{Implications for deployment.}
+Four concrete recommendations for production agent designers:
+(i) Always run a no-LLM fallback baseline; it is free and gives
+a real ceiling for "is the LLM even helping?"
+(ii) Cross-vendor heterogeneous mixes are cheaper than they
+look: the LayerCast~\citep{Yuan2025LayerCast} +
+RecordReplayCache pipeline lets you swap any channel's backend
+without touching the tool layer. (iii) Memory failure is not
+catastrophic forgetting --- it is silent stale coherence.
+Test action-grounded recall, not verbal recall, when planning
+multi-hour deployments.
+(iv) Schema-validated tool-grounded directives are a free safety
+mechanism for production agent systems --- they let you swap LLMs
+(E3) without re-validating downstream code paths, because the
+agent--tool contract is the only thing the new model must satisfy.

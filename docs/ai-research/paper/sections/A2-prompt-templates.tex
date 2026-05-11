@@ -1,0 +1,62 @@
+\section{Prompt Templates and Action-Space Contract}
+\label{app:prompts}
+
+The four channel prompts are released verbatim in
+\texttt{src/data/prompts/}. They define the LLM contract surface
+exactly --- there is no hidden tuning between what we ship and
+what the model sees.
+
+\subsection{Environment-Director Prompt (excerpt)}
+
+\begin{quote}\small\sffamily
+You manage the world of a small colony. Each tick, react to the
+operational summary by emitting a single environment-directive
+JSON of the form:\\
+\\
+\texttt{\{ weather: enum, durationSec: 8--180, factionTension: 0--1,
+eventSpawns: at most 3, summary?: string, focus?: string,
+steeringNotes?: string[] \}}\\
+\\
+Hard rules:\\
+- Match weather to the operationalHighlights threat profile.\\
+- Use eventSpawns sparingly --- low-intensity spawns degrade
+worker performance without giving useful signal to the
+strategic channel.\\
+- Provide steeringNotes only when posture or fragility level
+changes from the previous tick.
+\end{quote}
+
+\subsection{NPC-Policy Prompt (excerpt)}
+
+\begin{quote}\small\sffamily
+You produce per-group policies for the colony's worker /
+trader / saboteur / herbivore / predator groups. Each policy
+specifies:\\
+- intentWeights: Object$<$string, 0--3$>$\\
+- riskTolerance: 0--1\\
+- targetPriorities: Object$<$string, 0--3$>$\\
+- ttlSec: 8--24h\\
+\\
+Use the groupContracts allowlist to know which intents and
+target keys are valid for each group. Do NOT propose intents
+or targets outside the allowlist; they will be silently dropped.
+\end{quote}
+
+\subsection{Schema and Guardrails}
+
+The full JSON-Schema definition is in
+\texttt{src/simulation/ai/llm/ResponseSchema.js}. The numerical
+clamping rules are in
+\texttt{src/simulation/ai/llm/Guardrails.js}. Together they
+enforce:
+\begin{itemize}[leftmargin=*]
+\item all numeric fields finite (NaN dropped)
+\item enum values from a fixed allowlist (unknowns dropped)
+\item weights $\in [0, 3]$, risk $\in [0, 1]$,
+factionTension $\in [0, 1]$
+\item TTL $\in$ [8\,h, 24\,h]
+\item eventSpawns truncated to length 3, each with intensity
+$\geq 0.4$ and duration $\in$ [6, 60]\,s
+\item raid-posture clamp: when threat $\geq 80$, combat-relevant
+intents are forcibly raised regardless of LLM output
+\end{itemize}

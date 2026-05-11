@@ -1,0 +1,151 @@
+\section{Related Work}
+\label{sec:related-work}
+
+We organize related work along six axes, mapping each to the
+contribution claims (C1--C4) of \S\ref{sec:intro}. A complete prior-art
+table for the 75+ benchmarks reviewed appears in
+Appendix~\ref{app:prior-art-table}.
+
+\subsection{LLM Tool-Use and Tool-Augmented Agents}
+\label{sec:rw-tool-use}
+
+The closest immediate neighbours of Project-Utopia are agent
+frameworks that pair an LLM with a tool surface.
+\textbf{ReAct}~\citep{Yao2023ReAct} formalized interleaved reasoning
+and acting for a single agent; subsequent work scaled the action
+side: \textbf{Toolformer}~\citep{Schick2023Toolformer} taught models
+to self-invoke a small tool inventory;
+\textbf{Gorilla}~\citep{Patil2023Gorilla} and
+\textbf{ToolLLM}~\citep{Qin2024ToolLLM} pushed the inventory to
+$10^3$--$10^4$ real APIs and scored selection accuracy;
+\textbf{MINT}~\citep{Wang2024MINT} added multi-turn user feedback;
+\textbf{HuggingGPT}~\citep{Shen2023HuggingGPT} used an LLM planner to
+dispatch sub-tasks to model-zoo tools. These works converge on a
+shared methodology: \emph{measure single-channel selection or
+single-turn invocation accuracy}. Project-Utopia is complementary:
+it fixes the tool surface (4 tools $\times$ 4 channels) and
+measures \emph{cross-channel orchestration coherence under stale
+long-horizon context}.
+\textbf{Reflexion}~\citep{Shinn2023Reflexion} adds verbal
+self-improvement to ReAct loops; our colony-agent channel implements
+an analogous reflect step but uses simulator-objective feedback
+rather than the agent's own critique.
+
+\subsection{Single-Agent Tool-Use and Web Benchmarks}
+
+AgentBench~\citep{Liu2024AgentBench} ($N$=8 environments),
+GAIA~\citep{Mialon2023GAIA} ($N$=466 tasks),
+WebArena~\citep{Zhou2024WebArena} ($N$=812 web tasks),
+AgentBoard~\citep{Ma2024AgentBoard} (Progress Rate scoring),
+BALROG~\citep{Paglieri2025BALROG} ($N$=6 RL games), and recent
+TheAgentCompany~\citep{Xu2025TheAgentCompany},
+OdysseyBench~\citep{Wang2025OdysseyBench},
+HeroBench~\citep{Anokhin2025HeroBench} all evaluate \emph{single}
+agents on \emph{episodic} tasks. We share their commitment to
+programmatic state-based oracles (rather than LLM-as-judge); we
+differ in dispatching \emph{four} parallel decision channels over a
+fixed schema-validated tool surface at distinct cadences within a
+single continuous task.
+
+\subsection{LLM-in-Game Benchmarks}
+
+Voyager~\citep{Wang2023Voyager} (Minecraft skill discovery),
+Cicero~\citep{FAIR2022Cicero} (Diplomacy negotiation),
+Generative Agents~\citep{Park2023GenerativeAgents} (Smallville
+believability), SmartPlay~\citep{Wu2024SmartPlay} ($N$=6 games $\times$ 9
+capabilities), and MineDojo~\citep{Fan2022MineDojo} ($N$=3\,000+ tasks)
+established LLM-in-game evaluation. The most direct concurrent
+competitor is \textbf{Orak}~\citep{Krafton2026Orak}, which evaluates
+LLMs on 12 video games (including Stardew Valley and StarCraft II)
+through MCP plug-and-play. Project-Utopia differs by going
+\emph{depth-first} on one deep colony simulation with a 96$\times$72
+deterministic tile economy, FSM workers, and a multi-resource
+processing chain --- producing per-channel and per-dimension scores
+that Orak's flat per-game scalars cannot.
+
+\subsection{Memory and Long-Context Benchmarks}
+
+Long-context evaluation has rapidly matured in 2024--2026:
+RULER~\citep{Hsieh2024RULER} (effective context length, 13 task
+families), LongMemEval~\citep{Wu2025LongMemEval} (long-term chat
+memory), Lost-in-the-Middle~\citep{Liu2024LostInMiddle} (positional
+bias U-shape), InfiniteBench~\citep{Zhang2024InfiniteBench}
+($\geq$\,100k tokens), and the most recent
+MemoryArena~\citep{He2026MemoryArena},
+MemoryAgentBench~\citep{Hu2026MemoryAgentBench},
+Evo-Memory~\citep{EvoMemory2025},
+Memora~\citep{Memora2026}, and HELM Long Context~\citep{Stanford2025HELMLong}.
+These probe \emph{verbal} recall on synthetic distractors; only
+MemoryArena couples recall to action grounding, but in
+\emph{session-discrete} agent loops. Project-Utopia's
+contribution is the first three-axis joint analysis
+($\text{Recall} \times \text{Drift} \times \text{Performance}$)
+on \emph{tick-continuous, naturally-accumulated} context, capturing
+a dissociation between verbal-but-not-action recall that prior
+single-axis work cannot. The Illusion-of-Diminishing-Returns
+analysis~\citep{Sinha2025IllusionDiminishingReturns} provides the
+theoretical underpinning for our drift curves.
+
+\subsection{Multi-Agent LLM Coordination}
+
+ChatDev~\citep{Qian2024ChatDev} (5 software-engineering roles
+in chat-chain), MetaGPT~\citep{Hong2024MetaGPT} (publish-subscribe
+message pool), AgentVerse~\citep{Chen2024AgentVerse} (4-stage
+recruitment), CAMEL~\citep{Li2023Camel} (2-agent role-playing), and
+Concordia~\citep{Vezhnevets2023Concordia} (Game-Master broker)
+established multi-LLM coordination patterns. Crucially,
+\textbf{X-MAS}~\citep{Ma2025XMAS} (May 2025) is the first to
+\emph{systematically} demonstrate heterogeneous-LLM advantages on
+per-task routing across 27 LLMs $\times$ 5 domains $\times$ 5 functions,
+and \textbf{Anthropic's Multi-Agent Research
+System}~\citep{AnthropicMultiAgent2025} validated intra-family
+Opus + Sonnet mixes in production. Subsequent work clarifies that
+naive multi-agent debate often \emph{degrades}
+performance~\citep{StopOvervaluingMAD2025}, and that
+heterogeneity is the antidote.
+Project-Utopia's E3 experiment (\S\ref{sec:exp:e3}) extends this
+literature by adding three orthogonal axes: \emph{cross-vendor}
+mixes (Anthropic + OpenAI + open-weight, vs.\ X-MAS's
+mostly single-vendor scoring), \emph{per-channel} routing
+(vs.\ per-task), and \emph{long-horizon survival} (vs.\ per-task
+isolated runs).
+
+\subsection{RL Evaluation Methodology (Borrowed)}
+
+Although Project-Utopia is not an RL benchmark, the metric stack
+borrows four ingredients from RL game-playing AI methodology:
+Crafter~\citep{Hafner2022Crafter}'s geometric-mean composite (punishes
+single-axis collapse);
+MeltingPot~2.0~\citep{Agapiou2022MeltingPot}'s sandwich normalization
+$(\text{focal} - \text{random}) / (\text{exploiter} - \text{random})$;
+Pluribus AIVAT~\citep{Brown2019Pluribus}'s PolicyValue Baseline
+(2--3$\times$ variance reduction, \S\ref{sec:exp:e8}); and
+TrueSkill~\citep{Berner2019OpenAIFive} / $\alpha$-rank
+\citep{Lanctot2019OpenSpiel} for low-sample multi-LLM cells.
+AlphaStar~\citep{Vinyals2019AlphaStar} and FTW
+Capture-the-Flag~\citep{Jaderberg2019FTW} inspire our
+matched-budget fairness convention.
+
+\subsection{Reproducibility and Methodology}
+
+\citet{Bowyer2025DontUseClt} (ICML 2025 Spotlight) demonstrated
+that the central-limit-theorem normal approximation
+under-covers at LLM-benchmark sample sizes ($N < 300$) and
+recommended Beta-Binomial credible intervals as the community
+default; we adopt this throughout.
+\citet{Yuan2025LayerCast} (NeurIPS 2025 Oral) showed that bf16 LLM
+inference can swing accuracy by 9 percentage points across hardware,
+and proposed LayerCast for hardware-independent bit-identical
+inference --- enabling our Tier 2 reproducibility claim.
+\citet{Cheng2025PeerBench} (NeurIPS 2025 Position Paper) argued
+\emph{against} agent-as-judge for high-stakes capability evaluation;
+following their guidance, all Project-Utopia metrics are
+simulator-objective, never LLM-judged.
+\citet{Siddiq2025SoftwareReproducibility} introduced the
+Reproducibility Maturity Model (RMM) with seven smell categories;
+Project-Utopia targets RMM Tier 4+ (\S\ref{sec:reproducibility}).
+\citet{Liu2025BATS} formalized cost-aware Pareto reporting; we adopt
+$\alpha \cdot \text{tokens} + \beta \cdot \text{tool\_calls}$
+following BATS.
+The MathArena~\citep{Stanford2025MathArena} streaming-benchmark
+template inspires our scenario rotation (\S\ref{sec:limitations}).

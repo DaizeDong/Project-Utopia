@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // long-horizon-matrix.mjs — runs the long-horizon bench over the nightly
 // matrix defined in spec § 16.4: 10 seeds × 3 presets = 30 runs, output
-// collected under docs/benchmarks/nightly/.
+// collected under output/benchmark-runs/long-horizon-matrix/.
 //
 // Usage:
 //   node scripts/long-horizon-matrix.mjs                # full 30-run matrix

@@ -39,7 +39,7 @@ function run() {
     }
   }
 
-  const outDir = path.resolve(process.cwd(), "docs/assignment4/metrics");
+  const outDir = path.resolve(process.cwd(), "output/bench-perf");
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, "perf-baseline.csv");
   const header = "template,seed,grid_ms,astar_ms,path_len,width,height";

@@ -20,6 +20,13 @@ export class MemoryStore {
    * @param {string} text
    * @param {string} category
    * @param {number} importance  1 (routine) to 5 (critical), clamped
+   *
+   * Eviction policy: importance-aware FIFO (P1 fix, reviewer round 2).
+   * When capacity is exceeded, drop the oldest LOW-importance entry first
+   * (importance ≤ 2). Only drop high-importance (≥ 3) entries if every
+   * lower-importance slot has been freed. This preserves long-horizon
+   * anchor (importance=5) durability for E5 memory experiments while
+   * still bounding memory usage on routine observations.
    */
   addObservation(timeSec, text, category, importance) {
     const clamped = Math.max(1, Math.min(5, importance));
@@ -31,7 +38,16 @@ export class MemoryStore {
       type: "observation",
     });
     while (this.observations.length > this._maxObservations) {
-      this.observations.shift();
+      // Find oldest low-importance (≤ 2) entry; if none, drop oldest overall.
+      let evictIdx = -1;
+      for (let i = 0; i < this.observations.length; i++) {
+        if ((this.observations[i].importance ?? 1) <= 2) {
+          evictIdx = i;
+          break;
+        }
+      }
+      if (evictIdx === -1) evictIdx = 0;
+      this.observations.splice(evictIdx, 1);
     }
   }
 

@@ -18,16 +18,55 @@ function compactClientError(err) {
   return raw.slice(0, 180);
 }
 
-async function postJson(baseUrl, endpoint, body, timeoutMs) {
+/**
+ * Merge caller-supplied transport options (LayerCast metadata etc.) into a
+ * single fetch invocation. Returns `{ headers, body }` so callers can also
+ * record the merged request payload for debug envelopes.
+ *
+ * @param {object} body — base JSON body
+ * @param {object} [options]
+ * @param {Record<string,string>} [options.headers] — extra HTTP request headers
+ * @param {object} [options.inference_config] — LayerCast inference block merged into body
+ * @param {string} [options.model] — model override merged into body
+ * @param {number} [options.temperature] — sampler override merged into body
+ * @param {number} [options.top_p] — sampler override merged into body
+ */
+function mergeRequestOptions(body, options) {
+  const opts = options && typeof options === "object" ? options : {};
+  const mergedHeaders = { "Content-Type": "application/json" };
+  if (opts.headers && typeof opts.headers === "object") {
+    for (const [k, v] of Object.entries(opts.headers)) {
+      if (v == null) continue;
+      mergedHeaders[String(k)] = String(v);
+    }
+  }
+  const mergedBody = { ...body };
+  if (opts.inference_config && typeof opts.inference_config === "object") {
+    mergedBody.inference_config = { ...opts.inference_config };
+  }
+  if (typeof opts.model === "string" && opts.model.length > 0) {
+    mergedBody.model = opts.model;
+  }
+  if (Number.isFinite(opts.temperature)) {
+    mergedBody.temperature = Number(opts.temperature);
+  }
+  if (Number.isFinite(opts.top_p)) {
+    mergedBody.top_p = Number(opts.top_p);
+  }
+  return { headers: mergedHeaders, body: mergedBody };
+}
+
+async function postJson(baseUrl, endpoint, body, timeoutMs, options = {}) {
   const url = endpoint.startsWith("http") ? endpoint : `${baseUrl.replace(/\/$/, "")}${endpoint}`;
   const started = performance.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort("timeout"), timeoutMs);
+  const { headers, body: mergedBody } = mergeRequestOptions(body, options);
   try {
     const resp = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      headers,
+      body: JSON.stringify(mergedBody),
       signal: ctrl.signal,
     });
     if (!resp.ok) {
@@ -128,7 +167,7 @@ export class LLMClient {
     this.lastModel = "";
   }
 
-  async requestEnvironment(summary, enabled) {
+  async requestEnvironment(summary, enabled, options = {}) {
     if (!enabled) {
       const guarded = buildEnvironmentFallback(summary);
       const promptUser = buildEnvironmentPromptUserContent(summary);
@@ -150,7 +189,7 @@ export class LLMClient {
     }
 
     try {
-      const result = await postJson(this.baseUrl, AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(this.baseUrl, AI_CONFIG.environmentEndpoint, { summary }, AI_CONFIG.requestTimeoutMs, options);
       const payload = result.data;
       const candidate = payload.directive ?? payload.data ?? payload;
       const validation = validateEnvironmentDirective(candidate);
@@ -201,7 +240,7 @@ export class LLMClient {
     }
   }
 
-  async requestStrategic(promptContent, enabled, fallbackData = null) {
+  async requestStrategic(promptContent, enabled, fallbackData = null, options = {}) {
     const requestSummary = (() => {
       if (typeof promptContent !== "string") return promptContent ?? {};
       try {
@@ -233,7 +272,7 @@ export class LLMClient {
     }
 
     try {
-      const result = await postJson(this.baseUrl, AI_CONFIG.environmentEndpoint, { summary: requestSummary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(this.baseUrl, AI_CONFIG.environmentEndpoint, { summary: requestSummary }, AI_CONFIG.requestTimeoutMs, options);
       const payload = result.data;
       const data = payload.data ?? (payload.strategy ? { strategy: payload.strategy } : payload);
       this.lastLatencyMs = result.latencyMs;
@@ -341,11 +380,17 @@ export class LLMClient {
   async requestPlan(systemPrompt, userPrompt, options = {}) {
     const startedAt = performance.now();
     try {
+      // Preserve legacy behavior: callers historically pass `{ model }` etc.
+      // in `options` and expected those to land at the top level of the
+      // request body. We continue to spread them, while ALSO forwarding
+      // the same options to postJson so headers / inference_config /
+      // LayerCast metadata reach fetch().
       const result = await postJson(
         this.baseUrl,
         AI_CONFIG.planEndpoint,
         { systemPrompt, userPrompt, ...options },
         AI_CONFIG.requestTimeoutMs,
+        options,
       );
       const payload = result.data ?? {};
       this.lastLatencyMs = result.latencyMs;
@@ -407,7 +452,7 @@ export class LLMClient {
     }
   }
 
-  async requestPolicies(summary, enabled) {
+  async requestPolicies(summary, enabled, options = {}) {
     if (!enabled) {
       const guarded = buildPolicyFallback(summary);
       const promptUser = buildPolicyPromptUserContent(summary);
@@ -429,7 +474,7 @@ export class LLMClient {
     }
 
     try {
-      const result = await postJson(this.baseUrl, AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs);
+      const result = await postJson(this.baseUrl, AI_CONFIG.policyEndpoint, { summary }, AI_CONFIG.requestTimeoutMs, options);
       const payload = result.data;
       const candidate = payload.policies ? payload : payload.data ?? payload;
       const validation = validateGroupPolicy(candidate);

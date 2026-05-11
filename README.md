@@ -1,246 +1,141 @@
-# Project Utopia
+# Project Utopia — Academic Benchmark for LLM Long-Horizon Planning
 
-A real-time interactive crowd simulation built with Three.js. Users edit a tile-based map (roads, walls, buildings) and observe how NPCs reroute, redistribute resources, and adapt to the new environment. An LLM-based AI layer drives high-level NPC role decisions and world events on top of deterministic A* pathfinding and Boids steering.
+A **headless, deterministic, multi-resource simulation harness** for evaluating large language models on long-horizon planning and resource-allocation tasks. Forked from a real-time colony-simulation game (v0.10.0) and stripped of its rendering, audio, and player-facing surface across a 7-phase refactor (~78 k LOC removed). The remaining substrate exposes **four LLM decision channels** above an A* / Boids / seeded-RNG core, scored by **five academic dimension plugins**.
 
-## Highlights — Two Pillars
+> Companion docs: [`docs/ai-research/benchmark_proposal.md`](docs/ai-research/benchmark_proposal.md) (research framing), [`docs/ai-research/refactor-plan.md`](docs/ai-research/refactor-plan.md) (cut list + phase log), [`docs/ai-research/determinism-report.md`](docs/ai-research/determinism-report.md) (S0 audit).
 
-<!-- AUTHOR: Pillar names below MUST match the wording committed in
-     assignments/homework2/a2.md and assignments/homework2/Assignment 2_ Project Approval & Specs.md.
-     Do not let an LLM rename them. The two-three-sentence summaries below are
-     placeholders — rewrite each in your own voice before submitting. -->
+## Why this benchmark
 
-### Pillar A — _\<copy exact pillar name from A2\>_
+Existing LLM-agent benchmarks are mostly single-agent web/coding tasks (AgentBench, GAIA, WebArena) or flat MARL grids (MeltingPot, SMAC). Neither captures the **hierarchical, low-rank, schema-validated directive surface** that real production agent systems actually emit. Project-Utopia operates the LLM strictly above a deterministic substrate at three nested cadences (~5–90 s), with token cost decoupled from world size. After the academic-benchmark refactor it adds:
 
-Two-to-three sentence technical summary: what the pillar is, the system(s)
-under `src/` that implement it, and the one-line "you can see this in 30
-seconds of play" pitch. (Long form: see [Post-Mortem](assignments/homework7/Post-Mortem.md) §1 Pillar A.)
+- A 4-channel `AgentAdapter` plumbing seam (any local or remote LLM)
+- Token / first-token-latency / KV-cache telemetry
+- 5 dimension plugins (Resource-Allocation Efficiency, Group Dynamics, Memory Degradation, Decision Token Efficiency, Hierarchical Coordination)
+- Bayesian Beta-Binomial scoring engine
+- Seeded determinism (verified — same seed × fallback mode → identical state hash)
 
-### Pillar B — _\<copy exact pillar name from A2\>_
-
-Same shape — two-to-three sentence summary anchored to a real subsystem and a
-visible runtime artefact. (Long form: see [Post-Mortem](assignments/homework7/Post-Mortem.md) §1 Pillar B.)
-
-> See [Post-Mortem](assignments/homework7/Post-Mortem.md) for the full technical retrospective, playtest resolution, pivots from the A2 MVP, and AI tool evaluation.
-
-## Tech Stack
-
-- Renderer: Three.js + Vite
-- Language: JavaScript (ESM)
-- AI: OpenAI-compatible proxy with schema validation + deterministic fallback
-
-## Quick Start
-
-> **For graders / first-time runners**: This project runs fully without an LLM API key — the AI fallback policy provides complete gameplay. Set `OPENAI_API_KEY` only to enable live LLM-driven decisions (optional enhancement).
+## Quick start
 
 ```bash
-npm ci
-cp .env.example .env
-# set OPENAI_API_KEY and optional OPENAI_MODEL / OPENAI_REQUEST_TIMEOUT_MS / AI_PROXY_PORT
+git clone https://github.com/DaizeDong/Project-Utopia.git
+cd Project-Utopia
+git checkout refactor/academic-benchmark      # or tag refactor/academic-benchmark-v0.11.0-rc1
+npm test                                       # 684 tests / ~18 s, no deps required
 ```
 
-Supported launch paths:
+The repo declares **zero npm dependencies** in `package.json` — Node ≥ 20 with the built-in test runner is enough.
+
+### Reproducibility check
 
 ```bash
-npm start             # same as dev:full; latest source + ai-proxy
-npm run dev:full      # Vite source server + ai-proxy
-npm run start:prod    # rebuild dist, then preview + ai-proxy
+npm run audit:rng                              # Greps src/ for Math.random() leaks
+npm run audit:determinism                      # Same seed × 60 ticks × 2 runs → equal state hash
+npm run bench:dimensions                       # Runs the 5 dimension plugins on a short scenario
 ```
 
-Then open <http://localhost:5173> in your browser (Vite auto-launches in most setups).
-
-On Windows, double-click `Project Utopia.cmd` to rebuild `dist` from the source checkout and open the current app in Edge/Chrome app mode.
-
-Validation and release commands:
+### Long-horizon paper run (deferred — see refactor-plan.md S7)
 
 ```bash
-npm run test
-npm run build
-npm run verify:full
-npm run verify:long:fallback
-npm run verify:long
-npm run release:check
-npm run submit:local
-npm run submit:strict
+npm run bench:long:smoke                       # 90-day smoke (90 s sim time)
+npm run bench:long:matrix                      # multi-seed × multi-scenario sweep
 ```
 
-Notes:
-
-- `dev:full`, `preview:full`, `start:prod`, and `ai-proxy` now auto-load root `.env`.
-- `preview`, `preview:full`, `start:prod`, and the Windows launcher rebuild before serving `dist`, so they do not open stale generated assets.
-- Existing shell env variables still override `.env` values.
-
-## Long-Run Validation
-
-`verify:full` stays short and is still the daily gate. Long browser soaks are separate and run against `npm run preview:full`.
+### Optional: live LLM through the AI proxy
 
 ```bash
-npm run verify:long:fallback
-npm run verify:long:llm
-npm run verify:long
+cp .env.example .env                           # set OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL
+npm run ai-proxy                               # node:http server on :8787, OpenAI-compatible
 ```
 
-Notes:
+The AI proxy speaks the OpenAI completions API, so vLLM / llama.cpp-server / Ollama / TGI / Anthropic-via-bridge all work as drop-in agent backends — set `OPENAI_BASE_URL` accordingly.
 
-- `verify:long:fallback` runs the browser idle suite plus the scripted operator suite in deterministic fallback mode.
-- `verify:long:llm` runs the same suites with live LLM coverage and fails fast if `OPENAI_API_KEY` is missing, the local `ai-proxy /health` payload is not valid, or a live environment/policy probe falls back before the soak starts.
-- `verify:long` always runs the fallback suite first, then requires the live-LLM gate.
-- Long-run metrics are written to `docs/assignment4/metrics/`.
-- Browser screenshots and failure captures are written to `output/playwright/`.
+## Architecture (one screen)
 
-## Demo Video & Post-Mortem
-
-- **Demo Video**: pending — see [Demo-Video-Plan.md](assignments/homework7/Demo-Video-Plan.md) for the recording plan, shot list, and post-upload checklist. The video URL will replace this line once the recording is published.
-- **Post-Mortem**: [assignments/homework7/Post-Mortem.md](assignments/homework7/Post-Mortem.md) — pillars overview (anchored to the A2 spec), playtest resolution table, technical post-mortem on architectural challenges and pivots from the A2 MVP, and an AI tool evaluation in the author's own voice.
-
-## Submission / Release Flow
-
-The authoritative submission artifact is the local production build, *for daily verification gates during development*. For HW7 final submission, see § "How to Grade This Submission" below.
-
-Use this command for the full local submission gate:
-
-```bash
-npm run submit:local
+```
+                   ┌─────────────── 4 LLM decision channels ───────────────┐
+                   │                                                       │
+   environment-director ── npc-policy ── strategic-plan ── colony-agent
+        (weather/        (group intent  (long-horizon    (Perceive→Plan→
+         events)          weights +      goals)           Ground→Execute→
+                          targets)                        Evaluate→Reflect)
+                   │                                                       │
+                   └────────── AgentAdapter (schema + guardrails) ─────────┘
+                                            │
+                                  ┌─────────┴──────────┐
+                                  │  PromptPayload      │  observation envelope
+                                  │  ResponseSchema.js  │  contract
+                                  │  Guardrails.js      │  weight clamps
+                                  └─────────┬──────────┘
+                                            │
+                                ┌───────────┴────────────┐
+                                │  Deterministic substrate │
+                                │  rng.js (seeded PRNG)    │
+                                │  Grid (96×72 Uint8Array) │
+                                │  A* + PathCache + Faction│
+                                │  BoidsSystem + Spatial   │
+                                │  Worker priority FSM     │
+                                └─────────────────────────┘
+                                            │
+                                ┌───────────┴────────────────┐
+                                │  src/benchmark/            │
+                                │   framework/ (Sim Harness, │
+                                │     ScoringEngine,         │
+                                │     ProbeCollector,        │
+                                │     DecisionTracer)        │
+                                │   dimensions/ (5 plugins)  │
+                                └────────────────────────────┘
 ```
 
-That runs:
+## Refactor highlights (vs upstream v0.10.0)
 
-- `npm run verify:full`
-- `npm run release:check`
+| Surface | Status |
+|---|---|
+| Three.js renderer, HUD, audio, save/load, replay, leaderboard, devmode, browser bootstrap | **Removed** (~30 k LOC, S1) |
+| Pre-refactor test surface (UI, balance regressions, hotfixes, achievements) | **Removed** (~17.7 k LOC, S2; 1646 → 684 tests, 84 s → 18 s) |
+| Multi-tier processing chain (meals/medicine/tools), wildlife (predators/herbivores/biomes), traders, progression/achievements | **Removed** (~13.8 k LOC, S3) |
+| `balance.js` (1346 LOC) | Header-banner neutralized, values frozen to preserve test contracts |
+| `AgentAdapter` 4-channel interface, token telemetry on `aiRuntimeStats` | **Added** (S5 minimal) |
+| 5 dimension plugins + 8-test smoke suite | **Added** (S6 minimal) |
 
-If you want the final gate to fail on any remaining non-ignored local changes, run:
+See `docs/ai-research/refactor-plan.md` for the complete phase log + decision matrix.
 
-```bash
-npm run release:strict
+## Layout
+
 ```
-
-`release:strict` now requires both:
-
-- a clean non-ignored worktree
-- a non-stale production build relative to the checked frontend inputs
-- fresh local verification artifacts relative to the current build
-
-Or run the full verification chain plus the strict clean-worktree gate together:
-
-```bash
-npm run submit:strict
-```
-
-Generated verification artifacts are written to:
-
-- `docs/assignment4/metrics/`
-- `docs/assignment4/release-manifest.json`
-- `docs/assignment3/verification-summary.json`
-
-Optional local screenshot evidence can be captured under:
-
-- `output/playwright/release-*.png`
-
-These artifacts are intentionally ignored by git so repeated local verification does not dirty the worktree.
-That includes `output/playwright/`, which is treated as a local evidence/debug directory rather than a tracked source folder.
-The repo also ignores common local-only files such as `.env` and `.idea/` so release status stays focused on source changes.
-
-`release-manifest.json` now records:
-
-- the final HW04 report path and stage coverage
-- the current `HEAD` commit and a recent commit history snapshot
-- the current git branch / `git describe` / upstream reference for release provenance
-- the local release status summary, including whether `release:strict` would currently pass
-- the current `release:strict` blocker preview, including the first non-ignored dirty paths
-- whether strict mode is also requiring a fresh build at check time
-- whether strict mode is also requiring fresh local verification artifacts
-- the toolchain snapshot used for the release pass (`node`, `npm`, `vite`)
-- the exact release-script chain from `package.json`
-- per-artifact `sha256` hashes for the build, proofs, metrics, and optional screenshots
-- portable `relativePath` fields alongside the local absolute paths
-- a build-freshness summary showing whether `dist` is older than the checked frontend build inputs
-- a verification-freshness summary showing whether the local Stage 12/13 verification artifacts are older than the current build
-- the built `dist` asset inventory and bundle summary
-- the stored HW03 proof files
-- the generated local metrics and optional screenshot evidence
-- the current non-ignored git worktree status at release-check time
-
-### How to Grade This Submission
-
-The HW7 submission can be graded against either a fresh `git clone` of the repo
-or a zip of the repo root. Either way, the steps are the same:
-
-1. `git clone <repo-url>` (or unzip the submitted archive into a clean directory)
-2. `npm ci`
-3. `npm run build`
-4. `npx vite preview` and open the URL it prints — Vite **preview** defaults to <http://localhost:4173>; the Vite **dev server** (`npx vite` / `npm start`) instead uses <http://localhost:5173>. For grading, `vite preview` (`:4173`) serves the production build from `dist/`
-5. Click _Start Colony_ and let one in-game day cycle elapse — that exercises both pillars (live map editing & reroute, plus AI-driven decisions visible in the Developer Telemetry panel)
-6. For the deeper retrospective, read `assignments/homework7/Post-Mortem.md` (linked above)
-
-No `OPENAI_API_KEY` is required — the deterministic fallback policy keeps the
-simulation fully playable. Setting a key only enables live LLM decisions as an
-optional enhancement.
-
-> If submitting as zip: run `npm run build` first, then zip the repo root **excluding** `node_modules/`, `.env`, `output/`, and `dist/` is optional (a fresh `npm run build` will regenerate it). Reviewer runs `npm ci && npx vite preview` from the unzipped root.
-
-## Optional Live-AI Proof Refresh
-
-If `OPENAI_API_KEY` is configured and you want to refresh the stored live-AI evidence instead of relying on the existing HW03 proof files, run:
-
-```bash
-npm run a3:evidence:ai
-```
-
-Without a valid key, the app remains in deterministic fallback mode by design.
-
-## AI Runtime Self-Check
-
-1. Start:
-
-```bash
-npm run dev:full
-```
-
-2. Health check:
-
-```bash
-curl http://localhost:8787/health
-```
-
-Expected fields:
-
-- `hasApiKey: true`
-- `model: ...`
-- `envLoaded: true`
-- `apiKeySource: env|process`
-- `modelSource: env|default`
-
-3. In browser telemetry:
-
-- `World State -> AI Mode` should become `on / llm (...)` when key is available.
-- `Developer Telemetry -> AI Trace` should show lines like:
-    - `policy-request llm fallback=false ...`
-    - `policy llm fallback=false ...`
-
-If key is missing/unreachable, app stays in fallback mode by design.
-
-## Fallback Diagnostics
-
-| Symptom                     | Root Cause                              | Fix                                                                                     |
-|-----------------------------|-----------------------------------------|-----------------------------------------------------------------------------------------|
-| `OPENAI_API_KEY missing`    | key not loaded into proxy process       | set key in `.env`, restart `dev:full`                                                   |
-| `request timeout`           | upstream call exceeded timeout          | increase `OPENAI_REQUEST_TIMEOUT_MS` (for example `20000`) and verify network stability |
-| `OpenAI HTTP ... model ...` | invalid model name                      | set valid `OPENAI_MODEL` or remove to use default `gpt-4.1-mini`                        |
-| `proxy unreachable` in HUD  | proxy process not running/port conflict | free `AI_PROXY_PORT` and rerun `dev:full`                                               |
-
-## Project Structure
-
-```text
 src/
-  app/          # loop, simulation clock, orchestration
-  world/        # grid generation, weather, events
-  entities/     # initial state and entity factory
-  simulation/   # AI, navigation, movement, economy, meta systems
-  render/       # Three.js renderer and overlays
-  ui/           # toolbar, HUD, inspector, developer panels
-server/
-  ai-proxy.js   # /api/ai/environment, /api/ai/policy, /health
-scripts/
-  dev-full.mjs
-  preview-full.mjs
-  env-loader.mjs
+├── app/                 SimulationClock, rng, runOutcome, longRunTelemetry, aiRuntimeStats, warnings, math
+├── benchmark/
+│   ├── framework/       SimHarness, ScoringEngine (Bayesian), ProbeCollector, DecisionTracer, ScenarioSampler, CrisisInjector
+│   └── dimensions/      RAE, GroupDynamics, MemoryDegradation, DTE, HierarchicalCoordination
+├── config/              constants (SYSTEM_ORDER), balance.js (neutralized), aiConfig.js, longRunProfile.js
+├── data/prompts/        4 LLM channel prompt files (the action-space contract)
+├── entities/            EntityFactory (initial state)
+├── simulation/
+│   ├── ai/{brains,colony,director,strategic,memory,llm}/
+│   ├── construction/    ConstructionSystem, BuildSystem, BuildAdvisor
+│   ├── economy/         ResourceSystem, LogisticsSystem, WarehouseQueue, TileStateSystem
+│   ├── lifecycle/       MortalitySystem, TileMutationHooks
+│   ├── meta/            ColonyDirectorSystem, DevIndexSystem, GameEventBus, RaidEscalatorSystem, EventDirectorSystem
+│   ├── movement/        BoidsSystem, SpatialHash
+│   ├── navigation/      AStar, Navigation, PathCache, PathWorkerPool, RoadNetwork, Faction
+│   ├── npc/             WorkerAISystem, VisitorAISystem, fsm/* (priority FSM)
+│   ├── population/      PopulationGrowthSystem, RoleAssignmentSystem
+│   ├── services/        ReachabilityCache, PathFailBlacklist
+│   ├── telemetry/       EconomyTelemetry
+│   └── world/           VisibilitySystem
+└── world/
+    ├── grid/            Grid (6 templates), pickBootSeed
+    ├── scenarios/       ScenarioFactory (runtime helpers; story bundles deferred-deletable)
+    ├── weather/         WeatherSystem
+    └── events/          WorldEventSystem
+
+tools/audit/             rng-coverage-report.js, determinism-check.js
+scripts/                 bench-perf, logic-baseline, long-horizon-{bench,helpers,matrix}, env-loader
+server/                  ai-proxy.js (OpenAI-compatible)
+test/                    89 files, ~684 tests
+docs/ai-research/        benchmark_proposal.md, refactor-plan.md, determinism-report.md
 ```
+
+## License
+
+See repository root.
