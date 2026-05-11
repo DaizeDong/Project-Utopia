@@ -59,10 +59,10 @@ verifying each other's directives before both reach Guardrails;
 contract and re-skinning the simulation as a hospital triage
 or disaster response benchmark, testing whether the
 4-channel hierarchy generalizes;
-\textbf{(c)} prompt-injection robustness following
-KAIROS~\citep{Kairos2026AgentSecurityArena}, with adversarial
-NPCs (saboteur tile) able to inject text into the prompt
-context;
+\textbf{(c)} prompt-injection robustness through the
+saboteur visitor channel, which can be configured to inject
+adversarial text into the prompt context, exercising the
+schema + Guardrails layer under adversarial input;
 \textbf{(d)} 24-hour E5 long-horizon runs, deferred
 to camera-ready due to the $\sim$\,240 GPU-hour cost of
 the full 4 lengths $\times$ 3 models $\times$ 5 seeds matrix.

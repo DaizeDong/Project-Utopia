@@ -34,25 +34,29 @@ $\sim$\,2--3$\times$ seed-variance reduction. Statistical inference
 follows~\citet{Bowyer2025DontUseClt}'s ICML 2025 Spotlight
 recommendation of Beta-Binomial credible intervals for small-$N$.
 
-Across nine experiments evaluating seven LLM families on five scenarios
-with ten seeds each ($\sim$\,2\,250 runs total), we demonstrate
-\textbf{(i)} hierarchical decomposition outperforms a matched-budget
-flat baseline by $\sim$\,0.10 RAE (matching ChatDev's
-$-44\%$ role-removal effect size~\citep{Qian2024ChatDev}); \textbf{(ii)}
-\textbf{cross-vendor channel-axis} heterogeneous LLM mixes
-(Anthropic + OpenAI + open-weight) achieve near-strong-on-all RAE at
-$\sim$\,1/3 the cost --- going beyond X-MAS~\citep{Ma2025XMAS}'s
+We design a nine-experiment matrix (E1--E9) over seven LLM families,
+five scenarios, ten seeds (\(\sim\)\,2\,250 runs total) targeting three
+empirical findings: \textbf{(i)} hierarchical decomposition outperforming
+a matched-budget flat baseline by \(\sim\)\,0.10 RAE (calibrated against
+ChatDev's \(-44\%\) role-removal effect size~\citep{Qian2024ChatDev});
+\textbf{(ii)} cross-vendor channel-axis heterogeneous LLM mixes
+(Anthropic + OpenAI + open-weight) approaching strong-on-all RAE at
+\(\sim\)\,1/3 the cost --- going beyond X-MAS~\citep{Ma2025XMAS}'s
 per-task routing and Anthropic's intra-family
 mix~\citep{AnthropicMultiAgent2025}; \textbf{(iii)} the first
 \textbf{three-axis joint memory analysis}
-($\text{Recall}(t) \times \text{Drift}(t) \times \text{Performance}(t)$)
-on continuous tick-level naturally-accumulated context, dissociating
-verbal recall from action-grounded recall in ways
+(\(\text{Recall}(t) \times \text{Drift}(t) \times \text{Performance}(t)\))
+on continuous tick-level naturally-accumulated context, designed to
+dissociate verbal recall from action-grounded recall in ways
 LongMemEval~\citep{Wu2025LongMemEval} and
 MemoryArena~\citep{He2026MemoryArena} cannot.
+At submission, the pipeline is end-to-end verified on fallback-only
+NDJSON; the five \S\ref{sec:experiments} figures show structural
+layout, with cell-level signal populated for the camera-ready from
+real-LLM runs once API access is provisioned.
 
 Project-Utopia is released as a self-contained Python package
-(\texttt{pip install project-utopia}, 621 tests passing,
+(\texttt{pip install project-utopia}, 615 tests passing,
 $\sim$\,23\,k LOC, 128 modules) with one-line CLI reproducibility, a
 record-replay LLM cache via pydantic schemas, and full
 JSON-NDJSON paper-run pipeline. Code, prompts, and 7\,200-tick

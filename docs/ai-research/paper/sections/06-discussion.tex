@@ -2,17 +2,21 @@
 \label{sec:discussion}
 
 \paragraph{Cross-experiment narrative.}
-Our nine experiments tell a coherent story about
-hierarchical LLM agent design. E1 establishes that hierarchical
-decomposition is not merely interpretability sugar but a
-performance-relevant architectural choice; E3 shows that
+The nine experiments are designed to surface a coherent story about
+hierarchical LLM agent design. E1 is intended to establish that
+hierarchical decomposition is not merely interpretability sugar but a
+performance-relevant architectural choice; E3 to show that
 \emph{within} hierarchy, channel-specific model selection
 delivers Pareto-front improvements unavailable to homogeneous
-mixes; E5 demonstrates that the most consequential failure mode
-is not catastrophic forgetting (low recall, low performance)
-but rather \emph{stale coherence} (high verbal recall, low
+mixes; E5 to characterize the most consequential failure mode
+not as catastrophic forgetting (low recall, low performance)
+but as \emph{stale coherence} (high verbal recall, low
 action-grounded recall) --- the LLM continues to mention the
 anchor in summaries while its directives stop reflecting it.
+At submission time the pipeline is verified end-to-end on
+fallback-only data; numerical magnitudes in the narrative below
+are calibration targets, with cell-level signal populated for the
+camera-ready from real-LLM runs.
 
 \paragraph{The central architectural lesson.}
 Across E1, E3, and E5, a single pattern emerges: \emph{the

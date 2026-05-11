@@ -100,16 +100,19 @@ leaderboards. Variance reduction follows
 Pluribus AIVAT~\citep{Brown2019Pluribus}; statistical inference
 follows~\citet{Bowyer2025DontUseClt}.
 
-\item[C3 — Empirical.] Nine experiments yielding three findings:
+\item[C3 — Empirical.] A nine-experiment matrix (E1--E9) and
+pipeline targeting three intended findings:
 (a) hierarchical decomposition advantage at matched token budget;
-(b) \emph{cross-vendor channel-axis heterogeneous mix} achieves
-near-strong-on-all RAE at $\sim$\,1/3 the cost --- going beyond
+(b) \emph{cross-vendor channel-axis heterogeneous mix} approaching
+strong-on-all RAE at $\sim$\,1/3 the cost --- going beyond
 X-MAS~\citep{Ma2025XMAS} per-task routing and
 Anthropic~\citep{AnthropicMultiAgent2025} intra-family mix;
 (c) the first \emph{three-axis joint memory analysis}
 ($\text{Recall} \times \text{Drift} \times \text{Performance}$) on
-continuous tick-level naturally-accumulated context, dissociating
-verbal recall from action-grounded recall.
+continuous tick-level naturally-accumulated context, designed to
+dissociate verbal recall from action-grounded recall. At submission,
+the pipeline is end-to-end verified on fallback-only NDJSON; cell-level
+empirical signal is reserved for the camera-ready real-LLM run.
 
 \item[C4 — Position-defining.] First benchmark in the 2025--2026
 LLM-driven sim landscape combining (i) a deterministic 96$\times$72
