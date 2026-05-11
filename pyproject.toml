@@ -32,6 +32,8 @@ dev = [
 
 [project.scripts]
 project-utopia = "project_utopia.cli.benchmark_paper:app"
+project-utopia-determinism = "project_utopia.tools.audit.determinism_check:main"
+project-utopia-rng-audit = "project_utopia.tools.audit.rng_coverage_report:main"
 
 [build-system]
 requires = ["hatchling>=1.20"]
