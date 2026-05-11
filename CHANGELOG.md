@@ -1,6 +1,23 @@
 # Changelog
 
-## [Unreleased] — refactor/academic-benchmark — RC3 design audit
+## [Unreleased] — refactor/academic-benchmark — Round 2 simplification
+
+### Round 2 simplification (2026-05-10)
+- **Cut 1 — `POLICY_INTENT_TO_STATE` 13 → 6**: dropped aliases `idle, seek_rest, guard_engage, gather, haul, seek_construct, construct` in `project_utopia/simulation/npc/worker_states.py`. Canonical 6 intents retained: `wander, rest, fight, harvest, deliver, build`. `npc_policy.txt` prompt vocabulary updated. Guardrails verified dynamic (no hardcoded alias list).
+- **Cut 2 — `ANIMAL_SPECIES` deleted**: removed the `DEER/WOLF/BEAR` mapping from `project_utopia/config/constants.py` (zero users — the Python EntityFactory never ported it; only the test parametrize-table referenced it).
+- **Cut 3 — `WarehouseQueueSystem` removed**: dropped from `SYSTEM_ORDER` in `project_utopia/config/constants.py` and from the placeholder list in `project_utopia/benchmark/framework/sim_harness.py`. Stale comment in `simulation/economy/__init__.py` cleaned up.
+- **Cut 4 — `LEGACY_GROUP_IDS` deleted**: removed the `VISITORS:"visitors"` mapping and the corresponding `LEGACY_GROUP_IDS["VISITORS"]` contract from `GROUP_POLICY_CONTRACTS` in `project_utopia/config/ai_config.py`. `canonicalize_ai_group_id` no longer recognises `"visitor(s)"` (specific TRADERS / SABOTEURS contracts cover the use case).
+- **Cut 5 — `BUILD_COST["erase"]` deleted**: removed the no-op `{"wood": 0}` entry from `project_utopia/config/balance.py`. Erase logic in `build_advisor.py` / `build_system.py` already uses an inline `{"wood": 1.0}` and never reads `BUILD_COST["erase"]`.
+- **Cut 6 — `VisibilitySystem` removed**: audit confirmed it was a string-only placeholder in `SYSTEM_ORDER` with no Python implementation, no consumers, no tests. Dropped from `SYSTEM_ORDER` in `project_utopia/config/constants.py`. `FOG_STATE` enum retained (not in cut list).
+
+### Verified
+- `pytest tests/ -q` — **617 pass / 0 fail** (was 618; one parametrized `ANIMAL_SPECIES` case removed).
+- `python -m project_utopia.tools.audit.determinism_check --tier 1 --ticks 30 --seed 0xC0FFEE` — Tier 1 hash `be19781c…` PASS (unchanged).
+- Tier 2 hash `f7a099a4…` PASS (unchanged).
+- Tier 3 hash `43cb6aec…` PASS (unchanged).
+- No paper updates needed — all three documented Python tier hashes preserved bit-identically.
+
+## [Unreleased prior] — refactor/academic-benchmark — RC3 design audit
 
 ### Audit-driven P0 fixes (2026-05-10)
 - **B1 critical bug**: `SeedMatrix.js:124` was reading `state?.ai?.runtime` (path doesn't exist). All DTE/E6 cells were silently returning 0 for aiRuntime telemetry. Fixed to read `state.metrics.aiRuntime`, remap field names (`requestCount→totalCalls`, `fallbackResponseCount→fallbackCalls`, `errorCount→schemaErrors`), and pass through 7 S5 token-telemetry fields. New test: `test/seed-matrix-aiRuntime-passthrough.test.js`.

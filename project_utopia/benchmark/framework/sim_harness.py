@@ -80,7 +80,6 @@ SYSTEM_ORDER: tuple[str, ...] = (
     "WorldEventSystem",
     "TileStateSystem",
     "NPCBrainSystem",
-    "WarehouseQueueSystem",
     "WorkerAISystem",
     "ConstructionSystem",
     "VisitorAISystem",

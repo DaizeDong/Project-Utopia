@@ -176,17 +176,10 @@ STATE_TRANSITIONS: MappingProxyType[WorkerState, tuple[TransitionEntry, ...]] = 
 POLICY_INTENT_TO_STATE: MappingProxyType[str, WorkerState] = MappingProxyType(
     {
         "wander": WorkerState.IDLE,
-        "idle": WorkerState.IDLE,
         "rest": WorkerState.SEEKING_REST,
-        "seek_rest": WorkerState.SEEKING_REST,
-        "guard_engage": WorkerState.FIGHTING,
         "fight": WorkerState.FIGHTING,
         "harvest": WorkerState.SEEKING_HARVEST,
-        "gather": WorkerState.SEEKING_HARVEST,
         "deliver": WorkerState.DELIVERING,
-        "haul": WorkerState.DELIVERING,
-        "construct": WorkerState.SEEKING_BUILD,
-        "seek_construct": WorkerState.SEEKING_BUILD,
         "build": WorkerState.SEEKING_BUILD,
     }
 )

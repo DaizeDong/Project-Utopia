@@ -54,7 +54,6 @@ BUILD_COST: MappingProxyType[str, MappingProxyType[str, int]] = MappingProxyType
         "lumber": MappingProxyType({"wood": 5}),
         "warehouse": MappingProxyType({"wood": 10}),
         "wall": MappingProxyType({"wood": 2}),
-        "erase": MappingProxyType({"wood": 0}),
         "quarry": MappingProxyType({"wood": 6}),
         "bridge": MappingProxyType({"wood": 3, "stone": 1}),
     }

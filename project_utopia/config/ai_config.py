@@ -3,7 +3,7 @@
 Frozen mappings exposing the LLM-channel tuning surface:
 
 * :data:`AI_CONFIG` — request timeouts, decision cadences, hard rate-limits.
-* :data:`GROUP_IDS` / :data:`LEGACY_GROUP_IDS` — canonical group keys.
+* :data:`GROUP_IDS` — canonical group keys.
 * :data:`GROUP_POLICY_CONTRACTS` — per-group allowed intents / targets.
 * :data:`STRATEGY_CONFIG` — strategic-plan channel cadence + memory caps.
 * :data:`DEFAULT_GROUP_POLICIES` — fallback policy values returned by
@@ -27,7 +27,6 @@ __all__ = [
     "DEFAULT_GROUP_POLICIES",
     "GROUP_IDS",
     "GROUP_POLICY_CONTRACTS",
-    "LEGACY_GROUP_IDS",
     "POLICY_TEXT_LIMITS",
     "STRATEGY_CONFIG",
     "canonicalize_ai_group_id",
@@ -68,12 +67,6 @@ GROUP_IDS: MappingProxyType[str, str] = MappingProxyType(
     }
 )
 
-LEGACY_GROUP_IDS: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "VISITORS": "visitors",
-    }
-)
-
 POLICY_TEXT_LIMITS: MappingProxyType[str, int] = MappingProxyType(
     {
         "summary": 140,
@@ -111,8 +104,6 @@ def canonicalize_ai_group_id(raw: object) -> str:
         return GROUP_IDS["HERBIVORES"]
     if token in {"predators", "predator", "hunter", "hunters"}:
         return GROUP_IDS["PREDATORS"]
-    if token in {"visitors", "visitor"}:
-        return LEGACY_GROUP_IDS["VISITORS"]
     return token
 
 
@@ -189,21 +180,6 @@ GROUP_POLICY_CONTRACTS: MappingProxyType[str, MappingProxyType[str, object]] = M
                 "hunt isolated prey, patrol frontier habitats, and only drift "
                 "toward farms when prey pressure accumulates there"
             ),
-        ),
-        LEGACY_GROUP_IDS["VISITORS"]: _contract(
-            ("trade", "eat", "wander", "sabotage", "scout", "evade"),
-            (
-                "warehouse",
-                "road",
-                "depot",
-                "frontier",
-                "safety",
-                "farm",
-                "lumber",
-                "choke",
-                "exit",
-            ),
-            "legacy compatibility group that will be split into traders and saboteurs at runtime",
         ),
     }
 )

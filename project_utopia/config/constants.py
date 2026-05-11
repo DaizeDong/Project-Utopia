@@ -21,7 +21,6 @@ from types import MappingProxyType
 
 __all__ = [
     "ANIMAL_KIND",
-    "ANIMAL_SPECIES",
     "DEFAULT_GRID",
     "ENTITY_TYPE",
     "EVENT_TYPE",
@@ -80,14 +79,6 @@ ANIMAL_KIND: MappingProxyType[str, str] = MappingProxyType(
     {
         "HERBIVORE": "HERBIVORE",
         "PREDATOR": "PREDATOR",
-    }
-)
-
-ANIMAL_SPECIES: MappingProxyType[str, str] = MappingProxyType(
-    {
-        "DEER": "deer",
-        "WOLF": "wolf",
-        "BEAR": "bear",
     }
 )
 
@@ -195,7 +186,6 @@ MOVE_DIRECTIONS_4: tuple[tuple[int, int], ...] = (
 
 SYSTEM_ORDER: tuple[str, ...] = (
     "SimulationClock",
-    "VisibilitySystem",
     "DevIndexSystem",
     "RaidEscalatorSystem",
     "EventDirectorSystem",
@@ -207,7 +197,6 @@ SYSTEM_ORDER: tuple[str, ...] = (
     "WorldEventSystem",
     "TileStateSystem",
     "NPCBrainSystem",
-    "WarehouseQueueSystem",
     "WorkerAISystem",
     "ConstructionSystem",
     "VisitorAISystem",

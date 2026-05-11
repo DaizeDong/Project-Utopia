@@ -33,12 +33,14 @@ class TestSystemOrder:
         assert expected.issubset(set(C.SYSTEM_ORDER))
 
     def test_no_removed_systems(self) -> None:
-        """S3-removed systems must NOT appear in SYSTEM_ORDER."""
+        """S3 / Round-2 removed systems must NOT appear in SYSTEM_ORDER."""
         removed = {
             "AnimalAISystem",
             "WildlifePopulationSystem",
             "ProcessingSystem",
             "ProgressionSystem",
+            "WarehouseQueueSystem",
+            "VisibilitySystem",
         }
         intersection = set(C.SYSTEM_ORDER) & removed
         assert intersection == set(), f"removed systems still present: {intersection}"
@@ -70,7 +72,6 @@ class TestEnumTables:
             "ENTITY_TYPE",
             "VISITOR_KIND",
             "ANIMAL_KIND",
-            "ANIMAL_SPECIES",
             "ROLE",
             "WEATHER",
             "EVENT_TYPE",
