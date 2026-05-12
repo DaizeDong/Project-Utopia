@@ -13,19 +13,21 @@ answer the Gebru template questions under that framing.
 
 \begin{itemize}[leftmargin=*]
 \item \textbf{For what purpose was the dataset created?}
-To evaluate LLM long-horizon hierarchical decision-making and
-multi-resource allocation across a fixed 4-channel schema-validated
-tool surface. Existing benchmarks evaluate single agents picking
-single tools (AgentBench, GAIA, ToolLLM) or flat MARL on stateless
-games (MeltingPot, Crafter, BALROG); the orchestration-of-fixed-tools
+To evaluate LLM multi-channel orchestration of a fixed tool surface.
+Four parallel decision channels operate at three nested cadences
+over a fixed 4-tool layer with schema-validated directives.
+Existing benchmarks evaluate single agents picking single tools
+(AgentBench, GAIA, ToolLLM) or flat MARL on stateless games
+(MeltingPot, Crafter, BALROG); the orchestration-of-fixed-tools
 regime that dominates production agent systems is under-evaluated.
 \item \textbf{Who created the dataset and on behalf of which
 entity?}
 Anonymous authors as an independent academic submission. No
 corporate or institutional sponsorship.
 \item \textbf{Who funded the dataset's creation?}
-Self-funded. All LLM API costs for the 9-experiment matrix
-($\sim$2\,250 runs) were paid out of pocket. No grant identifiers.
+Self-funded. All LLM API costs for the 3-experiment matrix
+($\sim$95 runs: 40 for E1, 25 for E2, 30 for E6) are paid out of
+pocket. No grant identifiers.
 \item \textbf{Any other comments?}
 The benchmark is forked from a public v0.10.0 colony-simulation
 game ($\sim$78\,k LOC player-facing surface), stripped across six
@@ -45,14 +47,16 @@ the deterministic sequence of states the substrate produces when
 ticked under a specific LLM adapter responding to the four channel
 prompts. Trajectories are generated on demand, not stored.
 \item \textbf{How many instances are there in total?}
-Unbounded by construction: 6 scenarios $\times$ $2^{32}$ seeds
-$\times$ arbitrary tick budgets. The paper-run matrix
-materializes $\sim$2\,250 trajectories (9 experiments
-$\times$ 5--10 seeds $\times$ 5 scenarios) on demand from the
-released CLI.
+Unbounded by construction: 6 scenarios (4 used in the paper-run
+matrix) $\times$ $2^{32}$ seeds $\times$ arbitrary tick budgets.
+The paper-run matrix materializes $\sim$95 trajectories
+(3 experiments $\times$ 4 scenarios $\times$ 5--10 seeds) on
+demand from the released CLI.
 \item \textbf{What does the released artifact contain?}
 (1) Four verbatim system prompts in \texttt{project\_utopia/data/prompts/}
-defining the LLM contract surface;
+defining the LLM contract surface --- one per decision channel
+(\emph{environment-director}, \emph{npc-policy},
+\emph{strategic-plan}, \emph{colony-agent});
 (2) six hand-tuned scenario blueprints (\S\ref{app:scenarios});
 (3) the deterministic simulator core
 ($\sim$23\,k LOC Python, 128 modules);
@@ -72,9 +76,9 @@ No. Each NDJSON row is fully self-describing: schema version,
 seed, scenario, tick window, dimension scores, dimension
 inputs, adapter ID, and proxy / LLM snapshot ID (if applicable).
 \item \textbf{Are there recommended data splits?}
-The 9 experiments (E1--E9) define the evaluation cells; within
-each, seeds 0--9 are the canonical splits. Held-out seeds 10--19
-are reserved for replication and not used in any reported
+The 3 experiments (E1, E2, E6) define the evaluation cells;
+within each, seeds 0--9 are the canonical splits. Held-out seeds
+10--19 are reserved for replication and not used in any reported
 finding.
 \item \textbf{Are there any errors, sources of noise, or
 redundancies?}
@@ -149,15 +153,14 @@ Apache 2.0 / MIT.
 
 \begin{itemize}[leftmargin=*]
 \item \textbf{Has the dataset been used for any tasks already?}
-The 9-experiment paper-run matrix in this submission
+The 3-experiment paper-run matrix in this submission
 (\S\ref{sec:experiments}). No external uses to date.
 \item \textbf{What other tasks could this be used for?}
-Evaluating (i) hierarchical decision-making across a fixed
-tool surface; (ii) cross-vendor channel routing; (iii)
-memory degradation under stale long-horizon context;
-(iv) reproducibility-aware LLM evaluation methodology
-(LayerCast, RecordReplayCache); (v) RLHF / DPO with the
-4-channel directive surface as the action space (future
+Evaluating (i) multi-channel orchestration of a fixed tool surface;
+(ii) schema-validity profiling under multi-hour coherence stress;
+(iii) reproducibility-aware LLM evaluation methodology
+(LayerCast, RecordReplayCache); (iv) sample-efficient learning
+under the 4-channel directive surface as the action space (future
 work, \S\ref{sec:limitations}).
 \item \textbf{Is there anything that should not be done with
 this dataset?}

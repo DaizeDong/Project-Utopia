@@ -49,7 +49,10 @@ still reflect the anchor's implicit goal),
 \texttt{behavioral\_drift} (Jaccard distance of action-token sets
 between now and $t = 0$),
 \texttt{performance\_at\_t} (task signal).
-The three-axis decoupling of recall is novel; see \S\ref{sec:exp:e5}.
+These four keys are emitted by the plugin and surface in NDJSON
+output, but are not used as evidence for either pre-registered
+hypothesis under the current narrow scope; multi-hour memory
+analyses are deferred (see \S\ref{sec:limitations}).
 
 \paragraph{DecisionTokenEfficiency} ($N$=3):
 \texttt{dte\_per\_completion\_token},
@@ -139,13 +142,26 @@ S_{\text{PVB}} = S_{\text{realized}} - V_{F}(s_0) +
 \sum_t \big[V_{F}(s_t \mid \text{after } F) - V_{F}(s_t \mid \text{after } A)\big]
 $$
 where $V_F$ is the fallback policy's expected DevIndex contribution.
-We measure $\sim$\,2--3$\times$ variance reduction across E1--E7,
-which is equivalent to $\sim$\,3--5$\times$ fewer seeds for the same
-statistical power (see \S\ref{sec:exp:e8} for the post-hoc analysis).
-We name this estimator \emph{PolicyValue Baseline} rather than
-AIVAT because our $V_F$ is an EMA proxy of past values rather than
-true action-value sampling; we cite AIVAT as inspiration but do not
-claim full unbiasedness in the strict CFR sense.
+We measure $\sim$\,2--3$\times$ variance reduction across our pilot
+E1 runs, which is equivalent to $\sim$\,3--5$\times$ fewer seeds for
+the same statistical power. We name this estimator \emph{PolicyValue
+Baseline} rather than AIVAT because our $V_F$ is an EMA proxy of past
+values rather than true action-value sampling; we cite AIVAT as
+inspiration but do not claim full unbiasedness in the strict CFR
+sense.
+
+\paragraph{Bayesian vs.\ frequentist ranking stability (methodology
+check).} As a post-hoc methodology check, we bootstrap-sample our
+E1+E6 NDJSON logs to compare Kendall's $\tau$ ranking stability
+between the Beta-Binomial posterior (above) and a frequentist Wald
+interval at small $N$. Our working calibration target is that the
+Beta-Binomial method delivers at least 30\% better ranking stability
+at $N=5$ seeds, mirroring~\citet{Bowyer2025DontUseClt}'s ICML 2025
+result on the under-coverage of Wald intervals at $N < 300$. This is
+not an experiment about LLM behavior --- it is a check that our
+chosen aggregation method is justified at the seed counts the rest
+of the paper uses --- so we report it here alongside the metric
+stack rather than as a standalone experiment.
 
 \subsection{Layer 4b: HELM Mean Win Rate Across Dimensions}
 
