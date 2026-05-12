@@ -1,45 +1,156 @@
 \section{Project-Utopia Architecture}
 \label{sec:architecture}
 
-\subsection{Overview: A Tool-Grounded 4-Channel Action Surface}
+Project-Utopia is the elicitation substrate that makes stale coherence
+measurable. To dissociate verbal mention from sustained behavioral
+commitment we need (i) continuous structured-output emission across
+multiple temporal scales, (ii) a deterministic environment whose
+state-references can be machine-checked against the LLM's directives,
+and (iii) an anchor injection protocol that pairs verbal tokens with
+implicit action goals. We satisfy these three requirements with a
+$4\,\text{channel}\,\times\,4\,\text{tool}$ substrate over a seeded,
+bit-identically reproducible simulator. The substrate is the
+\emph{elicitation method}, not the contribution of the paper; the
+contribution is the dual-probe characterization of stale coherence
+that it makes possible (\S\ref{sec:metrics}).
 
-Project-Utopia exposes a 4-channel LLM action surface above a fixed, queryable tool layer. The agent has \emph{no syscall-level tool choice}: each channel binds to one tool, and the schema is the agent--tool interface contract. This is the language convention of ReAct~\citep{Yao2023ReAct} and Toolformer~\citep{Schick2023Toolformer} extended to a multi-channel setting; the LLM emits structured directives and the tool layer deterministically grounds them to per-entity actions through fixed implementations.
+\subsection{Multi-Cadence Substrate}
+\label{sec:channels}
 
-The tool layer offers four deterministic implementations that LLM channels indirectly invoke through directives: \textbf{(T1) path query tool} --- A* over a versioned grid, cached by $(\text{faction}, \text{gridVersion}, \text{costVersion})$; \textbf{(T2) group steering tool} --- Boids with per-group profiles applying \texttt{intentWeights} to NPC steering; \textbf{(T3) FSM intent application tool} --- per-NPC finite-state machine driven by \texttt{POLICY\_INTENT\_TO\_STATE} mapping; \textbf{(T4) build planner tool} --- PlanExecutor over BuildSystem, grounding multi-step plans tile-by-tile. A seeded RNG and a fixed system order tie these into a reproducible per-tick pipeline at $\Delta t = 1/30$\,s through 13 ordered systems (perception $\to$ LLM gates $\to$ policy applier $\to$ FSM $\to$ A* $\to$ Boids $\to$ integration $\to$ telemetry).
+The substrate emits structured output across three nested temporal
+scales through four parallel LLM decision channels, each bound to one
+deterministic tool. The cadence spread is what dissociates verbal
+mention from behavioral commitment: a single-cadence harness cannot
+tell whether an LLM continues to \emph{summarize} an anchor after it
+has stopped \emph{acting} on it.
 
-Crucially, \emph{the LLM never controls individual entities}. It produces low-rank, schema-validated, clamped directives that flow through the deterministic tool layer: 4-channel directive stream $\to$ group policy applier (T3) $\to$ per-NPC FSM $\to$ A* target (T1) $\to$ Boids \texttt{desiredVel} (T2) $\to$ integrated position. This handoff is the deterministic boundary that makes bit-identical reproducibility possible (\S\ref{sec:reproducibility}).
+\paragraph{Environment-director} (cadence: 5--15\,s; tool: event
+scheduler). Schema: \{weather: enum \texttt{clear|rain|storm},
+\texttt{durationSec} $\in$ [8, 180], \texttt{factionTension} $\in$
+[0, 1], \texttt{eventSpawns}: $\leq$3 with intensity $\geq 0.4$\}.
+Coarse-cadence state perturbations to which the policy channel must
+adapt, matching the ReAct~\citep{Yao2023ReAct} observe$\to$act loop.
+
+\paragraph{NPC-policy} (cadence: 5--15\,s; tools: A* path query,
+Boids steering, FSM intent applier). Schema: $\{\text{groupId},
+\text{intentWeights} \in [0,3]^{|\mathcal{I}_g|},
+\text{riskTolerance} \in [0,1],
+\text{targetPriorities} \in [0,3]^{|\mathcal{T}_g|},
+\text{ttlSec} \in [8, 24\,\text{h}]\}$. Intent weights flow through
+\texttt{POLICY\_INTENT\_TO\_STATE} into per-NPC FSM preferences;
+\texttt{targetPriorities} drive A* target selection; group Boids
+steering consumes \texttt{intentWeights}. The
+\texttt{targetPriorities} and \texttt{intentWeights} channels carry
+the \emph{action-token sets} that the action-grounded recall probe
+(\S\ref{sec:dualprobe}) machine-checks against injected anchors.
+
+\paragraph{Strategic-plan} (cadence: 90\,s heartbeat + crisis
+triggers; tool: plan arbitration). Schema:
+\{\texttt{primaryGoal}: str, \texttt{constraints}: str[],
+\texttt{resourceBudget}: \{food, wood, stone\}\}. The longest-cadence
+channel carries the \emph{verbal summaries} in
+\texttt{primaryGoal}/\texttt{constraints} that the verbal-recall
+probe scans for anchor token mentions.
+
+\paragraph{Colony-agent} (cadence: sim-time-gated + plan-stall
+triggers; tool: build planner over PlanExecutor). Schema:
+$[(\text{action: enum}, \text{args: obj}, \text{depends\_on:
+int[]})]$. Wraps a Perceive $\to$ Plan $\to$ Ground $\to$ Execute
+$\to$ Evaluate $\to$ Reflect loop~\citep{Yao2023ReAct,
+Shinn2023Reflexion} that grounds multi-step build plans
+tile-by-tile.
 
 \begin{figure}[t]
 \centering
-\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 1 placeholder] 4-channel LLM action surface bound to a deterministic 4-tool layer; tick pipeline; schema/guardrail boundary at \texttt{entity.desiredVel}.}}}
-\caption{Project-Utopia architecture: four LLM decision channels emit schema-validated directives that deterministically ground onto a fixed 4-tool surface (path query, group steering, FSM intent applier, build planner).}
+\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 1 placeholder]
+$4\,\text{channel}\,\times\,4\,\text{tool}$ elicitation substrate;
+three nested cadences (5--15\,s, 90\,s, sim-time gated); anchor
+injection at $t=0$ via \texttt{world\_summary}; dual-probe taps on
+\texttt{primaryGoal}/\texttt{constraints} (verbal) and
+\texttt{targetPriorities}/\texttt{intentWeights} (action).}}}
+\caption{Project-Utopia as the elicitation substrate for stale
+coherence. Multi-cadence structured output is what makes
+verbal-action dissociation visible; the four tools are kept fixed so
+the substrate is deterministic.}
 \label{fig:architecture}
 \end{figure}
 
-\subsection{The Four LLM Decision Channels}
-\label{sec:channels}
+\subsection{Anchor Injection Protocol}
+\label{sec:anchors}
 
-\paragraph{Environment-director.} \emph{Cadence}: 5--15\,s, throttled by \texttt{tuning.environmentDecisionIntervalSec}. \emph{Schema}: \{weather: enum \texttt{clear|rain|storm}, \texttt{durationSec} $\in$ [8, 180], \texttt{factionTension} $\in$ [0, 1], \texttt{eventSpawns}: $\leq$3 with intensity $\geq$ 0.4\}. The event scheduler tool grounds these directives into naturalistic stressors. This is the state-perturbation channel to which the policy channel must adapt, matching the ReAct~\citep{Yao2023ReAct} observe$\to$act pattern at a coarser cadence.
+At $t=0$ we inject \textbf{5 anchor entries} into the LLM's working
+memory via the system prompt's \texttt{world\_summary} field. Each
+anchor carries two paired fields:
 
-\paragraph{NPC-policy.} \emph{Cadence}: 5--15\,s, additionally gated by threat $\leq 14$ tiles, guard deficit, or active worker strikes. \emph{Schema}: $\{\text{groupId}, \text{intentWeights} \in [0,3]^{|\mathcal{I}_g|}, \text{riskTolerance} \in [0,1], \text{targetPriorities} \in [0,3]^{|\mathcal{T}_g|}, \text{ttlSec} \in [8, 24\,\text{h}]\}$. Intent weights flow through \texttt{POLICY\_INTENT\_TO\_STATE} into per-NPC FSM state preferences (T3); target priorities are interpreted by A* (T1); group steering (T2) consumes the resulting \texttt{intentWeights}. The typed directive surface mirrors the function-signature pattern of Toolformer~\citep{Schick2023Toolformer} extended to a parallel-channel cadence.
+\begin{lstlisting}[language=Python, caption={Anchor entry shape}]
+{
+  "verbal_tokens": ["warehouse at (12,8)"],
+  "implicit_goals": [
+      {"action": "deliver", "target": "warehouse"}
+  ]
+}
+\end{lstlisting}
 
-\paragraph{Strategic-plan.} \emph{Cadence}: 90\,s heartbeat plus crisis triggers (workers $\to 0$, food/wood $\leq 5$, threat $\geq 85$) with 15\,s cooldown. \emph{Schema}: \{\texttt{primaryGoal}: str, \texttt{constraints}: str[], \texttt{resourceBudget}: \{food, wood, stone\}\}. The plan-arbitration tool grounds directives by adjusting downstream channel budgets. Strategic plans are advisory; lower channels override under raid-posture clamps.
+The two fields are deliberately \emph{not} co-presented as an
+instruction (``you must deliver to (12,8)''). The anchor appears as
+observed world state. The LLM must autonomously integrate it into
+its directive stream: verbal tokens may resurface in
+\texttt{primaryGoal}/\texttt{strategy.notes}, and implicit goals may
+be served by allocating non-trivial weight to
+\texttt{\{action:deliver, target:warehouse\}} in the
+\texttt{targetPriorities}/\texttt{intentWeights} channels. The two
+paths are independent: an LLM may surface verbal tokens without
+serving implicit goals (stale coherence), serve implicit goals
+without surfacing verbal tokens (silent commitment), or do both
+(coherent) or neither (forgotten).
 
-\paragraph{Colony-agent.} \emph{Cadence}: sim-time gated, additionally triggered by plan stalls. \emph{Schema}: $[(\text{action: enum}, \text{args: obj}, \text{depends\_on: int[]})]$ multi-step plan directives that the build planner tool (T4, \texttt{PlanExecutor} over \texttt{BuildSystem}) grounds tile-by-tile. Wraps a Perceive $\to$ Plan $\to$ Ground $\to$ Execute $\to$ Evaluate $\to$ Reflect loop~\citep{Yao2023ReAct, Shinn2023Reflexion}, where Ground is the tool-invocation step.
+The 5-anchor count is empirically motivated. In pilot runs
+(Appendix~\ref{app:b-additional}) the verbal-recall probe saturates
+near 1.0 with $<5$ anchors (capacity not stressed) and the
+instruction-following probe collapses for the smaller open-weight
+models with $>5$ anchors (capacity exceeded); $n=5$ is the elbow at
+which both probes have measurable variance across our model menu.
 
-\subsection{Schema Validation and Guardrails: the Agent$\leftrightarrow$Tool Contract}
+\subsection{Schema Validation and Guardrails}
 \label{sec:contract}
 
-Schemas and guardrails are not safety bolt-ons; they \emph{are} the agent--tool interface contract. \textbf{Schema + Guardrails is contribution C1.} All four channels share two filters before directives reach the tool layer. \textbf{ResponseSchema} performs JSON-Schema validation: unknown enum values are dropped, NaN values rejected, field types coerced. \textbf{Guardrails} clamps numeric ranges ($\text{weights} \in [0,3]$, $\text{risk} \in [0,1]$, TTL $\in$ [8\,h, 24\,h]) and applies the \emph{raid-posture clamp}: when threat $\geq 80$, intent weights for combat-relevant intents are forcibly raised regardless of LLM output. The guard is an \textbf{idempotent fixed point}: \texttt{guard(guard(x)) == guard(x)} for every directive shape.
+The substrate must distinguish reasoning drift from parse error.
+Two filters sit between every LLM emission and the tool layer.
+\textbf{ResponseSchema} performs JSON-Schema validation (unknown
+enums dropped, NaN rejected, types coerced). \textbf{Guardrails}
+clamps numeric ranges ($\text{weights} \in [0,3]$,
+$\text{risk} \in [0,1]$, $\text{TTL} \in [8\,\text{h}, 24\,\text{h}]$)
+and is an idempotent fixed point:
+$\texttt{guard(guard(x)) == guard(x)}$ for every directive shape
+(generalizing the typed-function-signature pattern of
+ToolLLM~\citep{Qin2024ToolLLM} and Gorilla~\citep{Patil2023Gorilla}
+to four parallel channels). Idempotency matters here because
+clamped output from one channel re-enters another channel's prompt
+on the next tick; a non-idempotent guard would compound rather than
+stabilize. In the stale-coherence context the schema layer is
+\emph{plumbing, not the headline}: its role is to provide
+machine-checkable ground truth for whether a directive ``references
+an anchor'' or not, so that the dual probes
+(\S\ref{sec:dualprobe}) measure reasoning behavior rather than JSON
+malformedness.
 
-This is the typed-function-signature pattern of ToolLLM~\citep{Qin2024ToolLLM} and Gorilla~\citep{Patil2023Gorilla} generalized to four parallel channels with idempotent guards. Single-channel selection benchmarks don't need idempotency because their guard scope is one call; orchestration of $N$ parallel channels requires it because un-clamped output from one channel may re-enter another channel's prompt payload on the next tick, and a non-idempotent guard would compound rather than stabilize. The contract makes the action space $\sim$\,10$^2$--10$^3$ continuous axes per directive, decoupled from entity count, and ensures the tool layer never enters an invalid state under adversarial or malformed JSON.
-
-\subsection{Determinism and the AgentAdapter Seam}
+\subsection{Determinism Seam}
 \label{sec:adapter-seam}
 
-The tool layer is deterministic given a seed. RNG flows through \texttt{project\_utopia.app.rng}; A* paths are cached by $(\text{faction}, \text{gridVersion}, \text{costVersion})$; Boids accumulators run in fixed order; \texttt{PathWorkerPool} is disabled in \texttt{deterministic=True} mode. \texttt{project\_utopia.tools.audit.determinism\_check} runs the harness twice with the same seed and compares SHA-256 hashes of slim state snapshots. Three tiers pass with bit-identical hashes: 30 ticks \texttt{be19781c\ldots}, 1\,800 ticks \texttt{f7a099a4\ldots}, 7\,200 ticks \texttt{43cb6aec\ldots} (Appendix~\ref{app:determinism-report}).
+Without bit-identical reproducibility we cannot distinguish stale
+coherence from hardware variance. RNG flows through
+\texttt{project\_utopia.app.rng}; A* paths are cached by
+$(\text{faction}, \text{gridVersion}, \text{costVersion})$; Boids
+accumulators run in fixed order; \texttt{PathWorkerPool} is disabled
+in \texttt{deterministic=True} mode. \texttt{project\_utopia.tools.audit.determinism\_check}
+runs the harness twice on the same seed and compares SHA-256 hashes
+of slim state snapshots; three tiers pass with bit-identical hashes:
+30 ticks \texttt{be19781c\ldots}, 1\,800 ticks
+\texttt{f7a099a4\ldots}, 7\,200 ticks \texttt{43cb6aec\ldots}
+(Appendix~\ref{app:determinism-report}).
 
-The \textbf{AgentAdapter} is the interface that any policy (LLM, fallback, or scripted oracle) must implement to drive the four channels:
+The \textbf{AgentAdapter} is the interface any policy (LLM,
+fallback, scripted oracle) implements to drive the four channels:
 
 \begin{lstlisting}[language=Python, caption={AgentAdapter contract}]
 async def request(self, channel: str, payload: Any,
@@ -50,24 +161,13 @@ async def request(self, channel: str, payload: Any,
     ...
 \end{lstlisting}
 
-Concrete adapters in the core suite: (1) \texttt{NoopAgentAdapter} --- schema-valid no-op for the sandwich-norm lower bound; (2) \texttt{LLMClient} --- OpenAI-compatible HTTP via litellm; (3) \texttt{FlatBaselineAdapter} --- the E1 single-channel control that emits per-worker FSM-state preferences directly; (4) \texttt{ScriptedOraclePolicy} --- hand-coded heuristic upper bound for the sandwich norm. Tier-2 deterministic-inference adapters and cassette replay are documented in \S\ref{sec:reproducibility}.
-
-\subsection{Tool-Interface Contract}
-\label{sec:tool-contract}
-
-\begin{table}[t]
-\caption{The four channels of contribution C1. Schema is the typed interface; Guardrails enforces the idempotent contract (\S\ref{sec:contract}).}
-\label{tab:tool-contract}
-\centering
-\small
-\begin{tabularx}{\linewidth}{lXX}
-\toprule
-\textbf{Channel} & \textbf{Clamped directive schema} & \textbf{Tool implementation} \\
-\midrule
-environment-director & \{weather: enum, durationSec $\in$ [8,180], factionTension $\in$ [0,1], eventSpawns: $\leq$3\} & Event scheduler $\to$ weather \& faction state perturbation \\
-npc-policy & \{groupId, intentWeights $\in$ [0,3]$^{|\mathcal{I}_g|}$, risk $\in$ [0,1], targetPriorities, ttl $\in$ [8h,24h]\} & Group steering (Boids, T2) + FSM intent applier (T3) + A* target selection (T1) \\
-strategic-plan & \{primaryGoal: str, constraints: str[], resourceBudget: \{food, wood, stone\}\} & Plan-arbitration $\to$ adjusts downstream channel budgets \\
-colony-agent & [(action: enum, args: obj, depends\_on: int[])] & PlanExecutor $\to$ BuildSystem (T4, tile-by-tile grounding) \\
-\bottomrule
-\end{tabularx}
-\end{table}
+Concrete adapters: \texttt{NoopAgentAdapter} (sandwich-norm lower
+bound), \texttt{LLMClient} (OpenAI-compatible HTTP via litellm),
+\texttt{FlatBaselineAdapter} (single-channel control that emits
+per-worker FSM-state preferences directly), and
+\texttt{ScriptedOraclePolicy} (hand-tuned upper bound). Tier-2
+deterministic-inference adapters and cassette replay are documented
+in \S\ref{sec:reproducibility}. The per-channel table mapping each
+directive schema to its tool implementation is deferred to
+Appendix~\ref{app:b-additional}; it is supporting machinery for the
+dual probe, not the central object of study.

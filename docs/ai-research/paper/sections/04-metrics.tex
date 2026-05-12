@@ -1,181 +1,163 @@
 \section{Metric Stack}
 \label{sec:metrics}
 
-Project-Utopia reports scores at four layers, each grounded in prior
-art (Figure~\ref{fig:metric-stack}).
+The methodological centerpiece of this paper is the
+\textbf{MemoryDegradation dual probe}: a pair of independent probes
+that, taken jointly with a behavioral-drift discount, operationally
+define stale coherence. Everything else in this section is supporting
+machinery for the dual probe.
 
-\begin{figure}[t]
-\centering
-\fbox{\parbox{0.92\columnwidth}{\textsf{[Figure 2 placeholder]
-4-layer metric stack:
-Per-tick raw signal $\to$ Sandwich norm + Geometric mean
-$\to$ Bayesian per-dimension $\to$ HELM MWR cross-model leaderboard.}}}
-\caption{Four-layer metric stack. Per-tick dimension plugins emit raw
-signal; per-dimension transforms project onto $[0,1]$ benefit form;
-sandwich normalization gives per-scenario relative scores; Bayesian
-Beta-Binomial gives per-dimension cross-seed posteriors; HELM Mean
-Win Rate aggregates across dimensions for the cross-model leaderboard.}
-\label{fig:metric-stack}
-\end{figure}
+\subsection{The Dual Probe}
+\label{sec:dualprobe}
 
-\subsection{Layer 1: Per-Tick Dimension Plugins}
+Let $\mathcal{A} = \{a_1, \ldots, a_5\}$ denote the five anchors
+injected at $t=0$ (\S\ref{sec:anchors}). Each anchor $a_i$ carries a
+verbal-token set $V_i$ and an implicit-goal action-token set $G_i$.
+At every sample point $t > 0$ we tap two disjoint outputs of the
+substrate.
 
-Five plugins (\texttt{project\_utopia/benchmark/dimensions/}) emit a per-cell
-score row of 19 keys:
-
-\paragraph{ResourceAllocationEfficiency} ($N$=5):
-\texttt{rae\_composite}, \texttt{rae\_sufficiency},
-\texttt{rae\_distribution\_gini},
-\texttt{rae\_idle\_capacity},
-\texttt{rae\_path\_overhead}.
-\texttt{rae\_composite} is the Crafter geometric mean
-\citep{Hafner2022Crafter} over per-resource sufficiency:
+\paragraph{Verbal probe: \texttt{anchored\_fact\_recall}.}
 $$
-S_{\text{RAE}} = \exp\!\Bigg(\frac{1}{3}\sum_{i \in \{f,w,s\}}
-\ln(1 + s_i)\Bigg) - 1, \quad s_i \in [0,1]
+\text{verbal\_recall}(t) \;=\; \frac{1}{|\mathcal{A}|}
+\sum_{i=1}^{|\mathcal{A}|}
+\mathbf{1}\!\bigl[\,V_i \subseteq \mathrm{tokens}\bigl(\,
+\texttt{world\_summary}(t)\,\cup\,
+\texttt{strategy.notes}(t)\,\bigr)\,\bigr]
 $$
-where $s_f, s_w, s_s$ are food/wood/stone per-capita
-sufficiencies. Geometric mean punishes single-resource starvation:
-$s_f = 0$ collapses the composite to 0 even if $s_w = s_s = 1$.
+the fraction of injected anchors whose verbal tokens still appear in
+the LLM-emitted long-cadence summary channel
+(\texttt{primaryGoal}/\texttt{strategy.notes} of the strategic-plan
+channel). Range $[0, 1]$.
 
-\paragraph{GroupDynamics} ($N$=4): \texttt{intent\_entropy},
+\paragraph{Action-grounded probe: \texttt{action\_grounded\_recall}.}
+$$
+\text{action\_recall}(t) \;=\; \frac{1}{|\mathcal{A}|}
+\sum_{i=1}^{|\mathcal{A}|}
+\mathbf{1}\!\bigl[\,\exists\,g \in G_i :
+w_g(t) \ge \tau\,\bigr]
+$$
+the fraction of injected anchors whose implicit-goal action-tokens
+are still served with non-trivial weight $w_g(t) \ge \tau$ in the
+LLM-emitted \texttt{targetPriorities} / \texttt{intentWeights}
+channels. We fix $\tau = 0.3$ on the clamped $[0, 3]$ weight scale
+(pre-registered; sensitivity to $\tau \in \{0.1, 0.5\}$ reported in
+Appendix~\ref{app:b-additional}). Range $[0, 1]$.
+
+\paragraph{Dissociation metric.} Stale coherence is operationalized
+as the difference of the two probes:
+$$
+\Delta(t) \;=\; \text{verbal\_recall}(t) \;-\; \text{action\_recall}(t).
+$$
+$\Delta(t) > 0$ is the \emph{stale-coherence regime} (says it,
+doesn't act on it). $\Delta(t) \approx 0$ is coherent recall.
+$\Delta(t) < 0$ is silent commitment (acts without summarizing), an
+unusual regime we report for completeness but do not target.
+
+\paragraph{Behavioral drift discount: \texttt{behavioral\_drift}.}
+$$
+\text{drift}(t) \;=\; 1 \;-\;
+\frac{|\,\mathcal{D}(0) \,\cap\, \mathcal{D}(t)\,|}
+     {|\,\mathcal{D}(0) \,\cup\, \mathcal{D}(t)\,|}
+$$
+where $\mathcal{D}(t)$ is the action-token set emitted at time $t$
+across the \texttt{targetPriorities} / \texttt{intentWeights}
+channels (Jaccard distance between $t=0$ and $t$). Drift
+disentangles two confounded explanations of high $\Delta$: (a) the
+LLM \emph{switched goals} (high drift, $\Delta$ explained by goal
+displacement, \emph{not} stale coherence); (b) the LLM
+\emph{stopped acting on this goal while still describing it} (low
+drift, high $\Delta$, \emph{stale coherence}).
+
+\paragraph{Identification.} Stale coherence is the joint regime
+\begin{equation}
+\text{verbal\_recall}(t) \;\text{high},\quad
+\text{action\_recall}(t) \;\text{low},\quad
+\text{drift}(t) \;\text{low}.
+\label{eq:stalecoh-id}
+\end{equation}
+The three signals together identify the phenomenon. The dual probe
+alone (without drift) cannot distinguish stale coherence from goal
+displacement; drift alone (without the two probes) cannot identify
+the verbal--action gap.
+
+\subsection{Pre-Registered Statistical Tests}
+\label{sec:tests}
+
+We pre-register three tests on the dual probe, evaluated on the E1
+matrix of \S\ref{sec:experiments}.
+
+\paragraph{T1 --- Per-family existence test.} For each LLM family
+$m$, one-sided Welch $t$-test of $\Delta(t = 4\,\text{h}) > 0.3$,
+significance level $\alpha = 0.05$. We report effect size,
+$t$-statistic, and the 95\% Bayesian credible interval (Beta-Binomial,
+below) on the per-cell mean $\Delta$. Acceptance of $H$ for family
+$m$ requires both $p < 0.05$ \emph{and} the credible interval lower
+bound strictly above 0.
+
+\paragraph{T2 --- Independence from raw recall.} Spearman rank
+correlation
+$\rho\bigl(\Delta(t=4\,\text{h}),\;\text{verbal\_recall}(t=4\,\text{h})\bigr)$
+across $(\text{model}, \text{seed}, \text{scenario})$ cells, with
+the LongMemEval~\citep{Wu2025LongMemEval}/RULER~\citep{Hsieh2024RULER}
+recall-proxy as the verbal-recall baseline. Pre-registered target:
+$\rho \in [-0.5, +0.5]$. If $|\rho| > 0.5$, stale coherence reduces
+to a known long-context recall bias and the phenomenon does not
+warrant a new axis.
+
+\paragraph{T3 --- Cross-family heterogeneity.} Do the
+stale-coherence onset times $t^\star(m)$ cluster across families, or
+do families have distinct onset profiles? Kruskal--Wallis on
+$\{t^\star(m) : m \in \text{model menu}\}$ followed by pairwise
+Mann--Whitney with Bonferroni correction. Distinct onset profiles
+provide camera-ready evidence that stale coherence is a per-family
+characterization, not a universal context-length artifact.
+
+\subsection{Supporting Metrics}
+\label{sec:supporting}
+
+The remaining 15 dimension keys
+(\texttt{rae\_*}, \texttt{intent\_entropy},
 \texttt{coalition\_coupling}, \texttt{state\_target\_obedience},
-\texttt{faction\_responsiveness}.
-
-\paragraph{MemoryDegradation} ($N$=4):
-\texttt{anchored\_fact\_recall} (verbal),
-\texttt{action\_grounded\_recall} (does the directive distribution
-still reflect the anchor's implicit goal),
-\texttt{behavioral\_drift} (Jaccard distance of action-token sets
-between now and $t = 0$),
-\texttt{performance\_at\_t} (task signal).
-These four keys are emitted by the plugin and surface in NDJSON
-output, but are not used as evidence for either pre-registered
-hypothesis under the current narrow scope; multi-hour memory
-analyses are deferred (see \S\ref{sec:limitations}).
-
-\paragraph{DecisionTokenEfficiency} ($N$=3):
-\texttt{dte\_per\_completion\_token},
-\texttt{dte\_per\_decision},
-\texttt{first\_token\_latency\_p50}.
-Following the BATS cost-aware Pareto convention~\citep{Liu2025BATS}.
-
-\paragraph{HierarchicalCoordination} ($N$=3):
+\texttt{faction\_responsiveness}, \texttt{dte\_per\_completion\_token},
+\texttt{dte\_per\_decision}, \texttt{first\_token\_latency\_p50},
 \texttt{plan\_policy\_alignment},
 \texttt{env\_threat\_responsiveness},
-\texttt{colony\_cadence\_health}.
+\texttt{colony\_cadence\_health}) emitted by the five dimension
+plugins (\texttt{project\_utopia/benchmark/dimensions/}) provide
+context about \emph{how} stale coherence manifests in resource
+allocation and group dynamics, but are not used as evidence for
+hypothesis $\mathbf{H}$. They are reported in
+Appendix~\ref{app:b-additional}.
 
-\subsection{Layer 2: Dimension Normalizer}
+\paragraph{Aggregation pipeline.} Across cells we use the standard
+cross-cell normalization-and-aggregation pipeline:
+\textbf{DimensionNormalizer} maps each plugin key to $[0, 1]$
+benefit form via one of six transforms (\texttt{identity},
+\texttt{invert}, \texttt{reciprocal}, \texttt{clipScale},
+\texttt{rescaleSymmetric}, \texttt{exponentialDecay}); a reflective
+unit test enforces one-and-only-one transform registration per key.
+\textbf{Sandwich normalization}~\citep{Agapiou2022MeltingPot} pairs
+each normalized score with a fallback (\texttt{Guardrails}-only) and
+oracle (\texttt{ScriptedOraclePolicy}) reference run on the same
+seed/scenario and reports
+$S = (S_{\text{LLM}} - S_{\text{fallback}}) /
+(S_{\text{oracle}} - S_{\text{fallback}})$ without clipping the
+upper bound. The Crafter geometric mean~\citep{Hafner2022Crafter}
+collapses per-resource sufficiencies to \texttt{rae\_composite}.
+\textbf{Bayesian Beta-Binomial} posteriors with Beta(2, 2) prior
+provide credible intervals at the $N=5$-seed budget where
+central-limit-theorem Wald intervals
+under-cover~\citep{Bowyer2025DontUseClt}; a prior-sensitivity sweep
+over Jeffreys (0.5, 0.5) and uniform (1, 1) is reported in
+Appendix~\ref{app:prior-sensitivity}. A Pluribus
+AIVAT-style~\citep{Brown2019Pluribus} PolicyValue Baseline (PVB)
+correction reduces variance by $\sim$2--3$\times$ on E1 pilot logs.
 
-Plugin outputs are heterogeneous: some are already $[0,1]$ benefit
-form (e.g., \texttt{rae\_sufficiency}), others are inverted (Gini,
-idle-capacity, drift), unbounded (cadence-stddev), symmetric
-(correlations $\in$ [-1, 1]), or rates with a natural decay scale
-(token-throughput, latency).
-Our \texttt{DimensionNormalizer} applies one of six transforms per key:
-
-{\small
-\begin{verbatim}
-identity:       x
-invert:         1 - x        (clip to [0,1])
-reciprocal:     1 / x        (for x in [1, inf), 1 = best)
-clipScale:      x / scale    (then clip to [0,1])
-rescaleSymmetric: (x + 1) / 2
-exponentialDecay: 1 - exp(-x / scale)  for "fromZero=true" benefit
-                  exp(-x / scale)       for cost (lower = better)
-\end{verbatim}
-}
-
-\noindent
-A reflective unit test enforces that every plugin's
-\texttt{scoreDimensions} key is registered exactly once in the
-normalizer table, blocking silent drift between plugin and pipeline.
-
-\subsection{Layer 3: Sandwich Normalization}
-
-Following MeltingPot 2.0~\citep{Agapiou2022MeltingPot}, each
-normalized score is paired with a fallback (no-LLM) and oracle
-(scripted hand-tuned policy) reference run on the
-\emph{same seed and scenario}, then projected:
-$$
-S_{\text{sandwich}}(\text{cell}) = \frac{
-  S_{\text{LLM}} - S_{\text{fallback}}
-}{
-  S_{\text{oracle}} - S_{\text{fallback}}
-}.
-$$
-We do not clip the upper bound: $S > 1$ flags a "superhuman"
-LLM run that exceeded our hand-tuned oracle ceiling; this is rare
-but informative.
-
-The fallback policy is \texttt{Guardrails}'s production-grade
-state-adaptive default (with full clamping but no LLM), not a
-random baseline. The oracle is \texttt{ScriptedOraclePolicy}
-(\texttt{project\_utopia.benchmark.baselines.scripted\_oracle\_policy}),
-hand-tuned per scenario such that it is both schema-valid and
-guardrail-idempotent, with verified $\geq +20\%$ RAE over
-fallback in pre-pilot runs across all six scenarios.
-
-\subsection{Layer 4a: Bayesian Beta-Binomial Per-Dimension}
-
-Following~\citet{Bowyer2025DontUseClt} (ICML 2025 Spotlight), we
-report Bayesian credible intervals rather than central-limit-theorem
-Wald intervals (which under-cover at $N < 300$). For each (cell,
-scenario, dimension) cube cell with $N$ seed runs producing scores
-$x_1, \ldots, x_N \in [0,1]$:
-$$
-\alpha = 2 + \sum x_i, \qquad
-\beta = 2 + N - \sum x_i, \qquad
-\text{posterior} \sim \text{Beta}(\alpha, \beta).
-$$
-We report posterior mean, $[\text{p2.5}, \text{p97.5}]$ credible
-interval, and median. The Beta(2, 2) prior is mildly informative
-toward 0.5; we report sensitivity to alternative priors
-(Jeffreys (0.5, 0.5), uniform (1, 1)) in
-Appendix~\ref{app:prior-sensitivity}.
-
-\paragraph{Variance reduction.}
-Following Pluribus AIVAT~\citep{Brown2019Pluribus}, we additionally
-report a PolicyValue Baseline (PVB) corrected score:
-$$
-S_{\text{PVB}} = S_{\text{realized}} - V_{F}(s_0) +
-\sum_t \big[V_{F}(s_t \mid \text{after } F) - V_{F}(s_t \mid \text{after } A)\big]
-$$
-where $V_F$ is the fallback policy's expected DevIndex contribution.
-We measure $\sim$\,2--3$\times$ variance reduction across our pilot
-E1 runs, which is equivalent to $\sim$\,3--5$\times$ fewer seeds for
-the same statistical power. We name this estimator \emph{PolicyValue
-Baseline} rather than AIVAT because our $V_F$ is an EMA proxy of past
-values rather than true action-value sampling; we cite AIVAT as
-inspiration but do not claim full unbiasedness in the strict CFR
-sense.
-
-\paragraph{Bayesian vs.\ frequentist ranking stability (methodology
-check).} As a post-hoc methodology check, we bootstrap-sample our
-E1+E6 NDJSON logs to compare Kendall's $\tau$ ranking stability
-between the Beta-Binomial posterior (above) and a frequentist Wald
-interval at small $N$. Our working calibration target is that the
-Beta-Binomial method delivers at least 30\% better ranking stability
-at $N=5$ seeds, mirroring~\citet{Bowyer2025DontUseClt}'s ICML 2025
-result on the under-coverage of Wald intervals at $N < 300$. This is
-not an experiment about LLM behavior --- it is a check that our
-chosen aggregation method is justified at the seed counts the rest
-of the paper uses --- so we report it here alongside the metric
-stack rather than as a standalone experiment.
-
-\subsection{Layer 4b: HELM Mean Win Rate Across Dimensions}
-
-For the cross-model leaderboard, we follow HELM's Mean Win Rate
-\citep{Liang2023HELM}: for each pair of models $(m, m')$ and each
-(scenario, dimension) pair, compute
-$W_{m,m',s,d} = \mathbf{1}[S_{m,s,d} > S_{m',s,d}]$. Then
-$$
-\text{MWR}_m = \frac{1}{|S| \cdot |D|} \cdot \frac{1}{|M|-1}
-\sum_{s,d} \sum_{m' \neq m} W_{m,m',s,d}.
-$$
-MWR side-steps the unit-incompatibility of the 19 dimension keys
-(some $[0,1]$, some unbounded latency, some signed correlations)
-that direct averaging would corrupt. When the per-cell payoff
-matrix shows non-transitivity (rock-paper-scissor cycles), we
-additionally report $\alpha$-rank
-\citep{Lanctot2019OpenSpiel}.
+\paragraph{Cross-model leaderboard.} For the supporting
+cross-model leaderboard we follow HELM Mean Win
+Rate~\citep{Liang2023HELM}; the full MWR construction and
+$\alpha$-rank~\citep{Lanctot2019OpenSpiel} fallback for
+non-transitive payoff matrices are deferred to
+Appendix~\ref{app:b-additional}. MWR does not measure stale
+coherence and is not used to test $\mathbf{H}$; it is a
+camera-ready convenience for reader comparison across LLM families.
