@@ -1,62 +1,56 @@
 \begin{abstract}
 
-LLM-agent benchmarks today measure the wrong layer of the agent
-stack. AgentBench~\citep{Liu2024AgentBench}, GAIA~\citep{Mialon2023GAIA},
-WebArena~\citep{Zhou2024WebArena}, Toolformer~\citep{Schick2023Toolformer},
-Gorilla~\citep{Patil2023Gorilla}, ToolLLM~\citep{Qin2024ToolLLM} and
-MINT~\citep{Wang2024MINT} all evaluate \emph{tool selection}: given
-an open inventory of $10^3$--$10^4$ tools, can the LLM pick and
-parameterize the right one? Frontier models now do this competently.
-The mode that actually breaks deployments is the opposite regime:
-the tool set is \emph{fixed and known a priori}, and the agent must
-\textbf{orchestrate multiple parallel decision channels into that
-fixed surface coherently}. A weather update from one channel, a
-worker policy from another, and a build plan from a third are each
-individually schema-valid, yet jointly inconsistent because they
-reference state that has drifted between their cadences. No existing
-benchmark isolates this failure mode.
+A production-deployed LLM agent rarely fails by forgetting an anchor
+outright. It fails by a more subtle failure mode: it continues to
+\emph{mention} the anchor in its summaries while its directives stop
+\emph{acting} on it. We call this failure mode \textbf{stale
+coherence} and argue that it is an independent axis of LLM behavior
+distinct from raw recall as measured by LongMemEval~\citep{Wu2025LongMemEval},
+RULER~\citep{Hsieh2024RULER}, Lost-in-the-Middle~\citep{Liu2024LostInMiddle},
+or MemoryArena~\citep{He2026MemoryArena}.
 
-We introduce \textbf{Project-Utopia}, a benchmark for
-\emph{multi-channel orchestration of a fixed tool surface}. One
-agent exposes four parallel decision channels
+We define stale coherence operationally as the dual probe
+$\bigl(\,\text{verbal\_recall}(t),\,\text{action\_grounded\_recall}(t)\,\bigr)$
+and the dissociation metric
+$\Delta(t) = \text{verbal\_recall}(t) - \text{action\_grounded\_recall}(t)$.
+A single anchor is injected at $t = 0$ carrying both verbal tokens
+(``warehouse at $(12,8)$'') and an implicit action goal
+(\texttt{\{deliver, warehouse\}}). At every sample point $t > 0$, the
+\emph{verbal} probe checks whether the LLM-emitted summary still
+mentions the anchor; the \emph{action-grounded} probe checks whether
+the LLM's structured directives still allocate non-trivial weight to
+the anchor's implicit goal. Stale coherence is the regime where these
+two probes diverge.
+
+To make stale coherence measurable, we build Project-Utopia, a
+deterministic 8-sim-hour colony-simulation harness in which a single
+LLM emits structured directives across four parallel channels
 (\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
-\emph{colony-agent}) operating at three nested cadences over a fixed
-4-tool surface (path queries over a versioned grid, Boids group
-steering, FSM intent application, build planning). Every directive
-flows through a per-channel pydantic schema and idempotent numerical
-guardrails that constitute the \textbf{agent--tool interface contract}:
-weights $\in [0,3]$, TTLs $\in [8\,h, 24\,h]$, raid-posture clamps,
-allowlist-restricted intent and target vocabularies. This is the
-typed-function-signature pattern of ToolLLM~\citep{Qin2024ToolLLM}
-generalized to four parallel channels, plus a deterministic substrate
-(seeded RNG, A*, Boids, FSM) so hardware variance does not mask
-reasoning failures.
+\emph{colony-agent}) at three nested cadences. The multi-cadence
+structured-output substrate is what makes the dissociation visible:
+single-cadence benchmarks cannot dissociate verbal mention from
+sustained behavioral commitment. Schema validation and idempotent
+guardrails ensure that what we measure is reasoning drift, not
+parse error or hardware non-determinism (three-tier reproducibility
+with bit-identical fallback hashes \texttt{be19781c\ldots} verified at
+seed \texttt{0xC0FFEE}).
 
-We isolate the orchestration regime through two pre-registered
-hypotheses. \textbf{H1 (orchestration advantage)}: under matched
-per-decision token budget, the 4-channel contract achieves
-$\Delta\text{RAE} \geq 0.10$ over a flat single-channel baseline that
-emits per-worker FSM-state preferences directly --- target effect
-size anchored on ChatDev's $-44\%$ role-removal
-effect~\citep{Qian2024ChatDev}. \textbf{H2 (schema validity under
-coherence stress)}: across 7\,200-tick runs, the fraction of
-guardrail-rejected or behaviorally inconsistent directives remains
-bounded by the per-channel schema rejection rate, with no compounding
-inter-channel violation. The benchmark surfaces 19 dimension keys via
-a 4-layer metric stack (per-tick plugins $\to$ DimensionNormalizer
-$\to$ MeltingPot-style sandwich normalization~\citep{Agapiou2022MeltingPot}
-$\to$ Bayesian Beta-Binomial~\citep{Bowyer2025DontUseClt}), with
-PolicyValue Baseline~\citep{Brown2019Pluribus} variance reduction.
-A three-tier reproducibility contract~\citep{Yuan2025LayerCast}
-gates the substrate at bit-identical fallback hashes
-\texttt{be19781c\ldots / f7a099a4\ldots / 43cb6aec\ldots} (30 / 1\,800
-/ 7\,200 ticks at seed \texttt{0xC0FFEE}).
+We evaluate a single pre-registered hypothesis: \textbf{H}: for every
+LLM family $m$ in our model menu, there exists
+$t^{\star}(m) \leq 4\,\text{sim-hours}$ such that
+$\Delta(t^{\star}) > 0.3$. We additionally test whether stale
+coherence is statistically independent of LongMemEval-style verbal
+recall: if the dissociation gap correlates strongly with raw recall,
+the phenomenon reduces to known long-context bias; if it does not,
+stale coherence is a new axis production agent designers must
+explicitly test for.
 
-At submission, the pipeline is end-to-end verified on fallback-only
-NDJSON; cell-level real-LLM signal is reserved for the camera-ready
-once API access is provisioned. Project-Utopia is released as a
-self-contained Python package (\texttt{pip install project-utopia},
-615 tests passing, $\sim$\,23\,k LOC, 128 modules) at
-[ANONYMIZED-REPO-URL] (de-anonymized for camera-ready).
+At submission time, the pipeline is verified end-to-end on
+fallback-only NDJSON. Real-LLM evaluation across Claude-Sonnet-4.6,
+GPT-5-mini, and Llama-3.1-8B is reserved for the camera-ready once
+API access is provisioned. Project-Utopia is released as a Python
+package (\texttt{pip install project-utopia}, 615 tests passing,
+$\sim$\,23\,k LOC, 128 modules) at [ANONYMIZED-REPO-URL]
+(de-anonymized for camera-ready).
 
 \end{abstract}
