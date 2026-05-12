@@ -1,51 +1,49 @@
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph{The single architectural lesson.}
-The 4-channel decomposition combined with the per-channel pydantic
-schema is what makes the action space a precisely
-$10^2$--$10^3$-dimensional continuous surface per directive
-(weights $\in [0,3]^{|\mathcal{I}_g|}$, factionTension $\in [0,1]$,
-TTLs $\in [8h, 24h]$, raid-posture clamps, allowlist-restricted
-intent and target vocabularies), \emph{decoupled} from entity count.
-Each channel's prompt budget is bounded by
-\texttt{pickHighlights} truncation rather than by the size of the
-world it observes (E2). The schemas at this boundary
-($\text{environment-director} \to \text{factionTension} \in [0,1]$,
-\texttt{npc-policy} $\to$ intent weights $\in [0,3]^{|\mathcal{I}_g|}$)
-are simultaneously the safety mechanism and the evaluation contract
---- the same artifact that prevents downstream tool grounding from
-breaking is the artifact that defines what a "schema-valid directive"
-counts as for H2.
+\paragraph{Why stale coherence dissociates from existing memory
+benchmarks.}
+LongMemEval~\citep{Wu2025LongMemEval} and RULER~\citep{Hsieh2024RULER}
+ask ``did the model retrieve the fact?'' --- they probe only the
+verbal axis. MemoryArena~\citep{He2026MemoryArena} and
+MemoryAgentBench~\citep{Hu2025MemoryAgentBench} probe action
+grounding, but they do so inside session-discrete loops in which
+the agent receives explicit reset boundaries between trials. Stale
+coherence is visible only when both axes are measured \emph{jointly}
+on tick-continuous, naturally-accumulated context --- i.e., on the
+trajectory shape that production agent deployments actually exhibit,
+in which an anchor injected at deployment time has to survive hours
+of intermediate decisions without being re-prompted. This is
+exactly the regime our 8-sim-hour episode and dual probe
+($\texttt{verbal\_recall} \times \texttt{action\_grounded\_recall}$)
+target.
 
-\paragraph{Implications for deployment.}
-Three concrete recommendations for production agent designers follow
-from this architecture:
-\textbf{(i)} Always test schema validity under multi-channel coherence
-stress, not single-call accuracy. Single-call JSON-mode benchmarks
-under-detect the compounding failure mode where each channel is
-individually valid but the joint state has drifted between their
-cadences. E6 is designed to surface exactly this regime.
-\textbf{(ii)} Idempotent guards are required when channels feed each
-other's payloads. Our \texttt{Guardrails} layer is idempotent by
-construction: clamping a clamped value is a no-op. This is what
-allows the four channels to run at three different cadences without
-turning every cross-channel hand-off into a re-validation hazard.
-\textbf{(iii)} The sandwich-normalized RAE composite is a usable
-hill-climbing target. Because the fallback and oracle endpoints are
-deterministic and pinned per (seed, scenario), it cannot be gamed by
-LLM regression --- an LLM that drifts toward fallback-equivalent
-behavior scores at the lower anchor; one that exceeds the
-hand-tuned oracle scores above $1$ rather than saturating, flagging
-a result for review.
+\paragraph{Implications for production agent design.}
+Three concrete recommendations follow:
+\textbf{(i)} Test action-grounded recall, not summary fidelity. A
+model that scores well on LongMemEval may still abandon anchors in
+its action stream within 4 sim-hours; if your deployment cares
+whether the agent \emph{acts on} its memories rather than merely
+mentions them, verbal-only benchmarks will systematically
+over-estimate readiness.
+\textbf{(ii)} The verbal-recall axis is necessary but not
+sufficient for memory benchmark coverage. Existing benchmarks
+should add an action-grounded probe wherever the underlying task
+exposes structured directives or tool calls, so that
+$\Delta(t)$ can be reported alongside the verbal score.
+\textbf{(iii)} If your agent must maintain anchor commitment across
+hours of deployment, monitor $\Delta(t)$ in production telemetry,
+not just summary mentions. A flat verbal-recall curve combined
+with a decaying action-grounded-recall curve is the operational
+signature of stale coherence in the wild.
 
-\paragraph{Cost vs.\ performance Pareto.}
-Following BATS~\citep{Liu2025BATS}, we report cost as
-$\alpha \cdot \text{tokens} + \beta \cdot \text{tool\_calls}$ on all
-leaderboards. E2 plus the decision-token efficiency analysis
-(\S\ref{app:b1}) jointly establish that, in the multi-channel
-orchestration regime we study, prompt-token cost grows sub-linearly
-with entity count and completion-token cost is not rank-equivalent
-to RAE --- i.e., the cheapest channel-routed configuration is not
-trivially the best, so the architectural choice in E1 cannot be
-explained away as "the hierarchical arm just spent more tokens."
+\paragraph{What this implies for ``memory'' research.}
+Stale coherence suggests that LLM ``memory'' is not one capability
+but at least two --- verbal echo and behavioural commitment ---
+that can decouple under naturally-accumulated context. Future memory
+benchmarks should report both axes; the
+\citet{Sinha2025IllusionDiminishingReturns} curve relating model
+scale to long-context recall may need to be reported separately
+for each, because a regime in which verbal recall improves with
+scale while action-grounded recall does not would be invisible to
+single-axis evaluation but visible to the dual probe defined here.

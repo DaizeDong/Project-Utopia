@@ -2,10 +2,10 @@
 \label{app:b-additional}
 
 This appendix collects analyses that supplement, but do not directly
-test, the two pre-registered hypotheses H1 and H2. They are reported
-here so the underlying telemetry is available to readers while
-keeping the main-text experimental section focused on the
-orchestration regime.
+test, the pre-registered stale-coherence hypothesis \textbf{H}. They
+are reported here so the underlying telemetry is available to
+readers while keeping the main-text experimental section focused on
+the stale-coherence phenomenon.
 
 \subsection{B.1 Decision-Token Efficiency}
 \label{app:b1}
@@ -17,18 +17,17 @@ performance. Specifically, 7B-tier models with frequent short
 directives can outrank larger models with rare rich directives on
 the DTE axis.
 
-\paragraph{Design.} Reuses E6 logs (\S\ref{sec:exp:e6}) for the
+\paragraph{Design.} Reuses E1 logs (\S\ref{sec:exp:e1}) for the
 cross-model comparison; adds 15 cadence-ablation runs (1 model
 $\times$ 3 cadence levels $\times$ 5 seeds) to test whether DTE is
 robust to the LLM's call-frequency knob. The DTE metric stack
 (\texttt{dte\_per\_completion\_token},
 \texttt{dte\_per\_decision}, \texttt{first\_token\_latency\_p50})
-is defined in \S\ref{sec:metrics}. E2 (\S\ref{sec:exp:e2}) provides
-the complementary check that prompt-token cost is decoupled from
-world size; this analysis instead asks whether completion-token cost
-is decoupled from task performance.
+is defined in \S\ref{sec:metrics}. This analysis asks whether
+completion-token cost is decoupled from task performance and is
+reported only as supporting telemetry alongside the stale-coherence
+phenomenon.
 
 \paragraph{Expected result.} Spearman $\rho < 0.7$ between RAE rank
-and DTE rank across the 3-model $\times$ 2-scenario E6 matrix
-indicates that the DTE axis provides additional ranking information
-beyond pure RAE.
+and DTE rank across the 3-model E1 matrix indicates that the DTE
+axis provides additional ranking information beyond pure RAE.

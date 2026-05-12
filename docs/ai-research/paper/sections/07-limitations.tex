@@ -3,75 +3,81 @@
 
 \paragraph{Limitations.}
 (1) \textbf{Domain.} Project-Utopia is a colony simulation in a
-2-D tile world. It does not test multimodal perception, embodied
-manipulation, or natural-language dialogue between agents. Domain
-generalization to other fixed-tool-surface settings (city traffic,
-hospital scheduling, supply-chain orchestration) is left as future
-work.
-(2) \textbf{Sample size.} The 3-experiment matrix uses 10 seeds per
-cell for E1 and E2 and 5 seeds for E6, which is at the low end of
-statistical justifiability. We adopt~\citet{Bowyer2025DontUseClt}'s
-Beta-Binomial methodology and pair it with PVB variance reduction
-(\S\ref{sec:metrics}), but acknowledge that doubling seed count
-would tighten credible intervals and may reveal effects below our
-current detection threshold.
-(3) \textbf{LLM API stationarity.} Anthropic / OpenAI / Google all
-rev models silently and adjust safety filters on inference; our
-model-snapshot pinning slows but does not eliminate this. The
-RecordReplayCache lets reviewers replay our exact prompts-and-responses
-transcript bit-identically, but re-running with the latest production
-endpoint is not guaranteed to reproduce.
-(4) \textbf{Partial observability.} Project-Utopia exposes the full
-world summary to all four channels. A more realistic deployment
-would give each channel only its proper observation slice. We
-support this via a \texttt{VisibilitySystem} but have not yet wired
-it into the experimental matrix; this is the most important deferred
-ablation.
-(5) \textbf{Multi-LLM negotiation.} Channels communicate only through
-state mutation, not through inter-LLM text traffic. This is out of
-scope for the orchestration regime we test: H1 and H2 specifically
-ask what happens when four parallel channels of a single agent
-orchestrate a fixed tool surface, not what happens when multiple
-agents negotiate. Concordia~\citep{Vezhnevets2023Concordia}'s
-Game-Master-as-broker pattern would be a natural extension but is
-deliberately not exercised here.
-(6) \textbf{Sample-efficient learning under directive constraints.}
-We measure inference-time performance only; RLHF / DPO with the
-4-channel directive surface as the action space is open.
-(7) \textbf{Fixed tool set.} Unlike
-Toolformer~\citep{Schick2023Toolformer},
-Gorilla~\citep{Patil2023Gorilla}, and
-ToolLLM~\citep{Qin2024ToolLLM} --- which evaluate agents that
-\emph{choose} tools from a large inventory --- Project-Utopia
-evaluates agents that \emph{orchestrate a fixed 4-tool surface}.
-This is intentional: it is the design choice that defines the
-orchestration regime. Open-world tool discovery is out of scope by
-construction; domain-transfer claims are limited to settings where
-the tool surface is known a priori (industrial workflow
-orchestration, robotics primitives, scripted enterprise APIs).
-(8) \textbf{Empirical evidence pending.} At submission, no real-LLM
-runs are populated. The pipeline is verified end-to-end on
-fallback-only NDJSON: schema validity, guardrail idempotence,
-bit-identical determinism (\S\ref{sec:reproducibility}), and figure
-rendering all run through the released CLI. Cell-level real-LLM
-signal for H1 and H2 is reserved for the camera-ready once API
+2-D tile world. Generalisation of stale coherence as a phenomenon
+to other long-horizon agent domains --- city-traffic control,
+hospital scheduling, supply-chain orchestration, dialogue-heavy
+assistants, robotics primitives --- is left as future work. The
+decay profiles we measure may differ in dialogue-heavy or
+robotics-heavy domains; we characterise one regime in depth rather
+than many regimes shallowly.
+(2) \textbf{Sample size.} The main matrix is 5 seeds $\times$ 3
+models $\times$ 3 scenarios $=$ 15 runs per
+(model, scenario) cell for E1/E2, and 5 seeds per
+context-budget cell for E3. We adopt
+\citet{Bowyer2025DontUseClt}'s Beta-Binomial methodology
+appropriate for small-$N$, but acknowledge that doubling seed
+count would tighten credible intervals and may surface effects
+below our current detection threshold.
+(3) \textbf{LLM API stationarity.} Anthropic, OpenAI, and the
+open-weight hosts we use all rev models and adjust safety filters
+on inference; our model-snapshot pinning slows but does not
+eliminate this. The RecordReplayCache lets reviewers replay our
+exact prompts-and-responses transcript bit-identically, but
+re-running with the latest production endpoint is not guaranteed
+to reproduce.
+(4) \textbf{Anchor count and design.} Stale coherence may scale
+non-trivially with anchor count or anchor complexity. We use a
+fixed anchor count of 5 anchors per episode, each carrying a
+paired (verbal token, implicit-goal) structure. Other designs ---
+single anchor, 10 anchors, contradictory anchors, dynamically
+introduced anchors --- are out of scope for this paper and are
+the most immediate ablation we plan post-submission.
+(5) \textbf{Partial observability.} Project-Utopia currently
+exposes the full world summary to all four channels. A more
+realistic deployment would give each channel only its proper
+observation slice. We expect partial observability to
+\emph{increase} $\Delta$ (less verbal echo per probe, similar
+action grounding) and treat this as a useful future ablation,
+not as a threat to the present results.
+(6) \textbf{Inference-time only.} We measure inference-time
+stale coherence. Whether RLHF / DPO with $\Delta$ or the dual
+probe as part of the reward signal reduces stale coherence is
+an open question that requires training-time access we do not
+have for the frontier closed-weight models in our menu.
+(7) \textbf{Anchor protocol design choice.} Our anchors carry
+explicit verbal tokens that we then probe for. An alternative
+protocol, in which anchors carry only implicit context to be
+inferred, might surface different decay profiles. The current
+choice maximises measurability (the verbal probe has a
+well-defined target string); the alternative would maximise
+ecological validity (production anchors are rarely re-stated
+verbatim).
+(8) \textbf{Empirical evidence pending.} At submission, no
+real-LLM runs are populated for E1, E2, or E3. The pipeline is
+verified end-to-end on fallback NDJSON: schema validity, anchor
+injection, dual-probe sampling, statistical machinery, and
+figure rendering all run through the released CLI. Cell-level
+real-LLM signal is reserved for the camera-ready once API
 access is provisioned.
 
 \paragraph{Future work.}
-Camera-ready will populate H1 and H2 with the model menu from
-\S\ref{sec:exp:setup} (one frontier closed-weight, one mid-tier
-closed-weight, one open-weight 7B-tier for H2; the single
-Claude-Sonnet model for H1), then extend the methodology to
-additional fixed-tool-surface domains where the agent--tool contract
-is known a priori.
+Camera-ready will populate E1, E2, and E3 with the 3-family model
+menu in \S\ref{sec:exp:setup}
+(Claude-Sonnet-4.6, GPT-5-mini, Llama-3.1-8B-Instruct).
+Subsequent work extends the dual-probe methodology to other
+long-horizon agent domains (dialogue assistants, robotics
+primitives) and explores whether RLHF or DPO on $\Delta$
+reduces stale coherence at training time.
 
 \paragraph{What we explicitly do \emph{not} promise.}
-Project-Utopia does not claim to test "general intelligence,"
+Project-Utopia does not claim to test ``general intelligence'',
 linguistic competence, or commonsense reasoning. It tests
-\emph{multi-channel orchestration of a fixed tool surface under
-schema-validated long-horizon resource pressure}. Models that do
-well on Project-Utopia are not necessarily strong on
+\emph{stale coherence under multi-cadence structured output} ---
+specifically, whether an LLM continues to act on an anchor it
+continues to verbally mention, over an 8-sim-hour episode. Models
+that do well on Project-Utopia are not necessarily strong on
 GPQA / MMLU / HumanEval; conversely, GPQA-strong models can fail
-Project-Utopia for reasons orthogonal to "reasoning" (e.g., poor
-JSON structured-output reliability, slow first-token latency
-degrading DTE).
+stale-coherence tests for reasons orthogonal to ``reasoning''
+(e.g., the verbal-echo channel and the action-grounding channel
+of the model are decoupled in ways the reasoning benchmarks do
+not surface).
