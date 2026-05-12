@@ -1,68 +1,62 @@
 \begin{abstract}
 
-Existing LLM-agent benchmarks evaluate single agents picking single
-tools~\citep{Liu2024AgentBench, Mialon2023GAIA, Zhou2024WebArena,
-Schick2023Toolformer, Patil2023Gorilla, Qin2024ToolLLM} or flat MARL
-policies emitting primitive actions in stateless
-games~\citep{Agapiou2022MeltingPot, Hafner2022Crafter,
-Paglieri2025BALROG}, leaving the regime where an LLM agent
-\textbf{orchestrates a fixed, schema-validated tool surface across
-multiple parallel decision channels} largely under-evaluated --- despite
-this being the canonical pattern in production agent systems
-\citep{FAIR2022Cicero, Vinyals2019AlphaStar, AnthropicMultiAgent2025,
-Shen2023HuggingGPT}.
-We introduce \textbf{Project-Utopia}, a tool-grounded benchmark
-exposing four hierarchical LLM decision channels
+LLM-agent benchmarks today measure the wrong layer of the agent
+stack. AgentBench~\citep{Liu2024AgentBench}, GAIA~\citep{Mialon2023GAIA},
+WebArena~\citep{Zhou2024WebArena}, Toolformer~\citep{Schick2023Toolformer},
+Gorilla~\citep{Patil2023Gorilla}, ToolLLM~\citep{Qin2024ToolLLM} and
+MINT~\citep{Wang2024MINT} all evaluate \emph{tool selection}: given
+an open inventory of $10^3$--$10^4$ tools, can the LLM pick and
+parameterize the right one? Frontier models now do this competently.
+The mode that actually breaks deployments is the opposite regime:
+the tool set is \emph{fixed and known a priori}, and the agent must
+\textbf{orchestrate multiple parallel decision channels into that
+fixed surface coherently}. A weather update from one channel, a
+worker policy from another, and a build plan from a third are each
+individually schema-valid, yet jointly inconsistent because they
+reference state that has drifted between their cadences. No existing
+benchmark isolates this failure mode.
+
+We introduce \textbf{Project-Utopia}, a benchmark for
+\emph{multi-channel orchestration of a fixed tool surface}. One
+agent exposes four parallel decision channels
 (\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
-\emph{colony-agent}) that orchestrate a deterministic,
-schema-validated tool surface (path queries over a versioned grid,
-group steering, FSM intent application, build planning).
-Schema validation and numerical guardrails ensure \textbf{three-tier
-reproducibility}: (i) bit-identical fallback mode (verified at 7\,200
-ticks), (ii) hardware-independent LLM-on mode via
-LayerCast~\citep{Yuan2025LayerCast}, (iii) statistically stationary
-production-LLM mode.
+\emph{colony-agent}) operating at three nested cadences over a fixed
+4-tool surface (path queries over a versioned grid, Boids group
+steering, FSM intent application, build planning). Every directive
+flows through a per-channel pydantic schema and idempotent numerical
+guardrails that constitute the \textbf{agent--tool interface contract}:
+weights $\in [0,3]$, TTLs $\in [8\,h, 24\,h]$, raid-posture clamps,
+allowlist-restricted intent and target vocabularies. This is the
+typed-function-signature pattern of ToolLLM~\citep{Qin2024ToolLLM}
+generalized to four parallel channels, plus a deterministic substrate
+(seeded RNG, A*, Boids, FSM) so hardware variance does not mask
+reasoning failures.
 
-We propose a four-layer metric stack combining per-tick dimension
-plugins (Resource-Allocation Efficiency, Group Dynamics, Memory
-Degradation, Decision Token Efficiency, Hierarchical Coordination)
-with MeltingPot-style sandwich
-normalization~\citep{Agapiou2022MeltingPot}, Crafter geometric
-mean~\citep{Hafner2022Crafter}, HELM Mean Win Rate~\citep{Liang2023HELM},
-and Pluribus-style PolicyValue Baseline~\citep{Brown2019Pluribus} for
-$\sim$\,2--3$\times$ seed-variance reduction. Statistical inference
-follows~\citet{Bowyer2025DontUseClt}'s ICML 2025 Spotlight
-recommendation of Beta-Binomial credible intervals for small-$N$.
+We isolate the orchestration regime through two pre-registered
+hypotheses. \textbf{H1 (orchestration advantage)}: under matched
+per-decision token budget, the 4-channel contract achieves
+$\Delta\text{RAE} \geq 0.10$ over a flat single-channel baseline that
+emits per-worker FSM-state preferences directly --- target effect
+size anchored on ChatDev's $-44\%$ role-removal
+effect~\citep{Qian2024ChatDev}. \textbf{H2 (schema validity under
+coherence stress)}: across 7\,200-tick runs, the fraction of
+guardrail-rejected or behaviorally inconsistent directives remains
+bounded by the per-channel schema rejection rate, with no compounding
+inter-channel violation. The benchmark surfaces 19 dimension keys via
+a 4-layer metric stack (per-tick plugins $\to$ DimensionNormalizer
+$\to$ MeltingPot-style sandwich normalization~\citep{Agapiou2022MeltingPot}
+$\to$ Bayesian Beta-Binomial~\citep{Bowyer2025DontUseClt}), with
+PolicyValue Baseline~\citep{Brown2019Pluribus} variance reduction.
+A three-tier reproducibility contract~\citep{Yuan2025LayerCast}
+gates the substrate at bit-identical fallback hashes
+\texttt{be19781c\ldots / f7a099a4\ldots / 43cb6aec\ldots} (30 / 1\,800
+/ 7\,200 ticks at seed \texttt{0xC0FFEE}).
 
-We design a nine-experiment matrix (E1--E9) over seven LLM families,
-five scenarios, ten seeds (\(\sim\)\,2\,250 runs total) with three
-\emph{target hypotheses} and pre-registered effect sizes:
-\textbf{(H1)} hierarchical decomposition versus a matched-budget
-flat baseline, with target detectable effect \(\Delta\text{RAE} \geq 0.10\)
-anchored on ChatDev's \(-44\%\) role-removal effect size~\citep{Qian2024ChatDev};
-\textbf{(H2)} cross-vendor channel-axis heterogeneous LLM mixes
-(Anthropic + OpenAI + open-weight), with target Pareto improvement
-of strong-on-all RAE at \(\sim\)\,1/3 the cost --- testing whether
-the regime extends X-MAS~\citep{Ma2025XMAS}'s per-task routing and
-Anthropic's intra-family mix~\citep{AnthropicMultiAgent2025} to
-long-horizon survival;
-\textbf{(H3)} the first \textbf{three-axis joint memory analysis}
-(\(\text{Recall}(t) \times \text{Drift}(t) \times \text{Performance}(t)\))
-on continuous tick-level naturally-accumulated context, designed to
-dissociate verbal recall from action-grounded recall in ways
-LongMemEval~\citep{Wu2025LongMemEval} and
-MemoryArena~\citep{He2026MemoryArena} cannot.
 At submission, the pipeline is end-to-end verified on fallback-only
-NDJSON; the five \S\ref{sec:experiments} figures show structural
-layout, with cell-level signal populated for the camera-ready from
-real-LLM runs once API access is provisioned.
-
-Project-Utopia is released as a self-contained Python package
-(\texttt{pip install project-utopia}, 615 tests passing,
-$\sim$\,23\,k LOC, 128 modules) with one-line CLI reproducibility, a
-record-replay LLM cache via pydantic schemas, and full
-JSON-NDJSON paper-run pipeline. Code, prompts, and 7\,200-tick
-determinism manifests are at
+NDJSON; cell-level real-LLM signal is reserved for the camera-ready
+once API access is provisioned. Project-Utopia is released as a
+self-contained Python package (\texttt{pip install project-utopia},
+615 tests passing, $\sim$\,23\,k LOC, 128 modules) at
 [ANONYMIZED-REPO-URL] (de-anonymized for camera-ready).
 
 \end{abstract}
