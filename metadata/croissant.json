@@ -49,21 +49,24 @@
   "@id": "project-utopia",
   "conformsTo": "http://mlcommons.org/croissant/1.0",
   "name": "Project-Utopia",
-  "description": "Tool-grounded multi-channel benchmark for LLM hierarchical decision-making, stale-coherence memory failures, and cross-vendor channel routing. Released as a deterministic simulator + 6 procedurally-generated scenarios + 4 verbatim LLM prompts + scoring code.",
+  "description": "Project-Utopia is a deterministic measurement substrate for stale coherence — the failure mode where LLMs in long-horizon agent settings verbally mention an anchor while their action-emitting directives stop reflecting it. Released as a Python package with 4 verbatim prompts, 6 scenarios, anchor injection protocol, dual-probe (verbal × action-grounded recall) scoring, and three-tier reproducibility contract.",
   "url": "https://github.com/DaizeDong/Project-Utopia",
   "comment": "Repository URL anonymized for double-blind review; replace post-acceptance.",
   "license": "https://www.apache.org/licenses/LICENSE-2.0",
   "version": "0.11.0-py-rc1",
   "datePublished": "2026-05-10",
-  "citeAs": "@inproceedings{projectutopia2026, title={Project-Utopia: A Tool-Grounded Multi-Channel Benchmark for LLM Hierarchical Decision-Making}, author={Anonymous Authors}, booktitle={NeurIPS Datasets and Benchmarks Track}, year={2026}}",
+  "citeAs": "@inproceedings{projectutopia2026, title={Stale Coherence: Quantifying Verbal-Action Dissociation in Long-Horizon Structured LLM Output}, author={Anonymous Authors}, booktitle={NeurIPS Datasets and Benchmarks Track}, year={2026}}",
   "keywords": [
     "LLM benchmark",
-    "long-horizon planning",
-    "tool use",
-    "multi-channel agent",
+    "stale coherence",
+    "verbal-action dissociation",
+    "long-horizon memory",
+    "anchor injection",
+    "dual-probe",
+    "action-grounded recall",
     "deterministic simulation",
     "reproducibility",
-    "schema-validated actions"
+    "schema-validated"
   ],
   "creator": [
     {

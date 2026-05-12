@@ -13,13 +13,15 @@ answer the Gebru template questions under that framing.
 
 \begin{itemize}[leftmargin=*]
 \item \textbf{For what purpose was the dataset created?}
-To evaluate LLM multi-channel orchestration of a fixed tool surface.
-Four parallel decision channels operate at three nested cadences
-over a fixed 4-tool layer with schema-validated directives.
-Existing benchmarks evaluate single agents picking single tools
-(AgentBench, GAIA, ToolLLM) or flat MARL on stateless games
-(MeltingPot, Crafter, BALROG); the orchestration-of-fixed-tools
-regime that dominates production agent systems is under-evaluated.
+To quantify stale coherence --- the failure mode where an LLM in a
+long-horizon agent setting continues to \emph{verbally} mention an
+anchor while its \emph{action-emitting} directives stop reflecting
+it. Existing memory benchmarks (LongMemEval, RULER,
+Lost-in-the-Middle, InfiniteBench, MemoryArena, MemoryAgentBench)
+measure only one axis (verbal recall) or operate in session-discrete
+loops; none jointly measure verbal-recall $\times$
+action-grounded-recall on tick-continuous naturally-accumulated
+context.
 \item \textbf{Who created the dataset and on behalf of which
 entity?}
 Anonymous authors as an independent academic submission. No
@@ -156,12 +158,13 @@ Apache 2.0 / MIT.
 The 3-experiment paper-run matrix in this submission
 (\S\ref{sec:experiments}). No external uses to date.
 \item \textbf{What other tasks could this be used for?}
-Evaluating (i) multi-channel orchestration of a fixed tool surface;
-(ii) schema-validity profiling under multi-hour coherence stress;
-(iii) reproducibility-aware LLM evaluation methodology
-(LayerCast, RecordReplayCache); (iv) sample-efficient learning
-under the 4-channel directive surface as the action space (future
-work, \S\ref{sec:limitations}).
+(i) measuring stale coherence across LLM families on long-horizon
+structured-output tasks; (ii) ablating the contribution of
+context-window size vs anchor design vs model scale to stale
+coherence; (iii) reproducibility-aware LLM evaluation methodology
+(LayerCast, RecordReplayCache); (iv) extending the dual-probe
+(verbal $\times$ action-grounded recall) methodology to other
+domains.
 \item \textbf{Is there anything that should not be done with
 this dataset?}
 The prompts and scenarios should \textbf{not} be used as
@@ -170,13 +173,17 @@ contaminate any subsequent capability claim. The
 verbatim-release-as-action-space design assumes the prompts
 remain outside training distributions; we ask downstream
 users to honor this contract.
-The benchmark is also \emph{not} a substitute for:
+Project-Utopia is not a benchmark of language capability in
+isolation. Stale-coherence scores do not directly predict
+GPQA / MMLU / HumanEval. Conversely, GPQA-strong models may
+fail Project-Utopia for stale-coherence reasons orthogonal to
+reasoning. The benchmark is also \emph{not} a substitute for:
 single-task tool-call accuracy benchmarks (use AgentBench,
 GAIA, ToolBench); long-context language QA (use LongBench,
 $\infty$Bench); or general-knowledge / reasoning capability
 batteries (use MMLU, GPQA, HumanEval). Project-Utopia tests
-hierarchical decision-making under schema-validated
-long-horizon resource pressure, nothing broader
+verbal--action dissociation under a long-horizon
+structured-output substrate, nothing broader
 (\S\ref{sec:limitations}).
 \item \textbf{Any tasks for which the dataset is unsuitable?}
 Multimodal perception, embodied manipulation, free-form
