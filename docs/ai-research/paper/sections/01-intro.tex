@@ -1,99 +1,112 @@
 \section{Introduction}
 \label{sec:intro}
 
-LLM-agent benchmarks measure the wrong layer of the agent stack. The dominant
-evaluation regime --- ReAct~\citep{Yao2023ReAct}, Toolformer~\citep{Schick2023Toolformer},
-Gorilla~\citep{Patil2023Gorilla}, ToolLLM~\citep{Qin2024ToolLLM},
-AgentBench~\citep{Liu2024AgentBench}, GAIA~\citep{Mialon2023GAIA}, MINT~\citep{Wang2024MINT}
---- presents the agent with an \emph{open inventory} of $10^3$--$10^4$ tools and scores
-whether it selects and parameterizes the right one. Frontier models now do this
-competently. The mode that actually breaks deployments is the opposite regime: the tool
-set is \emph{fixed and known a priori}, and the agent must orchestrate multiple parallel
-decision channels into that fixed surface coherently.
+A production-deployed LLM agent rarely fails by forgetting an anchor outright. It
+fails by a more subtle failure mode: the model continues to \emph{verbally}
+mention an anchor --- ``warehouse at $(12,8)$'', ``defend territory~$X$'', ``the
+patient is on warfarin'' --- in its running summaries and reflections, while
+its \emph{action-emitting} directives quietly stop reflecting it. The summary
+still says ``I should defend territory~$X$''; the next dispatched unit goes
+elsewhere. The reflection still references the warehouse; the next pick task
+allocates zero weight to deliveries there. We call this failure mode
+\textbf{stale coherence}.
 
-Consider the canonical production failure: at tick $t$ the environment-director emits a
-weather update, the npc-policy emits a worker-allocation directive, and the colony-agent
-emits a build plan. Each is schema-valid in isolation; jointly they are stale --- the
-build plan references a directive evicted from working memory hours earlier, and no
-single-channel validator catches the inter-channel drift. This pattern --- one agent,
-several parallel channels at distinct cadences, a fixed schema-validated tool surface
---- is canonical in production systems~\citep{FAIR2022Cicero, AnthropicMultiAgent2025}
-and large-scale game agents~\citep{Vinyals2019AlphaStar, Berner2019OpenAIFive}, yet no
-existing benchmark isolates it. We call this regime \emph{multi-channel orchestration
-of a fixed tool surface}. Existing benchmarks evaluate a narrower slice:
+Stale coherence is the failure mode that breaks long-running agent deployments,
+and yet it is invisible to the dominant evaluation regimes. Existing memory
+benchmarks measure only one axis of the phenomenon. We argue this is a single,
+operationally definable phenomenon whose joint behaviour distinguishes it from
+every individual axis those benchmarks measure.
 
+\paragraph{Existing benchmarks measure only one axis.}
 \begin{itemize}[leftmargin=*]
-\item \textbf{Single-agent tool-use over an open inventory}
-(ReAct~\citep{Yao2023ReAct}, Toolformer~\citep{Schick2023Toolformer},
-Gorilla~\citep{Patil2023Gorilla}, ToolLLM~\citep{Qin2024ToolLLM},
-MINT~\citep{Wang2024MINT}, AgentBench~\citep{Liu2024AgentBench},
-GAIA~\citep{Mialon2023GAIA}). One LLM dispatches over an open or learned tool set; the
-figure of merit is selection accuracy. No parallel decision channels.
-\item \textbf{Flat MARL with primitive actions}
-(MeltingPot~\citep{Agapiou2022MeltingPot}, Crafter~\citep{Hafner2022Crafter},
-BALROG~\citep{Paglieri2025BALROG}). Policies emit primitive actions over a shared
-environment, with no natural-language directive surface, no schema, and no parallel
-channels within an agent.
-\item \textbf{Multi-agent LLM frameworks}
-(ChatDev~\citep{Qian2024ChatDev}, MetaGPT~\citep{Hong2024MetaGPT},
-AgentVerse~\citep{Chen2024AgentVerse}). Multiple agents collaborate, but each agent
-emits a \emph{single} channel; coherence is enforced by inter-agent dialogue rather
-than a per-channel schema contract over a fixed tool surface.
+\item \textbf{Verbal-recall benchmarks.}
+LongMemEval~\citep{Wu2025LongMemEval}, RULER~\citep{Hsieh2024RULER},
+Lost-in-the-Middle~\citep{Liu2024LostInMiddle}, and
+InfiniteBench~\citep{Zhang2024InfiniteBench} measure whether the model can
+\emph{retrieve} a fact from long context, not whether it sustains
+\emph{action} on it. Their probe is verbal: ``what was X?''
+\item \textbf{Action-grounded benchmarks (session-discrete).}
+MemoryArena~\citep{He2026MemoryArena} and
+MemoryAgentBench~\citep{Hu2025MemoryAgentBench} do score action grounding,
+but in session-discrete agent loops: each task is bounded, the agent has
+explicit reset boundaries, and the action set is small. They cannot expose a
+drift that emerges only across continuous tick-by-tick context accumulation.
+\item \textbf{Production agent observations.}
+FAIR Cicero~\citep{FAIR2022Cicero} and Anthropic's multi-agent research
+system~\citep{AnthropicMultiAgent2025} anecdotally describe stale coherence
+(``the agent kept saying it would defend territory~$X$ but stopped moving
+units there''; inter-channel coherence loss in long-running sessions), but
+provide no controlled measurement.
 \end{itemize}
+No existing benchmark dissociates verbal mention from sustained behavioural
+commitment on tick-continuous, naturally-accumulated context. The phenomenon
+falls in the gap between three literatures and consequently has neither an
+operational definition nor a measurement instrument.
 
 \paragraph{Contributions.}
-We introduce \textbf{Project-Utopia}, a benchmark for multi-channel orchestration of a
-fixed tool surface, with two contributions:
+We make three contributions, organized phenomenon-first:
 \begin{description}[leftmargin=*]
-\item[C1 --- The Action-Space Contract.] Four parallel LLM decision channels
-(\emph{environment-director}, \emph{npc-policy}, \emph{strategic-plan},
-\emph{colony-agent}) operate at three nested cadences over a fixed 4-tool surface (path
-queries over a versioned grid, Boids group steering, FSM intent application, build
-planning). Every directive is filtered through a per-channel pydantic schema and
-idempotent numerical guardrails (weights $\in [0, 3]$, TTL $\in [8\,h, 24\,h]$,
-allowlist-restricted intent and target vocabularies). This schema-plus-guardrail layer
-\emph{is} the agent--tool interface contract --- the same role as ToolLLM's typed
-function signatures~\citep{Qin2024ToolLLM} generalized to four parallel channels ---
-paired with a three-tier reproducibility contract: (i) bit-identical fallback mode
-(hashes verified at 30 / 1\,800 / 7\,200 ticks:
-\texttt{be19781c\ldots / f7a099a4\ldots / 43cb6aec\ldots}); (ii) hardware-independent
-LLM-on mode via LayerCast~\citep{Yuan2025LayerCast}; (iii) stationary-distribution
-production-LLM mode.
+\item[C1 --- Phenomenon.] An operational definition of stale coherence as the
+dual probe
+$\bigl(\,\text{verbal\_recall}(t),\,\text{action\_grounded\_recall}(t)\,\bigr)$
+with dissociation metric
+$\Delta(t) = \text{verbal\_recall}(t) - \text{action\_grounded\_recall}(t)$.
+Stale coherence is distinct from forgetting (both axes can remain non-zero),
+distinct from positional bias (the anchor is fixed at $t = 0$ and probed at
+the same surface continuously), and distinct from session-discrete action
+grounding (the agent never receives a query about the anchor; behavioural
+commitment is measured implicitly across emission cadence).
 
-\item[C2 --- Methodology.] A four-layer metric stack: per-tick dimension plugins emit
-raw signal across 19 score keys; a DimensionNormalizer projects via six transforms into
-$[0, 1]$ benefit form; MeltingPot-style sandwich
-normalization~\citep{Agapiou2022MeltingPot} computes
-$(\text{LLM} - \text{fallback})/(\text{oracle} - \text{fallback})$ on aligned per-seed
-paired runs; Bayesian Beta-Binomial scoring~\citep{Bowyer2025DontUseClt} with
-PolicyValue Baseline variance reduction~\citep{Brown2019Pluribus} yields the final
-estimate. Two pre-registered hypotheses isolate the regime:
-\textbf{H1 (orchestration advantage)} --- under matched per-decision token budget, the
-4-channel contract achieves $\Delta\text{RAE} \geq 0.10$ over a flat single-channel
-baseline emitting per-worker FSM-state preferences directly;
-\textbf{H2 (schema validity under coherence stress)} --- across 7\,200-tick runs, the
-fraction of guardrail-rejected or behaviorally inconsistent directives remains bounded
-by the per-channel schema rejection rate, with no compounding inter-channel violation.
+\item[C2 --- Method.] Anchor injection at $t = 0$ with a paired (verbal token,
+implicit action goal) --- e.g.\ (``warehouse at $(12,8)$'',
+\texttt{\{deliver,\ warehouse\}}); a multi-cadence structured-output
+substrate (four parallel decision channels emitting at three nested cadences
+over a fixed four-tool surface) as the elicitation harness; and 8-sim-hour
+episodes matching the natural TTL spread of agent directives (8--24\,h),
+which the route-B 240-sim-second framing did not exercise. The substrate is
+load-bearing methodologically because single-cadence benchmarks cannot
+dissociate verbal mention from sustained behavioural commitment.
+
+\item[C3 --- Empirical (camera-ready).] Cross-family decay profiles of
+$\Delta(t)$ over 8 sim-hours, and a statistical-independence test of $\Delta$
+against LongMemEval-style verbal-only recall, across at least three LLM
+families (Claude-Sonnet-4.6, GPT-5-mini, Llama-3.1-8B).
 \end{description}
 
-\paragraph{Differentiation from prior tool-use frameworks.}
-\textbf{ReAct}~\citep{Yao2023ReAct} and \textbf{Toolformer}~\citep{Schick2023Toolformer} keep a single
-channel and emit free-form actions over an open inventory; we split the reasoning--acting loop across
-four parallel channels with schema-validated directives over a fixed surface.
-\textbf{Gorilla}~\citep{Patil2023Gorilla} and \textbf{ToolLLM}~\citep{Qin2024ToolLLM} score API-call
-accuracy across $10^3$--$10^4$ REST endpoints; we score long-horizon outcomes downstream of a fixed
-4-tool surface, so the failure mode of interest is \emph{coherence across channels} rather than picking
-the right endpoint. \textbf{MINT}~\citep{Wang2024MINT} evaluates multi-turn tool use with user feedback,
-but the action surface remains a single channel; we add parallel channels and per-tick grounding with
-no human-in-the-loop. \textbf{ChatDev}~\citep{Qian2024ChatDev} and \textbf{X-MAS}~\citep{Ma2025XMAS}
-compose \emph{multiple agents} (potentially different LLMs); we study \emph{multiple channels within a
-single agent} over one fixed tool surface. \textbf{Voyager}~\citep{Wang2023Voyager} discovers new
-skills in Minecraft via self-generated code; we hold the tool surface fixed and measure orchestration
-under stale context.
+\paragraph{Single pre-registered hypothesis.}
+We register one testable hypothesis driving the entire empirical contribution:
+\textbf{H}: for every LLM family $m$ in our model menu, there exists
+$t^{\star}(m) \leq 4\,\text{sim-hours}$ such that
+$\Delta(t^{\star}) > 0.3$. We additionally test whether
+$\Delta$ is statistically independent of LongMemEval-style verbal recall:
+Spearman correlation between the dissociation gap and verbal-only recall
+$< 0.5$. A correlation above this threshold would reduce stale coherence to
+known long-context bias; a correlation below it establishes stale coherence as
+a separate axis production agent designers must explicitly test for.
 
-\paragraph{Roadmap.} Section~\ref{sec:related-work} surveys related work;
-Section~\ref{sec:architecture} describes the 4-channel decision contract;
-Section~\ref{sec:metrics} presents the metric stack and pre-registered hypotheses;
-Section~\ref{sec:experiments} reports the experimental matrix;
-Sections~\ref{sec:discussion}--\ref{sec:reproducibility} cover findings, limitations, and the
-reproducibility package.
+\paragraph{Why stale coherence dissociates from existing memory benchmarks.}
+LongMemEval and RULER measure single-axis verbal recall; MemoryArena and
+MemoryAgentBench measure action grounding but in session-discrete tasks with
+explicit query-response boundaries. Stale coherence is the \emph{joint}
+behaviour of both axes under tick-continuous long-horizon context, and it can
+appear even when each axis alone looks healthy:
+$\text{verbal\_recall}(t)$ near 1 (the model still talks about the anchor) and
+$\text{action\_grounded\_recall}(t)$ near 0 (no directive weights it). The
+theoretical underpinning for the decay shape itself is the diminishing-returns
+geometry described by \citet{Sinha2025IllusionDiminishingReturns}: recall
+scores decay sub-linearly with effective context length; stale coherence is
+the operational counterpart for the \emph{action} axis and is observable only
+when the two axes are measured jointly on naturally-accumulated context.
+
+\paragraph{Roadmap.}
+Section~\ref{sec:related-work} surveys memory benchmarks along the two axes
+above and the production-agent failure literature;
+Section~\ref{sec:architecture} describes the multi-cadence structured-output
+substrate that makes the dual probe measurable;
+Section~\ref{sec:metrics} presents the dual probe methodology and supporting
+scoring stack;
+Section~\ref{sec:experiments} reports the cross-family decay experiments;
+Section~\ref{sec:discussion} discusses implications for production agent
+design;
+Section~\ref{sec:limitations} states limitations;
+Section~\ref{sec:reproducibility} describes the reproducibility package.

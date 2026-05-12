@@ -1,70 +1,85 @@
 \section{Related Work}
 \label{sec:related-work}
 
-We position Project-Utopia along two axes: a tool-use taxonomy that locates
-our \emph{multi-channel orchestration} regime (\S\ref{sec:rw-tool-use}), and
-the RL evaluation methodology whose scoring ingredients we borrow
-(\S\ref{sec:rw-rl-methodology}). A complete prior-art table for the 75+
-benchmarks reviewed is in Appendix~\ref{app:prior-art-table}.
+Stale coherence sits in a gap between two literatures: long-context and
+memory benchmarks (\S\ref{sec:rw-memory}), which measure verbal or action
+recall but not their joint behaviour on tick-continuous context, and
+production-agent failure observations (\S\ref{sec:rw-production}), which
+anecdotally report the phenomenon but do not measure it. We organize this
+section accordingly.
 
-\subsection{LLM Tool-Use Spans Three Regimes}
-\label{sec:rw-tool-use}
+\subsection{Long-Context and Memory Benchmarks}
+\label{sec:rw-memory}
 
-LLM tool-use benchmarks fall into three regimes distinguished by the
-\emph{shape} of the action surface, not its size; the first two are saturated,
-the third --- where Project-Utopia sits --- has none.
+\paragraph{Verbal-recall axis.}
+The dominant long-context memory regime probes verbal retrieval:
+\textbf{LongMemEval}~\citep{Wu2025LongMemEval} curates multi-session
+conversational memory queries; \textbf{RULER}~\citep{Hsieh2024RULER}
+synthesizes needle-in-a-haystack and aggregation tasks across context lengths;
+\textbf{Lost-in-the-Middle}~\citep{Liu2024LostInMiddle} characterizes the
+U-shaped position bias of retrieval over long inputs;
+\textbf{InfiniteBench}~\citep{Zhang2024InfiniteBench} pushes the same probe
+beyond $10^5$-token contexts. HELM's recent long-context
+battery~\citep{Stanford2025HELMLong} aggregates these into an omnibus
+verbal-recall score. In each case the figure of merit is ``did the model
+retrieve the fact?''; none ask ``did it \emph{act} on it?''. As a result a
+model that hallucinates an anchor in its summary while ignoring it in its
+directives is indistinguishable from one that genuinely sustains commitment.
 
-\paragraph{Single-channel selection.}
-The dominant regime evaluates a single agent emitting tool invocations into
-an open action set, scoring selection accuracy or single-turn invocation
-success: \textbf{ReAct}~\citep{Yao2023ReAct} interleaved reasoning + acting;
-\textbf{Toolformer}~\citep{Schick2023Toolformer} self-supervised invocation;
-\textbf{Gorilla}~\citep{Patil2023Gorilla} and
-\textbf{ToolLLM}~\citep{Qin2024ToolLLM} scaling to $10^3$--$10^4$ APIs scored
-by selection accuracy; \textbf{MINT}~\citep{Wang2024MINT} multi-turn user
-feedback; \textbf{HuggingGPT}~\citep{Shen2023HuggingGPT} model-zoo dispatch.
-The single-agent web/task-bench literature --- AgentBench~\citep{Liu2024AgentBench},
-GAIA~\citep{Mialon2023GAIA}, WebArena~\citep{Zhou2024WebArena},
-AgentBoard~\citep{Ma2024AgentBoard}, BALROG~\citep{Paglieri2025BALROG},
-TheAgentCompany~\citep{Xu2025TheAgentCompany},
-OdysseyBench~\citep{Wang2025OdysseyBench}, HeroBench~\citep{Anokhin2025HeroBench}
---- shares the same shape: one agent, one (possibly large) action set, success
-per episode.
+\paragraph{Action-grounding axis (session-discrete).}
+A second strand evaluates whether the agent \emph{acts} on remembered facts:
+\textbf{MemoryArena}~\citep{He2026MemoryArena} probes action grounding by
+issuing explicit downstream queries that require recalled facts;
+\textbf{MemoryAgentBench}~\citep{Hu2025MemoryAgentBench} adds selective
+forgetting and structured tasks. These are the only benchmarks that touch the
+action axis at all, but both are \emph{session-discrete}: each task has
+explicit boundaries, the agent receives an explicit query that re-cues the
+fact, and the action set is small. Stale coherence, in contrast, requires
+\emph{tick-continuous} naturally-accumulated context: the agent emits
+structured directives continuously, never receives an explicit query about
+the anchor, and decay is measured by comparison across time rather than by
+query-response matching. The two regimes probe different failure modes ---
+session-discrete action grounding asks whether the agent retrieves on demand;
+stale coherence asks whether it sustains commitment when no demand is issued.
 
-\paragraph{Multi-agent (multi-LLM).}
-The second regime instantiates \emph{multiple} agents, each with its own
-action space, and studies their coordination protocol:
-\textbf{ChatDev}~\citep{Qian2024ChatDev} (chat-chain of SWE roles),
-\textbf{MetaGPT}~\citep{Hong2024MetaGPT} (publish-subscribe pool),
-\textbf{AgentVerse}~\citep{Chen2024AgentVerse} (4-stage recruitment),
-\textbf{CAMEL}~\citep{Li2023CAMEL} (2-agent role-playing), and
-\textbf{Concordia}~\citep{Vezhnevets2023Concordia} (Game-Master broker);
-\textbf{X-MAS}~\citep{Ma2025XMAS} and Anthropic's multi-agent
-system~\citep{AnthropicMultiAgent2025} systematize heterogeneous-LLM routing
-across 27 LLMs and intra-family production deployments. The regime studies
-\emph{between-agent} coordination; each agent owns its own action surface.
+\paragraph{Theoretical underpinning.}
+\citet{Sinha2025IllusionDiminishingReturns} characterizes long-context recall
+as following a diminishing-returns curve: per-token information yield decays
+sub-linearly with effective context length. We adopt this geometry as the
+expected functional form for both axes of the dual probe and report decay
+profiles for $\Delta(t)$ rather than scalar end-of-episode scores. The
+contribution of this paper is the operational counterpart of that theory for
+the \emph{action} axis, and the demonstration that the gap between the two
+axes is itself a measurable independent phenomenon.
 
-\paragraph{Multi-channel orchestration of a fixed tool surface (our regime).}
-We isolate a third regime in which \emph{one} agent must coherently
-orchestrate \emph{multiple parallel decision channels} into a \emph{fixed}
-schema-validated tool surface, at distinct cadences and under stale
-long-horizon context. The closest neighbours sit in adjacent regimes:
-\textbf{Voyager}~\citep{Wang2023Voyager} is depth-first in one Minecraft
-domain via skill discovery (one channel, open action set), and
-\textbf{Orak}~\citep{Krafton2026Orak} evaluates LLMs on 12 games via MCP
-(one channel per game). No existing benchmark makes \emph{cross-channel
-orchestration coherence} the unit of measurement. Project-Utopia fixes the
-tool surface (4 tools $\times$ 4 channels) and reports per-channel,
-per-dimension scores that single-channel benchmarks cannot produce.
+\paragraph{Position.}
+Stale coherence is the dissociation visible only when both axes are measured
+jointly on tick-continuous context. No existing benchmark probes both axes
+simultaneously, and no existing benchmark runs long enough on
+naturally-accumulated agent context for the dissociation to emerge. The
+methodological apparatus of \S\ref{sec:metrics} --- dual probe, anchor
+injection at $t = 0$, 8-sim-hour episodes --- is built specifically to close
+this gap.
 
-\subsection{RL Evaluation Methodology (Borrowed)}
-\label{sec:rw-rl-methodology}
+\subsection{Production Agent Failure Observations}
+\label{sec:rw-production}
 
-Although Project-Utopia is not an RL benchmark, the metric stack borrows
-four ingredients from RL game-playing AI: Crafter~\citep{Hafner2022Crafter}'s
-geometric-mean composite (punishes single-axis collapse);
-MeltingPot~2.0~\citep{Agapiou2022MeltingPot}'s sandwich normalization
-$(\text{focal}-\text{random})/(\text{exploiter}-\text{random})$ for cross-cell
-anchoring; Pluribus AIVAT~\citep{Brown2019Pluribus}'s PolicyValue Baseline for
-variance reduction; and HELM's Mean Win Rate~\citep{Liang2023HELM} for
-cross-cell aggregation.
+The phenomenon we name has been reported anecdotally in production agent
+deployments. \textbf{FAIR Cicero}~\citep{FAIR2022Cicero}, the Diplomacy
+negotiation agent, informally documents cases in which the system continued
+to declare strategic intent (``defend territory~$X$'') in its dialogue
+generations while its unit-movement directives shifted away from that
+territory --- a textbook instance of verbal-action dissociation in a
+production system. Anthropic's multi-agent research
+system~\citep{AnthropicMultiAgent2025} reports inter-channel coherence loss
+in long-running sessions of its production multi-agent deployment, including
+cases where summary-channel outputs continued to assert commitments that the
+acting-channel outputs no longer reflected.
+
+These reports are anecdotal, qualitative, and unreproducible: they describe
+the failure mode but do not measure it, isolate it from raw recall, or
+quantify its prevalence across model families. The contribution of this
+paper, relative to these observations, is to take the same phenomenon and
+deliver controlled, quantified, reproducible measurement: a single anchor,
+two paired probes, an 8-sim-hour deterministic substrate, a single
+pre-registered hypothesis, and three model families.
