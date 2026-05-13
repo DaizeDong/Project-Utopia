@@ -403,6 +403,34 @@ def _run_adapter(
     :class:`DecisionResponse`.
     """
     coro = adapter.request(channel, payload, None)  # type: ignore[arg-type]
+    # If we're already inside a running event loop (plugins drive the harness
+    # via asyncio.run), spawning a sub-loop on the same thread raises
+    # "Cannot run the event loop while another loop is running". Bridge via a
+    # worker thread.
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+    if running is not None and running.is_running():
+        import threading
+        result_box: dict[str, Any] = {}
+        err_box: dict[str, BaseException] = {}
+
+        def _worker() -> None:
+            new_loop = asyncio.new_event_loop()
+            try:
+                result_box["v"] = new_loop.run_until_complete(coro)
+            except BaseException as e:  # noqa: BLE001
+                err_box["e"] = e
+            finally:
+                new_loop.close()
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join()
+        if "e" in err_box:
+            raise err_box["e"]
+        return result_box["v"]  # type: ignore[return-value]
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro)

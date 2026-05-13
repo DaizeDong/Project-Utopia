@@ -231,6 +231,7 @@ class SimHarness:
         cadence_multiplier: float = 1.0,
     ) -> None:
         self.state: dict[str, Any] = _create_initial_state(template_id, seed)
+        self._seed: int = int(seed)  # cached for adapter / channel-system wiring
         self.state["session"]["phase"] = "active"
         self.state["controls"]["isPaused"] = False
         self.state["controls"]["timeScale"] = 1
@@ -323,6 +324,13 @@ class SimHarness:
         # Store for downstream system construction.
         self._cadence_multiplier = max(0.1, float(cadence_multiplier))
         self._attach_llm_channels = bool(attach_llm_channels)
+        # When the harness will drive real LLM channels, flip run_mode so
+        # channel systems' _wants_llm() gate opens the real-LLM path.
+        if self._attach_llm_channels:
+            self.state["ai"]["enabled"] = True  # gate in _wants_llm()
+            self.state["ai"]["run_mode"] = "llm"
+            self.state["ai"]["coverageTarget"] = "llm"
+            self.state["ai"]["runMode"] = "llm"
 
         if build_systems_override is not None:
             self.systems = list(build_systems_override(self.memory_store))
@@ -393,7 +401,7 @@ class SimHarness:
                 )
                 # Ensure adapter is on services so channel systems can reach it.
                 self.services = create_services(
-                    seed=int(self.state.get("seed") or 0),
+                    seed=self._seed,
                     deterministic=True,
                     agent_adapter=adapter,
                     offline_ai_fallback=False,

@@ -61,6 +61,10 @@ class Services:
     llm_client: Any | None = None
     fallback_environment: Any | None = None
     fallback_policies: Any | None = None
+    # Channel systems (env-director / npc-policy / strategic / colony) read
+    # this attribute via ``getattr(services, "agent_adapter", None)``. When
+    # None, the channel falls back to deterministic policy.
+    agent_adapter: Any | None = None
 
     def dispose(self) -> None:
         """Release any held resources (worker pools, sockets…).
@@ -119,6 +123,7 @@ def create_services(
         rng=rng,
         deterministic=deterministic,
         clock=clock,
+        agent_adapter=agent_adapter,
     )
     services.path_budget = {
         "tick": -1,
@@ -127,11 +132,9 @@ def create_services(
         "maxMs": path_budget_max_ms,
     }
 
-    # The agent_adapter / offline_ai_fallback / enable_path_workers flags
-    # are intentionally accepted but unused — Phase-1 scope. The mere
-    # presence of the parameters lets the harness subagent call
-    # ``create_services(seed, agent_adapter=...)`` without raising TypeError
-    # before the LLM layer is ported.
-    _ = (agent_adapter, base_url, offline_ai_fallback, enable_path_workers)
+    # The offline_ai_fallback / enable_path_workers flags are accepted but
+    # currently unused. Kept in the signature so the harness keeps the same
+    # call shape as the JS port.
+    _ = (base_url, offline_ai_fallback, enable_path_workers)
 
     return services

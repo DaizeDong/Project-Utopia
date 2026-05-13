@@ -362,9 +362,17 @@ def _build_realllm_agent_config(
         if cache_dir:
             try:
                 from project_utopia.simulation.ai.llm.record_replay_cache import (
+                    RecordReplayCache,
                     wrap_adapter_with_cache,
                 )
-                adapter = wrap_adapter_with_cache(adapter, cache_dir=cache_dir, mode="auto")
+                # NOTE: wrap_adapter_with_cache enforces isinstance(adapter,
+                # AgentAdapter); our _LLMClientAdapter is duck-typed, so we
+                # only wrap if the cache module accepts arbitrary adapters.
+                # For now, skip if isinstance check would fail.
+                from project_utopia.simulation.ai.llm.agent_adapter import AgentAdapter
+                if isinstance(adapter, AgentAdapter):
+                    cache = RecordReplayCache(cache_dir=cache_dir, mode="auto")
+                    adapter = wrap_adapter_with_cache(adapter, cache)
             except Exception as err:  # pragma: no cover - cache optional
                 _console.print(f"[yellow]cache wrap failed:[/yellow] {err}")
         if debug_log_dir:
@@ -374,7 +382,10 @@ def _build_realllm_agent_config(
     return {"adapter_class": _factory, "adapter_opts": {}}
 
 
-class _LLMClientAdapter:
+from project_utopia.simulation.ai.llm.agent_adapter import AgentAdapter as _AgentAdapter
+
+
+class _LLMClientAdapter(_AgentAdapter):
     """Wraps LLMClient.request_completion to expose the AgentAdapter contract.
 
     LLMClient is a low-level transport wrapper; this thin shim adapts it to
@@ -417,7 +428,7 @@ def _payload_to_user_content(payload: Any) -> str:
     return str(payload)
 
 
-class _DebugLogAdapter:
+class _DebugLogAdapter(_AgentAdapter):
     """Wraps an adapter to emit per-call NDJSON debug events."""
 
     def __init__(self, inner: Any, *, log_dir: str, cell_id: str) -> None:
