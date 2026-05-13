@@ -137,15 +137,22 @@ class LLMClient:
         model: str = "openai/gpt-4o-mini",
         api_key: str | None = None,
         options: dict[str, Any] | None = None,
+        timeout_s: float = 60.0,
+        max_retries: int = 3,
+        retry_backoff_s: tuple[float, ...] = (1.0, 2.0, 4.0),
     ) -> None:
         self.base_url = base_url
         self.model = model
         self.api_key = api_key
         self.default_options: dict[str, Any] = dict(options or {})
+        self.timeout_s = float(timeout_s)
+        self.max_retries = int(max_retries)
+        self.retry_backoff_s = tuple(retry_backoff_s)
         self.last_error: str = ""
         self.last_latency_ms: float = 0.0
         self.last_status: str = "unknown"
         self.last_model: str = ""
+        self.retry_total: int = 0  # cumulative retries this client has done
 
     async def request_completion(
         self,
@@ -195,14 +202,43 @@ class LLMClient:
                 debug={"channel": channel, "source": "import-error"},
             )
 
+        # Retry loop with exponential backoff. Patches 1+2 (route-α Phase 2):
+        # robust against transient proxy failures + per-call timeout enforced.
         started = time.perf_counter()
-        try:
-            raw = await acompletion(model=target_model, messages=messages, **merged)
-        except asyncio.CancelledError:
-            raise
-        except BaseException as err:
+        attempts = 0
+        last_err: BaseException | None = None
+        raw: Any = None
+        while attempts <= self.max_retries:
+            attempt_started = time.perf_counter()
+            try:
+                raw = await asyncio.wait_for(
+                    acompletion(model=target_model, messages=messages, **merged),
+                    timeout=self.timeout_s,
+                )
+                last_err = None
+                break  # success
+            except asyncio.CancelledError:
+                raise
+            except (asyncio.TimeoutError, Exception) as err:
+                last_err = err
+                self.retry_total += 1
+                attempts += 1
+                if attempts > self.max_retries:
+                    break
+                # Exponential backoff. Index clamped to backoff tuple length.
+                sleep_idx = min(attempts - 1, len(self.retry_backoff_s) - 1)
+                backoff = self.retry_backoff_s[sleep_idx]
+                attempt_ms = (time.perf_counter() - attempt_started) * 1000.0
+                logger.warning(
+                    "LLM call retry %d/%d on channel=%s model=%s "
+                    "(attempt %.0fms err=%s); sleeping %.1fs",
+                    attempts, self.max_retries, channel, target_model, attempt_ms,
+                    _compact_error(err), backoff,
+                )
+                await asyncio.sleep(backoff)
+        if last_err is not None:
             latency_ms = (time.perf_counter() - started) * 1000.0
-            self.last_error = _compact_error(err)
+            self.last_error = _compact_error(last_err)
             self.last_status = "down"
             self.last_latency_ms = latency_ms
             return DecisionResponse(
@@ -212,7 +248,11 @@ class LLMClient:
                 latency_ms=latency_ms,
                 model=target_model,
                 error=self.last_error,
-                debug={"channel": channel, "source": "litellm-error"},
+                debug={
+                    "channel": channel,
+                    "source": "litellm-error-after-retries",
+                    "retries": attempts,
+                },
             )
 
         latency_ms = (time.perf_counter() - started) * 1000.0
