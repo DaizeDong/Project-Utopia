@@ -308,13 +308,16 @@ async def _run_agent_cell(
     """
     from project_utopia.benchmark.framework.seed_matrix import run_seed_matrix
 
+    import sys
     if llm_adapter == "llm-client":
         # Build a SINGLE LLM adapter from .env credentials for all 4 channels.
+        print(f"[_run_agent_cell] llm-client path: cell={cell_id} cadence={cadence_multiplier}x cache={cache_dir!r} debug={debug_log_dir!r}", file=sys.stderr, flush=True)
         agent_config = _build_realllm_agent_config(
             cache_dir=cache_dir, debug_log_dir=debug_log_dir, cell_id=cell_id
         )
         attach_channels = True
     else:
+        print(f"[_run_agent_cell] noop path: cell={cell_id} llm_adapter={llm_adapter!r}", file=sys.stderr, flush=True)
         agent_config = build_agent_config_for_cell(cell_id)
         attach_channels = False
 

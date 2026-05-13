@@ -357,6 +357,8 @@ class SimHarness:
         # so SimHarness drives them per-tick at the configured cadence.
         # Default off so existing tests (which rely on Noop / no real LLM)
         # are unaffected.
+        import sys as _sys
+        print(f"[SimHarness._build_default_systems] attach_llm_channels={self._attach_llm_channels} adapter={type(adapter).__name__ if adapter else None}", file=_sys.stderr, flush=True)
         if self._attach_llm_channels and adapter is not None:
             cm = self._cadence_multiplier
             try:
