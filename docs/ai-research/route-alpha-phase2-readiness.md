@@ -142,4 +142,20 @@ This is the genuine test of H. If all 3 produce similar Δ, the phenomenon is un
 ## 10. Update log
 
 - 2026-05-12 21:xx: Phase 1 complete. Phase 2 readiness doc created.
-- Next: implement 6 patches → run pilot → if pass, scale to E1.
+- 2026-05-13 01:xx: Phase 2 patches landed + pilot SUCCESS.
+  - 6 patches: ✅ retry+timeout, ✅ cadence-mult, ✅ --llm-adapter,
+    ✅ cache wireable, ✅ debug log
+  - 4 incidental bugs found + fixed:
+    - Services dataclass missing agent_adapter field
+    - state.ai.enabled defaulted False (gates _wants_llm())
+    - asyncio nested-loop RuntimeError (sub-loop in running loop)
+    - seed_matrix plugin-loop SimHarness missed new kwargs
+  - Pilot: 60 sim-sec real-LLM run with deepseek-v4-flash
+    - 50 LLM calls, 0% fallback, 11.2s avg latency
+    - 72k total tokens
+    - Per-channel: colony-agent 25 / env 10 / npc 10 / strategic 5
+    - intent_entropy = 1.405 (LLM producing varied output)
+  - Phase 3 blocker identified: AnchorInjector not actually wired into
+    the LLM prompt path, so anchored_fact_recall = action_grounded_recall = 0.
+    Dual probe will report empty until Phase 3 wires anchors into
+    PromptPayload.
