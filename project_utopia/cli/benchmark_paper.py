@@ -289,11 +289,35 @@ async def _run_oracle_for_scenario(
 
 
 async def _run_agent_cell(
-    *, cell_id: str, seeds: list[int], scenarios: list[str], duration_sec: int, concurrency: int
+    *,
+    cell_id: str,
+    seeds: list[int],
+    scenarios: list[str],
+    duration_sec: int,
+    concurrency: int,
+    llm_adapter: str = "noop",
+    cadence_multiplier: float = 1.0,
+    cache_dir: str = "",
+    debug_log_dir: str = "",
 ) -> list[dict[str, Any]]:
+    """Run a cell with optional real-LLM override.
+
+    When ``llm_adapter == 'llm-client'``, the per-cell cross-vendor routing
+    is bypassed and a single LLMClient (wrapped with RecordReplayCache
+    + per-call debug log if configured) is used across all 4 channels.
+    """
     from project_utopia.benchmark.framework.seed_matrix import run_seed_matrix
 
-    agent_config = build_agent_config_for_cell(cell_id)
+    if llm_adapter == "llm-client":
+        # Build a SINGLE LLM adapter from .env credentials for all 4 channels.
+        agent_config = _build_realllm_agent_config(
+            cache_dir=cache_dir, debug_log_dir=debug_log_dir, cell_id=cell_id
+        )
+        attach_channels = True
+    else:
+        agent_config = build_agent_config_for_cell(cell_id)
+        attach_channels = False
+
     result = await run_seed_matrix(
         {
             "seeds": seeds,
@@ -302,9 +326,135 @@ async def _run_agent_cell(
             "concurrency": concurrency,
             "dimension_opts": {"duration_sec": duration_sec},
             "agent_config": agent_config,
+            "attach_llm_channels": attach_channels,
+            "cadence_multiplier": cadence_multiplier,
         }
     )
     return list(result["cells"])
+
+
+def _build_realllm_agent_config(
+    *, cache_dir: str, debug_log_dir: str, cell_id: str
+) -> dict[str, Any]:
+    """Materialise a real LLM adapter from .env: LLMClient + optional cache + debug log."""
+    from project_utopia.simulation.ai.llm.llm_client import LLMClient
+
+    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENAI_API_BASE")
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    model = os.environ.get("OPENAI_MODEL", "openai/gpt-4o-mini")
+
+    # Hint litellm: the proxy is openai-compatible, so prefix with "openai/"
+    # if the user didn't already namespace.
+    if model and not model.startswith(("openai/", "anthropic/", "gemini/")):
+        litellm_model = f"openai/{model}"
+    else:
+        litellm_model = model
+
+    def _factory() -> Any:
+        client = LLMClient(
+            base_url=base_url,
+            model=litellm_model,
+            api_key=api_key,
+            timeout_s=60.0,
+            max_retries=3,
+        )
+        adapter: Any = _LLMClientAdapter(client)
+        if cache_dir:
+            try:
+                from project_utopia.simulation.ai.llm.record_replay_cache import (
+                    wrap_adapter_with_cache,
+                )
+                adapter = wrap_adapter_with_cache(adapter, cache_dir=cache_dir, mode="auto")
+            except Exception as err:  # pragma: no cover - cache optional
+                _console.print(f"[yellow]cache wrap failed:[/yellow] {err}")
+        if debug_log_dir:
+            adapter = _DebugLogAdapter(adapter, log_dir=debug_log_dir, cell_id=cell_id)
+        return adapter
+
+    return {"adapter_class": _factory, "adapter_opts": {}}
+
+
+class _LLMClientAdapter:
+    """Wraps LLMClient.request_completion to expose the AgentAdapter contract.
+
+    LLMClient is a low-level transport wrapper; this thin shim adapts it to
+    ``async def request(channel, payload, options)`` so it plugs into
+    SimHarness channel systems.
+    """
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    async def request(self, channel: str, payload: Any, options: Any = None) -> Any:
+        # Translate PromptPayload (or dict-like) into the OpenAI-style messages.
+        from project_utopia.data.prompts import load_prompt
+
+        try:
+            system_prompt = load_prompt(channel)
+        except Exception:
+            system_prompt = ""
+        user_content = _payload_to_user_content(payload)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+        return await self._client.request_completion(messages, channel=channel)
+
+
+def _payload_to_user_content(payload: Any) -> str:
+    """Best-effort serialization of a PromptPayload (or dict) to a user-message body."""
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    if hasattr(payload, "model_dump"):
+        try:
+            return json.dumps(payload.model_dump(), default=str)
+        except Exception:
+            pass
+    if isinstance(payload, dict):
+        return json.dumps(payload, default=str)
+    return str(payload)
+
+
+class _DebugLogAdapter:
+    """Wraps an adapter to emit per-call NDJSON debug events."""
+
+    def __init__(self, inner: Any, *, log_dir: str, cell_id: str) -> None:
+        self._inner = inner
+        self._log_dir = Path(log_dir)
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        self._log_path = self._log_dir / f"cell-{cell_id}.ndjson"
+        self._call_idx = 0
+
+    async def request(self, channel: str, payload: Any, options: Any = None) -> Any:
+        import hashlib
+        t0 = time.perf_counter()
+        response = await self._inner.request(channel, payload, options)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        self._call_idx += 1
+        payload_text = _payload_to_user_content(payload)
+        ph = hashlib.sha256(payload_text.encode("utf-8")).hexdigest()[:16]
+        usage = getattr(response, "usage", None)
+        usage_dict = usage.model_dump() if (usage is not None and hasattr(usage, "model_dump")) else {}
+        log_entry = {
+            "callIdx": self._call_idx,
+            "channel": channel,
+            "model": getattr(response, "model", ""),
+            "promptHash": ph,
+            "latencyMs": round(elapsed_ms, 1),
+            "fallback": bool(getattr(response, "fallback", False)),
+            "error": getattr(response, "error", "") or "",
+            "promptTokens": int(usage_dict.get("promptTokens") or usage_dict.get("prompt_tokens") or 0),
+            "completionTokens": int(usage_dict.get("completionTokens") or usage_dict.get("completion_tokens") or 0),
+            "cachedTokens": int(usage_dict.get("cachedTokens") or usage_dict.get("cached_tokens") or 0),
+        }
+        try:
+            with open(self._log_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(log_entry, separators=(",", ":")) + "\n")
+        except Exception:
+            pass  # never let debug logging break the run
+        return response
 
 
 def _is_finite(x: Any) -> bool:
@@ -352,6 +502,10 @@ async def run_paper_experiment(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
 
     # 2. Per-cell agent run.
+    llm_adapter = str(cfg.get("llm_adapter", "noop")).lower()
+    cadence_mult = float(cfg.get("cadence_multiplier", 1.0))
+    cache_dir = str(cfg.get("cache_dir", ""))
+    debug_log_dir = str(cfg.get("debug_log_dir", ""))
     for cell_id in cells:
         agent_cells = await _run_agent_cell(
             cell_id=cell_id,
@@ -359,6 +513,10 @@ async def run_paper_experiment(cfg: dict[str, Any]) -> list[dict[str, Any]]:
             scenarios=scenarios,
             duration_sec=duration_sec,
             concurrency=concurrency,
+            llm_adapter=llm_adapter,
+            cadence_multiplier=cadence_mult,
+            cache_dir=cache_dir,
+            debug_log_dir=debug_log_dir,
         )
 
         # 3. For each registered dim, compute (raw, normalized, sandwichNorm).
@@ -534,6 +692,26 @@ def run_command(
         "-j",
         help="seed × scenario concurrency (Python asyncio.gather)",
     ),
+    llm_adapter: str = typer.Option(
+        "noop",
+        "--llm-adapter",
+        help="Adapter to drive LLM channels: 'noop' (fallback, default) | 'llm-client' (real LLM via .env OPENAI_*)",
+    ),
+    cadence_multiplier: float = typer.Option(
+        1.0,
+        "--cadence-multiplier",
+        help="Multiply all channel cadences (env/npc/strategic/colony) — e.g. 6.0 → env-director every 48s instead of 8s. Use higher values to throttle API cost.",
+    ),
+    cache_dir: str = typer.Option(
+        ".cache/llm-cassettes",
+        "--cache-dir",
+        help="RecordReplayCache directory (set to empty to disable caching)",
+    ),
+    debug_log_dir: str = typer.Option(
+        "output/llm-debug",
+        "--debug-log-dir",
+        help="Per-call NDJSON debug log directory (set to empty to disable)",
+    ),
 ) -> None:
     """Run one experiment end-to-end and stream NDJSON to ``--out``."""
     try:
@@ -549,6 +727,14 @@ def run_command(
     except ValueError as err:
         _console.print(f"[red]arg error:[/red] {err}")
         raise typer.Exit(code=2) from err
+
+    # Route-α P2 patches 3-6: thread LLM adapter / cadence / cache / debug log
+    # through cfg so run_paper_experiment can hand them to SimHarness +
+    # adapter constructors. These keys are ignored when llm_adapter == "noop".
+    cfg["llm_adapter"] = (llm_adapter or "noop").strip().lower()
+    cfg["cadence_multiplier"] = float(cadence_multiplier)
+    cfg["cache_dir"] = (cache_dir or "").strip()
+    cfg["debug_log_dir"] = (debug_log_dir or "").strip()
 
     _seed_repr = ",".join(
         f"0x{s:X}" if isinstance(s, int) and s >= 0 else str(s) for s in cfg["seeds"]

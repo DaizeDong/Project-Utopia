@@ -161,6 +161,8 @@ async def run_one_cell(
             ai_enabled=ai_enabled,
             runtime_profile=runtime_profile,
             agent_adapter=adapter,
+            attach_llm_channels=bool(opts.get("attach_llm_channels", False)),
+            cadence_multiplier=float(opts.get("cadence_multiplier", 1.0)),
         )
         await harness.advance_to(duration_sec)
         ai_runtime = _read_ai_runtime(harness.state)

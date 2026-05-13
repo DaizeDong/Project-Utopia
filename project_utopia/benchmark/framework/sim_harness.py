@@ -227,6 +227,8 @@ class SimHarness:
         build_systems_override: Callable[[Any], list[Any]] | None = None,
         agent_adapter: Any | None = None,
         run_mode: str = "fallback",
+        attach_llm_channels: bool = False,
+        cadence_multiplier: float = 1.0,
     ) -> None:
         self.state: dict[str, Any] = _create_initial_state(template_id, seed)
         self.state["session"]["phase"] = "active"
@@ -318,6 +320,10 @@ class SimHarness:
                 # plugin tests using `build_systems_override` keep working.
                 self._world_ready = False
 
+        # Store for downstream system construction.
+        self._cadence_multiplier = max(0.1, float(cadence_multiplier))
+        self._attach_llm_channels = bool(attach_llm_channels)
+
         if build_systems_override is not None:
             self.systems = list(build_systems_override(self.memory_store))
         else:
@@ -339,6 +345,59 @@ class SimHarness:
         systems: list[Any] = [_BaseStateSystem()]
         if ai_enabled and adapter is not None:
             systems.append(_AiRuntimeFallbackSystem(adapter))
+        # Patch 3+4 (route-α P2): optionally attach the 4 LLM channel systems
+        # so SimHarness drives them per-tick at the configured cadence.
+        # Default off so existing tests (which rely on Noop / no real LLM)
+        # are unaffected.
+        if self._attach_llm_channels and adapter is not None:
+            cm = self._cadence_multiplier
+            try:
+                from project_utopia.simulation.ai.director.environment_director_system import (
+                    DEFAULT_ENVIRONMENT_INTERVAL_SEC,
+                    EnvironmentDirectorSystem,
+                )
+                from project_utopia.simulation.ai.brains.npc_policy_system import (
+                    DEFAULT_NPC_POLICY_INTERVAL_SEC,
+                    NpcPolicySystem,
+                )
+                from project_utopia.simulation.ai.strategic.strategic_plan_system import (
+                    DEFAULT_STRATEGIC_HEARTBEAT_SEC,
+                    StrategicPlanSystem,
+                )
+                from project_utopia.simulation.ai.colony.colony_agent_system import (
+                    DEFAULT_COLONY_AGENT_INTERVAL_SEC,
+                    ColonyAgentSystem,
+                )
+            except Exception as err:  # pragma: no cover - import safety
+                logging.getLogger(__name__).warning(
+                    "attach_llm_channels=True but channel system imports failed: %s", err
+                )
+            else:
+                systems.append(
+                    EnvironmentDirectorSystem(
+                        interval_sec=DEFAULT_ENVIRONMENT_INTERVAL_SEC * cm
+                    )
+                )
+                systems.append(
+                    NpcPolicySystem(interval_sec=DEFAULT_NPC_POLICY_INTERVAL_SEC * cm)
+                )
+                systems.append(
+                    StrategicPlanSystem(
+                        heartbeat_sec=DEFAULT_STRATEGIC_HEARTBEAT_SEC * cm
+                    )
+                )
+                systems.append(
+                    ColonyAgentSystem(
+                        interval_sec=DEFAULT_COLONY_AGENT_INTERVAL_SEC * cm
+                    )
+                )
+                # Ensure adapter is on services so channel systems can reach it.
+                self.services = create_services(
+                    seed=int(self.state.get("seed") or 0),
+                    deterministic=True,
+                    agent_adapter=adapter,
+                    offline_ai_fallback=False,
+                )
         return systems
 
     # ----- state helpers --------------------------------------------------
