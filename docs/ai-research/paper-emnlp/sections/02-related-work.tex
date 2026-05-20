@@ -1,0 +1,46 @@
+\section{Related Work}
+\label{sec:related}
+
+A growing benchmark literature probes whether LLMs retain
+information over long inputs, but does so almost exclusively
+through the verbal channel. LongMemEval \citep{Wu2025LongMemEval}
+constructs multi-session dialogue probes that score retrieval of
+prior facts through question answering; RULER
+\citep{Hsieh2024RULER} measures needle-in-a-haystack retrieval as a
+function of context length and content type; Lost-in-the-Middle
+\citep{Liu2024LostInMiddle} characterises positional bias in
+document QA; InfiniteBench \citep{Zhang2024InfiniteBench} extends
+the same recall paradigm to 100k-token regimes. These benchmarks
+share a common evaluation surface: a textual probe is presented and
+the model's textual answer is scored. They do not measure what the
+model \emph{does} when given the same context inside an agent loop.
+A second line of work probes action grounding inside agent loops:
+MemoryArena \citep{He2026MemoryArena} and MemoryAgentBench
+\citep{Hu2025MemoryAgentBench} evaluate whether memory-augmented
+agents can ground prior context into correct actions on benchmark
+tasks, but the episodes are session-discrete---each task is a
+fresh prompt or a fresh agent run, and memory is tested as
+retrieval-into-action rather than as the sustained joint behaviour
+of two channels of the same continuous process. ReAct
+\citep{Yao2023ReAct} and Reflexion \citep{Shinn2023Reflexion}
+introduced the interleaved reasoning-and-action paradigm that these
+benchmarks evaluate, but report aggregate task success rather than
+channel-level dissociation. Recent work on diminishing returns in
+LLM agents \citep{Sinha2025IllusionDiminishingReturns} characterises
+performance ceilings without separating the verbal and action
+contributions to those ceilings. Anecdotal reports of
+verbal--action dissociation appear in post-mortems of
+production-grade agent deployments: the team behind Cicero
+\citep{FAIR2022Cicero} documented cases in which dialogue and
+action diverged under pressure, and Anthropic's multi-agent system
+\citep{AnthropicMultiAgent2025} reports that sub-agents
+occasionally produce summaries that overstate or misalign with the
+actions they took. These reports are descriptive: they note that
+the phenomenon occurs, but offer no controlled probe, no
+quantitative threshold, and no testbed on which to study its
+horizon-dependence or its tier-dependence. Our contribution sits in
+the gap: a joint-axis probe on tick-continuous structured-output
+context, with a pre-registered threshold ($|\Delta| > 0.3$ on a
+behaviourally discounted dual probe), a reproducible substrate, and
+pilot results that characterise the phenomenon's magnitude across
+deployment tiers.

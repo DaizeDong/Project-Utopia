@@ -1,0 +1,44 @@
+\section{Reproducibility}
+\label{app:reproducibility}
+
+The substrate and the dual probe are released as an open-source
+Python package targeting Python 3.11 and above. Determinism is
+verified on three tiers. Tier 1 fixes the no-LLM control: identical
+seeds reproduce identical world states bit-for-bit across runs,
+verified by SHA-256 hashes of the world-state stream and confirmed
+across two independent runs on the same operating system. Tier 2
+fixes a record-replay cache adapter that replays prior LLM
+responses byte-for-byte, isolating the substrate's contribution to
+the trajectory from the LLM's sampling. Tier 3 reports the
+expectation under live-LLM stationarity: with a fixed model
+snapshot and deterministic decoding, per-cell statistics remain
+within a documented tolerance band across re-runs.
+
+\paragraph{Quick start.}
+The package exposes a Typer-based command-line entry point. A
+single pilot cell is reproduced by
+
+\begin{quote}\small
+\texttt{project-utopia run\textbackslash}\\
+\texttt{\quad --experiment E1 --scenarios s\_plains\textbackslash}\\
+\texttt{\quad --seeds 0xBEEF,0xC0FFEE,0xCAFE\textbackslash}\\
+\texttt{\quad --duration-sec 3600 --cadence-multiplier 6.0\textbackslash}\\
+\texttt{\quad --out output/E1.ndjson}
+\end{quote}
+
+\noindent
+The NDJSON output stream contains per-cell AFR, AGR, $\Delta$, and
+drift values along with the raw LLM responses cached for replay.
+Model snapshot identifiers, prompt schemas, and the anchor list
+used in the pilot are pinned in the released configuration files.
+
+\paragraph{Software environment.}
+Python $\geq$ 3.11 is required. All randomness flows through a
+single PCG64 generator with keyed BLAKE2b sub-seed derivation; the
+release does not depend on the legacy \texttt{random} or
+\texttt{numpy.random} global generators. The package ships with an
+automated determinism audit (\texttt{project-utopia-determinism})
+that re-runs the three tiers and compares hashes against the
+pinned reference values, and an RNG coverage audit
+(\texttt{project-utopia-rng-audit}) that asserts every stochastic
+call site is reached by the seeded generator.

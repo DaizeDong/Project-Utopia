@@ -1,0 +1,53 @@
+\section{Introduction}
+\label{sec:intro}
+
+A production LLM agent writes in its hourly summary that it
+``should defend territory $X$,'' and the next unit it dispatches
+walks toward a different objective. A long-running planner reflects
+in prose that the warehouse is the priority, and the next pick task
+it emits allocates zero weight to the warehouse. These failures are
+not hallucinations in the textual output and not crashes in the
+agent loop; they are quiet drifts in which the verbal channel and
+the action-emitting channel of the same model cease to point at the
+same anchors. The failure mode is invisible to memory benchmarks
+that probe verbal recall in isolation
+\citep{Wu2025LongMemEval, Hsieh2024RULER, Liu2024LostInMiddle,
+He2026MemoryArena}, because the summaries continue to mention the
+anchor exactly as the benchmark expects.
+
+Existing benchmarks split the operational surface in half. One line
+of work probes verbal recall on dialogue-style or document-style
+inputs \citep{Wu2025LongMemEval, Hsieh2024RULER, Liu2024LostInMiddle};
+another probes action grounding inside session-discrete agent loops
+where each episode is a fresh prompt
+\citep{He2026MemoryArena, Hu2025MemoryAgentBench}. Neither line
+measures the \emph{joint} behaviour of verbal and action channels
+on tick-continuous structured-output context---the regime in which
+the LLM is a long-lived process emitting JSON directives every few
+seconds with cumulative state. Production observations of the
+phenomenon are anecdotal: deployment teams for Cicero
+\citep{FAIR2022Cicero} and for Anthropic's multi-agent agent stack
+\citep{AnthropicMultiAgent2025} have reported informal cases where
+agents ``forget what they just said,'' but no controlled probe
+exists.
+
+We address this gap with three contributions. We introduce a
+\emph{dual probe} for verbal--action recall that operationalises
+the phenomenon as paired probes over a small set of injected
+anchors, with a behavioural-drift discount that disentangles
+dissociation (verbal stays, action drops) from goal displacement
+(action moves to a different goal). We introduce a four-channel
+structured-output substrate---a deterministic colony simulation in
+which a single LLM emits directives across four channels at three
+nested cadences against a fixed tool surface---and an anchor
+injection protocol that makes the dual probe directly measurable.
+And we report a pilot across three LLM families spanning the
+deployment spectrum (frontier closed-weight, mid-tier closed-weight,
+open-weight) at two horizons, establishing that the dissociation
+reaches threshold magnitude on a controlled probe, stratifies by
+model tier, and reverses direction with horizon for non-frontier
+families. To distinguish the dissociation from a generic
+long-context-recall failure, we additionally run an external
+LongMemEval-style needle-in-haystack probe on the same models at
+matched context lengths; the contrast between the substrate and
+external readings is itself one of the paper's findings.

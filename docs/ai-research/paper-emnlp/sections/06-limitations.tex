@@ -1,0 +1,56 @@
+\section{Limitations}
+\label{sec:limitations}
+
+The eighteen-cell pilot we report is narrower than the matrix that
+would be required to characterise the dual probe definitively.
+Three seeds per family on a single scenario at two horizons cannot
+support strong claims about the tier ordering we observe, the
+horizon-dependent reversal we observe in two of three families, or
+the independence of dissociation magnitude from external verbal
+recall. We report the pilot as an existence and tier-stratification
+result, and we report the H2 independence finding as
+\emph{supported on this pilot} rather than as a general property of
+the dual probe; both characterisations require a broader matrix to
+elevate them to generalisable claims.
+
+We pre-registered a wider design than the one this pilot reports.
+The matrix as executed is the subset of the pre-registered design
+that completed under the rate budget available to us during the
+study window. The narrowing is a constraint, not a methodological
+choice: we ran the pilot we could run and report its results
+honestly. The full pre-registered matrix is the immediate
+experimental priority for follow-on work.
+
+A specific operational limitation tied to the H2 test deserves
+mention. The external verbal-recall probe recovered sixteen of
+eighteen cells with real-LLM responses; two Claude-Sonnet-4.6
+60-minute cells failed when the model-proxy wallet was exhausted
+mid-run by the ${\sim}25{,}000$-token prompts and could not be
+recovered within the study window. The methodological circularity
+of the earlier AFR-as-its-own-proxy formulation is resolved by the
+external probe, but the perfect-recall ceiling effect we observe
+on the recovered cells is itself a soft limit: a harder probe (more
+anchors, harder distractors, a longer context) might puncture the
+ceiling and produce a measurable non-zero correlation. We frame
+the H2 outcome as independence supported \emph{by the absence of an
+observable coupling at the difficulty level the LongMemEval-style
+probe sets}, and we identify a harder external probe as the next
+experimental step.
+
+A more fundamental concern is that the dual probe operates inside
+a substrate we designed to host it. The independent resource
+dynamics (Section~\ref{sec:method:substrate}) rule out the most
+degenerate failure mode---AGR collapsing into a JSON-token
+echo---but do not address whether the dissociation generalises
+beyond the colony-simulation domain. A stronger validation would
+re-instantiate the dual probe in a substrate we did not author---a
+dialogue agent loop, a robotics planning loop, or an existing
+structured-output agent benchmark instrumented post-hoc---and
+confirm that the same probe definitions surface comparable
+dissociation patterns. We expect generalisation to follow from the
+structural property the substrate provides (a verbal channel and
+an action channel sharing a single model state across cadences)
+rather than the specific colony content, but the test is open. We
+identify cross-substrate validation as the second priority for
+follow-on work, alongside the broader matrix sweep; the present
+findings should be read as conditional on it.

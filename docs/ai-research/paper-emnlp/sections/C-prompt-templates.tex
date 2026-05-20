@@ -1,0 +1,25 @@
+\section{Prompt Templates}
+\label{app:prompts}
+
+Each of the four channels described in
+Section~\ref{sec:method:substrate} is driven by a dedicated prompt
+template. The environment-director prompt requests weather, event,
+and faction-tension updates as a JSON object validated against a
+pydantic schema. The npc-policy prompt requests per-group intent
+weights and target-priority lists on the clamped $[0, 3]$ scale.
+The strategic-plan prompt requests a long-form primary goal, a
+list of constraints, and a free-form summary intended as the
+verbal channel of the agent. The colony-agent prompt requests a
+per-step build plan following the
+Perceive--Plan--Ground--Execute--Evaluate--Reflect pattern, with
+each phase emitted as a separately validated JSON sub-object.
+
+The four prompts share a common observation envelope that
+summarises recent world state, scenario blueprints, and the
+persistent world-summary memory into which anchors have been
+injected. Outputs are validated and clamped through a shared
+guardrail layer before they act on the world. Verbatim prompt
+templates and the pydantic response-schema definitions are
+released with the code package; we omit them from the paper body
+to preserve length, and refer the reader to the released
+repository for the exact strings used in the pilot.

@@ -1,0 +1,222 @@
+\section{Method}
+\label{sec:method}
+
+The dual probe operationalises stale coherence by measuring, at the
+same simulation instant, the fraction of injected anchors that the
+model echoes in its verbal output and the fraction whose
+corresponding action keys are weighted in its action output. To
+make the probe meaningful, the substrate has to expose a verbal
+channel and an action channel that share a single underlying model
+state. This section describes the substrate, the anchor injection
+protocol that prepares the probe surface, and the probe definitions
+themselves.
+
+\subsection{Multi-Cadence Structured-Output Substrate}
+\label{sec:method:substrate}
+
+We instantiate the dual probe on a deterministic two-dimensional
+colony simulation. A small group of worker units gather food,
+wood, and stone from tiles on a tile-world map, deposit them in
+storage, construct simple structures (shelter, walls, watchpoints),
+and respond to periodic threats (weather shifts, raids, faction
+tension). There is no terminal win condition; the simulation
+persists for the configured horizon as long as the colony's
+population threshold survives, which it always does in the no-LLM
+control. Our purpose is not to score whether the LLM keeps the
+colony alive---under the model families we test it does---but to
+expose a setting in which a single LLM emits parallel verbal and
+action directives over a sustained horizon against a fixed
+deterministic tool surface (A* path planning, Boids movement,
+seeded RNG, a build planner).
+
+A single LLM drives the colony across four channels.
+An \emph{environment-director} emits weather, event, and
+faction-tension shifts every 5--15 simulation seconds; an
+\emph{npc-policy} emits per-group target priorities and intent
+weights on the same fast cadence; a \emph{strategic-plan} emits
+prose summaries and high-level goals every 90 simulation seconds;
+and a \emph{colony-agent} emits per-step build plans through a
+Perceive--Plan--Ground--Execute--Evaluate--Reflect cycle on a
+slower sim-time gate. Each channel emits JSON that is validated
+against a typed response schema and clamped to feasible numeric
+ranges before it acts on the world. The probe surface is the
+cross-product of two channels: the strategic-plan's prose carries
+the verbal signal, and the npc-policy's target priorities and
+intent weights carry the action signal. Table~\ref{tab:channels}
+summarises the assignment.
+
+The multi-cadence emission shape is the structural property that
+makes verbal--action dissociation detectable. A single-cadence
+harness conflates the verbal summary and the next action into one
+inference call, so they cannot drift. By emitting strategic prose
+on a slow cadence and policy-weight vectors on a fast cadence over
+the same shared memory, the substrate exposes a verbal channel and
+an action channel that can move independently.
+
+\begin{table}[t]
+  \centering
+  \footnotesize
+  \begin{tabular}{l l l}
+    \toprule
+    Channel & Cadence & Probe surface \\
+    \midrule
+    environment-director & 5--15\,s & --- \\
+    npc-policy           & 5--15\,s & action \\
+    strategic-plan       & 90\,s    & verbal \\
+    colony-agent         & sim-gated & --- \\
+    \bottomrule
+  \end{tabular}
+  \caption{The four channels emitted by the substrate, their
+  cadences, and which probe surface each contributes to. The
+  environment-director and colony-agent channels are run for
+  realism but are not part of the verbal--action recall probes.}
+  \label{tab:channels}
+\end{table}
+
+\paragraph{Why a custom substrate.}
+Existing agent benchmarks do not expose the emission shape the
+dual probe requires. Crafter \citep{Hafner2022Crafter} and Voyager
+\citep{Wang2023Voyager} place a single LLM-as-policy in a tile or
+voxel world but emit one action per step, with no parallel
+structured directives across cadences; verbal and action cannot
+dissociate because they share an inference call. AgentBench
+\citep{Liu2024AgentBench} and tool-use benchmarks evaluate
+task-discrete episodes that reset the context each run,
+eliminating the sustained joint emission the dual probe requires.
+BALROG \citep{Paglieri2025BALROG} stresses agentic reasoning on
+NetHack-style games but uses a single textual action channel.
+Cicero \citep{FAIR2022Cicero} does emit parallel dialogue and
+action streams---and is the closest existing artifact to what we
+need---but is closed-source and not configurable for controlled
+anchor injection. Custom-building the substrate gives us the four
+properties the dual probe requires (a verbal channel, an action
+channel, multiple cadences, a deterministic tool surface), and an
+anchor injection point, without entangling them with the
+proprietary specifics of a production deployment.
+
+\paragraph{Action chain.}
+The substrate closes the loop between LLM directive and world
+state. On each new npc-policy envelope, every worker's FSM state
+is re-sampled from \textsf{intent\_weights}; its target tile is
+the highest-weighted \textsf{target\_priorities} key compatible
+with that state (harvest states resolve to farm/lumber/quarry
+anchors; deliver states resolve to warehouse). Harvest-state
+workers that reach their tile add food, wood, or stone to the
+colony stockpile each tick at a calibrated yield, while an
+independent resource system depletes food proportional to alive
+worker count regardless of LLM input. A directive that
+under-weights harvest intents or biases targets toward
+deposit-only anchors visibly bleeds the food reserve, and the
+updated counts enter the next prompt's world summary.
+
+\paragraph{Determinism and balance.}
+The substrate is deterministic in the no-LLM control: identical
+seeds reproduce identical world states bit-for-bit across runs and
+operating systems. Determinism is enforced through a single seeded
+PCG64 generator with sub-streams derived by keyed BLAKE2b, a
+versioned numpy tile grid, and deterministic implementations of
+A* path planning and Boids movement. When the LLM is active, only
+its sampling introduces stochasticity; everything downstream of an
+emitted directive is deterministic. The $|\Delta| = 0.3$ threshold
+is calibrated against this control: with the LLM replaced by a
+stub adapter that emits constant policy weights, the dual probe
+returns $\Delta \approx 0$ with a $|\Delta|$ noise floor below
+$0.05$ across all seeds, defining what counts as a substantive
+signal rather than substrate jitter. Game rules---resource gather
+rates, structure costs, threat frequencies---are constants from
+the simulation's config, deterministic given the seed, and
+identical for every LLM family the pilot evaluates; the substrate
+is the same lab for every model and our claims are differential.
+
+\subsection{Anchor Injection Protocol}
+\label{sec:method:anchors}
+
+At simulation time $t = 0$ we inject five anchor entries into the
+LLM's persistent world summary. Each anchor is a paired tuple of a
+verbal token and an implicit goal:
+
+\begin{equation*}
+  a_i = (\text{verbal\_token}_i,\ \text{implicit\_goal}_i).
+\end{equation*}
+
+A representative anchor is
+$(\textsf{warehouse at (12,8)},\ \{\textsf{action}: \textsf{deliver},
+\textsf{target}: \textsf{warehouse}\})$. The two halves of the
+anchor are co-located in the world-summary memory but are not
+presented to the model as an instruction. The model must
+autonomously integrate the pair: the verbal half may surface in its
+strategic-plan output (verbal recall) and the action half may
+surface in its npc-policy weights (action-grounded recall). This
+makes verbal and action recall independently checkable on the same
+underlying anchor set.
+
+The five-anchor count is calibrated against pilot runs we conducted
+during substrate development. Below five anchors the verbal probe
+saturated near $1.0$ for all three families, eliminating its
+discriminative power; above five anchors smaller open-weight models
+collapsed their structured-output validity rate. Five anchors
+preserved both the discrimination ceiling of the verbal probe and
+the JSON validity floor of the weakest tested family. The number
+of channels (four), the cadence stratification (5--15\,s for fast
+events, 90\,s for strategic prose, sim-gated for the colony loop),
+and the JSON schema validation are similarly load-bearing for the
+probe: collapsing the cadence stratification to a single rate
+removes the dissociation surface (we ran single-cadence variants
+during design and obtained $\Delta \approx 0$ across families), and
+removing schema validation breaks the action-key vocabulary the
+dual probe scores against. The remaining substrate
+details---tile-world dimensions, worker counts, structure
+costs---are mundane: they exist so the LLM has something concrete
+to operate over, but they are not load-bearing for the probe and
+can be re-instantiated in any other domain that exposes the same
+four properties.
+
+\subsection{The Dual Probe}
+\label{sec:method:probe}
+
+The dual probe samples two quantities at a fixed sim-time $t$.
+\emph{Anchored fact recall} (AFR) is the fraction of the five
+injected anchors whose verbal token appears in the LLM's verbal
+output blob aggregated across the strategic-plan, environment
+director, per-group policy summary, and colony-agent rationale
+fields at time $t$:
+
+\begin{equation*}
+  \mathrm{AFR}(t) = \frac{1}{|A|} \sum_{a_i \in A} \mathbf{1}\bigl[
+    \text{verbal\_token}_i \in \mathcal{V}(t) \bigr].
+\end{equation*}
+
+\emph{Action-grounded recall} (AGR) is the fraction of the five
+anchors whose implicit-goal action key appears in any group's
+\textsf{target\_priorities} or \textsf{intent\_weights} with weight
+at least $\tau = 0.3$ on the clamped $[0, 3]$ scale used by the
+guardrails:
+
+\begin{equation*}
+  \mathrm{AGR}(t) = \frac{1}{|A|} \sum_{a_i \in A} \mathbf{1}\bigl[
+    \exists g:\ w_g(\text{action\_key}_i; t) \geq \tau \bigr].
+\end{equation*}
+
+The dissociation gap is $\Delta(t) = \mathrm{AFR}(t) -
+\mathrm{AGR}(t)$. The signed gap distinguishes two directions of
+dissociation. $\Delta > 0$ corresponds to stale coherence, in which
+the model continues to mention the anchor while the action channel
+no longer weights it. $\Delta < 0$ corresponds to the inverse
+pattern, in which the model has dropped the anchor from its verbal
+output while the action channel still weights it. We report the
+signed gap and the magnitude $|\Delta|$ against a pre-registered
+threshold of $0.3$.
+
+Stale coherence as a deployment-relevant phenomenon requires more
+than a non-zero $\Delta$: the action channel must also continue to
+act on the world rather than collapsing into a no-op. We discount
+the gap by a behavioural-drift measure, computed as the Jaccard
+distance between the set of weighted action keys at $t = 0$ and at
+$t$. When drift is zero the policy has remained at its initial
+configuration regardless of input, and a non-zero $\Delta$ is not
+informative; we exclude such cells from the threshold-crossing
+count and report them transparently in the per-cell table. The
+drift discount disentangles dissociation (the model is acting but
+on a different anchor distribution than its prose describes) from
+goal displacement (the model has redirected the policy elsewhere)
+and from no-op output (the model is not acting at all).

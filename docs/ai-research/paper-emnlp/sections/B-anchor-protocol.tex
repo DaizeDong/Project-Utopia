@@ -1,0 +1,54 @@
+\section{Anchor Injection Protocol}
+\label{app:anchors}
+
+The five anchors injected at $t = 0$ in the pilot are summarised
+in Table~\ref{tab:anchors}. Each anchor pairs a single-keyword
+verbal token---chosen short and concrete to maximise the chance of
+verbatim re-emission---with an implicit goal whose action key is
+addressable on the substrate's action surface.
+
+\begin{table}[h]
+  \centering
+  \footnotesize
+  \begin{tabular}{l l}
+    \toprule
+    Verbal token & Implicit-goal action key \\
+    \midrule
+    \texttt{warehouse} & \texttt{deliver} \\
+    \texttt{food}      & \texttt{farm} \\
+    \texttt{wood}      & \texttt{wood} \\
+    \texttt{guard}     & \texttt{guard\_engage} \\
+    \texttt{quarry}    & \texttt{quarry} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Anchor pairs injected at $t = 0$ for the pilot.}
+  \label{tab:anchors}
+\end{table}
+
+The on-disk anchor representation is JSON of the form
+
+\begin{quote}\small\ttfamily
+\{ "verbal\_token": "warehouse",\\
+\hspace*{1em} "implicit\_goal": \{\\
+\hspace*{2em} "action": "deliver",\\
+\hspace*{2em} "target": "warehouse"\\
+\hspace*{1em} \},\\
+\hspace*{1em} "anchor\_pos": [12, 8] \}
+\end{quote}
+
+\noindent
+written into the LLM's persistent world-summary memory at $t = 0$
+without further instruction. The substrate does not surface the
+anchor pair to the model as a directive; the model must autonomously
+integrate the pair through its own summarisation and policy-weight
+behaviour.
+
+\paragraph{Calibration of $|A| = 5$.}
+The anchor count was calibrated during substrate development. With
+$|A| = 3$, AFR saturated at $1.0$ for every model family at the
+short horizon, eliminating discriminative power in the verbal
+channel. With $|A| = 7$, the structured-output validity rate of
+the smallest open-weight model dropped below 80\%, contaminating
+both probes with parsing-driven zeros. $|A| = 5$ preserved
+discrimination in the verbal probe while maintaining structured
+output integrity across all three families we tested.

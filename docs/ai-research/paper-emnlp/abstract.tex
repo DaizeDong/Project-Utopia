@@ -1,0 +1,24 @@
+\begin{abstract}
+\noindent
+LLM agents in production exhibit a failure mode invisible to
+single-axis memory benchmarks: the verbal channel and the
+action-emitting channel drift apart, with directives ceasing to
+reflect anchors the summaries continue to mention. We call this
+\emph{stale coherence} and propose a \emph{dual probe}---paired
+verbal and action-grounded recall---on tick-continuous
+structured-output agent loops. We instantiate it on a deterministic
+colony-simulation testbed where one LLM emits directives across
+four channels at three nested cadences. A pilot of three model
+families (Claude-Sonnet-4.6, GPT-5-mini, DeepSeek-v4-Flash) at two
+horizons yields three observations: the dissociation crosses our
+pre-registered $|\Delta| > 0.3$ threshold in four of eighteen cells;
+magnitude at the 60-minute horizon orders by tier
+($0.018 < 0.146 < 0.283$); and direction reverses with horizon for
+non-frontier families. To rule out a single-axis-recall reading,
+we run an external LongMemEval-style needle-in-haystack probe on
+the same models at matched context lengths: every recovered cell
+scores perfectly, including the cells whose substrate verbal
+recall collapsed. The dual probe measures a substrate-coupled
+failure that single-axis benchmarks miss. We release the substrate
+and dual-probe toolkit as open source.
+\end{abstract}

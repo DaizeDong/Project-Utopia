@@ -1,0 +1,69 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{Why verbal--action dissociation matters for deployment.}
+A production agent that mentions an anchor in its summaries but
+does not act on it occupies the most dangerous quadrant of the
+dual probe, because every log readout looks healthy: the verbal
+channel correctly references the priority while the agent's
+behaviour quietly diverges. An agent that drops the verbal mention
+while still acting on the anchor is less immediately dangerous but
+equally invisible to verbal-only memory benchmarks, which would
+score the cell as a recall failure and miss the fact that the
+agent's behaviour is still anchored. Both directions of
+dissociation argue that the operational signal a deployment should
+monitor is the dual probe, not the verbal probe alone. Our pilot
+identifies cells in both directions across the LLM family set we
+tested.
+
+\paragraph{Why direction depends on horizon.}
+The horizon-dependent reversal observed in two of three families
+admits a mechanism hypothesis. At short horizons, the strategic
+prose surfaces the anchor verbally before policy targets have
+re-aligned to act on it, producing a verbal-lead direction. At
+longer horizons, accumulated context pushes the anchor out of the
+effective attention window of the verbal channel, while the
+policy state---which is carried forward as numeric weights rather
+than as text the model must regenerate---continues to act on the
+anchor, producing an action-lead direction. Why the frontier model
+does not flip is consistent with the same mechanism: a stronger
+in-context retrieval profile keeps the anchor verbal-accessible
+across the longer horizon. We frame this only as a hypothesis;
+the experimental design that would test it directly is a broader
+horizon sweep with multiple scenarios and is the immediate
+follow-on to the present pilot.
+
+\paragraph{Why the dual probe is not LongMemEval.}
+A natural reviewer worry is that the dual probe's $\Delta$ might
+reduce to a known long-context-recall failure: maybe the cells with
+collapsed AFR are simply cells whose models cannot do retrieval at
+those context lengths. The external probe rules this reading out.
+The two cells with the largest pilot $|\Delta|$ are DeepSeek's
+60-minute runs, both with collapsed pilot AFR in the
+$0.36$--$0.43$ range; on a standalone needle-in-haystack benchmark
+at the same order of context length the same model recalls the
+same five anchors perfectly. The substrate-coupled failure mode that
+the dual probe detects is therefore distinguishable from the
+generic retrieval-under-load failure that single-axis memory
+benchmarks measure. This is the technical reason a paired probe is
+needed at all: a deployment monitor that only watched
+verbal-recall health would have judged those DeepSeek cells fine
+and missed the dissociation entirely.
+
+\paragraph{A practical recommendation.}
+The dual probe is implementable on any structured-output agent
+loop in which a model emits both prose (a summary, a plan, a
+rationale) and a separately addressable action surface (a policy
+weight vector, a tool call set, a target priority list). The
+substrate-side machinery in this paper is one instantiation, and
+its determinism makes the probe reproducible to a SHA-256 hash in
+the no-LLM control, but the probe itself does not depend on the
+substrate. A production monitoring stack can compute AFR and AGR
+on its own logs by registering a small set of anchor terms at
+session start and scoring their presence in the verbal and action
+streams at fixed intervals; the threshold can be calibrated
+against a no-LLM baseline as we calibrate ours. The substantive
+recommendation that follows from the pilot is that verbal-only
+memory health checks are insufficient for long-horizon production
+agents, and that a paired action-grounded probe should be
+co-deployed.
