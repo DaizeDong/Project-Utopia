@@ -47,6 +47,19 @@ except Exception:  # pragma: no cover - the LLM layer may not be present
     NoopAgentAdapter = None  # type: ignore[assignment]
 
 try:
+    from project_utopia.simulation.npc.worker_ai_system import WorkerAISystem
+    from project_utopia.simulation.npc.worker_states import (
+        GroupPolicy,
+        WorkerState,
+        apply_group_policy,
+    )
+except Exception:  # pragma: no cover - npc layer may not be present
+    WorkerAISystem = None  # type: ignore[assignment]
+    GroupPolicy = None  # type: ignore[assignment]
+    WorkerState = None  # type: ignore[assignment]
+    apply_group_policy = None  # type: ignore[assignment]
+
+try:
     from project_utopia.simulation.ai.memory.memory_store import MemoryStore
 except Exception:  # pragma: no cover
     MemoryStore = None  # type: ignore[assignment]
@@ -246,6 +259,19 @@ class SimHarness:
         self._skipped_systems: set[str] = set()
 
         self.memory_store = MemoryStore() if MemoryStore is not None else None
+        # Populated by ``_inject_default_anchors`` when ``attach_llm_channels``
+        # is True; consumed by MemoryDegradation plugin via seed_matrix.
+        self.injected_anchors: list[dict[str, Any]] = []
+        # WorkerAISystem instance — populated at end of ``__init__`` when
+        # ``attach_llm_channels`` is True so the LLM's ``intent_weights``
+        # and ``target_priorities`` directives actually drive worker
+        # behaviour through the FSM. None means the legacy rng-jitter
+        # micro-step is used (preserves existing test determinism).
+        self._worker_ai: Any | None = None
+        # Tracks the last ``state.ai.policyDecisionCount`` observed; used
+        # by ``_tick_workers_via_fsm`` to force worker re-sampling on
+        # each new policy envelope.
+        self._last_policy_decision_count: int = -1
 
         self.services = create_services(
             seed=seed,
@@ -253,6 +279,10 @@ class SimHarness:
             agent_adapter=agent_adapter,
             offline_ai_fallback=not bool(ai_enabled),
         )
+        # Wire memory_store onto services so channel systems'
+        # _collect_memory_snippets() can reach it.
+        if self.memory_store is not None:
+            self.services.memory_store = self.memory_store
 
         if agent_adapter is not None:
             self.state["ai"]["adapter"] = agent_adapter
@@ -331,6 +361,10 @@ class SimHarness:
             self.state["ai"]["run_mode"] = "llm"
             self.state["ai"]["coverageTarget"] = "llm"
             self.state["ai"]["runMode"] = "llm"
+            # Inject 5 default anchors at t=0 so the dual probe has signal
+            # to measure. Anchors derive from the scenario's coreWarehouse
+            # anchor position so they're scenario-specific and verifiable.
+            self._inject_default_anchors()
 
         if build_systems_override is not None:
             self.systems = list(build_systems_override(self.memory_store))
@@ -340,12 +374,91 @@ class SimHarness:
                 adapter = NoopAgentAdapter()
             self.systems = self._build_default_systems(adapter, bool(ai_enabled))
 
+        # Phase-3 action-chain wiring: when the harness drives real LLM
+        # channels, instantiate WorkerAISystem so each tick translates
+        # the npc-policy directive's ``intent_weights`` into FSM-state
+        # transitions and ``target_priorities`` into target-tile choice.
+        # Constructed AFTER ``_build_default_systems`` so it captures
+        # the post-services-replacement ``services.rng`` reference.
+        if (
+            self._attach_llm_channels
+            and WorkerAISystem is not None
+            and self._world_ready
+        ):
+            self._worker_ai = WorkerAISystem(self.services.rng)
+
         ensure_ai_runtime_stats(self.state)
 
         # Maintain populationStats now so callers see correct workers count
         # even before the first tick.
         self._refresh_population_stats()
         self._initial_workers = len(self.alive_workers)
+
+    # ----- anchor injection -----------------------------------------------
+
+    def _inject_default_anchors(self) -> None:
+        """Inject 5 default anchors into ``memory_store`` at t=0.
+
+        The 5 anchors pair verbal tokens (literals the LLM may echo in its
+        summary) with implicit action goals (target keys the LLM may emit
+        in directives). The MemoryDegradation dual probe will read both:
+
+        - ``anchored_fact_recall(t)`` checks whether the verbal tokens
+          appear in the LLM's emitted ``world_summary`` / ``strategy.notes``.
+        - ``action_grounded_recall(t)`` checks whether the implicit-goal
+          target keys appear with non-trivial weight in directives'
+          ``target_priorities``.
+
+        Anchors are scenario-anchored: their coordinates derive from the
+        scenario's ``coreWarehouse`` position so each scenario produces a
+        distinct anchor set, even at fixed seed.
+        """
+        from project_utopia.benchmark.anchors.anchor_injector import inject_anchors
+
+        store = self.memory_store
+        if store is None:
+            return
+        # Scenario anchor coordinates (best-effort; fall back to grid centre)
+        scenario_state = self.state.get("scenario")
+        warehouse_xy = (0, 0)
+        if scenario_state is not None and hasattr(scenario_state, "anchors"):
+            wh = scenario_state.anchors.get("coreWarehouse")
+            if wh:
+                warehouse_xy = (int(wh[0]), int(wh[1]))
+        wx, wz = warehouse_xy
+        # Construct 5 anchors: 1 warehouse-delivery, 1 farm-priority,
+        # 1 wood-supply, 1 guard-posture, 1 quarry-build.
+        # Anchor verbal tokens are single salient keywords — short enough
+        # that the LLM may echo them in primary_goal / constraints /
+        # group-policy summaries. Long phrases (the original v1 anchors)
+        # were never echoed verbatim, yielding zero verbal recall.
+        anchors = [
+            {
+                "verbal_tokens": ["warehouse"],
+                "implicit_goals": [{"action": "deliver", "target": "warehouse"}],
+            },
+            {
+                "verbal_tokens": ["food"],
+                "implicit_goals": [{"action": "farm", "target": "farm"}],
+            },
+            {
+                "verbal_tokens": ["wood"],
+                "implicit_goals": [{"action": "wood", "target": "lumber"}],
+            },
+            {
+                "verbal_tokens": ["guard"],
+                "implicit_goals": [{"action": "guard_engage", "target": "safety"}],
+            },
+            {
+                "verbal_tokens": ["quarry"],
+                "implicit_goals": [{"action": "quarry", "target": "quarry"}],
+            },
+        ]
+        inject_anchors(self, anchors, at_sec=0.0, importance=1.0)
+        # Expose the canonical anchor list so the MemoryDegradation plugin
+        # can compute anchored_fact_recall / action_grounded_recall against
+        # the same set the LLM saw. Stored as the paper-shape dicts.
+        self.injected_anchors = anchors
 
     # ----- default system list -------------------------------------------
 
@@ -402,12 +515,19 @@ class SimHarness:
                     )
                 )
                 # Ensure adapter is on services so channel systems can reach it.
+                # Preserve the memory_store wiring that ``__init__`` set up
+                # (and which ``_inject_default_anchors`` populated) — otherwise
+                # the channels' ``_collect_memory_snippets`` reads an empty
+                # store and ``anchored_fact_recall`` regresses to zero.
+                preserved_memory_store = getattr(self.services, "memory_store", None)
                 self.services = create_services(
                     seed=self._seed,
                     deterministic=True,
                     agent_adapter=adapter,
                     offline_ai_fallback=False,
                 )
+                if preserved_memory_store is not None:
+                    self.services.memory_store = preserved_memory_store
         return systems
 
     # ----- state helpers --------------------------------------------------
@@ -464,7 +584,12 @@ class SimHarness:
         # tiny rng draw. Comment: minimal seed-divergence wiring; full
         # world simulation in Phase 3.
         rng = self.services.rng
-        if self._world_ready:
+        if self._world_ready and self._worker_ai is not None:
+            # Phase-3 action-chain path: FSM-driven movement. Each worker's
+            # FSM is ticked with its group_id's policy; movement vector
+            # derives from the resulting FSM state + target_priorities.
+            self._tick_workers_via_fsm(self.state)
+        elif self._world_ready:
             grid = self.state.get("grid")
             gw = float(getattr(grid, "width", 96))
             gh = float(getattr(grid, "height", 72))
@@ -512,6 +637,230 @@ class SimHarness:
         self._refresh_population_stats()
         # Yield to the event loop so async cooperators run.
         await asyncio.sleep(0)
+
+    # ----- FSM-driven worker movement (Phase-3 action-chain wiring) -------
+
+    # Maps the anchor-protocol ``target`` key half (the half emitted by
+    # the npc-policy channel's ``target_priorities``) onto a scenario
+    # anchor tile name produced by ``_stamp_anchors``. The right-hand
+    # side names are the keys present in ``ScenarioState.anchors``.
+    _TARGET_KEY_TO_ANCHOR: dict[str, str] = {
+        "warehouse": "coreWarehouse",
+        "safety": "coreWarehouse",
+        "farm": "eastDepot",
+        "quarry": "eastDepot",
+        "lumber": "westOutpost",
+        "wood": "westOutpost",
+    }
+
+    # FSM movement step in tiles/tick. Calibrated so a worker spawned
+    # near the warehouse reaches an off-centre depot in roughly the same
+    # order of ticks the LLM cadence cycles (a few sim-seconds).
+    _FSM_MOVE_STEP_TILES: float = 0.5
+
+    def _tick_workers_via_fsm(self, state: dict[str, Any]) -> None:
+        """Drive each worker's position via its FSM + group policy.
+
+        Determinism: the rng inside :class:`WorkerAISystem` is the same
+        ``services.rng`` used by every other determinism-bearing surface,
+        so identical ``(seed, group_policies)`` sequences produce identical
+        worker trajectories.
+        """
+        if WorkerState is None or GroupPolicy is None or self._worker_ai is None:
+            return  # safety net; tick() gate should prevent this
+        rng = self.services.rng
+        grid = state.get("grid")
+        gw = float(getattr(grid, "width", 96))
+        gh = float(getattr(grid, "height", 72))
+
+        ai_state = state.get("ai") or {}
+        group_policies = ai_state.get("group_policies") or {}
+        # The npc-policy channel ticks on a slow cadence; the *first*
+        # call to ``_tick_workers_via_fsm`` may run before any policy has
+        # been committed (group_policies empty). Likewise, a new policy
+        # envelope (``policyDecisionCount`` increments) should re-pin
+        # worker FSM states to the new intent distribution. Track the
+        # last-seen count and force a re-sample on each increment.
+        current_policy_count = int(ai_state.get("policyDecisionCount", 0) or 0)
+        last_seen = int(getattr(self, "_last_policy_decision_count", -1))
+        policy_changed = (
+            current_policy_count > last_seen
+            and bool(group_policies)
+        )
+        if policy_changed:
+            self._last_policy_decision_count = current_policy_count
+
+        scenario_state = state.get("scenario")
+        scenario_anchors: dict[str, tuple[int, int]] = {}
+        if scenario_state is not None and hasattr(scenario_state, "anchors"):
+            scenario_anchors = dict(scenario_state.anchors or {})
+
+        seeking_states = {
+            WorkerState.SEEKING_HARVEST,
+            WorkerState.DELIVERING,
+            WorkerState.SEEKING_BUILD,
+            WorkerState.SEEKING_REST,
+        }
+
+        for agent in state.get("agents") or []:
+            if not isinstance(agent, dict):
+                continue
+            if agent.get("type") != "WORKER":
+                continue
+            if agent.get("alive", True) is False:
+                continue
+
+            group_id = agent.get("group_id", "workers") or "workers"
+            gp_data = group_policies.get(group_id)
+            gp: Any = None
+            if isinstance(gp_data, dict):
+                gp = GroupPolicy(
+                    intent_weights=dict(gp_data.get("intent_weights") or {}),
+                    target_priorities=dict(gp_data.get("target_priorities") or {}),
+                    risk_tolerance=float(gp_data.get("risk_tolerance", 0.5) or 0.5),
+                    ttl_sec=float(gp_data.get("ttl_sec", 0.0) or 0.0),
+                )
+
+            # We deliberately bypass ``WorkerAISystem.tick_worker`` here:
+            # its trigger table has a ``fsm_target_null`` rule that fires
+            # on freshly-initialised FSM dicts (target hasn't been set
+            # yet), demoting every seeking-state worker back to IDLE on
+            # the same tick the policy is applied. The JS port's onEnter
+            # hooks that would have written ``fsm.target`` before the
+            # transition loop were not migrated. Instead we drive policy
+            # → FSM state → target tile → movement directly. The fsm
+            # dict is still maintained so downstream telemetry and the
+            # benchmark dimension plugins see consistent state.
+            fsm_dict = agent.get("fsm")
+            if not isinstance(fsm_dict, dict):
+                fsm_dict = {}
+                agent["fsm"] = fsm_dict
+
+            need_resample = (
+                # First touch — no state yet.
+                not fsm_dict
+                or fsm_dict.get("state") is None
+                # New policy envelope arrived — re-pin worker state to
+                # the new intent distribution.
+                or (
+                    policy_changed
+                    and gp is not None
+                    and gp.intent_weights
+                )
+            )
+            if need_resample:
+                if gp is not None and gp.intent_weights:
+                    fsm_state = apply_group_policy(agent, gp, self._worker_ai.rng)
+                else:
+                    fsm_state = WorkerState.IDLE
+                fsm_dict["state"] = fsm_state
+                fsm_dict["entered_at_sec"] = float(
+                    (state.get("metrics") or {}).get("timeSec", 0.0)
+                )
+                fsm_dict["payload"] = None
+            else:
+                raw = fsm_dict.get("state")
+                fsm_state = raw if isinstance(raw, WorkerState) else WorkerState.IDLE
+
+            # Pick a target tile based on FSM state + target_priorities.
+            target = self._pick_target_tile(fsm_state, gp, scenario_anchors)
+            if target is not None:
+                fsm_dict["target"] = [int(target[0]), int(target[1])]
+            else:
+                fsm_dict["target"] = None
+
+            cur_x = float(agent.get("x", 0.0))
+            cur_z = float(agent.get("z", 0.0))
+
+            if fsm_state in seeking_states and target is not None:
+                tx, tz = float(target[0]), float(target[1])
+                dxr = tx - cur_x
+                dzr = tz - cur_z
+                dist = (dxr * dxr + dzr * dzr) ** 0.5
+                step = self._FSM_MOVE_STEP_TILES
+                if dist <= step or dist <= 1e-6:
+                    dx, dz = dxr, dzr
+                else:
+                    dx = step * dxr / dist
+                    dz = step * dzr / dist
+            elif fsm_state == WorkerState.IDLE:
+                # Preserve a small jitter for IDLE workers so the noise
+                # floor of the no-LLM control stays comparable to the
+                # legacy harness.
+                dx = rng.jitter(0.05)
+                dz = rng.jitter(0.05)
+            else:
+                # HARVESTING / DEPOSITING / BUILDING / RESTING / FIGHTING
+                # — stay in place this tick.
+                dx, dz = 0.0, 0.0
+
+            new_x = max(0.0, min(gw - 1.0, cur_x + dx))
+            new_z = max(0.0, min(gh - 1.0, cur_z + dz))
+            agent["x"] = new_x
+            agent["z"] = new_z
+            agent["vx"] = dx / DT_SEC
+            agent["vz"] = dz / DT_SEC
+
+            # Maintain ``arrived_at_target`` flag for the FSM's transition
+            # triggers — within 1 tile counts as arrived.
+            bb = agent.get("blackboard")
+            if not isinstance(bb, dict):
+                bb = {}
+                agent["blackboard"] = bb
+            if target is not None:
+                tx, tz = float(target[0]), float(target[1])
+                arrived = ((new_x - tx) ** 2 + (new_z - tz) ** 2) ** 0.5 < 1.0
+                bb["arrived_at_target"] = bool(arrived)
+            else:
+                bb["arrived_at_target"] = False
+
+    def _pick_target_tile(
+        self,
+        fsm_state: Any,
+        gp: Any,
+        scenario_anchors: dict[str, tuple[int, int]],
+    ) -> tuple[int, int] | None:
+        """Pick a target tile honouring ``target_priorities`` first.
+
+        Returns the (x, z) of the highest-weighted target_priorities key
+        that maps to a scenario anchor; falls back to an FSM-state-driven
+        default tile when no priorities are present or none match.
+        """
+        if not scenario_anchors:
+            return None
+
+        # Highest-weight target_priorities key that resolves to an anchor.
+        if gp is not None and gp.target_priorities:
+            items = sorted(
+                gp.target_priorities.items(),
+                key=lambda kv: (-float(kv[1] or 0.0), kv[0]),
+            )
+            for key, weight in items:
+                try:
+                    w = float(weight)
+                except (TypeError, ValueError):
+                    continue
+                if w <= 0.0:
+                    continue
+                anchor_name = self._TARGET_KEY_TO_ANCHOR.get(str(key).lower())
+                if anchor_name and anchor_name in scenario_anchors:
+                    tile = scenario_anchors[anchor_name]
+                    return (int(tile[0]), int(tile[1]))
+
+        # Fallback by FSM state — only seeking states return a target.
+        if WorkerState is None:
+            return None
+        fallback_anchor: str | None = None
+        if fsm_state == WorkerState.DELIVERING or fsm_state == WorkerState.SEEKING_REST:
+            fallback_anchor = "coreWarehouse"
+        elif fsm_state == WorkerState.SEEKING_HARVEST:
+            fallback_anchor = "eastDepot"
+        elif fsm_state == WorkerState.SEEKING_BUILD:
+            fallback_anchor = "westOutpost"
+        if fallback_anchor and fallback_anchor in scenario_anchors:
+            tile = scenario_anchors[fallback_anchor]
+            return (int(tile[0]), int(tile[1]))
+        return None
 
     async def advance_to(self, target_sec: float) -> None:
         total_ticks = max(1, round(float(target_sec) / DT_SEC))

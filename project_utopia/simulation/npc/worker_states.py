@@ -178,7 +178,18 @@ POLICY_INTENT_TO_STATE: MappingProxyType[str, WorkerState] = MappingProxyType(
         "wander": WorkerState.IDLE,
         "rest": WorkerState.SEEKING_REST,
         "fight": WorkerState.FIGHTING,
+        # Combat-style alias emitted by the npc-policy channel for the
+        # ``guard_engage`` anchor goal — routes to the same FSM state as
+        # ``fight``.
+        "guard_engage": WorkerState.FIGHTING,
         "harvest": WorkerState.SEEKING_HARVEST,
+        # Resource-specific harvest aliases. The dual-probe anchor set
+        # surfaces these as the action_key half of the (verbal, action)
+        # pairs (food→farm, wood→wood, stone→quarry); routing them all
+        # to SEEKING_HARVEST lets the FSM dispatch on role/target tile.
+        "farm": WorkerState.SEEKING_HARVEST,
+        "wood": WorkerState.SEEKING_HARVEST,
+        "quarry": WorkerState.SEEKING_HARVEST,
         "deliver": WorkerState.DELIVERING,
         "build": WorkerState.SEEKING_BUILD,
     }

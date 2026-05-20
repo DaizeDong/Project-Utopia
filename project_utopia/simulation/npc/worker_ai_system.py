@@ -226,7 +226,16 @@ class WorkerAISystem:
         """
         self.stats["ticks"] += 1
 
-        fsm = getattr(worker, "fsm", None)
+        # Workers may be either dataclass objects (slotted) or dict
+        # snapshots (the SimHarness path stores ``asdict(Worker)`` in
+        # ``state["agents"]``). Both shapes are supported by reading
+        # via ``getattr`` (slotted) or ``__getitem__`` (dict) and
+        # writing via the same paths.
+        is_dict = isinstance(worker, dict)
+        if is_dict:
+            fsm = worker.get("fsm")
+        else:
+            fsm = getattr(worker, "fsm", None)
         if fsm is None or (isinstance(fsm, dict) and not fsm):
             initial = (
                 apply_group_policy(worker, group_policy, self.rng)
@@ -234,7 +243,10 @@ class WorkerAISystem:
                 else WorkerState.IDLE
             )
             fsm = {"state": initial, "entered_at_sec": 0.0, "target": None, "payload": None}
-            setattr(worker, "fsm", fsm)
+            if is_dict:
+                worker["fsm"] = fsm
+            else:
+                setattr(worker, "fsm", fsm)
             if group_policy is not None:
                 self.stats["policy_applies"] += 1
 
@@ -251,10 +263,13 @@ class WorkerAISystem:
         # Single-write of the display label.
         label = DISPLAY_LABEL.get(_get_fsm_state(fsm))
         if label is not None:
-            try:
-                setattr(worker, "state_label", label)
-            except AttributeError:
-                pass
+            if is_dict:
+                worker["state_label"] = label
+            else:
+                try:
+                    setattr(worker, "state_label", label)
+                except AttributeError:
+                    pass
 
         return _get_fsm_state(fsm)
 
