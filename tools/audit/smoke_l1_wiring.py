@@ -74,6 +74,7 @@ def _run_one(seed: int = 0xBEEF, duration_sec: float = 60.0) -> dict[str, Any]:
         distances.append(math.hypot(x1 - x0, z1 - z0))
     group_policies = (harness.state.get("ai") or {}).get("group_policies") or {}
     workers_policy = group_policies.get("workers") or {}
+    final_resources = dict(harness.state.get("resources") or {})
     return {
         "seed": hex(seed),
         "initial_positions": initial_positions,
@@ -87,6 +88,7 @@ def _run_one(seed: int = 0xBEEF, duration_sec: float = 60.0) -> dict[str, Any]:
         "fsm_state_counts": fsm_state_counts,
         "arrived_anywhere": arrived_anywhere,
         "n_workers": len(final_positions),
+        "final_resources": final_resources,
     }
 
 
@@ -102,6 +104,7 @@ def main() -> int:
     print(f"  worker movement distance: max={r1['distance_max']:.2f} tiles, mean={r1['distance_mean']:.2f} tiles")
     print(f"  fsm_state_counts={r1['fsm_state_counts']}")
     print(f"  arrived_at_target (any worker, any tick)={r1['arrived_anywhere']}")
+    print(f"  final resources={r1['final_resources']}")
 
     # Determinism check
     r2 = _run_one(seed=0xBEEF, duration_sec=60.0)

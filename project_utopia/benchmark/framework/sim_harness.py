@@ -60,6 +60,11 @@ except Exception:  # pragma: no cover - npc layer may not be present
     apply_group_policy = None  # type: ignore[assignment]
 
 try:
+    from project_utopia.simulation.economy.resource_system import ResourceSystem
+except Exception:  # pragma: no cover - economy may not be present
+    ResourceSystem = None  # type: ignore[assignment]
+
+try:
     from project_utopia.simulation.ai.memory.memory_store import MemoryStore
 except Exception:  # pragma: no cover
     MemoryStore = None  # type: ignore[assignment]
@@ -386,6 +391,17 @@ class SimHarness:
             and self._world_ready
         ):
             self._worker_ai = WorkerAISystem(self.services.rng)
+            # L2: append ResourceSystem so colony food consumption is
+            # actually modelled (not the flat decay stub). This means
+            # the LLM's intent_weights choice between farm/wood/quarry/
+            # deliver/wander has observable stakes — only ``farm`` /
+            # ``wood`` / ``quarry`` produce resources via the harvest
+            # bonus in ``_tick_workers_via_fsm``; everything else lets
+            # the colony bleed. Inserted before the channel systems so
+            # the LLM sees the updated resource counts on its next
+            # observation.
+            if ResourceSystem is not None:
+                self.systems.insert(1, ResourceSystem())
 
         ensure_ai_runtime_stats(self.state)
 
@@ -616,17 +632,18 @@ class SimHarness:
 
             # Minimal-economy stub: workers consume food at a flat per-tick
             # rate so DTE / RAE plugins produce non-zero deltas in the
-            # fallback smoke. Phase-3 replaces this with the real
-            # ResourceSystem (already ported, just not yet ticked by the
-            # harness). The flat rate is deterministic given (seed, tick).
-            workers_alive = sum(
-                1 for a in self.state.get("agents") or []
-                if isinstance(a, dict) and a.get("type") == "WORKER" and a.get("alive", True) is not False
-            )
-            resources = self.state.setdefault("resources", {})
-            resources["food"] = max(
-                0.0, float(resources.get("food", 0.0)) - workers_alive * 0.05 * DT_SEC
-            )
+            # fallback smoke. When ``attach_llm_channels=True``, the
+            # real :class:`ResourceSystem` is now in ``self.systems`` so
+            # we skip this stub to avoid double-decrementing food.
+            if self._worker_ai is None:
+                workers_alive = sum(
+                    1 for a in self.state.get("agents") or []
+                    if isinstance(a, dict) and a.get("type") == "WORKER" and a.get("alive", True) is not False
+                )
+                resources = self.state.setdefault("resources", {})
+                resources["food"] = max(
+                    0.0, float(resources.get("food", 0.0)) - workers_alive * 0.05 * DT_SEC
+                )
         else:
             # Fallback: advance food by an rng draw so hashes still differ
             # across seeds even without a real world. Documented as minimal
@@ -642,21 +659,36 @@ class SimHarness:
 
     # Maps the anchor-protocol ``target`` key half (the half emitted by
     # the npc-policy channel's ``target_priorities``) onto a scenario
-    # anchor tile name produced by ``_stamp_anchors``. The right-hand
-    # side names are the keys present in ``ScenarioState.anchors``.
-    _TARGET_KEY_TO_ANCHOR: dict[str, str] = {
-        "warehouse": "coreWarehouse",
-        "safety": "coreWarehouse",
-        "farm": "eastDepot",
-        "quarry": "eastDepot",
-        "lumber": "westOutpost",
-        "wood": "westOutpost",
+    # anchor tile name + the resource type that target produces when a
+    # worker harvests there. The resource hint drives L2's yield rule.
+    # ``None`` resource means the anchor is a deposit point, not a
+    # harvest source.
+    _TARGET_KEY_TO_ANCHOR: dict[str, tuple[str, str | None]] = {
+        "warehouse": ("coreWarehouse", None),
+        "safety": ("coreWarehouse", None),
+        "farm": ("eastDepot", "food"),
+        "quarry": ("eastDepot", "stone"),
+        "lumber": ("westOutpost", "wood"),
+        "wood": ("westOutpost", "wood"),
     }
 
     # FSM movement step in tiles/tick. Calibrated so a worker spawned
     # near the warehouse reaches an off-centre depot in roughly the same
     # order of ticks the LLM cadence cycles (a few sim-seconds).
     _FSM_MOVE_STEP_TILES: float = 0.5
+
+    # L2: per-tick resource yield when a worker in a seeking-harvest
+    # state arrives at its target. Tuned to roughly balance the
+    # 0.030 food/sec/worker consumption modelled by ResourceSystem:
+    # one harvesting worker covers roughly 2 workers' subsistence,
+    # so the colony can survive iff the LLM keeps enough workers in
+    # the harvest direction. Wood and stone yields are smaller because
+    # those resources have lower consumption.
+    _HARVEST_YIELD_PER_TICK: dict[str, float] = {
+        "food": 0.010,
+        "wood": 0.006,
+        "stone": 0.004,
+    }
 
     def _tick_workers_via_fsm(self, state: dict[str, Any]) -> None:
         """Drive each worker's position via its FSM + group policy.
@@ -763,11 +795,14 @@ class SimHarness:
                 fsm_state = raw if isinstance(raw, WorkerState) else WorkerState.IDLE
 
             # Pick a target tile based on FSM state + target_priorities.
-            target = self._pick_target_tile(fsm_state, gp, scenario_anchors)
+            target, resource_hint = self._pick_target_tile(
+                fsm_state, gp, scenario_anchors
+            )
             if target is not None:
                 fsm_dict["target"] = [int(target[0]), int(target[1])]
             else:
                 fsm_dict["target"] = None
+            fsm_dict["resource_hint"] = resource_hint
 
             cur_x = float(agent.get("x", 0.0))
             cur_z = float(agent.get("z", 0.0))
@@ -807,29 +842,72 @@ class SimHarness:
             if not isinstance(bb, dict):
                 bb = {}
                 agent["blackboard"] = bb
+            arrived = False
             if target is not None:
                 tx, tz = float(target[0]), float(target[1])
                 arrived = ((new_x - tx) ** 2 + (new_z - tz) ** 2) ** 0.5 < 1.0
-                bb["arrived_at_target"] = bool(arrived)
-            else:
-                bb["arrived_at_target"] = False
+            bb["arrived_at_target"] = bool(arrived)
+
+            # L2 yield rule: a worker in a harvest-seeking state, arrived
+            # at a target whose anchor produces a resource, adds to the
+            # colony stockpile each tick it remains there. This is the
+            # mechanism through which the LLM's intent_weights and
+            # target_priorities choices acquire observable stakes — the
+            # next strategic-plan / npc-policy / colony-agent prompt
+            # reads the (changed) resource counts via PromptPayload.
+            if (
+                arrived
+                and fsm_state == WorkerState.SEEKING_HARVEST
+                and resource_hint is not None
+            ):
+                yield_per_tick = self._HARVEST_YIELD_PER_TICK.get(resource_hint, 0.0)
+                if yield_per_tick > 0.0:
+                    resources = state.setdefault("resources", {})
+                    resources[resource_hint] = (
+                        float(resources.get(resource_hint, 0.0)) + yield_per_tick
+                    )
+
+    # Per-FSM-state set of compatible ``target_priorities`` keys. A
+    # SEEKING_HARVEST worker should only consider harvest tiles even if
+    # the LLM weighted ``warehouse`` highest; a DELIVERING worker
+    # should only consider deposit tiles. This separation is what
+    # gives ``intent_weights`` and ``target_priorities`` their distinct
+    # semantic roles (what-to-do vs where-to-do-it).
+    @staticmethod
+    def _compatible_target_keys(fsm_state: Any) -> set[str]:
+        if WorkerState is None:
+            return set()
+        if fsm_state == WorkerState.SEEKING_HARVEST:
+            return {"farm", "wood", "lumber", "quarry"}
+        if fsm_state == WorkerState.DELIVERING:
+            return {"warehouse", "safety"}
+        if fsm_state == WorkerState.SEEKING_REST:
+            return {"warehouse", "safety"}
+        if fsm_state == WorkerState.SEEKING_BUILD:
+            return {"lumber", "wood"}
+        return set()
 
     def _pick_target_tile(
         self,
         fsm_state: Any,
         gp: Any,
         scenario_anchors: dict[str, tuple[int, int]],
-    ) -> tuple[int, int] | None:
-        """Pick a target tile honouring ``target_priorities`` first.
+    ) -> tuple[tuple[int, int] | None, str | None]:
+        """Pick a target tile honouring ``target_priorities`` first,
+        restricted to keys compatible with the current FSM state.
 
-        Returns the (x, z) of the highest-weighted target_priorities key
-        that maps to a scenario anchor; falls back to an FSM-state-driven
-        default tile when no priorities are present or none match.
+        Returns ``((x, z), resource_hint)`` where ``resource_hint`` is
+        the resource key (food/wood/stone) that the chosen anchor
+        produces when harvested, or ``None`` if the anchor is a deposit
+        point. Both values are ``None`` when no target resolves.
         """
         if not scenario_anchors:
-            return None
+            return (None, None)
+        compatible = self._compatible_target_keys(fsm_state)
+        if not compatible:
+            return (None, None)
 
-        # Highest-weight target_priorities key that resolves to an anchor.
+        # Highest-weight COMPATIBLE target_priorities key.
         if gp is not None and gp.target_priorities:
             items = sorted(
                 gp.target_priorities.items(),
@@ -842,25 +920,27 @@ class SimHarness:
                     continue
                 if w <= 0.0:
                     continue
-                anchor_name = self._TARGET_KEY_TO_ANCHOR.get(str(key).lower())
-                if anchor_name and anchor_name in scenario_anchors:
+                key_lc = str(key).lower()
+                if key_lc not in compatible:
+                    continue
+                entry = self._TARGET_KEY_TO_ANCHOR.get(key_lc)
+                if entry is None:
+                    continue
+                anchor_name, resource_hint = entry
+                if anchor_name in scenario_anchors:
                     tile = scenario_anchors[anchor_name]
-                    return (int(tile[0]), int(tile[1]))
+                    return ((int(tile[0]), int(tile[1])), resource_hint)
 
-        # Fallback by FSM state — only seeking states return a target.
-        if WorkerState is None:
-            return None
-        fallback_anchor: str | None = None
-        if fsm_state == WorkerState.DELIVERING or fsm_state == WorkerState.SEEKING_REST:
-            fallback_anchor = "coreWarehouse"
-        elif fsm_state == WorkerState.SEEKING_HARVEST:
-            fallback_anchor = "eastDepot"
-        elif fsm_state == WorkerState.SEEKING_BUILD:
-            fallback_anchor = "westOutpost"
-        if fallback_anchor and fallback_anchor in scenario_anchors:
-            tile = scenario_anchors[fallback_anchor]
-            return (int(tile[0]), int(tile[1]))
-        return None
+        # Fallback: deterministic first-compatible anchor.
+        for key_lc in sorted(compatible):
+            entry = self._TARGET_KEY_TO_ANCHOR.get(key_lc)
+            if entry is None:
+                continue
+            anchor_name, resource_hint = entry
+            if anchor_name in scenario_anchors:
+                tile = scenario_anchors[anchor_name]
+                return ((int(tile[0]), int(tile[1])), resource_hint)
+        return (None, None)
 
     async def advance_to(self, target_sec: float) -> None:
         total_ticks = max(1, round(float(target_sec) / DT_SEC))
