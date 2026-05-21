@@ -39,15 +39,20 @@ dissociation (verbal stays, action drops) from goal displacement
 (action moves to a different goal). We introduce a four-channel
 structured-output substrate---a deterministic colony simulation in
 which a single LLM emits directives across four channels at three
-nested cadences against a fixed tool surface---and an anchor
-injection protocol that makes the dual probe directly measurable.
-And we report a pilot across three LLM families spanning the
-deployment spectrum (frontier closed-weight, mid-tier closed-weight,
-open-weight) at two horizons, establishing that the dissociation
-reaches threshold magnitude on a controlled probe, stratifies by
-model tier, and reverses direction with horizon for non-frontier
-families. To distinguish the dissociation from a generic
-long-context-recall failure, we additionally run an external
-LongMemEval-style needle-in-haystack probe on the same models at
-matched context lengths; the contrast between the substrate and
-external readings is itself one of the paper's findings.
+nested cadences against a fixed tool surface, with the
+\textsf{intent\_weights} and \textsf{target\_priorities} channels
+wired into worker behaviour so that action-grounded recall reflects
+observable resource flow---and an anchor injection protocol that
+makes the dual probe directly measurable. And we report a pilot
+across three LLM families spanning the deployment spectrum
+(frontier closed-weight, mid-tier closed-weight, open-weight) at
+two horizons, observing on this substrate that a dissociation
+reaches threshold magnitude, stratifies by model tier, and
+reverses direction with horizon for non-frontier families. To
+distinguish the dissociation from a generic long-context-recall
+failure, we additionally run an external LongMemEval-style
+needle-in-haystack probe on the same models at matched context
+lengths; the contrast between the substrate and external readings
+is itself one of the paper's findings. We frame the result as a
+substrate-coupled pilot: whether the dissociation surfaces on
+agent loops we did not design is an explicit open question.

@@ -72,20 +72,28 @@ SCENARIOS: tuple[str, ...] = (
 )
 
 SEEDS_HEX: tuple[str, ...] = (
+    # Stage A's 3 seeds; the 2 reserved seeds (0xDEADBEEF, 0xFEED) are
+    # held out for a follow-on run once the headline-Δ pattern is
+    # confirmed on the matched-Stage-A subset.
     "0xC0FFEE",
     "0xBEEF",
     "0xCAFE",
-    "0xDEADBEEF",
-    "0xFEED",
 )
 
-# 4 horizons in sim-seconds (10 min, 30 min, 60 min, 4 h).
-HORIZONS_SEC: tuple[int, ...] = (600, 1800, 3600, 14400)
+# 2 horizons matching Stage A / Stage B (10 min and 60 min). The
+# longer pre-registered horizons (30 min, 4 h) are held out for
+# round 2 once the matched subset is in.
+HORIZONS_SEC: tuple[int, ...] = (600, 3600)
 
 # Pre-registered paper anchors.
 EXPERIMENT_ID: str = "E1"
 CELL_TYPE: str = "SS"           # 4-channel real-LLM cell
-CADENCE_MULT: float = 6.0       # env-director every 48 s instead of 8 s
+# Throttled to stay under the proxy's global 15-req/min cap. With
+# cadence=30 and a 3600-sim-sec cell the harness emits ~30 LLM calls
+# (env-director and npc-policy each every 240 s; strategic-plan
+# every 2700 s; colony-agent event-gated). Tested live on a 600-sec
+# cell: 80/85 calls succeeded, 5 fallback.
+CADENCE_MULT: float = 30.0
 DELTA_THRESHOLD: float = 0.30   # pre-registered hypothesis H
 
 # Metric dim keys emitted on the NDJSON wire by MemoryDegradation plugin.
