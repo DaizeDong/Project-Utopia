@@ -6,10 +6,12 @@ directives ceasing to reflect anchors the summaries continue to
 mention. We name this \emph{stale coherence} and propose a
 \emph{dual probe}---paired verbal and action-grounded recall---for
 tick-continuous structured-output agent loops. We instantiate it
-on a deterministic colony-simulation substrate that wires
-\textsf{intent\_weights} / \textsf{target\_priorities} into worker
-behaviour and resource flow, so action-grounded recall reflects
-observable behaviour rather than a schema-local token echo. A
+on a deterministic colony-simulation substrate whose action chain
+translates the LLM's \textsf{intent\_weights} and
+\textsf{target\_priorities} into worker FSM transitions and
+resource flow, so the action-channel directives the probe scores
+have downstream consequences rather than being emitted into a
+no-op slot. A
 pilot across three model families at two horizons yields three
 observations: dissociation crosses our pre-registered
 $|\Delta| > 0.3$ threshold in four of eighteen cells; magnitude at
