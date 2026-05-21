@@ -44,15 +44,15 @@ nested cadences against a fixed tool surface, with the
 wired into worker behaviour so that action-grounded recall reflects
 observable resource flow---and an anchor injection protocol that
 makes the dual probe directly measurable. And we report a pilot
-across three LLM families spanning the deployment spectrum
-(frontier closed-weight, mid-tier closed-weight, open-weight) at
-two horizons, observing on this substrate that a dissociation
-reaches threshold magnitude, stratifies by model tier, and
-reverses direction with horizon for non-frontier families. To
-distinguish the dissociation from a generic long-context-recall
-failure, we additionally run an external LongMemEval-style
-needle-in-haystack probe on the same models at matched context
-lengths; the contrast between the substrate and external readings
-is itself one of the paper's findings. We frame the result as a
+of DeepSeek-v4-Flash across three scenarios at two horizons,
+observing on this substrate that a dissociation reaches threshold
+magnitude in two of eighteen cells, stratifies by scenario, and
+attenuates with horizon---consistent with a feedback-loop reading
+in which the substrate's updated worker positions and resource
+counts return into each subsequent prompt. A prior external
+LongMemEval-style probe on three model families at matched context
+lengths recalls every recovered anchor perfectly; the contrast
+between the substrate and external readings is itself one of the
+paper's findings. We frame the result as a
 substrate-coupled pilot: whether the dissociation surfaces on
 agent loops we did not design is an explicit open question.

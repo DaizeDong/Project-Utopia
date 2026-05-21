@@ -11,16 +11,20 @@ translates the LLM's \textsf{intent\_weights} and
 \textsf{target\_priorities} into worker FSM transitions and
 resource flow, so the action-channel directives the probe scores
 have downstream consequences rather than being emitted into a
-no-op slot. A
-pilot across three model families at two horizons yields three
-observations: dissociation crosses our pre-registered
-$|\Delta| > 0.3$ threshold in four of eighteen cells; magnitude at
-the 60-minute horizon orders by tier ($0.018 < 0.146 < 0.283$);
-and direction reverses with horizon for non-frontier families. An
-external LongMemEval-style needle-in-haystack probe on the same
-models at matched context lengths recalls every recovered anchor
-perfectly, so the dissociation is distinct from generic
-long-context-recall failure. We frame the result as a
+no-op slot. A pilot of DeepSeek-v4-Flash across three scenarios at two
+horizons yields three observations: dissociation crosses our
+pre-registered $|\Delta| > 0.3$ threshold in two of eighteen
+cells; the 10-minute means separate by scenario
+(${+}0.24$ verbal-lead in \textsf{fortified\_basin}, ${-}0.08$
+action-lead in \textsf{rugged\_highlands},
+${+}0.06$ neutral in \textsf{temperate\_plains}); and the
+magnitude attenuates roughly $2.5\times$ from the 10-minute to the
+60-minute horizon, consistent with a feedback-loop interpretation
+in which the substrate's updated state returns into each
+subsequent prompt. A prior external LongMemEval-style probe at
+matched context lengths recalls every recovered anchor perfectly,
+so the dissociation is distinct from generic long-context-recall
+failure. We frame the result as a
 substrate-coupled pilot whose generalisation to non-colony agent
 loops is an explicit open question, and release the substrate and
 dual-probe toolkit as open source.
