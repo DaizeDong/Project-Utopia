@@ -45,6 +45,22 @@ four-hour ceiling. Table~\ref{tab:e1-stageb} reports the
 per-(scenario, horizon) aggregate;
 Figure~\ref{fig:alpha:trajectory} overlays the trajectories.
 
+\paragraph{Threshold sensitivity.}
+The pre-registered $|\Delta| > 0.3$ threshold is six times the
+no-LLM noise floor ($|\Delta| < 0.05$ in the constant-policy
+control), but the threshold itself is a choice and a reviewer can
+reasonably ask whether the H1 outcome is robust to other choices.
+Across the eighteen cells, $|\Delta|$ values above $0.40$ occur in
+zero cells, above $0.30$ in two, above $0.25$ in three, above
+$0.20$ in three, and above $0.15$ in four. The 0/2/3/3/4
+progression is monotone---there is no sudden jump at the
+pre-registered threshold---and the H1 outcome at any threshold in
+$[0.2, 0.3]$ would be that the hypothesis is satisfied (one to
+three cells in the matrix cross). We report this as a sensitivity
+note rather than as an additional test: the pre-registered
+threshold remains the headline, and the broader matrix is needed
+to characterise the sensitivity profile properly.
+
 \begin{figure}[t]
   \centering
   \includegraphics[width=0.95\linewidth]{figures/fig_route_alpha_delta_trajectory.pdf}
