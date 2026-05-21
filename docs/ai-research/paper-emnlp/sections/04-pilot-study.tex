@@ -199,17 +199,16 @@ is constant, Spearman $\rho(|\Delta|,
 report the ceiling outcome rather than a numerical correlation.
 
 \paragraph{Reading.}
-The ceiling outcome is a stronger decoupling result than a low
-$|\rho|$ would have been. The cells with the largest $|\Delta|$
-on the original three-family pilot, including DeepSeek-v4-Flash
-at the 60-minute horizon with $|\Delta|$ reaching $0.43$,
-recalled the external anchors perfectly on the same retrieval
-question outside the substrate loop. The dissociation the dual
-probe scores is therefore not the same failure mode that
-LongMemEval-style benchmarks measure; if it were, the same models
-on the same orders of context length would have failed the
-external probe too. The qualifications remain: the joinable
-matrix is narrow, the ceiling effect is itself a soft limit, and
-the deepseek-only matrix we report in
-Sections~\ref{sec:pilot:h1}--\ref{sec:pilot:horizon} awaits a
-matched external probe of its own.
+At the difficulty level the LongMemEval-style probe sets, the
+three pre-registered model families (including the DeepSeek-v4-Flash
+family reported in Section~\ref{sec:pilot:h1}) recall every
+anchor on a standalone retrieval question at the matched
+$\sim$4\,000- and $\sim$25\,000-token context lengths. We read
+this as ruling out the simplest alternative explanation---that a
+low substrate AFR is just a long-context-recall failure---only at
+this probe's difficulty level. We do not interpret the ceiling as
+positive evidence of decoupling; that interpretation requires a
+harder external probe that induces variance, plus a matched rerun
+on the exact eighteen DeepSeek cells reported in
+Sections~\ref{sec:pilot:h1}--\ref{sec:pilot:horizon}. Both are
+open work.
