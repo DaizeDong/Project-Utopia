@@ -241,17 +241,17 @@ sampled deterministically by seed from one of three scenario
 scripts (\textsf{easy} / \textsf{noisy} / \textsf{adversarial}).
 
 \paragraph{Results.}
-We run the matrix with the same model (DeepSeek-v4-Flash), the
-same three seeds, and two horizons (5 and 15 turns---short and
-long analogues of the colony pilot's 10- and 60-sim-minute
-horizons). At the time of writing the matrix is partially
-complete: the \textsf{easy} and \textsf{noisy} scenarios are
-finished ($n = 12$ cells), and the \textsf{adversarial} scenario
-is in progress ($n = 1$ of $6$ cells available). Across the
-thirteen cells available, \textbf{seven cross $|\Delta| > 0.3$
-(54\%)}, in both directions (four verbal-lead at $\Delta$
-up to $+0.80$, three action-lead at $\Delta$ down to $-0.80$).
-Table~\ref{tab:e1-h3} reports per-(scenario, horizon) aggregates.
+We run an $18$-cell matrix with the same model (DeepSeek-v4-Flash),
+the same three seeds, and two horizons (5 and 15 turns---short
+and long analogues of the colony pilot's 10- and 60-sim-minute
+horizons). Across the eighteen cells, \textbf{ten cross
+$|\Delta| > 0.3$ ($56\%$)}, in both directions (six verbal-lead
+with $\Delta$ up to $+0.80$, four action-lead with $\Delta$ down
+to $-0.80$). Crossings appear in every scenario, with the
+\textsf{adversarial} scenario yielding the highest crossing
+rate ($4/6$, $|\bar\Delta_{5t}| = 0.40$ action-lead).
+Table~\ref{tab:e1-h3} reports per-(scenario, horizon)
+aggregates.
 
 \begin{table}[t]
   \centering
@@ -265,33 +265,37 @@ Table~\ref{tab:e1-h3} reports per-(scenario, horizon) aggregates.
     \textsf{easy}        & 15 & $\phantom{-}0.00{\pm}0.40$ & $0.00$ & $\mathbf{2/3}$ \\
     \textsf{noisy}       & 5  & $+0.20{\pm}0.72$ & $0.20$ & $\mathbf{3/3}$ \\
     \textsf{noisy}       & 15 & $\phantom{-}0.00{\pm}0.20$ & $0.00$ & $0/3$ \\
-    \textsf{adversarial} & 5  & $-0.80\phantom{{\pm}0.00}$ & $0.80$ & $\mathbf{1/1}$ \\
+    \textsf{adversarial} & 5  & $-0.40{\pm}0.53$ & $0.40$ & $\mathbf{2/3}$ \\
+    \textsf{adversarial} & 15 & $\phantom{-}0.00{\pm}0.53$ & $0.00$ & $\mathbf{2/3}$ \\
     \bottomrule
   \end{tabular}
   \caption{Cross-substrate dual probe on the dialogue agent loop
   ($\Delta$ at the final turn, mean~$\pm$~sample std across $n = 3$
-  seeds per condition where the matrix completed). The substrate
-  shares no code with the colony simulation; the dual-probe
-  definitions (Section~\ref{sec:method:probe}) are unchanged. The
-  \textsf{adversarial} scenario was incomplete at submission with
-  $n = 1$; the in-progress run is reported transparently rather
-  than dropped.}
+  seeds per condition). The substrate shares no code with the
+  colony simulation; the dual-probe definitions
+  (Section~\ref{sec:method:probe}) are unchanged.}
   \label{tab:e1-h3}
 \end{table}
 
 \paragraph{Reading.}
 The dual probe surfaces threshold-crossing dissociation in both
-directions on the dialogue substrate at a rate ($7/13 = 54\%$)
+directions on the dialogue substrate at a rate ($10/18 = 56\%$)
 substantially above the colony substrate ($2/18 = 11\%$). We do
 not interpret the magnitude difference as a substrate ranking---a
-turn-based dialogue accumulates context faster and exposes more
-points at which the verbal and action calls can diverge---but
-the central kill-argument worry that the colony result might be
+turn-based dialogue with two independently-sampled LLM calls per
+turn exposes more drift opportunities than a multi-cadence
+simulation with cross-tick context carry---but the central
+kill-argument worry that the colony result might be
 colony-specific is the wrong worry: the cross-substrate result
 goes in the same direction (bidirectional dissociation, both
-threshold-crossing cells and threshold-undershooting cells), with
-the same probe definitions, on a substrate written from scratch
-in a different domain with a different action surface. This is
-one second instantiation, not a generality proof, but it
-converts the closed-loop concern from ``possibly an artefact'' to
-``observed in two independent substrates''.
+threshold-crossing cells and threshold-undershooting cells),
+with the same probe definitions, on a substrate written from
+scratch in a different domain with a different action surface.
+The \textsf{adversarial} pattern in particular---a strong
+action-lead mean at the short horizon attenuating to zero at the
+long horizon---is the same shape the colony's
+\textsf{fortified\_basin} scenario showed in the opposite
+direction (verbal-lead attenuating). This is one second
+instantiation, not a generality proof, but it converts the
+closed-loop concern from ``possibly an artefact'' to ``observed
+in two independent substrates''.
