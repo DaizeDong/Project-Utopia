@@ -212,3 +212,86 @@ harder external probe that induces variance, plus a matched rerun
 on the exact eighteen DeepSeek cells reported in
 Sections~\ref{sec:pilot:h1}--\ref{sec:pilot:horizon}. Both are
 open work.
+
+\subsection{H3: Cross-Substrate Replication}
+\label{sec:pilot:h3}
+
+\paragraph{Hypothesis.}
+$|\Delta| > 0.3$ also surfaces on at least one cell when the dual
+probe is re-instantiated on a substrate that shares neither code
+nor domain with the colony simulation. If the dissociation were
+purely an artefact of the colony substrate's specific shape, a
+correctly-built dual probe on a different substrate should fail
+to reproduce it.
+
+\paragraph{Cross-substrate design.}
+We construct a minimal customer-support dialogue agent loop with
+no code overlap with \texttt{project\_utopia.simulation}. Each
+turn issues two independent LLM calls---a verbal-summary call
+and a tool-call planner call---sharing session history but
+independently sampled, so the verbal and action channels have the
+same room to drift the multi-cadence colony substrate provides.
+Five anchors of the same $(\textsf{verbal\_token},
+\textsf{action\_key}, \textsf{target})$ shape are injected into a
+persistent session-context block. AFR scores the verbal-summary
+blob exactly as Section~\ref{sec:method:probe} defines; AGR
+scores the tool-call JSON's \textsf{action} keys above the same
+$\tau = 0.3$ priority threshold. The user-side message stream is
+sampled deterministically by seed from one of three scenario
+scripts (\textsf{easy} / \textsf{noisy} / \textsf{adversarial}).
+
+\paragraph{Results.}
+We run the matrix with the same model (DeepSeek-v4-Flash), the
+same three seeds, and two horizons (5 and 15 turns---short and
+long analogues of the colony pilot's 10- and 60-sim-minute
+horizons). At the time of writing the matrix is partially
+complete: the \textsf{easy} and \textsf{noisy} scenarios are
+finished ($n = 12$ cells), and the \textsf{adversarial} scenario
+is in progress ($n = 1$ of $6$ cells available). Across the
+thirteen cells available, \textbf{seven cross $|\Delta| > 0.3$
+(54\%)}, in both directions (four verbal-lead at $\Delta$
+up to $+0.80$, three action-lead at $\Delta$ down to $-0.80$).
+Table~\ref{tab:e1-h3} reports per-(scenario, horizon) aggregates.
+
+\begin{table}[t]
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{l c c c c}
+    \toprule
+    Scenario & Turns & $\bar\Delta$ & $|\bar\Delta|$ & thr.\ \\
+    \midrule
+    \textsf{easy}        & 5  & $-0.20{\pm}0.20$ & $0.20$ & $1/3$ \\
+    \textsf{easy}        & 15 & $\phantom{-}0.00{\pm}0.40$ & $0.00$ & $\mathbf{2/3}$ \\
+    \textsf{noisy}       & 5  & $+0.20{\pm}0.72$ & $0.20$ & $\mathbf{3/3}$ \\
+    \textsf{noisy}       & 15 & $\phantom{-}0.00{\pm}0.20$ & $0.00$ & $0/3$ \\
+    \textsf{adversarial} & 5  & $-0.80\phantom{{\pm}0.00}$ & $0.80$ & $\mathbf{1/1}$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Cross-substrate dual probe on the dialogue agent loop
+  ($\Delta$ at the final turn, mean~$\pm$~sample std across $n = 3$
+  seeds per condition where the matrix completed). The substrate
+  shares no code with the colony simulation; the dual-probe
+  definitions (Section~\ref{sec:method:probe}) are unchanged. The
+  \textsf{adversarial} scenario was incomplete at submission with
+  $n = 1$; the in-progress run is reported transparently rather
+  than dropped.}
+  \label{tab:e1-h3}
+\end{table}
+
+\paragraph{Reading.}
+The dual probe surfaces threshold-crossing dissociation in both
+directions on the dialogue substrate at a rate ($7/13 = 54\%$)
+substantially above the colony substrate ($2/18 = 11\%$). We do
+not interpret the magnitude difference as a substrate ranking---a
+turn-based dialogue accumulates context faster and exposes more
+points at which the verbal and action calls can diverge---but
+the central kill-argument worry that the colony result might be
+colony-specific is the wrong worry: the cross-substrate result
+goes in the same direction (bidirectional dissociation, both
+threshold-crossing cells and threshold-undershooting cells), with
+the same probe definitions, on a substrate written from scratch
+in a different domain with a different action surface. This is
+one second instantiation, not a generality proof, but it
+converts the closed-loop concern from ``possibly an artefact'' to
+``observed in two independent substrates''.

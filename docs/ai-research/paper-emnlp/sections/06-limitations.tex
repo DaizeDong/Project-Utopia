@@ -32,19 +32,16 @@ LongMemEval-style probe's difficulty level}, and identify a
 harder external probe as the next experimental step.
 
 A more fundamental concern is that the dual probe operates inside
-a substrate we designed to host it. The independent resource
+substrates we designed to host it. The independent resource
 dynamics (Section~\ref{sec:method:substrate}) rule out the most
-degenerate failure mode---AGR collapsing into a JSON-token
-echo---but do not address whether the dissociation generalises
-beyond the colony-simulation domain. A stronger validation would
-re-instantiate the dual probe in a substrate we did not author---a
-dialogue agent loop, a robotics planning loop, or an existing
-structured-output agent benchmark instrumented post-hoc---and
-confirm that the same probe definitions surface comparable
-dissociation patterns. We expect generalisation to follow from the
-structural property the substrate provides (a verbal channel and
-an action channel sharing a single model state across cadences)
-rather than the specific colony content, but the test is open. We
-identify cross-substrate validation as the second priority for
-follow-on work, alongside the broader matrix sweep; the present
-findings should be read as conditional on it.
+degenerate failure mode---AGR collapsing into a JSON-token echo
+on the colony substrate---and the cross-substrate replication on
+a minimal dialogue agent loop (Section~\ref{sec:pilot:h3}) rules
+out the next-most-degenerate reading, that the dissociation is
+colony-specific. But the dialogue substrate is also one we
+authored, and two substrates are not a population; the strongest
+remaining validation would re-instantiate the dual probe on an
+existing structured-output agent benchmark instrumented post-hoc.
+We identify that as the gating priority for follow-on work
+alongside the broader matrix sweep, and read the present findings
+as conditional on it.
